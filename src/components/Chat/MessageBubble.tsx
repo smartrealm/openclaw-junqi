@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, User, RotateCcw, Eye, Code2, RefreshCw, Pencil, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Copy, Check, User, RotateCcw, Eye, Code2, RefreshCw, Pencil, ChevronDown, ChevronRight, AlertTriangle, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -153,7 +153,7 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
 
 interface MessageBubbleProps {
   block: MessageBlock;
-  onResend?: (content: string) => void;
+  onResend?: (content: string, prevId?: string) => void;
   onRegenerate?: () => void;
   onErrorAction?: (action: string) => void;
 }
@@ -333,6 +333,8 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
   const [editText, setEditText] = useState('');
   const [errorActionDone, setErrorActionDone] = useState(false);
   const isUser = block.role === 'user';
+  const messageQueue = useChatStore((s) => s.messageQueue);
+  const isQueued = (messageQueue[activeSessionKey] || []).some((m) => m.id === block.id);
   const dir = getDirection(i18n.language);
 
   // block.markdown is already cleaned, directives stripped, code detected
@@ -451,12 +453,12 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                 autoFocus
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
-                className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[60px]"
-                rows={Math.min(editText.split('\n').length + 1, 8)}
+               className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-3 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[100px]"
+               rows={Math.min(editText.split('\n').length + 1, 8)}
               />
               <div className="flex gap-1.5 mt-1.5">
                 <button
-                  onClick={() => { onResend?.(editText); setIsEditing(false); }}
+                  onClick={() => { onResend?.(editText, block.id); setIsEditing(false); }}
                   className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors"
                 >
                   {t('chat.sendEdit', 'Send')}

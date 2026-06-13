@@ -1907,6 +1907,7 @@ version = "0.5.0"
 dependencies = [
  "dirs",
  "flate2",
+ "open",
  "portable-pty",
  "reqwest 0.12.28",
  "serde",

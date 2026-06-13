@@ -6,6 +6,7 @@ import { parseHistory, parseHistoryMessage } from '@/processing/ContentParser';
 import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
+import { gateway } from '@/services/gateway';
 import { useSettingsStore } from './settingsStore';
 
 // ═══════════════════════════════════════════════════════════
@@ -185,6 +186,7 @@ export interface ChatMessage {
   timestamp: string;
   runId?: string | null;
   responseState?: 'streaming' | 'final' | 'error' | 'aborted';
+  status?: 'sent' | 'queued' | 'cancelled';
   isStreaming?: boolean;
   mediaUrl?: string;
   mediaType?: string;
@@ -332,6 +334,10 @@ interface ChatState {
   isTyping: boolean;
   typingBySession: Record<string, boolean>;
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
+  messageQueue: Record<string, Array<{ id: string; text: string; timestamp: string }>>;
+  drainQueue: (sessionKey: string) => Promise<void>;
+  clearQueue: (sessionKey: string) => void;
+  queueSize: (sessionKey: string) => number;
   isSending: boolean;
   setIsSending: (sending: boolean) => void;
   isLoadingHistory: boolean;
@@ -1120,6 +1126,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── UI State ──
   isTyping: false,
   typingBySession: {},
+  messageQueue: {},
+  drainQueue: async (sessionKey) => {
+    const { messageQueue } = get();
+    const queue = [...(messageQueue[sessionKey] || [])];
+    if (queue.length === 0) return;
+    const next = queue.shift()!;
+    set({ messageQueue: { ...get().messageQueue, [sessionKey]: queue } });
+    try {
+      await gateway.sendMessage(next.text, undefined, sessionKey);
+      set((s) => {
+        const msgs = s.messagesPerSession[sessionKey] || [];
+        return { messagesPerSession: { ...s.messagesPerSession, [sessionKey]: msgs.map((m: any) => m.id === next.id ? { ...m, status: 'sent' as const } : m) } };
+      });
+    } catch { /* gateway handles retry */ }
+  },
+  clearQueue: (sessionKey) => set((s) => {
+    const q = s.messageQueue[sessionKey] || [];
+    const ids = new Set(q.map((m) => m.id));
+    return {
+      messageQueue: { ...s.messageQueue, [sessionKey]: [] },
+      messagesPerSession: { ...s.messagesPerSession, [sessionKey]: (s.messagesPerSession[sessionKey] || []).map((m) => ids.has(m.id) ? { ...m, status: 'cancelled' as const } : m) },
+    };
+  }),
+  queueSize: (sessionKey) => (get().messageQueue[sessionKey] || []).length,
   setIsTyping: (typing, sessionKey) =>
     set((state) => {
       const targetKey = sessionKey ?? state.activeSessionKey;

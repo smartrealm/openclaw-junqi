@@ -589,7 +589,10 @@
     "regenerate": "Regenerate",
     "sendEdit": "Send",
     "cancel": "Cancel",
-    "refreshDone": "Refreshed"
+    "refreshDone": "Refreshed",
+    "refreshHistory": "Refresh history",
+    "historyPartialBanner": "Currently showing the latest {{count}} messages. Older history is not available yet.",
+    "queued": "Queued — will send when AI finishes current reply"
   },
   "titlebar": {
     "minimize": "Minimize",

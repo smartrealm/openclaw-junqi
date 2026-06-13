@@ -125,6 +125,7 @@ export function ChatView() {
   // ── Virtuoso ref & scroll state ──
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const scrollLockedRef = useRef(false);
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const [hasSeenConnectionAttempt, setHasSeenConnectionAttempt] = useState(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
@@ -189,12 +190,13 @@ export function ChatView() {
   const scrollToBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({
       index: 'LAST',
-      behavior: 'smooth',
+      behavior: 'auto',
       align: 'end',
     });
   }, []);
 
   const revealConversationTail = useCallback(() => {
+    if (scrollLockedRef.current) return;
     scrollToBottom();
     requestAnimationFrame(() => scrollToBottom());
     setTimeout(() => scrollToBottom(), 80);
@@ -502,8 +504,21 @@ export function ChatView() {
 
   const activeHistoryMeta = historyMetaBySession[activeSessionKey];
 
-  const handleResend = useCallback(async (content: string) => {
+  const handleResend = useCallback(async (content: string, prevId?: string) => {
     const text = content;
+    if (prevId) {
+      useChatStore.getState().addMessage({ id: `user-${Date.now()}`, role: 'user', content: text, timestamp: new Date().toISOString() }, activeSessionKey);
+      // Strip old message and trailing aborted assistant
+      const st = useChatStore.getState();
+      const oldIdx = st._blocksCache[activeSessionKey]?.findIndex((b) => b.id === prevId) ?? -1;
+      if (oldIdx >= 0) {
+        const filtered = st._blocksCache[activeSessionKey]?.filter((_, i) => i < oldIdx) ?? [];
+        useChatStore.setState((s) => ({ _blocksCache: { ...s._blocksCache, [activeSessionKey]: filtered } }));
+      }
+      useChatStore.getState().setIsTyping(true, activeSessionKey);
+      try { await gateway.sendMessage(text, undefined, activeSessionKey); } catch {}
+      return;
+    }
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -786,24 +801,24 @@ export function ChatView() {
           <Virtuoso
             ref={virtuosoRef}
             data={responseGroups}
-            followOutput={() => (isTyping ? 'smooth' : 'auto')}
+            followOutput={atBottom ? (isTyping ? 'smooth' : 'auto') : false}
             overscan={{ main: 600, reverse: 600 }}
             increaseViewportBy={{ top: 400, bottom: 400 }}
             defaultItemHeight={120}
             initialTopMostItemIndex={responseGroups.length - 1}
-            atBottomStateChange={setAtBottom}
+            atBottomStateChange={(b) => { setAtBottom(b); if (!b) scrollLockedRef.current = true; }}
             atBottomThreshold={100}
             itemContent={renderGroup}
             components={{ Footer }}
             className="h-full py-3 scrollbar-thin"
-            style={{ overflowX: 'clip' }}
+            style={{ overflowX: 'clip', scrollBehavior: 'smooth' }}
           />
         )}
 
         {/* Scroll to bottom */}
         {!atBottom && hasUnreadBelow && responseGroups.length > 3 && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-            <button onClick={scrollToBottom}
+            <button onClick={() => { scrollLockedRef.current = false; scrollToBottom(); }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass shadow-float text-[11px] text-aegis-text-muted hover:text-aegis-text transition-colors">
               <ArrowDown size={13} />
               <span>{t('chat.newMessages')}</span>

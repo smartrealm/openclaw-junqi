@@ -48,6 +48,9 @@ export function MessageInput() {
     historyLoader,
     isLoadingHistory,
   } = useChatStore();
+  const drainQueue = useChatStore((s) => s.drainQueue);
+  const clearQueue = useChatStore((s) => s.clearQueue);
+  const pendingCount = useChatStore((s) => (s.messageQueue[activeSessionKey] || []).length);
   const [text, setText] = useState(() => drafts[activeSessionKey] || '');
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [screenshotOpen, setScreenshotOpen] = useState(false);
@@ -147,7 +150,18 @@ export function MessageInput() {
     setText('');
     setFiles([]);
     setIsTyping(true, activeSessionKey);
-    useChatStore.getState().setQuickReplies([], activeSessionKey);
+    const cs = useChatStore.getState();
+    cs.setQuickReplies([], activeSessionKey);
+
+    // Queue if AI is already processing — skip gateway.sendMessage
+    if (cs.typingBySession[activeSessionKey] && cs.activeSessionKey === activeSessionKey) {
+      // Already added to messages above; just queue for later drain
+      const st = useChatStore.getState();
+      const q = [...(st.messageQueue[activeSessionKey] || []), { id: userMsg.id, text: fullMessage || '', timestamp: userMsg.timestamp }];
+      useChatStore.getState().addMessage({ id: userMsg.id, role: 'user', content: fullMessage || '', timestamp: userMsg.timestamp, status: 'queued' }, activeSessionKey);
+      useChatStore.setState({ messageQueue: { ...st.messageQueue, [activeSessionKey]: q } });
+      return;
+    }
 
     try {
       await gateway.sendMessage(
@@ -414,15 +428,20 @@ export function MessageInput() {
               <button onClick={async () => {
                 try {
                   await gateway.abortChat(activeSessionKey);
+                  clearQueue(activeSessionKey);
                   setIsTyping(false, activeSessionKey);
                   setIsSending(false);
                 } catch (err) {
                   console.error('[Abort] Error:', err);
                 }
               }}
-                className="w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0 bg-aegis-danger/80 hover:bg-aegis-danger text-aegis-text transition-all"
-                title={t('input.stop')}>
-                <Square size={16} fill="currentColor" />
+                className="w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0 bg-aegis-danger/80 hover:bg-aegis-danger text-aegis-text transition-all relative">
+                <Square size={12} fill="currentColor" />
+                {pendingCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 flex items-center justify-center rounded-full bg-aegis-warning text-white text-[9px] font-bold leading-none">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
               </button>
             ) : (
               <button onClick={handleSend}

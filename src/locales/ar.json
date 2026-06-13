@@ -405,7 +405,10 @@
     "regenerate": "إعادة التوليد",
     "sendEdit": "إرسال",
     "cancel": "إلغاء",
-    "refreshDone": "تم التحديث"
+    "refreshDone": "تم التحديث",
+    "refreshHistory": "تحديث السجل",
+    "historyPartialBanner": "يتم عرض أحدث {{count}} رسالة فقط الآن. السجل الأقدم غير متاح بعد.",
+    "queued": "في الانتظار — سيتم الإرسال بعد انتهاء الرد الحالي"
   },
   "titlebar": {
     "minimize": "تصغير",

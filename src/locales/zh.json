@@ -587,7 +587,10 @@
     "regenerate": "重新生成",
     "sendEdit": "发送",
     "cancel": "取消",
-    "refreshDone": "已刷新"
+    "refreshDone": "已刷新",
+    "refreshHistory": "刷新历史记录",
+    "historyPartialBanner": "当前仅显示最近 {{count}} 条消息。更早的历史记录暂不可用。",
+    "queued": "排队中 — AI 完成当前回复后自动发送"
   },
   "titlebar": {
     "minimize": "最小化",

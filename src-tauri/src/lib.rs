@@ -40,6 +40,10 @@ pub fn run() {
             // Control UI (Console)
            commands::console::open_control_ui,
            commands::console::return_to_desktop,
+            commands::managed_files::managed_file_open,
+            commands::managed_files::managed_file_reveal,
+            commands::managed_files::managed_file_exists,
+
             commands::console::write_models_log,
             // Config
             commands::config::read_config,
