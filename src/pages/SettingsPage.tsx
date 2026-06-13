@@ -41,7 +41,24 @@ export function SettingsPageFull() {
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
   const [editUrl, setEditUrl] = useState(gatewayUrl);
   const [editToken, setEditToken] = useState(gatewayToken);
+  const [checkingVersion, setCheckingVersion] = useState(false);
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
+
+  const handleCheckVersion = async () => {
+    if (checkingVersion) return;
+    setCheckingVersion(true);
+    try {
+      const [v, latest] = await Promise.all([
+        window.aegis?.app?.versions(),
+        fetch('https://registry.npmjs.org/openclaw/latest').then(r => r.json()).catch(() => null),
+      ]);
+      setOpenclawVersion(v?.openclaw ?? (v as any)?.runtime ?? null);
+      if (latest?.version) setLatestVersion(latest.version);
+    } catch {} finally {
+      setCheckingVersion(false);
+    }
+  };
 
   const [managedFilesRefreshing, setManagedFilesRefreshing] = useState(false);
   const [attachmentsStatus, setAttachmentsStatus] = useState<string>('');
@@ -667,7 +684,20 @@ export function SettingsPageFull() {
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between">
               <span className="text-[11px] text-aegis-text-dim">{label}</span>
-              <span className="text-[10px] font-mono text-aegis-text-muted truncate max-w-[250px]">{value}</span>
+              {label === 'OpenClaw' ? (
+                <button onClick={handleCheckVersion} disabled={checkingVersion} className="flex items-center gap-1.5 text-[10px] font-mono truncate max-w-[250px] disabled:opacity-50 transition-colors" title="Click to check for updates">
+                  <span className={latestVersion && openclawVersion && latestVersion !== openclawVersion ? 'text-aegis-warning' : 'text-aegis-text-muted hover:text-aegis-primary'}>
+                    {checkingVersion ? 'Checking…' : value}
+                  </span>
+                  {latestVersion && openclawVersion && latestVersion !== openclawVersion && (
+                    <span className="text-[9px] px-1 py-px rounded bg-aegis-warning/15 text-aegis-warning border border-aegis-warning/30">
+                      v{latestVersion} available
+                    </span>
+                  )}
+                </button>
+              ) : (
+                <span className="text-[10px] font-mono text-aegis-text-muted truncate max-w-[250px]">{value}</span>
+              )}
             </div>
           ))}
         </div>

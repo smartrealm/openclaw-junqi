@@ -97,6 +97,7 @@ const SESSION_TOPIC_MAX_LENGTH = 40;
 const normalizeSessionTopic = (text?: string | null): string | undefined => {
   if (typeof text !== 'string') return undefined;
   const normalized = text
+    .replace(/\[OPENCLAW_DESKTOP_CONTEXT\][\s\S]*?\[\/OPENCLAW_DESKTOP_CONTEXT\]\s*/gi, '')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')

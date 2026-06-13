@@ -352,12 +352,6 @@ function NewSessionPicker({
     return () => document.removeEventListener('mousedown', handler);
   }, [agentDropdownOpen]);
 
-  // Filter sessions by selected agent
-  const agentSessions = newSessions.filter((s) => {
-    if (selectedAgentId === 'main') return !s.key.startsWith('agent:') || s.key.startsWith('agent:main:') || s.key.startsWith('agent:main');
-    return s.key.startsWith(`agent:${selectedAgentId}:`) || s.key === 'agent:main:main';
-  });
-
   return (
     <AnimatePresence>
       {open && (
@@ -445,10 +439,10 @@ function NewSessionPicker({
             </div>
 
             {/* Existing sessions not yet open */}
-            {(loadingNew || agentSessions.length > 0) && (
+            {(loadingNew || newSessions.length > 0) && (
               <div className="mx-1 my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
             )}
-            {agentSessions.length > 0 && (
+            {newSessions.length > 0 && (
               <div className="text-[9px] text-aegis-text-dim uppercase tracking-wider px-2 py-1 mb-0.5">
                 {t('chat.availableSessions', 'Available Sessions')}
               </div>
@@ -458,7 +452,7 @@ function NewSessionPicker({
                 {t('common.loading', 'Loading...')}
               </div>
             ) : (
-              agentSessions.map((session) => {
+              newSessions.map((session) => {
                 const displayLabel = sessionLabel(
                   session,
                   session.key,
@@ -562,12 +556,6 @@ export function ChatTabs() {
   } = useChatStore();
 
   // ── Drag-to-reorder sensors ──
-  // ── Active agent filtering: only show sessions for the current agent ──
-  const activeAgentId = activeSessionKey.split(':').length >= 3 ? (activeSessionKey.split(':')[1] ?? 'main') : 'main';
-  const visibleTabs = activeAgentId === 'main'
-    ? openTabs.filter((k) => !k.startsWith('agent:') || k.startsWith('agent:main:') || k.startsWith('agent:main'))
-    : openTabs.filter((k) => k.startsWith(`agent:${activeAgentId}:`) || k === MAIN_SESSION);
-
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
@@ -810,8 +798,8 @@ export function ChatTabs() {
       {/* ── Scrollable tab strip ── */}
       <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div ref={scrollContainerRef} className="flex-1 flex items-end h-full overflow-x-auto scrollbar-none min-w-0 pl-1">
-        <SortableContext items={visibleTabs} strategy={horizontalListSortingStrategy}>
-        {visibleTabs.map((key) => {
+        <SortableContext items={openTabs} strategy={horizontalListSortingStrategy}>
+        {openTabs.map((key) => {
           const isActive = key === activeSessionKey;
           const isMain = key === MAIN_SESSION;
           const { isMainSession, isDesktopSession } = parseSessionKey(key);

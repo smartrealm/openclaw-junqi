@@ -179,9 +179,8 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey } = useChatStore();
+  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
-  const messagesPerSession = useChatStore((s) => s.messagesPerSession);
   const sessions = useChatStore((s) => s.sessions);
   const hasProviders = availableModels.length > 0;
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -194,10 +193,22 @@ export function SessionContextBar() {
   const mainAgentName = agents.find((a) => a.id === 'main')?.name || 'Main Agent';
   const agentDisplayName = agent?.name ?? (agentId === 'main' ? mainAgentName : agentId);
 
-  // Session topic
+  // Session stats
   const activeSession = sessions.find((s) => s.key === activeSessionKey);
-  const sessionTopic = activeSession?.topic || '';
-  const showTopic = sessionTopic && sessionTopic !== agentDisplayName;
+  const sessionMsgs = messagesPerSession[activeSessionKey] || [];
+  const sessionMsgCount = sessionMsgs.length;
+  const firstMsgTs = sessionMsgs[0]?.timestamp
+    ? new Date(sessionMsgs[0].timestamp)
+    : null;
+  const fmtShort = (d: Date) => `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+  const startTime = firstMsgTs ? fmtShort(firstMsgTs) : '';
+  const startFull = firstMsgTs ? firstMsgTs.toLocaleString() : '';
+  const lastTs = activeSession?.lastTimestamp ? new Date(activeSession.lastTimestamp) : null;
+  const lastTime = lastTs ? fmtShort(lastTs) : '';
+  const lastFull = lastTs ? lastTs.toLocaleString() : '';
+  const sessionAge = lastTs
+    ? (() => { const diff = Date.now() - lastTs.getTime(); const m = Math.floor(diff / 60000); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d`; })()
+    : '';
 
   const usedTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
@@ -211,14 +222,6 @@ export function SessionContextBar() {
       <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim">
         {agentDisplayName}
       </span>
-      {showTopic && (
-        <>
-          <span className="text-aegis-text-dim opacity-30">·</span>
-          <span className="text-[10px] text-aegis-text-muted truncate max-w-[200px]" title={sessionTopic}>
-            {sessionTopic}
-          </span>
-        </>
-      )}
       <span className="text-aegis-text-dim opacity-40">·</span>
 
       <SessionModelPicker currentModel={currentModel} />
@@ -226,13 +229,46 @@ export function SessionContextBar() {
         <>
           <span className="text-aegis-text-dim opacity-40">·</span>
           <SessionThinkingPicker currentThinking={currentThinking} />
-          <span className="text-aegis-text-dim opacity-40">·</span>
-          <span className="text-[11px] text-aegis-text-muted font-mono">
-            {maxTokens > 0 ? `${usedK}K / ${maxLabel}` : t('config.notSet', 'Not set')}
-          </span>
         </>
       )}
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
+        {maxTokens > 0 && (
+          <>
+            <span className="text-[10px] text-aegis-text-muted font-mono">
+              {usedK}K / {maxLabel}
+            </span>
+            <span className="text-[10px] text-aegis-text-dim">
+              ({Math.round((usedTokens / maxTokens) * 100)}%)
+            </span>
+            <span className="text-aegis-text-dim opacity-20">·</span>
+          </>
+        )}
+        {sessionMsgCount > 0 && (
+          <span className="text-[10px] text-aegis-text-muted font-mono" title={`${sessionMsgCount} messages`}>
+            {sessionMsgCount} msg
+          </span>
+        )}
+        {startTime && (
+          <span className="text-[10px] text-aegis-text-muted font-mono" title={`Started: ${startFull}`}>
+            {startTime}
+          </span>
+        )}
+        {startTime && lastTime && (
+          <span className="text-[10px] text-aegis-text-dim">~</span>
+        )}
+        {lastTime && (
+          <span className="text-[10px] text-aegis-text-muted font-mono" title={`Last: ${lastFull}`}>
+            {lastTime}
+          </span>
+        )}
+        {sessionAge && (
+          <span className="text-[9px] text-aegis-text-dim" title={`${sessionAge} since last activity`}>
+            {sessionAge}
+          </span>
+        )}
+        {(sessionMsgCount > 0 || sessionAge) && (
+          <span className="text-aegis-text-dim opacity-20">|</span>
+        )}
         {renderBlocks.length > 0 && (
           <button
             onClick={() => exportChatMarkdown(renderBlocks, activeSessionKey)}
