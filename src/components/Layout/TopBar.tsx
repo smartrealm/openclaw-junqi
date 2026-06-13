@@ -6,6 +6,7 @@ import clsx from 'clsx';
 
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { notifications } from '@/services/notifications';
 import { NotificationPanel } from '@/components/Layout/NotificationPanel';
@@ -60,6 +61,7 @@ export function TopBar() {
   const thinkingBySession = useChatStore((s) => s.thinkingBySession);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const sessions = useChatStore((s) => s.sessions);
+  const agents = useGatewayDataStore((s) => s.agents);
   const currentModel = useChatStore((s) => s.currentModel);
 
   const workingKeys = Object.keys(typingBySession).filter((k) => typingBySession[k]);
@@ -154,7 +156,13 @@ export function TopBar() {
     const phase = displayThinking
       ? t('topbar.phaseThinking', 'Thinking')
       : t('topbar.phaseGenerating', 'Generating reply');
-    const head = workingCount > 1 ? `${agentId} +${workingCount - 1}` : agentId;
+    // Collect unique agent names from all working sessions
+    const workingNames = [...new Set(workingKeys.map((k) => {
+      const sid = k.split(':')[1] || 'main';
+      const agent = agents.find((a) => a.id === sid);
+      return agent?.name || sid;
+    }))];
+    const head = workingNames.join(', ');
     const agentPart = sessionLabel && sessionLabel !== agentId
       ? `${head} · 「${sessionLabel}」`
       : head;
