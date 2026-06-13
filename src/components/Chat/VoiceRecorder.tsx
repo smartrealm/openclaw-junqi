@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Square, X, Send, Loader2 } from 'lucide-react';
+import { Mic, Square, X, Send, Loader2, Pause, Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
@@ -23,6 +23,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
   const dir = getDirection(language);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [paused, setPaused] = useState(false);
   const [saving, setSaving] = useState(false);
   const [level, setLevel] = useState(0); // Audio level 0-1 for visualizer
 
@@ -33,6 +34,11 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const frozenHistory = useRef<number[]>([]); // Left: speaking segments accumulate
+  const liveHistory = useRef<number[]>(new Array(180).fill(0.05)); // Right: scrolling window
+  const noiseSum = useRef(0);
+  const noiseSamples = useRef(0);
 
   // ── Format elapsed time ──
   const formatTime = (sec: number): string => {
@@ -44,22 +50,146 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
   // ── Audio level visualizer ──
   const updateLevel = useCallback(() => {
     const analyser = analyserRef.current;
-    if (!analyser) return;
+    const canvas = canvasRef.current;
+    if (!analyser || !canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width, h = canvas.height, mid = h / 2;
+    const DIVIDER_X = Math.min(Math.floor(w * 0.65), (frozenHistory.current.length > 0 ? Math.floor(w * 0.06) + frozenHistory.current.length : 0));
 
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteTimeDomainData(data);
+    const tdData = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(tdData);
 
-    // Calculate RMS level
     let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      const v = (data[i] - 128) / 128;
+    for (let i = 0; i < tdData.length; i++) {
+      const v = (tdData[i] - 128) / 128;
       sum += v * v;
     }
-    const rms = Math.sqrt(sum / data.length);
-    setLevel(Math.min(1, rms * 3)); // Amplify for visibility
+    const rms = Math.sqrt(sum / tdData.length);
+    const level = Math.min(1, rms * 3);
+
+    // Running noise gate
+    if (rms < 0.04 && noiseSamples.current < 300) {
+      noiseSum.current += rms;
+      noiseSamples.current++;
+    }
+    const baseline = noiseSamples.current > 20 ? noiseSum.current / noiseSamples.current : 0.01;
+    const threshold = Math.max(0.04, baseline * 3);
+    const speaking = !paused && rms > threshold;
+
+    const val = speaking ? (0.5 + (level * 0.5)) : 0.05;
+
+    // Left: frozen — push only when speaking
+    if (speaking) {
+      frozenHistory.current.push(val);
+      const MAX_FROZEN = 600;
+      if (frozenHistory.current.length > MAX_FROZEN) frozenHistory.current.shift();
+    }
+
+    // Right: live — always push (flat when silent)
+    liveHistory.current.push(val);
+    if (liveHistory.current.length > 180) liveHistory.current.shift();
+
+    // Draw
+    ctx.clearRect(0, 0, w, h);
+
+    // ── Left: frozen history (same style as live) ──
+    const fh = frozenHistory.current;
+    if (fh.length > 0) {
+      const fgrad = ctx.createLinearGradient(0, mid - h * 0.3, 0, mid + h * 0.3);
+      fgrad.addColorStop(0, 'rgba(14,165,233,0.10)');
+      fgrad.addColorStop(0.5, 'rgba(14,165,233,0.015)');
+      fgrad.addColorStop(1, 'rgba(14,165,233,0.10)');
+      ctx.beginPath();
+      for (let i = 0; i < fh.length; i++) {
+        const x = (i / Math.max(fh.length - 1, 1)) * DIVIDER_X;
+        const y = mid + (fh[i] - 0.5) * h * 1.0;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.lineTo(DIVIDER_X, mid + h * 0.3);
+      ctx.lineTo(0, mid + h * 0.3);
+      ctx.closePath();
+      ctx.fillStyle = fgrad;
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let i = 0; i < fh.length; i++) {
+        const x = (i / Math.max(fh.length - 1, 1)) * DIVIDER_X;
+        const y = mid + (fh[i] - 0.5) * h * 1.0;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#0ea5e9';
+      ctx.lineWidth = 1.2;
+      ctx.shadowColor = '#0ea5e9';
+      ctx.shadowBlur = 4;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // ── Divider line ──
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath();
+    ctx.moveTo(DIVIDER_X, mid - h * 0.35);
+    ctx.lineTo(DIVIDER_X, mid + h * 0.35);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // ── Right: live scrolling ──
+    const lh = liveHistory.current;
+    const grad = ctx.createLinearGradient(DIVIDER_X, mid - h * 0.3, DIVIDER_X, mid + h * 0.3);
+    grad.addColorStop(0, 'rgba(14,165,233,0.12)');
+    grad.addColorStop(0.5, 'rgba(14,165,233,0.02)');
+    grad.addColorStop(1, 'rgba(14,165,233,0.12)');
+    ctx.beginPath();
+    for (let i = 0; i < lh.length; i++) {
+      const x = DIVIDER_X + (i / (lh.length - 1)) * (w - DIVIDER_X);
+      const y = mid + (lh[i] - 0.5) * h * 1.0;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(w, mid + h * 0.3);
+    ctx.lineTo(DIVIDER_X, mid + h * 0.3);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    for (let i = 0; i < lh.length; i++) {
+      const x = DIVIDER_X + (i / (lh.length - 1)) * (w - DIVIDER_X);
+      const y = mid + (lh[i] - 0.5) * h * 1.0;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#0ea5e9';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#0ea5e9';
+    ctx.shadowBlur = 6;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
 
     animFrameRef.current = requestAnimationFrame(updateLevel);
-  }, []);
+  }, [paused]);
+
+  const pauseRef = useRef(0);
+
+  // ── Pause / Resume ──
+  const togglePause = useCallback(() => {
+    const rec = mediaRecorderRef.current;
+    if (!rec) return;
+    if (paused) {
+      rec.resume();
+      setPaused(false);
+      startTimeRef.current += Date.now() - (pauseRef.current || Date.now());
+      timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 200);
+      animFrameRef.current = requestAnimationFrame(updateLevel);
+    } else {
+      rec.pause();
+      setPaused(true);
+      pauseRef.current = Date.now();
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    }
+  }, [paused, updateLevel]);
 
   // ── Start Recording ──
   const startRecording = useCallback(async () => {
@@ -96,6 +226,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
+      if (canvasRef.current) { const r = canvasRef.current.getBoundingClientRect(); canvasRef.current.width = r.width * 2; canvasRef.current.height = r.height * 2; }
       recorder.start(100); // Collect chunks every 100ms
       setRecording(true);
       startTimeRef.current = Date.now();
@@ -190,7 +321,30 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
 
   return (
     <div className="flex items-center gap-3 w-full px-3 py-2" dir={dir}>
-      {/* Cancel button */}
+      {/* Waveform — full width */}
+      <div className="flex-1 h-10 flex items-center">
+        <canvas ref={canvasRef} width={400} height={40} className="w-full h-full rounded" />
+      </div>
+
+      {/* Elapsed time */}
+      <span className="text-[13px] font-mono text-aegis-text-muted shrink-0 min-w-[40px] text-center" dir="ltr">
+        {formatTime(elapsed)}
+      </span>
+
+      {/* Pause / Resume */}
+      <button
+        onClick={togglePause}
+        disabled={saving}
+        className={clsx(
+          'p-2 rounded-lg transition-colors',
+          paused ? 'text-aegis-danger hover:bg-aegis-danger/[0.08]' : 'text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
+        )}
+        title={paused ? 'Resume' : 'Pause'}
+      >
+        {paused ? <Play size={18} /> : <Pause size={18} />}
+      </button>
+
+      {/* Cancel */}
       <button
         onClick={handleCancel}
         className="p-2 rounded-lg hover:bg-aegis-danger/20 text-aegis-danger transition-colors"
@@ -199,36 +353,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
         <X size={18} />
       </button>
 
-      {/* Recording indicator + waveform */}
-      <div className="flex-1 flex items-center gap-3">
-        {/* Pulsing red dot */}
-        <div className={clsx(
-          'w-3 h-3 rounded-full shrink-0',
-          recording ? 'bg-red-500 animate-pulse' : 'bg-aegis-text-dim'
-        )} />
-
-        {/* Audio level bars */}
-        <div className="flex items-center gap-[2px] h-8 flex-1">
-          {Array.from({ length: 24 }).map((_, i) => {
-            // Create a wave-like pattern based on audio level
-            const barLevel = Math.max(0.1, level * Math.sin((i / 24) * Math.PI) * (0.5 + Math.random() * 0.5));
-            return (
-              <div
-                key={i}
-                className="flex-1 rounded-full bg-aegis-primary/60 transition-all duration-75"
-                style={{ height: `${Math.max(4, barLevel * 32)}px` }}
-              />
-            );
-          })}
-        </div>
-
-        {/* Elapsed time */}
-        <span className="text-[13px] font-mono text-aegis-text-muted shrink-0 min-w-[40px] text-center" dir="ltr">
-          {formatTime(elapsed)}
-        </span>
-      </div>
-
-      {/* Send button */}
+      {/* Send */}
       <button
         onClick={handleSend}
         disabled={saving || elapsed < 1}
