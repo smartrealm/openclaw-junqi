@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw, GripVertical } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { isWeakSessionTopic, useChatStore, Session } from '@/stores/chatStore';
 import { useGatewayDataStore, type AgentInfo } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
@@ -349,6 +352,12 @@ function NewSessionPicker({
     return () => document.removeEventListener('mousedown', handler);
   }, [agentDropdownOpen]);
 
+  // Filter sessions by selected agent
+  const agentSessions = newSessions.filter((s) => {
+    if (selectedAgentId === 'main') return !s.key.startsWith('agent:') || s.key.startsWith('agent:main:') || s.key.startsWith('agent:main');
+    return s.key.startsWith(`agent:${selectedAgentId}:`) || s.key === 'agent:main:main';
+  });
+
   return (
     <AnimatePresence>
       {open && (
@@ -436,10 +445,10 @@ function NewSessionPicker({
             </div>
 
             {/* Existing sessions not yet open */}
-            {(loadingNew || newSessions.length > 0) && (
+            {(loadingNew || agentSessions.length > 0) && (
               <div className="mx-1 my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
             )}
-            {newSessions.length > 0 && (
+            {agentSessions.length > 0 && (
               <div className="text-[9px] text-aegis-text-dim uppercase tracking-wider px-2 py-1 mb-0.5">
                 {t('chat.availableSessions', 'Available Sessions')}
               </div>
@@ -449,7 +458,7 @@ function NewSessionPicker({
                 {t('common.loading', 'Loading...')}
               </div>
             ) : (
-              newSessions.map((session) => {
+              agentSessions.map((session) => {
                 const displayLabel = sessionLabel(
                   session,
                   session.key,
@@ -501,6 +510,34 @@ function NewSessionPicker({
 // ═══════════════════════════════════════════════════════════
 // ChatTabs — Main export
 // ═══════════════════════════════════════════════════════════
+// ── SortableTab ── a single tab wrapped for @dnd-kit drag-to-reorder ──────
+
+function SortableTab({ id, children, disabled }: { id: string; children: React.ReactNode; disabled?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+    position: 'relative',
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} className="group shrink-0">
+      {/* Drag handle: a thin grip icon on the left side of each tab */}
+      {!disabled && (
+        <button
+          type="button"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-[14px] h-full flex items-center justify-center opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+          {...listeners}
+        >
+          <GripVertical size={10} />
+        </button>
+      )}
+      {children}
+    </div>
+  );
+}
+
 
 export function ChatTabs() {
   const { t } = useTranslation();
@@ -512,6 +549,7 @@ export function ChatTabs() {
     openTab,
     closeTab,
     removeSession,
+    reorderTabs,
     setActiveSession,
     connected,
     connecting,
@@ -522,6 +560,31 @@ export function ChatTabs() {
     typingBySession,
     thinkingBySession,
   } = useChatStore();
+
+  // ── Drag-to-reorder sensors ──
+  // ── Active agent filtering: only show sessions for the current agent ──
+  const activeAgentId = activeSessionKey.split(':').length >= 3 ? (activeSessionKey.split(':')[1] ?? 'main') : 'main';
+  const visibleTabs = activeAgentId === 'main'
+    ? openTabs.filter((k) => !k.startsWith('agent:') || k.startsWith('agent:main:') || k.startsWith('agent:main'))
+    : openTabs.filter((k) => k.startsWith(`agent:${activeAgentId}:`) || k === MAIN_SESSION);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldOrder = openTabs;
+    const oldIdx = oldOrder.indexOf(String(active.id));
+    const newIdx = oldOrder.indexOf(String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    const reordered = [...oldOrder];
+    reordered.splice(oldIdx, 1);
+    reordered.splice(newIdx, 0, oldOrder[oldIdx]);
+    reorderTabs(reordered);
+  }, [openTabs, reorderTabs]);
 
   // ── New session picker (+ button) ──
   const [showNewPicker, setShowNewPicker] = useState(false);
@@ -745,8 +808,10 @@ export function ChatTabs() {
       aria-label={t('chat.sessions', 'Chat sessions')}
     >
       {/* ── Scrollable tab strip ── */}
+      <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div ref={scrollContainerRef} className="flex-1 flex items-end h-full overflow-x-auto scrollbar-none min-w-0 pl-1">
-        {openTabs.map((key) => {
+        <SortableContext items={visibleTabs} strategy={horizontalListSortingStrategy}>
+        {visibleTabs.map((key) => {
           const isActive = key === activeSessionKey;
           const isMain = key === MAIN_SESSION;
           const { isMainSession, isDesktopSession } = parseSessionKey(key);
@@ -764,6 +829,7 @@ export function ChatTabs() {
           const isEditing = editingKey === key;
 
           return (
+            <SortableTab id={key} disabled={isMain}>
             <div
               key={key}
               className="relative shrink-0"
@@ -878,9 +944,12 @@ export function ChatTabs() {
               </button>
 
             </div>
+            </SortableTab>
           );
         })}
+        </SortableContext>
       </div>
+      </DndContext>
 
       {/* Tooltip rendered in portal so it is not clipped by overflow-x-auto */}
       {showTooltip && tooltipPosition &&

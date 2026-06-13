@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import { exportChatMarkdown } from '@/utils/exportChat';
 
@@ -179,9 +180,24 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
 export function SessionContextBar() {
   const { t } = useTranslation();
   const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey } = useChatStore();
+  const agents = useGatewayDataStore((s) => s.agents);
+  const messagesPerSession = useChatStore((s) => s.messagesPerSession);
+  const sessions = useChatStore((s) => s.sessions);
   const hasProviders = availableModels.length > 0;
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshed, setIsRefreshed] = useState(false);
+
+  // Parse agentId from session key (same logic as ChatTabs)
+  const keyParts = activeSessionKey.split(':');
+  const agentId = keyParts.length >= 3 ? (keyParts[1] ?? 'main') : 'main';
+  const agent = agents.find((a) => a.id === agentId);
+  const mainAgentName = agents.find((a) => a.id === 'main')?.name || 'Main Agent';
+  const agentDisplayName = agent?.name ?? (agentId === 'main' ? mainAgentName : agentId);
+
+  // Session topic
+  const activeSession = sessions.find((s) => s.key === activeSessionKey);
+  const sessionTopic = activeSession?.topic || '';
+  const showTopic = sessionTopic && sessionTopic !== agentDisplayName;
 
   const usedTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
@@ -193,8 +209,16 @@ export function SessionContextBar() {
   return (
     <div className="h-[32px] shrink-0 flex items-center gap-2 px-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[var(--aegis-bg-frosted-60)]">
       <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim">
-        {t('chat.currentSession', 'Current Session')}
+        {agentDisplayName}
       </span>
+      {showTopic && (
+        <>
+          <span className="text-aegis-text-dim opacity-30">·</span>
+          <span className="text-[10px] text-aegis-text-muted truncate max-w-[200px]" title={sessionTopic}>
+            {sessionTopic}
+          </span>
+        </>
+      )}
       <span className="text-aegis-text-dim opacity-40">·</span>
 
       <SessionModelPicker currentModel={currentModel} />
