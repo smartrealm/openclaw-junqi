@@ -1,0 +1,202 @@
+// ═══════════════════════════════════════════════════════════
+// JunQi Desktop — Tauri Adapter
+// Replaces Electron preload (window.aegis) with Tauri APIs.
+// Requires @tauri-apps/api externalized in vite.config.ts
+// ═══════════════════════════════════════════════════════════
+
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
+import {
+  loadOrCreateDeviceIdentity,
+  buildDeviceAuthPayload,
+  signDevicePayload,
+} from "./device-identity";
+
+let _deviceIdentity: any = null;
+async function deviceIdentity() {
+  if (!_deviceIdentity) _deviceIdentity = await loadOrCreateDeviceIdentity();
+  return _deviceIdentity;
+}
+
+function detectPlatform(): string {
+  const ua = navigator.userAgent;
+  if (ua.includes("Mac")) return "darwin";
+  if (ua.includes("Win")) return "win32";
+  if (ua.includes("Linux")) return "linux";
+  return "unknown";
+}
+
+const appWindow = getCurrentWindow();
+
+// ── Listen for gateway-config event (may arrive before or after listener) ──
+let _gwConfig: any = null;
+let _gwReady = false;
+listen("gateway-config", (event: any) => {
+  _gwConfig = event.payload;
+  _gwReady = true;
+}).catch(() => {});
+
+// ── Wait a short time for the event, then use invoke as fallback ──
+async function resolveGwConfig(): Promise<any> {
+  // Wait up to 500ms for the setup event to arrive
+  for (let i = 0; i < 10 && !_gwReady; i++) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+  if (_gwConfig?.token) return _gwConfig;
+
+  // Fallback: use invoke (available once main app renders)
+  try {
+    const gw: any = await invoke("detect_gateway_config");
+    if (gw.token) return { token: gw.token, ws_url: gw.ws_url };
+  } catch {}
+
+  return null;
+}
+
+(window as any).aegis = {
+  platform: detectPlatform(),
+
+  app: {
+    versions: async () => {
+      // JunQi relies on the *local* OpenClaw (not a bundled copy), so the version
+      // comes from the installed binary via `check_openclaw`
+      // ("OpenClaw 2026.6.5 (hash)" → "2026.6.5").
+      let openclaw: string | null = null;
+      try {
+        const st: any = await invoke("check_openclaw");
+        if (st?.version) {
+          const m = String(st.version).match(/(\d[\w.\-]*)/);
+          openclaw = m ? m[1] : String(st.version);
+        }
+      } catch {}
+      return { desktop: (window as any).__APP_VERSION__ || "0.5.0", openclaw };
+    },
+    platformInfo: async () => {
+      try {
+        const info: any = await invoke("get_platform_info");
+        return `${info.os} (${info.arch})`;
+      } catch { return `${navigator.platform}`; }
+    },
+  },
+
+  window: {
+    minimize: () => appWindow.minimize(),
+    maximize: async () => { await appWindow.toggleMaximize(); return await appWindow.isMaximized(); },
+    close: () => appWindow.close(),
+    isMaximized: () => appWindow.isMaximized(),
+  },
+
+  config: {
+    get: async () => {
+      const gw = await resolveGwConfig();
+      const r: any = {};
+      if (gw?.token) r.gatewayToken = gw.token;
+      if (gw?.ws_url) r.gatewayUrl = gw.ws_url;
+      try { return { ...r, ...JSON.parse(localStorage.getItem("aegis-config") || "{}") }; } catch { return r; }
+    },
+    save: async (c: any) => { try { localStorage.setItem("aegis-config", JSON.stringify(c)); return { success: true }; } catch { return { success: false }; } },
+    detect: async () => { try { const d: any = await invoke("read_config"); return { path: d.path, exists: !!(d.raw && d.raw !== "{}") }; } catch { return { path: "", exists: false }; } },
+    read: async () => { try { const d: any = await invoke("read_config"); return { data: JSON.parse(d.raw || "{}"), path: d.path }; } catch { return { data: {}, path: "" }; } },
+    write: async (_p: string, d: any) => { try { await invoke("write_config", { json: JSON.stringify(d, null, 2) }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
+    restart: async () => { try { await invoke("stop_gateway"); await new Promise(r => setTimeout(r, 1000)); await invoke("start_gateway", { port: 18789 }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
+    validateOpenclawJson: async () => { try { const d: any = await invoke("read_config"); return { valid: true, path: d.path, exists: true }; } catch { return { valid: false, path: "", exists: false }; } },
+    backupAndResetOpenclaw: async () => { try { await invoke("write_config", { json: "{}" }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
+  },
+
+  gateway: {
+    getStatus: async () => {
+      try {
+        const s: any = await invoke("gateway_status");
+        return { running: Boolean(s.running), ready: Boolean(s.running), error: null, logs: { stdout: "", stderr: "" } };
+      } catch (e: any) {
+        return { running: false, ready: false, error: String(e), logs: { stdout: "", stderr: "" } };
+      }
+    },
+    start: async () => {
+      try {
+        await invoke("start_gateway", { port: 18789 });
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: String(e) };
+      }
+    },
+    retry: async () => {
+      try {
+        try { await invoke("stop_gateway"); } catch {}
+        await new Promise(r => setTimeout(r, 1000));
+        await invoke("start_gateway", { port: 18789 });
+        return { success: true };
+      } catch (e: any) { return { success: false, error: String(e) }; }
+    },
+    onStatusChanged: (cb: any) => {
+      let unlistenFn: (() => void) | null = null;
+      listen("gateway-log", (event: any) => {
+        const line = event.payload;
+        cb({ running: true, error: line.includes("Error") || line.includes("exited") ? line : null, logs: { stdout: line, stderr: "" } });
+      }).then((fn: any) => { unlistenFn = fn; }).catch(() => {});
+      return () => { unlistenFn?.(); };
+    },
+  },
+
+  settings: { save: async (k: string, v: any) => { try { localStorage.setItem(`aegis-setting:${k}`, JSON.stringify(v)); return { success: true }; } catch { return { success: false }; } } },
+
+  device: {
+    getIdentity: async () => { const id = await deviceIdentity(); return { deviceId: id.deviceId, publicKey: id.publicKey }; },
+    sign: async (params: any) => {
+      const id = await deviceIdentity();
+      const signedAtMs = Date.now();
+      const nonce = params.nonce || "";
+      const payload = buildDeviceAuthPayload({ deviceId: id.deviceId, clientId: params.clientId, clientMode: params.clientMode, role: params.role, scopes: params.scopes, signedAtMs, token: params.token, nonce });
+      const signature = await signDevicePayload(id.privateKey, payload);
+      return { deviceId: id.deviceId, publicKey: id.publicKey, signature, signedAt: signedAtMs, nonce: params.nonce };
+    },
+  },
+
+  file: {
+    openDialog: async () => { try { const { open } = await import("@tauri-apps/plugin-dialog"); const r = await open({ multiple: false }); return r ? { canceled: false, filePaths: [r] } : { canceled: true, filePaths: [] }; } catch { return { canceled: true, filePaths: [] }; } },
+    read: async (path: string) => { try { const { readFile } = await import("@tauri-apps/plugin-fs"); const c = await readFile(path); const t = new TextDecoder().decode(c); const ext = path.split(".").pop()?.toLowerCase() || ""; const img = ["png","jpg","jpeg","gif","webp","svg"]; const is = img.includes(ext); return { name: path.split("/").pop()||path, path, base64: is ? btoa(String.fromCharCode(...c)) : btoa(t), mimeType: is ? `image/${ext}` : "application/octet-stream", isImage: is, size: c.length }; } catch { return null; } },
+    openSharedFolder: async () => {
+      try {
+        // Read configured workspace from config, fall back to default
+        const config = await invoke<{ raw: string }>("read_config");
+        const parsed = JSON.parse(config.raw || "{}");
+        const workspace = parsed?.agents?.defaults?.workspace || "~/.openclaw/workspace";
+        await invoke("open_folder", { path: workspace });
+      } catch {
+        try { await invoke("open_folder", { path: "~/.openclaw/workspace" }); } catch {}
+      }
+    },
+  },
+
+  image: { save: async () => ({ success: false, error: "Not implemented" }) },
+  screenshot: { capture: async () => ({ success: false }), getWindows: async () => [], captureWindow: async () => ({ success: false }) },
+  memory: { browse: async () => null, readLocal: async () => ({ success: false, files: [] }) },
+  pairing: { getToken: async () => { try { return await invoke("get_gateway_token"); } catch { return null; } }, saveToken: async () => ({ success: true }), requestPairing: async () => { const id = await deviceIdentity(); return { code: "", deviceId: id.deviceId }; }, poll: async () => ({ status: "timeout" }) },
+  terminal: { create: async () => ({ id: "stub", pid: 0, error: "Not implemented" }), write: async () => {}, resize: async () => {}, kill: async () => {}, onData: () => () => {}, onExit: () => () => {} },
+  artifact: { open: async () => ({ success: false }) },
+  notify: async (t: string, b: string) => { if ("Notification" in window && Notification.permission === "granted") new Notification(t, { body: b }); },
+  consoleUi: {
+    // Open the gateway's Control UI in an in-app window (mirrors openclaw-desktop).
+    // The Rust side injects the gateway token via the URL hash and a floating
+    // "← 返回 JunQi" button. Falls back to the system browser on failure.
+    open: async () => {
+      try { await invoke("open_control_ui"); return { success: true }; }
+      catch (e: any) {
+        try { const { open } = await import("@tauri-apps/plugin-shell"); await open("http://127.0.0.1:18789"); return { success: true }; }
+        catch { return { success: false, error: String(e) }; }
+      }
+    },
+  },
+  logs: { openElectronLogFile: async () => { try { await invoke("open_folder", { path: "~/.openclaw" }); return { success: true }; } catch { return { success: false }; } } },
+  secrets: { audit: async () => ({ success: false }), reload: async () => ({ success: false }) },
+  agentAuth: { syncMain: async () => ({ success: true }), rehydrateMainRuntime: async () => ({ success: true }) },
+  skills: { listManaged: async () => ({ success: true, skills: [] }), importFolder: async () => ({ success: false }), importZip: async () => ({ success: false }), delete: async () => ({ success: false }) },
+  skillshub: { check: async () => ({ installed: false, path: null }), install: async () => ({ success: false }), installCli: async () => ({ success: false }) },
+  clawhub: { openLogin: async () => ({ success: false }), loginCli: async () => ({ success: false }), authStatus: async () => ({ available: false, loggedIn: false, source: null, displayName: null }), searchCli: async () => ({ success: false, items: [] }), fetchJson: async () => ({ ok: false, status: 500, retryAfter: null }), install: async () => ({ success: false }) },
+  managedFiles: { open: async () => ({ success: false }), reveal: async () => ({ success: false }), exists: async () => ({ success: false, exists: false }), list: async () => ({ success: true, total: 0, root: "", rows: [] }), delete: async () => ({ success: false }) },
+  attachments: { stage: async () => ({ success: false, staged: [] }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
+  uploads: { list: async () => ({ success: true, rows: [], total: 0, root: "" }), open: async () => ({ success: false }), reveal: async () => ({ success: false }), exists: async () => ({ success: false, exists: false }), read: async () => ({ success: false }), delete: async () => ({ success: false }), saveAs: async () => ({ success: false }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
+  voice: { save: async () => null, read: async () => null },
+  update: { check: async () => null, download: async () => null, install: async () => {}, onAvailable: () => () => {}, onUpToDate: () => () => {}, onProgress: () => () => {}, onDownloaded: () => () => {}, onError: () => () => {} },
+};

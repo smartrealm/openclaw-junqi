@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Tauri merges this into the bundled Info.plist. Required for WKWebView to
+       request microphone (voice input) / camera access under hardened runtime. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>JunQi 需要访问麦克风以支持语音输入。 / JunQi needs microphone access for voice input.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>JunQi 需要访问摄像头以支持视频相关功能。 / JunQi needs camera access for video features.</string>
+</dict>
+</plist>

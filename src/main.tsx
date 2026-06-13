@@ -1,0 +1,44 @@
+// ── Global error trap (must be FIRST) ──
+function showError(title: string, detail: string) {
+  document.getElementById('app-root')!.innerHTML =
+    `<div style="display:flex;flex-direction:column;height:100vh;align-items:center;justify-content:center;background:#0c1015;color:white;font-family:monospace;gap:8px;padding:20px">` +
+    `<h2 style="color:#ef4444">${title}</h2>` +
+    `<pre style="color:#f87171;font-size:11px;max-width:600px;white-space:pre-wrap">${detail}</pre>` +
+    `</div>`;
+}
+window.addEventListener('error', (e) => showError('JS Error', e.error?.stack || e.message));
+window.addEventListener('unhandledrejection', (e) => showError('Promise Rejection', e.reason || String(e.reason)));
+
+// Apply the saved theme SYNCHRONOUSLY before any render so chrome-bg / glass-bg
+// resolve the right --aegis-* variables on the very first paint (no dark→light
+// flicker on launch, no wrong "always dark" chrome).
+(function applyThemeEarly() {
+  try {
+    const saved = localStorage.getItem('aegis-theme');
+    let theme: string = saved || 'system';
+    if (theme === 'system') {
+      theme = window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'aegis-dark' : 'aegis-light';
+    }
+    document.documentElement.setAttribute('data-theme', theme);
+  } catch { /* localStorage may be unavailable in incognito */ }
+})();
+
+(async function boot() {
+  await import('./api/tauri-adapter');
+  await import('./i18n');
+  await import('@/styles/index.css');
+  const [React, ReactDOM, App, ErrorBoundary] = await Promise.all([
+    import('react'),
+    import('react-dom/client'),
+    import('./App'),
+    import('@/components/shared/ErrorBoundary'),
+  ]);
+  ReactDOM.createRoot(document.getElementById('app-root')!).render(
+    React.createElement(React.StrictMode, null,
+      React.createElement(ErrorBoundary.ErrorBoundary, null,
+        React.createElement(App.default)
+      )
+    )
+  );
+})().catch((e: any) => showError('Boot Error', e?.stack || e?.message || String(e)));
