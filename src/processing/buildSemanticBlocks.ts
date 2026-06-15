@@ -26,6 +26,7 @@ import type {
 } from '@/types/SemanticBlock';
 import { stripDirectives, isNoise, stripUserMeta } from './TextCleaner';
 import { autoDetectCode } from '@/utils/autoDetectCode';
+import { useChatStore } from '@/stores/chatStore';
 import {
   parseArtifacts,
   extractFileRefs,
@@ -56,7 +57,7 @@ function createBlockBase(normalized: NormalizedMessage, id = normalized.id) {
   };
 }
 
-function buildAssistantMeta(markdown: string): MetaItem[] {
+function buildAssistantMeta(markdown: string, normalized: NormalizedMessage): MetaItem[] {
   const meta: MetaItem[] = [];
 
   const workshopResults = markdown.match(/✅\s+(Added|Moved|Deleted|Updated)\s+task[^\n]*/g);
@@ -67,6 +68,44 @@ function buildAssistantMeta(markdown: string): MetaItem[] {
       content: workshopResults.join('\n'),
     });
   }
+
+  // Context meta — per-message input/output/cache tokens from gateway usage,
+  // context % from global tokenUsage. Mirrors openclaw renderMessageMeta.
+  try {
+    const usage = normalized.usage;
+    const tu = useChatStore.getState().tokenUsage;
+    const model = normalized.model || useChatStore.getState().currentModel || '';
+    const input = usage?.input ?? usage?.inputTokens ?? 0;
+    const output = usage?.output ?? usage?.outputTokens ?? 0;
+    const cacheRead = usage?.cacheRead ?? usage?.cache_read_input_tokens ?? 0;
+    const cacheWrite = usage?.cacheWrite ?? usage?.cache_creation_input_tokens ?? 0;
+    const contextPercent = tu?.percentage ?? null;
+    if (input || output || cacheRead || cacheWrite || contextPercent !== null || model) {
+      const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));
+      const parts = [
+        input ? `↑${fmt(input)}` : '',
+        output ? `↓${fmt(output)}` : '',
+        cacheRead ? `R${fmt(cacheRead)}` : '',
+        cacheWrite ? `W${fmt(cacheWrite)}` : '',
+        contextPercent !== null ? `${contextPercent}% ctx` : '',
+        model || '',
+      ].filter(Boolean);
+      meta.push({
+        kind: 'context',
+        label: 'Context',
+        content: JSON.stringify({
+          input,
+          output,
+          cacheRead,
+          cacheWrite,
+          contextPercent,
+          model: model || undefined,
+          formatted: parts.join(' · '),
+        }),
+      });
+    }
+  } catch {}
+
   return meta;
 }
 
@@ -153,7 +192,7 @@ export function buildSemanticBlocks(
 
   const images = extractAttachmentImages(normalized.attachments);
   const meta = role === 'assistant'
-    ? buildAssistantMeta(cleanText || markdown)
+    ? buildAssistantMeta(cleanText || markdown, normalized)
     : [];
 
   const blocks: SemanticBlock[] = [];

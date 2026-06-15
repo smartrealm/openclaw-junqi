@@ -72,7 +72,7 @@ interface BlockBase {
 
 /** Collapsed meta item (thinking, workshop, system notes) shown under reply */
 export interface MetaItem {
-  kind: 'thinking' | 'workshop' | 'system' | 'tool-summary';
+  kind: 'thinking' | 'workshop' | 'system' | 'tool-summary' | 'context';
   label: string;     // short label: "🧠 Reasoning", "✅ Workshop", etc.
   content: string;   // full content (shown when expanded)
 }

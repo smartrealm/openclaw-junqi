@@ -406,9 +406,18 @@
     "sendEdit": "إرسال",
     "cancel": "إلغاء",
     "refreshDone": "تم التحديث",
-    "refreshHistory": "تحديث السجل",
-    "historyPartialBanner": "يتم عرض أحدث {{count}} رسالة فقط الآن. السجل الأقدم غير متاح بعد.",
-    "queued": "في الانتظار — سيتم الإرسال بعد انتهاء الرد الحالي"
+    "loadingOlder": "u062Cu0627u0631u064D u062Au062Du0645u064Au0644 u0627u0644u0631u0633u0627u0626u0644 u0627u0644u0623u0642u062Fu0645…",
+    "historyExhausted": "u0628u062Fu0627u064Au0629 u0627u0644u0645u062Du0627u062Fu062Bu0629",
+    "queued": "في الانتظار — سيتم الإرسال بعد انتهاء الرد الحالي",
+    "queueTitle": "في الانتظار",
+    "queueClear": "مسح الكل",
+    "queueClearConfirm": "مسح كل الرسائل في الانتظار؟",
+    "queueEdit": "تعديل",
+    "queueDelete": "حذف",
+    "queueDeleteConfirm": "حذف هذه الرسالة؟",
+    "queueWait": "انتظار {{s}}s",
+    "queueMore": "+{{n}}",
+    "queueCancelled": "ملغى"
   },
   "titlebar": {
     "minimize": "تصغير",

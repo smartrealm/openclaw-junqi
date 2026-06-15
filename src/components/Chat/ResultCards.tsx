@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Code2, Eye, FileText, FolderOpen, Info, Sparkles } from 'lucide-react';
+import { Code2, Eye, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, Sparkles, ChevronDown, Loader2, type LucideIcon } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Artifact, DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
@@ -120,48 +122,84 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
   );
 }
 
+const PREVIEWABLE_EXTS = ['md', 'markdown', 'txt', 'text', 'log', 'json', 'html', 'htm', 'csv', 'xml', 'yml', 'yaml', 'js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'sh', 'sql'];
+
+function getFileIconByExt(ext: string): LucideIcon {
+  const e = ext.toLowerCase();
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(e)) return FileImage;
+  if (['xls', 'xlsx', 'csv', 'ppt', 'pptx', 'odp', 'ods', 'numbers', 'key'].includes(e)) return FileSpreadsheet;
+  if (['md', 'markdown', 'html', 'htm', 'js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'json', 'xml', 'yml', 'yaml', 'sh', 'sql'].includes(e)) return FileCode;
+  return FileText; // doc/docx/rtf/txt/pdf/...
+}
+
 function FileRow({ file }: { file: FileRef }) {
   const { t } = useTranslation();
   const addToast = useNotificationStore((s) => s.addToast);
   const [copied, setCopied] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const path = resolveFilePath(file);
   const name = fileNameFromPath(file.path);
   const detail = [file.meta, file.kind === 'voice' ? 'voice' : null, file.isCanonicalOutput === false ? 'noncanonical' : null]
     .filter(Boolean)
     .join(' · ');
 
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const isPreviewable = PREVIEWABLE_EXTS.includes(ext);
+  const isMarkdown = ext === 'md' || ext === 'markdown';
+  const isHtml = ext === 'html' || ext === 'htm';
+
   const handleOpen = async () => {
     try {
       const openPath = await resolveExistingFilePath(path);
-      const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
-      if (openManagedPath) {
-        const result = await openManagedPath(openPath);
-        if (result && typeof result === 'object' && 'success' in (result as any) && !(result as any).success) {
-          console.warn('[FileResultCard] open file rejected:', openPath, (result as any).error);
-          addToast('info', t('resultCards.open', 'Open'), t('errors.occurred', 'An error occurred'));
-          return;
-        }
-        if (result && typeof result === 'object' && 'fallback' in (result as any)) {
-          addToast('info', t('resultCards.open', 'Open'), t('fileManager.reveal', 'Reveal'));
-          return;
-        }
+      // Tauri: use plugin-shell open (system default handler)
+      try {
+        const { open } = await import('@tauri-apps/plugin-shell');
+        await open(openPath);
         return;
-      }
+      } catch { /* not Tauri or blocked — fall through */ }
+      const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
+      if (openManagedPath) { await openManagedPath(openPath); return; }
       const url = openPath.startsWith('file://') ? openPath : `file://${openPath}`;
       window.open(url, '_blank');
     } catch (err) {
       console.error('[FileResultCard] open file failed:', err);
+      addToast('info', t('resultCards.open', 'Open'), t('errors.occurred', 'An error occurred'));
     }
+  };
+
+  // Inline preview — read file via gateway, render by extension (md/text/html).
+  const handlePreview = async () => {
+    if (previewOpen) { setPreviewOpen(false); return; }
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewContent(null);
+    try {
+      const f = await window.aegis?.file?.read(path);
+      if (f?.base64) {
+        // base64 → UTF-8 text (handles CJK via decodeURIComponent(escape(...)))
+        const bin = atob(f.base64);
+        setPreviewContent(decodeURIComponent(escape(bin)));
+      }
+    } catch (err) {
+      console.error('[FileResultCard] preview failed:', err);
+      setPreviewContent(null);
+    }
+    setPreviewLoading(false);
   };
 
   const handleReveal = async () => {
     try {
       const revealPath = await resolveExistingFilePath(path);
+      // Tauri: macOS `open -R` reveals in Finder
+      try {
+        const { Command } = await import('@tauri-apps/plugin-shell');
+        await Command.create('open', ['-R', revealPath]).execute();
+        return;
+      } catch { /* fall through */ }
       const revealManagedPath = window.aegis?.managedFiles?.reveal || window.aegis?.uploads?.reveal;
-      const result = await revealManagedPath?.(revealPath);
-      if (result && typeof result === 'object' && 'success' in (result as any) && !(result as any).success) {
-        console.warn('[FileResultCard] reveal file rejected:', revealPath, (result as any).error);
-      }
+      await revealManagedPath?.(revealPath);
     } catch (err) {
       console.error('[FileResultCard] reveal file failed:', err);
     }
@@ -172,35 +210,79 @@ function FileRow({ file }: { file: FileRef }) {
       await navigator.clipboard.writeText(path);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
-      addToast(
-        'info',
-        t('fileManager.copyPathDone', 'Path copied'),
-        path,
-      );
+      addToast('info', t('fileManager.copyPathDone', 'Path copied'), path);
     } catch (err) {
       console.warn('[FileResultCard] copy path failed:', err);
       addToast('info', t('resultCards.path', 'Path'), t('errors.occurred', 'An error occurred'));
     }
   };
 
+  const renderPreview = () => {
+    if (previewLoading) {
+      return (
+        <div className="flex items-center gap-2 p-3 text-[11px] text-aegis-text-muted">
+          <Loader2 size={12} className="animate-spin" />
+          {t('common.loading', 'Loading…')}
+        </div>
+      );
+    }
+    if (previewContent === null) {
+      return <div className="p-3 text-[11px] text-aegis-text-dim">{t('resultCards.previewUnavailable', 'Preview unavailable')}</div>;
+    }
+    if (isHtml) {
+      return (
+        <iframe
+          srcDoc={previewContent}
+          sandbox=""
+          className="h-[320px] w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-white"
+          title={name}
+        />
+      );
+    }
+    if (isMarkdown) {
+      return (
+        <div className="markdown-body max-h-[420px] overflow-auto rounded-lg bg-[rgb(var(--aegis-overlay)/0.03)] p-3 text-[12px] leading-relaxed">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{previewContent}</ReactMarkdown>
+        </div>
+      );
+    }
+    return (
+      <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[rgb(var(--aegis-overlay)/0.05)] p-3 font-mono text-[11px] text-aegis-text-muted">
+        {previewContent}
+      </pre>
+    );
+  };
+
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2">
-      <FileText size={16} className="shrink-0 text-aegis-primary/80" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[12px] font-medium text-aegis-text">{name}</div>
-        <div className="truncate text-[10px] text-aegis-text-dim">{detail || path}</div>
+    <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)]">
+      <div className="flex items-center gap-3 px-3 py-2">
+        {(() => { const Ic = getFileIconByExt(ext); return <Ic size={16} className="shrink-0 text-aegis-primary/80" />; })()}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12px] font-medium text-aegis-text">{name}</div>
+          <div className="truncate text-[10px] text-aegis-text-dim">{detail || path}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {isPreviewable && (
+            <button onClick={handlePreview} className="rounded-md bg-aegis-primary/10 px-2 py-1 text-[10px] text-aegis-primary hover:bg-aegis-primary/20">
+              {previewOpen ? t('resultCards.hide', 'Hide') : t('resultCards.preview', 'Preview')}
+            </button>
+          )}
+          <button onClick={handleOpen} className="rounded-md bg-aegis-primary/10 px-2 py-1 text-[10px] text-aegis-primary hover:bg-aegis-primary/20">
+            {t('resultCards.open', 'Open')}
+          </button>
+          <button onClick={handleReveal} className="rounded-md px-2 py-1 text-[10px] text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text">
+            {t('resultCards.reveal', 'Reveal')}
+          </button>
+          <button onClick={handleCopy} className="rounded-md px-2 py-1 text-[10px] text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text">
+            {copied ? t('common.copied', 'Copied') : t('resultCards.path', 'Path')}
+          </button>
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <button onClick={handleOpen} className="rounded-md bg-aegis-primary/10 px-2 py-1 text-[10px] text-aegis-primary hover:bg-aegis-primary/20">
-          {t('resultCards.open', 'Open')}
-        </button>
-        <button onClick={handleReveal} className="rounded-md px-2 py-1 text-[10px] text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text">
-          {t('resultCards.reveal', 'Reveal')}
-        </button>
-        <button onClick={handleCopy} className="rounded-md px-2 py-1 text-[10px] text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text">
-          {copied ? t('common.copied', 'Copied') : t('resultCards.path', 'Path')}
-        </button>
-      </div>
+      {previewOpen && (
+        <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)] px-3 py-2">
+          {renderPreview()}
+        </div>
+      )}
     </div>
   );
 }

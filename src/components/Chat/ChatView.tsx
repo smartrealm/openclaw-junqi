@@ -21,7 +21,7 @@ import type { RenderBlock } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import clsx from 'clsx';
 
-const HISTORY_LIMIT = 200;
+const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
 const HISTORY_BACKGROUND_RETRY_BASE_MS = 30_000;
 const HISTORY_BACKGROUND_RETRY_MAX_MS = 120_000;
@@ -32,7 +32,8 @@ const DEFAULT_GATEWAY_WS_URL = 'ws://127.0.0.1:18789';
 interface HistoryMeta {
   loaded: boolean;
   loadedCount: number;
-  isLikelyTruncated: boolean;
+  hasMore: boolean;
+  nextCursor?: string;
   source: 'gateway' | 'cache';
 }
 
@@ -101,6 +102,8 @@ export function ChatView() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const messageQueue = useChatStore((s) => s.messageQueue);
+  const queueCount = (messageQueue[activeSessionKey] || []).length;
   const availableModels = useChatStore((s) => s.availableModels);
   const modelsLoading = useChatStore((s) => s.modelsLoading);
   const hasProviders = availableModels.length > 0;
@@ -126,6 +129,11 @@ export function ChatView() {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [atBottom, setAtBottom] = useState(true);
   const scrollLockedRef = useRef(false);
+  const prevResponseGroupsLenRef = useRef(0);
+
+  // Reset scroll lock when switching sessions — new session should start at bottom
+  useEffect(() => { scrollLockedRef.current = false; }, [activeSessionKey]);
+
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const [hasSeenConnectionAttempt, setHasSeenConnectionAttempt] = useState(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
@@ -156,6 +164,8 @@ export function ChatView() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [searchOpen]);
+
+  useEffect(() => { prevResponseGroupsLenRef.current = responseGroups.length; });
 
   const searchableGroups = useMemo(() => responseGroups, [responseGroups]);
 
@@ -190,17 +200,22 @@ export function ChatView() {
   const scrollToBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({
       index: 'LAST',
-      behavior: 'auto',
+      behavior: 'smooth',
       align: 'end',
     });
   }, []);
 
-  const revealConversationTail = useCallback(() => {
+  const revealConversationTail = useCallback((opts?: { instant?: boolean }) => {
     if (scrollLockedRef.current) return;
-    scrollToBottom();
-    requestAnimationFrame(() => scrollToBottom());
-    setTimeout(() => scrollToBottom(), 80);
-  }, [scrollToBottom]);
+    const bh = (opts?.instant ? 'auto' : 'smooth') as 'auto' | 'smooth';
+    const fn = () => {
+      virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: bh, align: 'end' });
+      virtuosoRef.current?.scrollBy?.({ top: Number.MAX_SAFE_INTEGER, behavior: bh });
+    };
+    fn();
+    requestAnimationFrame(fn);
+    setTimeout(fn, 150);
+  }, []);
 
   const tailMessage = messages[messages.length - 1];
   const tailRenderBlock = renderBlocks[renderBlocks.length - 1];
@@ -238,18 +253,27 @@ export function ChatView() {
     }
   }, [atBottom, bottomContentSignature]);
 
+  // ── Auto-scroll to bottom when opening a session ──
+  useEffect(() => {
+    if (renderBlocks.length === 0) return;
+    scrollLockedRef.current = false;
+    const raf = requestAnimationFrame(() => revealConversationTail());
+    return () => cancelAnimationFrame(raf);
+  }, [activeSessionKey, renderBlocks.length]);
+
+
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
     if (!isTyping || !lastMessage || lastMessage.role !== 'user') return;
     if (lastMessage.id === lastAutoRevealedUserMessageIdRef.current) return;
 
     lastAutoRevealedUserMessageIdRef.current = lastMessage.id;
-    revealConversationTail();
+    revealConversationTail({ instant: true });
   }, [messages, isTyping, revealConversationTail]);
 
   useEffect(() => {
     if (!isTyping) return;
-    revealConversationTail();
+    revealConversationTail({ instant: true });
   }, [isTyping, bottomContentSignature, revealConversationTail]);
 
   useEffect(() => {
@@ -284,7 +308,7 @@ export function ChatView() {
           [sessionKey]: prev[sessionKey] ?? {
             loaded: true,
             loadedCount: cached.length,
-            isLikelyTruncated: cached.length >= HISTORY_LIMIT,
+            hasMore: cached.length >= HISTORY_LIMIT,
             source: 'cache',
           },
         }));
@@ -319,9 +343,8 @@ export function ChatView() {
 
           const normalizeStartedAt = performance.now();
           const rawMessages = Array.isArray(result?.messages) ? result.messages : [];
-          const isLikelyTruncated =
-            Boolean(result?.hasMore ?? result?.more ?? result?.truncated ?? result?.nextCursor) ||
-            rawMessages.length >= HISTORY_LIMIT;
+          const hasMore = rawMessages.length >= HISTORY_LIMIT;
+          const nextCursor = rawMessages.length > 0 ? rawMessages[0]?.id || undefined : undefined;
 
           const mappedMessages = rawMessages.map((msg: any) => ({
             id: msg.id || msg.messageId || `hist-${crypto.randomUUID()}`,
@@ -362,7 +385,8 @@ export function ChatView() {
                 [sessionKey]: {
                   loaded: true,
                   loadedCount: messages.length,
-                  isLikelyTruncated,
+                  hasMore,
+                  nextCursor,
                   source: 'gateway',
                 },
               }));
@@ -375,7 +399,8 @@ export function ChatView() {
               [sessionKey]: {
                 loaded: true,
                 loadedCount: messages.length,
-                isLikelyTruncated,
+                hasMore,
+                nextCursor,
                 source: 'gateway',
               },
             }));
@@ -478,6 +503,67 @@ export function ChatView() {
     }
   }, [isRefreshing, isLoadingHistory, loadHistory]);
 
+  // ── Load older messages via HTTP cursor pagination ──
+  const isLoadingOlderRef = useRef(false);
+  const loadOlderMessages = useCallback(async () => {
+    const sk = activeSessionKey;
+    if (isLoadingOlderRef.current) return;
+    const meta = historyMetaBySession[sk];
+    if (!meta || !meta.hasMore) return;
+    isLoadingOlderRef.current = true;
+    setHasUnreadBelow(false);
+    try {
+      const { baseUrl, token } = (await import('@/api/gatewayAuth')).getGatewayAuth() || {};
+      if (!baseUrl || !token) return;
+      const { fetchSessionHistoryPage } = await import('@/api/http/historyClient');
+      const { normalizeHistoryMessages } = await import('@/processing/normalizeHistoryMessage');
+      const { prependOlderMessages } = await import('@/processing/mergeHistory');
+      const page = await fetchSessionHistoryPage({
+        baseUrl, token, sessionKey: sk,
+        limit: HISTORY_LIMIT,
+        cursor: meta.nextCursor,
+      });
+      const normalized = normalizeHistoryMessages(page.messages as unknown[]);
+      const existing = useChatStore.getState().messagesPerSession[sk] || [];
+      const { merged, addedCount } = prependOlderMessages(existing, normalized);
+      if (addedCount === 0) {
+        setHistoryMetaBySession((prev) => ({
+          ...prev,
+          [sk]: { ...prev[sk], hasMore: page.hasMore, nextCursor: page.nextCursor },
+        }));
+        return;
+      }
+      useChatStore.getState().setMessages(merged, sk);
+      useChatStore.getState().cacheMessagesForSession(sk, merged);
+      setHistoryMetaBySession((prev) => ({
+        ...prev,
+        [sk]: {
+          loaded: true,
+          loadedCount: merged.length,
+          hasMore: page.hasMore,
+          nextCursor: page.nextCursor,
+          source: 'gateway',
+        },
+      }));
+    } catch (err) {
+      console.warn('[ChatView] loadOlderMessages failed', err);
+    } finally {
+      isLoadingOlderRef.current = false;
+    }
+  }, [activeSessionKey, historyMetaBySession]);
+
+  const startReachedFiredRef = useRef(false);
+  const handleStartReached = useCallback(() => {
+    if (startReachedFiredRef.current) return;
+    const meta = historyMetaBySession[activeSessionKey];
+    if (!meta?.hasMore) return;
+    startReachedFiredRef.current = true;
+    loadOlderMessages().finally(() => {
+      startReachedFiredRef.current = false;
+    });
+  }, [activeSessionKey, historyMetaBySession, loadOlderMessages]);
+
+
   // Auto-load history when connected and the active session changes (tab switch).
   // loadHistory already checks the per-session cache first, so repeated calls are cheap.
   const prevSessionRef = useRef<string | null>(null);
@@ -504,6 +590,13 @@ export function ChatView() {
 
   const activeHistoryMeta = historyMetaBySession[activeSessionKey];
 
+  // Scroll to bottom when history first loads (or session switches)
+  useEffect(() => {
+    if (!activeHistoryMeta?.loaded) return;
+    if (scrollLockedRef.current) return;
+    revealConversationTail({ instant: true });
+  }, [activeSessionKey, activeHistoryMeta?.loaded, revealConversationTail]);
+
   const handleResend = useCallback(async (content: string, prevId?: string) => {
     const text = content;
     if (prevId) {
@@ -526,7 +619,7 @@ export function ChatView() {
       timestamp: new Date().toISOString(),
     };
     addMessage(userMsg, activeSessionKey);
-    revealConversationTail();
+    revealConversationTail({ instant: true });
     useChatStore.getState().setIsTyping(true, activeSessionKey);
     try {
       await gateway.sendMessage(text, undefined, activeSessionKey);
@@ -541,7 +634,7 @@ export function ChatView() {
       (b) => b.type === 'message' && b.role === 'user'
     );
     if (lastUserMsg && lastUserMsg.type === 'message') {
-      revealConversationTail();
+      revealConversationTail({ instant: true });
       useChatStore.getState().setIsTyping(true, activeSessionKey);
       gateway.sendMessage(lastUserMsg.markdown, undefined, activeSessionKey);
     }
@@ -646,6 +739,11 @@ export function ChatView() {
             onResend={block.role === 'user' ? handleResend : undefined}
             onRegenerate={block.role === 'assistant' ? handleRegenerate : undefined}
             onErrorAction={block.role === 'assistant' ? handleErrorAction : undefined}
+            onDelete={() => {
+              const st = useChatStore.getState();
+              const key = st.activeSessionKey;
+              st.setMessages((st.messagesPerSession[key] || []).filter((m) => m.id !== block.id), key);
+            }}
           />
         );
 
@@ -670,6 +768,31 @@ export function ChatView() {
       ))}
     </div>
   ), [renderBlock]);
+
+  // ── Header: loading indicator / session start divider ──
+  const Header = useCallback(() => {
+    const meta = historyMetaBySession[activeSessionKey];
+    if (!meta) return null;
+    if (isLoadingOlderRef.current) {
+      return (
+        <div className="flex items-center justify-center py-2">
+          <div className="h-[1px] w-24 bg-gradient-to-r from-transparent via-aegis-primary/40 to-transparent animate-pulse" />
+        </div>
+      );
+    }
+    if (!meta.hasMore && meta.loadedCount > 0) {
+      return (
+        <div className="flex items-center gap-2 px-5 py-3">
+          <div className="flex-1 h-px bg-aegis-border" />
+          <span className="text-[9px] text-aegis-text-dim shrink-0 uppercase tracking-wider">
+            {t('chat.historyExhausted', 'Session start')}
+          </span>
+          <div className="flex-1 h-px bg-aegis-border" />
+        </div>
+      );
+    }
+    return null;
+  }, [activeSessionKey, historyMetaBySession, t]);
 
   // ── Footer: thinking stream + typing indicator ──
   const Footer = useCallback(() => (
@@ -736,32 +859,7 @@ export function ChatView() {
         </div>
       )}
 
-      {activeHistoryMeta?.loaded && activeHistoryMeta.isLikelyTruncated && (
-        <div className="shrink-0 px-4 py-2 border-b border-aegis-warning/20 bg-aegis-warning/[0.05]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[12px] text-aegis-warning">
-              {t('chat.historyPartialBanner', {
-                count: activeHistoryMeta.loadedCount,
-                defaultValue: 'Currently showing the latest {{count}} messages. Older history is not available in this view yet.',
-              })}
-            </div>
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing || isLoadingHistory}
-              className="shrink-0 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-aegis-warning/30 text-aegis-warning hover:bg-aegis-warning/[0.1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isRefreshing
-                ? t('chat.refreshingHistory', 'Refreshing...')
-                : t('chat.refreshHistory', 'Refresh history')}
-            </button>
-          </div>
-          <div className="mt-1 text-[11px] text-aegis-text-dim">
-            {t('chat.historyPaginationUnavailable', {
-              defaultValue: 'Gateway pagination for older messages is not exposed here yet, so full long-session restore is still pending.',
-            })}
-          </div>
-        </div>
-      )}
+
 
       {/* Search Bar */}
       {searchOpen && (
@@ -794,22 +892,32 @@ export function ChatView() {
       )}
 
       {/* Messages Area — Virtualized */}
-      <div className="flex-1 min-h-0 relative">
+      <div className={clsx('flex-1 min-h-0 relative', queueCount > 0 && 'pb-[100px]')}>
         {responseGroups.length === 0 ? (
           <div className="flex-1 h-full" />
         ) : (
           <Virtuoso
             ref={virtuosoRef}
             data={responseGroups}
-            followOutput={atBottom ? (isTyping ? 'smooth' : 'auto') : false}
+            followOutput={() => (scrollLockedRef.current || !atBottom ? false : (isTyping ? 'smooth' : 'auto'))}
             overscan={{ main: 600, reverse: 600 }}
             increaseViewportBy={{ top: 400, bottom: 400 }}
             defaultItemHeight={120}
             initialTopMostItemIndex={responseGroups.length - 1}
-            atBottomStateChange={(b) => { setAtBottom(b); if (!b) scrollLockedRef.current = true; }}
+            atBottomStateChange={(b) => {
+              setAtBottom(b);
+              if (b) {
+                // User scrolled back to bottom → re-enable auto-follow.
+                scrollLockedRef.current = false;
+              } else if (responseGroups.length === prevResponseGroupsLenRef.current) {
+                // User manually scrolled up (not content growth) → lock, don't follow new output.
+                scrollLockedRef.current = true;
+              }
+            }}
             atBottomThreshold={100}
             itemContent={renderGroup}
-            components={{ Footer }}
+            startReached={handleStartReached}
+            components={{ Footer, Header }}
             className="h-full py-3 scrollbar-thin"
             style={{ overflowX: 'clip', scrollBehavior: 'smooth' }}
           />

@@ -131,7 +131,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
           {/* Duration + expand */}
           <div className="flex items-center gap-1.5 shrink-0">
             {tool.durationMs !== undefined && tool.status !== 'running' && (
-              <span className="text-[9px] text-aegis-text-dim/40 font-mono tabular-nums">
+              <span className="text-[11px] text-aegis-text-secondary font-mono tabular-nums font-medium px-1.5 py-0.5 rounded bg-[rgb(var(--aegis-overlay)/0.10)]">
                 {formatDuration(tool.durationMs)}
               </span>
             )}

@@ -100,9 +100,9 @@ function ToastItem({ toast }: { toast: Toast }) {
       role="alert"
       aria-live="polite"
       style={{
-        // Glass card — dark frosted glass, theme-aware
+        // Solid card — opaque bg so text is readable over vibrancy window
         width: 320,
-        background: 'var(--aegis-bg-frosted)',
+        background: 'var(--aegis-bg-solid)',
         border: `1px solid ${themeAlpha('primary', 0.25)}`,
         boxShadow: `0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 ${themeAlpha('primary', 0.08)}`,
       }}

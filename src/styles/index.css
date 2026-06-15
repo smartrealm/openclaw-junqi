@@ -46,7 +46,7 @@
   }
 
   /* ── Body ── */
-  body { background: var(--aegis-body); overflow: hidden; }
+  body { background: transparent; overflow: hidden; }
 }
 
 @layer components {
@@ -133,7 +133,7 @@
   }
 
   /* ── Markdown ── */
-  .markdown-body { line-height: 1.75; word-wrap: break-word; letter-spacing: 0.01em; overflow-x: hidden; max-width: 100%; }
+  .markdown-body { line-height: 1.75; word-wrap: break-word; letter-spacing: 0.01em; overflow-x: hidden; max-width: 100%; -webkit-user-select: text; user-select: text; }
   .markdown-body p { margin-bottom: 0.6em; }
   .markdown-body p:last-child { margin-bottom: 0; }
   .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
@@ -246,6 +246,44 @@
 
 .animate-shimmer {
   animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes borderPulse {
+  0% { border-color: rgb(var(--aegis-primary) / 0.3); box-shadow: 0 0 0 0 rgb(var(--aegis-primary) / 0); transform: scale(1); }
+  50% { border-color: rgb(var(--aegis-primary) / 0.7); box-shadow: 0 0 16px 3px rgb(var(--aegis-primary) / 0.3), 0 0 0 1px rgb(var(--aegis-primary) / 0.5); transform: scale(1.005); }
+  100% { border-color: rgb(var(--aegis-primary) / 0.3); box-shadow: 0 0 0 0 rgb(var(--aegis-primary) / 0); transform: scale(1); }
+}
+
+.hover\:animate-borderPulse:hover {
+  animation: borderPulse 1.5s ease-in-out infinite;
+}
+
+/* Streaming border — a light band runs all the way around the bubble border */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes borderRun {
+  to { --border-angle: 360deg; }
+}
+.streaming-border {
+  position: relative;
+}
+.streaming-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from var(--border-angle), transparent 0%, rgb(var(--aegis-primary) / 0.9) 8%, transparent 18%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: borderRun 2.5s linear infinite;
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════

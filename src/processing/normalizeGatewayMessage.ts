@@ -220,6 +220,7 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
     decisionOptions: Array.isArray(message?.decisionOptions) ? message.decisionOptions : undefined,
     workshopEvents: Array.isArray(message?.workshopEvents) ? message.workshopEvents : undefined,
     sessionEvents: Array.isArray(message?.sessionEvents) ? message.sessionEvents : undefined,
+    usage: (message?.usage && typeof message.usage === 'object') ? message.usage as Record<string, number> : undefined,
     text,
     textParts,
     toolCalls,

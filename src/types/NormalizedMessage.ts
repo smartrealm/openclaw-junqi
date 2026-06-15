@@ -37,6 +37,7 @@ export interface NormalizedMessage {
   decisionOptions?: DecisionOption[];
   workshopEvents?: WorkshopEvent[];
   sessionEvents?: SessionEvent[];
+  usage?: Record<string, number>;
   text: string;
   textParts: string[];
   toolCalls: NormalizedToolCall[];

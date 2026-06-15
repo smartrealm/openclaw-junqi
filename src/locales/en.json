@@ -590,9 +590,18 @@
     "sendEdit": "Send",
     "cancel": "Cancel",
     "refreshDone": "Refreshed",
-    "refreshHistory": "Refresh history",
-    "historyPartialBanner": "Currently showing the latest {{count}} messages. Older history is not available yet.",
-    "queued": "Queued — will send when AI finishes current reply"
+    "loadingOlder": "Loading older messages...",
+    "historyExhausted": "Start of conversation",
+    "queued": "Queued — will send when AI finishes current reply",
+    "queueTitle": "Queued",
+    "queueClear": "Clear all",
+    "queueClearConfirm": "Clear all queued messages?",
+    "queueEdit": "Edit",
+    "queueDelete": "Delete",
+    "queueDeleteConfirm": "Delete this queued message?",
+    "queueWait": "waiting {{s}}s",
+    "queueMore": "+{{n}} more",
+    "queueCancelled": "Cancelled"
   },
   "titlebar": {
     "minimize": "Minimize",

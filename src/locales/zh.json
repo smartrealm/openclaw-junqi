@@ -588,9 +588,18 @@
     "sendEdit": "发送",
     "cancel": "取消",
     "refreshDone": "已刷新",
-    "refreshHistory": "刷新历史记录",
-    "historyPartialBanner": "当前仅显示最近 {{count}} 条消息。更早的历史记录暂不可用。",
-    "queued": "排队中 — AI 完成当前回复后自动发送"
+    "loadingOlder": "加载更早消息…",
+    "historyExhausted": "对话起始",
+    "queued": "排队中 — AI 完成当前回复后自动发送",
+    "queueTitle": "排队中",
+    "queueClear": "清空",
+    "queueClearConfirm": "清空全部排队消息？",
+    "queueEdit": "编辑",
+    "queueDelete": "删除",
+    "queueDeleteConfirm": "删除这条排队消息？",
+    "queueWait": "等待 {{s}}s",
+    "queueMore": "+{{n}} 条",
+    "queueCancelled": "已取消"
   },
   "titlebar": {
     "minimize": "最小化",

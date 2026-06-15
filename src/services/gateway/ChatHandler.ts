@@ -507,12 +507,11 @@ export class ChatHandler {
     const timer = setTimeout(() => {
       const activeRunId = this.currentRunIdBySession.get(sessionKey);
       if (!activeRunId || activeRunId !== runId) return;
-      const currentText = this.currentStreamContentBySession.get(sessionKey) || '';
-      if (!currentText) return;
-      const segmentText = this.getSegmentText(sessionKey, currentText);
-      if (!segmentText.trim()) return;
-      const messageId = this.currentMessageIdBySession.get(sessionKey) || this.ensureActiveMessageId(sessionKey, runId);
-      void this.finalizeAssistantResponse(sessionKey, messageId, segmentText);
+      // Fallback seals the current assistant segment only — it must NOT trigger
+      // onStreamEnd, which would flip typing=false and refreshHistory mid-run
+      // (between tool rounds). The true run terminal state is owned exclusively
+      // by case 'final'/'aborted'/'error' below.
+      this.closeCurrentStreamSegment(sessionKey);
     }, 180);
     this.finalizeFallbackTimers.set(sessionKey, timer);
   }
