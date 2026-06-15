@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { showConfirm } from '@/components/shared/AlertDialog';
 import {
   FolderOpen,
   File,
@@ -762,16 +763,20 @@ export function FileManagerPage() {
                     {selected.kind === 'outputs' || selected.kind === 'output' ? (
                       <button
                         onClick={async () => {
-                          const confirmed = window.confirm(t('fileManager.deleteOutputFileConfirm'));
-                          if (!confirmed) return;
-                          const res = await window.aegis?.managedFiles?.delete?.({ path: selected.path });
-                          if (!res?.success) {
-                            setCleanMessage(res?.error || t('fileManager.deleteFailed'));
-                            return;
-                          }
-                          setSelected(null);
-                          setCleanMessage(t('fileManager.deleteOutputFileDone'));
-                          await loadFiles();
+                          showConfirm(
+                            t('fileManager.deleteOutputFile', '删除文件'),
+                            t('fileManager.deleteOutputFileConfirm'),
+                            async () => {
+                              const res = await window.aegis?.managedFiles?.delete?.({ path: selected.path });
+                              if (!res?.success) {
+                                setCleanMessage(res?.error || t('fileManager.deleteFailed'));
+                                return;
+                              }
+                              setSelected(null);
+                              setCleanMessage(t('fileManager.deleteOutputFileDone'));
+                              await loadFiles();
+                            }
+                          );
                         }}
                         disabled={!selected.exists}
                         className="px-2 py-1 rounded bg-red-500/10 border border-red-400/20 text-red-300 hover:bg-red-500/20 transition-colors disabled:opacity-40"

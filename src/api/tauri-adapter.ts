@@ -99,7 +99,28 @@ async function resolveGwConfig(): Promise<any> {
     detect: async () => { try { const d: any = await invoke("read_config"); return { path: d.path, exists: !!(d.raw && d.raw !== "{}") }; } catch { return { path: "", exists: false }; } },
     read: async () => { try { const d: any = await invoke("read_config"); return { data: JSON.parse(d.raw || "{}"), path: d.path }; } catch { return { data: {}, path: "" }; } },
     write: async (_p: string, d: any) => { try { await invoke("write_config", { json: JSON.stringify(d, null, 2) }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
-    restart: async () => { try { await invoke("stop_gateway"); await new Promise(r => setTimeout(r, 1000)); await invoke("start_gateway", { port: 18789 }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
+    restart: async () => {
+      try {
+        // Don't stop first — start_gateway already handles "port already in use"
+        // by detecting the external gateway and returning success without spawning.
+        // This avoids the "Gateway is not running" error from stop_gateway when
+        // the gateway is an external process not managed by this app.
+        await invoke("start_gateway", { port: 18789 });
+        return { success: true };
+      } catch {
+        // start_gateway failed — try stop+start as fallback
+        try {
+          await invoke("stop_gateway");
+        } catch { /* external gateway, ignore */ }
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+          await invoke("start_gateway", { port: 18789 });
+          return { success: true };
+        } catch (e: any) {
+          return { success: false, error: String(e) };
+        }
+      }
+    },
     validateOpenclawJson: async () => { try { const d: any = await invoke("read_config"); return { valid: true, path: d.path, exists: true }; } catch { return { valid: false, path: "", exists: false }; } },
     backupAndResetOpenclaw: async () => { try { await invoke("write_config", { json: "{}" }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
   },
@@ -169,8 +190,41 @@ async function resolveGwConfig(): Promise<any> {
     },
   },
 
-  image: { save: async () => ({ success: false, error: "Not implemented" }) },
-  screenshot: { capture: async () => ({ success: false }), getWindows: async () => [], captureWindow: async () => ({ success: false }) },
+  image: { save: async (src: string, suggestedName: string) => {
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const { writeFile } = await import("@tauri-apps/plugin-fs");
+      // Convert data URL to bytes and save
+      const b64 = src.replace(/^data:image\/\w+;base64,/, "");
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const path = await save({ defaultPath: suggestedName, filters: [{ name: "Images", extensions: ["png"] }] });
+      if (path) { await writeFile(path, bytes); return { success: true, path }; }
+      return { success: false, error: "Cancelled" };
+    } catch (e: any) { return { success: false, error: String(e) }; }
+  } },
+  screenshot: {
+    // Check if Screen Recording permission is granted (captures to /dev/null)
+    checkPermission: async () => { try { const r: any = await invoke("screenshot_check_permission"); return r ?? { granted: false }; } catch { return { granted: false }; } },
+    // Interactive: native macOS screencapture -i (drag area / Space for window)
+    captureInteractive: async () => { try { const r: any = await invoke("screenshot_interactive"); return r; } catch (e: any) {
+      const msg = String(e || '');
+      if (msg.includes("PERMISSION_DENIED")) { return { success: false, error: msg.replace("PERMISSION_DENIED:", ""), tccDenied: true }; }
+      if (msg.includes("CANCELLED")) { return { success: false, cancelled: true }; }
+      return { success: false };
+    }},
+    capture: async () => { try { const r: any = await invoke("screenshot_fullscreen"); return r; } catch (e: any) {
+      const msg = String(e || '');
+      if (msg.includes("PERMISSION_DENIED")) { return { success: false, error: msg.replace("PERMISSION_DENIED:", ""), tccDenied: true }; }
+      return { success: false };
+    }},
+    // Window picker (for ScreenshotPicker compatibility)
+    getWindows: async () => { try { const r: any = await invoke("screenshot_list_windows"); return Array.isArray(r) ? r : []; } catch { return []; } },
+    captureWindow: async (id: string) => { try { const r: any = await invoke("screenshot_capture_window", { id }); return r; } catch { return { success: false }; } },
+    captureSourceStream: async (sourceId: string): Promise<string | null> => {
+      try { const r: any = await invoke("screenshot_capture_window", { id: sourceId }); return r?.data ?? null; } catch { return null; }
+    },
+    getSources: async () => { try { const r: any = await invoke("screenshot_list_windows"); return Array.isArray(r) ? r : []; } catch { return []; } },
+  },
   memory: { browse: async () => null, readLocal: async () => ({ success: false, files: [] }) },
   pairing: { getToken: async () => { try { return await invoke("get_gateway_token"); } catch { return null; } }, saveToken: async () => ({ success: true }), requestPairing: async () => { const id = await deviceIdentity(); return { code: "", deviceId: id.deviceId }; }, poll: async () => ({ status: "timeout" }) },
   terminal: { create: async () => ({ id: "stub", pid: 0, error: "Not implemented" }), write: async () => {}, resize: async () => {}, kill: async () => {}, onData: () => () => {}, onExit: () => () => {} },
@@ -203,6 +257,32 @@ async function resolveGwConfig(): Promise<any> {
   },
   attachments: { stage: async () => ({ success: false, staged: [] }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
   uploads: { list: async () => ({ success: true, rows: [], total: 0, root: "" }), open: async () => ({ success: false }), reveal: async () => ({ success: false }), exists: async () => ({ success: false, exists: false }), read: async () => ({ success: false }), delete: async () => ({ success: false }), saveAs: async () => ({ success: false }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
-  voice: { save: async () => null, read: async () => null },
+  voice: {
+    // Rust-native recording via CoreAudio — TCC permission persists properly.
+    startRecording: async () => { try { const r: any = await invoke("voice_start_recording"); return r; } catch (e: any) { return { success: false, error: String(e) }; } },
+    stopRecording: async () => { try { const r: any = await invoke("voice_stop_recording"); return r; } catch (e: any) { return { success: false, error: String(e) }; } },
+    isRecording: async () => { try { const r: any = await invoke("voice_is_recording"); return r; } catch { return { recording: false }; } },
+    save: async (filename: string, base64: string, sessionKey?: string, agentId?: string) => {
+      try {
+        const { writeFile } = await import("@tauri-apps/plugin-fs");
+        const { appDataDir } = await import("@tauri-apps/api/path");
+        const dir = await appDataDir();
+        const voiceDir = sessionKey ? `${dir}voice/${sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_")}` : `${dir}voice`;
+        try { await invoke("open_folder", { path: voiceDir }); } catch {}
+        const path = `${voiceDir}/${filename}`;
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        await writeFile(path, bytes);
+        return path;
+      } catch { return null; }
+    },
+    read: async (filePath: string) => {
+      try {
+        const { readFile } = await import("@tauri-apps/plugin-fs");
+        const bytes = await readFile(filePath);
+        const b64 = btoa(String.fromCharCode(...bytes));
+        return b64;
+      } catch { return null; }
+    },
+  },
   update: { check: async () => null, download: async () => null, install: async () => {}, onAvailable: () => () => {}, onUpToDate: () => () => {}, onProgress: () => () => {}, onDownloaded: () => () => {}, onError: () => () => {} },
 };

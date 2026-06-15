@@ -9,7 +9,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, MessageCircle, Kanban, DollarSign,
   Clock, Bot, Settings, Settings2, Brain, Puzzle,
-  Terminal, FolderOpen, CalendarDays,
+  Terminal, FolderOpen, CalendarDays, Activity,
   PanelLeftOpen, PanelLeftClose,
 } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -29,6 +29,7 @@ const navItemDefs: NavItem[] = [
   { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', feature: 'dashboard' },
   { to: '/chat', icon: MessageCircle, labelKey: 'nav.chat', feature: 'chat' },
   { to: '/workshop', icon: Kanban, labelKey: 'nav.workshop', feature: 'workshop' },
+  { to: '/kanban', icon: LayoutDashboard, labelKey: 'nav.kanban', feature: 'workshop' },
   { to: '/cron', icon: Clock, labelKey: 'nav.cron', feature: 'cron' },
   { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
   { to: '/costs', icon: DollarSign, labelKey: 'nav.costs', feature: 'analytics' },
@@ -38,6 +39,7 @@ const navItemDefs: NavItem[] = [
   { to: '/files', icon: FolderOpen, labelKey: 'nav.files', feature: 'files' },
   { to: '/calendar', icon: CalendarDays, labelKey: 'nav.calendar', feature: 'calendar' },
   { to: '/config', icon: Settings2, labelKey: 'nav.config', feature: 'configManager' },
+  { to: '/perf', icon: Activity, labelKey: 'nav.performance', feature: 'logs' }, // reuse logs flag or always show
 ];
 
 const navItems = navItemDefs.filter((item) => isFeatureEnabled(item.feature));

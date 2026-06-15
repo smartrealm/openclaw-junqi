@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { Search, Loader2, RefreshCw, Package, Globe, FolderOpen, FileArchive, Upload, CheckCircle2, AlertCircle, Zap, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { gateway } from '@/services/gateway';
+import { showAlert } from '@/components/shared/AlertDialog';
 import { useChatStore } from '@/stores/chatStore';
 import clsx from 'clsx';
 import {
@@ -1082,10 +1083,10 @@ export function SkillsPage() {
         }
         setDeleteConfirm(null);
       } else {
-        alert(t('skills.deleteError', { error: res?.error ?? 'unknown' }));
+        showAlert('删除失败', String(res?.error ?? '未知错误'), 'error');
       }
     } catch (err: any) {
-      alert(t('skills.deleteError', { error: String(err?.message ?? err) }));
+      showAlert('删除失败', String(err?.message ?? err), 'error');
     } finally {
       setDeleting(false);
     }

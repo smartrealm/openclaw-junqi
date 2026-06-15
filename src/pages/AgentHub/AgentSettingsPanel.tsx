@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { showAlert } from '@/components/shared/AlertDialog';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
 import clsx from 'clsx';
 
@@ -321,7 +322,7 @@ export function AgentSettingsPanel({
       onSaved();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`${t('agentSettings.saveFailed', 'Failed to save')}: ${msg}`);
+      showAlert(t('agentSettings.saveFailed', '保存失败'), msg, 'error');
     } finally {
       setSaving(false);
     }

@@ -2,6 +2,7 @@ import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react'
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/components/Layout/AppLayout';
+import { GlobalAlertDialog } from '@/components/shared/AlertDialog';
 import { SetupPage } from '@/pages/SetupPage';
 import { useAppStore } from '@/stores/app-store';
 import { PairingScreen } from '@/components/PairingScreen';
@@ -28,6 +29,8 @@ const FileManagerPage = lazy(() => import('@/pages/FileManager').then(m => ({ de
 const CalendarPage = lazy(() => import('@/pages/Calendar'));
 const CodeInterpreterPage = lazy(() => import('@/pages/CodeInterpreter').then(m => ({ default: m.CodeInterpreterPage })));
 const McpToolsPage = lazy(() => import('@/pages/McpTools').then(m => ({ default: m.McpToolsPage })));
+const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
+const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
 import { FeatureRoute } from '@/components/FeatureRoute';
 import { useChatStore } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
@@ -206,7 +209,7 @@ export default function App() {
     try {
       const raw = await gateway.call('config.get', {});
       // Response may be config directly OR wrapped: { config: {...} }
-      const config = raw?.agents?.defaults?.models ? raw : raw?.config;
+      const config = raw?.agents?.defaults?.models ? raw : (raw?.config ?? raw);
       const authProfiles = config?.auth?.profiles ?? {};
       const modelProviders = config?.models?.providers ?? {};
       const envVars = config?.env?.vars ?? {};
@@ -218,11 +221,10 @@ export default function App() {
 
       const modelsSection: Record<string, any> = config?.agents?.defaults?.models ?? {};
       const fromConfig = Object.entries(modelsSection)
-        .filter(([, cfg]: [string, any]) => cfg?.alias)
         .map(([id, cfg]: [string, any]) => ({
           id,
           label: id,           // Raw — formatted in TitleBar
-          alias: cfg.alias as string,
+          alias: (cfg?.alias as string) || undefined,
         }));
       if (fromConfig.length > 0) {
         console.log('[Models] Loaded from config.get:', fromConfig.length);
@@ -308,6 +310,24 @@ export default function App() {
   // ── Request notification permission (Web Notification API) ──
   useEffect(() => { notifications.requestPermission(); }, []);
 
+  // ── Auto-drain the message queue when an AI reply completes ──
+  // Fires once per response (on the typing true→false transition) for any session,
+  // covering both streaming (finalizeStreamingMessage) and non-streaming (onMessage)
+  // completion paths — both set typingBySession[key]=false. drainQueue re-arms typing
+  // so the next completion drains the next item, until the queue is empty.
+  useEffect(() => {
+    return useChatStore.subscribe((state, prev) => {
+      const cur = state.typingBySession;
+      const old = prev.typingBySession;
+      if (cur === old) return;
+      for (const key of Object.keys(cur)) {
+        if (cur[key] === false && old[key] === true && (state.messageQueue[key] || []).length > 0) {
+          void useChatStore.getState().drainQueue(key);
+        }
+      }
+    });
+  }, []);
+
   // ── Gateway Setup ──
   useEffect(() => {
     gateway.setCallbacks({
@@ -316,7 +336,6 @@ export default function App() {
         const sessionKey =
           typeof rawSk === 'string' && rawSk.trim() ? rawSk : useChatStore.getState().activeSessionKey;
         const { activeSessionKey: currentSessionKey } = useChatStore.getState();
-        setIsTyping(false, sessionKey);
         addMessage(msg, sessionKey);
         if (sessionKey !== currentSessionKey) {
           incrementSessionUnread(sessionKey);
@@ -344,6 +363,7 @@ export default function App() {
         );
       },
       onStreamEnd: (sessionKey, messageId, content, media, meta) => {
+        setIsTyping(false, sessionKey);
         finalizeStreamingMessage(
           messageId,
           content,
@@ -681,11 +701,14 @@ export default function App() {
                 <Route path="/calendar" element={<FeatureRoute feature="calendar"><CalendarPage /></FeatureRoute>} />
                 <Route path="/sandbox" element={<FeatureRoute feature="sandbox"><CodeInterpreterPage /></FeatureRoute>} />
                 <Route path="/tools" element={<FeatureRoute feature="tools"><McpToolsPage /></FeatureRoute>} />
+                <Route path="/perf" element={<PerformancePage />} />
+                <Route path="/kanban" element={<KanbanPage />} />
                 <Route path="/settings" element={<FeatureRoute feature="settings"><SettingsPageFull /></FeatureRoute>} />
               </Route>
             </Routes>
         </Suspense>
         </ErrorBoundary>
+        <GlobalAlertDialog />
       </HashRouter>
     </>
   );

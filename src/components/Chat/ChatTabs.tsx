@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw, GripVertical } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { showConfirm } from '@/components/shared/AlertDialog';
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -738,11 +739,14 @@ export function ChatTabs() {
     if (!ctxMenu) return;
     const key = ctxMenu.key;
     setCtxMenu(null);
-    if (!window.confirm(t('chat.deleteSessionConfirm', 'Delete this session and its history? This cannot be undone.'))) return;
-    try {
-      await gateway.deleteSession(key);
-    } catch { /* gateway may 404 if session was already ephemeral */ }
-    removeSession(key);
+    showConfirm(
+      t('chat.deleteSession', '删除会话'),
+      t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
+      async () => {
+        try { await gateway.deleteSession(key); } catch {}
+        removeSession(key);
+      }
+    );
   }, [ctxMenu, t, removeSession]);
 
   const { clearSessionMessages, clearSessionTokens } = useChatStore();
@@ -750,12 +754,15 @@ export function ChatTabs() {
     if (!ctxMenu) return;
     const key = ctxMenu.key;
     setCtxMenu(null);
-    if (!window.confirm(t('chat.resetSessionConfirm', 'Clear conversation history for this session? The session will be kept.'))) return;
-    try {
-      await gateway.resetSession(key);
-    } catch { /* ignore */ }
-    clearSessionMessages(key);
-    clearSessionTokens(key);
+    showConfirm(
+      t('chat.resetSession', '重置会话'),
+      t('chat.resetSessionConfirm', '确定清除此会话的对话历史？会话本身会保留。'),
+      async () => {
+        try { await gateway.resetSession(key); } catch {}
+        clearSessionMessages(key);
+        clearSessionTokens(key);
+      }
+    );
     // Trigger App-level session refresh so the polled data also resets
     window.dispatchEvent(new CustomEvent('aegis:session-reset'));
   }, [ctxMenu, t, clearSessionMessages, clearSessionTokens]);
