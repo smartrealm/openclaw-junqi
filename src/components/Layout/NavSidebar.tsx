@@ -30,6 +30,7 @@ const navItemDefs: NavItem[] = [
   { to: '/chat', icon: MessageCircle, labelKey: 'nav.chat', feature: 'chat' },
   { to: '/workshop', icon: Kanban, labelKey: 'nav.workshop', feature: 'workshop' },
   { to: '/kanban', icon: LayoutDashboard, labelKey: 'nav.kanban', feature: 'workshop' },
+  { to: '/group-chat', icon: MessageCircle, labelKey: 'nav.groupChat', feature: 'chat' },
   { to: '/cron', icon: Clock, labelKey: 'nav.cron', feature: 'cron' },
   { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
   { to: '/costs', icon: DollarSign, labelKey: 'nav.costs', feature: 'analytics' },

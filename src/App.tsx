@@ -31,6 +31,7 @@ const CodeInterpreterPage = lazy(() => import('@/pages/CodeInterpreter').then(m 
 const McpToolsPage = lazy(() => import('@/pages/McpTools').then(m => ({ default: m.McpToolsPage })));
 const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
 const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
+const GroupChatPage = lazy(() => import('@/pages/GroupChat').then(m => ({ default: m.GroupChat })));
 import { FeatureRoute } from '@/components/FeatureRoute';
 import { useChatStore } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
@@ -703,6 +704,7 @@ export default function App() {
                 <Route path="/tools" element={<FeatureRoute feature="tools"><McpToolsPage /></FeatureRoute>} />
                 <Route path="/perf" element={<PerformancePage />} />
                 <Route path="/kanban" element={<KanbanPage />} />
+                <Route path="/group-chat" element={<GroupChatPage />} />
                 <Route path="/settings" element={<FeatureRoute feature="settings"><SettingsPageFull /></FeatureRoute>} />
               </Route>
             </Routes>

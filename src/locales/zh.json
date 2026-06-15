@@ -34,6 +34,7 @@
     "files": "文件管理",
     "performance": "性能监控",
     "kanban": "看板",
+    "groupChat": "群聊",
     "expandSidebar": "展开侧栏",
     "collapseSidebar": "收起侧栏",
     "sidebarToMini": "收起为图标",
@@ -1639,5 +1640,12 @@
     "cancel": "取消",
     "addPlaceholder": "任务标题…",
     "taskCount": "{{count}} 任务"
+  },
+  "groupchat": {
+    "agents": "参与 Agent",
+    "selected": "已选",
+    "noAgents": "暂无 Agent",
+    "selectHint": "选择左侧 Agent 开始群聊",
+    "placeholder": "输入消息，发送给所有选中的 Agent…"
   }
 }
