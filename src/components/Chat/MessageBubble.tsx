@@ -426,33 +426,32 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             block.isStreaming && 'border-aegis-primary/30 streaming-border'
           )}
         >
-          {/* Streaming indicator — light band runs around the whole border (.streaming-border class) */}
-          {/* Action bar — top-right of bubble */}
+          {/* Action bar — top-right of bubble content */}
           {!block.isStreaming && (
             <div className={clsx(
-              'absolute top-1 right-1 z-10 flex items-center gap-0.5 transition-opacity duration-150',
-              showActions ? 'opacity-100' : 'opacity-0'
+              'absolute -top-3 right-2 z-10 flex items-center gap-0.5 transition-opacity duration-150',
+              showActions ? 'opacity-100' : 'opacity-0 pointer-events-none'
             )}>
               {/* Copy */}
               <button
                 onClick={handleCopy}
-                className="rounded-md p-1 hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
+                className="rounded-md p-1 bg-[rgb(var(--aegis-overlay)/0.06)] hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
                 title={t('chat.copy')}
               >
                 {copied ? (
-                  <Check size={11} className="text-aegis-success" />
+                  <Check size={12} className="text-aegis-success" />
                 ) : (
-                  <Copy size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
+                  <Copy size={12} className="text-aegis-text-muted" />
                 )}
               </button>
               {/* Regenerate — assistant only */}
               {!isUser && onRegenerate && (
                 <button
                   onClick={onRegenerate}
-                  className="rounded-md p-1 hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
+                  className="rounded-md p-1 bg-[rgb(var(--aegis-overlay)/0.06)] hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
                   title={t('chat.regenerate', 'Regenerate')}
                 >
-                  <RefreshCw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
+                  <RefreshCw size={12} className="text-aegis-text-muted" />
                 </button>
               )}
               {/* MD Preview toggle — assistant only */}
@@ -463,11 +462,11 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                     'rounded-md p-1 transition-colors',
                     showRawMd
                       ? 'bg-aegis-primary/15 text-aegis-primary'
-                      : 'hover:bg-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted hover:text-aegis-text-secondary'
+                      : 'bg-[rgb(var(--aegis-overlay)/0.06)] hover:bg-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted'
                   )}
                   title={showRawMd ? t('chat.showRendered', 'Show rendered') : t('chat.showRaw', 'Show raw markdown')}
                 >
-                  <Code2 size={11} />
+                  <Code2 size={12} />
                 </button>
               )}
             </div>
