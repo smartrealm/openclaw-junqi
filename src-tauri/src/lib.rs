@@ -32,6 +32,16 @@ pub fn run() {
             commands::system::check_git,
             commands::system::check_openclaw,
             commands::system::open_folder,
+            // Screenshot
+            commands::screenshot::screenshot_check_permission,
+            commands::screenshot::screenshot_interactive,
+            commands::screenshot::screenshot_fullscreen,
+            commands::screenshot::screenshot_list_windows,
+            commands::screenshot::screenshot_capture_window,
+            // Voice
+            commands::voice::voice_start_recording,
+            commands::voice::voice_stop_recording,
+            commands::voice::voice_is_recording,
             // Setup
             commands::setup::install_node,
             commands::setup::install_git,
@@ -62,6 +72,21 @@ pub fn run() {
             commands::docker::docker_gateway_status,
         ])
         .setup(|app| {
+            // macOS: apply native vibrancy so the frosted/transparent CSS layers
+            // (Context bar, input area, message regions) bleed the desktop material
+            // through instead of a flat solid color.
+            #[cfg(target_os = "macos")]
+            {
+                use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = apply_vibrancy(
+                        &window,
+                        NSVisualEffectMaterial::Sidebar,
+                        Some(NSVisualEffectState::Active),
+                        None,
+                    );
+                }
+            }
             // First launch only: size the window to ~80% of the primary monitor and
             // center it. On later launches the window-state plugin restores the user's
             // last size/position, so we must NOT override it. A marker file under the
