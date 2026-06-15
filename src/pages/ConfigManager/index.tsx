@@ -17,6 +17,7 @@ import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
 } from './runtimeNormalization';
+// ModelsTab removed — models are now fetched per-provider from the ProvidersTab
 import { AgentsTab } from './AgentsTab';
 import { ChannelsTab } from './ChannelsTab';
 import { ToolsTab } from './ToolsTab';
@@ -1003,6 +1004,7 @@ export function ConfigManagerPage() {
   // Count should match what the user sees in the Agents tab.
   const agentCount = hasMainAgent ? rawAgents.length : rawAgents.length + 1;
   const channelCount = config?.channels ? Object.keys(config.channels).length : 0;
+  const modelCount = config?.agents?.defaults?.models ? Object.keys(config.agents.defaults.models).length : 0;
 
   // ── Smart tab badges ──
   const toolCount = [

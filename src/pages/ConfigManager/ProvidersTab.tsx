@@ -15,6 +15,7 @@ import {
   Search,
   X,
   Loader2,
+  Download,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type {
@@ -974,6 +975,106 @@ interface ProfileRowProps {
   saving?: boolean;
 }
 
+// ── Fetch Models Button (inline in expanded provider card) ──
+function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, saving, t }: {
+  providerId: string;
+  tmpl: ProviderTemplate | undefined;
+  profile: AuthProfile;
+  onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
+  profileKey: string;
+  saving?: boolean;
+  t: any;
+}) {
+  const [fetching, setFetching] = useState(false);
+  const [fetchResult, setFetchResult] = useState<string | null>(null);
+
+  const handleFetch = async () => {
+    const baseUrl = tmpl?.baseUrl?.replace(/\/$/, '');
+    if (!baseUrl) { setFetchResult('未配置 API 端点'); return; }
+    const apiKey: string | undefined =
+      (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key;
+    if (!apiKey) { setFetchResult('未配置 API Key'); return; }
+
+    setFetching(true);
+    setFetchResult(null);
+    try {
+      const url = modelsEndpointUrl(baseUrl);
+      const headers = buildTestHeaders(tmpl, apiKey);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), PROVIDER_TEST_TIMEOUT_MS);
+
+      const res = await fetch(url, { headers, signal: controller.signal });
+      clearTimeout(timer);
+
+      if (!res.ok) { setFetchResult(`${res.status} ${res.statusText}`); return; }
+
+      const data = await res.json();
+      const modelIds: string[] = [];
+      const raw = (Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []) as any[];
+      for (const entry of raw) {
+        const id = entry?.id as string | undefined;
+        if (id && typeof id === 'string') modelIds.push(id);
+      }
+
+      if (modelIds.length === 0) { setFetchResult('未找到模型'); return; }
+
+      onChange((prev) => {
+        const next = { ...prev };
+        const existing = { ...(next.agents?.defaults?.models ?? {}) };
+        let added = 0;
+        for (const id of modelIds) {
+          const fullRef = normalizeProviderModelRef(providerId, id);
+          if (fullRef && !existing[fullRef]) {
+            existing[fullRef] = { alias: stripProviderNamespace(providerId, id) };
+            added++;
+          }
+        }
+        return {
+          ...next,
+          agents: {
+            ...next.agents,
+            defaults: { ...next.agents?.defaults, models: existing },
+          },
+        };
+      });
+      setFetchResult(`✅ 已添加 ${modelIds.length} 个模型`);
+    } catch (err: any) {
+      setFetchResult(err?.message || String(err));
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={handleFetch}
+        disabled={fetching || saving}
+        className={clsx(
+          'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold',
+          'border border-aegis-primary/20 text-aegis-primary bg-aegis-primary/5',
+          'hover:bg-aegis-primary/10 hover:border-aegis-primary/40',
+          'transition-all duration-200',
+          (fetching || saving) && 'opacity-50 cursor-wait',
+        )}
+      >
+        {fetching ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : (
+          <Download size={12} />
+        )}
+        {t('config.fetchModels', '获取模型')}
+      </button>
+      {fetchResult && (
+        <span className={clsx(
+          'text-[11px]',
+          fetchResult.startsWith('✅') ? 'text-aegis-success' : 'text-aegis-warning'
+        )}>{fetchResult}</span>
+      )}
+    </div>
+  );
+}
+
 function ProfileRow({
   profileKey,
   profile,
@@ -1327,7 +1428,17 @@ function ProfileRow({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex items-center gap-2 pt-1 flex-wrap">
+            {/* Fetch Models button */}
+            <FetchModelsButton
+              providerId={providerId}
+              tmpl={tmpl}
+              profile={profile}
+              onChange={onChange}
+              profileKey={profileKey}
+              saving={saving}
+              t={t}
+            />
             <button
               onClick={removeProfile}
               className={clsx(
