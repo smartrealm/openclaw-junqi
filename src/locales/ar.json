@@ -32,6 +32,8 @@
     "notifications": "الإشعارات",
     "calendar": "التقويم",
     "files": "إدارة الملفات",
+    "performance": "مراقبة الأداء",
+    "kanban": "لوحة المهام",
     "expandSidebar": "توسيع الشريط الجانبي",
     "collapseSidebar": "طي الشريط الجانبي",
     "sidebarToMini": "طيّ إلى الأيقونات",
@@ -1175,5 +1177,32 @@
     "files": "ملفات",
     "nextStep": "الخطوة التالية",
     "workshop": "الورشة"
+  },
+  "perf": {
+    "gateway": "Gateway",
+    "online": "متصل",
+    "offline": "غير متصل",
+    "latency": "تأخير {{ms}}ms",
+    "uptime": "وقت التشغيل",
+    "uptimeHint": "في انتظار تقرير Gateway",
+    "ctxUsage": "استخدام السياق",
+    "compactions": "الضغط",
+    "agents": "الوكلاء",
+    "sessions": "الجلسات",
+    "activeAgents": "الوكلاء النشطون",
+    "models": "النماذج",
+    "agentList": "قائمة الوكلاء",
+    "noAgents": "لا يوجد وكلاء",
+    "sessionCount": "{{count}} جلسات"
+  },
+  "kanban": {
+    "queue": "قيد الانتظار",
+    "inProgress": "قيد التنفيذ",
+    "review": "مراجعة",
+    "done": "مكتمل",
+    "add": "إضافة",
+    "cancel": "إلغاء",
+    "addPlaceholder": "عنوان المهمة…",
+    "taskCount": "{{count}} مهام"
   }
 }

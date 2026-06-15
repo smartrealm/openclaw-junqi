@@ -1,5 +1,4 @@
 // Performance Monitor — gateway runtime metrics dashboard.
-// Data from WS snapshot + chat store + gateway data store.
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Activity, Cpu, HardDrive, Clock, Wifi, WifiOff, Users, Bot, MessageSquare, Zap, RefreshCw } from 'lucide-react';
@@ -25,17 +24,15 @@ function StatCard({ icon: Icon, label, value, sub, color = 'text-aegis-primary' 
 
 export function Performance() {
   const { t } = useTranslation();
-  const { connected, tokenUsage, sessions, activeSessionKey } = useChatStore();
+  const { connected, tokenUsage, sessions } = useChatStore();
   const agents = useGatewayDataStore(s => s.agents);
   const [ping, setPing] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const measurePing = useCallback(async () => {
     const start = Date.now();
-    try {
-      await gateway.getStatus();
-      setPing(Date.now() - start);
-    } catch { setPing(null); }
+    try { await gateway.getStatus(); setPing(Date.now() - start); }
+    catch { setPing(null); }
   }, []);
 
   useEffect(() => {
@@ -47,12 +44,9 @@ export function Performance() {
   const ctxTokens = tokenUsage?.contextTokens ?? 0;
   const maxTokens = tokenUsage?.maxTokens ?? 0;
   const ctxPct = maxTokens > 0 ? Math.round((ctxTokens / maxTokens) * 100) : 0;
-  const sessionCount = sessions.length;
-  const agentCount = agents.length;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-aegis-border/50 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-aegis-primary/10 flex items-center justify-center">
@@ -65,49 +59,49 @@ export function Performance() {
         </button>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {/* Connection Row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <StatCard icon={connected ? Wifi : WifiOff} label="Gateway"
-            value={connected ? '在线' : '离线'}
+          <StatCard icon={connected ? Wifi : WifiOff}
+            label={t('perf.gateway', 'Gateway')}
+            value={connected ? t('perf.online', '在线') : t('perf.offline', '离线')}
             color={connected ? 'text-emerald-400' : 'text-red-400'}
-            sub={ping ? `延迟 ${ping}ms` : undefined}
+            sub={ping ? t('perf.latency', { ms: ping }) : undefined}
           />
-          <StatCard icon={Clock} label="运行时间"
-            value="—" sub="等待 Gateway 上报"
+          <StatCard icon={Clock}
+            label={t('perf.uptime', '运行时间')}
+            value="—" sub={t('perf.uptimeHint', '等待 Gateway 上报')}
           />
-          <StatCard icon={Cpu} label="占用上下文"
+          <StatCard icon={Cpu}
+            label={t('perf.ctxUsage', '上下文占用')}
             value={`${ctxPct}%`}
             sub={`${Math.round(ctxTokens / 1000)}K / ${maxTokens >= 1000 ? `${Math.round(maxTokens / 1000)}K` : maxTokens}`}
           />
-          <StatCard icon={Zap} label="压缩次数"
+          <StatCard icon={Zap}
+            label={t('perf.compactions', '压缩次数')}
             value={tokenUsage?.compactions ?? 0}
           />
         </div>
 
-        {/* Entities */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <StatCard icon={Bot} label="Agents" value={agentCount} color="text-blue-400" />
-          <StatCard icon={MessageSquare} label="会话" value={sessionCount} color="text-purple-400" />
-          <StatCard icon={Users} label="活跃 Agent"
+          <StatCard icon={Bot} label={t('perf.agents', 'Agents')} value={agents.length} color="text-blue-400" />
+          <StatCard icon={MessageSquare} label={t('perf.sessions', '会话')} value={sessions.length} color="text-purple-400" />
+          <StatCard icon={Users} label={t('perf.activeAgents', '活跃 Agent')}
             value={agents.filter(a => sessions.some(s => s.key.includes(a.id))).length}
             color="text-amber-400"
           />
-          <StatCard icon={HardDrive} label="模型数"
+          <StatCard icon={HardDrive} label={t('perf.models', '模型数')}
             value={useChatStore(s => s.availableModels).length}
             color="text-cyan-400"
           />
         </div>
 
-        {/* Agent List */}
         <div className="rounded-xl border border-aegis-border/50 overflow-hidden">
           <div className="px-4 py-3 border-b border-aegis-border/30 bg-aegis-surface/30">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-aegis-text-muted">Agent 列表</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-aegis-text-muted">{t('perf.agentList', 'Agent 列表')}</h3>
           </div>
           <div className="divide-y divide-aegis-border/20">
             {agents.length === 0 && (
-              <div className="px-4 py-8 text-center text-[12px] text-aegis-text-dim">暂无 Agent</div>
+              <div className="px-4 py-8 text-center text-[12px] text-aegis-text-dim">{t('perf.noAgents', '暂无 Agent')}</div>
             )}
             {agents.map(agent => {
               const agentSessions = sessions.filter(s => s.key.includes(agent.id));
@@ -116,7 +110,7 @@ export function Performance() {
                   <div className={clsx('w-2 h-2 rounded-full shrink-0', agentSessions.length > 0 ? 'bg-emerald-400' : 'bg-aegis-text-dim/30')} />
                   <span className="flex-1 text-[12px] text-aegis-text font-medium">{agent.name || agent.id}</span>
                   <span className="text-[10px] text-aegis-text-muted font-mono">{agent.id}</span>
-                  <span className="text-[10px] text-aegis-text-dim">{agentSessions.length} 会话</span>
+                  <span className="text-[10px] text-aegis-text-dim">{t('perf.sessionCount', { count: agentSessions.length })}</span>
                 </div>
               );
             })}

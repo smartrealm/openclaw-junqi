@@ -32,6 +32,8 @@
     "notifications": "通知",
     "calendar": "日历",
     "files": "文件管理",
+    "performance": "性能监控",
+    "kanban": "看板",
     "expandSidebar": "展开侧栏",
     "collapseSidebar": "收起侧栏",
     "sidebarToMini": "收起为图标",
@@ -1610,5 +1612,32 @@
     "startGatewayBtn": "启动 Gateway",
     "skipBtn": "跳过，直接进入",
     "reinstallBtn": "重新安装 OpenClaw"
+  },
+  "perf": {
+    "gateway": "Gateway",
+    "online": "在线",
+    "offline": "离线",
+    "latency": "延迟 {{ms}}ms",
+    "uptime": "运行时间",
+    "uptimeHint": "等待 Gateway 上报",
+    "ctxUsage": "上下文占用",
+    "compactions": "压缩次数",
+    "agents": "Agents",
+    "sessions": "会话",
+    "activeAgents": "活跃 Agent",
+    "models": "模型数",
+    "agentList": "Agent 列表",
+    "noAgents": "暂无 Agent",
+    "sessionCount": "{{count}} 会话"
+  },
+  "kanban": {
+    "queue": "待处理",
+    "inProgress": "进行中",
+    "review": "审查",
+    "done": "已完成",
+    "add": "添加",
+    "cancel": "取消",
+    "addPlaceholder": "任务标题…",
+    "taskCount": "{{count}} 任务"
   }
 }

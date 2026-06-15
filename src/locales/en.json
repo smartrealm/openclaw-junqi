@@ -32,6 +32,8 @@
     "notifications": "Notifications",
     "calendar": "Calendar",
     "files": "File Manager",
+    "performance": "Performance",
+    "kanban": "Kanban",
     "expandSidebar": "Expand sidebar",
     "collapseSidebar": "Collapse sidebar",
     "sidebarToMini": "Collapse to icons",
@@ -1622,5 +1624,32 @@
     "startGatewayBtn": "Start Gateway",
     "skipBtn": "Skip, enter directly",
     "reinstallBtn": "Reinstall OpenClaw"
+  },
+  "perf": {
+    "gateway": "Gateway",
+    "online": "Online",
+    "offline": "Offline",
+    "latency": "Latency {{ms}}ms",
+    "uptime": "Uptime",
+    "uptimeHint": "Waiting for Gateway report",
+    "ctxUsage": "Context Usage",
+    "compactions": "Compactions",
+    "agents": "Agents",
+    "sessions": "Sessions",
+    "activeAgents": "Active Agents",
+    "models": "Models",
+    "agentList": "Agent List",
+    "noAgents": "No agents",
+    "sessionCount": "{{count}} sessions"
+  },
+  "kanban": {
+    "queue": "Queue",
+    "inProgress": "In Progress",
+    "review": "Review",
+    "done": "Done",
+    "add": "Add",
+    "cancel": "Cancel",
+    "addPlaceholder": "Task title…",
+    "taskCount": "{{count}} tasks"
   }
 }
