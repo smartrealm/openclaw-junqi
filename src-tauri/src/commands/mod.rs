@@ -7,4 +7,5 @@ pub mod pairing;
 pub mod screenshot;
 pub mod setup;
 pub mod system;
+pub mod system_metrics;
 pub mod voice;

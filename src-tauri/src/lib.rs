@@ -123,6 +123,8 @@ pub fn run() {
                 }
             });
             tray::menu::setup_tray(app)?;
+            // Start system metrics background thread (Nezha-style state stream)
+            commands::system_metrics::start_metrics_stream(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())

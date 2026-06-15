@@ -4,6 +4,24 @@
 // Requires @tauri-apps/api externalized in vite.config.ts
 // ═══════════════════════════════════════════════════════════
 
+export interface SystemMetricsPayload {
+  cpu: number;
+  cpu_count: number;
+  mem_used: number;
+  mem_total: number;
+  disk_used: number;
+  disk_total: number;
+  net_up_speed: number;
+  net_down_speed: number;
+  uptime: number;
+  load1: number;
+  load5: number;
+  load15: number;
+  platform: string;
+  platform_version: string;
+  arch: string;
+}
+
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -257,6 +275,13 @@ async function resolveGwConfig(): Promise<any> {
   },
   attachments: { stage: async () => ({ success: false, staged: [] }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
   uploads: { list: async () => ({ success: true, rows: [], total: 0, root: "" }), open: async () => ({ success: false }), reveal: async () => ({ success: false }), exists: async () => ({ success: false, exists: false }), read: async () => ({ success: false }), delete: async () => ({ success: false }), saveAs: async () => ({ success: false }), cleanup: async () => ({ success: true, removedFiles: 0, removedBytes: 0, scannedFiles: 0, totalBytes: 0, root: "", wouldRemoveFiles: 0, wouldRemoveBytes: 0 }), cleanupSession: async () => ({ success: false, removed: false, sessionKey: "" }) },
+  // Nezha-style system metrics event stream (background thread emits every 1s)
+  systemMetrics: {
+    onMetrics: (cb: (metrics: SystemMetricsPayload) => void) => {
+      const p = listen("system-metrics", (event: any) => cb(event.payload as SystemMetricsPayload));
+      return () => { p.then((fn: any) => fn()).catch(() => {}); };
+    },
+  },
   voice: {
     // Rust-native recording via CoreAudio — TCC permission persists properly.
     startRecording: async () => { try { const r: any = await invoke("voice_start_recording"); return r; } catch (e: any) { return { success: false, error: String(e) }; } },
