@@ -38,8 +38,7 @@
     "collapseSidebar": "Collapse sidebar",
     "sidebarToMini": "Collapse to icons",
     "sidebarHide": "Hide sidebar",
-    "sidebarExpand": "Expand sidebar",
-    "groupChat": "Group Chat"
+    "sidebarExpand": "Expand sidebar"
   },
   "skills": {
     "title": "Skills",
@@ -1652,12 +1651,5 @@
     "cancel": "Cancel",
     "addPlaceholder": "Task title…",
     "taskCount": "{{count}} tasks"
-  },
-  "groupchat": {
-    "agents": "Agents",
-    "selected": "Selected",
-    "noAgents": "No agents",
-    "selectHint": "Select agents to start group chat",
-    "placeholder": "Type a message to send to all selected agents…"
   }
 }

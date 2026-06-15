@@ -38,8 +38,7 @@
     "collapseSidebar": "طي الشريط الجانبي",
     "sidebarToMini": "طيّ إلى الأيقونات",
     "sidebarHide": "إخفاء الشريط الجانبي",
-    "sidebarExpand": "توسيع الشريط الجانبي",
-    "groupChat": "محادثة جماعية"
+    "sidebarExpand": "توسيع الشريط الجانبي"
   },
   "skills": {
     "title": "المهارات",
@@ -1205,12 +1204,5 @@
     "cancel": "إلغاء",
     "addPlaceholder": "عنوان المهمة…",
     "taskCount": "{{count}} مهام"
-  },
-  "groupchat": {
-    "agents": "الوكلاء المشاركون",
-    "selected": "محدد",
-    "noAgents": "لا يوجد وكلاء",
-    "selectHint": "اختر الوكلاء لبدء المحادثة الجماعية",
-    "placeholder": "اكتب رسالة لإرسالها إلى جميع الوكلاء المحددين…"
   }
 }
