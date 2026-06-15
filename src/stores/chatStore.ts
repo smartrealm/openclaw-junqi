@@ -338,6 +338,8 @@ interface ChatState {
   drainQueue: (sessionKey: string) => Promise<void>;
   clearQueue: (sessionKey: string) => void;
   queueSize: (sessionKey: string) => number;
+  removeQueuedMessage: (sessionKey: string, id: string) => void;
+  updateQueuedMessage: (sessionKey: string, id: string, newText: string) => void;
   isSending: boolean;
   setIsSending: (sending: boolean) => void;
   isLoadingHistory: boolean;
@@ -655,10 +657,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         const derived = recomputeDerived(updated, targetKey);
         return {
-          typingBySession: {
-            ...state.typingBySession,
-            [targetKey]: false,
-          },
           thinkingBySession: {
             ...state.thinkingBySession,
             [targetKey]: { runId: null, text: '' },
@@ -680,7 +678,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 messages: updated,
                 renderBlocks: derived.blocks,
                 responseGroups: derived.groups,
-                isTyping: false,
                 thinkingText: '',
                 thinkingRunId: null,
               }
@@ -708,10 +705,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const updated = [...currentMessages, newMsg];
         const derived = recomputeDerived(updated, targetKey);
         return {
-          typingBySession: {
-            ...state.typingBySession,
-            [targetKey]: false,
-          },
           thinkingBySession: {
             ...state.thinkingBySession,
             [targetKey]: { runId: null, text: '' },
@@ -733,7 +726,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 messages: updated,
                 renderBlocks: derived.blocks,
                 responseGroups: derived.groups,
-                isTyping: false,
                 thinkingText: '',
                 thinkingRunId: null,
               }
@@ -741,16 +733,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         };
       }
       return {
-        typingBySession: {
-          ...state.typingBySession,
-          [targetKey]: false,
-        },
         thinkingBySession: {
           ...state.thinkingBySession,
           [targetKey]: { runId: null, text: '' },
         },
         ...(targetKey === state.activeSessionKey
-          ? { isTyping: false, thinkingText: '', thinkingRunId: null }
+          ? { thinkingText: '', thinkingRunId: null }
           : {}),
       };
     });
@@ -1109,7 +1097,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Token Usage ──
   tokenUsage: null,
-  setTokenUsage: (usage) => set({ tokenUsage: usage }),
+  setTokenUsage: (usage) => set((state) => {
+    const updates: any = { tokenUsage: usage };
+    // When token data arrives via polling, recompute derived state so context
+    // bars appear under existing AI replies.  Do NOT call setMessages here —
+    // that path changes `messages` which makes Virtuoso diff the entire data
+    // list and can reset scroll position.
+    if (usage && !state.tokenUsage && state.activeSessionKey) {
+      const key = state.activeSessionKey;
+      const msgs = state.messagesPerSession[key] || [];
+      if (msgs.length > 0) {
+        const derived = recomputeDerived(msgs, key);
+        if (key === state.activeSessionKey) {
+          updates.renderBlocks = derived.blocks;
+          updates.responseGroups = derived.groups;
+        }
+        updates._blocksCache = { ...state._blocksCache, [key]: derived.blocks };
+        updates._groupsCache = { ...state._groupsCache, [key]: derived.groups };
+      }
+    }
+    return updates;
+  }),
   currentModel: null,
   setCurrentModel: (model) => set({ currentModel: model }),
   manualModelOverride: null,
@@ -1133,12 +1141,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (queue.length === 0) return;
     const next = queue.shift()!;
     set({ messageQueue: { ...get().messageQueue, [sessionKey]: queue } });
+    // Mark typing so the drained reply is tracked through its lifecycle — its
+    // completion (typing true→false) re-triggers the App.tsx drain subscription
+    // to send the next queued item. Without this the subscription would fire in
+    // a tight loop (typing stays false) and the reply would show no indicator.
+    // User message appears in chat BEFORE AI starts replying
+    get().addMessage({
+      id: next.id, role: 'user', content: next.text,
+      timestamp: next.timestamp, status: 'sent' as const,
+    }, sessionKey);
+    get().setIsTyping(true, sessionKey);
     try {
       await gateway.sendMessage(next.text, undefined, sessionKey);
-      set((s) => {
-        const msgs = s.messagesPerSession[sessionKey] || [];
-        return { messagesPerSession: { ...s.messagesPerSession, [sessionKey]: msgs.map((m: any) => m.id === next.id ? { ...m, status: 'sent' as const } : m) } };
-      });
     } catch { /* gateway handles retry */ }
   },
   clearQueue: (sessionKey) => set((s) => {
@@ -1149,6 +1163,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messagesPerSession: { ...s.messagesPerSession, [sessionKey]: (s.messagesPerSession[sessionKey] || []).map((m) => ids.has(m.id) ? { ...m, status: 'cancelled' as const } : m) },
     };
   }),
+  removeQueuedMessage: (sessionKey, id) => set((s) => ({
+    messageQueue: { ...s.messageQueue, [sessionKey]: (s.messageQueue[sessionKey] || []).filter((m) => m.id !== id) },
+    messagesPerSession: { ...s.messagesPerSession, [sessionKey]: (s.messagesPerSession[sessionKey] || []).map((m) => m.id === id ? { ...m, status: 'cancelled' as const } : m) },
+  })),
+  updateQueuedMessage: (sessionKey, id, newText) => set((s) => ({
+    messageQueue: { ...s.messageQueue, [sessionKey]: (s.messageQueue[sessionKey] || []).map((m) => m.id === id ? { ...m, text: newText } : m) },
+    messagesPerSession: { ...s.messagesPerSession, [sessionKey]: (s.messagesPerSession[sessionKey] || []).map((m) => m.id === id ? { ...m, content: newText } : m) },
+  })),
   queueSize: (sessionKey) => (get().messageQueue[sessionKey] || []).length,
   setIsTyping: (typing, sessionKey) =>
     set((state) => {
