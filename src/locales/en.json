@@ -1640,7 +1640,13 @@
     "models": "Models",
     "agentList": "Agent List",
     "noAgents": "No agents",
-    "sessionCount": "{{count}} sessions"
+    "sessionCount": "{{count}} sessions",
+    "systemMetrics": "System Metrics",
+    "memory": "Memory",
+    "disk": "Disk",
+    "network": "Network",
+    "comingSoon": "Coming Soon",
+    "agentStatus": "Agent Status"
   },
   "kanban": {
     "queue": "Queue",

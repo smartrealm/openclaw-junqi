@@ -1193,7 +1193,13 @@
     "models": "النماذج",
     "agentList": "قائمة الوكلاء",
     "noAgents": "لا يوجد وكلاء",
-    "sessionCount": "{{count}} جلسات"
+    "sessionCount": "{{count}} جلسات",
+    "systemMetrics": "System Metrics",
+    "memory": "Memory",
+    "disk": "Disk",
+    "network": "Network",
+    "comingSoon": "Coming Soon",
+    "agentStatus": "Agent Status"
   },
   "kanban": {
     "queue": "قيد الانتظار",
