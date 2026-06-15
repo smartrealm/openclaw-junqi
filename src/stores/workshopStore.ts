@@ -10,7 +10,7 @@ export interface Task {
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
-  status: 'queue' | 'inProgress' | 'done';
+  status: 'queue' | 'inProgress' | 'review' | 'done';
   createdAt: string;
   completedAt?: string;
   tags: string[];

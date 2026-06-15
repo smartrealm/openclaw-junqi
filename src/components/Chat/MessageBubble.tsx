@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, User, RotateCcw, Eye, Code2, RefreshCw, Pencil, ChevronDown, ChevronRight, AlertTriangle, Clock } from 'lucide-react';
+import { Copy, Check, User, RotateCcw, Eye, Code2, RefreshCw, Pencil, ChevronDown, ChevronRight, AlertTriangle, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -110,10 +110,10 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 function CollapsedMeta({ items }: { items: MetaItem[] }) {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const systemItems = items.filter((item) => item.kind === 'system');
-  const otherItems = items.filter((item) => item.kind !== 'system');
+  const otherItems = items.filter((item) => item.kind !== 'system' && item.kind !== 'context');
 
   return (
-    <div className="mt-2 pt-2 border-t border-[rgb(var(--aegis-overlay)/0.06)]">
+    <div className="mt-0.5">
       {systemItems.length > 0 && (
         <div className="space-y-1.5 mb-2">
           {systemItems.map((item, idx) => (
@@ -153,9 +153,10 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
 
 interface MessageBubbleProps {
   block: MessageBlock;
-  onResend?: (content: string, prevId?: string) => void;
+  onResend?: (content: string) => void;
   onRegenerate?: () => void;
   onErrorAction?: (action: string) => void;
+  onDelete?: () => void;
 }
 
 function isLocalFilePath(value?: string) {
@@ -201,12 +202,12 @@ function FileCard({ path, meta }: { path: string; meta?: string }) {
   };
 
   return (
-    <button
+    <div
       onClick={handleOpen}
       title={path}
-      className="inline-flex items-center gap-2 px-3 py-1.5 my-1 rounded-lg
+      className="relative inline-flex items-center gap-2 px-3 py-1.5 my-1 rounded-lg
       bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.08)]
-      hover:border-aegis-primary/20 transition-colors cursor-pointer max-w-full text-start"
+      hover:border-aegis-primary/20 transition-colors cursor-pointer max-w-full text-start group/filecard"
     >
       <span className="text-base shrink-0">{icon[ext] || '📄'}</span>
       <div className="min-w-0 flex flex-col">
@@ -215,7 +216,15 @@ function FileCard({ path, meta }: { path: string; meta?: string }) {
           {meta || t('resultCards.open', 'Open')}
         </span>
       </div>
-    </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(path); }}
+        className="absolute top-0.5 right-0.5 p-1 rounded-md opacity-0 group-hover/filecard:opacity-100
+          hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-all text-aegis-text-muted hover:text-aegis-text-secondary"
+        title="Copy path"
+      >
+        <Copy size={11} />
+      </button>
+    </div>
   );
 }
 
@@ -314,7 +323,7 @@ const markdownComponents = {
   },
 };
 
-export const MessageBubble = memo(function MessageBubble({ block, onResend, onRegenerate, onErrorAction }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ block, onResend, onRegenerate, onErrorAction, onDelete }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
   const agents = useGatewayDataStore((s) => s.agents);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
@@ -332,9 +341,16 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [errorActionDone, setErrorActionDone] = useState(false);
+  const [contextExpanded, setContextExpanded] = useState(false);
+  const [showRawMd, setShowRawMd] = useState(false);
+  const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
+  // Context bar payload is built in buildSemanticBlocks.buildAssistantMeta and
+  // serialized as JSON in contextMeta.content — parse the formatted summary here.
+  const contextContent = contextMeta?.content
+    ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; contextPercent?: number | null; model?: string; formatted?: string }; } catch { return null; } })()
+    : null;
+  const ctxFmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));
   const isUser = block.role === 'user';
-  const messageQueue = useChatStore((s) => s.messageQueue);
-  const isQueued = (messageQueue[activeSessionKey] || []).some((m) => m.id === block.id);
   const dir = getDirection(i18n.language);
 
   // block.markdown is already cleaned, directives stripped, code detected
@@ -356,7 +372,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
       const d = new Date(block.timestamp);
       if (isNaN(d.getTime())) return '';
       const locale = i18n.language?.startsWith('ar') ? 'ar-SA' : 'en-US';
-      return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+      const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0'); const h = String(d.getHours()).padStart(2, '0'); const min = String(d.getMinutes()).padStart(2, '0'); return `${y}年${m}月${day}日 ${h}:${min}`;
     } catch {
       return '';
     }
@@ -381,8 +397,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
     <div
       className={clsx(
         'group flex items-start gap-3 px-5 py-1.5 transition-colors',
-        isUser ? 'flex-row-reverse' : '',
-        !isUser && 'hover:bg-[rgb(var(--aegis-overlay)/0.015)]'
+        isUser ? 'flex-row-reverse' : ''
       )}
       dir={dir}
       onMouseEnter={() => setShowActions(true)}
@@ -406,15 +421,55 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           className={clsx(
             'rounded-2xl px-4 py-2.5 relative',
             isUser
-              ? 'rounded-tl-md bg-aegis-primary/[0.12] border border-aegis-primary/20'
-              : 'rounded-tr-md bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)]',
-            block.isStreaming && 'border-aegis-primary/30'
+              ? 'bg-aegis-primary/[0.12] border border-aegis-primary/20 hover:border-aegis-primary/40 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200'
+              : 'bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)] hover:border-aegis-primary/30 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200',
+            block.isStreaming && 'border-aegis-primary/30 streaming-border'
           )}
         >
-          {/* Streaming shimmer */}
-          {block.isStreaming && (
-            <div className="absolute -top-px left-0 right-0 h-[2px] overflow-hidden rounded-full">
-              <div className="w-full h-full bg-gradient-to-r from-transparent via-aegis-primary/50 to-transparent animate-shimmer bg-[length:200%_100%]" />
+          {/* Streaming indicator — light band runs around the whole border (.streaming-border class) */}
+          {/* Action bar — top-right of bubble */}
+          {!block.isStreaming && (
+            <div className={clsx(
+              'absolute top-1 right-1 z-10 flex items-center gap-0.5 transition-opacity duration-150',
+              showActions ? 'opacity-100' : 'opacity-0'
+            )}>
+              {/* Copy */}
+              <button
+                onClick={handleCopy}
+                className="rounded-md p-1 hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
+                title={t('chat.copy')}
+              >
+                {copied ? (
+                  <Check size={11} className="text-aegis-success" />
+                ) : (
+                  <Copy size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
+                )}
+              </button>
+              {/* Regenerate — assistant only */}
+              {!isUser && onRegenerate && (
+                <button
+                  onClick={onRegenerate}
+                  className="rounded-md p-1 hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
+                  title={t('chat.regenerate', 'Regenerate')}
+                >
+                  <RefreshCw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
+                </button>
+              )}
+              {/* MD Preview toggle — assistant only */}
+              {!isUser && content && (
+                <button
+                  onClick={() => setShowRawMd((v) => !v)}
+                  className={clsx(
+                    'rounded-md p-1 transition-colors',
+                    showRawMd
+                      ? 'bg-aegis-primary/15 text-aegis-primary'
+                      : 'hover:bg-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted hover:text-aegis-text-secondary'
+                  )}
+                  title={showRawMd ? t('chat.showRendered', 'Show rendered') : t('chat.showRaw', 'Show raw markdown')}
+                >
+                  <Code2 size={11} />
+                </button>
+              )}
             </div>
           )}
 
@@ -453,12 +508,12 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                 autoFocus
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
-               className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-3 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[100px]"
-               rows={Math.min(editText.split('\n').length + 1, 8)}
+                className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[60px]"
+                rows={Math.min(editText.split('\n').length + 1, 8)}
               />
               <div className="flex gap-1.5 mt-1.5">
                 <button
-                  onClick={() => { onResend?.(editText, block.id); setIsEditing(false); }}
+                  onClick={() => { onResend?.(editText); setIsEditing(false); }}
                   className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors"
                 >
                   {t('chat.sendEdit', 'Send')}
@@ -474,6 +529,11 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           ) : block.isStreaming ? (
             /* Plain text while streaming — no ReactMarkdown parsing overhead */
             <pre className="markdown-body text-[14px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words font-[inherit]">
+              {content}
+            </pre>
+          ) : showRawMd ? (
+            /* Raw markdown preview */
+            <pre className="text-[13px] leading-relaxed text-aegis-text-muted whitespace-pre-wrap break-words font-mono bg-[rgb(var(--aegis-overlay)/0.03)] rounded-lg p-3 max-h-[400px] overflow-y-auto">
               {content}
             </pre>
           ) : (
@@ -522,7 +582,32 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
         {/* Footer — Time + Actions */}
         <div className="flex items-center gap-2 mt-1 px-1 h-5">
           <span className="text-[10px] text-aegis-text-muted font-mono">{timeStr}</span>
-          {modelInfo && (
+          {!isUser && contextMeta && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setContextExpanded((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.08)] px-2 py-0.5 text-[10px] font-mono text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)]"
+              >
+                <ChevronRight size={10} className={clsx('transition-transform duration-150', contextExpanded && 'rotate-90')} />
+                <span>Context</span>
+              </button>
+              {contextExpanded && (
+                <div className="inline-flex items-center gap-2 rounded-full bg-[rgb(var(--aegis-overlay)/0.08)] px-2 py-0.5 text-[10px] font-mono tabular-nums text-aegis-text-muted">
+                  {!!contextContent?.input && <span>↑{ctxFmt(contextContent.input)}</span>}
+                  {!!contextContent?.output && <span>↓{ctxFmt(contextContent.output)}</span>}
+                  {!!contextContent?.cacheRead && <span>R{ctxFmt(contextContent.cacheRead)}</span>}
+                  {contextContent?.contextPercent !== null && contextContent?.contextPercent !== undefined && (
+                    <span className={clsx(
+                      (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger'
+                        : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : ''
+                    )}>{contextContent.contextPercent}% ctx</span>
+                  )}
+                  {contextContent?.model && <span className="max-w-[140px] truncate">{contextContent.model}</span>}
+                </div>
+              )}
+            </div>
+          )}
+          {!isUser && !contextMeta && modelInfo && (
             <span
               title={modelInfo.full}
               className="inline-flex max-w-[280px] items-center overflow-hidden rounded-md border border-aegis-primary/10 bg-aegis-primary/[0.06] text-[9px] font-mono"
@@ -540,17 +625,6 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
 
           {showActions && !block.isStreaming && (
             <div className="flex items-center gap-0.5 animate-fade-in">
-              <button
-                onClick={handleCopy}
-                className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-                title={t('chat.copy')}
-              >
-                {copied ? (
-                  <Check size={11} className="text-aegis-success" />
-                ) : (
-                  <Copy size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
-                )}
-              </button>
               {block.role === 'user' && onResend && (
                 <button
                   onClick={() => onResend(block.markdown)}
@@ -578,6 +652,16 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                   title={t('chat.edit', 'Edit')}
                 >
                   <Pencil size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
+                </button>
+              )}
+              {/* Delete */}
+              {onDelete && (
+                <button
+                  onClick={onDelete}
+                  className="p-1 rounded-md hover:bg-aegis-danger/10 transition-colors"
+                  title={t('chat.delete', 'Delete')}
+                >
+                  <Trash2 size={11} className="text-aegis-text-muted hover:text-aegis-danger" />
                 </button>
               )}
             </div>

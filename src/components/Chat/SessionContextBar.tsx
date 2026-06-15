@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Download, Plus, RotateCcw } from 'lucide-react';
+import { Check, ChevronDown, Download, Folder, Plus, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -36,7 +36,7 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [switching, setSwitching] = useState(false);
-  const { setManualModelOverride, manualModelOverride, availableModels } = useChatStore();
+  const { setManualModelOverride, manualModelOverride, availableModels, addMessage } = useChatStore();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const effectiveModel = manualModelOverride ?? currentModel;
 
@@ -48,6 +48,16 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
       await gateway.setSessionModel(modelId, sessionKey);
       setManualModelOverride(modelId);
       persistSessionModelPreference(sessionKey, modelId);
+      // Drop a system notice into the chat so the switch is visible in-stream.
+      const fromModel = effectiveModel || '';
+      if (fromModel && fromModel !== modelId) {
+        addMessage({
+          id: `model-switch-${Date.now()}`,
+          role: 'system',
+          content: `🔄 ${t('chat.modelSwitched', '模型切换')}: ${fromModel} → ${modelId}`,
+          timestamp: new Date().toISOString(),
+        }, sessionKey);
+      }
       setTimeout(() => window.dispatchEvent(new Event('aegis:model-changed')), 500);
     } catch (err) {
       console.error('[SessionModelPicker] Failed to switch model:', err);
@@ -79,10 +89,93 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
         value={switching ? null : effectiveModel}
         onChange={handleSelect}
         variant="pill"
-        onlyAliased
         placeholder={switching ? '…' : t('config.notSet', 'Not set')}
         disabled={switching}
       />
+    </div>
+  );
+}
+
+function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [recents, setRecents] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('aegis:recent-workspaces') || '[]'); } catch { return []; }
+  });
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const persist = (ws: string) => {
+    const next = [ws, ...recents.filter((w) => w !== ws)].slice(0, 8);
+    setRecents(next);
+    localStorage.setItem('aegis:recent-workspaces', JSON.stringify(next));
+  };
+  const switchTo = async (ws: string) => {
+    setOpen(false);
+    setQuery('');
+    persist(ws);
+    try { await gateway.updateAgent(agentId, { workspace: ws }); } catch (e) { console.error('[WorkspacePicker] switch failed:', e); }
+  };
+  const pickFolder = async () => {
+    // openDialog is typed as () => ... but the underlying Tauri open accepts { properties }.
+    const openDialog = (window.aegis?.file as any)?.openDialog;
+    const result = typeof openDialog === 'function' ? await openDialog({ properties: ['openDirectory'] }) : null;
+    if (result?.filePaths?.[0]) await switchTo(result.filePaths[0]);
+  };
+  const label = current ? (current.split(/[\\/]/).pop() || current) : t('chat.workspaceDefault', 'default');
+  const filtered = query.trim()
+    ? recents.filter((ws) => ws.toLowerCase().includes(query.toLowerCase()) || (ws.split(/[\\/]/).pop() || '').toLowerCase().includes(query.toLowerCase()))
+    : recents;
+
+  return (
+    <div ref={ref} className="relative no-drag">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+        title={current || t('chat.workspaceDefault', 'default')}
+      >
+        <Folder size={11} />
+        <span className="font-mono max-w-[120px] truncate">{label}</span>
+        <ChevronDown size={9} className={clsx('transition-transform duration-150', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 w-[260px] rounded-xl overflow-hidden bg-aegis-menu-bg border border-aegis-menu-border" style={{ boxShadow: 'var(--aegis-menu-shadow)' }}>
+          <div className="p-2 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('chat.workspaceSearch', 'Search workspaces…')}
+              className="w-full rounded-md bg-[rgb(var(--aegis-overlay)/0.06)] px-2 py-1 text-[11px] text-aegis-text placeholder:text-aegis-text-dim outline-none focus:bg-[rgb(var(--aegis-overlay)/0.1)]"
+            />
+          </div>
+          <div className="max-h-[200px] overflow-y-auto scrollbar-hidden">
+            {filtered.length > 0 ? filtered.map((ws) => {
+              const isActive = current === ws;
+              const name = ws.split(/[\\/]/).pop() || ws;
+              return (
+                <button key={ws} onClick={() => switchTo(ws)} className={clsx('w-full text-start px-3 py-1.5 text-[11px] truncate font-mono transition-colors', isActive ? 'bg-aegis-primary/10 text-aegis-primary' : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)]')} title={ws}>
+                  <span className="font-sans font-medium">{name}</span>
+                  <span className="ml-1.5 text-[10px] text-aegis-text-dim">{ws}</span>
+                </button>
+              );
+            }) : (
+              <div className="px-3 py-2 text-[11px] text-aegis-text-dim">{t('chat.workspaceNoResults', 'No match')}</div>
+            )}
+          </div>
+          <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)]">
+            <button onClick={pickFolder} className="w-full flex items-center gap-1.5 text-start px-3 py-2 text-[11px] text-aegis-primary hover:bg-aegis-primary/10 transition-colors">
+              <Plus size={11} /> {t('chat.workspacePick', 'Choose folder…')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -179,7 +272,7 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession } = useChatStore();
+  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession, isTyping } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const sessions = useChatStore((s) => s.sessions);
   const hasProviders = availableModels.length > 0;
@@ -210,6 +303,17 @@ export function SessionContextBar() {
     ? (() => { const diff = Date.now() - lastTs.getTime(); const m = Math.floor(diff / 60000); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d`; })()
     : '';
 
+  // ── Elapsed timer while AI is working ──
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isTyping) { setElapsed(0); return; }
+    const id = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [isTyping]);
+  const elapsedText = isTyping
+    ? (elapsed >= 60 ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` : `${elapsed}s`)
+    : null;
+
   const usedTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
   const usedK = Math.round(usedTokens / 1000);
@@ -217,11 +321,35 @@ export function SessionContextBar() {
     ? `${(maxTokens / 1_000_000).toFixed(maxTokens % 1_000_000 === 0 ? 0 : 1)}M`
     : `${Math.round(maxTokens / 1000)}K`;
 
+  // ── Derive latest input/output token breakdown from renderBlocks ──
+  const latestTokenMeta = (() => {
+    for (let i = renderBlocks.length - 1; i >= 0; i--) {
+      const b = renderBlocks[i] as any;
+      if (b.role !== 'assistant') continue;
+      const ctx = b.meta?.find((m: any) => m.kind === 'context');
+      if (!ctx) continue;
+      try {
+        const parsed = JSON.parse(ctx.content);
+        if (parsed.input || parsed.output) return parsed as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; contextPercent?: number | null };
+      } catch { continue; }
+    }
+    return null;
+  })();
+  const lastInput = latestTokenMeta?.input ?? 0;
+  const lastOutput = latestTokenMeta?.output ?? 0;
+  const fmtToken = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));
+
   return (
     <div className="h-[32px] shrink-0 flex items-center gap-2 px-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[var(--aegis-bg-frosted-60)]">
       <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim">
         {agentDisplayName}
       </span>
+      <WorkspacePicker agentId={agentId} current={agent?.workspace} />
+      {elapsedText && (
+        <span className="text-[9px] font-mono text-aegis-warning px-1.5 py-0.5 rounded-md bg-aegis-warning/[0.08] border border-aegis-warning/20">
+          {elapsedText}
+        </span>
+      )}
       <span className="text-aegis-text-dim opacity-40">·</span>
 
       <SessionModelPicker currentModel={currentModel} />
@@ -234,6 +362,13 @@ export function SessionContextBar() {
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
         {maxTokens > 0 && (
           <>
+            {(lastInput > 0 || lastOutput > 0) && (
+              <>
+                {lastInput > 0 && <span className="text-[10px] text-aegis-text-muted font-mono tabular-nums" title={`输入 ${lastInput.toLocaleString()} tokens`}>↑{fmtToken(lastInput)}</span>}
+                {lastOutput > 0 && <span className="text-[10px] text-aegis-text-muted font-mono tabular-nums" title={`输出 ${lastOutput.toLocaleString()} tokens`}>↓{fmtToken(lastOutput)}</span>}
+                <span className="text-aegis-text-dim opacity-20">·</span>
+              </>
+            )}
             <span className="text-[10px] text-aegis-text-muted font-mono">
               {usedK}K / {maxLabel}
             </span>
