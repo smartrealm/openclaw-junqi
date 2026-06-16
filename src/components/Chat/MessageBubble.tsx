@@ -342,6 +342,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
   const [editText, setEditText] = useState('');
   const [errorActionDone, setErrorActionDone] = useState(false);
   const [showRawMd, setShowRawMd] = useState(false);
+  const [ctxOpen, setCtxOpen] = useState(false); // openclaw-style details toggle
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   // Context bar payload is built in buildSemanticBlocks.buildAssistantMeta and
   // serialized as JSON in contextMeta.content — parse the formatted summary here.
@@ -577,29 +578,49 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           )}
         </div>
 
-        {/* Footer — Sender + Time + inline token meta (always visible) + Actions */}
-        <div className="flex items-center gap-2 mt-1 px-1 h-5 flex-wrap">
+        {/* Footer — openclaw style: sender + time + msg-meta (details toggle) + actions */}
+        <div className="flex items-center gap-2 mt-1 px-1 flex-wrap" style={{ gap: 8, rowGap: 5 }}>
           <span className="text-[10px] text-aegis-text-muted font-mono shrink-0">{timeStr}</span>
-          {/* Inline token meta — openclaw style: always visible, no click */}
+          {/* msg-meta — openclaw <details> pattern: "▸ Context" button → token pill */}
           {!isUser && contextContent && (
-            <div className="inline-flex items-center gap-1.5 text-[10px] font-mono tabular-nums text-aegis-text-dim">
-              {!!contextContent.input && <span title="输入">↑{ctxFmt(contextContent.input)}</span>}
-              {!!contextContent.output && <span title="输出">↓{ctxFmt(contextContent.output)}</span>}
-              {!!contextContent.cacheRead && <span title="缓存读">R{ctxFmt(contextContent.cacheRead)}</span>}
-              {!!contextContent.cacheWrite && <span title="缓存写">W{ctxFmt(contextContent.cacheWrite)}</span>}
-              {contextContent.contextPercent !== null && contextContent.contextPercent !== undefined && (
+            /* details.msg-meta wrapper */
+            <span className="inline-flex items-center flex-wrap" style={{ gap: 8 }}>
+              {/* summary — always visible toggle */}
+              <button
+                onClick={() => setCtxOpen(v => !v)}
+                className="inline-flex items-center gap-1.5 text-[10px] rounded-full border border-transparent px-2 py-0.5 transition-colors"
+                style={{ color: 'var(--aegis-text-muted)', background: 'rgb(var(--aegis-overlay) / 0.06)' }}
+              >
+                <ChevronRight size={10}
+                  className={clsx('shrink-0 transition-transform duration-120', ctxOpen && 'rotate-90')}
+                  style={{ stroke: 'currentColor', strokeWidth: 2 }}
+                />
+                <span>Context</span>
+              </button>
+              {/* details — inline pill when open */}
+              {ctxOpen && (
                 <span
-                  title="上下文占用"
-                  className={clsx(
-                    (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger'
-                      : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : ''
-                  )}
+                  className="inline-flex items-center flex-wrap rounded-full px-2 py-0.5 text-[10px] font-mono tabular-nums"
+                  style={{ gap: 8, border: '1px solid var(--aegis-border, rgb(var(--aegis-overlay)/0.1))', background: 'rgb(var(--aegis-overlay) / 0.03)' }}
                 >
-                  {contextContent.contextPercent}% ctx
+                  {!!contextContent.input && <span>↑{ctxFmt(contextContent.input)}</span>}
+                  {!!contextContent.output && <span>↓{ctxFmt(contextContent.output)}</span>}
+                  {!!contextContent.cacheRead && <span>R{ctxFmt(contextContent.cacheRead)}</span>}
+                  {!!contextContent.cacheWrite && <span>W{ctxFmt(contextContent.cacheWrite)}</span>}
+                  {contextContent.contextPercent !== null && contextContent.contextPercent !== undefined && (
+                    <span className={clsx(
+                      (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger'
+                        : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : 'text-aegis-text-dim'
+                    )}>{contextContent.contextPercent}% ctx</span>
+                  )}
+                  {contextContent.model && (
+                    <span className="rounded px-1.5" style={{ background: 'rgb(var(--aegis-overlay) / 0.06)', fontFamily: 'monospace' }}>
+                      {contextContent.model.includes('/') ? contextContent.model.split('/').pop() : contextContent.model}
+                    </span>
+                  )}
                 </span>
               )}
-              {contextContent.model && <span className="max-w-[160px] truncate" title={contextContent.model}>{contextContent.model}</span>}
-            </div>
+            </span>
           )}
           {!isUser && !contextMeta && modelInfo && (
             <span
