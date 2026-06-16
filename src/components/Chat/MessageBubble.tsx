@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, User, RotateCcw, Eye, Code2, RefreshCw, Pencil, ChevronDown, ChevronRight, AlertTriangle, Trash2 } from 'lucide-react';
+import { Copy, Check, User, RotateCcw, RefreshCw, Pencil, ChevronDown, ChevronRight, AlertTriangle, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -341,7 +341,6 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [errorActionDone, setErrorActionDone] = useState(false);
-  const [showRawMd, setShowRawMd] = useState(false);
   const [ctxOpen, setCtxOpen] = useState(false); // openclaw-style details toggle
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   // Context bar payload is built in buildSemanticBlocks.buildAssistantMeta and
@@ -431,7 +430,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           )}
           style={{ width: 'auto' }}
         >
-          {/* Action bar — top-right of bubble, both sides have Copy, assistant also has MD toggle */}
+          {/* Action bar — Copy button (both sides), matches openclaw */}
           {!block.isStreaming && (
             <div className={clsx(
               'absolute top-2 right-2 z-10 flex items-center gap-0.5 transition-opacity duration-120',
@@ -442,13 +441,6 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                 title={t('chat.copy')}>
                 {copied ? <Check size={12} className="text-aegis-success" /> : <Copy size={12} className="text-aegis-text-muted" />}
               </button>
-              {!isUser && content && (
-                <button onClick={() => setShowRawMd(v => !v)}
-                  className={clsx('rounded p-1 transition-colors', showRawMd ? 'bg-aegis-primary/15 text-aegis-primary' : 'hover:bg-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted')}
-                  title={showRawMd ? t('chat.showRendered', 'Show rendered') : t('chat.showRaw', 'Show raw markdown')}>
-                  <Code2 size={12} />
-                </button>
-              )}
             </div>
           )}
 
@@ -506,13 +498,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               </div>
             </div>
           ) : block.isStreaming ? (
-            /* Plain text while streaming — no ReactMarkdown parsing overhead */
             <pre className="markdown-body text-[14px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words font-[inherit]">
-              {content}
-            </pre>
-          ) : showRawMd ? (
-            /* Raw markdown preview */
-            <pre className="text-[13px] leading-relaxed text-aegis-text-muted whitespace-pre-wrap break-words font-mono bg-[rgb(var(--aegis-overlay)/0.03)] rounded-lg p-3 max-h-[400px] overflow-y-auto">
               {content}
             </pre>
           ) : (
