@@ -479,7 +479,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                 autoFocus
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
-                className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[60px]"
+                className="w-full min-w-[320px] bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[13px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-y min-h-[60px]"
                 rows={Math.min(editText.split('\n').length + 1, 8)}
               />
               <div className="flex gap-1.5 mt-1.5">
@@ -555,8 +555,11 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               {activeAgentName}
             </span>
           )}
-          {/* Time */}
-          <time className="text-xs text-aegis-text-dim" dateTime={block.timestamp || ''} title={timeStr}>
+          {/* Time — always visible on assistant, hidden for user until hover */}
+          <time className={clsx(
+            'text-[10px] text-aegis-text-dim transition-opacity duration-120',
+            isUser && !showActions && 'opacity-0',
+          )} dateTime={block.timestamp || ''} title={timeStr}>
             {timeStr}
           </time>
 
