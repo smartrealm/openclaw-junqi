@@ -1651,7 +1651,12 @@
     "offlineAgents": "Offline Agents",
     "process": "Proc",
     "upload": "Upload",
-    "download": "Download"
+    "download": "Download",
+    "status": "status",
+    "version": "version",
+    "arch": "arch",
+    "system": "system",
+    "cpuModel": "cpuModel"
   },
   "kanban": {
     "queue": "Queue",

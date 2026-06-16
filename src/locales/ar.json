@@ -1204,7 +1204,12 @@
     "offlineAgents": "الوكلاء غير المتصلين",
     "process": "عمليات",
     "upload": "رفع",
-    "download": "تنزيل"
+    "download": "تنزيل",
+    "status": "الحالة",
+    "version": "الإصدار",
+    "arch": "المعمارية",
+    "system": "النظام",
+    "cpuModel": "طراز المعالج"
   },
   "kanban": {
     "queue": "قيد الانتظار",

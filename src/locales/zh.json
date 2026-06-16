@@ -1639,7 +1639,12 @@
     "offlineAgents": "离线 Agent",
     "process": "Proc",
     "upload": "上传",
-    "download": "下载"
+    "download": "下载",
+    "status": "状态",
+    "version": "版本",
+    "arch": "架构",
+    "system": "系统",
+    "cpuModel": "CPU 型号"
   },
   "kanban": {
     "queue": "待处理",
