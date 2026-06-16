@@ -3,7 +3,7 @@
   "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "JunQi Desktop — AI-powered desktop assistant by 陕西浚启智境科技有限公司",
+  "description": "JunQi Desktop \u2014 AI-powered desktop assistant by \u9655\u897f\u6d5a\u542f\u667a\u5883\u79d1\u6280\u6709\u9650\u516c\u53f8",
   "author": "Wei ZHANG",
   "license": "MIT",
   "scripts": {
@@ -24,7 +24,7 @@
     "@tauri-apps/plugin-dialog": "~2.6.0",
     "@tauri-apps/plugin-fs": "~2.4.0",
     "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-shell": "^2",
+    "@tauri-apps/plugin-shell": "~2.3.5",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",

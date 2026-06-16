@@ -144,7 +144,7 @@ async function loadApiModuleModels(providerId) {
   if (!fs.existsSync(apiPath)) return [];
   let mod;
   try {
-    mod = await (new Function('url', 'return import(url)'))(pathToFileURL(apiPath).href);
+    mod = await import(pathToFileURL(apiPath).href);
   } catch {
     return [];
   }
@@ -203,7 +203,7 @@ async function enrichModelsWithExtensionMetadata(providerId, models) {
   if (!fs.existsSync(apiPath)) return models;
   let mod;
   try {
-    mod = await (new Function('url', 'return import(url)'))(pathToFileURL(apiPath).href);
+    mod = await import(pathToFileURL(apiPath).href);
   } catch {
     return models;
   }
@@ -278,7 +278,7 @@ async function loadMediaCatalog(kind) {
     const indexPath = path.join(extensionsRoot, extensionId, 'index.js');
     let pluginModule;
     try {
-      pluginModule = await (new Function('url', 'return import(url)'))(pathToFileURL(indexPath).href);
+      pluginModule = await import(pathToFileURL(indexPath).href);
     } catch {
       continue;
     }

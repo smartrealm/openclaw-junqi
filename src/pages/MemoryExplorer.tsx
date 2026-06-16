@@ -688,14 +688,12 @@ function DetailPanel({ memory, onClose, onEdit, onDelete, apiUrl, isLocal }: {
 // ═══════════════════════════════════════════════════════════
 
 export function MemoryExplorerPage() {
-  const { memoryExplorerEnabled, memoryMode, memoryApiUrl, memoryLocalPath } = useSettingsStore();
-  if (!memoryExplorerEnabled) return <MemoryDisabledView />;
-
   const { t } = useTranslation();
+  const { memoryExplorerEnabled, memoryMode, memoryApiUrl, memoryLocalPath } = useSettingsStore();
   const API = memoryApiUrl || 'http://localhost:3040';
   const isLocal = memoryMode === 'local';
 
-  // ── State ──
+  // ── State (always call hooks before any conditional return) ──
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -714,21 +712,12 @@ export function MemoryExplorerPage() {
     else if (lc.includes('decision')) category = 'decisions';
     else if (lc.includes('preference')) category = 'preferences';
     else if (lc.includes('technical')) category = 'technical';
-
     const tagsMatch = file.content.match(/tags:\s*\[([^\]]*)\]/);
     const tags = tagsMatch ? tagsMatch[1].replace(/['"]/g, '').split(',').map((t: string) => t.trim()).filter(Boolean) : [];
-
-    return {
-      id: idx + 1,
-      content: file.content.slice(0, 2000),
-      category,
-      importance: file.name === 'MEMORY.md' ? 10 : 5,
-      tags: tags.length ? tags : [file.name.replace('.md', '')],
-      created_at: file.modified,
-    };
+    return { id: idx + 1, content: file.content.slice(0, 2000), category, importance: file.name === 'MEMORY.md' ? 10 : 5, tags: tags.length ? tags : [file.name.replace('.md', '')], created_at: file.modified };
   };
 
-  // ── Load ──
+  // ── Load (must be before any conditional return) ──
   const loadMemories = useCallback(async () => {
     setLoading(true);
     try {
@@ -771,6 +760,8 @@ export function MemoryExplorerPage() {
     } catch { /* silent */ }
     finally { setSearching(false); }
   }, [query, loadMemories, isLocal, memoryLocalPath, API]);
+
+  if (!memoryExplorerEnabled) return <MemoryDisabledView />;
 
   // ── CRUD ──
   const handleSave = async (data: { content: string; category: string; importance: number; tags: string[] }) => {
