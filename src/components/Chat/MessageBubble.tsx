@@ -401,6 +401,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
       dir={dir}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
+      onMouseOut={() => setShowActions(false)}  // safety: mouseout always resets
     >
       {/* Avatar */}
       {isUser ? (
