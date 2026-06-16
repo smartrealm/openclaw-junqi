@@ -396,7 +396,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
   return (
     <div
       className={clsx(
-        'group flex items-start gap-3 px-5 py-1.5 transition-colors overflow-visible',
+        'group flex gap-2.5 items-start mx-1 mr-4 mb-3.5',
         isUser ? 'flex-row-reverse' : ''
       )}
       dir={dir}
@@ -415,19 +415,21 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
       )}
 
       {/* Message Content */}
-      <div className={clsx('flex flex-col max-w-[80%] min-w-0', isUser && 'items-end')}>
-        {/* Bubble */}
+      <div className="flex flex-col min-w-0" style={{ width: '100%', maxWidth: 'min(900px, 68%)', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+        {/* Bubble — openclaw chat-bubble style */}
         <div
           className={clsx(
-            'rounded-2xl px-4 py-2.5 relative',
+            'relative block border rounded-2xl px-3.5 py-2.5 transition-colors duration-150',
+            'max-w-full box-border min-w-0 break-words',
             isUser
-              ? 'bg-aegis-primary/[0.12] border border-aegis-primary/20 hover:border-aegis-primary/40 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200'
+              ? 'bg-aegis-primary/[0.12] border-aegis-primary/20'
               : clsx(
-                'bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)] hover:border-aegis-primary/30 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200',
-                !block.isStreaming && 'pr-14',  // reserved for action icons (copy/retry/MD)
+                'bg-[rgb(var(--aegis-overlay)/0.04)] border-[rgb(var(--aegis-overlay)/0.06)]',
+                !block.isStreaming && 'pr-[70px]',  // openclaw: .chat-bubble--has-actions
               ),
             block.isStreaming && 'border-aegis-primary/30 streaming-border'
           )}
+          style={{ width: 'auto' }}
         >
           {/* Action bar — top-right of bubble content */}
           {!block.isStreaming && (
@@ -581,43 +583,46 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           )}
         </div>
 
-        {/* Footer — openclaw style: sender + time + msg-meta (details toggle) + actions */}
-        <div className="flex items-center gap-2 mt-1 px-1 flex-wrap" style={{ gap: 8, rowGap: 5 }}>
-          <span className="text-[10px] text-aegis-text-muted font-mono shrink-0">{timeStr}</span>
-          {/* msg-meta — openclaw <details> pattern: "▸ Context" button → token pill */}
+        {/* Footer — openclaw chat-group-footer: flex, mt-6px, gap-8px, flex-wrap */}
+        <div className="flex items-center mt-1.5 flex-wrap" style={{ gap: 8, rowGap: 5 }}>
+          {/* Sender name */}
+          <span className="text-xs font-medium text-aegis-text-muted">
+            {activeAgentName}
+          </span>
+          {/* Time */}
+          <time className="text-xs text-aegis-text-dim" dateTime={block.timestamp || ''} title={timeStr}>
+            {timeStr}
+          </time>
+
+          {/* msg-meta — openclaw <details> pattern */}
           {!isUser && contextContent && (
-            /* details.msg-meta wrapper */
             <span className="inline-flex items-center flex-wrap" style={{ gap: 8 }}>
-              {/* summary — always visible toggle */}
+              {/* summary toggle — msg-meta__summary */}
               <button
                 onClick={() => setCtxOpen(v => !v)}
-                className="inline-flex items-center gap-1.5 text-[10px] rounded-full border border-transparent px-2 py-0.5 transition-colors"
-                style={{ color: 'var(--aegis-text-muted)', background: 'rgb(var(--aegis-overlay) / 0.06)' }}
+                className="inline-flex items-center gap-1.5 text-[10px] rounded-full px-2 py-0.5"
+                style={{ background: 'rgb(var(--aegis-overlay) / 0.03)', color: 'var(--aegis-text-muted)' }}
               >
-                <ChevronRight size={10}
-                  className={clsx('shrink-0 transition-transform duration-120', ctxOpen && 'rotate-90')}
-                  style={{ stroke: 'currentColor', strokeWidth: 2 }}
-                />
+                <ChevronRight size={10} className={clsx('shrink-0 transition-transform', ctxOpen && 'rotate-90')} style={{ strokeWidth: 2 }} />
                 <span>Context</span>
               </button>
-              {/* details — inline pill when open */}
+              {/* details — msg-meta__details inline pill */}
               {ctxOpen && (
                 <span
-                  className="inline-flex items-center flex-wrap rounded-full px-2 py-0.5 text-[10px] font-mono tabular-nums"
+                  className="inline-flex items-center flex-wrap rounded-full px-1.5 py-0.5 text-[10px] font-mono tabular-nums"
                   style={{ gap: 8, border: '1px solid var(--aegis-border, rgb(var(--aegis-overlay)/0.1))', background: 'rgb(var(--aegis-overlay) / 0.03)' }}
                 >
                   {(contextContent.input ?? 0) > 0 && <span>↑{ctxFmt(contextContent.input!)}</span>}
                   {(contextContent.output ?? 0) > 0 && <span>↓{ctxFmt(contextContent.output!)}</span>}
                   {(contextContent.cacheRead ?? 0) > 0 && <span>R{ctxFmt(contextContent.cacheRead!)}</span>}
                   {(contextContent.cacheWrite ?? 0) > 0 && <span>W{ctxFmt(contextContent.cacheWrite!)}</span>}
-                  {contextContent.contextPercent !== null && contextContent.contextPercent !== undefined && (
-                    <span className={clsx(
-                      (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger'
-                        : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : 'text-aegis-text-dim'
-                    )}>{contextContent.contextPercent}% ctx</span>
+                  {contextContent.contextPercent != null && (
+                    <span className={clsx((contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger' : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : 'text-aegis-text-dim')}>
+                      {contextContent.contextPercent}% ctx
+                    </span>
                   )}
                   {contextContent.model && (
-                    <span className="rounded px-1.5" style={{ background: 'rgb(var(--aegis-overlay) / 0.06)', fontFamily: 'monospace' }}>
+                    <span className="rounded px-1.5 text-[10px]" style={{ background: 'rgb(var(--aegis-overlay) / 0.06)' }}>
                       {contextContent.model.includes('/') ? contextContent.model.split('/').pop() : contextContent.model}
                     </span>
                   )}
@@ -626,43 +631,21 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             </span>
           )}
           {!isUser && !contextMeta && modelInfo && (
-            <span
-              title={modelInfo.full}
-              className="inline-flex max-w-[280px] items-center overflow-hidden rounded-md border border-aegis-primary/10 bg-aegis-primary/[0.06] text-[9px] font-mono"
-            >
-              {modelInfo.provider && (
-                <span className="shrink-0 border-r border-aegis-primary/10 bg-aegis-primary/[0.1] px-1.5 py-0.5 text-aegis-primary/80">
-                  {modelInfo.provider}
-                </span>
-              )}
-              <span className="truncate px-1.5 py-0.5 text-aegis-primary/70">
-                {modelInfo.model}
-              </span>
+            <span className="rounded px-1.5 text-[10px]" style={{ background: 'rgb(var(--aegis-overlay) / 0.06)' }}>
+              {modelInfo.model.includes('/') ? modelInfo.model.split('/').pop() : modelInfo.model}
             </span>
           )}
-          {showActions && !block.isStreaming && (
-            <div className="flex items-center gap-0.5 animate-fade-in ml-auto">
-              {block.role === 'user' && onResend && (
-                <button onClick={() => onResend(block.markdown)} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.resend')}>
-                  <RotateCcw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
-                </button>
-              )}
-              {block.role === 'assistant' && onRegenerate && (
-                <button onClick={onRegenerate} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.regenerate', 'Regenerate')}>
-                  <RefreshCw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
-                </button>
-              )}
-              {block.role === 'user' && onResend && (
-                <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.edit', 'Edit')}>
-                  <Pencil size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
-                </button>
-              )}
-              {onDelete && (
-                <button onClick={onDelete} className="p-1 rounded-md hover:bg-aegis-danger/10 transition-colors" title={t('chat.delete', 'Delete')}>
-                  <Trash2 size={11} className="text-aegis-text-muted hover:text-aegis-danger" />
-                </button>
-              )}
-            </div>
+
+          {/* Delete button — openclaw: hover group → visible */}
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="inline-flex items-center justify-center rounded p-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-aegis-danger/10 text-aegis-text-muted hover:text-aegis-danger transition-all"
+              title={t('chat.delete', 'Delete')}
+              style={{ minWidth: 24, minHeight: 24 }}
+            >
+              <Trash2 size={14} />
+            </button>
           )}
         </div>
       </div>
