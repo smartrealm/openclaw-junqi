@@ -341,7 +341,6 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [errorActionDone, setErrorActionDone] = useState(false);
-  const [contextExpanded, setContextExpanded] = useState(false);
   const [showRawMd, setShowRawMd] = useState(false);
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   // Context bar payload is built in buildSemanticBlocks.buildAssistantMeta and
@@ -578,71 +577,46 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           )}
         </div>
 
-        {/* Footer — Time + Context (inline expand) + Actions */}
-        <div className="flex flex-col gap-1 mt-1 px-1">
-          <div className="flex items-center gap-2 h-5">
-            <span className="text-[10px] text-aegis-text-muted font-mono shrink-0">{timeStr}</span>
-            {!isUser && contextMeta && (
-              <button
-                onClick={() => setContextExpanded((v) => !v)}
-                className="inline-flex items-center gap-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.08)] px-2 py-0.5 text-[10px] font-mono text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)]"
-              >
-                <ChevronRight size={10} className={clsx('transition-transform duration-150', contextExpanded && 'rotate-90')} />
-                <span>Context</span>
-              </button>
-            )}
-            {!isUser && !contextMeta && modelInfo && (
-              <span
-                title={modelInfo.full}
-                className="inline-flex max-w-[280px] items-center overflow-hidden rounded-md border border-aegis-primary/10 bg-aegis-primary/[0.06] text-[9px] font-mono"
-              >
-                {modelInfo.provider && (
-                  <span className="shrink-0 border-r border-aegis-primary/10 bg-aegis-primary/[0.1] px-1.5 py-0.5 text-aegis-primary/80">
-                    {modelInfo.provider}
-                  </span>
-                )}
-                <span className="truncate px-1.5 py-0.5 text-aegis-primary/70">
-                  {modelInfo.model}
+        {/* Footer — Time + Actions (single row, no token UI here) */}
+        <div className="flex items-center gap-2 mt-1 px-1 h-5">
+          <span className="text-[10px] text-aegis-text-muted font-mono shrink-0">{timeStr}</span>
+          {!isUser && !contextMeta && modelInfo && (
+            <span
+              title={modelInfo.full}
+              className="inline-flex max-w-[280px] items-center overflow-hidden rounded-md border border-aegis-primary/10 bg-aegis-primary/[0.06] text-[9px] font-mono"
+            >
+              {modelInfo.provider && (
+                <span className="shrink-0 border-r border-aegis-primary/10 bg-aegis-primary/[0.1] px-1.5 py-0.5 text-aegis-primary/80">
+                  {modelInfo.provider}
                 </span>
-              </span>
-            )}
-            {showActions && !block.isStreaming && (
-              <div className="flex items-center gap-0.5 animate-fade-in">
-                {block.role === 'user' && onResend && (
-                  <button onClick={() => onResend(block.markdown)} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.resend')}>
-                    <RotateCcw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
-                  </button>
-                )}
-                {block.role === 'assistant' && onRegenerate && (
-                  <button onClick={onRegenerate} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.regenerate', 'Regenerate')}>
-                    <RefreshCw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
-                  </button>
-                )}
-                {block.role === 'user' && onResend && (
-                  <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.edit', 'Edit')}>
-                    <Pencil size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
-                  </button>
-                )}
-                {onDelete && (
-                  <button onClick={onDelete} className="p-1 rounded-md hover:bg-aegis-danger/10 transition-colors" title={t('chat.delete', 'Delete')}>
-                    <Trash2 size={11} className="text-aegis-text-muted hover:text-aegis-danger" />
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          {!isUser && contextMeta && contextExpanded && (
-            <div className="flex flex-col gap-0.5 text-[10px] font-mono tabular-nums text-aegis-text-dim">
-              {!!contextContent?.input && <span>↑ {t('perf.input', '输入')} {ctxFmt(contextContent.input)}</span>}
-              {!!contextContent?.output && <span>↓ {t('perf.output', '输出')} {ctxFmt(contextContent.output)}</span>}
-              {!!contextContent?.cacheRead && <span>📦 Cache R {ctxFmt(contextContent.cacheRead)}</span>}
-              {contextContent?.contextPercent !== null && contextContent?.contextPercent !== undefined && (
-                <span className={clsx(
-                  (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger'
-                    : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : ''
-                )}>📊 {contextContent.contextPercent}% ctx</span>
               )}
-              {contextContent?.model && <span className="max-w-[180px] truncate">{contextContent.model}</span>}
+              <span className="truncate px-1.5 py-0.5 text-aegis-primary/70">
+                {modelInfo.model}
+              </span>
+            </span>
+          )}
+          {showActions && !block.isStreaming && (
+            <div className="flex items-center gap-0.5 animate-fade-in">
+              {block.role === 'user' && onResend && (
+                <button onClick={() => onResend(block.markdown)} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.resend')}>
+                  <RotateCcw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
+                </button>
+              )}
+              {block.role === 'assistant' && onRegenerate && (
+                <button onClick={onRegenerate} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.regenerate', 'Regenerate')}>
+                  <RefreshCw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
+                </button>
+              )}
+              {block.role === 'user' && onResend && (
+                <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.edit', 'Edit')}>
+                  <Pencil size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />
+                </button>
+              )}
+              {onDelete && (
+                <button onClick={onDelete} className="p-1 rounded-md hover:bg-aegis-danger/10 transition-colors" title={t('chat.delete', 'Delete')}>
+                  <Trash2 size={11} className="text-aegis-text-muted hover:text-aegis-danger" />
+                </button>
+              )}
             </div>
           )}
         </div>
