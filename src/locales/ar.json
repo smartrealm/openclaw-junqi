@@ -1199,7 +1199,12 @@
     "disk": "Disk",
     "network": "Network",
     "comingSoon": "Coming Soon",
-    "agentStatus": "Agent Status"
+    "agentStatus": "Agent Status",
+    "totalAgents": "إجمالي الوكلاء",
+    "offlineAgents": "الوكلاء غير المتصلين",
+    "process": "عمليات",
+    "upload": "رفع",
+    "download": "تنزيل"
   },
   "kanban": {
     "queue": "قيد الانتظار",

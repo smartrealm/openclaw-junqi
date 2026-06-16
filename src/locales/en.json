@@ -1646,7 +1646,12 @@
     "disk": "Disk",
     "network": "Network",
     "comingSoon": "Coming Soon",
-    "agentStatus": "Agent Status"
+    "agentStatus": "Agent Status",
+    "totalAgents": "Total Agents",
+    "offlineAgents": "Offline Agents",
+    "process": "Proc",
+    "upload": "Upload",
+    "download": "Download"
   },
   "kanban": {
     "queue": "Queue",

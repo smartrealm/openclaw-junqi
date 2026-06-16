@@ -578,11 +578,11 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           )}
         </div>
 
-        {/* Footer — Time + Actions */}
-        <div className="flex items-center gap-2 mt-1 px-1 h-5">
-          <span className="text-[10px] text-aegis-text-muted font-mono">{timeStr}</span>
+        {/* Footer — Time + Context + Actions (independent of bubble width) */}
+        <div className="flex items-center gap-2 mt-1 px-1 h-5 relative">
+          <span className="text-[10px] text-aegis-text-muted font-mono shrink-0">{timeStr}</span>
           {!isUser && contextMeta && (
-            <div className="flex items-center gap-1.5">
+            <div className="relative">
               <button
                 onClick={() => setContextExpanded((v) => !v)}
                 className="inline-flex items-center gap-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.08)] px-2 py-0.5 text-[10px] font-mono text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)]"
@@ -591,7 +591,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                 <span>Context</span>
               </button>
               {contextExpanded && (
-                <div className="inline-flex items-center gap-2 rounded-full bg-[rgb(var(--aegis-overlay)/0.08)] px-2 py-0.5 text-[10px] font-mono tabular-nums text-aegis-text-muted">
+                <div className="absolute top-full mt-1 left-0 z-50 inline-flex items-center gap-2 rounded-full bg-[rgb(var(--aegis-overlay)/0.12)] backdrop-blur-md px-2 py-0.5 text-[10px] font-mono tabular-nums text-aegis-text-muted whitespace-nowrap shadow-lg border border-aegis-border/30">
                   {!!contextContent?.input && <span>↑{ctxFmt(contextContent.input)}</span>}
                   {!!contextContent?.output && <span>↓{ctxFmt(contextContent.output)}</span>}
                   {!!contextContent?.cacheRead && <span>R{ctxFmt(contextContent.cacheRead)}</span>}

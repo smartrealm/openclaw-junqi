@@ -1634,7 +1634,12 @@
     "disk": "磁盘",
     "network": "网络",
     "comingSoon": "即将支持",
-    "agentStatus": "Agent 状态"
+    "agentStatus": "Agent 状态",
+    "totalAgents": "Agents 总数",
+    "offlineAgents": "离线 Agent",
+    "process": "Proc",
+    "upload": "上传",
+    "download": "下载"
   },
   "kanban": {
     "queue": "待处理",
