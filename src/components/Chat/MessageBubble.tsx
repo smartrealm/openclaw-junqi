@@ -602,31 +602,34 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             </span>
           )}
 
-          {/* Action buttons — openclaw: group hover → visible, whole row triggers together */}
-          {/* User: edit + delete | Assistant: retry + delete */}
-          {block.role === 'user' && onResend && (
-            <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }}
-              className="inline-flex items-center justify-center rounded p-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted transition-all"
-              title={t('chat.edit', 'Edit')}
-              style={{ minWidth: 24, minHeight: 24 }}>
-              <Pencil size={14} />
-            </button>
-          )}
-          {block.role === 'assistant' && onRegenerate && (
-            <button onClick={onRegenerate}
-              className="inline-flex items-center justify-center rounded p-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted transition-all"
-              title={t('chat.regenerate', 'Regenerate')}
-              style={{ minWidth: 24, minHeight: 24 }}>
-              <RefreshCw size={14} />
-            </button>
-          )}
-          {onDelete && (
-            <button onClick={onDelete}
-              className="inline-flex items-center justify-center rounded p-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-aegis-danger/10 text-aegis-text-muted hover:text-aegis-danger transition-all"
-              title={t('chat.delete', 'Delete')}
-              style={{ minWidth: 24, minHeight: 24 }}>
-              <Trash2 size={14} />
-            </button>
+          {/* Footer action buttons — openclaw: .chat-group:hover → all visible, individual :hover → bg */}
+          {showActions && (
+            <>
+              {block.role === 'user' && onResend && (
+                <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }}
+                  className="inline-flex items-center justify-center rounded p-1 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text transition-all"
+                  title={t('chat.edit', 'Edit')}
+                  style={{ minWidth: 24, minHeight: 24, animation: 'fadeIn 120ms ease-out' }}>
+                  <Pencil size={14} />
+                </button>
+              )}
+              {block.role === 'assistant' && onRegenerate && (
+                <button onClick={onRegenerate}
+                  className="inline-flex items-center justify-center rounded p-1 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text transition-all"
+                  title={t('chat.regenerate', 'Regenerate')}
+                  style={{ minWidth: 24, minHeight: 24 }}>
+                  <RefreshCw size={14} />
+                </button>
+              )}
+              {onDelete && (
+                <button onClick={onDelete}
+                  className="inline-flex items-center justify-center rounded p-1 text-aegis-text-muted hover:bg-aegis-danger/10 hover:text-aegis-danger transition-all"
+                  title={t('chat.delete', 'Delete')}
+                  style={{ minWidth: 24, minHeight: 24 }}>
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
