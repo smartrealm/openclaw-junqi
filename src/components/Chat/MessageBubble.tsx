@@ -602,34 +602,42 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             </span>
           )}
 
-          {/* Footer action buttons — openclaw: .chat-group:hover → all visible, individual :hover → bg */}
-          {showActions && (
-            <>
-              {block.role === 'user' && onResend && (
-                <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }}
-                  className="inline-flex items-center justify-center rounded p-1 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text transition-all"
-                  title={t('chat.edit', 'Edit')}
-                  style={{ minWidth: 24, minHeight: 24, animation: 'fadeIn 120ms ease-out' }}>
-                  <Pencil size={14} />
-                </button>
+          {/* Footer action buttons — always rendered (reserve space), opacity toggle only */}
+          {block.role === 'user' && onResend && (
+            <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }}
+              className={clsx(
+                'inline-flex items-center justify-center rounded p-1 text-aegis-text-muted transition-all',
+                'hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text hover:opacity-100',
+                showActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
               )}
-              {block.role === 'assistant' && onRegenerate && (
-                <button onClick={onRegenerate}
-                  className="inline-flex items-center justify-center rounded p-1 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text transition-all"
-                  title={t('chat.regenerate', 'Regenerate')}
-                  style={{ minWidth: 24, minHeight: 24 }}>
-                  <RefreshCw size={14} />
-                </button>
+              title={t('chat.edit', 'Edit')}
+              style={{ minWidth: 24, minHeight: 24 }}>
+              <Pencil size={14} />
+            </button>
+          )}
+          {block.role === 'assistant' && onRegenerate && (
+            <button onClick={onRegenerate}
+              className={clsx(
+                'inline-flex items-center justify-center rounded p-1 text-aegis-text-muted transition-all',
+                'hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text hover:opacity-100',
+                showActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
               )}
-              {onDelete && (
-                <button onClick={onDelete}
-                  className="inline-flex items-center justify-center rounded p-1 text-aegis-text-muted hover:bg-aegis-danger/10 hover:text-aegis-danger transition-all"
-                  title={t('chat.delete', 'Delete')}
-                  style={{ minWidth: 24, minHeight: 24 }}>
-                  <Trash2 size={14} />
-                </button>
+              title={t('chat.regenerate', 'Regenerate')}
+              style={{ minWidth: 24, minHeight: 24 }}>
+              <RefreshCw size={14} />
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={onDelete}
+              className={clsx(
+                'inline-flex items-center justify-center rounded p-1 text-aegis-text-muted transition-all',
+                'hover:bg-aegis-danger/10 hover:text-aegis-danger hover:opacity-100',
+                showActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
               )}
-            </>
+              title={t('chat.delete', 'Delete')}
+              style={{ minWidth: 24, minHeight: 24 }}>
+              <Trash2 size={14} />
+            </button>
           )}
         </div>
       </div>
