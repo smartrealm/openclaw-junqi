@@ -421,10 +421,10 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             'relative block border rounded-2xl px-3.5 py-2.5 transition-colors duration-150',
             'max-w-full box-border min-w-0 break-words',
             isUser
-              ? clsx('bg-aegis-primary/[0.12] border-aegis-primary/20', !block.isStreaming && 'pr-[70px]')
+              ? clsx('bg-aegis-primary/[0.12] border-aegis-primary/20', !block.isStreaming && 'pr-10')
               : clsx(
                 'bg-[rgb(var(--aegis-overlay)/0.04)] border-[rgb(var(--aegis-overlay)/0.06)]',
-                !block.isStreaming && 'pr-[70px]',  // openclaw: .chat-bubble--has-actions
+                !block.isStreaming && 'pr-10',  // openclaw: .chat-bubble--has-actions
               ),
             block.isStreaming && 'border-aegis-primary/30 streaming-border'
           )}
