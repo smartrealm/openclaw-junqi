@@ -584,11 +584,16 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
         </div>
 
         {/* Footer — openclaw chat-group-footer: flex, mt-6px, gap-8px, flex-wrap */}
-        <div className="flex items-center mt-1.5 flex-wrap" style={{ gap: 8, rowGap: 5 }}>
+        <div className={clsx(
+          'flex items-center mt-1.5 flex-wrap',
+          isUser && 'justify-end',
+        )} style={{ gap: 8, rowGap: 5 }}>
           {/* Sender name */}
-          <span className="text-xs font-medium text-aegis-text-muted">
-            {activeAgentName}
-          </span>
+          {!isUser && (
+            <span className="text-xs font-medium text-aegis-text-muted">
+              {activeAgentName}
+            </span>
+          )}
           {/* Time */}
           <time className="text-xs text-aegis-text-dim" dateTime={block.timestamp || ''} title={timeStr}>
             {timeStr}
