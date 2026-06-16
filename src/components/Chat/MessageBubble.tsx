@@ -371,9 +371,21 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
     try {
       const d = new Date(block.timestamp);
       if (isNaN(d.getTime())) return '';
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
       const h = String(d.getHours()).padStart(2, '0');
       const min = String(d.getMinutes()).padStart(2, '0');
-      return `${h}:${min}`;
+      return `${y}年${m}月${day}日 ${h}:${min}`;
+    } catch {
+      return '';
+    }
+  })();
+  const timeStrShort = (() => {
+    try {
+      const d = new Date(block.timestamp);
+      if (isNaN(d.getTime())) return '';
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     } catch {
       return '';
     }
@@ -424,6 +436,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               ? clsx(
                 'bg-aegis-primary/[0.12] border-aegis-primary/20',
                 'hover:border-aegis-primary/40 hover:bg-aegis-primary/[0.18]',
+                !block.isStreaming && 'pr-10',
               )
               : clsx(
                 'bg-[rgb(var(--aegis-overlay)/0.04)] border-[rgb(var(--aegis-overlay)/0.06)]',
@@ -564,12 +577,9 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               {activeAgentName}
             </span>
           )}
-          {/* Time — hidden default, show on hover (both sides) */}
-          <time className={clsx(
-            'text-[10px] text-aegis-text-dim transition-opacity duration-120',
-            showFooterActions ? 'opacity-60' : 'opacity-0',
-          )} dateTime={block.timestamp || ''} title={timeStr}>
-            {timeStr}
+          {/* Time — assistant: full date+time always visible; user: HH:MM always visible */}
+          <time className="text-[10px] text-aegis-text-dim" dateTime={block.timestamp || ''} title={isUser ? timeStrShort : timeStr}>
+            {isUser ? timeStrShort : timeStr}
           </time>
 
           {/* msg-meta — openclaw <details> pattern */}
@@ -614,14 +624,10 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             </span>
           )}
 
-          {/* Footer action buttons — always rendered (reserve space), opacity toggle only */}
+          {/* Footer action buttons — user side always visible, assistant side hover-triggered */}
           {block.role === 'user' && onResend && (
             <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }}
-              className={clsx(
-                'inline-flex items-center justify-center rounded p-1 text-aegis-text-muted transition-all',
-                'hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text hover:opacity-100',
-                showFooterActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
-              )}
+              className="inline-flex items-center justify-center rounded p-1 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text transition-all"
               title={t('chat.edit', 'Edit')}
               style={{ minWidth: 24, minHeight: 24 }}>
               <Pencil size={12} />
@@ -644,7 +650,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               className={clsx(
                 'inline-flex items-center justify-center rounded p-1 text-aegis-text-muted transition-all',
                 'hover:bg-aegis-danger/10 hover:text-aegis-danger hover:opacity-100',
-                showFooterActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
+                isUser ? '' : (showFooterActions ? 'opacity-60' : 'opacity-0 pointer-events-none'),
               )}
               title={t('chat.delete', 'Delete')}
               style={{ minWidth: 24, minHeight: 24 }}>
