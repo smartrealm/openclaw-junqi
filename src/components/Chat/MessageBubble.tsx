@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, User, RotateCcw, RefreshCw, Pencil, ChevronDown, ChevronRight, AlertTriangle, Trash2 } from 'lucide-react';
+import { Copy, Check, User, RotateCcw, RefreshCw, Pencil, ChevronDown, ChevronRight, AlertTriangle, Trash2, Eye, Code2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
