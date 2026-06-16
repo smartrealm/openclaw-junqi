@@ -422,7 +422,10 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             'rounded-2xl px-4 py-2.5 relative',
             isUser
               ? 'bg-aegis-primary/[0.12] border border-aegis-primary/20 hover:border-aegis-primary/40 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200'
-              : 'pr-16 bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)] hover:border-aegis-primary/30 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200',
+              : clsx(
+                'bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)] hover:border-aegis-primary/30 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200',
+                !block.isStreaming && 'pr-14',  // reserved for action icons (copy/retry/MD)
+              ),
             block.isStreaming && 'border-aegis-primary/30 streaming-border'
           )}
         >
@@ -603,10 +606,10 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                   className="inline-flex items-center flex-wrap rounded-full px-2 py-0.5 text-[10px] font-mono tabular-nums"
                   style={{ gap: 8, border: '1px solid var(--aegis-border, rgb(var(--aegis-overlay)/0.1))', background: 'rgb(var(--aegis-overlay) / 0.03)' }}
                 >
-                  {!!contextContent.input && <span>↑{ctxFmt(contextContent.input)}</span>}
-                  {!!contextContent.output && <span>↓{ctxFmt(contextContent.output)}</span>}
-                  {!!contextContent.cacheRead && <span>R{ctxFmt(contextContent.cacheRead)}</span>}
-                  {!!contextContent.cacheWrite && <span>W{ctxFmt(contextContent.cacheWrite)}</span>}
+                  {(contextContent.input ?? 0) > 0 && <span>↑{ctxFmt(contextContent.input!)}</span>}
+                  {(contextContent.output ?? 0) > 0 && <span>↓{ctxFmt(contextContent.output!)}</span>}
+                  {(contextContent.cacheRead ?? 0) > 0 && <span>R{ctxFmt(contextContent.cacheRead!)}</span>}
+                  {(contextContent.cacheWrite ?? 0) > 0 && <span>W{ctxFmt(contextContent.cacheWrite!)}</span>}
                   {contextContent.contextPercent !== null && contextContent.contextPercent !== undefined && (
                     <span className={clsx(
                       (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger'
