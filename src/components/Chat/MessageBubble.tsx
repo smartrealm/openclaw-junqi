@@ -396,7 +396,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
   return (
     <div
       className={clsx(
-        'group flex items-start gap-3 px-5 py-1.5 transition-colors',
+        'group flex items-start gap-3 px-5 py-1.5 transition-colors overflow-visible',
         isUser ? 'flex-row-reverse' : ''
       )}
       dir={dir}
@@ -419,7 +419,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
         {/* Bubble */}
         <div
           className={clsx(
-            'rounded-2xl px-4 py-2.5 relative',
+            'rounded-2xl px-4 pt-5 pb-2.5 relative',
             isUser
               ? 'bg-aegis-primary/[0.12] border border-aegis-primary/20 hover:border-aegis-primary/40 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200'
               : 'bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)] hover:border-aegis-primary/30 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200',
@@ -591,17 +591,17 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
                 <span>Context</span>
               </button>
               {contextExpanded && (
-                <div className="absolute top-full mt-1 left-0 z-50 inline-flex items-center gap-2 rounded-full bg-[rgb(var(--aegis-overlay)/0.12)] backdrop-blur-md px-2 py-0.5 text-[10px] font-mono tabular-nums text-aegis-text-muted whitespace-nowrap shadow-lg border border-aegis-border/30">
-                  {!!contextContent?.input && <span>↑{ctxFmt(contextContent.input)}</span>}
-                  {!!contextContent?.output && <span>↓{ctxFmt(contextContent.output)}</span>}
-                  {!!contextContent?.cacheRead && <span>R{ctxFmt(contextContent.cacheRead)}</span>}
+                <div className="absolute top-full mt-1 left-0 z-50 flex flex-col gap-0.5 rounded-xl bg-[rgb(var(--aegis-overlay)/0.12)] backdrop-blur-md px-2.5 py-1.5 text-[10px] font-mono tabular-nums text-aegis-text-muted shadow-lg border border-aegis-border/30">
+                  {!!contextContent?.input && <span>↑ {t('perf.input', '输入')} {ctxFmt(contextContent.input)}</span>}
+                  {!!contextContent?.output && <span>↓ {t('perf.output', '输出')} {ctxFmt(contextContent.output)}</span>}
+                  {!!contextContent?.cacheRead && <span>📦 Cache R {ctxFmt(contextContent.cacheRead)}</span>}
                   {contextContent?.contextPercent !== null && contextContent?.contextPercent !== undefined && (
                     <span className={clsx(
                       (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger'
                         : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : ''
-                    )}>{contextContent.contextPercent}% ctx</span>
+                    )}>📊 {contextContent.contextPercent}% ctx</span>
                   )}
-                  {contextContent?.model && <span className="max-w-[140px] truncate">{contextContent.model}</span>}
+                  {contextContent?.model && <span className="max-w-[180px] truncate">{contextContent.model}</span>}
                 </div>
               )}
             </div>
