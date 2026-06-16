@@ -370,8 +370,9 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
     try {
       const d = new Date(block.timestamp);
       if (isNaN(d.getTime())) return '';
-      const locale = i18n.language?.startsWith('ar') ? 'ar-SA' : 'en-US';
-      const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0'); const h = String(d.getHours()).padStart(2, '0'); const min = String(d.getMinutes()).padStart(2, '0'); return `${y}年${m}月${day}日 ${h}:${min}`;
+      const h = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      return `${h}:${min}`;
     } catch {
       return '';
     }
@@ -425,7 +426,6 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               ? clsx(
                 'bg-aegis-primary/[0.12] border-aegis-primary/20',
                 'hover:border-aegis-primary/40 hover:bg-aegis-primary/[0.18]',
-                !block.isStreaming && 'pr-10',
               )
               : clsx(
                 'bg-[rgb(var(--aegis-overlay)/0.04)] border-[rgb(var(--aegis-overlay)/0.06)]',
@@ -561,10 +561,10 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               {activeAgentName}
             </span>
           )}
-          {/* Time — always visible on assistant, hidden for user until hover */}
+          {/* Time — hidden default, show on hover (both sides) */}
           <time className={clsx(
             'text-[10px] text-aegis-text-dim transition-opacity duration-120',
-            isUser && !showActions && 'opacity-0',
+            showActions ? 'opacity-60' : 'opacity-0',
           )} dateTime={block.timestamp || ''} title={timeStr}>
             {timeStr}
           </time>
