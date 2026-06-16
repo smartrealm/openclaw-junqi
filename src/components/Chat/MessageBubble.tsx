@@ -577,9 +577,30 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           )}
         </div>
 
-        {/* Footer — Time + Actions (single row, no token UI here) */}
-        <div className="flex items-center gap-2 mt-1 px-1 h-5">
+        {/* Footer — Sender + Time + inline token meta (always visible) + Actions */}
+        <div className="flex items-center gap-2 mt-1 px-1 h-5 flex-wrap">
           <span className="text-[10px] text-aegis-text-muted font-mono shrink-0">{timeStr}</span>
+          {/* Inline token meta — openclaw style: always visible, no click */}
+          {!isUser && contextContent && (
+            <div className="inline-flex items-center gap-1.5 text-[10px] font-mono tabular-nums text-aegis-text-dim">
+              {!!contextContent.input && <span title="输入">↑{ctxFmt(contextContent.input)}</span>}
+              {!!contextContent.output && <span title="输出">↓{ctxFmt(contextContent.output)}</span>}
+              {!!contextContent.cacheRead && <span title="缓存读">R{ctxFmt(contextContent.cacheRead)}</span>}
+              {!!contextContent.cacheWrite && <span title="缓存写">W{ctxFmt(contextContent.cacheWrite)}</span>}
+              {contextContent.contextPercent !== null && contextContent.contextPercent !== undefined && (
+                <span
+                  title="上下文占用"
+                  className={clsx(
+                    (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger'
+                      : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : ''
+                  )}
+                >
+                  {contextContent.contextPercent}% ctx
+                </span>
+              )}
+              {contextContent.model && <span className="max-w-[160px] truncate" title={contextContent.model}>{contextContent.model}</span>}
+            </div>
+          )}
           {!isUser && !contextMeta && modelInfo && (
             <span
               title={modelInfo.full}
@@ -596,7 +617,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             </span>
           )}
           {showActions && !block.isStreaming && (
-            <div className="flex items-center gap-0.5 animate-fade-in">
+            <div className="flex items-center gap-0.5 animate-fade-in ml-auto">
               {block.role === 'user' && onResend && (
                 <button onClick={() => onResend(block.markdown)} className="p-1 rounded-md hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors" title={t('chat.resend')}>
                   <RotateCcw size={11} className="text-aegis-text-muted hover:text-aegis-text-secondary" />

@@ -14,7 +14,6 @@ import { ToolCallBubble } from './ToolCallBubble';
 import { ThinkingBubble } from './ThinkingBubble';
 import { DecisionCard, FileResultCard, SessionEventCard, WorkshopEventCard } from './ResultCards';
 import { MessageInput } from './MessageInput';
-import { ContextNotice } from './ContextNotice';
 import { TypingIndicator } from './TypingIndicator';
 import { InlineButtonBar } from './InlineButtonBar';
 import { QuickReplyBar } from './QuickReplyBar';
@@ -960,10 +959,6 @@ export function ChatView() {
           onDismiss={() => setQuickReplies([], activeSessionKey)}
         />
       )}
-
-      <div className="px-3 pt-2">
-        <ContextNotice />
-      </div>
 
       <MessageInput />
     </div>
