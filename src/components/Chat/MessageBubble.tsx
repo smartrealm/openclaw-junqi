@@ -337,7 +337,8 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
     || (activeAgentId === 'main' ? t('agents.mainAgent', 'Main Agent') : activeAgentId);
   const activeAgentLetter = activeAgentName.charAt(0) || 'M';
   const [copied, setCopied] = useState(false);
-  const [showActions, setShowActions] = useState(false);
+  const [showBubbleActions, setShowBubbleActions] = useState(false);
+  const [showFooterActions, setShowFooterActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [errorActionDone, setErrorActionDone] = useState(false);
@@ -400,9 +401,6 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
         isUser ? 'flex-row-reverse' : ''
       )}
       dir={dir}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
-      onMouseOut={() => setShowActions(false)}  // safety: mouseout always resets
     >
       {/* Avatar */}
       {isUser ? (
@@ -435,12 +433,14 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             block.isStreaming && 'border-aegis-primary/30 streaming-border'
           )}
           style={{ width: 'auto' }}
+          onMouseEnter={() => setShowBubbleActions(true)}
+          onMouseLeave={() => setShowBubbleActions(false)}
         >
           {/* Action bar — Copy button (both sides), matches openclaw */}
           {!block.isStreaming && (
             <div className={clsx(
               'absolute top-2 right-2 z-10 flex items-center gap-0.5 transition-opacity duration-120',
-              showActions ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              showBubbleActions ? 'opacity-100' : 'opacity-0 pointer-events-none'
             )}>
               <button onClick={handleCopy}
                 className="rounded p-1 hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
@@ -554,7 +554,10 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
         <div className={clsx(
           'flex items-center mt-1.5 flex-wrap',
           isUser && 'justify-end',
-        )} style={{ gap: 6, rowGap: 4 }}>
+        )} style={{ gap: 6, rowGap: 4 }}
+          onMouseEnter={() => setShowFooterActions(true)}
+          onMouseLeave={() => setShowFooterActions(false)}
+        >
           {/* Sender name */}
           {!isUser && (
             <span className="text-xs font-medium text-aegis-text-muted">
@@ -564,7 +567,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           {/* Time — hidden default, show on hover (both sides) */}
           <time className={clsx(
             'text-[10px] text-aegis-text-dim transition-opacity duration-120',
-            showActions ? 'opacity-60' : 'opacity-0',
+            showFooterActions ? 'opacity-60' : 'opacity-0',
           )} dateTime={block.timestamp || ''} title={timeStr}>
             {timeStr}
           </time>
@@ -617,7 +620,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               className={clsx(
                 'inline-flex items-center justify-center rounded p-1 text-aegis-text-muted transition-all',
                 'hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text hover:opacity-100',
-                showActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
+                showFooterActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
               )}
               title={t('chat.edit', 'Edit')}
               style={{ minWidth: 24, minHeight: 24 }}>
@@ -629,7 +632,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               className={clsx(
                 'inline-flex items-center justify-center rounded p-1 text-aegis-text-muted transition-all',
                 'hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text hover:opacity-100',
-                showActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
+                showFooterActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
               )}
               title={t('chat.regenerate', 'Regenerate')}
               style={{ minWidth: 24, minHeight: 24 }}>
@@ -641,7 +644,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               className={clsx(
                 'inline-flex items-center justify-center rounded p-1 text-aegis-text-muted transition-all',
                 'hover:bg-aegis-danger/10 hover:text-aegis-danger hover:opacity-100',
-                showActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
+                showFooterActions ? 'opacity-60' : 'opacity-0 pointer-events-none',
               )}
               title={t('chat.delete', 'Delete')}
               style={{ minWidth: 24, minHeight: 24 }}>
