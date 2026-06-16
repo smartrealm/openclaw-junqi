@@ -419,17 +419,17 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
         {/* Bubble */}
         <div
           className={clsx(
-            'rounded-2xl px-4 pt-5 pb-2.5 relative',
+            'rounded-2xl px-4 py-2.5 relative',
             isUser
               ? 'bg-aegis-primary/[0.12] border border-aegis-primary/20 hover:border-aegis-primary/40 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200'
-              : 'bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)] hover:border-aegis-primary/30 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200',
+              : 'pr-16 bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)] hover:border-aegis-primary/30 hover:bg-[rgb(var(--aegis-overlay)/0.10)] hover:animate-borderPulse transition-colors duration-200',
             block.isStreaming && 'border-aegis-primary/30 streaming-border'
           )}
         >
           {/* Action bar — top-right of bubble content */}
           {!block.isStreaming && (
             <div className={clsx(
-              'absolute -top-3 right-2 z-10 flex items-center gap-0.5 transition-opacity duration-150',
+              'absolute top-2 right-2 z-10 flex items-center gap-0.5 transition-opacity duration-150',
               showActions ? 'opacity-100' : 'opacity-0 pointer-events-none'
             )}>
               {/* Copy */}
