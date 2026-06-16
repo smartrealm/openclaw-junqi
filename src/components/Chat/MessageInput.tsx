@@ -12,11 +12,7 @@ import { SLASH_COMMANDS, CATEGORY_META, type SlashCommand, type SlashCategory } 
 import { cmdIcon } from '@/data/cmdIcons';
 import clsx from 'clsx';
 
-function formatAttachmentSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1048576).toFixed(1)} MB`;
-}
+import { formatBytes } from '@/utils/format';
 
 // ═══════════════════════════════════════════════════════════
 // Message Input — premium input with attachments
@@ -335,7 +331,7 @@ export function MessageInput() {
     } catch {
       const nonImageFiles = files.filter((f) => !f.isImage);
       const filePathRefs = nonImageFiles
-        .map((f) => `📎 file: ${f.path || f.name} (${f.mimeType}, ${formatAttachmentSize(f.size)})`)
+        .map((f) => `📎 file: ${f.path || f.name} (${f.mimeType}, ${formatBytes(f.size)})`)
         .join('\n');
       if (filePathRefs) {
         fullMessage = fullMessage ? `${fullMessage}\n\n${filePathRefs}` : filePathRefs;
@@ -562,7 +558,7 @@ export function MessageInput() {
                 <Trash2 size={9} className="text-white" />
               </button>
               <div className="absolute bottom-0 left-0 right-0 bg-aegis-bg-solid/80 text-[7px] text-center text-aegis-text py-0.5">
-                {formatAttachmentSize(file.size)}
+                {formatBytes(file.size)}
               </div>
             </div>
           ))}

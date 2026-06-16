@@ -9,12 +9,8 @@ import { gateway } from '@/services/gateway';
 import type { SystemMetricsPayload } from '@/api/tauri-adapter';
 import clsx from 'clsx';
 
-function fmtBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${bytes} B`;
-}
+import { formatBytes } from '@/utils/format';
+
 function fmtSpeed(bps: number): string {
   if (bps >= 1_048_576) return `${(bps / 1_048_576).toFixed(2)} MB/s`;
   if (bps >= 1024) return `${(bps / 1024).toFixed(0)} KB/s`;
@@ -111,8 +107,8 @@ export function Performance() {
               <StatPill label={t('perf.arch', 'Arch')}>
                 {m.arch || '—'}
               </StatPill>
-              <StatPill label="Mem">{fmtBytes(m.mem_total)}</StatPill>
-              <StatPill label="Disk">{fmtBytes(m.disk_total)}</StatPill>
+              <StatPill label="Mem">{formatBytes(m.mem_total)}</StatPill>
+              <StatPill label="Disk">{formatBytes(m.disk_total)}</StatPill>
             </section>
 
             {/* Row 2: System | CPU cores */}

@@ -67,11 +67,7 @@ function getExt(name: string): string {
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { formatBytes } from '@/utils/format';
 
 function formatDate(iso: string): string {
   try {
@@ -233,7 +229,7 @@ function FileMeta({ file }: { file: FileEntry }) {
   const { t } = useTranslation();
   return (
     <div className="flex items-center gap-3 text-[10px] text-aegis-text-dim font-mono">
-      <span>{formatSize(file.size)}</span>
+      <span>{formatBytes(file.size)}</span>
       <span>·</span>
       <span>{formatDate(file.modified)}</span>
       <span>·</span>
@@ -808,7 +804,7 @@ export function FileManagerPage() {
                       {t('fileManager.outputRef')}
                     </span>
                   )}
-                  <span>{formatSize(selected.size)}</span>
+                  <span>{formatBytes(selected.size)}</span>
                   <span>·</span>
                   <span className="text-aegis-text-muted">{getLanguageLabel(selected.ext)}</span>
                   {lineCount > 0 && (

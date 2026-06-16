@@ -45,6 +45,14 @@ export function formatSchedule(schedule: any): string {
   return JSON.stringify(schedule);
 }
 
+/** Format bytes: 1073741824 → "1.0 GB", 1048576 → "1.0 MB" */
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} B`;
+}
+
 /** Format uptime: "3h 12m"/"3س 12م" */
 export function formatUptime(ms: number): string {
   if (ms < 60000) return i18n.t('format.lessThanMinute');

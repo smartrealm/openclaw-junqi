@@ -18,6 +18,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
 import { changeLanguage } from '@/i18n';
+import { formatBytes } from '@/utils/format';
 import clsx from 'clsx';
 
 export function SettingsPageFull() {
@@ -77,14 +78,6 @@ export function SettingsPageFull() {
       .catch(() => {});
     window.aegis?.app?.platformInfo?.().then(setPlatformLabel).catch(() => {});
   }, []);
-
-  const formatBytes = (bytes: number) => {
-    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-  };
 
   const refreshManagedIndexInfo = async (): Promise<{ success: boolean; error?: string }> => {
     try {
