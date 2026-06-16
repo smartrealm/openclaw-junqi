@@ -421,10 +421,15 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             'relative block border rounded-2xl px-3.5 py-2.5 transition-colors duration-150',
             'max-w-full box-border min-w-0 break-words',
             isUser
-              ? clsx('bg-aegis-primary/[0.12] border-aegis-primary/20', !block.isStreaming && 'pr-10')
+              ? clsx(
+                'bg-aegis-primary/[0.12] border-aegis-primary/20',
+                'hover:border-aegis-primary/40 hover:bg-aegis-primary/[0.18]',
+                !block.isStreaming && 'pr-10',
+              )
               : clsx(
                 'bg-[rgb(var(--aegis-overlay)/0.04)] border-[rgb(var(--aegis-overlay)/0.06)]',
-                !block.isStreaming && 'pr-10',  // openclaw: .chat-bubble--has-actions
+                'hover:border-aegis-primary/30 hover:bg-[rgb(var(--aegis-overlay)/0.08)]',
+                !block.isStreaming && 'pr-10',
               ),
             block.isStreaming && 'border-aegis-primary/30 streaming-border'
           )}
@@ -615,7 +620,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               )}
               title={t('chat.edit', 'Edit')}
               style={{ minWidth: 24, minHeight: 24 }}>
-              <Pencil size={14} />
+              <Pencil size={12} />
             </button>
           )}
           {block.role === 'assistant' && onRegenerate && (
@@ -627,7 +632,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               )}
               title={t('chat.regenerate', 'Regenerate')}
               style={{ minWidth: 24, minHeight: 24 }}>
-              <RefreshCw size={14} />
+              <RefreshCw size={12} />
             </button>
           )}
           {onDelete && (
@@ -639,7 +644,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               )}
               title={t('chat.delete', 'Delete')}
               style={{ minWidth: 24, minHeight: 24 }}>
-              <Trash2 size={14} />
+              <Trash2 size={12} />
             </button>
           )}
         </div>
