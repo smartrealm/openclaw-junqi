@@ -548,7 +548,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
         <div className={clsx(
           'flex items-center mt-1.5 flex-wrap',
           isUser && 'justify-end',
-        )} style={{ gap: 8, rowGap: 5 }}>
+        )} style={{ gap: 6, rowGap: 4 }}>
           {/* Sender name */}
           {!isUser && (
             <span className="text-xs font-medium text-aegis-text-muted">
@@ -562,7 +562,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
 
           {/* msg-meta — openclaw <details> pattern */}
           {!isUser && contextContent && (
-            <span className="inline-flex items-center flex-wrap" style={{ gap: 8 }}>
+            <span className="inline-flex items-center flex-wrap" style={{ gap: 6 }}>
               {/* summary toggle — msg-meta__summary */}
               <button
                 onClick={() => setCtxOpen(v => !v)}
@@ -576,7 +576,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
               {ctxOpen && (
                 <span
                   className="inline-flex items-center flex-wrap rounded-full px-1.5 py-0.5 text-[10px] font-mono tabular-nums"
-                  style={{ gap: 8, border: '1px solid var(--aegis-border, rgb(var(--aegis-overlay)/0.1))', background: 'rgb(var(--aegis-overlay) / 0.03)' }}
+                  style={{ gap: 6, border: '1px solid var(--aegis-border, rgb(var(--aegis-overlay)/0.1))', background: 'rgb(var(--aegis-overlay) / 0.03)' }}
                 >
                   {(contextContent.input ?? 0) > 0 && <span>↑{ctxFmt(contextContent.input!)}</span>}
                   {(contextContent.output ?? 0) > 0 && <span>↓{ctxFmt(contextContent.output!)}</span>}
