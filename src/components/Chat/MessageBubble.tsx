@@ -422,7 +422,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             'relative block border rounded-2xl px-3.5 py-2.5 transition-colors duration-150',
             'max-w-full box-border min-w-0 break-words',
             isUser
-              ? 'bg-aegis-primary/[0.12] border-aegis-primary/20'
+              ? clsx('bg-aegis-primary/[0.12] border-aegis-primary/20', !block.isStreaming && 'pr-[70px]')
               : clsx(
                 'bg-[rgb(var(--aegis-overlay)/0.04)] border-[rgb(var(--aegis-overlay)/0.06)]',
                 !block.isStreaming && 'pr-[70px]',  // openclaw: .chat-bubble--has-actions
@@ -431,46 +431,21 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           )}
           style={{ width: 'auto' }}
         >
-          {/* Action bar — top-right of bubble content */}
+          {/* Action bar — top-right of bubble, both sides have Copy, assistant also has MD toggle */}
           {!block.isStreaming && (
             <div className={clsx(
-              'absolute top-2 right-2 z-10 flex items-center gap-0.5 transition-opacity duration-150',
+              'absolute top-2 right-2 z-10 flex items-center gap-0.5 transition-opacity duration-120',
               showActions ? 'opacity-100' : 'opacity-0 pointer-events-none'
             )}>
-              {/* Copy */}
-              <button
-                onClick={handleCopy}
-                className="rounded-md p-1 bg-[rgb(var(--aegis-overlay)/0.06)] hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
-                title={t('chat.copy')}
-              >
-                {copied ? (
-                  <Check size={12} className="text-aegis-success" />
-                ) : (
-                  <Copy size={12} className="text-aegis-text-muted" />
-                )}
+              <button onClick={handleCopy}
+                className="rounded p-1 hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
+                title={t('chat.copy')}>
+                {copied ? <Check size={12} className="text-aegis-success" /> : <Copy size={12} className="text-aegis-text-muted" />}
               </button>
-              {/* Regenerate — assistant only */}
-              {!isUser && onRegenerate && (
-                <button
-                  onClick={onRegenerate}
-                  className="rounded-md p-1 bg-[rgb(var(--aegis-overlay)/0.06)] hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors"
-                  title={t('chat.regenerate', 'Regenerate')}
-                >
-                  <RefreshCw size={12} className="text-aegis-text-muted" />
-                </button>
-              )}
-              {/* MD Preview toggle — assistant only */}
               {!isUser && content && (
-                <button
-                  onClick={() => setShowRawMd((v) => !v)}
-                  className={clsx(
-                    'rounded-md p-1 transition-colors',
-                    showRawMd
-                      ? 'bg-aegis-primary/15 text-aegis-primary'
-                      : 'bg-[rgb(var(--aegis-overlay)/0.06)] hover:bg-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted'
-                  )}
-                  title={showRawMd ? t('chat.showRendered', 'Show rendered') : t('chat.showRaw', 'Show raw markdown')}
-                >
+                <button onClick={() => setShowRawMd(v => !v)}
+                  className={clsx('rounded p-1 transition-colors', showRawMd ? 'bg-aegis-primary/15 text-aegis-primary' : 'hover:bg-[rgb(var(--aegis-overlay)/0.12)] text-aegis-text-muted')}
+                  title={showRawMd ? t('chat.showRendered', 'Show rendered') : t('chat.showRaw', 'Show raw markdown')}>
                   <Code2 size={12} />
                 </button>
               )}
@@ -641,14 +616,29 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
             </span>
           )}
 
-          {/* Delete button — openclaw: hover group → visible */}
+          {/* Action buttons — openclaw: group hover → visible, whole row triggers together */}
+          {/* User: edit + delete | Assistant: retry + delete */}
+          {block.role === 'user' && onResend && (
+            <button onClick={() => { setIsEditing(true); setEditText(block.markdown); }}
+              className="inline-flex items-center justify-center rounded p-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted transition-all"
+              title={t('chat.edit', 'Edit')}
+              style={{ minWidth: 24, minHeight: 24 }}>
+              <Pencil size={14} />
+            </button>
+          )}
+          {block.role === 'assistant' && onRegenerate && (
+            <button onClick={onRegenerate}
+              className="inline-flex items-center justify-center rounded p-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted transition-all"
+              title={t('chat.regenerate', 'Regenerate')}
+              style={{ minWidth: 24, minHeight: 24 }}>
+              <RefreshCw size={14} />
+            </button>
+          )}
           {onDelete && (
-            <button
-              onClick={onDelete}
+            <button onClick={onDelete}
               className="inline-flex items-center justify-center rounded p-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-aegis-danger/10 text-aegis-text-muted hover:text-aegis-danger transition-all"
               title={t('chat.delete', 'Delete')}
-              style={{ minWidth: 24, minHeight: 24 }}
-            >
+              style={{ minWidth: 24, minHeight: 24 }}>
               <Trash2 size={14} />
             </button>
           )}
