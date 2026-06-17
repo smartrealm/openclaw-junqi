@@ -1,3 +1,4 @@
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ProgressRing, StatusDot } from '@/components/shared';
@@ -17,79 +18,156 @@ const DOT_STATUS: Record<PetEmotion, 'active' | 'idle' | 'sleeping' | 'error' | 
   memory: 'paused',
 };
 
+/** Fallback status labels (used until/unless i18n keys are present). */
+const STATUS_LABEL: Record<PetEmotion, string> = {
+  idle: '待机',
+  thinking: '思考中',
+  typing: '回复中',
+  working: '工作中',
+  happy: '完成啦',
+  celebrate: '任务完成',
+  error: '出错了',
+  sleepy: '犯困',
+  sleep: '休息中',
+  memory: '整理记忆',
+};
+
+/** Active states get the rich multi-line bubble (label + action + elapsed + ring). */
+const ACTIVE: ReadonlySet<PetEmotion> = new Set(['thinking', 'typing', 'working', 'memory']);
+
+function fmtDuration(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m${String(s % 60).padStart(2, '0')}s`;
+}
+
+const BUBBLE: CSSProperties = {
+  maxWidth: 122,
+  padding: '5px 8px',
+  borderRadius: 10,
+  background: 'rgba(20,24,30,0.92)',
+  backdropFilter: 'blur(10px)',
+  border: '1px solid rgba(255,255,255,0.12)',
+  color: '#e8eaed',
+  fontFamily: 'system-ui, sans-serif',
+  lineHeight: 1.3,
+  overflow: 'hidden',
+};
+
 /**
- * Compact status bubble above the character. Hidden on idle (the pet is just
- * hanging out). Reuses the shared `StatusDot` + `ProgressRing` so it matches
- * the rest of the app's visual language and theme.
+ * Compact status bubble above the character. Display priority (high → low):
+ *   1. dragging          → "moving" (immediate drag feedback)
+ *   2. error             → error label
+ *   3. active            → label + concrete action + elapsed time + progress ring
+ *                          (thinking / typing / working / memory)
+ *   4. happy / celebrate → completion label (transient)
+ *   5. sleep / sleepy    → resting label
+ *   6. hovered           → carousel of operation hints (only when idle)
+ *   7. idle              → a single static hint
+ * Rationale: live task info always beats "how to use me" hints — hovering while
+ * the AI is replying still shows the reply status, not the hint carousel.
  */
-export function PetBubble({ state }: { state: PetState }) {
+export function PetBubble({ state, dragging, hovered }: { state: PetState; dragging?: boolean; hovered?: boolean }) {
   const { t } = useTranslation();
   const e = state.emotion;
+  const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
 
-  let title: string | null = null;
-  switch (e) {
-    case 'thinking':
-      title = state.message ? state.message.slice(0, 40) : t('pet.thinking', '思考中…');
-      break;
-    case 'typing':
-      title = t('pet.typing', '正在回复…');
-      break;
-    case 'working':
-      title = state.taskLabel || t('pet.working', '工作中…');
-      break;
-    case 'happy':
-      title = t('pet.done', '完成啦！');
-      break;
-    case 'celebrate':
-      title = t('pet.celebrate', '任务完成 🎉');
-      break;
-    case 'error':
-      title = t('pet.error', '出错了');
-      break;
-    case 'sleepy':
-      title = t('pet.sleepy', '有点困…');
-      break;
-    case 'sleep':
-      title = t('pet.sleep', '休息中');
-      break;
-    case 'memory':
-      title = t('pet.memory', '整理记忆…');
-      break;
-    default:
-      title = null; // idle — no bubble
+  // Operation-hint carousel — only meaningful when nothing more important is up.
+  const tips = [
+    t('pet.hint.tip1', '双击 → 打开主窗口'),
+    t('pet.hint.tip2', '按住拖动 → 移动位置'),
+    t('pet.hint.tip3', '托盘图标 → 显示/隐藏'),
+  ];
+  const [tipIndex, setTipIndex] = useState(0);
+  useEffect(() => {
+    if (!hovered) return;
+    setTipIndex(0);
+    const id = setInterval(() => setTipIndex((i) => (i + 1) % tips.length), 2200);
+    return () => clearInterval(id);
+  }, [hovered, tips.length]);
+
+  let body: ReactNode = null;
+
+  if (dragging) {
+    body = (
+      <Row>
+        <span style={{ fontSize: 10 }}>{t('pet.hint.moving', '移动中…')}</span>
+      </Row>
+    );
+  } else if (e === 'error') {
+    body = (
+      <Row>
+        <StatusDot status="error" size={6} />
+        <span style={{ fontSize: 10, fontWeight: 600 }}>{label}</span>
+      </Row>
+    );
+  } else if (ACTIVE.has(e)) {
+    const detail = state.message || state.taskLabel;
+    const elapsed = state.elapsedMs ? fmtDuration(state.elapsedMs) : null;
+    const showRing = (e === 'working' || e === 'typing') && typeof state.progress === 'number';
+    body = (
+      <>
+        <Row>
+          <StatusDot status={DOT_STATUS[e]} size={6} pulse={e === 'working' || e === 'typing'} />
+          <span style={{ fontSize: 10, fontWeight: 600 }}>{label}</span>
+          {elapsed && <span style={{ fontSize: 9, opacity: 0.6 }}>· {elapsed}</span>}
+          {showRing && <ProgressRing percentage={state.progress ?? 0} size={13} strokeWidth={2.5} />}
+        </Row>
+        {detail && (
+          <div style={{ fontSize: 9, opacity: 0.7, maxWidth: 104, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {detail}
+          </div>
+        )}
+      </>
+    );
+  } else if (e === 'happy' || e === 'celebrate') {
+    body = (
+      <Row>
+        <span style={{ fontSize: 10, fontWeight: 600 }}>{label}</span>
+      </Row>
+    );
+  } else if (e === 'sleep' || e === 'sleepy') {
+    body = (
+      <Row>
+        <StatusDot status="sleeping" size={6} />
+        <span style={{ fontSize: 10, opacity: 0.85 }}>{label}</span>
+      </Row>
+    );
+  } else if (hovered) {
+    body = (
+      <motion.span
+        key={tipIndex}
+        initial={{ opacity: 0, y: 3 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ fontSize: 9.5, display: 'block', whiteSpace: 'nowrap' }}
+      >
+        {tips[tipIndex]}
+      </motion.span>
+    );
+  } else {
+    // idle & not hovered — no bubble. Keeps the tiny window uncluttered; the
+    // hint carousel above appears on hover, and live states show their own text.
+    body = null;
   }
-
-  const showProgress = (e === 'working' || e === 'typing') && typeof state.progress === 'number';
 
   return (
     <AnimatePresence>
-      {title && (
+      {body && (
         <motion.div
           initial={{ opacity: 0, y: 6, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.18 }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            maxWidth: 96,
-            padding: '4px 8px',
-            borderRadius: 999,
-            background: 'rgba(20,24,30,0.9)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            color: '#e8eaed',
-            fontSize: 10,
-            fontFamily: 'system-ui, sans-serif',
-            overflow: 'hidden',
-          }}
+          style={BUBBLE}
         >
-          <StatusDot status={DOT_STATUS[e]} size={6} pulse={e === 'working' || e === 'typing'} />
-          {showProgress && <ProgressRing percentage={state.progress ?? 0} size={16} strokeWidth={2.5} />}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+          {body}
         </motion.div>
       )}
     </AnimatePresence>
   );
+}
+
+function Row({ children }: { children: ReactNode }) {
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>{children}</div>;
 }

@@ -29,6 +29,8 @@ export interface PetState {
   taskLabel?: string;
   /** Epoch ms — transient `happy`/`celebrate` expires after this. */
   celebrateUntil?: number;
+  /** How long the current activity (typing/working/thinking) has been running, in ms. */
+  elapsedMs?: number;
   stats?: { doneToday: number; tokens: number };
 }
 

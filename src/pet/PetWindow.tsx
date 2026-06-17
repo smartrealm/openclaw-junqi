@@ -26,6 +26,7 @@ const DRAG_THRESHOLD = 3;
 export default function PetWindow() {
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const position = usePetStore((s) => s.position);
   const setPosition = usePetStore((s) => s.setPosition);
   const skin = usePetStore((s) => s.skin);
@@ -119,6 +120,8 @@ export default function PetWindow() {
     <div
       onMouseDown={onMouseDown}
       onDoubleClick={onDoubleClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         width: '100vw',
         height: '100vh',
@@ -133,7 +136,7 @@ export default function PetWindow() {
         userSelect: 'none',
       }}
     >
-      <PetBubble state={state} />
+      <PetBubble state={state} dragging={dragging} hovered={hovered} />
       <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={skin} customAsset={customAsset} />
     </div>
   );
