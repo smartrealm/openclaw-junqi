@@ -96,6 +96,7 @@ export function usePetStateEmitter() {
         message,
         taskLabel: gw.runningSubAgents[0]?.label,
         elapsedMs: mem.activeStartedAt ? now - mem.activeStartedAt : undefined,
+        skin: usePetStore.getState().skin,
       });
     };
 

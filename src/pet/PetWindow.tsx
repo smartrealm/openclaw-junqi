@@ -60,6 +60,14 @@ export default function PetWindow() {
     listen<{ x: number; y: number }>('pet-moved', (e) => setPosition(e.payload))
       .then((fn) => unlistens.push(fn))
       .catch(() => undefined);
+    // Custom asset changed in the main window (upload/clear) → reload from disk.
+    listen('pet-asset-changed', () => {
+      invoke<string | null>('load_pet_asset')
+        .then((url) => setCustomAsset(url ?? null))
+        .catch(() => undefined);
+    })
+      .then((fn) => unlistens.push(fn))
+      .catch(() => undefined);
     return () => unlistens.forEach((fn) => fn());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -138,7 +146,7 @@ export default function PetWindow() {
       }}
     >
       <PetBubble state={state} dragging={dragging} hovered={hovered} />
-      <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={skin} customAsset={customAsset} />
+      <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={state.skin ?? skin} customAsset={customAsset} />
     </div>
   );
 }

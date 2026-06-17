@@ -1670,12 +1670,12 @@
       "preview": "演示表情",
       "stopPreview": "停止演示",
       "showMain": "显示主窗口",
-      "hide": "隐藏宠物"
+      "hide": "隐藏萌宠"
     },
     "settings": {
-      "title": "桌面宠物",
-      "enabled": "启用桌面宠物",
-      "enabledHint": "在桌面上悬浮一只随任务状态变化的小伙伴",
+      "title": "桌面萌宠",
+      "enabled": "启用桌面萌宠",
+      "enabledHint": "在桌面上悬浮一只随任务状态变化的萌宠",
       "skin": "皮肤",
       "sprite": "小精灵",
       "robot": "机器人",

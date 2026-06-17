@@ -211,6 +211,8 @@ pub async fn save_pet_asset(app: AppHandle, src_path: String) -> Result<String, 
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join(format!("pet-asset.{ext}"));
     std::fs::write(&dest, &data).map_err(|e| format!("Write failed: {e}"))?;
+    // Tell the pet window to reload its asset.
+    let _ = app.emit("pet-asset-changed", ());
 
     Ok(format!("data:{};base64,{}", image_mime(&ext), general_purpose::STANDARD.encode(&data)))
 }
@@ -250,5 +252,6 @@ pub async fn clear_pet_asset(app: AppHandle) -> Result<(), String> {
             }
         }
     }
+    let _ = app.emit("pet-asset-changed", ());
     Ok(())
 }

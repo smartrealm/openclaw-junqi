@@ -70,6 +70,7 @@ export function SettingsPageFull() {
   const [checkingVersion, setCheckingVersion] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
+  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
 
   const handleCheckVersion = async () => {
     if (checkingVersion) return;
@@ -325,6 +326,26 @@ export function SettingsPageFull() {
         </h1>
       </div>
 
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-5 border-b border-aegis-border/15">
+        {([
+          ['appearance', t('settings.tab.appearance', '外观')],
+          ['notify', t('settings.tab.notify', '通知')],
+          ['pet', t('settings.tab.pet', '萌宠')],
+          ['connect', t('settings.tab.connect', '连接')],
+          ['storage', t('settings.tab.storage', '存储')],
+          ['about', t('settings.tab.about', '关于')],
+        ] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className={clsx('relative py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors',
+              activeTab === key ? 'border-aegis-primary text-aegis-text' : 'border-transparent text-aegis-text-dim hover:text-aegis-text')}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'appearance' && (
+        <>
       {/* Language */}
       <GlassCard delay={0.05}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
@@ -465,7 +486,11 @@ export function SettingsPageFull() {
           ))}
         </div>
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'notify' && (
+        <>
       {/* Notifications */}
       <GlassCard delay={0.1}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
@@ -511,7 +536,11 @@ export function SettingsPageFull() {
           </button>
         </div>
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'pet' && (
+        <>
       {/* Desktop Pet */}
       <GlassCard delay={0.12}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
@@ -561,7 +590,11 @@ export function SettingsPageFull() {
         </div>
         {petUploadError && <div className="text-[11px] text-aegis-danger mt-2">{petUploadError}</div>}
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'connect' && (
+        <>
       {/* Gateway */}
       <GlassCard delay={0.15}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
@@ -662,7 +695,11 @@ export function SettingsPageFull() {
           </div>
         </div>
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'storage' && (
+        <>
       {/* Conversation files — same managed index as File Manager */}
       <GlassCard delay={0.28}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-1 flex items-center gap-2">
@@ -729,7 +766,11 @@ export function SettingsPageFull() {
           )}
         </div>
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'about' && (
+        <>
       {/* About + System Info */}
       <GlassCard delay={0.3}>
         <div className="text-center py-4 mb-4">
@@ -807,6 +848,8 @@ export function SettingsPageFull() {
           </div>
         )}
       </GlassCard>
+        </>
+      )}
     </PageTransition>
   );
 }

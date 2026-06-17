@@ -42,17 +42,13 @@ function fmtDuration(ms: number): string {
   return `${m}m${String(s % 60).padStart(2, '0')}s`;
 }
 
-// Minimal: no glass/background/border — just text with a strong outline shadow
-// so it stays readable over any desktop wallpaper.
+// Fully transparent — no background, no border, no text outline. Just text.
 const BUBBLE: CSSProperties = {
   maxWidth: 124,
-  padding: '1px 3px',
   color: '#ffffff',
-  textShadow: '0 1px 3px rgba(0,0,0,0.85), 0 0 1px rgba(0,0,0,0.85)',
   fontFamily: 'system-ui, sans-serif',
   fontSize: 10,
   lineHeight: 1.3,
-  overflow: 'hidden',
 };
 
 /**

@@ -31,6 +31,8 @@ export interface PetState {
   celebrateUntil?: number;
   /** How long the current activity (typing/working/thinking) has been running, in ms. */
   elapsedMs?: number;
+  /** Current skin — broadcast so the pet window picks up settings changes. */
+  skin?: 'sprite' | 'robot' | 'lobster';
   stats?: { doneToday: number; tokens: number };
 }
 
