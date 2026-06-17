@@ -530,7 +530,7 @@ export function SettingsPageFull() {
         <div className="flex items-center justify-between mt-4">
           <div className="text-[13px] text-aegis-text">{t('pet.settings.skin', '皮肤')}</div>
           <div className="flex gap-1">
-            {(['sprite', 'robot'] as const).map((s) => (
+            {(['lobster', 'sprite', 'robot'] as const).map((s) => (
               <button key={s} onClick={() => setPetSkin(s)}
                 className={clsx('text-[12px] px-3 py-1.5 rounded-lg border transition-colors',
                   petSkin === s ? 'border-aegis-primary/50 text-aegis-text bg-aegis-primary/10' : 'border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text')}>

@@ -1691,6 +1691,7 @@
       "skin": "Skin",
       "sprite": "Sprite",
       "robot": "Robot",
+      "lobster": "Lobster",
       "custom": "Custom asset",
       "customHint": "Upload PNG/JPG/GIF/WebP, ≤2MB",
       "upload": "Upload",

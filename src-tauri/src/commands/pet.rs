@@ -46,7 +46,7 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
 
     let mut builder = WebviewWindowBuilder::new(&app, PET_LABEL, WebviewUrl::App("index.html".into()))
         .title("JunQi Pet")
-        .inner_size(108.0, 138.0)
+        .inner_size(108.0, 154.0)
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -65,7 +65,7 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
             let logical_w = phys.width as f64 / scale;
             let logical_h = phys.height as f64 / scale;
             let x = (logical_w - 130.0).max(20.0);
-            let y = (logical_h - 168.0).max(20.0);
+            let y = (logical_h - 184.0).max(20.0);
             builder = builder.position(x, y);
         }
     }

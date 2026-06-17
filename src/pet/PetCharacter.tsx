@@ -14,7 +14,7 @@ import { themeAlpha, themeHex } from '@/utils/theme-colors';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
-export type PetSkin = 'sprite' | 'robot';
+export type PetSkin = 'sprite' | 'robot' | 'lobster';
 
 type EffectKind = 'none' | 'sleep' | 'gear' | 'think' | 'stars' | 'hearts' | 'sweat' | 'book' | 'spark';
 
@@ -129,7 +129,9 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', 
 
 /** Swappable body shape — only the silhouette + decorations change; eyes/mouth/effects stay. */
 function BodySkin({ skin, color }: { skin: PetSkin; color: string }) {
-  return skin === 'robot' ? <RobotBody color={color} /> : <SpriteBody color={color} />;
+  if (skin === 'robot') return <RobotBody color={color} />;
+  if (skin === 'lobster') return <LobsterBody color={color} />;
+  return <SpriteBody color={color} />;
 }
 
 function SpriteBody({ color }: { color: string }) {
@@ -166,6 +168,38 @@ function RobotBody({ color }: { color: string }) {
       <circle cx={86} cy={114} r={2} fill="#fff" opacity={0.3} />
       {/* highlight */}
       <rect x={32} y={58} width={16} height={20} rx={7} fill="#fff" opacity={0.16} />
+    </>
+  );
+}
+
+/** JunQi lobster — nods to OpenClaw ("claw"). Rounded shell, two big claws,
+ * wiggling antennae, tail fan. Eyes/mouth/effects are reused from the shared
+ * emotion layers, so all expressions still work on this skin. */
+function LobsterBody({ color }: { color: string }) {
+  const dark = themeAlpha('primary', 1);
+  return (
+    <>
+      {/* antennae */}
+      <motion.path d="M50,24 Q42,12 38,6" stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round"
+        style={{ transformBox: 'fill-box', transformOrigin: 'bottom' }}
+        animate={{ rotate: [-4, 4, -4] }} transition={{ duration: 2.4, repeat: Infinity, ease: EASE }} />
+      <motion.path d="M70,24 Q78,12 82,6" stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round"
+        style={{ transformBox: 'fill-box', transformOrigin: 'bottom' }}
+        animate={{ rotate: [4, -4, 4] }} transition={{ duration: 2.4, repeat: Infinity, ease: EASE }} />
+      {/* tail fan */}
+      <path d="M44,118 L60,130 L76,118 L70,110 L50,110 Z" fill={color} stroke={dark} strokeWidth={1} />
+      {/* shell */}
+      <ellipse cx={60} cy={74} rx={30} ry={40} fill={color} stroke={dark} strokeWidth={1} />
+      {/* shell segments */}
+      <path d="M34,66 Q60,72 86,66" stroke="#fff" strokeWidth={1} fill="none" opacity={0.18} />
+      <path d="M34,82 Q60,88 86,82" stroke="#fff" strokeWidth={1} fill="none" opacity={0.18} />
+      {/* claws */}
+      <ellipse cx={24} cy={88} rx={11} ry={13} fill={color} stroke={dark} strokeWidth={1} />
+      <path d="M16,82 L11,78 M16,94 L11,98" stroke={dark} strokeWidth={2} strokeLinecap="round" />
+      <ellipse cx={96} cy={88} rx={11} ry={13} fill={color} stroke={dark} strokeWidth={1} />
+      <path d="M104,82 L109,78 M104,94 L109,98" stroke={dark} strokeWidth={2} strokeLinecap="round" />
+      {/* highlight */}
+      <ellipse cx={50} cy={58} rx={10} ry={14} fill="#fff" opacity={0.16} />
     </>
   );
 }

@@ -129,6 +129,7 @@ export default function PetWindow() {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'flex-end',
+        gap: 10,
         cursor: dragging ? 'grabbing' : 'grab',
         transform: dragging ? 'scale(1.08)' : 'scale(1)',
         transition: 'transform 0.15s ease',

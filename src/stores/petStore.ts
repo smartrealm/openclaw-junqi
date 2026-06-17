@@ -8,7 +8,7 @@ import { persist } from 'zustand/middleware';
  * Follows the `workshopStore` persist pattern rather than the hand-rolled
  * localStorage reads elsewhere in the app.
  */
-export type PetSkin = 'sprite' | 'robot';
+export type PetSkin = 'sprite' | 'robot' | 'lobster';
 
 interface PetSettings {
   /** Master switch — when false the pet window is never opened. */
@@ -35,7 +35,7 @@ export const usePetStore = create<PetSettings>()(
       enabled: true,
       position: null,
       clickThrough: true,
-      skin: 'robot',
+      skin: 'lobster',
       customAsset: null,
       setEnabled: (enabled) => set({ enabled }),
       setPosition: (position) => set({ position }),

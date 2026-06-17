@@ -42,15 +42,15 @@ function fmtDuration(ms: number): string {
   return `${m}m${String(s % 60).padStart(2, '0')}s`;
 }
 
+// Minimal: no glass/background/border — just text with a strong outline shadow
+// so it stays readable over any desktop wallpaper.
 const BUBBLE: CSSProperties = {
-  maxWidth: 122,
-  padding: '5px 8px',
-  borderRadius: 10,
-  background: 'rgba(20,24,30,0.92)',
-  backdropFilter: 'blur(10px)',
-  border: '1px solid rgba(255,255,255,0.12)',
-  color: '#e8eaed',
+  maxWidth: 124,
+  padding: '1px 3px',
+  color: '#ffffff',
+  textShadow: '0 1px 3px rgba(0,0,0,0.85), 0 0 1px rgba(0,0,0,0.85)',
   fontFamily: 'system-ui, sans-serif',
+  fontSize: 10,
   lineHeight: 1.3,
   overflow: 'hidden',
 };
@@ -135,16 +135,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       </Row>
     );
   } else if (hovered) {
-    body = (
-      <motion.span
-        key={tipIndex}
-        initial={{ opacity: 0, y: 3 }}
-        animate={{ opacity: 1, y: 0 }}
-        style={{ fontSize: 9.5, display: 'block', whiteSpace: 'nowrap' }}
-      >
-        {tips[tipIndex]}
-      </motion.span>
-    );
+    body = <span style={{ fontSize: 9.5, display: 'block', whiteSpace: 'nowrap' }}>{tips[tipIndex]}</span>;
   } else {
     // idle & not hovered — no bubble. Keeps the tiny window uncluttered; the
     // hint carousel above appears on hover, and live states show their own text.
