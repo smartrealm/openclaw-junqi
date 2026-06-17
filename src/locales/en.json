@@ -1667,5 +1667,27 @@
     "cancel": "Cancel",
     "addPlaceholder": "Task title…",
     "taskCount": "{{count}} tasks"
+  },
+  "pet": {
+    "thinking": "Thinking…",
+    "typing": "Replying…",
+    "working": "Working…",
+    "done": "Done!",
+    "celebrate": "Task complete 🎉",
+    "error": "Error",
+    "sleepy": "Getting sleepy…",
+    "sleep": "Resting",
+    "memory": "Organizing memory…",
+    "menu": {
+      "preview": "Preview expressions",
+      "stopPreview": "Stop preview",
+      "showMain": "Show main window",
+      "hide": "Hide pet"
+    },
+    "settings": {
+      "title": "Desktop Pet",
+      "enabled": "Enable desktop pet",
+      "enabledHint": "A little companion floating on your desktop that reacts to task state"
+    }
   }
 }

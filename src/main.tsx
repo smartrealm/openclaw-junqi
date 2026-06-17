@@ -28,16 +28,30 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise Rejectio
   await import('./api/tauri-adapter');
   await import('./i18n');
   await import('@/styles/index.css');
-  const [React, ReactDOM, App, ErrorBoundary] = await Promise.all([
+  const [React, ReactDOM, ErrorBoundary] = await Promise.all([
     import('react'),
     import('react-dom/client'),
-    import('./App'),
     import('@/components/shared/ErrorBoundary'),
   ]);
+
+  // The "pet" window is a lightweight companion: it shares this SPA entry but
+  // renders a different root — it must NOT mount the full app / gateway client.
+  let windowLabel = '';
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    windowLabel = getCurrentWindow().label;
+  } catch {
+    /* plain vite/browser context */
+  }
+  const Root =
+    windowLabel === 'pet'
+      ? (await import('./pet/PetWindow')).default
+      : (await import('./App')).default;
+
   ReactDOM.createRoot(document.getElementById('app-root')!).render(
     React.createElement(React.StrictMode, null,
       React.createElement(ErrorBoundary.ErrorBoundary, null,
-        React.createElement(App.default)
+        React.createElement(Root)
       )
     )
   );

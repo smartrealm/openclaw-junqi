@@ -15,6 +15,7 @@ import { PageTransition } from '@/components/shared/PageTransition';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
+import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
 import { changeLanguage } from '@/i18n';
@@ -35,6 +36,7 @@ export function SettingsPageFull() {
     accentColor, setAccentColor,
   } = useSettingsStore();
   const { connected, connecting } = useChatStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled } = usePetStore();
 
   const [openclawVersion, setOpenclawVersion] = useState<string | null>(null);
   const [platformLabel, setPlatformLabel] = useState<string>('—');
@@ -484,6 +486,21 @@ export function SettingsPageFull() {
           >
             🔔 {t('settings.testSound')}
           </button>
+        </div>
+      </GlassCard>
+
+      {/* Desktop Pet */}
+      <GlassCard delay={0.12}>
+        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
+          <span className="text-base">🐾</span>
+          {t('pet.settings.title')}
+        </h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[13px] text-aegis-text">{t('pet.settings.enabled')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.enabledHint')}</div>
+          </div>
+          <Toggle enabled={petEnabled} onChange={setPetEnabled} />
         </div>
       </GlassCard>
 
