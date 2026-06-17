@@ -39,6 +39,7 @@ import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
 import { changeLanguage } from '@/i18n';
 import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
+import { usePomodoro } from '@/pet/usePomodoro';
 
 const SESSION_MODEL_PREFS_KEY = 'aegis:session-model-prefs';
 
@@ -310,6 +311,7 @@ export default function App() {
 
   // ── Desktop pet companion: open window + broadcast state (main window only) ──
   usePetStateEmitter();
+  usePomodoro();
 
   // ── Request notification permission (Web Notification API) ──
   useEffect(() => { notifications.requestPermission(); }, []);

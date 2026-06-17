@@ -1687,7 +1687,7 @@
       "clear": "清除"
     },
     "status": {
-      "idle": "待机",
+      "idle": "空闲中",
       "thinking": "思考中",
       "typing": "回复中",
       "working": "工作中",
@@ -1704,6 +1704,19 @@
       "tip1": "双击 → 打开主窗口",
       "tip2": "按住拖动 → 移动位置",
       "tip3": "托盘图标 → 显示/隐藏"
+    },
+    "pomodoro": {
+      "title": "番茄钟",
+      "enable": "启用番茄钟",
+      "enableHint": "工作时长提醒，专注与休息循环",
+      "workMin": "工作",
+      "breakMin": "休息",
+      "start": "开始",
+      "stop": "停止",
+      "focusing": "专注中",
+      "resting": "休息中",
+      "workDone": "专注完成，休息一下！",
+      "breakDone": "休息结束，继续专注！"
     }
   }
 }

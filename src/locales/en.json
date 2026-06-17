@@ -1716,6 +1716,19 @@
       "tip1": "Double-click → open main window",
       "tip2": "Press & drag → move",
       "tip3": "Tray icon → show/hide"
+    },
+    "pomodoro": {
+      "title": "Pomodoro",
+      "enable": "Enable Pomodoro",
+      "enableHint": "Work-duration reminder, focus/break loop",
+      "workMin": "Work",
+      "breakMin": "Break",
+      "start": "Start",
+      "stop": "Stop",
+      "focusing": "Focusing",
+      "resting": "Resting",
+      "workDone": "Focus done — take a break!",
+      "breakDone": "Break over — back to focus!"
     }
   }
 }

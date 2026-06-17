@@ -82,6 +82,7 @@ export function usePetStateEmitter() {
         lastReplyTs: mem.lastReplyTs,
         lastTaskDoneTs: mem.lastTaskDoneTs,
         lastCompactionTs: mem.lastCompactionTs,
+        pomodoroDoneTs: usePetStore.getState().pomodoro.lastDoneTs,
         lastActivityTs: mem.lastActivityTs,
         now,
         progress: cs.tokenUsage?.percentage ?? 0,

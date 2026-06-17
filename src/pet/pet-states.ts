@@ -52,6 +52,8 @@ export interface PetInputs {
   lastReplyTs: number;
   /** epoch ms of the most recent workshop task moved to done, or 0 */
   lastTaskDoneTs: number;
+  /** epoch ms of the most recent pomodoro phase completion, or 0 */
+  pomodoroDoneTs: number;
   /** epoch ms of the most recent context compaction, or 0 */
   lastCompactionTs: number;
   /** epoch ms of the last sign of activity */
@@ -92,6 +94,8 @@ export function derivePetState(i: PetInputs): PetState {
     return { emotion: 'memory', ...base, celebrateUntil: i.lastCompactionTs + MEMORY_WINDOW };
   if (i.lastTaskDoneTs && i.now - i.lastTaskDoneTs < CELEBRATE_WINDOW)
     return { emotion: 'celebrate', ...base, celebrateUntil: i.lastTaskDoneTs + CELEBRATE_WINDOW };
+  if (i.pomodoroDoneTs && i.now - i.pomodoroDoneTs < CELEBRATE_WINDOW)
+    return { emotion: 'celebrate', ...base, celebrateUntil: i.pomodoroDoneTs + CELEBRATE_WINDOW };
   if (i.lastReplyTs && i.now - i.lastReplyTs < HAPPY_WINDOW)
     return { emotion: 'happy', ...base, celebrateUntil: i.lastReplyTs + HAPPY_WINDOW };
 
