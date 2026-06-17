@@ -8,6 +8,7 @@ const base = (over: Partial<PetInputs> = {}): PetInputs => ({
   connectionError: null,
   thinking: false,
   typing: false,
+  tool: false,
   running: false,
   lastReplyTs: 0,
   lastTaskDoneTs: 0,

@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ProgressRing, StatusDot } from '@/components/shared';
+import { themeHex } from '@/utils/theme-colors';
 import type { PetEmotion, PetState } from './pet-states';
 
 /** Map pet emotions onto the shared StatusDot palette. */
@@ -9,6 +10,7 @@ const DOT_STATUS: Record<PetEmotion, 'active' | 'idle' | 'sleeping' | 'error' | 
   idle: 'idle',
   thinking: 'active',
   typing: 'active',
+  tool: 'active',
   working: 'active',
   happy: 'active',
   celebrate: 'active',
@@ -23,6 +25,7 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
   idle: '待机',
   thinking: '思考中',
   typing: '回复中',
+  tool: '调工具',
   working: '工作中',
   happy: '完成啦',
   celebrate: '任务完成',
@@ -34,6 +37,21 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
 
 /** Active states get the rich multi-line bubble (label + action + elapsed + ring). */
 const ACTIVE: ReadonlySet<PetEmotion> = new Set(['thinking', 'typing', 'working', 'memory']);
+
+/** Per-emotion accent color so each state reads at a glance. */
+const EMOTION_COLOR: Record<PetEmotion, string> = {
+  idle: '#9aa3b2',
+  thinking: themeHex('accent'),
+  typing: themeHex('primary'),
+  tool: themeHex('accent'),
+  working: themeHex('warning'),
+  happy: themeHex('success'),
+  celebrate: themeHex('success'),
+  error: themeHex('danger'),
+  sleepy: '#9aa3b2',
+  sleep: '#7a8290',
+  memory: themeHex('warning'),
+};
 
 function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -106,7 +124,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       <>
         <Row>
           <StatusDot status={DOT_STATUS[e]} size={6} pulse={e === 'working' || e === 'typing'} />
-          <span style={{ fontSize: 10, fontWeight: 600 }}>{label}</span>
+          <span style={{ fontSize: 10, fontWeight: 600, color: EMOTION_COLOR[e] }}>{label}</span>
           {elapsed && <span style={{ fontSize: 9, opacity: 0.6 }}>· {elapsed}</span>}
           {showRing && <ProgressRing percentage={state.progress ?? 0} size={13} strokeWidth={2.5} />}
         </Row>

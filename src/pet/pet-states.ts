@@ -12,6 +12,7 @@ export type PetEmotion =
   | 'working' // an agent/session is running
   | 'thinking' // reasoning stream active (pre-first-token)
   | 'typing' // assistant tokens streaming
+  | 'tool' // calling a tool
   | 'happy' // a reply just finished
   | 'celebrate' // a workshop task moved to done
   | 'error' // connection / reply error
@@ -45,6 +46,7 @@ export interface PetInputs {
   connectionError: string | null;
   thinking: boolean;
   typing: boolean;
+  tool: boolean;
   running: boolean;
   /** epoch ms of the most recent reply finalization, or 0 */
   lastReplyTs: number;
@@ -81,6 +83,7 @@ export function derivePetState(i: PetInputs): PetState {
 
   // Steady active states.
   if (i.thinking) return { emotion: 'thinking', ...base };
+  if (i.tool) return { emotion: 'tool', ...base };
   if (i.typing) return { emotion: 'typing', ...base };
   if (i.running) return { emotion: 'working', ...base };
 

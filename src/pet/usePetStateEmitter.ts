@@ -54,7 +54,8 @@ export function usePetStateEmitter() {
       const typing = Object.values(cs.typingBySession).some(Boolean);
       const thinking = Object.values(cs.thinkingBySession).some((e) => (e?.text?.length ?? 0) > 0);
       const running = gw.sessions.some((s) => s.running) || gw.runningSubAgents.length > 0;
-      const isActive = typing || thinking || running;
+      const tool = cs.messages.some((m) => m.toolStatus === 'running');
+      const isActive = typing || thinking || tool || running;
 
       // Track when the current stretch of activity began (for the elapsed timer).
       if (isActive && !prevActive) mem.activeStartedAt = now;
@@ -76,6 +77,7 @@ export function usePetStateEmitter() {
         connectionError: cs.connectionError,
         thinking,
         typing,
+        tool,
         running,
         lastReplyTs: mem.lastReplyTs,
         lastTaskDoneTs: mem.lastTaskDoneTs,

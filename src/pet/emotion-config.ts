@@ -35,6 +35,7 @@ export const EMOTION_CFG: Record<PetEmotion, EmotionCfg> = {
   working: { mouth: 'M55,88 Q60,84 65,88 Q60,93 55,88', eyeOpen: 1, pupilDx: 0, bodyY: 0, bodyScale: 1, bodyRotate: 0, cheeks: false, effect: 'gear', breath: 0.7 },
   thinking: { mouth: 'M54,91 L66,91', eyeOpen: 1, pupilDx: 1.6, bodyY: 0, bodyScale: 1, bodyRotate: -3, cheeks: false, effect: 'think', breath: 0.6 },
   typing: { mouth: 'M56,90 Q60,88 64,90', eyeOpen: 0.9, pupilDx: 0, bodyY: 0, bodyScale: 1, bodyRotate: 0, cheeks: false, effect: 'spark', breath: 1.7 },
+  tool: { mouth: 'M55,88 Q60,84 65,88 Q60,93 55,88', eyeOpen: 1, pupilDx: 0, bodyY: 0, bodyScale: 1, bodyRotate: 0, cheeks: false, effect: 'gear', breath: 0.9 },
   happy: { mouth: 'M43,82 Q60,108 77,82', eyeOpen: 0.85, pupilDx: 0, bodyY: -2, bodyScale: 1.04, bodyRotate: 0, cheeks: true, effect: 'stars', breath: 1.3 },
   celebrate: { mouth: 'M43,82 Q60,110 77,82', eyeOpen: 0.8, pupilDx: 0, bodyY: -7, bodyScale: 1.06, bodyRotate: 0, cheeks: true, effect: 'hearts', breath: 1.5 },
   error: { mouth: 'M48,95 Q60,84 72,95', eyeOpen: 0.8, pupilDx: 0, bodyY: 1, bodyScale: 0.98, bodyRotate: 0, cheeks: false, effect: 'sweat', breath: 0.5 },
