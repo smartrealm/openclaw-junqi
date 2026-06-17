@@ -46,7 +46,7 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
 
     let mut builder = WebviewWindowBuilder::new(&app, PET_LABEL, WebviewUrl::App("index.html".into()))
         .title("JunQi Pet")
-        .inner_size(132.0, 170.0)
+        .inner_size(108.0, 138.0)
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -64,8 +64,8 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
             let phys = monitor.size();
             let logical_w = phys.width as f64 / scale;
             let logical_h = phys.height as f64 / scale;
-            let x = (logical_w - 160.0).max(24.0);
-            let y = (logical_h - 200.0).max(24.0);
+            let x = (logical_w - 130.0).max(20.0);
+            let y = (logical_h - 168.0).max(20.0);
             builder = builder.position(x, y);
         }
     }
@@ -162,6 +162,93 @@ pub async fn pet_focus_main(app: AppHandle) -> Result<(), String> {
         let _ = main.unminimize();
         let _ = main.show();
         let _ = main.set_focus();
+    }
+    Ok(())
+}
+
+// ── Custom asset (user-uploaded pet skin) ───────────────────────────────────
+
+/// Max size for an uploaded pet asset. Keeps localStorage / IPC payloads sane.
+const MAX_PET_ASSET_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+
+fn image_mime(ext: &str) -> &'static str {
+    match ext {
+        "svg" => "image/svg+xml",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "jpg" | "jpeg" => "image/jpeg",
+        _ => "image/png",
+    }
+}
+
+/// Copy a user-chosen file into the app data dir as the pet's custom skin.
+/// `src_path` comes from a Tauri file dialog; size + extension are validated
+/// here. Returns the asset as a data URL so the frontend can render directly.
+#[tauri::command]
+pub async fn save_pet_asset(app: AppHandle, src_path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose, Engine};
+
+    let path = std::path::Path::new(&src_path);
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    const ALLOWED: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
+    if !ALLOWED.contains(&ext.as_str()) {
+        return Err(format!("Unsupported file type: .{ext}"));
+    }
+    let meta = std::fs::metadata(path).map_err(|e| format!("Cannot read file: {e}"))?;
+    if (meta.len() as usize) > MAX_PET_ASSET_BYTES {
+        return Err(format!("File too large — max is {} KB", MAX_PET_ASSET_BYTES / 1024));
+    }
+    let data = std::fs::read(path).map_err(|e| format!("Read failed: {e}"))?;
+
+    // Clear any previous asset first (may have a different extension).
+    let _ = clear_pet_asset(app.clone()).await;
+
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = dir.join(format!("pet-asset.{ext}"));
+    std::fs::write(&dest, &data).map_err(|e| format!("Write failed: {e}"))?;
+
+    Ok(format!("data:{};base64,{}", image_mime(&ext), general_purpose::STANDARD.encode(&data)))
+}
+
+/// Load the current custom pet asset as a data URL (None if none is set).
+#[tauri::command]
+pub async fn load_pet_asset(app: AppHandle) -> Result<Option<String>, String> {
+    use base64::{engine::general_purpose, Engine};
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.file_stem().and_then(|s| s.to_str()) != Some("pet-asset") {
+                continue;
+            }
+            let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+            let data = std::fs::read(&p).map_err(|e| e.to_string())?;
+            return Ok(Some(format!(
+                "data:{};base64,{}",
+                image_mime(&ext),
+                general_purpose::STANDARD.encode(&data)
+            )));
+        }
+    }
+    Ok(None)
+}
+
+/// Remove the custom pet asset (revert to the built-in skin).
+#[tauri::command]
+pub async fn clear_pet_asset(app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.file_stem().and_then(|s| s.to_str()) == Some("pet-asset") {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
     }
     Ok(())
 }

@@ -79,6 +79,9 @@ pub fn run() {
             commands::pet::set_pet_position,
             commands::pet::get_pet_position,
             commands::pet::pet_focus_main,
+            commands::pet::save_pet_asset,
+            commands::pet::load_pet_asset,
+            commands::pet::clear_pet_asset,
         ])
         .setup(|app| {
             // Desktop-pet mode on macOS: keep JunQi out of the Dock entirely

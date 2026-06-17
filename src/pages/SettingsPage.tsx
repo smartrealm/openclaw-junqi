@@ -18,6 +18,8 @@ import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
+import { invoke } from '@tauri-apps/api/core';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
 import clsx from 'clsx';
@@ -36,7 +38,28 @@ export function SettingsPageFull() {
     accentColor, setAccentColor,
   } = useSettingsStore();
   const { connected, connecting } = useChatStore();
-  const { enabled: petEnabled, setEnabled: setPetEnabled } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset } = usePetStore();
+  const [petUploadError, setPetUploadError] = useState<string | null>(null);
+
+  const handlePetUpload = async () => {
+    setPetUploadError(null);
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+      });
+      if (!selected || Array.isArray(selected)) return;
+      const url = await invoke<string>('save_pet_asset', { srcPath: selected });
+      setPetCustomAsset(url);
+    } catch (e) {
+      setPetUploadError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const handlePetClear = async () => {
+    setPetUploadError(null);
+    await invoke('clear_pet_asset').catch(() => undefined);
+    setPetCustomAsset(null);
+  };
 
   const [openclawVersion, setOpenclawVersion] = useState<string | null>(null);
   const [platformLabel, setPlatformLabel] = useState<string>('—');
@@ -502,6 +525,41 @@ export function SettingsPageFull() {
           </div>
           <Toggle enabled={petEnabled} onChange={setPetEnabled} />
         </div>
+
+        {/* Skin picker */}
+        <div className="flex items-center justify-between mt-4">
+          <div className="text-[13px] text-aegis-text">{t('pet.settings.skin', '皮肤')}</div>
+          <div className="flex gap-1">
+            {(['sprite', 'robot'] as const).map((s) => (
+              <button key={s} onClick={() => setPetSkin(s)}
+                className={clsx('text-[12px] px-3 py-1.5 rounded-lg border transition-colors',
+                  petSkin === s ? 'border-aegis-primary/50 text-aegis-text bg-aegis-primary/10' : 'border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text')}>
+                {t(`pet.settings.${s}`, s === 'sprite' ? '小精灵' : '机器人')}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom upload */}
+        <div className="flex items-center justify-between mt-4">
+          <div>
+            <div className="text-[13px] text-aegis-text">{t('pet.settings.custom', '自定义素材')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.customHint', '上传 PNG/JPG/GIF/WebP，≤2MB')}</div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handlePetUpload}
+              className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors">
+              {petCustomAsset ? t('pet.settings.replace', '更换') : t('pet.settings.upload', '上传')}
+            </button>
+            {petCustomAsset && (
+              <button onClick={handlePetClear}
+                className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-danger transition-colors">
+                {t('pet.settings.clear', '清除')}
+              </button>
+            )}
+          </div>
+        </div>
+        {petUploadError && <div className="text-[11px] text-aegis-danger mt-2">{petUploadError}</div>}
       </GlassCard>
 
       {/* Gateway */}

@@ -73,7 +73,7 @@ export function PetBubble({ state }: { state: PetState }) {
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            maxWidth: 120,
+            maxWidth: 96,
             padding: '4px 8px',
             borderRadius: 999,
             background: 'rgba(20,24,30,0.9)',

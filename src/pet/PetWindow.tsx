@@ -28,6 +28,9 @@ export default function PetWindow() {
   const [dragging, setDragging] = useState(false);
   const position = usePetStore((s) => s.position);
   const setPosition = usePetStore((s) => s.setPosition);
+  const skin = usePetStore((s) => s.skin);
+  const customAsset = usePetStore((s) => s.customAsset);
+  const setCustomAsset = usePetStore((s) => s.setCustomAsset);
 
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
@@ -42,6 +45,12 @@ export default function PetWindow() {
     if (position && typeof position.x === 'number' && typeof position.y === 'number') {
       invoke('set_pet_position', position).catch(() => undefined);
     }
+    // Load a user-uploaded custom skin from disk (not persisted in localStorage).
+    invoke<string | null>('load_pet_asset')
+      .then((url) => {
+        if (url) setCustomAsset(url);
+      })
+      .catch(() => undefined);
 
     const unlistens: UnlistenFn[] = [];
     listen<PetState>('pet-state', (e) => setState(e.payload))
@@ -125,7 +134,7 @@ export default function PetWindow() {
       }}
     >
       <PetBubble state={state} />
-      <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} />
+      <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={skin} customAsset={customAsset} />
     </div>
   );
 }

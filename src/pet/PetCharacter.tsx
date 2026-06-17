@@ -1,14 +1,11 @@
 /**
  * SVG-layered desktop companion character.
  *
- * Every layer (body / eyes / mouth / cheeks / antenna / effects) is driven from
- * a single emotion config table, so a new expression is a one-line change.
- * Colors come from theme variables (themeHex / themeAlpha) so the pet re-tints
- * with the active theme / accent color automatically.
- *
- * Animation split:
- *   • idle loops (float / breathe / blink / shadow) → framer `repeat: Infinity`
- *   • emotion transitions (pose / mouth shape)      → framer spring
+ * Every layer (body / eyes / mouth / cheeks / effects) is driven from a single
+ * emotion config table. The body shape is swappable via `skin` (sprite / robot)
+ * without touching expressions, animation, or the state machine. Colors come
+ * from theme variables (themeHex / themeAlpha) so the pet re-tints with the
+ * active theme / accent color automatically.
  */
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
@@ -16,6 +13,8 @@ import type { PetEmotion } from './pet-states';
 import { themeAlpha, themeHex } from '@/utils/theme-colors';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+
+export type PetSkin = 'sprite' | 'robot';
 
 type EffectKind = 'none' | 'sleep' | 'gear' | 'think' | 'stars' | 'hearts' | 'sweat' | 'book' | 'spark';
 
@@ -47,7 +46,20 @@ const CFG: Record<PetEmotion, EmotionCfg> = {
 const INK = '#1b1b2f';
 const BOX = { transformBox: 'fill-box' as const, transformOrigin: 'center' };
 
-export function PetCharacter({ emotion = 'idle', progress = 0 }: { emotion?: PetEmotion; progress?: number }) {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', customAsset }: { emotion?: PetEmotion; progress?: number; skin?: PetSkin; customAsset?: string | null }) {
+  // A user-uploaded skin overrides the built-in SVG entirely.
+  if (customAsset) {
+    return (
+      <motion.div
+        style={{ width: 96, height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+        animate={{ y: [0, -4, 0] }}
+        transition={{ duration: 3.6, repeat: Infinity, ease: EASE }}
+      >
+        <img src={customAsset} alt="pet" draggable={false}
+          style={{ width: 96, height: 110, objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }} />
+      </motion.div>
+    );
+  }
   const cfg = CFG[emotion] ?? CFG.idle;
   const bodyColor = themeHex('primary');
   const cheekColor = themeAlpha('danger', 0.5);
@@ -70,61 +82,29 @@ export function PetCharacter({ emotion = 'idle', progress = 0 }: { emotion?: Pet
 
   return (
     <motion.div
-      style={{ width: 120, height: 132, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+      style={{ width: 96, height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
       animate={{ y: [0, -4, 0] }}
       transition={{ duration: 3.6, repeat: Infinity, ease: EASE }}
     >
-      <svg width="120" height="132" viewBox="0 0 120 140" style={{ overflow: 'visible' }}>
+      <svg width="96" height="110" viewBox="0 0 120 140" style={{ overflow: 'visible' }}>
         {/* ground shadow */}
         <motion.ellipse
-          cx={60}
-          cy={128}
-          rx={30}
-          ry={6}
-          fill="#000"
-          opacity={0.18}
-          style={BOX}
+          cx={60} cy={128} rx={30} ry={6} fill="#000" opacity={0.18} style={BOX}
           animate={{ scaleX: [1, 0.92, 1], opacity: [0.18, 0.14, 0.18] }}
           transition={{ duration: 3.6, repeat: Infinity, ease: EASE }}
         />
 
         {/* emotion pose (spring) */}
-        <motion.g
-          style={BOX}
+        <motion.g style={BOX}
           animate={{ y: cfg.bodyY, scale: cfg.bodyScale, rotate: cfg.bodyRotate }}
-          transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-        >
+          transition={{ type: 'spring', stiffness: 260, damping: 20 }}>
           {/* breathing layer */}
-          <motion.g
-            style={BOX}
+          <motion.g style={BOX}
             animate={{ scale: [1, 1.035, 1] }}
-            transition={{ duration: 3 / Math.max(cfg.breath, 0.1), repeat: Infinity, ease: EASE }}
-          >
-            {/* antenna */}
-            <motion.line
-              x1={60}
-              y1={20}
-              x2={60}
-              y2={8}
-              stroke={bodyColor}
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              style={{ transformBox: 'fill-box', transformOrigin: 'bottom' }}
-              animate={{ rotate: [-4, 4, -4] }}
-              transition={{ duration: 2.6, repeat: Infinity, ease: EASE }}
-            />
-            <circle cx={60} cy={7} r={4} fill={bodyColor} />
+            transition={{ duration: 3 / Math.max(cfg.breath, 0.1), repeat: Infinity, ease: EASE }}>
 
-            {/* body */}
-            <path
-              d="M60,18 C88,18 100,42 100,74 C100,106 82,126 60,126 C38,126 20,106 20,74 C20,42 32,18 60,18 Z"
-              fill={bodyColor}
-              stroke={themeAlpha('primary', 1)}
-              strokeWidth={1}
-            />
-            <ellipse cx={46} cy={48} rx={16} ry={20} fill="#fff" opacity={0.16} />
+            <BodySkin skin={skin} color={bodyColor} />
 
-            {/* cheeks */}
             {cfg.cheeks && (
               <>
                 <ellipse cx={38} cy={80} rx={6} ry={4} fill={cheekColor} />
@@ -132,20 +112,11 @@ export function PetCharacter({ emotion = 'idle', progress = 0 }: { emotion?: Pet
               </>
             )}
 
-            {/* eyes */}
             <Eye cx={47} blink={blink} open={cfg.eyeOpen} dx={cfg.pupilDx + gaze} />
             <Eye cx={73} blink={blink} open={cfg.eyeOpen} dx={cfg.pupilDx + gaze} />
 
-            {/* mouth */}
-            <motion.path
-              d={cfg.mouth}
-              fill="none"
-              stroke={INK}
-              strokeWidth={2.4}
-              strokeLinecap="round"
-              animate={{ d: cfg.mouth }}
-              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            />
+            <motion.path d={cfg.mouth} fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"
+              animate={{ d: cfg.mouth }} transition={{ type: 'spring', stiffness: 300, damping: 26 }} />
           </motion.g>
         </motion.g>
 
@@ -153,6 +124,49 @@ export function PetCharacter({ emotion = 'idle', progress = 0 }: { emotion?: Pet
         <Effect kind={cfg.effect} />
       </svg>
     </motion.div>
+  );
+}
+
+/** Swappable body shape — only the silhouette + decorations change; eyes/mouth/effects stay. */
+function BodySkin({ skin, color }: { skin: PetSkin; color: string }) {
+  return skin === 'robot' ? <RobotBody color={color} /> : <SpriteBody color={color} />;
+}
+
+function SpriteBody({ color }: { color: string }) {
+  return (
+    <>
+      <motion.line x1={60} y1={20} x2={60} y2={8} stroke={color} strokeWidth={2.5} strokeLinecap="round"
+        style={{ transformBox: 'fill-box', transformOrigin: 'bottom' }}
+        animate={{ rotate: [-4, 4, -4] }} transition={{ duration: 2.6, repeat: Infinity, ease: EASE }} />
+      <circle cx={60} cy={7} r={4} fill={color} />
+      <path d="M60,18 C88,18 100,42 100,74 C100,106 82,126 60,126 C38,126 20,106 20,74 C20,42 32,18 60,18 Z"
+        fill={color} stroke={themeAlpha('primary', 1)} strokeWidth={1} />
+      <ellipse cx={46} cy={48} rx={16} ry={20} fill="#fff" opacity={0.16} />
+    </>
+  );
+}
+
+function RobotBody({ color }: { color: string }) {
+  return (
+    <>
+      {/* antenna */}
+      <motion.line x1={60} y1={24} x2={60} y2={8} stroke={color} strokeWidth={2.5} strokeLinecap="round"
+        style={{ transformBox: 'fill-box', transformOrigin: 'bottom' }}
+        animate={{ rotate: [-3, 3, -3] }} transition={{ duration: 2.6, repeat: Infinity, ease: EASE }} />
+      <circle cx={60} cy={7} r={4} fill={color} />
+      {/* rounded-square chassis */}
+      <rect x={24} y={24} width={72} height={100} rx={22} ry={22} fill={color} stroke={themeAlpha('primary', 1)} strokeWidth={1} />
+      {/* chest panel (decorative) */}
+      <rect x={44} y={40} width={32} height={14} rx={4} fill="#fff" opacity={0.12} />
+      <line x1={50} y1={47} x2={70} y2={47} stroke="#fff" strokeWidth={1} opacity={0.3} />
+      {/* rivets */}
+      <circle cx={34} cy={34} r={2} fill="#fff" opacity={0.3} />
+      <circle cx={86} cy={34} r={2} fill="#fff" opacity={0.3} />
+      <circle cx={34} cy={114} r={2} fill="#fff" opacity={0.3} />
+      <circle cx={86} cy={114} r={2} fill="#fff" opacity={0.3} />
+      {/* highlight */}
+      <rect x={32} y={58} width={16} height={20} rx={7} fill="#fff" opacity={0.16} />
+    </>
   );
 }
 
@@ -174,12 +188,9 @@ function Effect({ kind }: { kind: EffectKind }) {
       {kind === 'sleep' && (
         <>
           {[0, 1, 2].map((i) => (
-            <motion.g
-              key={i}
-              initial={{ opacity: 0 }}
+            <motion.g key={i} initial={{ opacity: 0 }}
               animate={{ opacity: [0, 1, 0], y: [0, -12] }}
-              transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.6, ease: EASE }}
-            >
+              transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.6, ease: EASE }}>
               <text x={68 + i * 5} y={22 - i * 6} fontSize={13 - i * 2} fontWeight={700} fill={themeHex('primary')}>z</text>
             </motion.g>
           ))}
@@ -188,10 +199,7 @@ function Effect({ kind }: { kind: EffectKind }) {
       {kind === 'gear' && (
         <motion.g style={BOX} animate={{ rotate: 360 }} transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}>
           <g transform="translate(60,12)">
-            <path
-              d="M0,-9 L2,-7 L6,-7 L7,-3 L9,0 L7,3 L6,7 L2,7 L0,9 L-2,7 L-6,7 L-7,3 L-9,0 L-7,-3 L-6,-7 L-2,-7 Z"
-              fill={themeAlpha('warning', 0.95)}
-            />
+            <path d="M0,-9 L2,-7 L6,-7 L7,-3 L9,0 L7,3 L6,7 L2,7 L0,9 L-2,7 L-6,7 L-7,3 L-9,0 L-7,-3 L-6,-7 L-2,-7 Z" fill={themeAlpha('warning', 0.95)} />
             <circle r={3} fill={themeHex('primary')} />
           </g>
         </motion.g>
