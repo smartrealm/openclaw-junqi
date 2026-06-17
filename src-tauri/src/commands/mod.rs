@@ -4,6 +4,7 @@ pub mod docker;
 pub mod gateway;
 pub mod managed_files;
 pub mod pairing;
+pub mod pet;
 pub mod screenshot;
 pub mod setup;
 pub mod system;

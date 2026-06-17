@@ -13,6 +13,7 @@
     "security": {
       "csp": null
     },
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "JunQi Desktop",

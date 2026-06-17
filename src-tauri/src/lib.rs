@@ -70,8 +70,28 @@ pub fn run() {
             commands::docker::start_docker_gateway,
             commands::docker::stop_docker_gateway,
             commands::docker::docker_gateway_status,
+            // Desktop Pet (companion)
+            commands::pet::emit_pet_state,
+            commands::pet::open_pet_window,
+            commands::pet::close_pet_window,
+            commands::pet::toggle_pet_window,
+            commands::pet::set_pet_click_through,
+            commands::pet::set_pet_position,
+            commands::pet::get_pet_position,
+            commands::pet::pet_focus_main,
+            commands::pet::save_pet_asset,
+            commands::pet::load_pet_asset,
+            commands::pet::clear_pet_asset,
         ])
         .setup(|app| {
+            // Desktop-pet mode on macOS: keep JunQi out of the Dock entirely
+            // (Accessory activation policy). The main window + pet window still
+            // display normally; the tray icon and double-clicking the pet are
+            // the entry points — no Dock tile, no Cmd+Tab entry.
+            #[cfg(target_os = "macos")]
+            {
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
             // macOS: apply native vibrancy so the frosted/transparent CSS layers
             // (Context bar, input area, message regions) bleed the desktop material
             // through instead of a flat solid color.

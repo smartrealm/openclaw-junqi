@@ -1655,5 +1655,55 @@
     "cancel": "取消",
     "addPlaceholder": "任务标题…",
     "taskCount": "{{count}} 任务"
+  },
+  "pet": {
+    "thinking": "思考中…",
+    "typing": "正在回复…",
+    "working": "工作中…",
+    "done": "完成啦！",
+    "celebrate": "任务完成 🎉",
+    "error": "出错了",
+    "sleepy": "有点困…",
+    "sleep": "休息中",
+    "memory": "整理记忆…",
+    "menu": {
+      "preview": "演示表情",
+      "stopPreview": "停止演示",
+      "showMain": "显示主窗口",
+      "hide": "隐藏萌宠"
+    },
+    "settings": {
+      "title": "桌面萌宠",
+      "enabled": "启用桌面萌宠",
+      "enabledHint": "在桌面上悬浮一只随任务状态变化的萌宠",
+      "skin": "皮肤",
+      "sprite": "小精灵",
+      "robot": "机器人",
+      "lobster": "龙虾",
+      "custom": "自定义素材",
+      "customHint": "上传 PNG/JPG/GIF/WebP，≤2MB",
+      "upload": "上传",
+      "replace": "更换",
+      "clear": "清除"
+    },
+    "status": {
+      "idle": "待机",
+      "thinking": "思考中",
+      "typing": "回复中",
+      "working": "工作中",
+      "happy": "完成啦",
+      "celebrate": "任务完成",
+      "error": "出错了",
+      "sleepy": "犯困",
+      "sleep": "休息中",
+      "memory": "整理记忆"
+    },
+    "hint": {
+      "idle": "双击打开 · 按住拖动",
+      "moving": "移动中…",
+      "tip1": "双击 → 打开主窗口",
+      "tip2": "按住拖动 → 移动位置",
+      "tip3": "托盘图标 → 显示/隐藏"
+    }
   }
 }

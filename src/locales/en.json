@@ -1667,5 +1667,55 @@
     "cancel": "Cancel",
     "addPlaceholder": "Task title…",
     "taskCount": "{{count}} tasks"
+  },
+  "pet": {
+    "thinking": "Thinking…",
+    "typing": "Replying…",
+    "working": "Working…",
+    "done": "Done!",
+    "celebrate": "Task complete 🎉",
+    "error": "Error",
+    "sleepy": "Getting sleepy…",
+    "sleep": "Resting",
+    "memory": "Organizing memory…",
+    "menu": {
+      "preview": "Preview expressions",
+      "stopPreview": "Stop preview",
+      "showMain": "Show main window",
+      "hide": "Hide pet"
+    },
+    "settings": {
+      "title": "Desktop Pet",
+      "enabled": "Enable desktop pet",
+      "enabledHint": "A little companion floating on your desktop that reacts to task state",
+      "skin": "Skin",
+      "sprite": "Sprite",
+      "robot": "Robot",
+      "lobster": "Lobster",
+      "custom": "Custom asset",
+      "customHint": "Upload PNG/JPG/GIF/WebP, ≤2MB",
+      "upload": "Upload",
+      "replace": "Replace",
+      "clear": "Clear"
+    },
+    "status": {
+      "idle": "Idle",
+      "thinking": "Thinking",
+      "typing": "Replying",
+      "working": "Working",
+      "happy": "Done!",
+      "celebrate": "Task complete",
+      "error": "Error",
+      "sleepy": "Sleepy",
+      "sleep": "Resting",
+      "memory": "Organizing memory"
+    },
+    "hint": {
+      "idle": "Double-click to open · drag to move",
+      "moving": "Moving…",
+      "tip1": "Double-click → open main window",
+      "tip2": "Press & drag → move",
+      "tip3": "Tray icon → show/hide"
+    }
   }
 }

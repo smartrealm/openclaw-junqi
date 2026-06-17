@@ -38,6 +38,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
 import { changeLanguage } from '@/i18n';
+import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
 
 const SESSION_MODEL_PREFS_KEY = 'aegis:session-model-prefs';
 
@@ -306,6 +307,9 @@ export default function App() {
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, [theme]);
+
+  // ── Desktop pet companion: open window + broadcast state (main window only) ──
+  usePetStateEmitter();
 
   // ── Request notification permission (Web Notification API) ──
   useEffect(() => { notifications.requestPermission(); }, []);

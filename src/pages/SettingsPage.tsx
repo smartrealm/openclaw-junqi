@@ -15,8 +15,11 @@ import { PageTransition } from '@/components/shared/PageTransition';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
+import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
+import { invoke } from '@tauri-apps/api/core';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
 import clsx from 'clsx';
@@ -35,6 +38,28 @@ export function SettingsPageFull() {
     accentColor, setAccentColor,
   } = useSettingsStore();
   const { connected, connecting } = useChatStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset } = usePetStore();
+  const [petUploadError, setPetUploadError] = useState<string | null>(null);
+
+  const handlePetUpload = async () => {
+    setPetUploadError(null);
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+      });
+      if (!selected || Array.isArray(selected)) return;
+      const url = await invoke<string>('save_pet_asset', { srcPath: selected });
+      setPetCustomAsset(url);
+    } catch (e) {
+      setPetUploadError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const handlePetClear = async () => {
+    setPetUploadError(null);
+    await invoke('clear_pet_asset').catch(() => undefined);
+    setPetCustomAsset(null);
+  };
 
   const [openclawVersion, setOpenclawVersion] = useState<string | null>(null);
   const [platformLabel, setPlatformLabel] = useState<string>('—');
@@ -45,6 +70,7 @@ export function SettingsPageFull() {
   const [checkingVersion, setCheckingVersion] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
+  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
 
   const handleCheckVersion = async () => {
     if (checkingVersion) return;
@@ -300,6 +326,26 @@ export function SettingsPageFull() {
         </h1>
       </div>
 
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-5 border-b border-aegis-border/15">
+        {([
+          ['appearance', t('settings.tab.appearance', '外观')],
+          ['notify', t('settings.tab.notify', '通知')],
+          ['pet', t('settings.tab.pet', '萌宠')],
+          ['connect', t('settings.tab.connect', '连接')],
+          ['storage', t('settings.tab.storage', '存储')],
+          ['about', t('settings.tab.about', '关于')],
+        ] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className={clsx('relative py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors',
+              activeTab === key ? 'border-aegis-primary text-aegis-text' : 'border-transparent text-aegis-text-dim hover:text-aegis-text')}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'appearance' && (
+        <>
       {/* Language */}
       <GlassCard delay={0.05}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
@@ -440,7 +486,11 @@ export function SettingsPageFull() {
           ))}
         </div>
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'notify' && (
+        <>
       {/* Notifications */}
       <GlassCard delay={0.1}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
@@ -486,7 +536,65 @@ export function SettingsPageFull() {
           </button>
         </div>
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'pet' && (
+        <>
+      {/* Desktop Pet */}
+      <GlassCard delay={0.12}>
+        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
+          <span className="text-base">🐾</span>
+          {t('pet.settings.title')}
+        </h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[13px] text-aegis-text">{t('pet.settings.enabled')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.enabledHint')}</div>
+          </div>
+          <Toggle enabled={petEnabled} onChange={setPetEnabled} />
+        </div>
+
+        {/* Skin picker */}
+        <div className="flex items-center justify-between mt-4">
+          <div className="text-[13px] text-aegis-text">{t('pet.settings.skin', '皮肤')}</div>
+          <div className="flex gap-1">
+            {(['lobster', 'sprite', 'robot'] as const).map((s) => (
+              <button key={s} onClick={() => setPetSkin(s)}
+                className={clsx('text-[12px] px-3 py-1.5 rounded-lg border transition-colors',
+                  petSkin === s ? 'border-aegis-primary/50 text-aegis-text bg-aegis-primary/10' : 'border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text')}>
+                {t(`pet.settings.${s}`, s === 'sprite' ? '小精灵' : '机器人')}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom upload */}
+        <div className="flex items-center justify-between mt-4">
+          <div>
+            <div className="text-[13px] text-aegis-text">{t('pet.settings.custom', '自定义素材')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.customHint', '上传 PNG/JPG/GIF/WebP，≤2MB')}</div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handlePetUpload}
+              className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors">
+              {petCustomAsset ? t('pet.settings.replace', '更换') : t('pet.settings.upload', '上传')}
+            </button>
+            {petCustomAsset && (
+              <button onClick={handlePetClear}
+                className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-danger transition-colors">
+                {t('pet.settings.clear', '清除')}
+              </button>
+            )}
+          </div>
+        </div>
+        {petUploadError && <div className="text-[11px] text-aegis-danger mt-2">{petUploadError}</div>}
+      </GlassCard>
+        </>
+      )}
+
+      {activeTab === 'connect' && (
+        <>
       {/* Gateway */}
       <GlassCard delay={0.15}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
@@ -587,7 +695,11 @@ export function SettingsPageFull() {
           </div>
         </div>
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'storage' && (
+        <>
       {/* Conversation files — same managed index as File Manager */}
       <GlassCard delay={0.28}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-1 flex items-center gap-2">
@@ -654,7 +766,11 @@ export function SettingsPageFull() {
           )}
         </div>
       </GlassCard>
+        </>
+      )}
 
+      {activeTab === 'about' && (
+        <>
       {/* About + System Info */}
       <GlassCard delay={0.3}>
         <div className="text-center py-4 mb-4">
@@ -732,6 +848,8 @@ export function SettingsPageFull() {
           </div>
         )}
       </GlassCard>
+        </>
+      )}
     </PageTransition>
   );
 }
