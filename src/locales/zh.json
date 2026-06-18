@@ -392,7 +392,16 @@
     "openDesktopLogs": "查看桌面日志",
     "openDesktopLogsFallback": "当前运行实例未更新，已回退到兼容日志入口",
     "cleanNow": "立即清理",
-    "cleaningNow": "清理中…"
+    "cleaningNow": "清理中…",
+    "accentColor": "强调色",
+    "accent": {
+      "teal": "蓝绿",
+      "blue": "蓝",
+      "purple": "紫",
+      "rose": "玫红",
+      "amber": "琥珀",
+      "emerald": "翠绿"
+    }
   },
   "common": {
     "add": "添加",

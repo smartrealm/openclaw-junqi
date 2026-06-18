@@ -392,7 +392,16 @@
     "openDesktopLogs": "Open desktop logs",
     "openDesktopLogsFallback": "Current running instance is outdated; fell back to legacy log entrypoint",
     "cleanNow": "Clean now",
-    "cleaningNow": "Cleaning…"
+    "cleaningNow": "Cleaning…",
+    "accentColor": "Accent Color",
+    "accent": {
+      "teal": "Teal",
+      "blue": "Blue",
+      "purple": "Purple",
+      "rose": "Rose",
+      "amber": "Amber",
+      "emerald": "Emerald"
+    }
   },
   "common": {
     "add": "Add",

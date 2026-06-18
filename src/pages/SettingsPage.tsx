@@ -500,7 +500,7 @@ export function SettingsPageFull() {
                   emerald: 'rgb(52, 211, 153)',
                 }[color],
               }}
-              title={color.charAt(0).toUpperCase() + color.slice(1)}
+              title={t(`settings.accent.${color}`, color.charAt(0).toUpperCase() + color.slice(1))}
             />
           ))}
         </div>

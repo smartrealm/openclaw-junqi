@@ -342,7 +342,16 @@
     "openDesktopLogs": "فتح سجلات سطح المكتب",
     "openDesktopLogsFallback": "نسخة التشغيل الحالية قديمة؛ تم الرجوع إلى مدخل السجلات المتوافق",
     "cleanNow": "تنظيف الآن",
-    "cleaningNow": "جاري التنظيف…"
+    "cleaningNow": "جاري التنظيف…",
+    "accentColor": "لون التمييز",
+    "accent": {
+      "teal": "Teal",
+      "blue": "أزرق",
+      "purple": "بنفسجي",
+      "rose": "وردي",
+      "amber": "كهرماني",
+      "emerald": "زمردي"
+    }
   },
   "common": {
     "cancel": "إلغاء",
