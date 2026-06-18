@@ -1670,7 +1670,8 @@
       "preview": "演示表情",
       "stopPreview": "停止演示",
       "showMain": "显示主窗口",
-      "hide": "隐藏萌宠"
+      "hide": "隐藏萌宠",
+      "nextSkin": "下一皮肤"
     },
     "settings": {
       "title": "桌面萌宠",
@@ -1716,7 +1717,13 @@
       "focusing": "专注中",
       "resting": "休息中",
       "workDone": "专注完成，休息一下！",
-      "breakDone": "休息结束，继续专注！"
+      "workDoneLong": "4 轮专注完成，长休息一下！",
+      "breakDone": "休息结束，继续专注！",
+      "longBreakMin": "长休",
+      "pause": "暂停",
+      "resume": "继续",
+      "paused": "已暂停",
+      "completedToday": "今日"
     }
   }
 }

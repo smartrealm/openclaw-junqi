@@ -78,10 +78,12 @@ pub fn run() {
             commands::pet::set_pet_click_through,
             commands::pet::set_pet_position,
             commands::pet::get_pet_position,
+            commands::pet::get_pet_bounds,
             commands::pet::pet_focus_main,
             commands::pet::save_pet_asset,
             commands::pet::load_pet_asset,
             commands::pet::clear_pet_asset,
+            commands::pet::pet_show_context_menu,
         ])
         .setup(|app| {
             // Desktop-pet mode on macOS: keep JunQi out of the Dock entirely
@@ -140,6 +142,15 @@ pub fn run() {
                         "http_url": info.http_url,
                         "port": info.port,
                     }));
+                }
+            });
+            // Pet right-click menu items report their kind here; the main window
+            // acts on the "pet-action" event. Tray items have their own handler,
+            // so this fires only for the pet's popup context menu.
+            app.on_menu_event(move |app, event| {
+                let id = event.id().as_ref();
+                if matches!(id, "showMain" | "hide" | "nextSkin" | "pomoStart" | "pomoPause" | "pomoStop") {
+                    let _ = app.emit("pet-action", serde_json::json!({ "kind": id }));
                 }
             });
             tray::menu::setup_tray(app)?;

@@ -7,16 +7,21 @@ import { persist } from 'zustand/middleware';
  */
 export type PetSkin = 'sprite' | 'robot' | 'lobster';
 
-/** Pomodoro work/break timer. Only config (enabled/workMin/breakMin) is
- * persisted; running/phase/endsAt reset on restart. */
+/** Pomodoro work/break timer. Config + daily count + cycle progress persisted; runtime resets. */
 export interface PomodoroState {
   enabled: boolean;
   workMin: number;
   breakMin: number;
+  longBreakMin: number; // every 4 work rounds → long break
   running: boolean;
+  paused: boolean;
   phase: 'work' | 'break';
   endsAt: number | null; // epoch ms when current phase ends
-  lastDoneTs: number; // epoch ms of last phase completion (pet cue), 0 = none
+  pausedRemainingMs: number | null; // remaining ms captured on pause
+  lastDoneTs: number; // epoch ms of last phase completion (pet cue)
+  workRounds: number; // work rounds done in the current 4-round cycle (0–3, resets after the long break)
+  completedToday: number;
+  completedDate: string; // YYYY-MM-DD for daily reset
 }
 
 interface PetSettings {
@@ -47,10 +52,16 @@ export const usePetStore = create<PetSettings>()(
         enabled: false,
         workMin: 30,
         breakMin: 5,
+        longBreakMin: 15,
         running: false,
+        paused: false,
         phase: 'work',
         endsAt: null,
+        pausedRemainingMs: null,
         lastDoneTs: 0,
+        workRounds: 0,
+        completedToday: 0,
+        completedDate: '',
       },
       setEnabled: (enabled) => set({ enabled }),
       setPosition: (position) => set({ position }),
@@ -61,22 +72,35 @@ export const usePetStore = create<PetSettings>()(
     }),
     {
       name: 'aegis-pet-settings',
-      // customAsset is a large data URL — keep out of localStorage (loaded from
-      // disk). pomodoro: persist only config, not runtime (running/phase/endsAt).
+      // customAsset (data URL) stays out of localStorage. pomodoro: persist
+      // config + daily count + cycle progress; runtime (running/paused/phase/endsAt/...) resets.
       partialize: ({ enabled, position, clickThrough, skin, pomodoro }) => ({
         enabled,
         position,
         clickThrough,
         skin,
-        pomodoro: { enabled: pomodoro.enabled, workMin: pomodoro.workMin, breakMin: pomodoro.breakMin },
+        pomodoro: {
+          enabled: pomodoro.enabled,
+          workMin: pomodoro.workMin,
+          breakMin: pomodoro.breakMin,
+          longBreakMin: pomodoro.longBreakMin,
+          workRounds: pomodoro.workRounds,
+          completedToday: pomodoro.completedToday,
+          completedDate: pomodoro.completedDate,
+        },
       }),
       merge: (persisted, current) => {
         const p = (persisted as Partial<PetSettings>) || {};
-        return {
-          ...current,
-          ...p,
-          pomodoro: { ...current.pomodoro, ...(p.pomodoro || {}) },
-        };
+        const pomodoro = { ...current.pomodoro, ...(p.pomodoro || {}) };
+        // Day rolled over (or first run / stale data): reset the daily count
+        // and the 4-round cycle so yesterday's progress doesn't bleed in.
+        const today = new Date().toISOString().slice(0, 10);
+        if (pomodoro.completedDate !== today) {
+          pomodoro.completedToday = 0;
+          pomodoro.workRounds = 0;
+          pomodoro.completedDate = today;
+        }
+        return { ...current, ...p, pomodoro };
       },
     },
   ),

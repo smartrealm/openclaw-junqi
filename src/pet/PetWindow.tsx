@@ -1,29 +1,48 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { useTranslation } from 'react-i18next';
+import { motion } from 'framer-motion';
+import { pomodoroIcon, pomodoroColor } from './pomodoroView';
+import { computeSnapTarget, easeOutCubic, type PetBounds } from './snap';
 import { PetCharacter } from './PetCharacter';
 import { PetBubble } from './PetBubble';
 import { DEFAULT_PET_STATE, type PetState } from './pet-states';
+import { cycleSkin, type PetMenuItem } from './petActions';
 import { usePetStore } from '@/stores/petStore';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
+/** Wait this long (ms) before firing a single-click action, so a following
+ *  double-click can cancel it. */
+const CLICK_DELAY = 280;
+/** Pet logical size — must match Rust `open_pet_window` (108×154). */
+const PET_W = 108;
+const PET_H = 154;
+/** Release within this many px of an edge → snap; mid-screen is left alone. */
+const SNAP_THRESHOLD = 90;
+/** Gap left between the pet and the edge after snapping. */
+const SNAP_MARGIN = 6;
 
 /**
  * Root of the transparent floating pet window — a thin client.
  *
- * It does NOT connect to the gateway: it only listens for "pet-state" (emitted
- * by the main window) and "pet-moved" (emitted by Rust when dragged) and renders
- * the character.
+ * It does NOT connect to the gateway or hold the timer: it only listens for
+ * "pet-state" (emitted by the main window) and "pet-moved" (emitted by Rust
+ * when dragged) and renders the character. State-changing actions (skin cycle,
+ * pomodoro control) are forwarded to the main window via the "pet-action"
+ * event, since the main window owns the live timer and the authoritative store.
  *
  * Interaction:
- *   • Press & slide → drag the pet (manual JS drag via set_pet_position; more
- *     reliable than data-tauri-drag-region on transparent windows, and keeps
- *     working even after the cursor leaves the tiny window mid-drag).
- *   • Double-click → surface the main window.
+ *   • Press & slide → drag the pet (manual JS drag via set_pet_position).
+ *   • Single-click → cycle to the next skin (delayed so double-click cancels).
+ *   • Double-click → surface & focus the main window.
+ *   • Right-click → native context menu (main window / next skin / hide /
+ *     pomodoro control when enabled).
  *   • While dragging the pet scales up slightly ("picked up" feel).
  */
 export default function PetWindow() {
+  const { t } = useTranslation();
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -36,6 +55,8 @@ export default function PetWindow() {
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
   const justDragged = useRef(false);
+  // Pending single-click action; cleared if a double-click arrives first.
+  const clickTimer = useRef<number | null>(null);
 
   useEffect(() => {
     document.documentElement.style.background = 'transparent';
@@ -54,7 +75,15 @@ export default function PetWindow() {
       .catch(() => undefined);
 
     const unlistens: UnlistenFn[] = [];
-    listen<PetState>('pet-state', (e) => setState(e.payload))
+    listen<PetState>('pet-state', (e) => {
+      setState(e.payload);
+      // Mirror the broadcast skin into the local store so single-click cycling
+      // advances from the skin actually shown — but only on change, to avoid
+      // writing localStorage on every 250ms tick.
+      if (e.payload.skin && e.payload.skin !== usePetStore.getState().skin) {
+        usePetStore.getState().setSkin(e.payload.skin);
+      }
+    })
       .then((fn) => unlistens.push(fn))
       .catch(() => undefined);
     listen<{ x: number; y: number }>('pet-moved', (e) => setPosition(e.payload))
@@ -86,6 +115,32 @@ export default function PetWindow() {
       }
       if (d.moved) invoke('set_pet_position', { x: d.bx + dx, y: d.by + dy });
     };
+    // Magnetic snap: if the pet is released close to a screen edge, glide it to
+    // that edge. Releases in the middle of the screen are left untouched.
+    // Geometry is pure (snap.ts); this helper only owns the IO + animation.
+    const glideTo = (fromX: number, fromY: number, toX: number, toY: number) => {
+      const dur = 200;
+      const start = performance.now();
+      const step = (now: number) => {
+        const e = easeOutCubic(Math.min(1, (now - start) / dur));
+        invoke('set_pet_position', { x: fromX + (toX - fromX) * e, y: fromY + (toY - fromY) * e });
+        if (now - start < dur) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    };
+    const snapToEdge = () => {
+      Promise.all([
+        invoke<{ x: number; y: number }>('get_pet_position'),
+        invoke<PetBounds>('get_pet_bounds'),
+      ])
+        .then(([pos, b]) => {
+          const target = computeSnapTarget({ x: pos.x, y: pos.y, w: PET_W, h: PET_H }, b, SNAP_THRESHOLD, SNAP_MARGIN);
+          if (!target) return;
+          if (Math.abs(target.x - pos.x) < 1 && Math.abs(target.y - pos.y) < 1) return;
+          glideTo(pos.x, pos.y, target.x, target.y);
+        })
+        .catch(() => undefined);
+    };
     const onUp = () => {
       const d = drag.current;
       if (d?.moved) {
@@ -93,6 +148,7 @@ export default function PetWindow() {
         window.setTimeout(() => {
           justDragged.current = false;
         }, 350);
+        snapToEdge();
       }
       drag.current = null;
       setDragging(false);
@@ -119,15 +175,63 @@ export default function PetWindow() {
       .catch(() => undefined);
   };
 
+  // Single-click cycles skins — delayed so a double-click can cancel it. The
+  // action runs in the main window (authoritative store); the new skin echoes
+  // back via the next pet-state emit.
+  const onClick = () => {
+    if (justDragged.current) return;
+    if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
+    clickTimer.current = window.setTimeout(() => {
+      // Optimistic: flip the local skin instantly so the change is visible at
+      // once; then ask the main window to persist + re-broadcast (confirming it).
+      cycleSkin();
+      emit('pet-action', { kind: 'nextSkin' });
+    }, CLICK_DELAY);
+  };
+
   const onDoubleClick = () => {
     if (justDragged.current) return;
+    if (clickTimer.current !== null) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
     invoke('pet_focus_main').catch(() => undefined);
   };
+
+  // Right-click → native menu built from i18n labels. Rust only pops the menu
+  // and reports the clicked kind back via "pet-action"; labels stay here so
+  // localization (incl. Arabic RTL) is handled by the native menu renderer.
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const p = state.pomodoro;
+    const items: PetMenuItem[] = [
+      { kind: 'showMain', label: t('pet.menu.showMain', '显示主窗口') },
+      { kind: 'nextSkin', label: t('pet.menu.nextSkin', '下一皮肤') },
+      { kind: 'hide', label: t('pet.menu.hide', '隐藏萌宠') },
+    ];
+    if (p?.enabled) {
+      items.push({ kind: 'sep', label: '' });
+      if (p.running) {
+        items.push({ kind: 'pomoPause', label: p.paused ? t('pet.pomodoro.resume', '继续') : t('pet.pomodoro.pause', '暂停') });
+        items.push({ kind: 'pomoStop', label: t('pet.pomodoro.stop', '停止') });
+      } else {
+        items.push({ kind: 'pomoStart', label: t('pet.pomodoro.start', '开始') });
+      }
+    }
+    invoke('pet_show_context_menu', { items }).catch(() => undefined);
+  };
+
+  // Pomodoro badge over the character's head — vector Lucide icon, not emoji.
+  const pomoBadge = state.pomodoro?.enabled && state.pomodoro.running ? state.pomodoro : null;
+  const BadgeIcon = pomoBadge ? pomodoroIcon(pomoBadge) : null;
+  const badgeColor = pomoBadge ? pomodoroColor(pomoBadge) : '';
 
   return (
     <div
       onMouseDown={onMouseDown}
+      onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -140,13 +244,24 @@ export default function PetWindow() {
         gap: 10,
         cursor: dragging ? 'grabbing' : 'grab',
         transform: dragging ? 'scale(1.08)' : 'scale(1)',
-        transition: 'transform 0.15s ease',
+        transition: 'transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
         WebkitUserSelect: 'none',
         userSelect: 'none',
       }}
     >
       <PetBubble state={state} dragging={dragging} hovered={hovered} />
-      <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={state.skin ?? skin} customAsset={customAsset} />
+      <div style={{ position: 'relative' }}>
+        <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={state.skin ?? skin} customAsset={customAsset} dragging={dragging} />
+        {BadgeIcon && (
+          <motion.span
+            style={{ position: 'absolute', top: -1, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
+            animate={{ y: [0, -2, 0] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <BadgeIcon size={15} strokeWidth={2.4} />
+          </motion.span>
+        )}
+      </div>
     </div>
   );
 }

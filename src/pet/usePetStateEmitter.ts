@@ -4,7 +4,7 @@ import { usePetStore } from '@/stores/petStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
-import { derivePetState, type PetState } from './pet-states';
+import { derivePetState, type CelebrateKind, type PetState } from './pet-states';
 
 const TICK_MS = 250;
 
@@ -16,9 +16,10 @@ let petWindowOpened = false;
 /**
  * Runs in the MAIN window (single source of truth). Opens the pet window when
  * enabled and broadcasts a `PetState` derived from the live business stores
- * every TICK_MS. Edge transitions (reply ended / task done / activity start) are
- * detected by diffing against the previous tick and timestamped, so the bubble
- * can show what the pet is doing and for how long.
+ * every TICK_MS. Edge transitions (reply ended / task done / pomodoro phase
+ * done / activity start) are detected by diffing against the previous tick and
+ * timestamped, so the bubble can show what the pet is doing and for how long,
+ * plus the live Pomodoro countdown.
  */
 export function usePetStateEmitter() {
   const enabled = usePetStore((s) => s.enabled);
@@ -34,12 +35,22 @@ export function usePetStateEmitter() {
       invoke('open_pet_window').catch(() => undefined);
     }
 
-    const mem = {
+    const mem: {
+      lastReplyTs: number;
+      lastTaskDoneTs: number;
+      lastCompactionTs: number;
+      lastActivityTs: number;
+      activeStartedAt: number;
+      prevPomoDoneTs: number;
+      lastPomoDoneKind: CelebrateKind;
+    } = {
       lastReplyTs: 0,
       lastTaskDoneTs: 0,
       lastCompactionTs: 0,
       lastActivityTs: Date.now(),
       activeStartedAt: 0,
+      prevPomoDoneTs: 0,
+      lastPomoDoneKind: 'pomodoroWork',
     };
     let prevTyping = Object.values(useChatStore.getState().typingBySession).some(Boolean);
     let prevDone = useWorkshopStore.getState().tasks.filter((t) => t.status === 'done').length;
@@ -72,6 +83,28 @@ export function usePetStateEmitter() {
       prevTyping = typing;
       prevDone = done;
 
+      // Pomodoro: on a fresh phase completion, classify which kind (so the
+      // celebrate bubble shows a pomodoro-specific caption) and compute the
+      // live remaining time for the countdown bubble.
+      const pomodoro = usePetStore.getState().pomodoro;
+      if (pomodoro.lastDoneTs && pomodoro.lastDoneTs !== mem.prevPomoDoneTs) {
+        mem.prevPomoDoneTs = pomodoro.lastDoneTs;
+        // After work→break the phase is 'break' (work just finished); after
+        // break→work the phase is 'work' (break just finished). The 4th work
+        // round (workRounds % 4 === 0) earns a long break.
+        mem.lastPomoDoneKind =
+          pomodoro.phase === 'break'
+            ? pomodoro.workRounds > 0 && pomodoro.workRounds % 4 === 0
+              ? 'pomodoroWorkLong'
+              : 'pomodoroWork'
+            : 'pomodoroBreak';
+      }
+      const remainingMs = pomodoro.running
+        ? pomodoro.paused
+          ? Math.max(0, pomodoro.pausedRemainingMs ?? 0)
+          : Math.max(0, (pomodoro.endsAt ?? now) - now)
+        : 0;
+
       const derived = derivePetState({
         connected: cs.connected,
         connectionError: cs.connectionError,
@@ -82,7 +115,8 @@ export function usePetStateEmitter() {
         lastReplyTs: mem.lastReplyTs,
         lastTaskDoneTs: mem.lastTaskDoneTs,
         lastCompactionTs: mem.lastCompactionTs,
-        pomodoroDoneTs: usePetStore.getState().pomodoro.lastDoneTs,
+        pomodoroDoneTs: pomodoro.lastDoneTs,
+        pomodoroDoneKind: mem.lastPomoDoneKind,
         lastActivityTs: mem.lastActivityTs,
         now,
         progress: cs.tokenUsage?.percentage ?? 0,
@@ -100,6 +134,9 @@ export function usePetStateEmitter() {
         taskLabel: gw.runningSubAgents[0]?.label,
         elapsedMs: mem.activeStartedAt ? now - mem.activeStartedAt : undefined,
         skin: usePetStore.getState().skin,
+        pomodoro: pomodoro.enabled
+          ? { running: pomodoro.running, paused: pomodoro.paused, phase: pomodoro.phase, remainingMs, enabled: true }
+          : undefined,
       });
     };
 

@@ -18,6 +18,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
+import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
@@ -42,10 +43,11 @@ export function SettingsPageFull() {
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petNow, setPetNow] = useState(Date.now());
   useEffect(() => {
-    if (!petPomodoro.running) return;
+    // Pause freezes the countdown (shows pausedRemainingMs), so skip the tick.
+    if (!petPomodoro.running || petPomodoro.paused) return;
     const id = setInterval(() => setPetNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [petPomodoro.running]);
+  }, [petPomodoro.running, petPomodoro.paused]);
 
   const handlePetUpload = async () => {
     setPetUploadError(null);
@@ -621,24 +623,46 @@ export function SettingsPageFull() {
             onChange={(e) => setPetPomodoro({ breakMin: Math.max(1, Math.min(60, Number(e.target.value) || 5)) })}
             className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center" />
           <span className="text-[11px] text-aegis-text-dim">min</span>
+          <label className="text-[12px] text-aegis-text-dim ms-2">{t('pet.pomodoro.longBreakMin', '长休')}</label>
+          <input type="number" min={1} max={60} value={petPomodoro.longBreakMin} disabled={petPomodoro.running}
+            onChange={(e) => setPetPomodoro({ longBreakMin: Math.max(1, Math.min(60, Number(e.target.value) || 15)) })}
+            className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center" />
+          <span className="text-[11px] text-aegis-text-dim">min</span>
         </div>
-        <div className="flex items-center gap-3 mt-4">
+        <div className="flex items-center gap-2 mt-4 flex-wrap">
           <button
-            onClick={() => petPomodoro.running
-              ? setPetPomodoro({ running: false, endsAt: null })
-              : setPetPomodoro({ running: true, phase: 'work', endsAt: Date.now() + petPomodoro.workMin * 60000, lastDoneTs: 0 })}
+            onClick={() => (petPomodoro.running ? stopPomodoro() : startPomodoro())}
             disabled={!petPomodoro.enabled}
             className={clsx('text-[12px] px-4 py-2 rounded-xl border transition-colors',
               petPomodoro.running ? 'border-aegis-danger/30 text-aegis-danger hover:bg-aegis-danger/10' : 'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10',
               !petPomodoro.enabled && 'opacity-40 cursor-not-allowed')}>
             {petPomodoro.running ? t('pet.pomodoro.stop', '停止') : t('pet.pomodoro.start', '开始')}
           </button>
-          {petPomodoro.running && petPomodoro.endsAt && (
+          {petPomodoro.running && (
+            <button
+              onClick={() => togglePausePomodoro()}
+              className="text-[12px] px-3 py-2 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors">
+              {petPomodoro.paused ? t('pet.pomodoro.resume', '继续') : t('pet.pomodoro.pause', '暂停')}
+            </button>
+          )}
+          {petPomodoro.running && (
             <span className="text-[13px] font-mono text-aegis-text">
-              {petPomodoro.phase === 'work' ? t('pet.pomodoro.focusing', '专注中') : t('pet.pomodoro.resting', '休息中')}
-              {' '}{String(Math.floor(Math.max(0, petPomodoro.endsAt - petNow) / 60000)).padStart(2, '0')}:{String(Math.floor((Math.max(0, petPomodoro.endsAt - petNow) % 60000) / 1000)).padStart(2, '0')}
+              {petPomodoro.paused
+                ? t('pet.pomodoro.paused', '已暂停') + ' ' + String(Math.floor(Math.max(0, petPomodoro.pausedRemainingMs ?? 0) / 60000)).padStart(2, '0') + ':' + String(Math.floor((Math.max(0, petPomodoro.pausedRemainingMs ?? 0) % 60000) / 1000)).padStart(2, '0')
+                : (petPomodoro.phase === 'work' ? t('pet.pomodoro.focusing', '专注中') : t('pet.pomodoro.resting', '休息中')) +
+                  ' ' + (petPomodoro.endsAt ? String(Math.floor(Math.max(0, petPomodoro.endsAt - petNow) / 60000)).padStart(2, '0') + ':' + String(Math.floor((Math.max(0, petPomodoro.endsAt - petNow) % 60000) / 1000)).padStart(2, '0') : '')}
             </span>
           )}
+          <span className="text-[11px] text-aegis-text-dim ms-auto flex items-center gap-2">
+            {petPomodoro.running && (
+              <span className="flex items-center gap-1" aria-hidden="true">
+                {[1, 2, 3, 4].map((n) => (
+                  <span key={n} className={clsx('w-1.5 h-1.5 rounded-full transition-colors', n <= petPomodoro.workRounds ? 'bg-aegis-primary' : 'bg-aegis-border/40')} />
+                ))}
+              </span>
+            )}
+            {t('pet.pomodoro.completedToday', '今日')} {petPomodoro.completedDate === new Date().toISOString().slice(0, 10) ? petPomodoro.completedToday : 0} 🍅
+          </span>
         </div>
       </GlassCard>
         </>

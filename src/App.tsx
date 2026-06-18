@@ -40,6 +40,7 @@ import { notifications } from '@/services/notifications';
 import { changeLanguage } from '@/i18n';
 import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
 import { usePomodoro } from '@/pet/usePomodoro';
+import { usePetActions } from '@/pet/usePetActions';
 
 const SESSION_MODEL_PREFS_KEY = 'aegis:session-model-prefs';
 
@@ -312,6 +313,9 @@ export default function App() {
   // ── Desktop pet companion: open window + broadcast state (main window only) ──
   usePetStateEmitter();
   usePomodoro();
+  // Pet-window interactions (single-click cycle skin, right-click menu) are
+  // forwarded here via the "pet-action" event — execute them in the main window.
+  usePetActions();
 
   // ── Request notification permission (Web Notification API) ──
   useEffect(() => { notifications.requestPermission(); }, []);

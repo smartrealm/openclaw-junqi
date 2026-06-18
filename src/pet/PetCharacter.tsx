@@ -20,11 +20,12 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const INK = '#1b1b2f';
 const BOX = { transformBox: 'fill-box' as const, transformOrigin: 'center' };
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', customAsset }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', customAsset, dragging = false }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;
   customAsset?: string | null;
+  dragging?: boolean;
 }) {
   const cfg = EMOTION_CFG[emotion] ?? EMOTION_CFG.idle;
   const bodyColor = themeHex('primary');
@@ -98,8 +99,8 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', 
                 <ellipse cx={82} cy={80} rx={6} ry={4} fill="#ff8fab" opacity={0.5} />
               </>
             )}
-            <Eye cx={47} blink={blink} open={cfg.eyeOpen} dx={cfg.pupilDx + gaze} />
-            <Eye cx={73} blink={blink} open={cfg.eyeOpen} dx={cfg.pupilDx + gaze} />
+            <Eye cx={47} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze} />
+            <Eye cx={73} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze} />
             <motion.path d={cfg.mouth} fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"
               animate={{ d: cfg.mouth }} transition={{ type: 'spring', stiffness: 300, damping: 26 }} />
           </motion.g>

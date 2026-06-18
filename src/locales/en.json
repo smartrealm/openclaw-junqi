@@ -1682,7 +1682,8 @@
       "preview": "Preview expressions",
       "stopPreview": "Stop preview",
       "showMain": "Show main window",
-      "hide": "Hide pet"
+      "hide": "Hide pet",
+      "nextSkin": "Next skin"
     },
     "settings": {
       "title": "Desktop Pet",
@@ -1728,7 +1729,13 @@
       "focusing": "Focusing",
       "resting": "Resting",
       "workDone": "Focus done — take a break!",
-      "breakDone": "Break over — back to focus!"
+      "workDoneLong": "4 rounds done — take a long break!",
+      "breakDone": "Break over — back to focus!",
+      "longBreakMin": "Long",
+      "pause": "Pause",
+      "resume": "Resume",
+      "paused": "Paused",
+      "completedToday": "Today"
     }
   }
 }

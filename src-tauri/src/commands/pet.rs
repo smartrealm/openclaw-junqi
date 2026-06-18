@@ -10,6 +10,7 @@
 //! Rust so the frontend pet window needs zero window-API permissions — it only
 //! `invoke`s these commands and listens for events.
 
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, Manager, Position, WebviewUrl, WebviewWindowBuilder,
     WindowEvent,
@@ -155,6 +156,27 @@ pub async fn get_pet_position(app: AppHandle) -> Result<serde_json::Value, Strin
     Err("pet window not found".into())
 }
 
+/// Logical bounds {monX, monY, monW, monH} of the monitor the pet currently
+/// sits on — used by the frontend to magnetic-snap the pet to the nearest edge
+/// after a drag.
+#[tauri::command]
+pub async fn get_pet_bounds(app: AppHandle) -> Result<serde_json::Value, String> {
+    let win = app.get_webview_window(PET_LABEL).ok_or("pet window not found")?;
+    let mon = win
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or("no monitor")?;
+    let scale = mon.scale_factor();
+    let pos = mon.position();
+    let size = mon.size();
+    Ok(serde_json::json!({
+        "monX": pos.x as f64 / scale,
+        "monY": pos.y as f64 / scale,
+        "monW": size.width as f64 / scale,
+        "monH": size.height as f64 / scale,
+    }))
+}
+
 /// The pet was clicked — surface & focus the main window.
 #[tauri::command]
 pub async fn pet_focus_main(app: AppHandle) -> Result<(), String> {
@@ -162,6 +184,43 @@ pub async fn pet_focus_main(app: AppHandle) -> Result<(), String> {
         let _ = main.unminimize();
         let _ = main.show();
         let _ = main.set_focus();
+    }
+    Ok(())
+}
+
+// ── Right-click context menu ────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+pub struct PetMenuItem {
+    kind: String,
+    label: String,
+    #[serde(default)]
+    disabled: bool,
+}
+
+/// Pop up the pet's right-click context menu at a physical screen position.
+/// Item labels + kinds come from the frontend (i18n stays in JS); on click the
+/// `app.on_menu_event` handler registered in `lib.rs` re-emits the item's kind
+/// as a "pet-action" event for the main window to act on.
+#[tauri::command]
+pub async fn pet_show_context_menu(app: AppHandle, items: Vec<PetMenuItem>) -> Result<(), String> {
+    let menu = Menu::new(&app).map_err(|e| e.to_string())?;
+    for item in items {
+        if item.kind == "sep" {
+            menu.append(&PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        } else {
+            menu.append(
+                &MenuItem::with_id(&app, item.kind.clone(), item.label, !item.disabled, None::<&str>)
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    // Pop up at the cursor (which is exactly where the user right-clicked);
+    // avoids any screen↔window / HiDPI coordinate math.
+    if let Some(win) = app.get_webview_window(PET_LABEL) {
+        win.popup_menu(&menu).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
