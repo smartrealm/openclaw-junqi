@@ -1687,7 +1687,10 @@
       "customHint": "上传 PNG/JPG/GIF/WebP，≤2MB",
       "upload": "上传",
       "replace": "更换",
-      "clear": "清除"
+      "clear": "清除",
+      "cat": "猫咪",
+      "jellyfish": "水母",
+      "ghost": "幽灵"
     },
     "status": {
       "idle": "空闲中",

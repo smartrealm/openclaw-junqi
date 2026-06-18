@@ -1699,7 +1699,10 @@
       "customHint": "Upload PNG/JPG/GIF/WebP, ≤2MB",
       "upload": "Upload",
       "replace": "Replace",
-      "clear": "Clear"
+      "clear": "Clear",
+      "cat": "Cat",
+      "jellyfish": "Jellyfish",
+      "ghost": "Ghost"
     },
     "status": {
       "idle": "Idle",

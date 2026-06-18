@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { PetSkin } from '@/pet/skins';
+export type { PetSkin };
 
 /**
  * Pet companion settings. Persisted to localStorage (`aegis-pet-settings`) so
  * both the main window and the pet window read the same values (same origin).
  */
-export type PetSkin = 'sprite' | 'robot' | 'lobster';
-
 /** Pomodoro work/break timer. Config + daily count + cycle progress persisted; runtime resets. */
 export interface PomodoroState {
   enabled: boolean;

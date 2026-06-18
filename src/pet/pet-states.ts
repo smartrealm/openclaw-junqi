@@ -7,6 +7,8 @@
  * function) decides the single current emotion by priority.
  */
 
+import type { PetSkin } from './skins';
+
 export type PetEmotion =
   | 'idle'
   | 'working' // an agent/session is running
@@ -46,7 +48,7 @@ export interface PetState {
   /** How long the current activity (typing/working/thinking) has been running, in ms. */
   elapsedMs?: number;
   /** Current skin — broadcast so the pet window picks up settings changes. */
-  skin?: 'sprite' | 'robot' | 'lobster';
+  skin?: PetSkin;
   /** Live Pomodoro state — present only when the feature is enabled. */
   pomodoro?: PetPomodoroState;
   /** Present only when emotion === 'celebrate'. */

@@ -1252,7 +1252,10 @@
       "customHint": "ارفع PNG/JPG/GIF/WebP، ≤2MB",
       "upload": "رفع",
       "replace": "استبدال",
-      "clear": "مسح"
+      "clear": "مسح",
+      "cat": "قطة",
+      "jellyfish": "قنديل البحر",
+      "ghost": "شبح"
     },
     "status": {
       "idle": "خامل",
