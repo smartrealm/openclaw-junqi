@@ -1702,7 +1702,10 @@
       "clear": "Clear",
       "cat": "Cat",
       "jellyfish": "Jellyfish",
-      "ghost": "Ghost"
+      "ghost": "Ghost",
+      "showPet": "Recall pet",
+      "showPetHint": "Recall after hide (or tray icon / ⌘⇧H)",
+      "show": "Show"
     },
     "status": {
       "idle": "Idle",

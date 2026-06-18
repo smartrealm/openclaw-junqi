@@ -574,6 +574,21 @@ export function SettingsPageFull() {
           <Toggle enabled={petEnabled} onChange={setPetEnabled} />
         </div>
 
+        {/* Recall the pet after it's been hidden (tray / ⌘⇧H / right-click also work). */}
+        <div className="flex items-center justify-between mt-4">
+          <div>
+            <div className="text-[13px] text-aegis-text">{t('pet.settings.showPet', '唤回萌宠')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.showPetHint', '隐藏后一键唤回(也可托盘图标 / ⌘⇧H)')}</div>
+          </div>
+          <button
+            disabled={!petEnabled}
+            onClick={() => invoke('open_pet_window').catch(() => undefined)}
+            className={clsx('text-[12px] px-3 py-1.5 rounded-xl border transition-colors',
+              petEnabled ? 'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10' : 'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed')}>
+            {t('pet.settings.show', '显示')}
+          </button>
+        </div>
+
         {/* Skin picker */}
         <div className="flex items-center justify-between mt-4">
           <div className="text-[13px] text-aegis-text">{t('pet.settings.skin', '皮肤')}</div>

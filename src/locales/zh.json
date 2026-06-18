@@ -1690,7 +1690,10 @@
       "clear": "清除",
       "cat": "猫咪",
       "jellyfish": "水母",
-      "ghost": "幽灵"
+      "ghost": "幽灵",
+      "showPet": "唤回萌宠",
+      "showPetHint": "隐藏后一键唤回(也可托盘图标 / ⌘⇧H)",
+      "show": "显示"
     },
     "status": {
       "idle": "空闲中",
