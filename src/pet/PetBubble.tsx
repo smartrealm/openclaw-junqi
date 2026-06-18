@@ -2,8 +2,8 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { themeHex } from '@/utils/theme-colors';
-import type { CelebrateKind, PetEmotion, PetState } from './pet-states';
-import { pomodoroIcon, pomodoroColor, celebrateIcon } from './pomodoroView';
+import type { PetEmotion, PetState } from './pet-states';
+import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
 const STATUS_LABEL: Record<PetEmotion, string> = {
@@ -37,13 +37,6 @@ const EMOTION_COLOR: Record<PetEmotion, string> = {
 
 /** Active states get the rich multi-line bubble (label + action + elapsed). */
 const ACTIVE: ReadonlySet<PetEmotion> = new Set(['thinking', 'typing', 'tool', 'working', 'memory']);
-
-/** Pomodoro celebrate captions, keyed by which phase just finished. */
-const POMODORO_KIND_CAPTION: Record<Exclude<CelebrateKind, 'task'>, { key: string; fallback: string }> = {
-  pomodoroWork: { key: 'pet.pomodoro.workDone', fallback: '专注完成，休息一下！' },
-  pomodoroWorkLong: { key: 'pet.pomodoro.workDoneLong', fallback: '4 轮专注完成，长休息一下！' },
-  pomodoroBreak: { key: 'pet.pomodoro.breakDone', fallback: '休息结束，继续专注！' },
-};
 
 function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -132,7 +125,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     // the generic one.
     bubbleKey = `celebrate-${state.celebrateKind ?? 'task'}`;
     const pomoKind = e === 'celebrate' && state.celebrateKind && state.celebrateKind !== 'task' ? state.celebrateKind : null;
-    const caption = pomoKind ? t(POMODORO_KIND_CAPTION[pomoKind].key, POMODORO_KIND_CAPTION[pomoKind].fallback) : label;
+    const caption = pomoKind ? t(CELEBRATE_CAPTION[pomoKind].key, CELEBRATE_CAPTION[pomoKind].fallback) : label;
     const CelebrateIcon = pomoKind ? celebrateIcon(pomoKind) : null;
     body = (
       <span style={{ fontSize: 10, fontWeight: 600, color: EMOTION_COLOR[e], display: 'inline-flex', alignItems: 'center', gap: 3 }}>

@@ -29,3 +29,10 @@ export function pomodoroColor(p: PomodoroPhase): string {
 export function celebrateIcon(kind: Exclude<CelebrateKind, 'task'>): LucideIcon {
   return kind === 'pomodoroBreak' ? Coffee : Timer;
 }
+
+/** i18n key + fallback caption for a completed pomodoro phase. */
+export const CELEBRATE_CAPTION: Record<Exclude<CelebrateKind, 'task'>, { key: string; fallback: string }> = {
+  pomodoroWork: { key: 'pet.pomodoro.workDone', fallback: '专注完成，休息一下！' },
+  pomodoroWorkLong: { key: 'pet.pomodoro.workDoneLong', fallback: '4 轮专注完成，长休息一下！' },
+  pomodoroBreak: { key: 'pet.pomodoro.breakDone', fallback: '休息结束，继续专注！' },
+};
