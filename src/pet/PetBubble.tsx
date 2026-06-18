@@ -85,6 +85,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     t('pet.hint.tip1', '双击 → 打开主窗口'),
     t('pet.hint.tip2', '按住拖动 → 移动位置'),
     t('pet.hint.tip3', '托盘图标 → 显示/隐藏'),
+    t('pet.hint.tip4', '右键 → 菜单 / 番茄控制'),
   ];
   const [tipIndex, setTipIndex] = useState(0);
   useEffect(() => {

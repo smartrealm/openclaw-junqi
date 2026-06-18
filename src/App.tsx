@@ -41,6 +41,7 @@ import { changeLanguage } from '@/i18n';
 import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
 import { usePomodoro } from '@/pet/usePomodoro';
 import { usePetActions } from '@/pet/usePetActions';
+import { usePetShortcuts } from '@/pet/usePetShortcuts';
 
 const SESSION_MODEL_PREFS_KEY = 'aegis:session-model-prefs';
 
@@ -316,6 +317,7 @@ export default function App() {
   // Pet-window interactions (single-click cycle skin, right-click menu) are
   // forwarded here via the "pet-action" event — execute them in the main window.
   usePetActions();
+  usePetShortcuts();
 
   // ── Request notification permission (Web Notification API) ──
   useEffect(() => { notifications.requestPermission(); }, []);

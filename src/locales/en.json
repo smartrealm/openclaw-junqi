@@ -1716,7 +1716,8 @@
       "moving": "Moving…",
       "tip1": "Double-click → open main window",
       "tip2": "Press & drag → move",
-      "tip3": "Tray icon → show/hide"
+      "tip3": "Tray icon → show/hide",
+      "tip4": "Right-click → menu / Pomodoro"
     },
     "pomodoro": {
       "title": "Pomodoro",
