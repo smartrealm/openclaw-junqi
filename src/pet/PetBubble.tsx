@@ -112,6 +112,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   // Base bubble style: no background, no border, no shadow. Inverse-of-theme
   // text + a tight outline so the text reads on any desktop background.
   const bubbleStyle: CSSProperties = {
+    maxWidth: 180,
     color: isDark ? '#ffffff' : '#16181f',
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 12,
