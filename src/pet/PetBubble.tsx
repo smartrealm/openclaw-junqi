@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { themeHex } from '@/utils/theme-colors';
+import { useSettingsStore } from '@/stores/settingsStore';
 import type { PetEmotion, PetState } from './pet-states';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
 
@@ -53,37 +54,43 @@ function fmtClock(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-// Solid dark pill: opaque fill + soft border + shadow. No blur/glass — the pet
-// window is transparent, so backdrop-filter never really blurred anything and
-// just read as a muddy translucent block.
-const BUBBLE: CSSProperties = {
-  maxWidth: 168,
-  background: 'rgb(18, 20, 28)',
-  border: '1px solid rgba(255, 255, 255, 0.09)',
-  borderRadius: 12,
-  padding: '6px 11px',
-  color: '#ffffff',
-  fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
-  fontSize: 12,
-  fontWeight: 500,
-  lineHeight: 1.4,
-  boxShadow: '0 8px 22px rgba(0, 0, 0, 0.32)',
-};
+/** Resolve the user-selected theme to a concrete "is the UI dark?" boolean
+ * (handles the 'system' value by following the OS preference). */
+function useResolvedDark(): boolean {
+  const theme = useSettingsStore((s) => s.theme);
+  const [systemDark, setSystemDark] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return true;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setSystemDark(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  if (theme === 'aegis-dark') return true;
+  if (theme === 'aegis-light') return false;
+  return systemDark;
+}
 
 /**
- * Compact status bubble above the character. Display priority (high → low):
- * dragging > error > active(chat) > celebrate/happy > pomodoro countdown >
- * sleep/sleepy > hover carousel > idle (no bubble). Live task info and the
- * pomodoro countdown beat the "how to use me" hints; chat celebrations briefly
- * take priority over the countdown so a finished pomodoro phase shows its own
- * caption for a moment before the next countdown takes over.
+ * Compact status bubble above the character. No background — the text color
+ * is the *inverse* of the theme (white on dark themes, near-black on light
+ * themes) and a tight `text-shadow` acts as a one‑pixel outline so the text
+ * stays legible over any desktop. That keeps the bubble feeling like a
+ * native floating label instead of a panel glued on top of the pet.
  *
- * `bubbleKey` follows the bubble's logical type (not the ticking seconds or the
- * carousel index), so AnimatePresence cross-fades when the type changes but
- * leaves within-type updates (the countdown, the tip carousel) untouched.
+ * Display priority (high → low):
+ * dragging > error > active(chat) > celebrate/happy > pomodoro countdown >
+ * sleep/sleepy > hover carousel > idle (no bubble).
+ *
+ * `bubbleKey` follows the bubble's logical type, so AnimatePresence cross-fades
+ * when the type changes but leaves within-type updates untouched.
  */
 export function PetBubble({ state, dragging, hovered }: { state: PetState; dragging?: boolean; hovered?: boolean }) {
   const { t } = useTranslation();
+  const isDark = useResolvedDark();
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
 
@@ -102,15 +109,28 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     return () => clearInterval(id);
   }, [hovered, tips.length]);
 
+  // Base bubble style: no background, no border, no shadow. Inverse-of-theme
+  // text + a tight outline so the text reads on any desktop background.
+  const bubbleStyle: CSSProperties = {
+    color: isDark ? '#ffffff' : '#16181f',
+    fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+    fontSize: 12,
+    fontWeight: 500,
+    lineHeight: 1.4,
+    textShadow: isDark
+      ? '0 0 2px rgba(0, 0, 0, 0.65), 0 1px 3px rgba(0, 0, 0, 0.4)'
+      : '0 0 2px rgba(255, 255, 255, 0.85), 0 1px 2px rgba(255, 255, 255, 0.65)',
+  };
+
   let body: ReactNode = null;
   let bubbleKey = '';
 
   if (dragging) {
     bubbleKey = 'dragging';
-    body = <span>{t('pet.hint.moving', '移动中…')}</span>;
+    body = <span style={{ fontWeight: 600 }}>{t('pet.hint.moving', '移动中…')}</span>;
   } else if (e === 'error') {
     bubbleKey = 'error';
-    body = <span style={{ fontWeight: 600, color: EMOTION_COLOR[e] }}>{label}</span>;
+    body = <span style={{ fontWeight: 700, color: EMOTION_COLOR[e] }}>{label}</span>;
   } else if (ACTIVE.has(e)) {
     bubbleKey = `active-${e}`;
     const detail = state.message || state.taskLabel;
@@ -119,10 +139,10 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       <>
         <span style={{ fontWeight: 600, color: EMOTION_COLOR[e] }}>
           {label}
-          {elapsed && <span style={{ fontSize: 10.5, opacity: 0.62, fontWeight: 400 }}> · {elapsed}</span>}
+          {elapsed && <span style={{ fontSize: 10.5, opacity: 0.65, fontWeight: 400 }}> · {elapsed}</span>}
         </span>
         {detail && (
-          <div style={{ fontSize: 10.5, opacity: 0.72, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+          <div style={{ fontSize: 10.5, opacity: 0.75, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
             {detail}
           </div>
         )}
@@ -158,7 +178,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     );
   } else if (e === 'sleep' || e === 'sleepy') {
     bubbleKey = e;
-    body = <span style={{ opacity: 0.88, color: EMOTION_COLOR[e] }}>{label}</span>;
+    body = <span style={{ opacity: 0.85, color: EMOTION_COLOR[e] }}>{label}</span>;
   } else if (hovered) {
     bubbleKey = 'tips';
     body = (
@@ -186,7 +206,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, scale: 0.92 }}
           transition={{ duration: 0.18 }}
-          style={BUBBLE}
+          style={bubbleStyle}
         >
           {body}
         </motion.div>
