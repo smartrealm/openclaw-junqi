@@ -8,5 +8,10 @@
   <string>JunQi 需要访问麦克风以支持语音输入。 / JunQi needs microphone access for voice input.</string>
   <key>NSCameraUsageDescription</key>
   <string>JunQi 需要访问摄像头以支持视频相关功能。 / JunQi needs camera access for video features.</string>
+  <!-- Modern macOS (10.15+) reads CFBundleIconName for the Dock / Launchpad
+       icon; CFBundleIconFile alone is treated as legacy and may render
+       blank/incorrect on Apple Silicon. Reference the .icns basename. -->
+  <key>CFBundleIconName</key>
+  <string>icon</string>
 </dict>
 </plist>

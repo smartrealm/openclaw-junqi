@@ -115,7 +115,9 @@
     "viewBrowse": "Browse All Skills",
     "loadMore": "Load {{count}} more",
     "loadingMore": "Loading…",
-    "showingOf": "Showing {{shown}} of {{total}} skills"
+    "showingOf": "Showing {{shown}} of {{total}} skills",
+    "startChat": "Start chat",
+    "startChatWithPersona": "Start chat with this persona"
   },
   "dashboard": {
     "activeAgents": "Active Agents",
@@ -574,7 +576,12 @@
     "selectAgent": "Select agent",
     "openMainSession": "Open main session",
     "newDesktopSession": "New desktop conversation",
+    "persona": "Persona",
+    "personaChip": "Persona: {{name}}",
+    "clearPersona": "Clear persona",
     "closeTab": "Close tab",
+    "renameSession": "Rename session",
+    "renameSessionHint": "Double-click to rename",
     "deleteSession": "Delete session",
     "deleteSessionConfirm": "Delete this session and its history? This cannot be undone.",
     "deleteSessionSuccess": "Session deleted",

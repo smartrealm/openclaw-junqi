@@ -69,7 +69,9 @@
     "loadingMore": "جارٍ التحميل…",
     "showingOf": "يعرض {{shown}} من أصل {{total}} مهارة",
     "viewFeatured": "المميزة TOP 50",
-    "viewBrowse": "تصفح الكل"
+    "viewBrowse": "تصفح الكل",
+    "startChat": "بدء المحادثة",
+    "startChatWithPersona": "ابدأ المحادثة بهذه الشخصية"
   },
   "dashboard": {
     "activeAgents": "الوكلاء النشطون",
@@ -390,7 +392,12 @@
     "selectAgent": "اختر الوكيل",
     "openMainSession": "فتح الجلسة الرئيسية",
     "newDesktopSession": "محادثة سطح مكتب جديدة",
+    "persona": "الشخصية",
+    "personaChip": "الشخصية: {{name}}",
+    "clearPersona": "مسح الشخصية",
     "closeTab": "إغلاق التبويب",
+    "renameSession": "إعادة تسمية الجلسة",
+    "renameSessionHint": "انقر مرتين لإعادة التسمية",
     "deleteSession": "حذف الجلسة",
     "deleteSessionConfirm": "حذف هذه الجلسة وسجلها؟ لا يمكن التراجع عن هذا الإجراء.",
     "deleteSessionSuccess": "تم حذف الجلسة",

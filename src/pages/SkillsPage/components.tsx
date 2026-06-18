@@ -3,15 +3,16 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Copy, ExternalLink, Download, Trash2 } from 'lucide-react';
+import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
+import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
 
 // ═══════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════
 
-export interface MySkill {
+export interface MySkill extends SkillPersonaFields {
   slug: string;
   name: string;
   emoji: string;
@@ -41,7 +42,7 @@ export function isSkillDeletable(source: string): boolean {
   return source === 'openclaw-managed';
 }
 
-export interface HubSkill {
+export interface HubSkill extends SkillPersonaFields {
   slug: string;
   name: string;
   emoji: string;
@@ -88,6 +89,22 @@ export const CATEGORIES = [
 function formatNum(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
   return String(n);
+}
+
+/**
+ * Normalize a skill's optional `persona` field into a SkillPersona object, or
+ * return null when the persona is missing/empty/whitespace. UI elements gate
+ * on this so tool-only skills remain visually unchanged.
+ */
+export function resolvePersona(p?: SkillPersona | string): SkillPersona | null {
+  if (typeof p === 'string') {
+    const trimmed = p.trim();
+    return trimmed ? { prompt: p } : null;
+  }
+  if (p && typeof p === 'object' && typeof p.prompt === 'string' && p.prompt.trim()) {
+    return p;
+  }
+  return null;
 }
 
 function SourceBadge({ source }: { source: string }) {
@@ -211,8 +228,27 @@ export function MySkillRow({ skill, onToggle, index = 0, onDelete }: {
         </span>
       </div>
 
-      {/* Actions — toggle only (position preserved) */}
+      {/* Actions — toggle + optional persona chat (position preserved) */}
       <div className="flex items-center gap-1.5 pe-3 shrink-0">
+        {(() => {
+          const persona = resolvePersona(skill.persona);
+          if (!persona) return null;
+          return (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('aegis:open-new-session-picker', {
+                detail: { persona },
+              }))}
+              title={t('skills.startChatWithPersona', 'Start chat with this persona')}
+              aria-label={t('skills.startChatWithPersona', 'Start chat with this persona')}
+              className="w-7 h-7 rounded-lg flex items-center justify-center border
+                border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim
+                hover:text-aegis-primary hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04]
+                transition-all"
+            >
+              <MessageSquare size={11} />
+            </button>
+          );
+        })()}
         <button
           onClick={onToggle}
           className={clsx(
@@ -318,6 +354,7 @@ export type InstallState = 'idle' | 'installing' | 'done' | 'error';
 export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, installState,
   accentColor, installLabel, installingLabel, doneLabel, doneHint, errorLabel,
   externalUrl, externalLabel, installCmd, errorText, secondaryActionLabel, onSecondaryAction,
+  persona, onStartChat,
 }: {
   open: boolean;
   skill: SkillDetail | null;
@@ -339,6 +376,10 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
   errorText?: string;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
+  /** Optional persona carried by the skill; surfaces a "Start chat" action. */
+  persona?: SkillPersona | string;
+  /** Called when user clicks the "Start chat" button with the resolved persona. */
+  onStartChat?: (persona: SkillPersona) => void;
 }) {
   const { t } = useTranslation();
   const isRed = accentColor === 'red';
@@ -499,6 +540,33 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                   <ExternalLink size={12} /> {secondaryActionLabel}
                 </button>
               )}
+
+              {/* Persona: Start chat (only when skill carries a persona) */}
+              {(() => {
+                const resolved = resolvePersona(persona);
+                if (!resolved) return null;
+                const handle = () => {
+                  if (onStartChat) {
+                    onStartChat(resolved);
+                  } else {
+                    window.dispatchEvent(new CustomEvent('aegis:open-new-session-picker', {
+                      detail: { persona: resolved },
+                    }));
+                  }
+                };
+                return (
+                  <button
+                    onClick={handle}
+                    title={t('skills.startChatWithPersona', 'Start chat with this persona')}
+                    className="w-full py-2 rounded-[9px] text-[11.5px] font-medium
+                      bg-aegis-primary/[0.06] border border-aegis-primary/15 text-aegis-primary
+                      hover:bg-aegis-primary/[0.1] transition-colors
+                      flex items-center justify-center gap-1.5"
+                  >
+                    <MessageSquare size={12} /> {t('skills.startChat', 'Start chat')}
+                  </button>
+                );
+              })()}
 
               {/* Secondary: View on source */}
               <button

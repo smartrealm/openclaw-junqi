@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw, GripVertical } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { showConfirm } from '@/components/shared/AlertDialog';
@@ -12,6 +12,8 @@ import { useGatewayDataStore, type AgentInfo } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
 import { themeHex, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
+import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
+import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
 
 // ═══════════════════════════════════════════════════════════
@@ -139,7 +141,7 @@ function parseSessionKey(key: string): { agentId: string; isMainSession: boolean
   return { agentId, isMainSession, isDesktopSession };
 }
 
-function compactTabLabel(label: string, max = 24): string {
+function compactTabLabel(label: string, max = 36): string {
   return label.length > max ? `${label.slice(0, max - 1).trim()}…` : label;
 }
 
@@ -314,17 +316,29 @@ function NewSessionPicker({
   newSessions,
   messagesPerSession,
   agents,
+  initialPersona,
+  defaultPersonaFor,
+  onClearPersona,
+  onClearDefaultPersona,
 }: {
   open: boolean;
   onClose: () => void;
   onOpenExisting: (key: string) => void;
-  onOpenMainSession: (agentId: string) => void;
-  onCreateDesktopSession: (agentId: string) => void;
+  onOpenMainSession: (agentId: string, persona?: SkillPersona | null) => void;
+  onCreateDesktopSession: (agentId: string, persona?: SkillPersona | null) => void;
   openTabs: string[];
   loadingNew: boolean;
   newSessions: Session[];
   messagesPerSession: Record<string, Array<{ role: string; content: string }>>;
   agents: AgentInfo[];
+  /** Persona carried in from a SkillsPage skill click. Wins over agent default. */
+  initialPersona?: SkillPersona | null;
+  /** Resolves the default persona for a given agent (read from localStorage). */
+  defaultPersonaFor?: (agentId: string) => SkillPersona | null;
+  /** Called when user clears a skill-carried persona via the chip × button. */
+  onClearPersona?: () => void;
+  /** Called when user clears an agent-default persona via the chip × button. */
+  onClearDefaultPersona?: (agentId: string) => void;
 }) {
   const { t } = useTranslation();
 
@@ -339,8 +353,96 @@ function NewSessionPicker({
   const [selectedAgentId, setSelectedAgentId] = useState(agentList[0]?.id ?? 'main');
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
   const agentDropdownRef = useRef<HTMLDivElement>(null);
+  // User explicitly cleared the chip; resets when the picker is reopened or
+  // when the agent changes, so a fresh default / new persona can re-appear.
+  const [personaCleared, setPersonaCleared] = useState(false);
+
+  useEffect(() => {
+    if (open) setPersonaCleared(false);
+  }, [open]);
+
+  // Per-item context menu (Open / Rename / Delete) + inline-rename state for
+  // sessions that haven't been opened as tabs yet. Inline rename keeps the
+  // edit flow in-place rather than opening a hidden tab just to rename.
+  const [pickerCtxMenu, setPickerCtxMenu] = useState<{ session: Session; x: number; y: number } | null>(null);
+  const pickerCtxRef = useRef<HTMLDivElement>(null);
+  const [pickerRenamingKey, setPickerRenamingKey] = useState<string | null>(null);
+  const [pickerRenameValue, setPickerRenameValue] = useState('');
+  const [pickerRenaming, setPickerRenaming] = useState(false);
+
+  useEffect(() => {
+    if (!pickerCtxMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (pickerCtxRef.current && !pickerCtxRef.current.contains(e.target as Node)) {
+        setPickerCtxMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [pickerCtxMenu]);
+
+  const cancelPickerRename = useCallback(() => {
+    setPickerRenamingKey(null);
+    setPickerRenameValue('');
+  }, []);
+
+  const beginPickerRename = useCallback((session: Session) => {
+    setPickerCtxMenu(null);
+    setPickerRenamingKey(session.key);
+    // Pre-fill with the same display label the row shows so the user sees
+    // exactly what they'll replace.
+    const display = sessionLabel(session, session.key, agents, mainDisplayName, messagesPerSession[session.key]);
+    setPickerRenameValue(display || session.label || '');
+  }, [agents, mainDisplayName, messagesPerSession]);
+
+  const submitPickerRename = useCallback(async () => {
+    if (pickerRenaming || !pickerRenamingKey) return;
+    const next = pickerRenameValue.trim();
+    if (!next) { cancelPickerRename(); return; }
+    setPickerRenaming(true);
+    try {
+      await gateway.setSessionLabel(next, pickerRenamingKey);
+      useChatStore.getState().setSessionLabel(pickerRenamingKey, next);
+      // Close the picker so reopening refetches the sessions.list with the
+      // server-confirmed label (covers the case where the backend quietly
+      // rejects / trims the label).
+      cancelPickerRename();
+      onClose();
+    } catch (err) {
+      console.warn('[NewSessionPicker] setSessionLabel failed:', err);
+      cancelPickerRename();
+    } finally {
+      setPickerRenaming(false);
+    }
+  }, [pickerRenaming, pickerRenamingKey, pickerRenameValue, cancelPickerRename, onClose]);
+
+  const deleteAvailableSession = useCallback((session: Session) => {
+    setPickerCtxMenu(null);
+    showConfirm(
+      t('chat.deleteSession', '删除会话'),
+      t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
+      async () => {
+        try { await gateway.deleteSession(session.key); } catch (err) {
+          console.warn('[NewSessionPicker] deleteSession failed:', err);
+        }
+        useChatStore.getState().removeSession(session.key);
+        onClose();
+      }
+    );
+  }, [t, onClose]);
 
   const selectedAgent = agentList.find((a) => a.id === selectedAgentId) ?? agentList[0];
+
+  // Skill-carried persona wins; otherwise fall back to the selected agent's default.
+  const defaultPersona = defaultPersonaFor ? defaultPersonaFor(selectedAgentId) : null;
+  const effectivePersona = personaCleared ? null : (initialPersona ?? defaultPersona);
+  const personaSource: 'skill' | 'default' | null = personaCleared
+    ? null
+    : initialPersona
+      ? 'skill'
+      : defaultPersona
+        ? 'default'
+        : null;
 
   useEffect(() => {
     if (!agentDropdownOpen) return;
@@ -394,7 +496,7 @@ function NewSessionPicker({
                     return (
                       <button
                         key={a.id}
-                        onClick={() => { setSelectedAgentId(a.id); setAgentDropdownOpen(false); }}
+                        onClick={() => { setSelectedAgentId(a.id); setAgentDropdownOpen(false); setPersonaCleared(false); }}
                         className={clsx(
                           'w-full flex items-center justify-between px-3 py-1.5 text-[12px] text-start transition-colors',
                           isActive
@@ -411,10 +513,37 @@ function NewSessionPicker({
               )}
             </div>
 
+            {/* Persona chip — shown when a persona is preselected (from a skill click or agent default) */}
+            {effectivePersona && (
+              <div className="mx-2 mb-2 flex items-center gap-1.5 px-2 py-1.5 rounded-lg
+                bg-aegis-primary/[0.06] border border-aegis-primary/15">
+                <Sparkles size={11} className="text-aegis-primary shrink-0" />
+                <span
+                  className="flex-1 min-w-0 truncate text-[11px] text-aegis-text-secondary"
+                  title={effectivePersona.label || effectivePersona.prompt.slice(0, 80)}
+                >
+                  {t('chat.personaChip', { name: effectivePersona.label || effectivePersona.prompt.slice(0, 32) })}
+                </span>
+                <button
+                  onClick={() => {
+                    setPersonaCleared(true);
+                    if (personaSource === 'skill') onClearPersona?.();
+                    else if (personaSource === 'default') onClearDefaultPersona?.(selectedAgentId);
+                  }}
+                  title={t('chat.clearPersona', 'Clear persona')}
+                  aria-label={t('chat.clearPersona', 'Clear persona')}
+                  className="w-5 h-5 rounded-md flex items-center justify-center text-aegis-text-dim
+                    hover:text-aegis-danger hover:bg-aegis-danger/[0.06] transition-colors shrink-0"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            )}
+
             {/* Action buttons */}
             <div className="flex flex-col gap-1 mb-2">
               <button
-                onClick={() => { onOpenMainSession(selectedAgentId); onClose(); }}
+                onClick={() => { onOpenMainSession(selectedAgentId, effectivePersona); onClose(); }}
                 className={clsx(
                   'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-start transition-colors',
                   'hover:bg-[rgb(var(--aegis-overlay)/0.06)] border border-transparent hover:border-[rgb(var(--aegis-overlay)/0.08)]',
@@ -426,7 +555,7 @@ function NewSessionPicker({
                 </span>
               </button>
               <button
-                onClick={() => { onCreateDesktopSession(selectedAgentId); onClose(); }}
+                onClick={() => { onCreateDesktopSession(selectedAgentId, effectivePersona); onClose(); }}
                 className={clsx(
                   'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-start transition-colors',
                   'hover:bg-[rgb(var(--aegis-overlay)/0.06)] border border-transparent hover:border-[rgb(var(--aegis-overlay)/0.08)]',
@@ -467,17 +596,48 @@ function NewSessionPicker({
                   || session.key;
                 const detailText = getSessionPreview(displayLabel, session, messagesPerSession[session.key]);
                 const timeLabel = formatSessionTimestamp(session.lastTimestamp);
+                const isRenaming = pickerRenamingKey === session.key;
                 return (
-                  <button
+                  <div
                     key={session.key}
+                    className="w-full min-w-0 overflow-hidden flex flex-col gap-1 px-3 py-2 rounded-lg text-start hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors cursor-pointer"
+                    onClick={() => {
+                      if (isRenaming) return;
+                      onOpenExisting(session.key);
+                      onClose();
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      if (isRenaming) return;
+                      setPickerCtxMenu({ session, x: e.clientX, y: e.clientY });
+                    }}
                     title={fullLabel}
-                    onClick={() => { onOpenExisting(session.key); onClose(); }}
-                    className="w-full min-w-0 overflow-hidden flex flex-col gap-1 px-3 py-2 rounded-lg text-start hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
                   >
-                    <span className="block w-full min-w-0 truncate text-[12px] text-aegis-text font-medium">
-                      {displayLabel}
-                    </span>
-                    {(detailText || timeLabel) && (
+                    {isRenaming ? (
+                      <input
+                        autoFocus
+                        value={pickerRenameValue}
+                        onChange={(e) => setPickerRenameValue(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={() => void submitPickerRename()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void submitPickerRename();
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            cancelPickerRename();
+                          }
+                        }}
+                        disabled={pickerRenaming}
+                        className="w-full max-w-full h-[22px] px-1.5 rounded bg-aegis-bg border border-aegis-primary/40 text-[12px] text-aegis-text outline-none"
+                      />
+                    ) : (
+                      <span className="block w-full min-w-0 truncate text-[12px] text-aegis-text font-medium">
+                        {displayLabel}
+                      </span>
+                    )}
+                    {(detailText || timeLabel) && !isRenaming && (
                       <span className="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden text-[10px] text-aegis-text-dim">
                         {detailText && (
                           <span className="block flex-1 basis-0 min-w-0 truncate overflow-hidden">
@@ -491,12 +651,48 @@ function NewSessionPicker({
                         )}
                       </span>
                     )}
-                  </button>
+                  </div>
                 );
               })
             )}
           </div>
         </motion.div>
+      )}
+
+      {/* Available-session context menu — portal'd so it's not clipped by the
+          picker's overflow. Same three actions as the tab right-click menu,
+          since available sessions ARE existing sessions (just not yet in a
+          tab). Open opens them as a tab; Rename / Delete work directly. */}
+      {pickerCtxMenu && createPortal(
+        <div
+          ref={pickerCtxRef}
+          className="fixed z-[9999] min-w-[160px] py-1 rounded-lg border bg-aegis-menu-bg border-aegis-menu-border text-[12px]"
+          style={{ left: pickerCtxMenu.x, top: pickerCtxMenu.y, boxShadow: 'var(--aegis-menu-shadow)' }}
+        >
+          <button
+            onClick={() => { onOpenExisting(pickerCtxMenu.session.key); setPickerCtxMenu(null); onClose(); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+          >
+            <Shield size={13} className="opacity-60" />
+            {t('chat.openSession', 'Open')}
+          </button>
+          <button
+            onClick={() => beginPickerRename(pickerCtxMenu.session)}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+          >
+            <Pencil size={13} className="opacity-60" />
+            {t('chat.renameSession', 'Rename session')}
+          </button>
+          <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
+          <button
+            onClick={() => deleteAvailableSession(pickerCtxMenu.session)}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 size={13} />
+            {t('chat.deleteSession', 'Delete session')}
+          </button>
+        </div>,
+        document.body,
       )}
     </AnimatePresence>
   );
@@ -619,18 +815,38 @@ export function ChatTabs() {
     }
   }, [showNewPicker, openTabs, sessions]);
 
+  // Persona carried in from a SkillsPage click. Cleared after the picker closes.
+  const [pendingPersona, setPendingPersona] = useState<SkillPersona | null>(null);
+
   useEffect(() => {
-    const handler = () => handleOpenNewPicker();
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ persona?: SkillPersona }>).detail;
+      if (detail?.persona) {
+        setPendingPersona(detail.persona);
+        // When a persona is carried in, always ensure the picker is open —
+        // don't toggle it closed if it's already open (user may be re-picking).
+        if (!showNewPicker) handleOpenNewPicker();
+      } else {
+        // Plain + button: toggle behavior (open/close).
+        handleOpenNewPicker();
+      }
+    };
     window.addEventListener('aegis:open-new-session-picker', handler);
     return () => window.removeEventListener('aegis:open-new-session-picker', handler);
-  }, [handleOpenNewPicker]);
+  }, [handleOpenNewPicker, showNewPicker]);
 
-  const handleOpenMainSession = useCallback((agentId: string) => {
-    openTab(`agent:${agentId}:main`);
+  const handleOpenMainSession = useCallback((agentId: string, persona?: SkillPersona | null) => {
+    const sessionKey = `agent:${agentId}:main`;
+    openTab(sessionKey);
     setShowNewPicker(false);
+    setPendingPersona(null);
+    if (persona && persona.prompt) {
+      void gateway.setSessionPersona(persona.prompt, sessionKey)
+        .catch((err) => console.warn('[ChatTabs] setSessionPersona failed:', err));
+    }
   }, [openTab]);
 
-  const handleCreateDesktopSession = useCallback((agentId: string) => {
+  const handleCreateDesktopSession = useCallback((agentId: string, persona?: SkillPersona | null) => {
     const desktopKey = `agent:${agentId}:desktop-${Date.now()}`;
     const sourceMainKey = `agent:${agentId}:main`;
     const sourceMainSession = sessions.find((session) => session.key === sourceMainKey);
@@ -640,6 +856,12 @@ export function ChatTabs() {
 
     openTab(desktopKey);
     setShowNewPicker(false);
+    setPendingPersona(null);
+
+    if (persona && persona.prompt) {
+      void gateway.setSessionPersona(persona.prompt, desktopKey)
+        .catch((err) => console.warn('[ChatTabs] setSessionPersona failed:', err));
+    }
 
     if (!inheritedModel) return;
 
@@ -787,6 +1009,9 @@ export function ChatTabs() {
     setRenaming(true);
     try {
       await gateway.setSessionLabel(next, key);
+      // Apply locally so the tab title refreshes immediately — sessions.list
+      // refetch is heavy and aegis:refresh only reloads chat history.
+      useChatStore.getState().setSessionLabel(key, next);
       window.dispatchEvent(new Event('aegis:refresh'));
     } catch (err) {
       console.warn('[ChatTabs] Failed to rename session:', err);
@@ -880,7 +1105,7 @@ export function ChatTabs() {
                   />
                 ) : (
                   <span
-                    className="max-w-[140px] truncate"
+                    className="max-w-[220px] truncate"
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       startRename(key, label);
@@ -971,6 +1196,24 @@ export function ChatTabs() {
             className="fixed z-[9999] min-w-[180px] py-1 rounded-lg border bg-aegis-menu-bg border-aegis-menu-border text-[12px]"
             style={{ left: ctxMenu.x, top: ctxMenu.y, boxShadow: 'var(--aegis-menu-shadow)' }}
           >
+            {/* Rename — works for all tabs. Use the same display-label helper as
+                the double-click path so the input pre-fills with the visible
+                label (topic / lastMessage / label — whichever the tab shows). */}
+            <button
+              onClick={() => {
+                const key = ctxMenu.key;
+                setCtxMenu(null);
+                const sess = sessions.find(s => s.key === key);
+                const current = sess
+                  ? sessionLabel(sess, key, agents, mainAgentName, messagesPerSession[key])
+                  : '';
+                startRename(key, current);
+              }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+            >
+              <Pencil size={13} className="opacity-60" />
+              {t('chat.renameSession', 'Rename session')}
+            </button>
             {/* Close tab — not for agent:main:main (always pinned) */}
             {!isMainTab && (
               <button
@@ -1010,7 +1253,7 @@ export function ChatTabs() {
       <div className="relative shrink-0 w-0 h-full" ref={newPickerRef}>
         <NewSessionPicker
           open={showNewPicker}
-          onClose={() => setShowNewPicker(false)}
+          onClose={() => { setShowNewPicker(false); setPendingPersona(null); }}
           onOpenExisting={(key) => openTab(key)}
           onOpenMainSession={handleOpenMainSession}
           onCreateDesktopSession={handleCreateDesktopSession}
@@ -1019,6 +1262,10 @@ export function ChatTabs() {
           newSessions={newSessions}
           messagesPerSession={messagesPerSession}
           agents={agents}
+          initialPersona={pendingPersona}
+          defaultPersonaFor={getAgentDefaultPersona}
+          onClearPersona={() => setPendingPersona(null)}
+          onClearDefaultPersona={(agentId) => setAgentDefaultPersona(agentId, null)}
         />
       </div>
     </div>

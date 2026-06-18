@@ -318,6 +318,7 @@ function mapHubSkill(raw: any): HubSkill {
     version: raw.latestVersion?.version || raw.version || raw.tags?.latest || '0.0.0',
     badge: raw.official ? 'official' : raw.featured ? 'featured' : undefined,
     category: raw.category || guessCategory(raw.slug || '', raw.summary || ''),
+    persona: raw.persona,
   };
 }
 
@@ -422,6 +423,7 @@ function mapShSkill(raw: ShRawSkill, featured = false): HubSkill {
     // Use the real category from SkillsHub; fall back to heuristic only when absent
     category: raw.category || guessCategory(raw.slug, desc),
     homepage: raw.homepage,
+    persona: (raw as any).persona,
   };
 }
 
@@ -597,6 +599,7 @@ async function fetchInstalledSkills(): Promise<MySkill[]> {
         enabled: s.disabled !== true && s.enabled !== false,
         source: s.source || 'openclaw-managed',
         dirName,
+        persona: s.persona,
       };
     });
     return mergeInstalledSkills(scannedSkills, gatewaySkills, managedScanAvailable);
@@ -1553,6 +1556,11 @@ export function SkillsPage() {
             : `https://clawhub.ai/skills/${detailSkill?.slug ?? ''}`
         }
         externalLabel={detailSource === 'skillshub' ? t('skills.skillshubOpenSite') : t('skillsExtra.viewOnClawHub')}
+        persona={detailSkill?.persona}
+        onStartChat={(persona) => {
+          window.dispatchEvent(new CustomEvent('aegis:open-new-session-picker', { detail: { persona } }));
+          closeDetail();
+        }}
       />
 
       {/* ═══ Delete Confirm Modal ═══ */}

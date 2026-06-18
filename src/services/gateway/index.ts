@@ -113,6 +113,12 @@ export const gateway = {
   async setSessionLabel(label: string, sessionKey = 'agent:main:main') {
     return connection.request('sessions.patch', { key: sessionKey, label });
   },
+  // Inject a per-session system prompt (persona). Backend may not yet support
+  // `systemPrompt` in sessions.patch; callers should `.catch(console.warn)`
+  // and let the session open normally without the persona in that case.
+  async setSessionPersona(systemPrompt: string | null, sessionKey = 'agent:main:main') {
+    return connection.request('sessions.patch', { key: sessionKey, systemPrompt });
+  },
   async updateAgentParams(agentId: string, params: Record<string, any>) {
     return connection.request('agents.update', { agentId, params });
   },

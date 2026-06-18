@@ -282,6 +282,8 @@ interface ChatState {
   sessions: Session[];
   activeSessionKey: string;
   setSessions: (sessions: Session[], defaults?: { model: string | null; contextTokens: number | null }) => void;
+  /** Update a single session's label locally without a full sessions.list refetch. */
+  setSessionLabel: (key: string, label: string) => void;
   setActiveSession: (key: string) => void;
   incrementSessionUnread: (key: string, amount?: number) => void;
   markSessionCompleted: (key: string) => void;
@@ -947,6 +949,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   clearSessionAttention: (key) => set((state) => ({
     sessions: updateSession(state.sessions, key, clearSessionAttentionState),
+  })),
+
+  /** Locally apply a renamed label without refetching sessions.list. */
+  setSessionLabel: (key, label) => set((state) => ({
+    sessions: updateSession(state.sessions, key, (session) =>
+      session.label === label ? session : { ...session, label },
+    ),
   })),
 
   // ── Tabs ──

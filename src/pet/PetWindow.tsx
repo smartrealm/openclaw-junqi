@@ -9,7 +9,6 @@ import { PetCharacter } from './PetCharacter';
 import { PetBubble } from './PetBubble';
 import { DEFAULT_PET_STATE, type PetState } from './pet-states';
 import type { PetMenuItem } from './petActions';
-import { X } from 'lucide-react';
 import { usePetStore } from '@/stores/petStore';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
@@ -36,6 +35,7 @@ const SNAP_MARGIN = 6;
  *   • Double-click → surface & focus the main window.
  *   • Right-click → native context menu (main window / next skin / hide /
  *     pomodoro control when enabled).
+ *   • Hover → bubble tip visibility (no other UI affordance).
  *   • While dragging the pet scales up slightly ("picked up" feel).
  */
 export default function PetWindow() {
@@ -43,15 +43,6 @@ export default function PetWindow() {
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
-  // Theme-aware so the hide button and other overlays can pick a legible color.
-  const [isDark, setIsDark] = useState(true);
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    setIsDark(mq.matches);
-    const onChange = () => setIsDark(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
   // True while the magnetic-snap glide is moving the window. The window moving
   // under a still cursor makes hovered flicker (mouseenter/leave), which would
   // make the tip bubble strobe — so we suppress hover-driven tips while snapping.
@@ -219,6 +210,7 @@ export default function PetWindow() {
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       onMouseEnter={() => setHovered(true)}
+      onMouseMove={() => { if (!hovered) setHovered(true); }}
       onMouseLeave={() => setHovered(false)}
       style={{
         width: '100vw',
@@ -236,17 +228,6 @@ export default function PetWindow() {
       }}
     >
       <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} />
-      {/* Obvious "hide" affordance — the transparent window has no chrome, so
-          without this button users have no way to find the right-click / tray /
-          ⌘⇧H / settings-page route to dismiss the pet. */}
-      <button
-        onClick={() => invoke('close_pet_window').catch(() => undefined)}
-        aria-label={t('pet.hint.hidePet', '隐藏萌宠')}
-        className="absolute top-2 left-2 z-10 flex items-center justify-center w-5 h-5 rounded-full opacity-50 hover:opacity-100 hover:bg-white/15 transition-opacity"
-        style={{ color: isDark ? '#ffffff' : '#16181f' }}
-      >
-        <X size={12} strokeWidth={2.4} />
-      </button>
       <div style={{ position: 'relative' }}>
         <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={state.skin ?? skin} customAsset={customAsset} dragging={dragging} />
         {BadgeIcon && (

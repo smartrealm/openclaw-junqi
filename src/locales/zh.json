@@ -115,7 +115,9 @@
     "viewBrowse": "全部技能",
     "loadMore": "加载更多 {{count}} 个",
     "loadingMore": "加载中…",
-    "showingOf": "已显示 {{shown}} / {{total}} 个技能"
+    "showingOf": "已显示 {{shown}} / {{total}} 个技能",
+    "startChat": "开始对话",
+    "startChatWithPersona": "以此人格开始对话"
   },
   "dashboard": {
     "activeAgents": "活跃智能体",
@@ -572,7 +574,12 @@
     "selectAgent": "选择智能体",
     "openMainSession": "打开主会话",
     "newDesktopSession": "新建桌面会话",
+    "persona": "人格",
+    "personaChip": "人格：{{name}}",
+    "clearPersona": "清除人格",
     "closeTab": "关闭标签",
+    "renameSession": "重命名会话",
+    "renameSessionHint": "双击重命名",
     "deleteSession": "删除会话",
     "deleteSessionConfirm": "删除此会话及其历史记录？此操作无法撤销。",
     "deleteSessionSuccess": "会话已删除",

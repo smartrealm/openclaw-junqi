@@ -40,7 +40,7 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise Rejectio
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     windowLabel = getCurrentWindow().label;
-  } catch {
+      } catch {
     /* plain vite/browser context */
   }
   const Root =

@@ -87,13 +87,13 @@ pub fn run() {
             commands::pet::pet_show_context_menu,
         ])
         .setup(|app| {
-            // Desktop-pet mode on macOS: keep JunQi out of the Dock entirely
-            // (Accessory activation policy). The main window + pet window still
-            // display normally; the tray icon and double-clicking the pet are
-            // the entry points — no Dock tile, no Cmd+Tab entry.
+            // Use the default (Regular) activation policy so JunQi gets a Dock
+            // tile with its icon and a Cmd+Tab entry — the whole point of
+            // shipping a branded .app. The pet window is still skip_taskbar
+            // and always_on_top so it doesn't take its own Dock slot.
             #[cfg(target_os = "macos")]
             {
-                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
             }
             // macOS: apply native vibrancy so the frosted/transparent CSS layers
             // (Context bar, input area, message regions) bleed the desktop material
