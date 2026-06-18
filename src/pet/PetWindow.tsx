@@ -42,6 +42,10 @@ export default function PetWindow() {
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
+  // True while the magnetic-snap glide is moving the window. The window moving
+  // under a still cursor makes hovered flicker (mouseenter/leave), which would
+  // make the tip bubble strobe — so we suppress hover-driven tips while snapping.
+  const [snapping, setSnapping] = useState(false);
   const position = usePetStore((s) => s.position);
   const setPosition = usePetStore((s) => s.setPosition);
   const skin = usePetStore((s) => s.skin);
@@ -104,28 +108,33 @@ export default function PetWindow() {
     // Magnetic snap: if the pet is released close to a screen edge, glide it to
     // that edge. Releases in the middle of the screen are left untouched.
     // Geometry is pure (snap.ts); this helper only owns the IO + animation.
-    const glideTo = (fromX: number, fromY: number, toX: number, toY: number) => {
+    const glideTo = (fromX: number, fromY: number, toX: number, toY: number, onDone?: () => void) => {
       const dur = 200;
       const start = performance.now();
       const step = (now: number) => {
-        const e = easeOutCubic(Math.min(1, (now - start) / dur));
+        const t = Math.min(1, (now - start) / dur);
+        const e = easeOutCubic(t);
         invoke('set_pet_position', { x: fromX + (toX - fromX) * e, y: fromY + (toY - fromY) * e });
-        if (now - start < dur) requestAnimationFrame(step);
+        if (t < 1) requestAnimationFrame(step);
+        else onDone?.();
       };
       requestAnimationFrame(step);
     };
     const snapToEdge = () => {
+      setSnapping(true);
       Promise.all([
         invoke<{ x: number; y: number }>('get_pet_position'),
         invoke<PetBounds>('get_pet_bounds'),
       ])
         .then(([pos, b]) => {
           const target = computeSnapTarget({ x: pos.x, y: pos.y, w: PET_W, h: PET_H }, b, SNAP_THRESHOLD, SNAP_MARGIN);
-          if (!target) return;
-          if (Math.abs(target.x - pos.x) < 1 && Math.abs(target.y - pos.y) < 1) return;
-          glideTo(pos.x, pos.y, target.x, target.y);
+          if (!target || (Math.abs(target.x - pos.x) < 1 && Math.abs(target.y - pos.y) < 1)) {
+            setSnapping(false);
+            return;
+          }
+          glideTo(pos.x, pos.y, target.x, target.y, () => setSnapping(false));
         })
-        .catch(() => undefined);
+        .catch(() => setSnapping(false));
     };
     const onUp = () => {
       const d = drag.current;
@@ -216,7 +225,7 @@ export default function PetWindow() {
         userSelect: 'none',
       }}
     >
-      <PetBubble state={state} dragging={dragging} hovered={hovered} />
+      <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} />
       <div style={{ position: 'relative' }}>
         <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={state.skin ?? skin} customAsset={customAsset} dragging={dragging} />
         {BadgeIcon && (
