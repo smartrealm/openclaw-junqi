@@ -71,3 +71,18 @@ test('default → idle', () => {
 test('expired happy window falls back to idle', () => {
   assert.equal(derivePetState(base({ lastReplyTs: 0, now: 10_000 })).emotion, 'idle');
 });
+
+test('task celebrate carries kind=task', () => {
+  assert.equal(derivePetState(base({ lastTaskDoneTs: 1800 })).celebrateKind, 'task');
+});
+
+test('pomodoro celebrate carries the given kind', () => {
+  assert.equal(
+    derivePetState(base({ pomodoroDoneTs: 1800, pomodoroDoneKind: 'pomodoroWorkLong' })).celebrateKind,
+    'pomodoroWorkLong',
+  );
+});
+
+test('pomodoro celebrate defaults to pomodoroWork kind', () => {
+  assert.equal(derivePetState(base({ pomodoroDoneTs: 1800 })).celebrateKind, 'pomodoroWork');
+});
