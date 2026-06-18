@@ -42,6 +42,7 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(PET_LABEL) {
         let _ = win.show();
         let _ = win.set_focus();
+        let _ = app.emit("pet-visibility", serde_json::json!({ "visible": true }));
         return Ok(());
     }
 
@@ -89,6 +90,7 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
         }
     });
 
+    let _ = app.emit("pet-visibility", serde_json::json!({ "visible": true }));
     Ok(())
 }
 
@@ -97,7 +99,17 @@ pub async fn close_pet_window(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(PET_LABEL) {
         let _ = win.hide();
     }
+    let _ = app.emit("pet-visibility", serde_json::json!({ "visible": false }));
     Ok(())
+}
+
+/// Current visibility of the pet window — used by the settings-page recall
+/// button to label itself "Show" vs "Hide".
+#[tauri::command]
+pub async fn get_pet_visible(app: AppHandle) -> bool {
+    app.get_webview_window(PET_LABEL)
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false)
 }
 
 /// Toggle the pet window's visibility, creating it if it doesn't exist yet.

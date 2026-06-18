@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { cycleSkin, startPomodoro, stopPomodoro, togglePausePomodoro, type PetMenuKind } from './petActions';
+import { usePetStore } from '@/stores/petStore';
 
 /**
  * Runs in the MAIN window. The pet window is a thin client — when the user
@@ -13,7 +14,7 @@ import { cycleSkin, startPomodoro, stopPomodoro, togglePausePomodoro, type PetMe
  */
 export function usePetActions() {
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
+    const unlistens: UnlistenFn[] = [];
     listen<{ kind: PetMenuKind }>('pet-action', (e) => {
       switch (e.payload.kind) {
         case 'showMain':
@@ -36,12 +37,19 @@ export function usePetActions() {
           break;
       }
     })
-      .then((fn) => {
-        unlisten = fn;
-      })
+      .then((f) => unlistens.push(f))
       .catch(() => undefined);
-    return () => {
-      unlisten?.();
-    };
+    // Mirror pet-window visibility into the store so the settings-page recall
+    // button can label itself "Show" vs "Hide".
+    listen<{ visible: boolean }>('pet-visibility', (e) => {
+      usePetStore.getState().setPetVisible(e.payload.visible);
+    })
+      .then((f) => unlistens.push(f))
+      .catch(() => undefined);
+    // Initialize from the pet window's current visibility (covers cold start).
+    invoke<boolean>('get_pet_visible')
+      .then((v) => usePetStore.getState().setPetVisible(v))
+      .catch(() => undefined);
+    return () => unlistens.forEach((f) => f());
   }, []);
 }

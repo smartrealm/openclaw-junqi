@@ -79,6 +79,7 @@ pub fn run() {
             commands::pet::set_pet_position,
             commands::pet::get_pet_position,
             commands::pet::get_pet_bounds,
+            commands::pet::get_pet_visible,
             commands::pet::pet_focus_main,
             commands::pet::save_pet_asset,
             commands::pet::load_pet_asset,

@@ -50,7 +50,7 @@ export function SettingsPageFull() {
     accentColor, setAccentColor,
   } = useSettingsStore();
   const { connected, connecting } = useChatStore();
-  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, pomodoro: petPomodoro, setPomodoro: setPetPomodoro } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petNow, setPetNow] = useState(Date.now());
   useEffect(() => {
@@ -574,18 +574,22 @@ export function SettingsPageFull() {
           <Toggle enabled={petEnabled} onChange={setPetEnabled} />
         </div>
 
-        {/* Recall the pet after it's been hidden (tray / ⌘⇧H / right-click also work). */}
+        {/* Toggle the pet window: shown → hide (close_pet_window), hidden → recall (open_pet_window). */}
         <div className="flex items-center justify-between mt-4">
           <div>
-            <div className="text-[13px] text-aegis-text">{t('pet.settings.showPet', '唤回萌宠')}</div>
-            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.showPetHint', '隐藏后一键唤回(也可托盘图标 / ⌘⇧H)')}</div>
+            <div className="text-[13px] text-aegis-text">
+              {petVisible ? t('pet.settings.hidePet', '隐藏萌宠') : t('pet.settings.showPet', '显示萌宠')}
+            </div>
+            <div className="text-[11px] text-aegis-text-dim">
+              {petVisible ? t('pet.settings.hidePetHint', '点击隐藏(也可托盘图标 / ⌘⇧H)') : t('pet.settings.showPetHint', '隐藏后一键唤回(也可托盘图标 / ⌘⇧H)')}
+            </div>
           </div>
           <button
             disabled={!petEnabled}
-            onClick={() => invoke('open_pet_window').catch(() => undefined)}
+            onClick={() => invoke(petVisible ? 'close_pet_window' : 'open_pet_window').catch(() => undefined)}
             className={clsx('text-[12px] px-3 py-1.5 rounded-xl border transition-colors',
               petEnabled ? 'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10' : 'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed')}>
-            {t('pet.settings.show', '显示')}
+            {petVisible ? t('pet.settings.hide', '隐藏') : t('pet.settings.show', '显示')}
           </button>
         </div>
 

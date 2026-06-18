@@ -31,7 +31,9 @@ interface PetSettings {
   skin: PetSkin;
   customAsset: string | null;
   pomodoro: PomodoroState;
+  petVisible: boolean;
 
+  setPetVisible: (v: boolean) => void;
   setEnabled: (v: boolean) => void;
   setPosition: (p: { x: number; y: number }) => void;
   setClickThrough: (v: boolean) => void;
@@ -63,12 +65,14 @@ export const usePetStore = create<PetSettings>()(
         completedToday: 0,
         completedDate: '',
       },
+      petVisible: true,
       setEnabled: (enabled) => set({ enabled }),
       setPosition: (position) => set({ position }),
       setClickThrough: (clickThrough) => set({ clickThrough }),
       setSkin: (skin) => set({ skin }),
       setCustomAsset: (customAsset) => set({ customAsset }),
       setPomodoro: (p) => set((s) => ({ pomodoro: { ...s.pomodoro, ...p } })),
+      setPetVisible: (petVisible: boolean) => set({ petVisible }),
     }),
     {
       name: 'aegis-pet-settings',
