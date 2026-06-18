@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { pomodoroIcon, pomodoroColor } from './pomodoroView';
@@ -8,14 +8,11 @@ import { computeSnapTarget, easeOutCubic, type PetBounds } from './snap';
 import { PetCharacter } from './PetCharacter';
 import { PetBubble } from './PetBubble';
 import { DEFAULT_PET_STATE, type PetState } from './pet-states';
-import { cycleSkin, type PetMenuItem } from './petActions';
+import type { PetMenuItem } from './petActions';
 import { usePetStore } from '@/stores/petStore';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
-/** Wait this long (ms) before firing a single-click action, so a following
- *  double-click can cancel it. */
-const CLICK_DELAY = 280;
 /** Pet logical size — must match Rust `open_pet_window` (108×154). */
 const PET_W = 108;
 const PET_H = 154;
@@ -35,7 +32,6 @@ const SNAP_MARGIN = 6;
  *
  * Interaction:
  *   • Press & slide → drag the pet (manual JS drag via set_pet_position).
- *   • Single-click → cycle to the next skin (delayed so double-click cancels).
  *   • Double-click → surface & focus the main window.
  *   • Right-click → native context menu (main window / next skin / hide /
  *     pomodoro control when enabled).
@@ -55,8 +51,6 @@ export default function PetWindow() {
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
   const justDragged = useRef(false);
-  // Pending single-click action; cleared if a double-click arrives first.
-  const clickTimer = useRef<number | null>(null);
 
   useEffect(() => {
     document.documentElement.style.background = 'transparent';
@@ -75,15 +69,7 @@ export default function PetWindow() {
       .catch(() => undefined);
 
     const unlistens: UnlistenFn[] = [];
-    listen<PetState>('pet-state', (e) => {
-      setState(e.payload);
-      // Mirror the broadcast skin into the local store so single-click cycling
-      // advances from the skin actually shown — but only on change, to avoid
-      // writing localStorage on every 250ms tick.
-      if (e.payload.skin && e.payload.skin !== usePetStore.getState().skin) {
-        usePetStore.getState().setSkin(e.payload.skin);
-      }
-    })
+    listen<PetState>('pet-state', (e) => setState(e.payload))
       .then((fn) => unlistens.push(fn))
       .catch(() => undefined);
     listen<{ x: number; y: number }>('pet-moved', (e) => setPosition(e.payload))
@@ -175,26 +161,8 @@ export default function PetWindow() {
       .catch(() => undefined);
   };
 
-  // Single-click cycles skins — delayed so a double-click can cancel it. The
-  // action runs in the main window (authoritative store); the new skin echoes
-  // back via the next pet-state emit.
-  const onClick = () => {
-    if (justDragged.current) return;
-    if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
-    clickTimer.current = window.setTimeout(() => {
-      // Optimistic: flip the local skin instantly so the change is visible at
-      // once; then ask the main window to persist + re-broadcast (confirming it).
-      cycleSkin();
-      emit('pet-action', { kind: 'nextSkin' });
-    }, CLICK_DELAY);
-  };
-
   const onDoubleClick = () => {
     if (justDragged.current) return;
-    if (clickTimer.current !== null) {
-      window.clearTimeout(clickTimer.current);
-      clickTimer.current = null;
-    }
     invoke('pet_focus_main').catch(() => undefined);
   };
 
@@ -229,7 +197,6 @@ export default function PetWindow() {
   return (
     <div
       onMouseDown={onMouseDown}
-      onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       onMouseEnter={() => setHovered(true)}
