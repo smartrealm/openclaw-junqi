@@ -53,18 +53,27 @@ function fmtClock(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-// Minimal: no background, no border, no dot, no ring — just colored text.
+// Glassy pill: translucent dark fill + blur (with an opaque-enough fallback so
+// white text stays legible over any desktop), soft border + shadow. Was a bare
+// 10px white text with no background — illegible on light backgrounds.
 const BUBBLE: CSSProperties = {
-  maxWidth: 124,
+  maxWidth: 168,
+  background: 'rgba(18, 20, 28, 0.78)',
+  backdropFilter: 'blur(14px)',
+  WebkitBackdropFilter: 'blur(14px)',
+  border: '1px solid rgba(255, 255, 255, 0.09)',
+  borderRadius: 12,
+  padding: '6px 11px',
   color: '#ffffff',
-  fontFamily: 'system-ui, sans-serif',
-  fontSize: 10,
-  lineHeight: 1.3,
+  fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+  fontSize: 12,
+  fontWeight: 500,
+  lineHeight: 1.4,
+  boxShadow: '0 8px 22px rgba(0, 0, 0, 0.32)',
 };
 
 /**
- * Compact status bubble above the character. Plain text only (label tinted by
- * emotion + elapsed time + a detail line). Display priority (high → low):
+ * Compact status bubble above the character. Display priority (high → low):
  * dragging > error > active(chat) > celebrate/happy > pomodoro countdown >
  * sleep/sleepy > hover carousel > idle (no bubble). Live task info and the
  * pomodoro countdown beat the "how to use me" hints; chat celebrations briefly
@@ -100,37 +109,37 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
 
   if (dragging) {
     bubbleKey = 'dragging';
-    body = <span style={{ fontSize: 10 }}>{t('pet.hint.moving', '移动中…')}</span>;
+    body = <span>{t('pet.hint.moving', '移动中…')}</span>;
   } else if (e === 'error') {
     bubbleKey = 'error';
-    body = <span style={{ fontSize: 10, fontWeight: 600, color: EMOTION_COLOR[e] }}>{label}</span>;
+    body = <span style={{ fontWeight: 600, color: EMOTION_COLOR[e] }}>{label}</span>;
   } else if (ACTIVE.has(e)) {
     bubbleKey = `active-${e}`;
     const detail = state.message || state.taskLabel;
     const elapsed = state.elapsedMs ? fmtDuration(state.elapsedMs) : null;
     body = (
       <>
-        <span style={{ fontSize: 10, fontWeight: 600, color: EMOTION_COLOR[e] }}>
+        <span style={{ fontWeight: 600, color: EMOTION_COLOR[e] }}>
           {label}
-          {elapsed && <span style={{ fontSize: 9, opacity: 0.6, fontWeight: 400 }}> · {elapsed}</span>}
+          {elapsed && <span style={{ fontSize: 10.5, opacity: 0.62, fontWeight: 400 }}> · {elapsed}</span>}
         </span>
         {detail && (
-          <div style={{ fontSize: 9, opacity: 0.7, maxWidth: 116, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: 10.5, opacity: 0.72, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
             {detail}
           </div>
         )}
       </>
     );
   } else if (e === 'happy' || e === 'celebrate') {
-    // A finished pomodoro phase shows its own caption (+ an emoji) instead of
+    // A finished pomodoro phase shows its own caption (+ an icon) instead of
     // the generic one.
     bubbleKey = `celebrate-${state.celebrateKind ?? 'task'}`;
     const pomoKind = e === 'celebrate' && state.celebrateKind && state.celebrateKind !== 'task' ? state.celebrateKind : null;
     const caption = pomoKind ? t(CELEBRATE_CAPTION[pomoKind].key, CELEBRATE_CAPTION[pomoKind].fallback) : label;
     const CelebrateIcon = pomoKind ? celebrateIcon(pomoKind) : null;
     body = (
-      <span style={{ fontSize: 10, fontWeight: 600, color: EMOTION_COLOR[e], display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-        {CelebrateIcon && <CelebrateIcon size={11} strokeWidth={2.2} style={{ flexShrink: 0 }} />}
+      <span style={{ fontWeight: 600, color: EMOTION_COLOR[e], display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        {CelebrateIcon && <CelebrateIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />}
         {caption}
       </span>
     );
@@ -144,14 +153,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       : t(p.phase === 'work' ? 'pet.pomodoro.focusing' : 'pet.pomodoro.resting', p.phase === 'work' ? '专注中' : '休息中');
     const PomoIcon = pomodoroIcon(p);
     body = (
-      <span style={{ fontSize: 10, fontWeight: 600, color: pomodoroColor(p), display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-        <PomoIcon size={11} strokeWidth={2.2} style={{ flexShrink: 0 }} />
+      <span style={{ fontWeight: 600, color: pomodoroColor(p), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />
         {p.paused ? phaseLabel : `${phaseLabel} ${fmtClock(p.remainingMs)}`}
       </span>
     );
   } else if (e === 'sleep' || e === 'sleepy') {
     bubbleKey = e;
-    body = <span style={{ fontSize: 10, opacity: 0.85, color: EMOTION_COLOR[e] }}>{label}</span>;
+    body = <span style={{ opacity: 0.88, color: EMOTION_COLOR[e] }}>{label}</span>;
   } else if (hovered) {
     bubbleKey = 'tips';
     body = (
@@ -159,7 +168,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
         key={tipIndex}
         initial={{ opacity: 0, y: 3 }}
         animate={{ opacity: 1, y: 0 }}
-        style={{ fontSize: 9.5, display: 'block', whiteSpace: 'nowrap' }}
+        style={{ display: 'block', whiteSpace: 'nowrap' }}
       >
         {tips[tipIndex]}
       </motion.span>
@@ -175,9 +184,9 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       {body && (
         <motion.div
           key={bubbleKey}
-          initial={{ opacity: 0, y: 6, scale: 0.9 }}
+          initial={{ opacity: 0, y: 6, scale: 0.92 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
+          exit={{ opacity: 0, scale: 0.92 }}
           transition={{ duration: 0.18 }}
           style={BUBBLE}
         >
