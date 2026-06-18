@@ -1644,7 +1644,9 @@
     "version": "版本",
     "arch": "架构",
     "system": "系统",
-    "cpuModel": "CPU 型号"
+    "cpuModel": "CPU 型号",
+    "resources": "资源使用",
+    "context": "上下文"
   },
   "kanban": {
     "queue": "待处理",

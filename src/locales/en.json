@@ -1656,7 +1656,9 @@
     "version": "version",
     "arch": "arch",
     "system": "system",
-    "cpuModel": "cpuModel"
+    "cpuModel": "cpuModel",
+    "resources": "Resources",
+    "context": "Context"
   },
   "kanban": {
     "queue": "Queue",

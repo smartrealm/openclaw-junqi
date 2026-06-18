@@ -1195,9 +1195,9 @@
     "noAgents": "لا يوجد وكلاء",
     "sessionCount": "{{count}} جلسات",
     "systemMetrics": "System Metrics",
-    "memory": "Memory",
+    "memory": "الذاكرة",
     "disk": "Disk",
-    "network": "Network",
+    "network": "الشبكة",
     "comingSoon": "Coming Soon",
     "agentStatus": "Agent Status",
     "totalAgents": "إجمالي الوكلاء",
@@ -1209,7 +1209,9 @@
     "version": "الإصدار",
     "arch": "المعمارية",
     "system": "النظام",
-    "cpuModel": "طراز المعالج"
+    "cpuModel": "طراز المعالج",
+    "resources": "الموارد",
+    "context": "السياق"
   },
   "kanban": {
     "queue": "قيد الانتظار",
