@@ -53,14 +53,12 @@ function fmtClock(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-// Glassy pill: translucent dark fill + blur (with an opaque-enough fallback so
-// white text stays legible over any desktop), soft border + shadow. Was a bare
-// 10px white text with no background — illegible on light backgrounds.
+// Solid dark pill: opaque fill + soft border + shadow. No blur/glass — the pet
+// window is transparent, so backdrop-filter never really blurred anything and
+// just read as a muddy translucent block.
 const BUBBLE: CSSProperties = {
   maxWidth: 168,
-  background: 'rgba(18, 20, 28, 0.78)',
-  backdropFilter: 'blur(14px)',
-  WebkitBackdropFilter: 'blur(14px)',
+  background: 'rgb(18, 20, 28)',
   border: '1px solid rgba(255, 255, 255, 0.09)',
   borderRadius: 12,
   padding: '6px 11px',
