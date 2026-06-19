@@ -210,8 +210,32 @@ export function TerminalPage() {
   const [tabs, setTabs] = useState<TermTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [ptyError, setPtyError] = useState<string | null>(null);
+  // Inline tab rename state. Label is pure-frontend (no backend round-trip —
+  // unlike chat sessions, a terminal tab's display name is just a convenience
+  // for the user and lives only in this component's state).
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const tabCounterRef = useRef(0);
   const initialTabCreatedRef = useRef(false);
+
+  const beginRename = useCallback((tab: TermTab) => {
+    setRenamingId(tab.id);
+    setRenameValue(tab.label);
+  }, []);
+
+  const cancelRename = useCallback(() => {
+    setRenamingId(null);
+    setRenameValue('');
+  }, []);
+
+  const submitRename = useCallback((id: string) => {
+    const next = renameValue.trim();
+    if (next) {
+      setTabs(prev => prev.map(tab => (tab.id === id ? { ...tab, label: next } : tab)));
+    }
+    setRenamingId(null);
+    setRenameValue('');
+  }, [renameValue]);
 
   // Check if terminal API is available (Electron only)
   const hasTerminal = !!window.aegis?.terminal;
@@ -242,7 +266,7 @@ export function TerminalPage() {
     try {
       const result = await window.aegis.terminal.create({ cols: 80, rows: 24 });
       if (!result?.id) {
-        setPtyError(result?.error || 'PTY creation failed — node-pty may not be compiled for this Electron version. Run: npx electron-rebuild -f -w node-pty');
+        setPtyError(result?.error || 'PTY creation failed — the native terminal backend could not spawn a shell.');
         return;
       }
       setPtyError(null);
@@ -318,7 +342,41 @@ export function TerminalPage() {
             <TermIcon size={12} className={clsx(
               activeTabId === tab.id ? 'text-aegis-primary' : 'text-aegis-text-dim',
             )} />
-            <span className="truncate max-w-[120px]">{tab.label}</span>
+            {renamingId === tab.id ? (
+              <input
+                autoFocus
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                // Stop clicks from switching the active tab (which would blur
+                // the input and submit prematurely).
+                onClick={(e) => e.stopPropagation()}
+                onBlur={() => submitRename(tab.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitRename(tab.id);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelRename();
+                  }
+                }}
+                title={t('terminal.renameHint', 'Enter to save · Esc to cancel')}
+                className="max-w-[120px] min-w-[60px] h-[20px] px-1 rounded
+                  bg-aegis-bg border border-aegis-primary/40 text-[12px]
+                  text-aegis-text outline-none"
+              />
+            ) : (
+              <span
+                className="truncate max-w-[120px] cursor-text"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  beginRename(tab);
+                }}
+                title={t('terminal.renameHint', 'Double-click to rename')}
+              >
+                {tab.label}
+              </span>
+            )}
             {!tab.alive && (
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-danger/60 shrink-0" />
             )}

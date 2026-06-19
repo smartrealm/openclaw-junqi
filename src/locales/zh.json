@@ -682,9 +682,10 @@
   },
   "terminal": {
     "title": "终端",
-    "notAvailable": "终端仅在桌面应用中可用，需要 Electron 与 node-pty 支持。",
+    "notAvailable": "终端仅在桌面应用中可用。",
     "empty": "暂无终端标签页",
-    "newTab": "新建终端"
+    "newTab": "新建终端",
+    "renameHint": "双击重命名"
   },
   "offline": {
     "title": "未连接",

@@ -85,6 +85,11 @@ pub fn run() {
             commands::pet::load_pet_asset,
             commands::pet::clear_pet_asset,
             commands::pet::pet_show_context_menu,
+            // Integrated terminal (portable-pty)
+            commands::terminal::terminal_create,
+            commands::terminal::terminal_write,
+            commands::terminal::terminal_resize,
+            commands::terminal::terminal_kill,
         ])
         .setup(|app| {
             // Use the default (Regular) activation policy so JunQi gets a Dock

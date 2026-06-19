@@ -9,4 +9,5 @@ pub mod screenshot;
 pub mod setup;
 pub mod system;
 pub mod system_metrics;
+pub mod terminal;
 pub mod voice;

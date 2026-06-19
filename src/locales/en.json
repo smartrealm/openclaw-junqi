@@ -684,9 +684,10 @@
   },
   "terminal": {
     "title": "Terminal",
-    "notAvailable": "Terminal is only available in the desktop app. The integrated terminal requires Electron and node-pty.",
+    "notAvailable": "Terminal is only available in the desktop app.",
     "empty": "No terminal tabs open",
-    "newTab": "New Terminal"
+    "newTab": "New Terminal",
+    "renameHint": "Double-click to rename"
   },
   "offline": {
     "title": "Not Connected",

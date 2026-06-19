@@ -245,7 +245,43 @@ async function resolveGwConfig(): Promise<any> {
   },
   memory: { browse: async () => null, readLocal: async () => ({ success: false, files: [] }) },
   pairing: { getToken: async () => { try { return await invoke("get_gateway_token"); } catch { return null; } }, saveToken: async () => ({ success: true }), requestPairing: async () => { const id = await deviceIdentity(); return { code: "", deviceId: id.deviceId }; }, poll: async () => ({ status: "timeout" }) },
-  terminal: { create: async () => ({ id: "stub", pid: 0, error: "Not implemented" }), write: async () => {}, resize: async () => {}, kill: async () => {}, onData: () => () => {}, onExit: () => () => {} },
+  terminal: {
+    // portable-pty backed PTY multiplexer in Rust. Each create() spawns a
+    // login shell; stdout arrives via the "terminal-data" event, exits via
+    // "terminal-exit". onData/onExit return unlisten functions that match
+    // the Electron preload contract in src/types/global.d.ts.
+    create: async (opts?: { cols?: number; rows?: number; cwd?: string }) => {
+      try {
+        const r = await invoke<{ id: string; pid: number }>("terminal_create", {
+          cols: opts?.cols,
+          rows: opts?.rows,
+          cwd: opts?.cwd ?? null,
+        });
+        return { id: r.id, pid: r.pid };
+      } catch (e: any) {
+        return { id: "", pid: 0, error: String(e?.message ?? e) };
+      }
+    },
+    write: (id: string, data: string) => invoke("terminal_write", { id, data }),
+    resize: (id: string, cols: number, rows: number) => invoke("terminal_resize", { id, cols, rows }),
+    kill: (id: string) => invoke("terminal_kill", { id }),
+    onData: (callback: (id: string, data: string) => void) => {
+      let unlisten: (() => void) | null = null;
+      let pending = true;
+      listen<{ id: string; data: string }>("terminal-data", (e) => callback(e.payload.id, e.payload.data))
+        .then((fn) => { if (pending) unlisten = fn; else fn(); })
+        .catch(() => {});
+      return () => { pending = false; unlisten?.(); };
+    },
+    onExit: (callback: (id: string, exitCode: number, signal?: number) => void) => {
+      let unlisten: (() => void) | null = null;
+      let pending = true;
+      listen<{ id: string; exit_code: number }>("terminal-exit", (e) => callback(e.payload.id, e.payload.exit_code))
+        .then((fn) => { if (pending) unlisten = fn; else fn(); })
+        .catch(() => {});
+      return () => { pending = false; unlisten?.(); };
+    },
+  },
   artifact: { open: async () => ({ success: false }) },
   notify: async (t: string, b: string) => { if ("Notification" in window && Notification.permission === "granted") new Notification(t, { body: b }); },
   consoleUi: {
