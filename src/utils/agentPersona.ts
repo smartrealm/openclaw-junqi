@@ -6,7 +6,23 @@
 import type { SkillPersona } from '@/types/skills';
 
 const STORAGE_KEY = 'aegis:agent-default-persona';
+// 16 KB — defends localStorage quota + caps a maliciously long prompt at
+// the trust boundary before the gateway sees it.
+const MAX_PROMPT_LENGTH = 16_000;
 type StoredMap = Record<string, SkillPersona>;
+
+// Strip ASCII control chars (NUL, ESC, RTL override, zero-width) and
+// collapse runs of whitespace. Keeps the prompt readable in the chip
+// preview while neutralizing the simplest prompt-injection vectors.
+function sanitizePrompt(raw: string): string {
+  // eslint-disable-next-line no-control-regex
+  const CTRL_RE = new RegExp('[\\x00-\\x1F\\x7F]', 'g');
+  return raw
+    .replace(CTRL_RE, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_PROMPT_LENGTH);
+}
 
 function readAll(): StoredMap {
   try {
@@ -34,10 +50,19 @@ export function getAgentDefaultPersona(agentId: string): SkillPersona | null {
 
 export function setAgentDefaultPersona(agentId: string, persona: SkillPersona | null): void {
   const map = readAll();
-  if (persona && persona.prompt) {
-    map[agentId] = persona;
+  if (persona) {
+    const cleaned = sanitizePrompt(persona.prompt);
+    if (!cleaned) {
+      delete map[agentId];
+    } else {
+      map[agentId] = { ...persona, prompt: cleaned };
+    }
   } else {
     delete map[agentId];
   }
   writeAll(map);
 }
+
+// Display-only cap for chip previews — kept separate from the persisted cap
+// so "show full" can still render the entire 16 KB if needed.
+export const PERSONA_DISPLAY_LIMIT = 200;

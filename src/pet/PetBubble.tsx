@@ -96,25 +96,29 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
 
   // Operation-hint carousel, shown only while the cursor is over the pet
-  // AND the pet is idle. Tips cycle every 4.5s with a soft cross-fade so the
-  // eye can follow. Leaving the pet immediately stops the cycle and resets
-  // back to the first tip so re-entering always starts from the same place.
+  // AND the pet is idle (i.e. the tip branch is the rendered body — busy
+  // / celebrate / pomodoro branches suppress the bubble). Cycle interval
+  // 2.5s with a soft cross-fade. Leaving the pet immediately stops and
+  // resets to the first tip.
   const tips = [
     t('pet.hint.tip1', '双击 → 打开主窗口'),
     t('pet.hint.tip2', '按住拖动 → 移动位置'),
     t('pet.hint.tip3', '托盘图标 → 显示/隐藏'),
     t('pet.hint.tip4', '右键 → 菜单 / 番茄控制'),
   ];
+  // Carousel is only visible in the idle branch, so drive the interval off
+  // the same condition — saves a setInterval in every busy/celebrate state.
+  const carouselActive = hovered && e === 'idle';
   const [tipIndex, setTipIndex] = useState(0);
   useEffect(() => {
-    if (!hovered) {
+    if (!carouselActive) {
       setTipIndex(0);
       return;
     }
     setTipIndex(0);
     const id = setInterval(() => setTipIndex((i) => (i + 1) % tips.length), 2500);
     return () => clearInterval(id);
-  }, [hovered, tips.length]);
+  }, [carouselActive, tips.length]);
 
   // Base bubble style: pure text, no background / border / shadow / outline.
   // Color flips with the theme so it reads on either desktop wallpaper.

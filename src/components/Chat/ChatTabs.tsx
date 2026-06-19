@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -22,6 +22,25 @@ import clsx from 'clsx';
 // ═══════════════════════════════════════════════════════════
 
 const MAIN_SESSION = 'agent:main:main';
+
+/**
+ * Apply a rename via gateway.setSessionLabel + chatStore.setSessionLabel.
+ * Returns true if the rename was sent, false if it was a no-op (empty or
+ * unchanged). Used by both the tab rename path and the available-session
+ * rename path — extracted so the guard + error handling stay consistent.
+ */
+async function applySessionRename(key: string, next: string): Promise<boolean> {
+  const trimmed = next.trim();
+  if (!trimmed) return false;
+  try {
+    await gateway.setSessionLabel(trimmed, key);
+    useChatStore.getState().setSessionLabel(key, trimmed);
+    return true;
+  } catch (err) {
+    console.warn('[ChatTabs] setSessionLabel failed:', err);
+    return false;
+  }
+}
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -314,6 +333,7 @@ function NewSessionPicker({
   openTabs,
   loadingNew,
   newSessions,
+  setNewSessions,
   messagesPerSession,
   agents,
   initialPersona,
@@ -329,6 +349,9 @@ function NewSessionPicker({
   openTabs: string[];
   loadingNew: boolean;
   newSessions: Session[];
+  /** Used by inline-rename to refresh the list after a successful save so
+   *  the renamed row updates in place. */
+  setNewSessions: React.Dispatch<React.SetStateAction<Session[]>>;
   messagesPerSession: Record<string, Array<{ role: string; content: string }>>;
   agents: AgentInfo[];
   /** Persona carried in from a SkillsPage skill click. Wins over agent default. */
@@ -397,24 +420,32 @@ function NewSessionPicker({
 
   const submitPickerRename = useCallback(async () => {
     if (pickerRenaming || !pickerRenamingKey) return;
-    const next = pickerRenameValue.trim();
-    if (!next) { cancelPickerRename(); return; }
     setPickerRenaming(true);
     try {
-      await gateway.setSessionLabel(next, pickerRenamingKey);
-      useChatStore.getState().setSessionLabel(pickerRenamingKey, next);
-      // Close the picker so reopening refetches the sessions.list with the
-      // server-confirmed label (covers the case where the backend quietly
-      // rejects / trims the label).
-      cancelPickerRename();
-      onClose();
-    } catch (err) {
-      console.warn('[NewSessionPicker] setSessionLabel failed:', err);
-      cancelPickerRename();
+      const ok = await applySessionRename(pickerRenamingKey, pickerRenameValue);
+      if (ok) {
+        // Refresh the available-sessions list so the user sees the server-
+        // confirmed label (or any backend trim/reject). Keep the picker open
+        // so the edit context stays visible — the renamed row updates in place.
+        try {
+          const result: any = await gateway.getSessions();
+          const list = (result?.sessions || []).map((s: any) => ({
+            key: s.key || s.sessionKey,
+            label: s.label || s.name || '',
+            lastMessage: s.lastMessage?.content?.substring?.(0, 80),
+            lastTimestamp: s.lastMessage?.timestamp || s.updatedAt,
+            kind: s.kind,
+          }));
+          setNewSessions(list);
+        } catch (err) {
+          console.warn('[NewSessionPicker] refresh after rename failed:', err);
+        }
+      }
     } finally {
       setPickerRenaming(false);
+      cancelPickerRename();
     }
-  }, [pickerRenaming, pickerRenamingKey, pickerRenameValue, cancelPickerRename, onClose]);
+  }, [pickerRenaming, pickerRenamingKey, pickerRenameValue, cancelPickerRename]);
 
   const deleteAvailableSession = useCallback((session: Session) => {
     setPickerCtxMenu(null);
@@ -434,15 +465,23 @@ function NewSessionPicker({
   const selectedAgent = agentList.find((a) => a.id === selectedAgentId) ?? agentList[0];
 
   // Skill-carried persona wins; otherwise fall back to the selected agent's default.
-  const defaultPersona = defaultPersonaFor ? defaultPersonaFor(selectedAgentId) : null;
-  const effectivePersona = personaCleared ? null : (initialPersona ?? defaultPersona);
-  const personaSource: 'skill' | 'default' | null = personaCleared
-    ? null
-    : initialPersona
-      ? 'skill'
-      : defaultPersona
-        ? 'default'
-        : null;
+  // memoized so the localStorage read doesn't repeat on every render — the
+  // picker re-renders frequently when typing in the rename input, and the
+  // default lookup is a JSON.parse on the persisted map.
+  const { effectivePersona, personaSource } = useMemo(() => {
+    const def = defaultPersonaFor ? defaultPersonaFor(selectedAgentId) : null;
+    const eff = personaCleared ? null : (initialPersona ?? def);
+    const src: 'skill' | 'default' | null = personaCleared
+      ? null
+      : initialPersona
+        ? 'skill'
+        : def
+          ? 'default'
+          : null;
+    return { effectivePersona: eff, personaSource: src };
+    // defaultPersonaFor is provided by the parent (closure-captures
+    // getAgentDefaultPersona — referentially stable).
+  }, [selectedAgentId, initialPersona, personaCleared, defaultPersonaFor]);
 
   useEffect(() => {
     if (!agentDropdownOpen) return;
@@ -520,7 +559,7 @@ function NewSessionPicker({
                 <Sparkles size={11} className="text-aegis-primary shrink-0" />
                 <span
                   className="flex-1 min-w-0 truncate text-[11px] text-aegis-text-secondary"
-                  title={effectivePersona.label || effectivePersona.prompt.slice(0, 80)}
+                  title={effectivePersona.label ? `${effectivePersona.label}\n\n${effectivePersona.prompt}` : effectivePersona.prompt}
                 >
                   {t('chat.personaChip', { name: effectivePersona.label || effectivePersona.prompt.slice(0, 32) })}
                 </span>
@@ -817,6 +856,12 @@ export function ChatTabs() {
 
   // Persona carried in from a SkillsPage click. Cleared after the picker closes.
   const [pendingPersona, setPendingPersona] = useState<SkillPersona | null>(null);
+  // Mirror of showNewPicker for the listener — reads via ref avoid stale-
+  // closure traps where the listener re-attaches every time the picker
+  // toggles, and let us decide "should I open vs toggle?" using the current
+  // value at event-fire time, not the value at subscribe time.
+  const showNewPickerRef = useRef(false);
+  useEffect(() => { showNewPickerRef.current = showNewPicker; }, [showNewPicker]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -825,7 +870,7 @@ export function ChatTabs() {
         setPendingPersona(detail.persona);
         // When a persona is carried in, always ensure the picker is open —
         // don't toggle it closed if it's already open (user may be re-picking).
-        if (!showNewPicker) handleOpenNewPicker();
+        if (!showNewPickerRef.current) handleOpenNewPicker();
       } else {
         // Plain + button: toggle behavior (open/close).
         handleOpenNewPicker();
@@ -833,7 +878,11 @@ export function ChatTabs() {
     };
     window.addEventListener('aegis:open-new-session-picker', handler);
     return () => window.removeEventListener('aegis:open-new-session-picker', handler);
-  }, [handleOpenNewPicker, showNewPicker]);
+    // handleOpenNewPicker is stable enough by the linter; depends are kept
+    // minimal so we don't churn the listener on every sessions / openTabs
+    // refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleOpenMainSession = useCallback((agentId: string, persona?: SkillPersona | null) => {
     const sessionKey = `agent:${agentId}:main`;
@@ -1001,20 +1050,19 @@ export function ChatTabs() {
 
   const submitRename = useCallback(async (key: string, fallbackLabel: string) => {
     if (renaming) return;
-    const next = editingLabel.trim();
-    if (!next || next === fallbackLabel) {
+    if (!editingLabel.trim() || editingLabel.trim() === fallbackLabel) {
       cancelRename();
       return;
     }
     setRenaming(true);
     try {
-      await gateway.setSessionLabel(next, key);
-      // Apply locally so the tab title refreshes immediately — sessions.list
-      // refetch is heavy and aegis:refresh only reloads chat history.
-      useChatStore.getState().setSessionLabel(key, next);
-      window.dispatchEvent(new Event('aegis:refresh'));
-    } catch (err) {
-      console.warn('[ChatTabs] Failed to rename session:', err);
+      const ok = await applySessionRename(key, editingLabel);
+      if (ok) {
+        // aegis:refresh is fired so any other tab listening to "session list
+        // changed" re-renders. sessions.list refetch is intentionally avoided
+        // here (heavy + aegis:refresh only reloads chat history).
+        window.dispatchEvent(new Event('aegis:refresh'));
+      }
     } finally {
       setRenaming(false);
       cancelRename();
@@ -1260,6 +1308,7 @@ export function ChatTabs() {
           openTabs={openTabs}
           loadingNew={loadingNew}
           newSessions={newSessions}
+          setNewSessions={setNewSessions}
           messagesPerSession={messagesPerSession}
           agents={agents}
           initialPersona={pendingPersona}

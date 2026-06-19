@@ -210,7 +210,6 @@ export default function PetWindow() {
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       onMouseEnter={() => setHovered(true)}
-      onMouseMove={() => { if (!hovered) setHovered(true); }}
       onMouseLeave={() => setHovered(false)}
       style={{
         width: '100vw',
