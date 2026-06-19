@@ -75,11 +75,12 @@ function useResolvedDark(): boolean {
 }
 
 /**
- * Compact status bubble above the character. No background — the text color
- * is the *inverse* of the theme (white on dark themes, near-black on light
- * themes) and a tight `text-shadow` acts as a one‑pixel outline so the text
- * stays legible over any desktop. That keeps the bubble feeling like a
- * native floating label instead of a panel glued on top of the pet.
+ * Compact status bubble above the character. No background, no border, no
+ * outline / text-shadow — just the inverse-of-theme text color, which keeps
+ * the bubble feeling like a native floating label rather than a panel glued
+ * on top of the pet. The text inherits color from the theme only; on busy
+ * desktop backgrounds it may blend in a little, which is the intended trade
+ * for the lightweight look.
  *
  * Display priority (high → low):
  * dragging > error > active(chat) > celebrate/happy > pomodoro countdown >
@@ -94,7 +95,10 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
 
-  // Operation-hint carousel, shown while the cursor is over the pet (idle).
+  // Operation-hint carousel, shown only while the cursor is over the pet
+  // AND the pet is idle. Tips cycle every 4.5s with a soft cross-fade so the
+  // eye can follow. Leaving the pet immediately stops the cycle and resets
+  // back to the first tip so re-entering always starts from the same place.
   const tips = [
     t('pet.hint.tip1', '双击 → 打开主窗口'),
     t('pet.hint.tip2', '按住拖动 → 移动位置'),
@@ -103,24 +107,25 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   ];
   const [tipIndex, setTipIndex] = useState(0);
   useEffect(() => {
-    if (!hovered) return;
+    if (!hovered) {
+      setTipIndex(0);
+      return;
+    }
     setTipIndex(0);
-    const id = setInterval(() => setTipIndex((i) => (i + 1) % tips.length), 2200);
+    const id = setInterval(() => setTipIndex((i) => (i + 1) % tips.length), 2500);
     return () => clearInterval(id);
   }, [hovered, tips.length]);
 
-  // Base bubble style: no background, no border, no shadow. Inverse-of-theme
-  // text + a tight outline so the text reads on any desktop background.
+  // Base bubble style: pure text, no background / border / shadow / outline.
+  // Color flips with the theme so it reads on either desktop wallpaper.
   const bubbleStyle: CSSProperties = {
-    maxWidth: 180,
+    maxWidth: 240,
+    textAlign: 'center',
     color: isDark ? '#ffffff' : '#16181f',
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 12,
     fontWeight: 500,
     lineHeight: 1.4,
-    textShadow: isDark
-      ? '0 0 2px rgba(0, 0, 0, 0.65), 0 1px 3px rgba(0, 0, 0, 0.4)'
-      : '0 0 2px rgba(255, 255, 255, 0.85), 0 1px 2px rgba(255, 255, 255, 0.65)',
   };
 
   let body: ReactNode = null;
@@ -143,7 +148,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
           {elapsed && <span style={{ fontSize: 10.5, opacity: 0.65, fontWeight: 400 }}> · {elapsed}</span>}
         </span>
         {detail && (
-          <div style={{ fontSize: 10.5, opacity: 0.75, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+          <div style={{ fontSize: 10.5, opacity: 0.75, maxWidth: 220, marginTop: 1, wordBreak: 'break-word' }}>
             {detail}
           </div>
         )}
@@ -183,14 +188,21 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   } else if (hovered) {
     bubbleKey = 'tips';
     body = (
-      <motion.span
-        key={tipIndex}
-        initial={{ opacity: 0, y: 3 }}
-        animate={{ opacity: 1, y: 0 }}
-        style={{ display: 'block', whiteSpace: 'nowrap' }}
-      >
-        {tips[tipIndex]}
-      </motion.span>
+      // Cross-fade between tips — old tip fades out as new one fades in,
+      // so the carousel never "snaps". Y stays at 0 so the line position
+      // doesn't bob while the user reads.
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={tipIndex}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18, ease: 'easeInOut' }}
+          style={{ display: 'block' }}
+        >
+          {tips[tipIndex]}
+        </motion.span>
+      </AnimatePresence>
     );
   } else {
     // idle & not hovered — no bubble.
