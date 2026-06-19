@@ -3,3 +3,7 @@ dist/
 target/
 .DS_Store
 *.log
+# Local AI-tooling scratch space (attachments, config). Keep out of git.
+.nezha/
+# Ad-hoc screenshots dropped at the repo root for inspection.
+696.png
