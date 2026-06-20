@@ -99,12 +99,12 @@ export function NavSidebar() {
               onMouseEnter={() => PREFETCH_MAP[item.to]?.()}
               aria-current={isActive ? 'page' : undefined}
               className={clsx(
-                'relative h-[44px] rounded-xl',
+                'relative h-[44px] rounded-lg',
                 'flex items-center',
                 'transition-all duration-300 group',
                 sidebarCollapsed ? 'w-[44px] justify-center' : 'w-full px-3 justify-start gap-2.5',
                 isActive
-                  ? 'nav-icon-active-glow text-aegis-primary'
+                  ? 'bg-[rgb(var(--aegis-primary)/0.10)] text-aegis-primary'
                   : 'text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
               )}
             >
@@ -116,7 +116,6 @@ export function NavSidebar() {
                     'absolute top-1/2 -translate-y-1/2',
                     'w-[3px] h-[20px] rounded-full',
                     'bg-aegis-primary',
-                    'shadow-[0_0_12px_rgb(var(--aegis-primary)/0.4)]',
                     isRTL ? '-right-[12px]' : '-left-[12px]'
                   )}
                   transition={{
@@ -128,7 +127,7 @@ export function NavSidebar() {
               )}
 
               <div className="relative">
-                <item.icon size={18} className={clsx(isActive && 'icon-halo-teal')} />
+                <item.icon size={18} />
                 {item.badge && (
                   <span className="absolute -top-1.5 -right-2 text-[8px]">{item.badge}</span>
                 )}
@@ -184,7 +183,7 @@ export function NavSidebar() {
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
             />
           )}
-          <Settings size={18} className={clsx(location.pathname === '/settings' && 'icon-halo-teal')} />
+          <Settings size={18} />
           {!sidebarCollapsed && <span className="text-[12px] font-medium truncate">{t('nav.settings')}</span>}
           {sidebarCollapsed && (
             <div className={clsx(
