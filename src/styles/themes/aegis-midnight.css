@@ -18,11 +18,14 @@
   --aegis-bg-solid:       #1a1b1d;
   --aegis-surface:        #1a1b1d;
   --aegis-surface-solid:  #1a1b1d;
+  --aegis-surface-elevated: #1f2123;
   --aegis-elevated:       #1f2123;
   --aegis-elevated-solid: #1f2123;
   --aegis-card:           #222427;
   --aegis-card-solid:     #222427;
+  --aegis-hover: #26282b;
   --aegis-chrome:         #1a1b1d;
+  --aegis-input: #222427;
   --aegis-body:           #1a1b1d;
   --aegis-bg-frosted:     rgba(26, 27, 29, 0.95);
   --aegis-bg-frosted-60:  rgba(26, 27, 29, 0.6);

@@ -85,7 +85,7 @@ export function Sparkline({
             r={6}
             fill={color}
             opacity={0.15}
-            className="spark-dot-pulse"
+            style={{ animation: "pulseSoft 2s ease-in-out infinite" }}
           />
           {/* Solid dot */}
           <circle

@@ -10,11 +10,14 @@
   --aegis-bg-solid:       hsl(240deg 6% 99.4%);
   --aegis-surface:        #fdfdfd;                 /* bg-sidebar */
   --aegis-surface-solid:  #fdfdfd;
+  --aegis-surface-elevated: #fafafa;
   --aegis-elevated:       #ffffff;                 /* bg-panel */
   --aegis-elevated-solid: #ffffff;
   --aegis-card:           #ffffff;                 /* bg-card */
   --aegis-card-solid:     #ffffff;
+  --aegis-hover: hsl(240deg 6% 97.7%);
   --aegis-chrome:         hsl(240deg 6% 99.4%);
+  --aegis-input: #ffffff;
   --aegis-body:           hsl(240deg 6% 99.4%);
   --aegis-bg-frosted:     rgba(253, 253, 253, 0.95);
   --aegis-bg-frosted-60:  rgba(253, 253, 253, 0.6);

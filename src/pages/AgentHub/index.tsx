@@ -785,7 +785,7 @@ export function AgentHubPage() {
               <div>
                 <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold mb-3">{t('agents.mainAgent', 'Main Agent')}</div>
                 {mainSession ? (
-                  <GlassCard delay={0} hover shimmer={mainSession.running}>
+                  <GlassCard delay={0} hover >
                     <div className="flex items-center gap-5">
                       <div className="w-[64px] h-[64px] rounded-2xl flex items-center justify-center shrink-0 text-[26px] font-extrabold border-2 relative"
                         style={{ background: `linear-gradient(135deg, ${mainColor()}25, ${mainColor()}08)`, borderColor: `${mainColor()}35`, color: mainColor() }}>
@@ -887,7 +887,7 @@ export function AgentHubPage() {
 
                       return (
                         <div key={agent.id}>
-                          <GlassCard delay={i * 0.05} hover shimmer={isRunning}>
+                          <GlassCard delay={i * 0.05} hover >
                             <div className="flex items-start gap-4">
                               <div className="w-[48px] h-[48px] rounded-xl flex items-center justify-center shrink-0 border relative"
                                 style={{ background: `linear-gradient(135deg, ${display.color}20, ${display.color}05)`, borderColor: isRunning ? `${display.color}40` : `${display.color}25`, color: display.color }}>

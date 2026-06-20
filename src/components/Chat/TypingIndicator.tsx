@@ -28,7 +28,7 @@ export function TypingIndicator() {
   return (
     <div className="flex items-start gap-3 px-5 py-2 animate-fade-in" dir={dir}>
       {/* Avatar */}
-      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-aegis-primary to-aegis-accent flex items-center justify-center shrink-0 mt-0.5 shadow-glow-sm">
+      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-aegis-primary to-aegis-accent flex items-center justify-center shrink-0 mt-0.5 shadow-card">
         <span className="text-[10px] font-bold text-aegis-text">{activeAgentLetter}</span>
       </div>
 

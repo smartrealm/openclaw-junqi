@@ -1,7 +1,15 @@
-// ═══════════════════════════════════════════════════════════
-// GlassCard — Transparent glass panel with hover lift
-// + Shimmer edge light streak (conceptual design)
-// ═══════════════════════════════════════════════════════════
+/**
+ * GlassCard — renamed for legacy compat; now an OPAQUE card matching
+ * nezha's paper-stack aesthetic. No backdrop-blur, no shimmer edge,
+ * no hover lift. Just a solid surface with a 1px hairline that swaps
+ * to a hover tint on hover.
+ *
+ * The word "Glass" is retained in the filename to avoid a 50-file
+ * import churn; the component itself is a plain card.
+ *
+ * Spec: NEZHA-VISUAL-DNA.md §1.1 (paper-stack), §1.4 (no shadow),
+ * §1.5 (radii), §1.6 (quiet motion).
+ */
 
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
@@ -13,8 +21,6 @@ interface GlassCardProps {
   hover?: boolean;
   delay?: number;
   noPad?: boolean;
-  /** Enable shimmer light streak on top edge (conceptual design) */
-  shimmer?: boolean;
   onClick?: () => void;
 }
 
@@ -24,31 +30,24 @@ export const GlassCard = React.memo(function GlassCard({
   hover = true,
   delay = 0,
   noPad = false,
-  shimmer = true,
   onClick,
 }: GlassCardProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay, ease: [0.22, 1, 0.36, 1] }}
-      whileHover={hover ? { y: -2, transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] } } : undefined}
+      transition={{ duration: 0.3, delay, ease: [0.22, 1, 0.36, 1] }}
       onClick={onClick}
       className={clsx(
-        'relative overflow-hidden rounded-2xl',
+        'relative overflow-hidden rounded-xl',
         'border border-aegis-border',
         'bg-aegis-card',
-        'backdrop-blur-xl',
-        'hover:border-aegis-border-hover',
-        'hover:bg-aegis-glass-hover',
-        'transition-all duration-300',
+        hover && 'hover:border-aegis-border-hover hover:bg-aegis-hover',
+        'transition-[background,border-color] duration-200',
         onClick && 'cursor-pointer',
-        shimmer && 'card-shimmer-edge',
-        className
+        className,
       )}
     >
-      {/* Top light edge — subtle glass reflection */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
       <div className={noPad ? undefined : 'p-5'}>
         {children}
       </div>

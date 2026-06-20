@@ -421,7 +421,7 @@ export const MessageBubble = memo(function MessageBubble({ block, onResend, onRe
           <User size={14} className="text-aegis-primary" />
         </div>
       ) : (
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-aegis-primary to-aegis-accent flex items-center justify-center shrink-0 mt-0.5 shadow-glow-sm">
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-aegis-primary to-aegis-accent flex items-center justify-center shrink-0 mt-0.5 shadow-card">
           <span className="text-[10px] font-bold text-aegis-text">{activeAgentLetter}</span>
         </div>
       )}

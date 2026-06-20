@@ -78,7 +78,7 @@ export function NavSidebar() {
       initial={false}
       animate={{ width: targetWidth, opacity: visible ? 1 : 0 }}
       transition={{ type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.24 }}
-      style={{ width: targetWidth, willChange: 'width, opacity' }}
+      style={{ width: targetWidth, willChange: 'width, opacity', background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))' }}
       className={clsx(
         'shrink-0 flex flex-col overflow-hidden',
         'chrome-bg', borderClass, 'border-aegis-border',
@@ -166,7 +166,7 @@ export function NavSidebar() {
             'transition-all duration-300 group',
             sidebarCollapsed ? 'w-[44px] justify-center' : 'w-full px-3 justify-start gap-2.5',
             location.pathname === '/settings'
-              ? 'nav-icon-active-glow text-aegis-primary'
+              ? 'bg-[rgb(var(--aegis-primary)/0.10)] text-aegis-primary'
               : 'text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
           )}
         >

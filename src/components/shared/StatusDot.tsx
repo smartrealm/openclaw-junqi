@@ -49,9 +49,9 @@ export function StatusDot({
       className={clsx(
         'inline-block rounded-full shrink-0 relative',
         STATUS_COLORS[status],
-        shouldPulse && 'animate-glow-green',
+        shouldPulse && "animate-status-pulse",
         glowClass,
-        shouldBeacon && 'dot-beacon',
+        shouldBeacon && "animate-status-pulse",
         className,
       )}
       style={{ width: size, height: size }}
