@@ -31,12 +31,13 @@
   --aegis-text-muted:     var(--color-slate-600);
   --aegis-text-dim:       var(--color-slate-500);
 
-  /* ── Primary — Teal (darker for light bg) ── */
-  --aegis-primary:        var(--color-teal-700);
+  /* ── Primary — Teal (mid-bright for light bg; was teal-700 which was too dark
+     for the floating pet on slate-100 desktops — body/zzz/dots disappeared) ── */
+  --aegis-primary:        var(--color-teal-500);
   --aegis-primary-hover:  var(--color-teal-600);
-  --aegis-primary-deep:   var(--color-teal-800);
-  --aegis-primary-glow:   rgb(var(--color-teal-700) / 0.12);
-  --aegis-primary-surface:rgb(var(--color-teal-700) / 0.06);
+  --aegis-primary-deep:   var(--color-teal-700);
+  --aegis-primary-glow:   rgb(var(--color-teal-500) / 0.14);
+  --aegis-primary-surface:rgb(var(--color-teal-500) / 0.07);
 
   /* ── Accent — Blue (darker) ── */
   --aegis-accent:         var(--color-blue-700);

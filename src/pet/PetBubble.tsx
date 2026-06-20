@@ -21,9 +21,11 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
   memory: '整理记忆',
 };
 
-/** Per-emotion accent color so each state reads at a glance. */
+/** Per-emotion accent color so each state reads at a glance. Neutral states
+ * (idle / sleepy / sleep) use slate-600 on light, slate-400 on dark, derived
+ * from --aegis-text-muted — so a hardcoded gray doesn't vanish on either theme. */
 const EMOTION_COLOR: Record<PetEmotion, string> = {
-  idle: '#9aa3b2',
+  idle: isDark() ? '#9aa3b2' : '#5a6473',
   thinking: themeHex('accent'),
   typing: themeHex('primary'),
   tool: themeHex('accent'),
@@ -31,10 +33,20 @@ const EMOTION_COLOR: Record<PetEmotion, string> = {
   happy: themeHex('success'),
   celebrate: themeHex('success'),
   error: themeHex('danger'),
-  sleepy: '#9aa3b2',
-  sleep: '#7a8290',
+  sleepy: isDark() ? '#9aa3b2' : '#5a6473',
+  sleep: isDark() ? '#7a8290' : '#404a59',
   memory: themeHex('warning'),
 };
+
+/** Tiny resolver duplicated here to keep EMOTION_COLOR a module-scope constant.
+ * Full version (with system-mode support + listener) lives in useResolvedDark. */
+function isDark(): boolean {
+  if (typeof document === 'undefined') return true;
+  const t = document.documentElement.getAttribute('data-theme');
+  if (t === 'aegis-dark') return true;
+  if (t === 'aegis-light') return false;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+}
 
 /** Active states get the rich multi-line bubble (label + action + elapsed). */
 const ACTIVE: ReadonlySet<PetEmotion> = new Set(['thinking', 'typing', 'tool', 'working', 'memory']);

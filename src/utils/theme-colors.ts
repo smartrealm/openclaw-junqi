@@ -4,10 +4,13 @@
  * so they automatically adapt to dark/light mode.
  *
  * Usage:
- *   themeHex('primary')           → '#4EC9B0' (dark) / '#14A087' (light)
- *   themeAlpha('primary', 0.1)    → 'rgba(78,201,176,0.1)' / 'rgba(20,160,135,0.1)'
+ *   themeHex('primary')           → '#4EC9B0' (dark) / '#3DB89F' (light)
+ *   themeAlpha('primary', 0.1)    → 'rgba(78,201,176,0.1)' / 'rgba(61,184,159,0.1)'
  *   overlay(0.05)                 → 'rgba(255,255,255,0.05)' / 'rgba(0,0,0,0.05)'
- *   dataColor(0)                  → '#4EC9B0' (dark) / '#0D9B7A' (light)
+ *   dataColor(0)                  → '#4EC9B0' (dark) / '#4EC9B0' (light, same scale)
+ *
+ * Source of truth: primitives.css (--color-teal-400 = 78 201 176 for dark,
+ * --color-teal-500 = 61 184 159 for light), wired through aegis-*.css.
  *
  * ⚠️ These read getComputedStyle at call time — always call inside
  *    render functions, useMemo, or event handlers. Never at module scope.
