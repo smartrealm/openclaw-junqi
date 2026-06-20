@@ -228,7 +228,7 @@ export default function PetWindow() {
     >
       <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} />
       <div style={{ position: 'relative' }}>
-        <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={state.skin ?? skin} customAsset={customAsset} dragging={dragging} />
+        <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={state.skin ?? skin} customAsset={customAsset} dragging={dragging} celebrating={state.emotion === 'celebrate'} />
         {BadgeIcon && (
           <motion.span
             style={{ position: 'absolute', top: -1, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}

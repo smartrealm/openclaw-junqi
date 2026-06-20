@@ -20,12 +20,14 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const INK = '#1b1b2f';
 const BOX = { transformBox: 'fill-box' as const, transformOrigin: 'center' };
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', customAsset, dragging = false }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', customAsset, dragging = false, celebrating = false }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;
   customAsset?: string | null;
   dragging?: boolean;
+  /** True when the pet just completed a pomodoro or task — triggers a bounce + glow. */
+  celebrating?: boolean;
 }) {
   const cfg = EMOTION_CFG[emotion] ?? EMOTION_CFG.idle;
   const bodyColor = themeHex('primary');
@@ -76,8 +78,34 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', 
 
   return (
     <motion.div
-      style={{ width: 96, height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-      animate={{ y: [0, -4, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: EASE }}>
+      style={{ width: 96, height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', position: 'relative' }}
+      // Normal breathing + celebrate bounce (scale spring that pops up then settles)
+      animate={celebrating
+        ? { y: [-2, -18, -8, -12, -6, -8], scale: [1, 1.18, 1.08, 1.12, 1.04, 1.06, 1] }
+        : { y: [0, -4, 0] }
+      }
+      transition={{
+        duration: celebrating ? 0.9 : 3.6,
+        repeat: celebrating ? 1 : Infinity,
+        ease: EASE,
+      }}
+    >
+      {/* Completion glow ring — a soft colour ring that expands and fades out */}
+      {celebrating && (
+        <motion.div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            background: 'transparent',
+            border: '3px solid rgba(78,201,176,0.7)',
+            transform: 'translateY(10px)',
+          }}
+          initial={{ scale: 0.4, opacity: 0.9 }}
+          animate={{ scale: [0.4, 1.6, 2.2], opacity: [0.9, 0.4, 0] }}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
+        />
+      )}
       <svg width="96" height="110" viewBox="0 0 120 140" style={{ overflow: 'visible' }}>
         {/* ground shadow */}
         <motion.ellipse cx={60} cy={128} rx={30} ry={6} fill="#000" opacity={0.18} style={BOX}

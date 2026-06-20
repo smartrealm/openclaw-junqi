@@ -87,7 +87,7 @@ export interface PetInputs {
 }
 
 const HAPPY_WINDOW = 2500;
-const CELEBRATE_WINDOW = 3200;
+const CELEBRATE_WINDOW = 5000; // longer window so pomodoro completions feel rewarding
 const MEMORY_WINDOW = 4000;
 const SLEEPY_AFTER = 90_000;
 const SLEEP_AFTER = 5 * 60_000;

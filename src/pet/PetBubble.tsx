@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { themeHex } from '@/utils/theme-colors';
@@ -21,31 +21,23 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
   memory: '整理记忆',
 };
 
-/** Per-emotion accent color so each state reads at a glance. Neutral states
- * (idle / sleepy / sleep) use slate-600 on light, slate-400 on dark, derived
- * from --aegis-text-muted — so a hardcoded gray doesn't vanish on either theme. */
-const EMOTION_COLOR: Record<PetEmotion, string> = {
-  idle: isDark() ? '#9aa3b2' : '#5a6473',
-  thinking: themeHex('accent'),
-  typing: themeHex('primary'),
-  tool: themeHex('accent'),
-  working: themeHex('warning'),
-  happy: themeHex('success'),
-  celebrate: themeHex('success'),
-  error: themeHex('danger'),
-  sleepy: isDark() ? '#9aa3b2' : '#5a6473',
-  sleep: isDark() ? '#7a8290' : '#404a59',
-  memory: themeHex('warning'),
-};
-
-/** Tiny resolver duplicated here to keep EMOTION_COLOR a module-scope constant.
- * Full version (with system-mode support + listener) lives in useResolvedDark. */
-function isDark(): boolean {
-  if (typeof document === 'undefined') return true;
-  const t = document.documentElement.getAttribute('data-theme');
-  if (t === 'aegis-dark') return true;
-  if (t === 'aegis-light') return false;
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+/** Per-emotion accent color — reactive to isDark so color updates when the
+ * pet window's theme flips (no stale module-level constant). Memoised so each
+ * render pass doesn't re-allocate the record. */
+function useEmotionColor(isDark: boolean): Record<PetEmotion, string> {
+  return useMemo(() => ({
+    idle: isDark ? '#9aa3b2' : '#5a6473',
+    thinking: themeHex('accent'),
+    typing: themeHex('primary'),
+    tool: themeHex('accent'),
+    working: themeHex('warning'),
+    happy: themeHex('success'),
+    celebrate: themeHex('success'),
+    error: themeHex('danger'),
+    sleepy: isDark ? '#9aa3b2' : '#5a6473',
+    sleep: isDark ? '#7a8290' : '#404a59',
+    memory: themeHex('warning'),
+  }), [isDark]);
 }
 
 /** Active states get the rich multi-line bubble (label + action + elapsed). */
@@ -104,6 +96,7 @@ function useResolvedDark(): boolean {
 export function PetBubble({ state, dragging, hovered }: { state: PetState; dragging?: boolean; hovered?: boolean }) {
   const { t } = useTranslation();
   const isDark = useResolvedDark();
+  const emotionColor = useEmotionColor(isDark);
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
 
@@ -152,14 +145,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     body = <span style={{ fontWeight: 600 }}>{t('pet.hint.moving', '移动中…')}</span>;
   } else if (e === 'error') {
     bubbleKey = 'error';
-    body = <span style={{ fontWeight: 700, color: EMOTION_COLOR[e] }}>{label}</span>;
+    body = <span style={{ fontWeight: 700, color: emotionColor[e] }}>{label}</span>;
   } else if (ACTIVE.has(e)) {
     bubbleKey = `active-${e}`;
     const detail = state.message || state.taskLabel;
     const elapsed = state.elapsedMs ? fmtDuration(state.elapsedMs) : null;
     body = (
       <>
-        <span style={{ fontWeight: 600, color: EMOTION_COLOR[e] }}>
+        <span style={{ fontWeight: 600, color: emotionColor[e] }}>
           {label}
           {elapsed && <span style={{ fontSize: 10.5, opacity: 0.65, fontWeight: 400 }}> · {elapsed}</span>}
         </span>
@@ -178,29 +171,31 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     const caption = pomoKind ? t(CELEBRATE_CAPTION[pomoKind].key, CELEBRATE_CAPTION[pomoKind].fallback) : label;
     const CelebrateIcon = pomoKind ? celebrateIcon(pomoKind) : null;
     body = (
-      <span style={{ fontWeight: 600, color: EMOTION_COLOR[e], display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontWeight: 600, color: emotionColor[e], display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         {CelebrateIcon && <CelebrateIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />}
         {caption}
       </span>
     );
   } else if (state.pomodoro?.enabled && state.pomodoro.running) {
     // Live countdown — shown only when the pet isn't busy with chat or celebrating.
-    // Key excludes the seconds so the countdown ticks in place (no cross-fade).
+    // Key excludes phase (work→break only changes color, not the bubble identity)
+    // so AnimatePresence doesn't re-trigger the whole fade when the phase switches.
+    // Only 'run'/'paused' is in the key — the label + icon are always rendered.
     const p = state.pomodoro;
-    bubbleKey = `pomo-${p.phase}-${p.paused ? 'paused' : 'run'}`;
+    bubbleKey = `pomo-${p.paused ? 'paused' : 'run'}`;
     const phaseLabel = p.paused
       ? t('pet.pomodoro.paused', '已暂停')
       : t(p.phase === 'work' ? 'pet.pomodoro.focusing' : 'pet.pomodoro.resting', p.phase === 'work' ? '专注中' : '休息中');
     const PomoIcon = pomodoroIcon(p);
     body = (
-      <span style={{ fontWeight: 600, color: pomodoroColor(p, isDark), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontWeight: 600, color: pomodoroColor(p, isDark), display: 'inline-flex', alignItems: 'center', gap: 4, transition: 'color 0.25s ease' }}>
         <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />
         {p.paused ? phaseLabel : `${phaseLabel} ${fmtClock(p.remainingMs)}`}
       </span>
     );
   } else if (e === 'sleep' || e === 'sleepy') {
     bubbleKey = e;
-    body = <span style={{ opacity: 0.85, color: EMOTION_COLOR[e] }}>{label}</span>;
+    body = <span style={{ opacity: 0.85, color: emotionColor[e] }}>{label}</span>;
   } else if (hovered) {
     bubbleKey = 'tips';
     body = (
