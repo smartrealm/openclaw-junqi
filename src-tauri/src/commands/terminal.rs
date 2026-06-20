@@ -152,23 +152,75 @@ pub async fn terminal_create(
 
     // Pump stdout → "terminal-data". Reader returns 0 / Err on child exit,
     // at which point we emit "terminal-exit" and drop the entry.
+    //
+    // UTF-8 boundary handling: a single `read()` can split a multi-byte
+    // codepoint (CJK / emoji) across two chunks, and feeding each half to
+    // `from_utf8_lossy` turns it into two U+FFFD → mojibake on Chinese output.
+    // We carry any trailing incomplete bytes in `pending` and decode only up
+    // to the last valid boundary, so split chars reassemble on the next read.
     let app_handle = app.clone();
     let pump_id = id.clone();
     std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 8192];
+        let mut pending: Vec<u8> = Vec::with_capacity(buf.len() + 4);
         loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).into_owned();
-                    let _ = app_handle.emit(
-                        "terminal-data",
-                        DataEvent { id: pump_id.clone(), data },
-                    );
+            let n = match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
+            pending.extend_from_slice(&buf[..n]);
+
+            // Emit the longest complete UTF-8 prefix of `pending`; keep any
+            // partial trailing codepoint for the next iteration. Genuinely
+            // invalid bytes (a lone byte, not a truncated tail) → U+FFFD.
+            let mut out = String::with_capacity(pending.len());
+            let mut consumed = 0usize;
+            loop {
+                match std::str::from_utf8(&pending[consumed..]) {
+                    Ok(s) => {
+                        out.push_str(s);
+                        consumed = pending.len();
+                        break;
+                    }
+                    Err(e) => {
+                        let valid = consumed + e.valid_up_to();
+                        // `valid` is a confirmed UTF-8 boundary → unwrap is sound.
+                        out.push_str(
+                            std::str::from_utf8(&pending[consumed..valid]).unwrap(),
+                        );
+                        match e.error_len() {
+                            Some(err_len) => {
+                                out.push('\u{FFFD}');
+                                consumed = valid + err_len;
+                            }
+                            None => {
+                                // Incomplete multi-byte sequence at the end → wait.
+                                consumed = valid;
+                                break;
+                            }
+                        }
+                    }
                 }
-                Err(_) => break,
             }
+            pending.drain(..consumed);
+
+            if !out.is_empty() {
+                let _ = app_handle.emit(
+                    "terminal-data",
+                    DataEvent { id: pump_id.clone(), data: out },
+                );
+            }
+        }
+        // Flush any dangling incomplete bytes (lossy) so nothing is silently dropped.
+        if !pending.is_empty() {
+            let _ = app_handle.emit(
+                "terminal-data",
+                DataEvent {
+                    id: pump_id.clone(),
+                    data: String::from_utf8_lossy(&pending).into_owned(),
+                },
+            );
         }
         // Child's stdout pipe is closed → it has exited (or was killed).
         // Best-effort exit code; the renderer only uses onExit to mark the

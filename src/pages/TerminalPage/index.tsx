@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// Integrated Terminal — Multi-tab xterm.js + node-pty
+// Integrated Terminal — Multi-tab xterm.js + portable-pty (Rust)
 // Each tab = independent PTY process
 // ═══════════════════════════════════════════════════════════
 
@@ -81,6 +81,50 @@ function getTerminalTheme(): Record<string, string> {
 }
 
 // ═══════════════════════════════════════════════════════════
+// Workaround for xterm.js #5887 — IMEs that report keyCode=229 for every
+// keystroke (Doubao/豆包, some Baidu configs) drop the 2nd+ character on
+// rapid typing, because _inputEvent's emit gate `(!ev.composed || !_keyDownSeen)`
+// misfires when `input` arrives before `keydown` (these IMEs do that). We
+// bypass it: any non-composing `insertText` emits ev.data directly. We still
+// honor xterm's own `_keyPressHandled` dedup and `_unprocessedDeadKey` reset
+// (Terminal.ts:1172) so normal typing doesn't double up and dead-key layouts
+// (é, ü, à) don't drop a following arrow key — only the misfiring gate changes.
+// Real Chinese composition (isComposing=true while 组字) stays on xterm's own
+// composition path, so 中文输入不受影响. Touches private `_core`; if xterm's
+// internals move, it no-ops (guarded), leaving normal English/Sogou input
+// working as before. Upstream issue: https://github.com/xtermjs/xterm.js/issues/5887
+// ═══════════════════════════════════════════════════════════
+
+function patchXtermImeFallback(term: any) {
+  try {
+    const core = term?._core;
+    if (!core || typeof core._inputEvent !== 'function' || core._imePatched) return;
+    const orig = core._inputEvent.bind(core);
+    core._inputEvent = (ev: InputEvent): boolean => {
+      if (ev && ev.inputType === 'insertText' && ev.data && !(ev as any).isComposing) {
+        // Same guards xterm's own _inputEvent keeps (Terminal.ts:1172), so this
+        // bypass only changes the misfiring gate, not the safety nets:
+        //   - _keyPressHandled: keypress already emitted this char → skip
+        //     (avoids double input where keypress fires).
+        //   - _unprocessedDeadKey: clear dead-key state so a following arrow
+        //     key isn't swallowed.
+        if (core._keyPressHandled) return false;
+        core._unprocessedDeadKey = false;
+        try { core.coreService?.triggerDataEvent?.(ev.data, true); } catch {}
+        // Cancel the helper textarea's default (what xterm's this.cancel(ev)
+        // does) via stable DOM API rather than a private method.
+        try { ev.preventDefault?.(); ev.stopPropagation?.(); } catch {}
+        return false;
+      }
+      return orig(ev);
+    };
+    core._imePatched = true;
+  } catch {
+    // _core is private; if xterm internals shift, silently skip.
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
 // Single Terminal Instance (per tab)
 // ═══════════════════════════════════════════════════════════
 
@@ -117,6 +161,9 @@ function TerminalInstance({ tabId, active }: { tabId: string; active: boolean })
       term.loadAddon(fitAddon);
       term.loadAddon(webLinksAddon);
       term.open(containerRef.current!);
+
+      // IME fallback patch must run after open() (needs _core wired up).
+      patchXtermImeFallback(term);
 
       termRef.current = term;
       fitAddonRef.current = fitAddon;
@@ -237,7 +284,7 @@ export function TerminalPage() {
     setRenameValue('');
   }, [renameValue]);
 
-  // Check if terminal API is available (Electron only)
+  // Check if terminal API is available (Tauri/Rust PTY backend)
   const hasTerminal = !!window.aegis?.terminal;
 
   // Listen for PTY exits
@@ -294,19 +341,21 @@ export function TerminalPage() {
       await window.aegis.terminal.kill(id);
     }
 
-    setTabs(prev => {
-      const next = prev.filter(t => t.id !== id);
-      // Switch to adjacent tab
-      if (activeTabId === id && next.length > 0) {
-        const idx = prev.findIndex(t => t.id === id);
-        const newActive = next[Math.min(idx, next.length - 1)];
-        setActiveTabId(newActive.id);
-      }
-      return next;
-    });
+    // Derive next state from the current `tabs` (a dep of this callback) and
+    // choose the new active tab *before* calling setTabs — scheduling
+    // setActiveTabId inside a setTabs updater is an impure side effect.
+    const idx = tabs.findIndex(t => t.id === id);
+    const next = tabs.filter(t => t.id !== id);
+    if (activeTabId === id && next.length > 0) {
+      // Closing the active tab: move to the neighbor that now fills its slot,
+      // or the new tail if we closed the last tab.
+      const newActive = next[Math.min(idx, next.length - 1)];
+      setActiveTabId(newActive.id);
+    }
+    setTabs(next);
   }, [hasTerminal, tabs, activeTabId]);
 
-  // ═══ No Electron → show placeholder ═══
+  // ═══ No PTY backend → show placeholder ═══
   if (!hasTerminal) {
     return (
       <div className="flex-1 flex items-center justify-center">
