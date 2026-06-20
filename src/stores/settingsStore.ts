@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   DEFAULT_SETTING,
   STORAGE_KEY as THEME_STORAGE_KEY,
+  AEGIS_FONTS_STORAGE_KEYS,
   isThemeSetting,
   type ThemeSetting,
 } from '@/theme';
@@ -20,6 +21,10 @@ interface SettingsState {
   theme: ThemeSetting;
   /** Whole-UI scale in percent (80–150). Applied via CSS `zoom` on #app-root. */
   uiScale: number;
+  /** UI font family (CSS font stack). Empty string means "use platform default". */
+  uiFont: string;
+  /** Monospace font family (CSS font stack). Empty string means "use platform default". */
+  monoFont: string;
   sidebarOpen: boolean;
   sidebarWidth: number;
   settingsOpen: boolean;
@@ -43,6 +48,8 @@ interface SettingsState {
 
   setTheme: (theme: ThemeSetting) => void;
   setUiScale: (scale: number) => void;
+  setUiFont: (font: string) => void;
+  setMonoFont: (font: string) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
@@ -120,6 +127,8 @@ const readPersistedTheme = (): ThemeSetting => {
 export const useSettingsStore = create<SettingsState>((set) => ({
   theme: readPersistedTheme(),
   uiScale: savedUiScale,
+  uiFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.uiFont) || '',
+  monoFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.monoFont) || '',
   sidebarOpen: true,
   sidebarWidth: 280,
   settingsOpen: false,
@@ -155,6 +164,18 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     localStorage.setItem('aegis-ui-scale', String(v));
     set({ uiScale: v });
     window.aegis?.settings?.save?.('uiScale', v).catch?.(() => {});
+  },
+  setUiFont: (font) => {
+    localStorage.setItem(AEGIS_FONTS_STORAGE_KEYS.uiFont, font);
+    set({ uiFont: font });
+    if (font) document.documentElement.style.setProperty('--font-ui', font);
+    else document.documentElement.style.removeProperty('--font-ui');
+  },
+  setMonoFont: (font) => {
+    localStorage.setItem(AEGIS_FONTS_STORAGE_KEYS.monoFont, font);
+    set({ monoFont: font });
+    if (font) document.documentElement.style.setProperty('--font-mono', font);
+    else document.documentElement.style.removeProperty('--font-mono');
   },
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),

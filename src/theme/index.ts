@@ -8,7 +8,7 @@
  *   import { useTheme, earlyBootstrap, AEGIS_THEMES, type AegisTheme,
  *            type ThemeSetting, STORAGE_KEY } from '@/theme';
  */
-export { AEGIS_THEMES, isAegisTheme, isThemeSetting } from './types';
+export { AEGIS_THEMES, AEGIS_FONTS_STORAGE_KEYS, isAegisTheme, isThemeSetting } from './types';
 export type { AegisTheme, NativeTitleBarMode, ThemeSetting } from './types';
 export { DEFAULT_SETTING, DEFAULT_THEME, HTML_ATTR, NATIVE_TITLE_BAR_MAP, STORAGE_KEY } from './constants';
 export { detectOSPreference, resolveTheme } from './resolver';

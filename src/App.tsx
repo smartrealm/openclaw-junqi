@@ -32,6 +32,7 @@ const CodeInterpreterPage = lazy(() => import('@/pages/CodeInterpreter').then(m 
 const McpToolsPage = lazy(() => import('@/pages/McpTools').then(m => ({ default: m.McpToolsPage })));
 const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
 const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
+const GitPage = lazy(() => import('@/pages/GitPage'));
 const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
 import { FeatureRoute } from '@/components/FeatureRoute';
 import { useChatStore } from '@/stores/chatStore';
@@ -687,6 +688,7 @@ export default function App() {
                 <Route path="/logs" element={<FeatureRoute feature="logs"><LogsViewerPage /></FeatureRoute>} />
                 <Route path="/agents/live" element={<FeatureRoute feature="liveAgents"><MultiAgentViewPage /></FeatureRoute>} />
                 <Route path="/files" element={<FeatureRoute feature="files"><FileManagerPage /></FeatureRoute>} />
+                <Route path="/git" element={<FeatureRoute feature="git"><GitPage /></FeatureRoute>} />
                 <Route path="/calendar" element={<FeatureRoute feature="calendar"><CalendarPage /></FeatureRoute>} />
                 <Route path="/sandbox" element={<FeatureRoute feature="sandbox"><CodeInterpreterPage /></FeatureRoute>} />
                 <Route path="/tools" element={<FeatureRoute feature="tools"><McpToolsPage /></FeatureRoute>} />

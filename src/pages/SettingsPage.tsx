@@ -25,6 +25,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
+import { FontPanel } from '@/components/settings/FontPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import clsx from 'clsx';
 
@@ -43,6 +44,8 @@ export function SettingsPageFull() {
   const {
     theme, setTheme,
     uiScale, setUiScale,
+    uiFont, setUiFont,
+    monoFont, setMonoFont,
     language, setLanguage,
     notificationsEnabled, setNotificationsEnabled,
     soundEnabled, setSoundEnabled,
@@ -417,6 +420,20 @@ export function SettingsPageFull() {
           value={theme}
           onChange={setTheme}
           systemPrefersDark={prefersDark}
+        />
+      </GlassCard>
+
+      {/* Font Settings — UI font + Mono font with live preview */}
+      <GlassCard delay={0.085}>
+        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
+          <Type size={16} className="text-aegis-primary" />
+          {t("settings.fonts", "Fonts")}
+        </h3>
+        <FontPanel
+          uiFont={uiFont}
+          monoFont={monoFont}
+          onUiFontChange={setUiFont}
+          onMonoFontChange={setMonoFont}
         />
       </GlassCard>
 

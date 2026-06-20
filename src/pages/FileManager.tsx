@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// FileManager — Managed Files (uploads + outputs)
+// FileManager — Managed Files (uploads + outputs) + Tree Explorer
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -30,6 +30,9 @@ import {
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';
 import { PdfPreview } from './PdfPreview';
+import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
+import { FileViewer } from '@/components/FileExplorer/FileViewer';
+import type { OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import clsx from 'clsx';
 
 interface FileEntry {
@@ -296,7 +299,7 @@ function PreviewPlaceholder() {
   );
 }
 
-type FileManagerView = 'outputs' | 'uploads';
+type FileManagerView = 'outputs' | 'uploads' | 'tree';
 
 export function FileManagerPage() {
   const { t } = useTranslation();
@@ -315,6 +318,19 @@ export function FileManagerPage() {
   const [sessionOnly, setSessionOnly] = useState(false);
   const [agentFilter, setAgentFilter] = useState('all');
   const [visibilityFilter, setVisibilityFilter] = useState('all');
+
+  // ── Tree Explorer state ──
+  const [treeProjectPath, setTreeProjectPath] = useState(() => {
+    try {
+      const config = localStorage.getItem('aegis:workspaceRoot');
+      return config || '';
+    } catch {
+      return '';
+    }
+  });
+  const [treeTabs, setTreeTabs] = useState<OpenFileTab[]>([]);
+  const [treeActiveFilePath, setTreeActiveFilePath] = useState<string | null>(null);
+
   const isOutputKind = useCallback((kind?: string) => kind === 'outputs' || kind === 'output', []);
 
   const hasManagedBridge = useCallback(() => {
@@ -581,21 +597,37 @@ export function FileManagerPage() {
             <Upload size={13} />
             {t('fileManager.uploadsView')}
           </button>
+          <button
+            onClick={() => setActiveView('tree')}
+            className={clsx(
+              'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-medium transition-colors',
+              activeView === 'tree'
+                ? 'bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/25'
+                : 'text-aegis-text-muted hover:text-aegis-text'
+            )}
+          >
+            <FolderSearch size={13} />
+            {t('fileManager.treeView', 'Tree Explorer')}
+          </button>
         </div>
         <div className="min-w-0 flex-1 text-[11px] text-aegis-text-dim">
           {activeView === 'outputs'
             ? t('fileManager.outputsDesc')
-            : t('fileManager.uploadsDesc')}
+            : activeView === 'uploads'
+              ? t('fileManager.uploadsDesc')
+              : t('fileManager.treeViewDesc', 'Browse local filesystem')}
         </div>
-        <button
-          onClick={() => loadFiles()}
-          disabled={loading}
-          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-[11px] text-aegis-text-muted hover:text-aegis-text-secondary transition-colors disabled:opacity-30"
-          title={t('fileManager.refreshHint')}
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          {t('fileManager.refresh')}
-        </button>
+        {activeView !== 'tree' && (
+          <button
+            onClick={() => loadFiles()}
+            disabled={loading}
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-[11px] text-aegis-text-muted hover:text-aegis-text-secondary transition-colors disabled:opacity-30"
+            title={t('fileManager.refreshHint')}
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            {t('fileManager.refresh')}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -611,6 +643,76 @@ export function FileManagerPage() {
         </div>
       )}
 
+      {/* ── Tree Explorer View ── */}
+      {activeView === 'tree' && (
+        <div className="flex flex-1 min-h-0">
+          <FileExplorer
+            projectPath={treeProjectPath}
+            projectName={treeProjectPath.split(/[\\/]/).pop() || 'project'}
+            onFileSelect={(path, name) => {
+              setTreeTabs((prev) => {
+                const exists = prev.some((t) => t.path === path);
+                if (exists) {
+                  setTreeActiveFilePath(path);
+                  return prev;
+                }
+                const tab: OpenFileTab = { path, name };
+                setTreeActiveFilePath(path);
+                return [...prev, tab];
+              });
+            }}
+            width={260}
+          />
+          {treeTabs.length > 0 && treeActiveFilePath ? (
+            <FileViewer
+              tabs={treeTabs}
+              activeFilePath={treeActiveFilePath}
+              projectPath={treeProjectPath}
+              onSelectTab={setTreeActiveFilePath}
+              onCloseTab={(path) => {
+                setTreeTabs((prev) => {
+                  const next = prev.filter((t) => t.path !== path);
+                  if (treeActiveFilePath === path) {
+                    setTreeActiveFilePath(next.length > 0 ? next[next.length - 1].path : null);
+                  }
+                  return next;
+                });
+              }}
+              onCloseOtherTabs={(path) => {
+                setTreeTabs((prev) => prev.filter((t) => t.path === path));
+              }}
+              onCloseTabsToRight={(path) => {
+                setTreeTabs((prev) => {
+                  const idx = prev.findIndex((t) => t.path === path);
+                  return idx >= 0 ? prev.slice(0, idx + 1) : prev;
+                });
+              }}
+              onCloseTabsToLeft={(path) => {
+                setTreeTabs((prev) => {
+                  const idx = prev.findIndex((t) => t.path === path);
+                  return idx >= 0 ? prev.slice(idx) : prev;
+                });
+              }}
+              onCloseAllTabs={() => {
+                setTreeTabs([]);
+                setTreeActiveFilePath(null);
+              }}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
+              <div className="w-12 h-12 rounded-xl bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] flex items-center justify-center">
+                <FolderSearch size={20} className="text-aegis-text-dim" />
+              </div>
+              <div className="text-[12px] text-aegis-text-dim">
+                {t('fileManager.selectFileTree', 'Select a file from the tree to open it')}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Managed Files View (outputs/uploads) ── */}
+      {activeView !== 'tree' && (
       <div className="flex flex-1 min-h-0">
         <div className="w-[260px] shrink-0 border-e border-[rgb(var(--aegis-overlay)/0.06)] flex flex-col min-h-0">
           <div className="shrink-0 p-2.5 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
@@ -892,10 +994,11 @@ export function FileManagerPage() {
               </div>
             </>
           ) : (
-            <PreviewPlaceholder />
-          )}
+              <PreviewPlaceholder />
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </PageTransition>
   );
 }

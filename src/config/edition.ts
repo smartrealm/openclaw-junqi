@@ -20,6 +20,7 @@ export type EditionFeatureKey =
   | 'logs'
   | 'liveAgents'
   | 'files'
+  | 'git'
   | 'calendar'
   | 'sandbox'
   | 'tools'
@@ -53,6 +54,7 @@ const allEnabled = (): EditionFeatures => ({
   logs: true,
   liveAgents: true,
   files: true,
+  git: true,
   calendar: true,
   sandbox: true,
   tools: true,
@@ -128,6 +130,7 @@ const APP_ROUTE_ORDER: { feature: EditionFeatureKey; path: string }[] = [
   { feature: 'logs', path: '/logs' },
   { feature: 'liveAgents', path: '/agents/live' },
   { feature: 'files', path: '/files' },
+  { feature: 'git', path: '/git' },
   { feature: 'calendar', path: '/calendar' },
   { feature: 'sandbox', path: '/sandbox' },
   { feature: 'tools', path: '/tools' },
@@ -150,6 +153,7 @@ const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/sessions', feature: 'sessions' },
   { prefix: '/logs', feature: 'logs' },
   { prefix: '/files', feature: 'files' },
+  { prefix: '/git', feature: 'git' },
   { prefix: '/calendar', feature: 'calendar' },
   { prefix: '/sandbox', feature: 'sandbox' },
   { prefix: '/tools', feature: 'tools' },

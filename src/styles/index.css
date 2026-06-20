@@ -5,6 +5,7 @@
 @import './themes/aegis-light.css';
 @import './themes/aegis-eyecare.css';
 @import './themes/shadcn-tokens.css';
+@import './font-selector.css';
 
 @import "tailwindcss";
 

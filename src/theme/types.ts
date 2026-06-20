@@ -31,3 +31,9 @@ export function isAegisTheme(value: unknown): value is AegisTheme {
 export function isThemeSetting(value: unknown): value is ThemeSetting {
   return value === 'system' || isAegisTheme(value);
 }
+
+/** localStorage keys for font persistence. Applied to CSS custom properties --font-ui / --font-mono at boot and on change. */
+export const AEGIS_FONTS_STORAGE_KEYS = {
+  uiFont: 'aegis-font-ui',
+  monoFont: 'aegis-font-mono',
+} as const;
