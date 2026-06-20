@@ -45,15 +45,24 @@ function detectPlatform(): string {
   return "unknown";
 }
 
-const appWindow = getCurrentWindow();
+// Guard: in a plain browser (no Tauri runtime, e.g. headless screenshots),
+// getCurrentWindow()/listen() throw at module load. Wrap so the adapter boots.
+let appWindow: any = null;
+try {
+  appWindow = getCurrentWindow();
+} catch {
+  appWindow = null;
+}
 
 // ── Listen for gateway-config event (may arrive before or after listener) ──
 let _gwConfig: any = null;
 let _gwReady = false;
-listen("gateway-config", (event: any) => {
-  _gwConfig = event.payload;
-  _gwReady = true;
-}).catch(() => {});
+try {
+  listen("gateway-config", (event: any) => {
+    _gwConfig = event.payload;
+    _gwReady = true;
+  }).catch(() => {});
+} catch {}
 
 // ── Wait a short time for the event, then use invoke as fallback ──
 async function resolveGwConfig(): Promise<any> {
@@ -99,10 +108,10 @@ async function resolveGwConfig(): Promise<any> {
   },
 
   window: {
-    minimize: () => appWindow.minimize(),
-    maximize: async () => { await appWindow.toggleMaximize(); return await appWindow.isMaximized(); },
-    close: () => appWindow.close(),
-    isMaximized: () => appWindow.isMaximized(),
+    minimize: () => appWindow?.minimize(),
+    maximize: async () => { if (!appWindow) return false; await appWindow.toggleMaximize(); return await appWindow.isMaximized(); },
+    close: () => appWindow?.close(),
+    isMaximized: () => appWindow?.isMaximized() ?? false,
   },
 
   config: {
