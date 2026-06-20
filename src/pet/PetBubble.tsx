@@ -193,7 +193,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       : t(p.phase === 'work' ? 'pet.pomodoro.focusing' : 'pet.pomodoro.resting', p.phase === 'work' ? '专注中' : '休息中');
     const PomoIcon = pomodoroIcon(p);
     body = (
-      <span style={{ fontWeight: 600, color: pomodoroColor(p), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontWeight: 600, color: pomodoroColor(p, isDark), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />
         {p.paused ? phaseLabel : `${phaseLabel} ${fmtClock(p.remainingMs)}`}
       </span>
