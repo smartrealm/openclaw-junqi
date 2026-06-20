@@ -362,6 +362,8 @@
     "theme": "Theme",
     "themeDark": "Dark",
     "themeLight": "Light",
+    "themeEyecare": "Eye-care",
+    "themeMidnight": "Midnight",
     "themeSystem": "System",
     "fontSize": "Font Size",
     "displayScale": "Display Scale",
@@ -404,6 +406,24 @@
       "amber": "Amber",
       "emerald": "Emerald"
     }
+  },
+  "theme": {
+    "followSystem": "Follow System",
+    "followSystemAria": "Follow system theme",
+    "manualTheme": "Manual Theme",
+    "manualThemeAria": "Manual theme",
+    "dark": "Dark",
+    "midnight": "Midnight",
+    "light": "Light",
+    "eyecare": "Eye Care",
+    "followingSystem": "Following system · {{mode}}",
+    "manual": "Manual · {{mode}}",
+    "darkDescription": "Always use the dark interface.",
+    "midnightDescription": "Neutral near-black surfaces for low-glare focus.",
+    "lightDescription": "Always use the light interface.",
+    "eyecareDescription": "Warm sepia palette for long reading sessions.",
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode"
   },
   "common": {
     "add": "Add",

@@ -1,0 +1,111 @@
+/* ═══════════════════════════════════════════════════════════
+   Theme: AEGIS Midnight — values ported 1:1 from hanshuaikang/nezha
+   themes.css (html.dark.midnight).
+
+   Unlike nezha — where midnight is two classes (dark + midnight)
+   layered on the same element — our data-theme is a single value.
+   So this file is a FULL palette: it copies aegis-dark text/primary/
+   status/data-viz tokens verbatim, then overrides the surface and
+   border tokens with midnight near-black values.
+
+   Keep midnight non-surface tokens in sync with aegis-dark.css.
+   The midnight-specific deltas are marked with: midnight delta.
+   ═══════════════════════════════════════════════════════════ */
+
+[data-theme="aegis-midnight"] {
+  /* ── Backgrounds ──  ◆ midnight delta (near-black #1a1b1d / #222427) */
+  --aegis-bg:             #1a1b1d;
+  --aegis-bg-solid:       #1a1b1d;
+  --aegis-surface:        #1a1b1d;
+  --aegis-surface-solid:  #1a1b1d;
+  --aegis-elevated:       #1f2123;
+  --aegis-elevated-solid: #1f2123;
+  --aegis-card:           #222427;
+  --aegis-card-solid:     #222427;
+  --aegis-chrome:         #1a1b1d;
+  --aegis-body:           #1a1b1d;
+  --aegis-bg-frosted:     rgba(26, 27, 29, 0.95);
+  --aegis-bg-frosted-60:  rgba(26, 27, 29, 0.6);
+
+  /* ── Borders ──  ◆ midnight delta (solid steps, not white-alpha) */
+  --aegis-border:         #222427;
+  --aegis-border-hover:   #2c2f33;
+  --aegis-border-active:  #3a3e44;
+
+  /* ── Text (inherited from aegis-dark) ── */
+  --aegis-text:           241 244 251;
+  --aegis-text-secondary: 214 219 232;
+  --aegis-text-muted:     164 173 194;
+  --aegis-text-dim:       114 123 143;
+
+  /* ── Primary / Accent (inherited from aegis-dark blue) ── */
+  --aegis-primary:         127 154 255;
+  --aegis-primary-hover:   111 142 255;
+  --aegis-primary-deep:    105 135 255;
+  --aegis-primary-glow:    rgba(127, 154, 255, 0.34);
+  --aegis-primary-surface: rgba(127, 154, 255, 0.14);
+
+  --aegis-accent:        105 135 255;
+  --aegis-accent-hover:  111 142 255;
+  --aegis-accent-glow:   rgba(105, 135, 255, 0.3);
+
+  /* ── Status (inherited from aegis-dark) ── */
+  --aegis-danger:         255 85 85;
+  --aegis-danger-surface: rgba(248, 81, 73, 0.12);
+  --aegis-warning:        245 166 35;
+  --aegis-warning-surface:rgba(245, 166, 35, 0.14);
+  --aegis-success:        61 214 140;
+  --aegis-success-surface:rgba(61, 214, 140, 0.14);
+
+  /* ── Messages ──  ◆ midnight delta (subtler bot bubble alpha) */
+  --aegis-user-bubble:    rgba(127, 154, 255, 0.12);
+  --aegis-user-border:    rgba(127, 154, 255, 0.24);
+  --aegis-bot-bubble:     rgba(255, 255, 255, 0.03);
+  --aegis-bot-border:     rgba(255, 255, 255, 0.06);
+
+  /* ── Glass ──  ◆ midnight delta (rebuilt on the near-black surface) */
+  --aegis-glass:          rgba(31, 33, 35, 0.78);
+  --aegis-glass-border:   rgba(255, 255, 255, 0.06);
+  --aegis-glass-hover:    rgba(38, 40, 43, 0.9);
+
+  /* ── Overlay (white in dark / midnight) ── */
+  --aegis-overlay:        255 255 255;
+
+  /* ── Scrollbar ──  ◆ midnight delta */
+  --aegis-scrollbar:      rgba(255, 255, 255, 0.10);
+  --aegis-scrollbar-hover:rgba(255, 255, 255, 0.18);
+
+  /* ── Selection ── */
+  --aegis-selection:      rgba(127, 154, 255, 0.28);
+  --aegis-selection-text: #ffffff;
+
+  /* ── Code ──  ◆ midnight delta */
+  --aegis-code-bg:        #161719;
+  --aegis-code-header:    #1f2123;
+
+  /* ── Data viz palette (inherited) ── */
+  --aegis-data-1:  #4EC9B0;
+  --aegis-data-2:  #6C9FFF;
+  --aegis-data-3:  #FFD740;
+  --aegis-data-4:  #B388FF;
+  --aegis-data-5:  #FF6E40;
+  --aegis-data-6:  #69F0AE;
+  --aegis-data-7:  #40C4FF;
+  --aegis-data-8:  #F48FB1;
+  --aegis-data-9:  #CE93D8;
+  --aegis-data-10: #80DEEA;
+
+  /* ── Menus ──  ◆ midnight delta */
+  --aegis-menu-bg:        #222427;
+  --aegis-menu-hover:     #2c2f33;
+  --aegis-menu-active:    #2f3338;
+  --aegis-menu-border:    rgba(255, 255, 255, 0.06);
+  --aegis-menu-shadow:    0 8px 32px rgba(0, 0, 0, 0.6);
+  --aegis-menu-text:      241 244 251;
+  --aegis-menu-text-muted:164 173 194;
+
+  /* ── Button (inherited) ── */
+  --aegis-btn-primary-text: #161719;
+
+  color-scheme: dark;
+}

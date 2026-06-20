@@ -1,110 +1,109 @@
 /* ═══════════════════════════════════════════════════════════
-   Theme: AEGIS Dark (Default)
+   Theme: AEGIS Dark — values ported 1:1 from hanshuaikang/nezha
+   themes.css (html.dark). Cool blue-grey surfaces, blue accent,
+   4-level text, 3-step solid borders. --aegis-* names kept so the
+   3900+ aegis utility classes work unchanged.
 
-   All values reference primitives.css scales via var().
-   To create a new theme: copy this file, pick different scale steps.
-   All --aegis-* variables must be defined.
-
-   Dark theme picks: teal 400-600, slate 100-500 (text), slate 800-950 (bg)
+   IMPORTANT: do NOT add `:root` to this selector. main.tsx
+   synchronously sets data-theme on <html> before first paint,
+   so the :root fallback is unnecessary and would silently leak
+   dark values into light/eyecare themes when Tailwind v4's CSS
+   layer optimizer reorders blocks.
    ═══════════════════════════════════════════════════════════ */
 
-:root, [data-theme="aegis-dark"] {
-  /* ── Backgrounds ── */
-  --aegis-bg:             rgb(var(--color-slate-950));
-  --aegis-surface:        rgb(var(--color-white) / 0.03);
-  --aegis-elevated:       rgb(var(--color-white) / 0.05);
-  --aegis-card:           rgb(var(--color-white) / 0.035);
-  --aegis-bg-solid:       rgb(var(--color-slate-950));
-  --aegis-surface-solid:  rgb(var(--color-slate-900));
-  --aegis-elevated-solid: rgb(var(--color-slate-800));
-  --aegis-card-solid:     rgb(var(--color-slate-850));
-  --aegis-chrome:         rgb(var(--color-white) / 0.03);
+[data-theme="aegis-dark"] {
+  /* ── Backgrounds (nezha dark surfaces) ── */
+  --aegis-bg:             #1d212a;   /* bg-root */
+  --aegis-bg-solid:       #1d212a;
+  --aegis-surface:        #242a35;   /* bg-sidebar */
+  --aegis-surface-solid:  #242a35;
+  --aegis-elevated:       #2b313d;   /* bg-panel */
+  --aegis-elevated-solid: #2b313d;
+  --aegis-card:           #313847;   /* bg-card */
+  --aegis-card-solid:     #313847;
+  --aegis-chrome:         #2b313e;   /* bg-titlebar */
+  --aegis-body:           #1d212a;
+  --aegis-bg-frosted:     rgba(29, 33, 42, 0.95);
+  --aegis-bg-frosted-60:  rgba(29, 33, 42, 0.6);
 
-  /* ── Borders ── */
-  --aegis-border:         rgb(var(--color-white) / 0.08);
-  --aegis-border-hover:   rgb(var(--color-white) / 0.14);
-  --aegis-border-active:  rgb(var(--color-white) / 0.20);
+  /* ── Borders — 3-step solid (nezha border-dim/medium/strong) ── */
+  --aegis-border:         rgba(255, 255, 255, 0.07);
+  --aegis-border-hover:   rgba(255, 255, 255, 0.12);
+  --aegis-border-active:  rgba(141, 163, 255, 0.3);
 
-  /* ── Text (space-separated RGB for Tailwind alpha) ── */
-  --aegis-text:           var(--color-slate-100);
-  --aegis-text-secondary: var(--color-slate-300);
-  --aegis-text-muted:     var(--color-slate-400);
-  --aegis-text-dim:       var(--color-slate-500);
+  /* ── Text — 4 levels (RGB triplets for Tailwind alpha) ── */
+  --aegis-text:           241 244 251;   /* text-primary #f1f4fb */
+  --aegis-text-secondary: 214 219 232;   /* text-secondary #d6dbe8 */
+  --aegis-text-muted:     164 173 194;   /* text-muted #a4adc2 */
+  --aegis-text-dim:       114 123 143;   /* text-hint #727b8f */
 
-  /* ── Primary — Teal ── */
-  --aegis-primary:        var(--color-teal-400);
-  --aegis-primary-hover:  var(--color-teal-500);
-  --aegis-primary-deep:   var(--color-teal-600);
-  --aegis-primary-glow:   rgb(var(--color-teal-400) / 0.16);
-  --aegis-primary-surface:rgb(var(--color-teal-400) / 0.08);
+  /* ── Primary = nezha accent (blue, was teal) ── */
+  --aegis-primary:         127 154 255;   /* accent #7f9aff */
+  --aegis-primary-hover:   111 142 255;   /* accent-hover #6f8eff */
+  --aegis-primary-deep:    105 135 255;   /* accent-strong #6987ff */
+  --aegis-primary-glow:    rgba(127, 154, 255, 0.34);
+  --aegis-primary-surface: rgba(127, 154, 255, 0.14);
 
-  /* ── Accent — Blue ── */
-  --aegis-accent:         var(--color-blue-400);
-  --aegis-accent-hover:   var(--color-blue-500);
-  --aegis-accent-glow:    rgb(var(--color-blue-400) / 0.14);
+  /* ── Accent — deeper blue ── */
+  --aegis-accent:        105 135 255;
+  --aegis-accent-hover:  111 142 255;
+  --aegis-accent-glow:   rgba(105, 135, 255, 0.3);
 
-  /* ── Status ── */
-  --aegis-danger:         var(--color-red-400);
-  --aegis-danger-surface: rgb(var(--color-red-400) / 0.10);
-  --aegis-warning:        var(--color-amber-400);
-  --aegis-warning-surface:rgb(var(--color-amber-400) / 0.10);
-  --aegis-success:        var(--color-green-400);
-  --aegis-success-surface:rgb(var(--color-green-400) / 0.10);
+  /* ── Status (nezha) ── */
+  --aegis-danger:         255 85 85;     /* #ff5555 */
+  --aegis-danger-surface: rgba(248, 81, 73, 0.12);
+  --aegis-warning:        245 166 35;    /* #f5a623 */
+  --aegis-warning-surface:rgba(245, 166, 35, 0.14);
+  --aegis-success:        61 214 140;    /* #3dd68c */
+  --aegis-success-surface:rgba(61, 214, 140, 0.14);
 
   /* ── Messages ── */
-  --aegis-user-bubble:    rgb(var(--color-teal-400) / 0.12);
-  --aegis-user-border:    rgb(var(--color-teal-400) / 0.20);
-  --aegis-bot-bubble:     rgb(var(--color-white) / 0.04);
-  --aegis-bot-border:     rgb(var(--color-white) / 0.07);
+  --aegis-user-bubble:    rgba(127, 154, 255, 0.12);
+  --aegis-user-border:    rgba(127, 154, 255, 0.24);
+  --aegis-bot-bubble:     rgba(255, 255, 255, 0.04);
+  --aegis-bot-border:     rgba(255, 255, 255, 0.07);
 
   /* ── Glass ── */
-  --aegis-glass:          rgb(var(--color-white) / 0.04);
-  --aegis-glass-border:   rgb(var(--color-white) / 0.08);
-  --aegis-glass-hover:    rgb(var(--color-white) / 0.08);
+  --aegis-glass:          rgba(43, 49, 61, 0.72);
+  --aegis-glass-border:   rgba(255, 255, 255, 0.08);
+  --aegis-glass-hover:    rgba(49, 56, 71, 0.85);
 
-  /* ── Overlay ── */
-  --aegis-overlay:        var(--color-white);
+  /* ── Overlay (white in dark) ── */
+  --aegis-overlay:        255 255 255;
 
   /* ── Scrollbar ── */
-  --aegis-scrollbar:      rgb(var(--color-white) / 0.08);
-  --aegis-scrollbar-hover:rgb(var(--color-white) / 0.15);
+  --aegis-scrollbar:      rgba(255, 255, 255, 0.14);
+  --aegis-scrollbar-hover:rgba(255, 255, 255, 0.24);
 
   /* ── Selection ── */
-  --aegis-selection:      rgb(var(--color-teal-400) / 0.28);
-  --aegis-selection-text: rgb(var(--color-slate-100));
-
-  /* ── Body ── */
-  --aegis-body:           rgb(var(--color-slate-950));
-
-  /* ── Frosted ── */
-  --aegis-bg-frosted:     rgb(var(--color-slate-950) / 0.95);
-  --aegis-bg-frosted-60:  rgb(var(--color-slate-950) / 0.6);
+  --aegis-selection:      rgba(127, 154, 255, 0.28);
+  --aegis-selection-text: #ffffff;
 
   /* ── Code ── */
-  --aegis-code-bg:        rgb(var(--color-slate-950));
-  --aegis-code-header:    rgb(var(--color-slate-900));
+  --aegis-code-bg:        #171b24;
+  --aegis-code-header:    #20242e;
 
-  /* ── Data Visualization ── */
-  --aegis-data-1:  var(--color-data-1);
-  --aegis-data-2:  var(--color-data-2);
-  --aegis-data-3:  var(--color-data-3);
-  --aegis-data-4:  var(--color-data-4);
-  --aegis-data-5:  var(--color-data-5);
-  --aegis-data-6:  var(--color-data-6);
-  --aegis-data-7:  var(--color-data-7);
-  --aegis-data-8:  var(--color-data-8);
-  --aegis-data-9:  var(--color-data-9);
-  --aegis-data-10: var(--color-data-10);
+  /* ── Data viz palette (kept) ── */
+  --aegis-data-1:  #4EC9B0;
+  --aegis-data-2:  #6C9FFF;
+  --aegis-data-3:  #FFD740;
+  --aegis-data-4:  #B388FF;
+  --aegis-data-5:  #FF6E40;
+  --aegis-data-6:  #69F0AE;
+  --aegis-data-7:  #40C4FF;
+  --aegis-data-8:  #F48FB1;
+  --aegis-data-9:  #CE93D8;
+  --aegis-data-10: #80DEEA;
 
-  /* ── Menus & Dropdowns ── */
-  --aegis-menu-bg:         rgb(var(--color-slate-850));
-  --aegis-menu-hover:      rgb(var(--color-white) / 0.08);
-  --aegis-menu-active:     rgb(var(--color-teal-400) / 0.15);
-  --aegis-menu-border:     rgb(var(--color-white) / 0.10);
-  --aegis-menu-shadow:     0 8px 24px rgb(var(--color-black) / 0.5);
-  --aegis-menu-text:       rgb(var(--color-slate-100));
-  --aegis-menu-text-muted: rgb(var(--color-slate-500));
+  /* ── Menus ── */
+  --aegis-menu-bg:        #2b313d;
+  --aegis-menu-hover:     #394154;
+  --aegis-menu-active:    #34446d;
+  --aegis-menu-border:    rgba(255, 255, 255, 0.08);
+  --aegis-menu-shadow:    0 8px 32px rgba(0, 0, 0, 0.55);
+  --aegis-menu-text:      241 244 251;
+  --aegis-menu-text-muted:164 173 194;
 
-  /* ── Button text (dark on bright teal — WCAG 9.5:1) ── */
-  --aegis-btn-primary-text: rgb(var(--color-slate-950));
+  /* ── Button ── */
+  --aegis-btn-primary-text: #171b24;
 }

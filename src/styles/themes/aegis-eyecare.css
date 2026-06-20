@@ -1,0 +1,104 @@
+/* ═══════════════════════════════════════════════════════════
+   Theme: AEGIS Eyecare — values ported 1:1 from hanshuaikang/nezha
+   themes.css (html.eyecare). Warm sepia/low-contrast, brown accent.
+   The eye-friendly light variant.
+   ═══════════════════════════════════════════════════════════ */
+
+[data-theme="aegis-eyecare"] {
+  /* ── Backgrounds (warm sepia) ── */
+  --aegis-bg:             #f5ecd7;   /* bg-root */
+  --aegis-bg-solid:       #f5ecd7;
+  --aegis-surface:        #f9f1dc;   /* bg-sidebar */
+  --aegis-surface-solid:  #f9f1dc;
+  --aegis-elevated:       #fbf5e4;   /* bg-panel */
+  --aegis-elevated-solid: #fbf5e4;
+  --aegis-card:           #fdf9ec;   /* bg-card */
+  --aegis-card-solid:     #fdf9ec;
+  --aegis-chrome:         #f5ecd7;
+  --aegis-body:           #f5ecd7;
+  --aegis-bg-frosted:     rgba(245, 236, 215, 0.95);
+  --aegis-bg-frosted-60:  rgba(245, 236, 215, 0.6);
+
+  /* ── Borders — 3-step warm ── */
+  --aegis-border:         rgba(101, 84, 51, 0.12);
+  --aegis-border-hover:   rgba(101, 84, 51, 0.2);
+  --aegis-border-active:  rgba(101, 84, 51, 0.32);
+
+  /* ── Text — 4 levels warm ── */
+  --aegis-text:           63 55 36;     /* text-primary #3f3724 */
+  --aegis-text-secondary: 90 79 55;     /* text-secondary #5a4f37 */
+  --aegis-text-muted:     122 108 79;   /* text-muted #7a6c4f */
+  --aegis-text-dim:       168 152 118;  /* text-hint #a89876 */
+
+  /* ── Primary = nezha eyecare accent (brown) ── */
+  --aegis-primary:         176 123 62;   /* accent #b07b3e */
+  --aegis-primary-hover:   149 97 42;    /* accent-hover #95612a */
+  --aegis-primary-deep:    149 97 42;    /* accent-strong #95612a */
+  --aegis-primary-glow:    rgba(176, 123, 62, 0.32);
+  --aegis-primary-surface: rgba(176, 123, 62, 0.14);
+
+  /* ── Accent — deeper brown ── */
+  --aegis-accent:        149 97 42;
+  --aegis-accent-hover:  149 97 42;
+  --aegis-accent-glow:   rgba(149, 97, 42, 0.24);
+
+  /* ── Status ── */
+  --aegis-danger:         185 28 28;
+  --aegis-danger-surface: rgba(185, 28, 28, 0.12);
+  --aegis-warning:        180 110 20;
+  --aegis-warning-surface:rgba(180, 110, 20, 0.14);
+  --aegis-success:        60 120 50;
+  --aegis-success-surface:rgba(60, 120, 50, 0.14);
+
+  /* ── Messages ── */
+  --aegis-user-bubble:    rgba(176, 123, 62, 0.12);
+  --aegis-user-border:    rgba(176, 123, 62, 0.24);
+  --aegis-bot-bubble:     #fdf9ec;
+  --aegis-bot-border:     rgba(101, 84, 51, 0.12);
+
+  /* ── Glass ── */
+  --aegis-glass:          rgba(253, 249, 236, 0.78);
+  --aegis-glass-border:   rgba(101, 84, 51, 0.12);
+  --aegis-glass-hover:    rgba(253, 249, 236, 0.92);
+
+  /* ── Overlay (dark-brown in eyecare) ── */
+  --aegis-overlay:        101 84 51;
+
+  /* ── Scrollbar ── */
+  --aegis-scrollbar:      rgba(101, 84, 51, 0.2);
+  --aegis-scrollbar-hover:rgba(101, 84, 51, 0.34);
+
+  /* ── Selection ── */
+  --aegis-selection:      rgba(176, 123, 62, 0.24);
+  --aegis-selection-text: #3f3724;
+
+  /* ── Code ── */
+  --aegis-code-bg:        #f1e7cd;
+  --aegis-code-header:    #ede2c4;
+
+  /* ── Data viz palette (kept) ── */
+  --aegis-data-1:  #4EC9B0;
+  --aegis-data-2:  #6C9FFF;
+  --aegis-data-3:  #FFD740;
+  --aegis-data-4:  #B388FF;
+  --aegis-data-5:  #FF6E40;
+  --aegis-data-6:  #69F0AE;
+  --aegis-data-7:  #40C4FF;
+  --aegis-data-8:  #F48FB1;
+  --aegis-data-9:  #CE93D8;
+  --aegis-data-10: #80DEEA;
+
+  /* ── Menus ── */
+  --aegis-menu-bg:        #fdf9ec;
+  --aegis-menu-hover:     #ede2c4;
+  --aegis-menu-active:    rgba(101, 84, 51, 0.12);
+  --aegis-menu-border:    rgba(101, 84, 51, 0.14);
+  --aegis-menu-shadow:    0 8px 32px rgba(101, 84, 51, 0.22);
+  --aegis-menu-text:      63 55 36;
+  --aegis-menu-text-muted:122 108 79;
+
+  /* ── Button ── */
+  --aegis-btn-primary-text: #fdf9ec;
+
+  color-scheme: light;
+}

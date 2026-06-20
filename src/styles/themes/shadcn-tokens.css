@@ -1,0 +1,107 @@
+/* ═══════════════════════════════════════════════════════════
+   shadcn/ui HSL tokens — keyed on [data-theme].
+   primary/ring bridge to nezha's blue accent (#5d7cff light /
+   #7f9aff dark / #b07b3e eyecare). Neutrals follow nezha surfaces.
+
+   nezha accent HSL (computed from hex):
+     #5d7cff → 229 100% 68%   (light)
+     #7f9aff → 227 100% 75%   (dark)
+     #b07b3e →  32  48% 47%   (eyecare brown)
+
+   IMPORTANT: do NOT add `:root` fallback to any block. main.tsx
+   synchronously writes data-theme to <html> before first paint;
+   a :root fallback would leak dark tokens into light/eyecare
+   when Tailwind v4's optimizer reorders cascades.
+   ═══════════════════════════════════════════════════════════ */
+
+[data-theme="aegis-dark"] {
+  --background: 222 18% 14%;        /* #1d212a */
+  --foreground: 225 65% 96%;        /* #f1f4fb */
+  --card: 219 17% 23%;              /* #313847 */
+  --card-foreground: 225 65% 96%;
+  --popover: 218 16% 20%;           /* #2b313d */
+  --popover-foreground: 225 65% 96%;
+  --primary: 227 100% 75%;          /* accent #7f9aff */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 218 14% 26%;
+  --secondary-foreground: 225 65% 96%;
+  --muted: 218 14% 26%;
+  --muted-foreground: 220 14% 72%;  /* #a4adc2 */
+  --accent: 218 14% 26%;
+  --accent-foreground: 225 65% 96%;
+  --destructive: 0 100% 64%;        /* #ff5555 */
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 100% / 0.07;       /* rgba white 0.07 */
+  --input: 0 0% 100% / 0.07;
+  --ring: 227 100% 75%;
+  --radius: 0.5rem;
+}
+
+[data-theme="aegis-midnight"] {
+  --background: 220 5% 11%;         /* #1a1b1d */
+  --foreground: 225 65% 96%;        /* #f1f4fb (inherited from dark) */
+  --card: 216 6% 15%;               /* #222427 */
+  --card-foreground: 225 65% 96%;
+  --popover: 220 5% 13%;            /* #1f2123 */
+  --popover-foreground: 225 65% 96%;
+  --primary: 227 100% 75%;          /* accent #7f9aff (inherited from dark) */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 6% 17%;          /* slightly raised against midnight bg */
+  --secondary-foreground: 225 65% 96%;
+  --muted: 220 6% 17%;
+  --muted-foreground: 220 14% 72%;  /* #a4adc2 (inherited) */
+  --accent: 220 6% 17%;
+  --accent-foreground: 225 65% 96%;
+  --destructive: 0 100% 64%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 216 6% 15%;             /* solid #222427 — no alpha */
+  --input: 216 6% 15%;
+  --ring: 227 100% 75%;
+  --radius: 0.5rem;
+}
+
+[data-theme="aegis-light"] {
+  --background: 240 6% 99%;
+  --foreground: 222 25% 12%;        /* #171b24 */
+  --card: 0 0% 100%;
+  --card-foreground: 222 25% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 25% 12%;
+  --primary: 229 100% 68%;          /* accent #5d7cff */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 6% 96%;
+  --secondary-foreground: 222 25% 12%;
+  --muted: 240 6% 96%;
+  --muted-foreground: 221 14% 47%;  /* #69758a */
+  --accent: 240 6% 96%;
+  --accent-foreground: 222 25% 12%;
+  --destructive: 0 72% 51%;         /* #dc2626 */
+  --destructive-foreground: 0 0% 100%;
+  --border: 222 47% 11% / 0.08;     /* rgba slate 0.08 */
+  --input: 222 47% 11% / 0.08;
+  --ring: 229 100% 68%;
+  --radius: 0.5rem;
+}
+
+[data-theme="aegis-eyecare"] {
+  --background: 47 60% 87%;         /* #f5ecd7 */
+  --foreground: 39 27% 19%;         /* #3f3724 */
+  --card: 50 67% 95%;               /* #fdf9ec */
+  --card-foreground: 39 27% 19%;
+  --popover: 49 64% 93%;            /* #fbf5e4 */
+  --popover-foreground: 39 27% 19%;
+  --primary: 32 48% 47%;            /* accent #b07b3e brown */
+  --primary-foreground: 50 67% 95%;
+  --secondary: 45 45% 84%;
+  --secondary-foreground: 39 27% 19%;
+  --muted: 45 45% 84%;
+  --muted-foreground: 36 22% 39%;   /* #7a6c4f */
+  --accent: 45 45% 84%;
+  --accent-foreground: 39 27% 19%;
+  --destructive: 0 74% 42%;
+  --destructive-foreground: 50 67% 95%;
+  --border: 34 33% 30% / 0.12;      /* rgba brown 0.12 */
+  --input: 34 33% 30% / 0.12;
+  --ring: 32 48% 47%;
+  --radius: 0.5rem;
+}

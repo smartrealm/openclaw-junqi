@@ -312,6 +312,8 @@
     "theme": "المظهر",
     "themeDark": "داكن",
     "themeLight": "فاتح",
+    "themeEyecare": "وضع الراحة",
+    "themeMidnight": "منتصف الليل",
     "themeSystem": "النظام",
     "fontSize": "حجم الخط",
     "displayScale": "مقياس العرض",
@@ -354,6 +356,24 @@
       "amber": "كهرماني",
       "emerald": "زمردي"
     }
+  },
+  "theme": {
+    "followSystem": "اتباع النظام",
+    "followSystemAria": "اتباع مظهر النظام",
+    "manualTheme": "المظهر اليدوي",
+    "manualThemeAria": "المظهر اليدوي",
+    "dark": "داكن",
+    "midnight": "منتصف الليل",
+    "light": "فاتح",
+    "eyecare": "وضع الراحة",
+    "followingSystem": "اتباع النظام · {{mode}}",
+    "manual": "يدوي · {{mode}}",
+    "darkDescription": "استخدام الواجهة الداكنة دائمًا.",
+    "midnightDescription": "أسطح محايدة قريبة من الأسود لتركيز منخفض الوهج.",
+    "lightDescription": "استخدام الواجهة الفاتحة دائمًا.",
+    "eyecareDescription": "لوحة ألوان بنية دافئة لجلسات القراءة الطويلة.",
+    "switchToLight": "التبديل إلى الوضع الفاتح",
+    "switchToDark": "التبديل إلى الوضع الداكن"
   },
   "common": {
     "cancel": "إلغاء",

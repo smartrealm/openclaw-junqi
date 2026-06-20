@@ -1,111 +1,102 @@
 /* ═══════════════════════════════════════════════════════════
-   Theme: AEGIS Light (Calm)
-
-   Same primitives, opposite scale picks.
-   Light theme picks: teal 600-800, slate 600-900 (text), slate 50-200 (bg)
-
-   "Calm light" — NOT harsh white. Uses slate-100 (#e6edf3) as base bg.
-   White reserved for elevated surfaces (cards, menus).
+   Theme: AEGIS Light — values ported 1:1 from hanshuaikang/nezha
+   themes.css (:root). Near-white cool surfaces, blue accent,
+   4-level text, 3-step solid borders.
    ═══════════════════════════════════════════════════════════ */
 
 [data-theme="aegis-light"] {
-  /* ── Backgrounds ── */
-  --aegis-bg:             rgb(var(--color-slate-100));
-  --aegis-surface:        rgb(var(--color-slate-50));
-  --aegis-elevated:       rgb(var(--color-white));
-  --aegis-card:           rgb(var(--color-white));
-  --aegis-bg-solid:       rgb(var(--color-slate-100));
-  --aegis-surface-solid:  rgb(var(--color-slate-50));
-  --aegis-elevated-solid: rgb(var(--color-white));
-  --aegis-card-solid:     rgb(var(--color-white));
-  --aegis-chrome:         rgb(var(--color-slate-50));
+  /* ── Backgrounds (nezha light surfaces) ── */
+  --aegis-bg:             hsl(240deg 6% 99.4%);   /* bg-root */
+  --aegis-bg-solid:       hsl(240deg 6% 99.4%);
+  --aegis-surface:        #fdfdfd;                 /* bg-sidebar */
+  --aegis-surface-solid:  #fdfdfd;
+  --aegis-elevated:       #ffffff;                 /* bg-panel */
+  --aegis-elevated-solid: #ffffff;
+  --aegis-card:           #ffffff;                 /* bg-card */
+  --aegis-card-solid:     #ffffff;
+  --aegis-chrome:         hsl(240deg 6% 99.4%);
+  --aegis-body:           hsl(240deg 6% 99.4%);
+  --aegis-bg-frosted:     rgba(253, 253, 253, 0.95);
+  --aegis-bg-frosted-60:  rgba(253, 253, 253, 0.6);
 
-  /* ── Borders ── */
-  --aegis-border:         rgb(var(--color-black) / 0.08);
-  --aegis-border-hover:   rgb(var(--color-black) / 0.15);
-  --aegis-border-active:  rgb(var(--color-black) / 0.22);
+  /* ── Borders — 3-step solid ── */
+  --aegis-border:         rgba(15, 23, 42, 0.08);
+  --aegis-border-hover:   rgba(15, 23, 42, 0.14);
+  --aegis-border-active:  rgba(99, 122, 163, 0.24);
 
-  /* ── Text ── */
-  --aegis-text:           var(--color-slate-900);
-  --aegis-text-secondary: var(--color-slate-700);
-  --aegis-text-muted:     var(--color-slate-600);
-  --aegis-text-dim:       var(--color-slate-500);
+  /* ── Text — 4 levels ── */
+  --aegis-text:           23 27 36;     /* text-primary #171b24 */
+  --aegis-text-secondary: 65 72 87;     /* text-secondary #414857 */
+  --aegis-text-muted:     105 117 138;  /* text-muted #69758a */
+  --aegis-text-dim:       154 163 178;  /* text-hint #9aa3b2 */
 
-  /* ── Primary — Teal (mid-bright for light bg; was teal-700 which was too dark
-     for the floating pet on slate-100 desktops — body/zzz/dots disappeared) ── */
-  --aegis-primary:        var(--color-teal-500);
-  --aegis-primary-hover:  var(--color-teal-600);
-  --aegis-primary-deep:   var(--color-teal-700);
-  --aegis-primary-glow:   rgb(var(--color-teal-500) / 0.14);
-  --aegis-primary-surface:rgb(var(--color-teal-500) / 0.07);
+  /* ── Primary = nezha accent (blue) ── */
+  --aegis-primary:         93 124 255;   /* accent #5d7cff */
+  --aegis-primary-hover:   77 111 242;   /* accent-hover #4d6ff2 */
+  --aegis-primary-deep:    68 103 245;   /* accent-strong #4467f5 */
+  --aegis-primary-glow:    rgba(93, 124, 255, 0.28);
+  --aegis-primary-surface: rgba(93, 124, 255, 0.12);
 
-  /* ── Accent — Blue (darker) ── */
-  --aegis-accent:         var(--color-blue-700);
-  --aegis-accent-hover:   var(--color-blue-600);
-  --aegis-accent-glow:    rgb(var(--color-blue-700) / 0.10);
+  /* ── Accent — deeper blue ── */
+  --aegis-accent:        68 103 245;
+  --aegis-accent-hover:  77 111 242;
+  --aegis-accent-glow:   rgba(68, 103, 245, 0.18);
 
-  /* ── Status (darker shades for light bg) ── */
-  --aegis-danger:         var(--color-red-600);
-  --aegis-danger-surface: rgb(var(--color-red-600) / 0.08);
-  --aegis-warning:        var(--color-amber-700);
-  --aegis-warning-surface:rgb(var(--color-amber-700) / 0.08);
-  --aegis-success:        var(--color-green-700);
-  --aegis-success-surface:rgb(var(--color-green-700) / 0.06);
+  /* ── Status (nezha) ── */
+  --aegis-danger:         220 38 38;      /* #dc2626 */
+  --aegis-danger-surface: rgba(220, 38, 38, 0.10);
+  --aegis-warning:        217 119 6;      /* #d97706 */
+  --aegis-warning-surface:rgba(217, 119, 6, 0.12);
+  --aegis-success:        22 163 74;      /* #16a34a */
+  --aegis-success-surface:rgba(22, 163, 74, 0.12);
 
   /* ── Messages ── */
-  --aegis-user-bubble:    rgb(var(--color-teal-700) / 0.06);
-  --aegis-user-border:    rgb(var(--color-teal-700) / 0.15);
-  --aegis-bot-bubble:     rgb(var(--color-white));
-  --aegis-bot-border:     rgb(var(--color-black) / 0.08);
+  --aegis-user-bubble:    rgba(93, 124, 255, 0.10);
+  --aegis-user-border:    rgba(93, 124, 255, 0.22);
+  --aegis-bot-bubble:     #ffffff;
+  --aegis-bot-border:     rgba(15, 23, 42, 0.08);
 
   /* ── Glass ── */
-  --aegis-glass:          rgb(var(--color-white) / 0.70);
-  --aegis-glass-border:   rgb(var(--color-black) / 0.08);
-  --aegis-glass-hover:    rgb(var(--color-white) / 0.85);
+  --aegis-glass:          rgba(255, 255, 255, 0.72);
+  --aegis-glass-border:   rgba(15, 23, 42, 0.08);
+  --aegis-glass-hover:    rgba(255, 255, 255, 0.88);
 
-  /* ── Overlay ── */
-  --aegis-overlay:        var(--color-black);
+  /* ── Overlay (black in light) ── */
+  --aegis-overlay:        15 23 42;
 
   /* ── Scrollbar ── */
-  --aegis-scrollbar:      rgb(var(--color-black) / 0.10);
-  --aegis-scrollbar-hover:rgb(var(--color-black) / 0.20);
+  --aegis-scrollbar:      rgba(15, 23, 42, 0.16);
+  --aegis-scrollbar-hover:rgba(15, 23, 42, 0.28);
 
   /* ── Selection ── */
-  --aegis-selection:      rgb(var(--color-teal-400) / 0.25);
-  --aegis-selection-text: rgb(var(--color-slate-900));
-
-  /* ── Body ── */
-  --aegis-body:           rgb(var(--color-slate-100));
-
-  /* ── Frosted ── */
-  --aegis-bg-frosted:     rgb(var(--color-slate-100) / 0.95);
-  --aegis-bg-frosted-60:  rgb(var(--color-slate-100) / 0.6);
+  --aegis-selection:      rgba(93, 124, 255, 0.22);
+  --aegis-selection-text: #171b24;
 
   /* ── Code ── */
-  --aegis-code-bg:        rgb(var(--color-slate-50));
-  --aegis-code-header:    rgb(var(--color-slate-100));
+  --aegis-code-bg:        #f6f8fa;
+  --aegis-code-header:    #eaeef2;
 
-  /* ── Data Visualization (same palette — works on both) ── */
-  --aegis-data-1:  var(--color-data-1);
-  --aegis-data-2:  var(--color-data-2);
-  --aegis-data-3:  var(--color-data-3);
-  --aegis-data-4:  var(--color-data-4);
-  --aegis-data-5:  var(--color-data-5);
-  --aegis-data-6:  var(--color-data-6);
-  --aegis-data-7:  var(--color-data-7);
-  --aegis-data-8:  var(--color-data-8);
-  --aegis-data-9:  var(--color-data-9);
-  --aegis-data-10: var(--color-data-10);
+  /* ── Data viz palette (kept) ── */
+  --aegis-data-1:  #4EC9B0;
+  --aegis-data-2:  #6C9FFF;
+  --aegis-data-3:  #FFD740;
+  --aegis-data-4:  #B388FF;
+  --aegis-data-5:  #FF6E40;
+  --aegis-data-6:  #69F0AE;
+  --aegis-data-7:  #40C4FF;
+  --aegis-data-8:  #F48FB1;
+  --aegis-data-9:  #CE93D8;
+  --aegis-data-10: #80DEEA;
 
-  /* ── Menus & Dropdowns ── */
-  --aegis-menu-bg:         rgb(var(--color-white));
-  --aegis-menu-hover:      rgb(var(--color-black) / 0.04);
-  --aegis-menu-active:     rgb(var(--color-teal-700) / 0.08);
-  --aegis-menu-border:     rgb(var(--color-black) / 0.10);
-  --aegis-menu-shadow:     0 8px 24px rgb(var(--color-black) / 0.12);
-  --aegis-menu-text:       rgb(var(--color-slate-900));
-  --aegis-menu-text-muted: rgb(var(--color-slate-500));
+  /* ── Menus ── */
+  --aegis-menu-bg:        #ffffff;
+  --aegis-menu-hover:     hsl(240deg 6% 97.7%);
+  --aegis-menu-active:    rgba(15, 23, 42, 0.08);
+  --aegis-menu-border:    rgba(15, 23, 42, 0.08);
+  --aegis-menu-shadow:    0 8px 32px rgba(0, 0, 0, 0.22);
+  --aegis-menu-text:      23 27 36;
+  --aegis-menu-text-muted:105 117 138;
 
-  /* ── Button text (white on dark teal — WCAG 6.2:1) ── */
-  --aegis-btn-primary-text: rgb(var(--color-white));
+  /* ── Button ── */
+  --aegis-btn-primary-text: #ffffff;
 }

@@ -12,19 +12,21 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise Rejectio
 // Apply the saved theme SYNCHRONOUSLY before any render so chrome-bg / glass-bg
 // resolve the right --aegis-* variables on the very first paint (no dark→light
 // flicker on launch, no wrong "always dark" chrome).
-(function applyThemeEarly() {
-  try {
-    const saved = localStorage.getItem('aegis-theme');
-    let theme: string = saved || 'system';
-    if (theme === 'system') {
-      theme = window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'aegis-dark' : 'aegis-light';
-    }
-    document.documentElement.setAttribute('data-theme', theme);
-  } catch { /* localStorage may be unavailable in incognito */ }
-})();
+//
+// CRITICAL: the theme CSS files key exclusively on `[data-theme="..."]`
+// — without an attribute on <html>, NO theme matches and the app paints
+// unstyled. earlyBootstrap() guarantees the attribute is set before the
+// stylesheet imports below resolve.
+import { earlyBootstrap } from './theme/earlyBootstrap';
+earlyBootstrap();
 
 (async function boot() {
+  // Inter UI font (weights used across the app). Imported before index.css so
+  // the --font-sans stack can resolve it on first paint.
+  await import('@fontsource/inter/400.css');
+  await import('@fontsource/inter/500.css');
+  await import('@fontsource/inter/600.css');
+  await import('@fontsource/inter/700.css');
   await import('./api/tauri-adapter');
   await import('./i18n');
   await import('@/styles/index.css');

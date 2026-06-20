@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -24,6 +24,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
+import { ThemePicker } from '@/components/settings/ThemePicker';
+import { usePrefersDark } from '@/hooks/usePrefersDark';
 import clsx from 'clsx';
 
 /** Chinese fallback labels for the skin picker (i18n key: pet.settings.<skin>). */
@@ -50,6 +52,7 @@ export function SettingsPageFull() {
     accentColor, setAccentColor,
   } = useSettingsStore();
   const { connected, connecting } = useChatStore();
+  const prefersDark = usePrefersDark();
   const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petNow, setPetNow] = useState(Date.now());
@@ -337,7 +340,7 @@ export function SettingsPageFull() {
   );
 
   return (
-    <PageTransition className="p-6 space-y-6 max-w-[700px] mx-auto">
+    <PageTransition className="p-6 space-y-6 max-w-[920px] mx-auto">
       <div>
         <h1 className="text-[22px] font-bold text-aegis-text flex items-center gap-3">
           <Settings size={24} className="text-aegis-text-dim" />
@@ -345,23 +348,30 @@ export function SettingsPageFull() {
         </h1>
       </div>
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-5 border-b border-aegis-border/15">
-        {([
-          ['appearance', t('settings.tab.appearance', '外观')],
-          ['notify', t('settings.tab.notify', '通知')],
-          ['pet', t('settings.tab.pet', '萌宠')],
-          ['connect', t('settings.tab.connect', '连接')],
-          ['storage', t('settings.tab.storage', '存储')],
-          ['about', t('settings.tab.about', '关于')],
-        ] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key)}
-            className={clsx('relative py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors',
-              activeTab === key ? 'border-aegis-primary text-aegis-text' : 'border-transparent text-aegis-text-dim hover:text-aegis-text')}>
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* Layout: left nav (nezha-style vertical) + right panel */}
+      <div className="flex gap-6 items-start">
+        <nav className="w-44 shrink-0">
+          <div className="flex flex-col gap-0.5">
+            {([
+              ['appearance', t('settings.tab.appearance', '外观'), Sun],
+              ['notify', t('settings.tab.notify', '通知'), Bell],
+              ['pet', t('settings.tab.pet', '萌宠'), PawPrint],
+              ['connect', t('settings.tab.connect', '连接'), Wifi],
+              ['storage', t('settings.tab.storage', '存储'), HardDrive],
+              ['about', t('settings.tab.about', '关于'), Info],
+            ] as const).map(([key, label, Icon]) => (
+              <button key={key} onClick={() => setActiveTab(key)}
+                className={clsx('flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors text-left w-full',
+                  activeTab === key
+                    ? 'bg-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text font-medium'
+                    : 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.03)]')}>
+                <Icon size={15} className={clsx(activeTab === key ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </nav>
+        <div className="flex-1 min-w-0 space-y-6">
 
       {activeTab === 'appearance' && (
         <>
@@ -397,50 +407,17 @@ export function SettingsPageFull() {
         </div>
       </GlassCard>
 
-      {/* Theme */}
+      {/* Theme — 1:1 nezha ThemePanel: system toggle + 2×2 manual cards */}
       <GlassCard delay={0.08}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
           <Moon size={16} className="text-aegis-primary" />
           {t('settings.theme')}
         </h3>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setTheme('system')}
-            className={clsx(
-              'flex-1 py-3 rounded-xl text-[14px] font-medium border transition-colors flex items-center justify-center gap-2',
-              (theme || 'system') === 'system'
-                ? 'bg-aegis-primary text-aegis-btn-primary-text border-transparent'
-                : 'bg-aegis-glass text-aegis-text-secondary border border-aegis-border'
-            )}
-          >
-            <MonitorDot size={15} />
-            {t('settings.themeSystem', 'System')}
-          </button>
-          <button
-            onClick={() => setTheme('aegis-dark')}
-            className={clsx(
-              'flex-1 py-3 rounded-xl text-[14px] font-medium border transition-colors flex items-center justify-center gap-2',
-              (theme || 'system') === 'aegis-dark'
-                ? 'bg-aegis-primary text-aegis-btn-primary-text border-transparent'
-                : 'bg-aegis-glass text-aegis-text-secondary border border-aegis-border'
-            )}
-          >
-            <Moon size={15} />
-            {t('settings.themeDark')}
-          </button>
-          <button
-            onClick={() => setTheme('aegis-light')}
-            className={clsx(
-              'flex-1 py-3 rounded-xl text-[14px] font-medium border transition-colors flex items-center justify-center gap-2',
-              (theme || 'system') === 'aegis-light'
-                ? 'bg-aegis-primary text-aegis-btn-primary-text border-transparent'
-                : 'bg-aegis-glass text-aegis-text-secondary border border-aegis-border'
-            )}
-          >
-            <Sun size={15} />
-            {t('settings.themeLight')}
-          </button>
-        </div>
+        <ThemePicker
+          value={theme}
+          onChange={setTheme}
+          systemPrefersDark={prefersDark}
+        />
       </GlassCard>
 
       {/* Display Scale (whole-UI zoom) */}
@@ -955,6 +932,8 @@ export function SettingsPageFull() {
       </GlassCard>
         </>
       )}
+        </div>
+      </div>
     </PageTransition>
   );
 }

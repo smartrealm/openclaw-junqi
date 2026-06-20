@@ -9,6 +9,7 @@ import { PairingScreen } from '@/components/PairingScreen';
 import { GatewayErrorScreen } from '@/components/GatewayErrorScreen';
 import { ToastContainer } from '@/components/Toast/ToastContainer';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { useTheme } from '@/theme';
 
 // Lazy-loaded pages
 const DashboardPage = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.DashboardPage })));
@@ -31,6 +32,7 @@ const CodeInterpreterPage = lazy(() => import('@/pages/CodeInterpreter').then(m 
 const McpToolsPage = lazy(() => import('@/pages/McpTools').then(m => ({ default: m.McpToolsPage })));
 const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
 const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
+const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
 import { FeatureRoute } from '@/components/FeatureRoute';
 import { useChatStore } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
@@ -97,7 +99,9 @@ function setSessionModelPref(sessionKey: string, model: string | null): void {
 
 export default function App() {
   const { t } = useTranslation();
-  const { theme } = useSettingsStore();
+  // ── Theme: resolve setting → concrete theme, apply to <html> + native chrome,
+  //         follow OS preference live when set to 'system'. All in one hook. ──
+  useTheme();
   const {
     addMessage,
     updateStreamingMessage,
@@ -283,33 +287,6 @@ export default function App() {
     setAvailableModels([]);
     console.warn('[Models] No configured models from config or gateway');
   }, [setAvailableModels, loadSessions]);
-
-  // ── Resolve actual theme (system → dark/light based on OS) ──
-  const resolvedTheme = (() => {
-    if (theme === 'system') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'aegis-dark' : 'aegis-light';
-    }
-    return theme;
-  })();
-
-  // ── Apply theme to document root + sync native macOS title bar ──
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', resolvedTheme);
-    import('@tauri-apps/api/window').then(m => m.getCurrentWindow().setTheme(resolvedTheme === 'aegis-dark' ? 'dark' : 'light')).catch(() => {});
-  }, [resolvedTheme]);
-
-  // ── Listen for OS theme changes when in 'system' mode ──
-  useEffect(() => {
-    if (theme !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => {
-      const osTheme = mq.matches ? 'aegis-dark' : 'aegis-light';
-      document.documentElement.setAttribute('data-theme', osTheme);
-      import('@tauri-apps/api/window').then(m => m.getCurrentWindow().setTheme(mq.matches ? 'dark' : 'light')).catch(() => {});
-    };
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, [theme]);
 
   // ── Desktop pet companion: open window + broadcast state (main window only) ──
   usePetStateEmitter();
@@ -715,6 +692,7 @@ export default function App() {
                 <Route path="/tools" element={<FeatureRoute feature="tools"><McpToolsPage /></FeatureRoute>} />
                 <Route path="/perf" element={<PerformancePage />} />
                 <Route path="/kanban" element={<KanbanPage />} />
+                <Route path="/ui-showcase" element={<UIShowcase />} />
                 <Route path="/settings" element={<FeatureRoute feature="settings"><SettingsPageFull /></FeatureRoute>} />
               </Route>
             </Routes>

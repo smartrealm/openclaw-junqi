@@ -1,4 +1,10 @@
 import { create } from 'zustand';
+import {
+  DEFAULT_SETTING,
+  STORAGE_KEY as THEME_STORAGE_KEY,
+  isThemeSetting,
+  type ThemeSetting,
+} from '@/theme';
 
 // ═══════════════════════════════════════════════════════════
 // Settings Store
@@ -10,7 +16,8 @@ type Lang = 'ar' | 'en' | 'zh';
 export type SidebarMode = 'expanded' | 'mini' | 'hidden';
 
 interface SettingsState {
-  theme: 'aegis-dark' | 'aegis-light' | 'system';
+  /** User-selected theme. Concrete themes are derived from {@link AEGIS_THEMES}; `system` follows the OS. */
+  theme: ThemeSetting;
   /** Whole-UI scale in percent (80–150). Applied via CSS `zoom` on #app-root. */
   uiScale: number;
   sidebarOpen: boolean;
@@ -34,7 +41,7 @@ interface SettingsState {
   sidebarCollapsed: boolean;
   sidebarMode: SidebarMode;
 
-  setTheme: (theme: string) => void;
+  setTheme: (theme: ThemeSetting) => void;
   setUiScale: (scale: number) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
@@ -98,8 +105,20 @@ const readSidebarMode = (): SidebarMode => {
 };
 const savedSidebarMode = readSidebarMode();
 
+// Read the persisted theme exactly once at store init; fall back to the
+// canonical default if storage is empty / unreadable / contains a value
+// from a no-longer-supported theme (e.g. after a migration).
+const readPersistedTheme = (): ThemeSetting => {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+    return isThemeSetting(raw) ? raw : DEFAULT_SETTING;
+  } catch {
+    return DEFAULT_SETTING;
+  }
+};
+
 export const useSettingsStore = create<SettingsState>((set) => ({
-  theme: (localStorage.getItem('aegis-theme') || 'system') as 'aegis-dark' | 'aegis-light' | 'system',
+  theme: readPersistedTheme(),
   uiScale: savedUiScale,
   sidebarOpen: true,
   sidebarWidth: 280,
@@ -124,8 +143,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   accentColor: localStorage.getItem('aegis-accent-color') || 'teal',
 
   setTheme: (theme) => {
-    localStorage.setItem('aegis-theme', theme);
-    set({ theme: theme as 'aegis-dark' | 'aegis-light' | 'system' });
+    // Validate at the store boundary — `theme: string` was the old loose
+    // contract; tighten it here so invalid values never reach the DOM.
+    if (!isThemeSetting(theme)) return;
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    set({ theme });
     window.aegis?.settings?.save?.('theme', theme).catch?.(() => {});
   },
   setUiScale: (scale) => {

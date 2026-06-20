@@ -362,6 +362,8 @@
     "theme": "主题",
     "themeDark": "深色",
     "themeLight": "浅色",
+    "themeEyecare": "护眼",
+    "themeMidnight": "暗黑",
     "themeSystem": "跟随系统",
     "fontSize": "字体大小",
     "displayScale": "界面缩放",
@@ -404,6 +406,24 @@
       "amber": "琥珀",
       "emerald": "翠绿"
     }
+  },
+  "theme": {
+    "followSystem": "跟随系统",
+    "followSystemAria": "跟随系统主题",
+    "manualTheme": "手动主题",
+    "manualThemeAria": "手动主题",
+    "dark": "深色",
+    "midnight": "暗黑",
+    "light": "浅色",
+    "eyecare": "护眼",
+    "followingSystem": "跟随系统 · {{mode}}",
+    "manual": "手动 · {{mode}}",
+    "darkDescription": "始终使用深色界面。",
+    "midnightDescription": "中性近黑界面,低眩光更聚焦。",
+    "lightDescription": "始终使用浅色界面。",
+    "eyecareDescription": "暖色米黄低对比,适合长时间阅读。",
+    "switchToLight": "切换到浅色模式",
+    "switchToDark": "切换到深色模式"
   },
   "common": {
     "add": "添加",
