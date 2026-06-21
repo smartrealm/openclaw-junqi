@@ -335,15 +335,15 @@ pub fn kill_shell(shell_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn send_input(shell_id: String, data: String) -> Result<(), String> {
+pub fn send_input(task_id: String, data: String) -> Result<(), String> {
     let registry = pty_registry().lock().unwrap();
     let handle = registry
-        .get(&shell_id)
-        .ok_or_else(|| format!("unknown shell id: {shell_id}"))?;
+        .get(&task_id)
+        .ok_or_else(|| format!("unknown shell id: {task_id}"))?;
     let guard = handle.lock().unwrap();
     let handles = guard
         .as_ref()
-        .ok_or_else(|| format!("shell closed: {shell_id}"))?;
+        .ok_or_else(|| format!("shell closed: {task_id}"))?;
     handles
         .writer
         .lock()
@@ -354,7 +354,7 @@ pub fn send_input(shell_id: String, data: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn resize_pty(shell_id: String, cols: u16, rows: u16) -> Result<(), String> {
+pub fn resize_pty(task_id: String, cols: u16, rows: u16) -> Result<(), String> {
     // Guard: reject degenerate sizes. FitAddon in a display:none container can
     // report cols=2, which would send SIGWINCH cols=2 to Claude Code / Codex
     // and permanently shred the TUI layout. Frontend has three layers of defense;
@@ -364,12 +364,12 @@ pub fn resize_pty(shell_id: String, cols: u16, rows: u16) -> Result<(), String> 
     }
     let registry = pty_registry().lock().unwrap();
     let handle = registry
-        .get(&shell_id)
-        .ok_or_else(|| format!("unknown shell id: {shell_id}"))?;
+        .get(&task_id)
+        .ok_or_else(|| format!("unknown shell id: {task_id}"))?;
     let guard = handle.lock().unwrap();
     let handles = guard
         .as_ref()
-        .ok_or_else(|| format!("shell closed: {shell_id}"))?;
+        .ok_or_else(|| format!("shell closed: {task_id}"))?;
     handles
         .master
         .resize(PtySize {
