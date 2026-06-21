@@ -16,6 +16,7 @@ import { DayView } from './DayView';
 import { EventModal } from './EventModal';
 import { MiniCalendar } from './MiniCalendar';
 import { UpcomingEvents } from './UpcomingEvents';
+import { CronStrip } from './CronStrip';
 import type { CalendarEvent } from './calendarTypes';
 
 export default function CalendarPage() {
@@ -149,6 +150,9 @@ export default function CalendarPage() {
             <AlertCircle size={14} /> {error}
           </div>
         )}
+
+        {/* Cron schedule + reminder strip */}
+        <CronStrip />
 
         {/* Calendar view */}
         {loading ? (

@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useCalendarStore } from '@/stores/calendarStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { EventCard } from './EventCard';
 import {
   daysInMonth, firstDayOffset, eventsForDate, toDateStr,
@@ -23,11 +24,35 @@ export function MonthView({ onDateClick, onEventClick }: MonthViewProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language || 'en';
   const { selectedDate, events, settings, filter } = useCalendarStore();
+  const cronJobs = useGatewayDataStore((s) => s.cronJobs);
 
   const year = selectedDate.getFullYear();
   const month = selectedDate.getMonth();
   const weekOrder = getWeekOrder(settings.weekStartDay);
   const todayStr = useMemo(() => toDateStr(new Date()), []);
+
+  // ── Cron dates set: which dates have cron jobs scheduled ──
+  const cronDates = useMemo(() => {
+    const set = new Set<string>();
+    cronJobs.forEach((j) => {
+      if (j.lastRun) {
+        const d = toDateStr(new Date(j.lastRun));
+        set.add(d);
+      }
+    });
+    return set;
+  }, [cronJobs]);
+
+  // ── Reminder dates: events with active reminders ──
+  const reminderDates = useMemo(() => {
+    const set = new Set<string>();
+    events.forEach((e) => {
+      if (e.reminderMinutes > 0 && e.status !== 'cancelled' && e.status !== 'completed') {
+        set.add(e.date);
+      }
+    });
+    return set;
+  }, [events]);
 
   const totalDays = daysInMonth(year, month);
   const offset = firstDayOffset(year, month, settings.weekStartDay);
@@ -112,12 +137,23 @@ export function MonthView({ onDateClick, onEventClick }: MonthViewProps) {
                 !cell.isOther && !cell.isToday && 'hover:bg-[rgb(var(--aegis-overlay)/0.015)]',
               )}
             >
-              {/* Day number */}
-              <div className={clsx(
-                'w-7 h-7 flex items-center justify-center rounded-full text-[12px] font-medium shrink-0',
-                cell.isToday ? 'bg-aegis-primary text-aegis-btn-primary-text font-bold' : 'text-aegis-text-muted',
-              )}>
-                {cell.day}
+              {/* Day number + indicator dots */}
+              <div className="flex items-center justify-between shrink-0">
+                <div className={clsx(
+                  'w-7 h-7 flex items-center justify-center rounded-full text-[12px] font-medium',
+                  cell.isToday ? 'bg-aegis-primary text-aegis-btn-primary-text font-bold' : 'text-aegis-text-muted',
+                )}>
+                  {cell.day}
+                </div>
+                {/* Cron / Reminder dots */}
+                <div className="flex items-center gap-0.5 mr-0.5">
+                  {cronDates.has(cell.dateStr) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-aegis-accent" title={t('calendar.cronDot', 'Cron scheduled')} />
+                  )}
+                  {reminderDates.has(cell.dateStr) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-aegis-warning" title={t('calendar.reminderDot', 'Reminder set')} />
+                  )}
+                </div>
               </div>
 
               {/* Events (max 3) */}
