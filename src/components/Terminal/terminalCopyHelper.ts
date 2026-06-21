@@ -1,5 +1,5 @@
 import type { Terminal } from "@xterm/xterm";
-import { APP_PLATFORM } from "@/components/Terminal/platform";
+import { APP_PLATFORM } from "./_nezha-platform";
 
 /** Threshold below which we use the fast synchronous path. */
 const FAST_PATH_MAX_LINES = 200;

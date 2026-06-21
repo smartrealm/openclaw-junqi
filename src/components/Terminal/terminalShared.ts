@@ -2,10 +2,10 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { IS_MAC_WEBKIT } from "@/components/Terminal/platform";
-import type { ThemeVariant } from "@/_nezha_root/types";
+import { IS_MAC_WEBKIT } from "./_nezha-platform";
+import type { ThemeVariant } from "./_nezha-types";
 // xterm 私有字段访问的显式契约——见 xterm-private.d.ts 头部说明。
-import type { XTermWithPrivates } from "@/components/Terminal/types";
+import type { XTermWithPrivates } from "./xterm-private.d";
 
 // xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
 // 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
@@ -535,7 +535,7 @@ export function initTerminal(
     theme: themeFor(variant),
     minimumContrastRatio: minimumContrastRatioFor(variant),
     allowProposedApi: true,
-     // overviewRuler removed — not in current xterm typings
+    // overviewRuler removed — not in current xterm typings
     // 当运行中的 TUI（Claude Code / Codex）开启鼠标上报时，xterm 默认把拖动当作
     // 鼠标事件转发给程序并取消本地选区,导致 macOS 用户"运行时无法框选"。开启此项后
     // 按住 ⌥ Option 拖动可强制本地选区（iTerm2 / Terminal.app 的标准约定）。

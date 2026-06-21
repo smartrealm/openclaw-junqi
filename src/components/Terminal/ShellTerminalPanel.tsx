@@ -4,8 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { attachSmartCopy } from "@/components/Terminal/terminalCopyHelper";
-import type { TerminalFontSize, FontFamily, ThemeVariant } from "@/_nezha_root/types";
+import { attachSmartCopy } from "./terminalCopyHelper";
+import type { TerminalFontSize, FontFamily, ThemeVariant } from "./_nezha-types";
 import {
   applyTerminalThemeOnPanel,
   initTerminal,
@@ -18,10 +18,10 @@ import {
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
   refreshTerminalDisplay,
-} from "@/components/Terminal/terminalShared";
-import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "@/components/Terminal/terminalInputFix";
+} from "./terminalShared";
+import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
-import { useI18n } from "@/components/Terminal/i18n-fallback";
+import { useI18n } from "./_nezha-i18n";
 import "@xterm/xterm/css/xterm.css";
 
 interface ShellOutputEvent {
@@ -96,7 +96,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       ref,
       () => ({
         sendCommand: (cmd: string) => {
-          invoke("send_input", { shell_id: shellId, data: cmd }).catch(console.error);
+          invoke("send_input", { taskId: shellId, data: cmd }).catch(console.error);
         },
       }),
       [shellId],
@@ -134,7 +134,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         const last = lastSizeRef.current;
         if (last && last.cols === s.cols && last.rows === s.rows) return;
         lastSizeRef.current = { cols: s.cols, rows: s.rows };
-        invoke("resize_pty", { shell_id: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+        invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
       };
 
       // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
@@ -147,8 +147,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         if (cleaned) return;
         fit();
         invoke<void>("open_shell", {
-          shell_id: shellId,
-          project_path: projectPath,
+          shellId,
+          projectPath,
           cols: term.cols,
           rows: term.rows,
         })
@@ -168,7 +168,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       const disposeSmartCopy = attachSmartCopy(term);
       const linuxIME = attachLinuxIMEFix(term, (data) => {
-        invoke("send_input", { shell_id: shellId, data }).catch(() => {});
+        invoke("send_input", { taskId: shellId, data }).catch(() => {});
       });
       const disposeOnData = { dispose: () => linuxIME.dispose() };
 
@@ -223,12 +223,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         terminalRef.current = null;
         fitAddonRef.current = null;
         disposeCharSizeOverride();
-        try { webglHandle.dispose(); } catch { /* addon may not have loaded */ }
+        webglHandle.dispose();
         disposeScrollbarAutoHide();
         disposeMacWebKitGuard();
         disposeInputFix();
-        try { term.dispose(); } catch { /* already gone */ }
-        invoke("kill_shell", { shell_id: shellId }).catch(() => {});
+        term.dispose();
+        invoke("kill_shell", { shellId }).catch(() => {});
       };
     }, [shellId, projectPath]);
 
@@ -241,7 +241,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           const last = lastSizeRef.current;
           if (!last || last.cols !== s.cols || last.rows !== s.rows) {
             lastSizeRef.current = { cols: s.cols, rows: s.rows };
-            invoke("resize_pty", { shell_id: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+            invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
           }
         }
         refreshTerminalDisplay(terminalRef.current);
@@ -270,7 +270,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       const last = lastSizeRef.current;
       if (last && last.cols === size.cols && last.rows === size.rows) return;
       lastSizeRef.current = { cols: size.cols, rows: size.rows };
-      invoke("resize_pty", { shell_id: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+      invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
     }, [terminalFontSize, shellId]);
 
     useEffect(() => {
@@ -287,7 +287,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         const last = lastSizeRef.current;
         if (last && last.cols === size.cols && last.rows === size.rows) return;
         lastSizeRef.current = { cols: size.cols, rows: size.rows };
-        invoke("resize_pty", { shell_id: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+        invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
       };
       pushResize(result.immediate);
       let cancelled = false;

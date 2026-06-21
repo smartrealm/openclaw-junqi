@@ -3,14 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
-import { attachSmartCopy } from "@/components/Terminal/terminalCopyHelper";
+import { attachSmartCopy } from "./terminalCopyHelper";
 import {
   DEFAULT_SHIFT_ENTER_NEWLINE,
   matchesTerminalNewline,
   normalizeShiftEnterNewline,
   TERMINAL_NEWLINE_SEQUENCE,
 } from "@/_nezha_root/shortcuts";
-import type { TerminalFontSize, FontFamily, ThemeVariant } from "@/_nezha_root/types";
+import type { TerminalFontSize, FontFamily, ThemeVariant } from "./_nezha-types";
 import {
   applyTerminalThemeOnPanel,
   initTerminal,
@@ -23,7 +23,7 @@ import {
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
   refreshTerminalDisplay,
-} from "@/components/Terminal/terminalShared";
+} from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
 
