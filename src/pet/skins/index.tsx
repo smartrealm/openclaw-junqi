@@ -136,9 +136,6 @@ export function CatSkin({ color }: SkinProps) {
         <line x1={80} y1={64} x2={100} y2={62} stroke={SHADOW} strokeWidth={1.2} opacity={0.55} />
       </motion.g>
 
-      {/* Tiny nose */}
-      <ellipse cx={60} cy={66} rx={3.5} ry={2.5} fill={color} opacity={0.5} />
-
       {/* Head highlight */}
       <ellipse cx={54} cy={42} rx={14} ry={9} fill="#fff" opacity={0.13} />
     </>
@@ -219,19 +216,6 @@ export function GhostSkin({ color }: SkinProps) {
       <path d="M26,72 Q24,18 60,14 Q96,18 94,72 L94,122 L84,108 L74,122 L64,108 L54,122 L44,108 L34,122 L26,108 Z"
         fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1.2} filter={`url(#${id}-shadow)`} />
 
-      {/* Big cute eyes — white ovals */}
-      <ellipse cx={47} cy={46} rx={11} ry={14} fill="#fff" opacity={0.85} />
-      <ellipse cx={75} cy={46} rx={11} ry={14} fill="#fff" opacity={0.85} />
-      {/* Pupils — dark dots looking slightly down-right */}
-      <circle cx={48} cy={48} r={5} fill={color} opacity={0.7} />
-      <circle cx={76} cy={48} r={5} fill={color} opacity={0.7} />
-      {/* Eye sparkle */}
-      <circle cx={46} cy={44} r={2} fill="#fff" opacity={0.6} />
-      <circle cx={74} cy={44} r={2} fill="#fff" opacity={0.6} />
-
-      {/* Tiny mouth — simple oval */}
-      <ellipse cx={61} cy={64} rx={4} ry={2.5} fill={color} opacity={0.35} />
-
       {/* Top highlight */}
       <ellipse cx={56} cy={34} rx={16} ry={8} fill="#fff" opacity={0.12} />
     </>
@@ -294,16 +278,6 @@ export function LobsterSkin({ color }: SkinProps) {
       {/* Tiny walking legs — simpler */}
       <path d="M46,68 L36,66 M46,76 L36,78" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" opacity={0.6} />
       <path d="M74,68 L84,66 M74,76 L84,78" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" opacity={0.6} />
-
-      {/* Cute big eyes — tall white ovals */}
-      <ellipse cx={52} cy={52} rx={10} ry={14} fill="#fff" opacity={0.75} />
-      <ellipse cx={70} cy={52} rx={10} ry={14} fill="#fff" opacity={0.75} />
-      {/* Pupils */}
-      <circle cx={53} cy={54} r={4} fill={color} opacity={0.7} />
-      <circle cx={71} cy={54} r={4} fill={color} opacity={0.7} />
-      {/* Eye sparkles */}
-      <circle cx={51} cy={50} r={1.8} fill="#fff" opacity={0.5} />
-      <circle cx={69} cy={50} r={1.8} fill="#fff" opacity={0.5} />
 
       {/* Body highlight */}
       <path d="M50,68 Q60,62 70,68 Q62,72 50,68 Z" fill="#fff" opacity={0.13} />
