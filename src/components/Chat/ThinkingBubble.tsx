@@ -43,7 +43,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
   // ── Collapsed pill (finalized) ──
   if (!isStreaming && !expanded) {
     return (
-      <div className="px-14 py-[2px]">
+      <div className="px-14 py-[2px] min-w-0">
         <div
           onClick={() => setExpanded(true)}
           className="inline-flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] rounded-lg cursor-pointer
@@ -66,10 +66,10 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
 
   // ── Expanded / Streaming ──
   return (
-    <div className="px-14 py-[2px]">
+    <div className="px-14 py-[2px] min-w-0">
       <div
         className={clsx(
-          'rounded-lg overflow-hidden transition-all duration-200',
+          'rounded-lg overflow-hidden transition-[border-color,background-color] duration-200',
           isStreaming
             ? 'border border-violet-500/10 bg-violet-500/[0.018]'
             : 'border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.02)]',
@@ -124,7 +124,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           <div
             ref={contentRef}
             className={clsx(
-              'px-2.5 py-2 text-[10px] leading-relaxed font-mono whitespace-pre-wrap break-words overflow-y-auto',
+              'px-2.5 py-2 text-[10px] leading-relaxed font-mono whitespace-pre-wrap break-words overflow-y-auto overflow-x-hidden',
               isStreaming ? 'text-aegis-text-muted/58 max-h-[250px]' : 'text-aegis-text-dim/52 max-h-[300px]',
             )}
           >
