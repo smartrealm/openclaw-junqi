@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { attachSmartCopy } from "@/components/Terminal/terminalCopyHelper";
-import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
+import type { TerminalFontSize, FontFamily, ThemeVariant } from "@/_nezha_root/types";
 import {
   applyTerminalThemeOnPanel,
   initTerminal,
@@ -74,7 +74,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   onReady?: () => void;
 }>(
   function ShellTerminalInstance(
-    { shellId, projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady },
+    { shell_id: shellId, project_path: projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -96,7 +96,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       ref,
       () => ({
         sendCommand: (cmd: string) => {
-          invoke("send_input", { taskId: shellId, data: cmd }).catch(console.error);
+          invoke("send_input", { shell_id: shellId, data: cmd }).catch(console.error);
         },
       }),
       [shellId],
@@ -134,7 +134,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         const last = lastSizeRef.current;
         if (last && last.cols === s.cols && last.rows === s.rows) return;
         lastSizeRef.current = { cols: s.cols, rows: s.rows };
-        invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+        invoke("resize_pty", { shell_id: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
       };
 
       // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
@@ -147,8 +147,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         if (cleaned) return;
         fit();
         invoke<void>("open_shell", {
-          shellId,
-          projectPath,
+          shell_id: shellId,
+          project_path: projectPath,
           cols: term.cols,
           rows: term.rows,
         })
@@ -168,7 +168,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       const disposeSmartCopy = attachSmartCopy(term);
       const linuxIME = attachLinuxIMEFix(term, (data) => {
-        invoke("send_input", { taskId: shellId, data }).catch(() => {});
+        invoke("send_input", { shell_id: shellId, data }).catch(() => {});
       });
       const disposeOnData = { dispose: () => linuxIME.dispose() };
 
@@ -227,11 +227,10 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         disposeScrollbarAutoHide();
         disposeMacWebKitGuard();
         disposeInputFix();
-        // Guard: xterm may already be disposed (rapid tab close).
         try { term.dispose(); } catch { /* already gone */ }
-        invoke("kill_shell", { shellId }).catch(() => {});
+        invoke("kill_shell", { shell_id: shellId }).catch(() => {});
       };
-    }, [shellId, projectPath]);
+    }, [shell_id: shellId, project_path: projectPath]);
 
     useEffect(() => {
       if (!isActive) return;
@@ -242,7 +241,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           const last = lastSizeRef.current;
           if (!last || last.cols !== s.cols || last.rows !== s.rows) {
             lastSizeRef.current = { cols: s.cols, rows: s.rows };
-            invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+            invoke("resize_pty", { shell_id: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
           }
         }
         refreshTerminalDisplay(terminalRef.current);
@@ -271,7 +270,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       const last = lastSizeRef.current;
       if (last && last.cols === size.cols && last.rows === size.rows) return;
       lastSizeRef.current = { cols: size.cols, rows: size.rows };
-      invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+      invoke("resize_pty", { shell_id: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
     }, [terminalFontSize, shellId]);
 
     useEffect(() => {
@@ -288,7 +287,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         const last = lastSizeRef.current;
         if (last && last.cols === size.cols && last.rows === size.rows) return;
         lastSizeRef.current = { cols: size.cols, rows: size.rows };
-        invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
+        invoke("resize_pty", { shell_id: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
       };
       pushResize(result.immediate);
       let cancelled = false;
