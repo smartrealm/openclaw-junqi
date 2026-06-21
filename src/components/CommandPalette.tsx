@@ -76,7 +76,7 @@ export function CommandPalette() {
       window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: "What's on my calendar today and tomorrow?", autoSend: true } }));
     }},
     { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
-      window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: 'Compact the main session context', autoSend: true } }));
+      window.dispatchEvent(new CustomEvent('aegis:compress-session'));
     }},
 
     // Connection

@@ -131,18 +131,30 @@ export function DashboardPage() {
   // ── Quick Actions ────────────────────────────────────────────
   const handleQuickAction = (action: string) => {
     setQuickActionLoading(action);
-    const messages: Record<string, string> = {
-      heartbeat: t('dashboard.quickMsg.heartbeat'),
-      emails:    t('dashboard.quickMsg.emails'),
-      calendar:  t('dashboard.quickMsg.calendar'),
-      compact:   t('dashboard.quickMsg.compact'),
-      status:    t('dashboard.quickMsg.status'),
-      summary:   t('dashboard.quickMsg.summary'),
-    };
-    if (messages[action]) {
-      window.dispatchEvent(new CustomEvent('aegis:quick-action', {
-        detail: { message: messages[action], autoSend: true },
-      }));
+
+    switch (action) {
+      case 'compact':
+        // Trigger the existing session compaction flow
+        window.dispatchEvent(new CustomEvent('aegis:compress-session'));
+        break;
+      case 'status':
+        // Navigate to full system performance page
+        navigate('/perf');
+        break;
+      default: {
+        // heartbeat / emails / calendar / summary → send as chat message
+        const messages: Record<string, string> = {
+          heartbeat: t('dashboard.quickMsg.heartbeat'),
+          emails:    t('dashboard.quickMsg.emails'),
+          calendar:  t('dashboard.quickMsg.calendar'),
+          summary:   t('dashboard.quickMsg.summary'),
+        };
+        if (messages[action]) {
+          window.dispatchEvent(new CustomEvent('aegis:quick-action', {
+            detail: { message: messages[action], autoSend: true },
+          }));
+        }
+      }
     }
     setTimeout(() => setQuickActionLoading(null), 2000);
   };

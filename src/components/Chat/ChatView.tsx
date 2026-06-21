@@ -588,14 +588,14 @@ export function ChatView() {
     return () => window.removeEventListener('aegis:refresh', handler);
   }, [handleRefresh]);
 
-  // Quick actions from Dashboard / CommandPalette — route as chat messages
+  // Quick actions from Dashboard / CommandPalette → gateway chat
   const handleQuickAction = useCallback(async (e: Event) => {
     const detail = (e as CustomEvent<{ message: string; autoSend?: boolean }>).detail;
     if (!detail?.message) return;
     const key = activeSessionKey || 'agent:main:main';
     try {
       await gateway.sendMessage(detail.message, undefined, key);
-    } catch { /* gateway may be offline */ }
+    } catch { /* gateway offline — safe no-op */ }
   }, [activeSessionKey]);
   useEffect(() => {
     window.addEventListener('aegis:quick-action', handleQuickAction as EventListener);
