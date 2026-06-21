@@ -21,7 +21,7 @@ import {
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X } from "lucide-react";
-import { useI18n } from "./_nezha-i18n";
+import { useI18n } from "./i18n-fallback";
 import "@xterm/xterm/css/xterm.css";
 
 interface ShellOutputEvent {
