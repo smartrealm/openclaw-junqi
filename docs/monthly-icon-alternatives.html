@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="aegis-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本月累计 — 图标方案对比</title>
+<style>
+:root,[data-theme="aegis-dark"]{--bg:#1d212a;--card:#313847;--border:rgba(255,255,255,.07);--text:#f1f4fb;--text-muted:#a4adc2;--dim:#727b8f;--p:#7f9aff;--a:#6987ff;--s:#3dd68c;--w:#f5a623;--d:#ff5555}
+[data-theme="aegis-light"]{--bg:#fdfdfe;--card:#fff;--border:rgba(15,23,42,.08);--text:#171b24;--text-muted:#69758a;--dim:#9aa3b2;--p:#5d7cff;--a:#4467f5;--s:#16a34a;--w:#d97706;--d:#dc2626}
+[data-theme="aegis-midnight"]{--bg:#1a1b1d;--card:#222427;--border:#222427;--text:#f1f4fb;--text-muted:#a4adc2;--dim:#727b8f;--p:#7f9aff;--a:#6987ff;--s:#3dd68c;--w:#f5a623;--d:#ff5555}
+[data-theme="aegis-eyecare"]{--bg:#f5ecd7;--card:#fdf9ec;--border:rgba(101,84,51,.12);--text:#3f3724;--text-muted:#7a6c4f;--dim:#a89876;--p:#b07b3e;--a:#95612a;--s:#3c7832;--w:#b46e14;--d:#b91c1c}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'SF Pro Display','PingFang SC',sans-serif;background:var(--bg);color:var(--text);padding:40px;transition:all .3s}
+h1{font-size:20px;margin-bottom:4px}h1 span{font-size:13px;font-weight:400;color:var(--dim)}
+h2{font-size:14px;margin:36px 0 16px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.switcher{position:fixed;top:16px;right:16px;display:flex;gap:6px;z-index:10}
+.switcher button{padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text-muted);cursor:pointer;font-size:12px;font-weight:600}
+.switcher button.active{background:var(--p);color:#fff;border-color:transparent}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;transition:border-color .15s}
+.card:hover{border-color:var(--a)}
+.card h3{font-size:13px;color:var(--text-muted);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card h3 .idx{width:20px;height:20px;border-radius:6px;background:var(--p);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.icon-grid{display:flex;gap:20px;align-items:flex-end;justify-content:center;margin-bottom:20px}
+.icon-box{text-align:center}
+.icon-box .s{font-size:9px;color:var(--dim);margin-top:4px}
+svg.icon{display:block;margin:0 auto}
+.desc{font-size:11px;color:var(--dim);line-height:1.6;text-align:center;margin-top:6px}
+.pick{display:inline-flex;align-items:center;gap:4px;margin-top:8px;padding:4px 12px;border-radius:999px;font-size:10px;font-weight:600}
+.pick.yes{background:rgba(61,214,140,.12);color:var(--s)}
+.pick.maybe{background:rgba(245,166,35,.12);color:var(--w)}
+.card-render{border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:16px;background:var(--bg)}
+.card-render .lbl{font-size:10.5px;color:var(--text-muted);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.card-render .val{font-size:22px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="switcher">
+  <button onclick="set('aegis-dark')" id="b-dark">Dark</button>
+  <button onclick="set('aegis-midnight')" id="b-midnight">Midnight</button>
+  <button onclick="set('aegis-light')" id="b-light">Light</button>
+  <button onclick="set('aegis-eyecare')" id="b-eyecare">Eyecare</button>
+</div>
+
+<h1>📅 This Month 图标方案 <span>— 6 种设计，选哪个？</span></h1>
+
+<!-- ════════ A: 三柱渐高 ════════ -->
+<h2>A — 三柱渐高柱状图（当前）</h2>
+<div class="grid"><div class="card">
+<h3><span class="idx">A</span> Ascending Bars</h3>
+<div class="icon-grid">
+  <div class="icon-box"><svg class="icon" width="24" height="24" viewBox="0 0 24 24"><rect x="2" y="13" width="4" height="8" rx="1" fill="var(--a)" opacity=".25"/><rect x="10" y="7" width="4" height="14" rx="1" fill="var(--a)" opacity=".4"/><rect x="18" y="2" width="4" height="19" rx="1" fill="var(--p)" opacity=".6"/></svg><span class="s">24px</span></div>
+  <div class="icon-box"><svg class="icon" width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="8" width="3" height="6" rx=".8" fill="var(--a)" opacity=".3"/><rect x="7" y="4" width="3" height="10" rx=".8" fill="var(--a)" opacity=".45"/><rect x="13" y="1" width="3" height="13" rx=".8" fill="var(--p)" opacity=".65"/></svg><span class="s">16px</span></div>
+  <div class="icon-box"><svg class="icon" width="12" height="12" viewBox="0 0 12 12"><rect x=".5" y="6" width="2.5" height="5" rx=".7" fill="var(--a)" opacity=".35"/><rect x="5" y="3" width="2.5" height="8" rx=".7" fill="var(--a)" opacity=".5"/><rect x="9.5" y="1" width="2.5" height="10" rx=".7" fill="var(--p)" opacity=".7"/></svg><span class="s">12px</span></div>
+</div>
+<div class="card-render"><div class="lbl"><svg width="14" height="14" viewBox="0 0 24 24"><rect x="2" y="13" width="4" height="8" rx="1" fill="var(--a)" opacity=".25"/><rect x="10" y="7" width="4" height="14" rx="1" fill="var(--a)" opacity=".4"/><rect x="18" y="2" width="4" height="19" rx="1" fill="var(--p)" opacity=".6"/></svg> This Month</div><div class="val">$4.27</div></div>
+<div class="desc">简洁直接，柱状图天然关联"统计/月度"。三角大小渐强表现增长趋势。</div>
+</div></div>
+
+<!-- ════════ B: 日历 ════════ -->
+<h2>B — 日历页</h2>
+<div class="grid"><div class="card">
+<h3><span class="idx">B</span> Calendar Sheet</h3>
+<div class="icon-grid">
+  <div class="icon-box"><svg class="icon" width="24" height="24" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="18" rx="3" fill="var(--p)" opacity=".08" stroke="var(--p)" stroke-width="1.5"/><line x1="2" y1="10" x2="22" y2="10" stroke="var(--p)" stroke-width="1.5"/><line x1="8" y1="2" x2="8" y2="6" stroke="var(--p)" stroke-width="1.5" stroke-linecap="round"/><line x1="16" y1="2" x2="16" y2="6" stroke="var(--p)" stroke-width="1.5" stroke-linecap="round"/><text x="12" y="19" text-anchor="middle" font-size="9" font-weight="700" fill="var(--p)">30</text></svg><span class="s">24px</span></div>
+  <div class="icon-box"><svg class="icon" width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="2.5" width="14" height="12.5" rx="2" fill="var(--p)" opacity=".08" stroke="var(--p)" stroke-width="1.2"/><line x1="1" y1="6.5" x2="15" y2="6.5" stroke="var(--p)" stroke-width="1.2"/><text x="8" y="13" text-anchor="middle" font-size="6.5" font-weight="700" fill="var(--p)">31</text></svg><span class="s">16px</span></div>
+  <div class="icon-box"><svg class="icon" width="12" height="12" viewBox="0 0 12 12"><rect x=".5" y="1.5" width="11" height="10" rx="1.5" fill="var(--p)" opacity=".08" stroke="var(--p)" stroke-width="1"/><line x1=".5" y1="5" x2="11.5" y2="5" stroke="var(--p)" stroke-width="1"/></svg><span class="s">12px</span></div>
+</div>
+<div class="card-render"><div class="lbl"><svg width="14" height="14" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="18" rx="3" fill="var(--p)" opacity=".08" stroke="var(--p)" stroke-width="1.5"/><line x1="2" y1="10" x2="22" y2="10" stroke="var(--p)" stroke-width="1.5"/></svg> This Month</div><div class="val">$4.27</div></div>
+<div class="desc">日历天然关联"月度"。右侧数字可动态渲染当天日期。</div>
+</div></div>
+
+<!-- ════════ C: 堆叠圆环 ════════ -->
+<h2>C — 堆叠圆环（开销层级）</h2>
+<div class="grid"><div class="card">
+<h3><span class="idx">C</span> Stacked Rings</h3>
+<div class="icon-grid">
+  <div class="icon-box"><svg class="icon" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--a)" stroke-width="2.5" opacity=".25"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="var(--a)" stroke-width="2.5" opacity=".45"/><circle cx="12" cy="12" r="2.5" fill="var(--p)" opacity=".7"/></svg><span class="s">24px</span></div>
+  <div class="icon-box"><svg class="icon" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--a)" stroke-width="2" opacity=".25"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="var(--a)" stroke-width="2" opacity=".5"/><circle cx="8" cy="8" r="1.5" fill="var(--p)" opacity=".7"/></svg><span class="s">16px</span></div>
+  <div class="icon-box"><svg class="icon" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5" fill="none" stroke="var(--a)" stroke-width="1.8" opacity=".3"/><circle cx="6" cy="6" r="2.5" fill="var(--p)" opacity=".6"/></svg><span class="s">12px</span></div>
+</div>
+<div class="card-render"><div class="lbl"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--a)" stroke-width="2.5" opacity=".25"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="var(--a)" stroke-width="2.5" opacity=".45"/><circle cx="12" cy="12" r="2.5" fill="var(--p)" opacity=".7"/></svg> This Month</div><div class="val">$4.27</div></div>
+<div class="desc">三层圆环表示成本层级（基础/附加/峰值），中心实心圆为当月总花费。</div>
+</div></div>
+
+<!-- ════════ D: Coin ════════ -->
+<h2>D — 堆叠金币</h2>
+<div class="grid"><div class="card">
+<h3><span class="idx">D</span> Stacked Coins</h3>
+<div class="icon-grid">
+  <div class="icon-box"><svg class="icon" width="24" height="24" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3" fill="var(--w)" opacity=".15" stroke="var(--w)" stroke-width="1.2"/><rect x="4" y="6" width="16" height="2" fill="var(--w)" opacity=".1"/><ellipse cx="12" cy="12" rx="8" ry="3" fill="var(--w)" opacity=".22" stroke="var(--w)" stroke-width="1.2"/><rect x="4" y="12" width="16" height="2" fill="var(--w)" opacity=".15"/><ellipse cx="12" cy="18" rx="8" ry="3" fill="var(--p)" opacity=".35" stroke="var(--p)" stroke-width="1.2"/></svg><span class="s">24px</span></div>
+  <div class="icon-box"><svg class="icon" width="16" height="16" viewBox="0 0 16 16"><ellipse cx="8" cy="4" rx="5.5" ry="2" fill="var(--w)" opacity=".15" stroke="var(--w)" stroke-width="1"/><ellipse cx="8" cy="8.5" rx="5.5" ry="2" fill="var(--w)" opacity=".25" stroke="var(--w)" stroke-width="1"/><ellipse cx="8" cy="13" rx="5.5" ry="2" fill="var(--p)" opacity=".4" stroke="var(--p)" stroke-width="1"/></svg><span class="s">16px</span></div>
+  <div class="icon-box"><svg class="icon" width="12" height="12" viewBox="0 0 12 12"><ellipse cx="6" cy="3" rx="4" ry="1.5" fill="var(--w)" opacity=".2" stroke="var(--w)" stroke-width=".8"/><ellipse cx="6" cy="7" rx="4" ry="1.5" fill="var(--p)" opacity=".3" stroke="var(--p)" stroke-width=".8"/><ellipse cx="6" cy="10.5" rx="4" ry="1.5" fill="var(--p)" opacity=".45" stroke="var(--p)" stroke-width=".8"/></svg><span class="s">12px</span></div>
+</div>
+<div class="card-render"><div class="lbl"><svg width="14" height="14" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="3" fill="var(--p)" opacity=".2" stroke="var(--p)" stroke-width="1.2"/><ellipse cx="12" cy="18" rx="8" ry="3" fill="var(--p)" opacity=".35" stroke="var(--p)" stroke-width="1.2"/></svg> This Month</div><div class="val">$4.27</div></div>
+<div class="desc">金币堆叠直观表达"累计开销"，渐变色从 Amber(Warning) 过渡到 Primary Blue。</div>
+</div></div>
+
+<!-- ════════ E: Wallet ════════ -->
+<h2>E — 钱包 / 账单</h2>
+<div class="grid"><div class="card">
+<h3><span class="idx">E</span> Wallet</h3>
+<div class="icon-grid">
+  <div class="icon-box"><svg class="icon" width="24" height="24" viewBox="0 0 24 24"><path d="M2 7a3 3 0 013-3h12l4 4v10a3 3 0 01-3 3H5a3 3 0 01-3-3V7z" fill="var(--p)" opacity=".1" stroke="var(--p)" stroke-width="1.5"/><path d="M19 8h-4V4" fill="none" stroke="var(--p)" stroke-width="1.5" stroke-linecap="round"/><line x1="6" y1="12" x2="12" y2="12" stroke="var(--p)" stroke-width="1.2" opacity=".4"/><line x1="6" y1="15" x2="10" y2="15" stroke="var(--p)" stroke-width="1.2" opacity=".3"/></svg><span class="s">24px</span></div>
+  <div class="icon-box"><svg class="icon" width="16" height="16" viewBox="0 0 16 16"><path d="M1.5 4.5a2 2 0 012-2h8l3 3v6.5a2 2 0 01-2 2h-11a2 2 0 01-2-2v-7.5z" fill="var(--p)" opacity=".1" stroke="var(--p)" stroke-width="1.2"/><line x1="4" y1="8" x2="8" y2="8" stroke="var(--p)" stroke-width="1" opacity=".4"/><line x1="4" y1="10" x2="7" y2="10" stroke="var(--p)" stroke-width="1" opacity=".3"/></svg><span class="s">16px</span></div>
+  <div class="icon-box"><svg class="icon" width="12" height="12" viewBox="0 0 12 12"><path d="M1 3.5a1.5 1.5 0 011.5-1.5h6l2 2v5a1.5 1.5 0 01-1.5 1.5h-8A1.5 1.5 0 011 9V3.5z" fill="var(--p)" opacity=".1" stroke="var(--p)" stroke-width=".9"/></svg><span class="s">12px</span></div>
+</div>
+<div class="card-render"><div class="lbl"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M2 7a3 3 0 013-3h12l4 4v10a3 3 0 01-3 3H5a3 3 0 01-3-3V7z" fill="var(--p)" opacity=".1" stroke="var(--p)" stroke-width="1.5"/></svg> This Month</div><div class="val">$4.27</div></div>
+<div class="desc">右上折角代表"账单/票据"。内部横线暗示明细行。</div>
+</div></div>
+
+<!-- ════════ F: Trending Up ════════ -->
+<h2>F — 趋势线 + 圆点</h2>
+<div class="grid"><div class="card">
+<h3><span class="idx">F</span> Trend Line</h3>
+<div class="icon-grid">
+  <div class="icon-box"><svg class="icon" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--p)" opacity=".06"/><polyline points="4,16 9,11 14,14 20,7" fill="none" stroke="var(--p)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20" cy="7" r="2" fill="var(--s)" opacity=".6"/></svg><span class="s">24px</span></div>
+  <div class="icon-box"><svg class="icon" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="var(--p)" opacity=".06"/><polyline points="2.5,10.5 6,7.5 9,9.5 13.5,4.5" fill="none" stroke="var(--p)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13.5" cy="4.5" r="1.5" fill="var(--s)" opacity=".6"/></svg><span class="s">16px</span></div>
+  <div class="icon-box"><svg class="icon" width="12" height="12" viewBox="0 0 12 12"><polyline points="2,8 5,6 7,7.5 10,4" fill="none" stroke="var(--p)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="4" r="1.2" fill="var(--s)" opacity=".6"/></svg><span class="s">12px</span></div>
+</div>
+<div class="card-render"><div class="lbl"><svg width="14" height="14" viewBox="0 0 24 24"><polyline points="4,16 9,11 14,14 20,7" fill="none" stroke="var(--p)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20" cy="7" r="2" fill="var(--s)" opacity=".6"/></svg> This Month</div><div class="val">$4.27</div></div>
+<div class="desc">右上绿色圆点表示"增长良好"，趋势线天然关联"月度走势"。最贴合 Dashboard 数据叙事。</div>
+</div></div>
+
+</body>
+<script>
+function set(t){document.documentElement.setAttribute('data-theme',t);document.querySelectorAll('.switcher button').forEach(b=>b.classList.remove('active'));document.getElementById('b-'+t.split('-')[1]).classList.add('active')}
+set('aegis-dark');document.getElementById('b-dark').classList.add('active')
+</script>
+</html>
