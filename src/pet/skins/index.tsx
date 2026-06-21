@@ -48,25 +48,56 @@ export function RobotSkin({ color }: SkinProps) {
   );
 }
 
-/** JunQi lobster — nods to OpenClaw ("claw"). Flat style: single fill + stroke,
- * no radial 3D gradient (the old one looked dated). Takes the theme color so it
- * matches the accent like the other skins. */
+/** JunQi lobster 🦞 — recognizable silhouette: big claws, segmented curved
+ * tail, antennae, and tiny walking legs. Feels like a lobster, not a blob. */
 export function LobsterSkin({ color }: SkinProps) {
   return (
     <>
-      <motion.path d="M50,24 Q42,12 38,6" stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round"
-        style={BOTTOM} animate={{ rotate: [-4, 4, -4] }} transition={{ duration: 2.4, repeat: Infinity, ease: EASE }} />
-      <motion.path d="M70,24 Q78,12 82,6" stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round"
-        style={BOTTOM} animate={{ rotate: [4, -4, 4] }} transition={{ duration: 2.4, repeat: Infinity, ease: EASE }} />
-      <path d="M44,118 L60,130 L76,118 L70,110 L50,110 Z" fill={color} stroke={EDGE} strokeWidth={1} />
-      <ellipse cx={60} cy={74} rx={30} ry={40} fill={color} stroke={EDGE} strokeWidth={1} />
-      <path d="M34,66 Q60,72 86,66" stroke={EDGE} strokeWidth={1} fill="none" opacity={0.4} />
-      <path d="M34,82 Q60,88 86,82" stroke={EDGE} strokeWidth={1} fill="none" opacity={0.4} />
-      <ellipse cx={24} cy={88} rx={11} ry={13} fill={color} stroke={EDGE} strokeWidth={1} />
-      <path d="M16,82 L11,78 M16,94 L11,98" stroke={EDGE} strokeWidth={2} strokeLinecap="round" />
-      <ellipse cx={96} cy={88} rx={11} ry={13} fill={color} stroke={EDGE} strokeWidth={1} />
-      <path d="M104,82 L109,78 M104,94 L109,98" stroke={EDGE} strokeWidth={2} strokeLinecap="round" />
-      <ellipse cx={50} cy={56} rx={11} ry={15} fill="#fff" opacity={0.16} />
+      {/* Antennae — long sweeping curves */}
+      <motion.path d="M54,34 Q38,16 22,8" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round"
+        style={BOTTOM} animate={{ rotate: [-3, 3, -3] }} transition={{ duration: 2.8, repeat: Infinity, ease: EASE }} />
+      <motion.path d="M66,34 Q82,16 98,8" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round"
+        style={BOTTOM} animate={{ rotate: [3, -3, 3] }} transition={{ duration: 2.8, repeat: Infinity, ease: EASE }} />
+
+      {/* Left claw — big oval pincer */}
+      <motion.g style={BOTTOM} animate={{ rotate: [-5, 5, -5] }} transition={{ duration: 2.2, repeat: Infinity, ease: EASE }}>
+        {/* Left arm */}
+        <path d="M44,50 Q28,54 18,42 Q12,34 16,28" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" />
+        {/* Left pincer upper */}
+        <path d="M16,28 Q8,20 14,14 Q20,12 22,20" fill={color} stroke={EDGE} strokeWidth={1} />
+        {/* Left pincer lower */}
+        <path d="M16,28 Q22,32 26,26" fill={color} stroke={EDGE} strokeWidth={1} />
+      </motion.g>
+
+      {/* Right claw — mirror */}
+      <motion.g style={BOTTOM} animate={{ rotate: [5, -5, 5] }} transition={{ duration: 2.2, repeat: Infinity, ease: EASE }}>
+        <path d="M76,50 Q92,54 102,42 Q108,34 104,28" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" />
+        <path d="M104,28 Q112,20 106,14 Q100,12 98,20" fill={color} stroke={EDGE} strokeWidth={1} />
+        <path d="M104,28 Q98,32 94,26" fill={color} stroke={EDGE} strokeWidth={1} />
+      </motion.g>
+
+      {/* Body — segmented curved tail */}
+      <path d="M44,56 Q40,80 46,100 Q52,114 58,118 L62,118 Q68,114 74,100 Q80,80 76,56 Z"
+        fill={color} stroke={EDGE} strokeWidth={1} />
+      {/* Tail segments */}
+      <path d="M46,78 Q60,82 74,78" stroke={EDGE} strokeWidth={1} fill="none" opacity={0.35} />
+      <path d="M46,90 Q60,94 74,90" stroke={EDGE} strokeWidth={1} fill="none" opacity={0.35} />
+      <path d="M48,102 Q60,106 72,102" stroke={EDGE} strokeWidth={1} fill="none" opacity={0.35} />
+
+      {/* Tail fan */}
+      <path d="M50,114 L58,130 L64,126 L60,118 Z" fill={color} stroke={EDGE} strokeWidth={1} />
+      <path d="M58,118 L64,126 L70,118 Z" fill={color} stroke={EDGE} strokeWidth={1} />
+      <path d="M60,118 L66,130 L72,114 Z" fill={color} stroke={EDGE} strokeWidth={1} />
+
+      {/* Walking legs — 3 pairs, tiny */}
+      <path d="M48,66 L38,64 M48,74 L36,74 M50,82 L38,84" stroke={color} strokeWidth={1.5} fill="none" strokeLinecap="round" opacity={0.7} />
+      <path d="M72,66 L82,64 M72,74 L84,74 M70,82 L82,84" stroke={color} strokeWidth={1.5} fill="none" strokeLinecap="round" opacity={0.7} />
+
+      {/* Eyes */}
+      <ellipse cx={52} cy={50} rx={8} ry={11} fill="#fff" opacity={0.22} />
+      <ellipse cx={68} cy={50} rx={8} ry={11} fill="#fff" opacity={0.22} />
+      <circle cx={54} cy={49} r={3} fill={color} opacity={0.8} />
+      <circle cx={66} cy={49} r={3} fill={color} opacity={0.8} />
     </>
   );
 }

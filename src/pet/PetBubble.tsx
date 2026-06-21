@@ -195,7 +195,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     );
   } else if (e === 'sleep' || e === 'sleepy') {
     bubbleKey = e;
-    body = <span style={{ opacity: 0.85, color: emotionColor[e] }}>{label}</span>;
+    body = <span style={{ fontWeight: 600, opacity: 0.85, color: emotionColor[e] }}>{label}</span>;
   } else if (hovered) {
     bubbleKey = 'tips';
     body = (
@@ -209,7 +209,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18, ease: 'easeInOut' }}
-          style={{ display: 'block' }}
+          style={{ display: 'block', fontWeight: 600 }}
         >
           {tips[tipIndex]}
         </motion.span>
