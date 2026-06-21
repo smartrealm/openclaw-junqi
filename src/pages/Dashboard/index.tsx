@@ -313,14 +313,24 @@ export function DashboardPage() {
                     : 'bg-aegis-text-dim/[0.06] border-aegis-text-dim/20 text-aegis-text-dim'
                   : 'bg-aegis-danger/[0.08] border-aegis-danger/30 text-aegis-danger'
               )}>
+                {/* Dot with ring background — gives the status indicator visual weight */}
                 <span className={clsx(
-                  'w-1.5 h-1.5 rounded-full',
+                  'relative flex items-center justify-center w-3.5 h-3.5 rounded-full border',
                   connected
                     ? agentStatus === 'working'
-                      ? 'bg-aegis-success animate-pulse-soft'
-                      : 'bg-aegis-text-dim'
-                    : 'bg-aegis-danger animate-pulse-soft'
-                )} />
+                      ? 'border-aegis-success/30 bg-aegis-success/[0.06]'
+                      : 'border-aegis-text-dim/25 bg-aegis-text-dim/[0.04]'
+                    : 'border-aegis-danger/30 bg-aegis-danger/[0.06]'
+                )}>
+                  <span className={clsx(
+                    'w-1.5 h-1.5 rounded-full',
+                    connected
+                      ? agentStatus === 'working'
+                        ? 'bg-aegis-success animate-pulse-soft'
+                        : 'bg-aegis-text-dim'
+                      : 'bg-aegis-danger animate-pulse-soft'
+                  )} />
+                </span>
                 {connected
                   ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
                   : t('dashboard.offline')
