@@ -137,26 +137,26 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
 }) {
   return (
     <div className={clsx(
-      'flex items-center gap-3 p-2.5 rounded-[10px] transition-all duration-200 cursor-default',
+      'flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all duration-200 cursor-default',
       isMain
         ? 'bg-aegis-primary-surface border border-aegis-primary/10'
         : 'hover:bg-[rgb(var(--aegis-overlay)/0.03)]'
     )}>
       <div
-        className="w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0"
+        className="w-[26px] h-[26px] rounded-md flex items-center justify-center flex-shrink-0"
         style={{ background: avatarBg }}
       >
-        <Icon size={16} style={{ color: avatarColor }} />
+        <Icon size={13} style={{ color: avatarColor }} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[12px] font-semibold text-aegis-text truncate">{name}</div>
-        <div className="text-[10px] text-aegis-text-muted font-mono flex gap-2 mt-0.5">
-          <span className="truncate max-w-[90px]">{model}</span>
+        <div className="text-[11px] font-semibold text-aegis-text truncate leading-tight">{name}</div>
+        <div className="text-[9px] text-aegis-text-muted font-mono flex gap-1.5">
+          <span className="truncate max-w-[80px]">{model}</span>
           <span className="opacity-60">{detail}</span>
         </div>
       </div>
       <span className={clsx(
-        'text-[11px] font-bold font-mono flex-shrink-0',
+        'text-[10px] font-bold font-mono flex-shrink-0',
         isMain ? 'text-aegis-primary' : 'text-aegis-text-dim'
       )}>{tokens}</span>
     </div>

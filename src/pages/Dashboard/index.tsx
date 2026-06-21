@@ -639,22 +639,23 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* ── Sessions ── */}
-        <GlassCard delay={0.22} className="flex flex-col min-h-0">
-          <div className="flex items-center justify-between mb-3">
+        <GlassCard delay={0.22} noPad className="flex flex-col min-h-0">
+          <div className="flex flex-col min-h-0 p-4 h-full">
+          <div className="flex items-center justify-between mb-2 shrink-0">
             <div className="flex items-center gap-2">
-              <Bot size={15} className="text-aegis-accent" />
-              <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.sessions')}</span>
+              <Bot size={13} className="text-aegis-accent" />
+              <span className="text-[12px] font-semibold text-aegis-text">{t('dashboard.sessions')}</span>
             </div>
             <button
               onClick={() => navigate('/agents')}
               className="flex items-center gap-0.5 text-[10px] text-aegis-primary hover:underline"
             >
               {t('dashboard.viewAll')}
-              <ChevronRight size={12} />
+              <ChevronRight size={11} />
             </button>
           </div>
 
-          <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
+          <div className="space-y-0.5 overflow-y-auto flex-1 min-h-0">
             {mainSession && (
               <SessionItem
                 isMain
@@ -694,11 +695,13 @@ export function DashboardPage() {
               </div>
             )}
           </div>
+          </div>
         </GlassCard>
 
         {/* ── Activity Feed ── */}
-        <GlassCard delay={0.24} className="flex flex-col min-h-0">
-          <div className="flex items-center justify-between mb-3">
+        <GlassCard delay={0.24} noPad className="flex flex-col min-h-0">
+          <div className="flex flex-col min-h-0 p-4 h-full">
+          <div className="flex items-center justify-between mb-2 shrink-0">
             <div className="flex items-center gap-2">
               <Activity size={15} className="text-aegis-primary" />
               <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.activity')}</span>
@@ -724,6 +727,7 @@ export function DashboardPage() {
                 {connected ? t('dashboard.noActiveSessions') : t('dashboard.notConnected')}
               </div>
             )}
+          </div>
           </div>
         </GlassCard>
       </div>
