@@ -26,6 +26,7 @@ import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
 import { FontPanel } from '@/components/settings/FontPanel';
+import { AegisIcon } from '@/components/shared/AegisIcon';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import clsx from 'clsx';
 
