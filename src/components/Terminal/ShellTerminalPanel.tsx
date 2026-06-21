@@ -74,7 +74,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   onReady?: () => void;
 }>(
   function ShellTerminalInstance(
-    { shell_id: shellId, project_path: projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady },
+    { shellId, projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -230,7 +230,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         try { term.dispose(); } catch { /* already gone */ }
         invoke("kill_shell", { shell_id: shellId }).catch(() => {});
       };
-    }, [shell_id: shellId, project_path: projectPath]);
+    }, [shellId, projectPath]);
 
     useEffect(() => {
       if (!isActive) return;
