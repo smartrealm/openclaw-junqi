@@ -14,10 +14,11 @@ import {
 import {
   Heart, Mail, Calendar, RefreshCw, BarChart3, FileText,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
-  TrendingUp, TrendingDown, DollarSign, Cpu,
+  TrendingUp, TrendingDown,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { DashboardIcon } from '@/components/shared/DashboardIcon';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore } from '@/stores/chatStore';
@@ -376,7 +377,7 @@ export function DashboardPage() {
         {/* 💰 Today's Cost */}
         <GlassCard delay={0.05} className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted font-medium">
-            <DollarSign size={13} className="text-aegis-primary" />
+            <DashboardIcon kind="cost" size={13} />
             {t('dashboard.todayCost')}
           </div>
           <div className="text-[22px] font-bold text-aegis-text leading-none tracking-tight">
@@ -400,7 +401,7 @@ export function DashboardPage() {
         {/* 📅 This Month */}
         <GlassCard delay={0.08} className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted font-medium">
-            <BarChart3 size={13} className="text-aegis-accent" />
+            <DashboardIcon kind="month" size={13} />
             {t('dashboard.thisMonth')}
           </div>
           <div className="text-[22px] font-bold text-aegis-text leading-none tracking-tight">
@@ -417,7 +418,7 @@ export function DashboardPage() {
         {/* ⚡ Tokens Today */}
         <GlassCard delay={0.11} className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted font-medium">
-            <Zap size={13} className="text-aegis-warning" />
+            <DashboardIcon kind="tokens" size={13} />
             {t('dashboard.tokensToday')}
           </div>
           <div className="text-[22px] font-bold text-aegis-text leading-none tracking-tight">
@@ -438,7 +439,7 @@ export function DashboardPage() {
         {/* 🧠 Context */}
         <GlassCard delay={0.14} className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted font-medium">
-            <Cpu size={13} className="text-aegis-danger" />
+            <DashboardIcon kind="context" size={13} />
             {t('dashboard.contextCard')}
           </div>
           <div className="flex items-center gap-3 mt-1">
