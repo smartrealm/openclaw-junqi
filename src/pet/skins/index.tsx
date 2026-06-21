@@ -3,6 +3,19 @@
  * silhouette + decorations (no eyes/mouth/effects; those are layered on top by
  * PetCharacter so they're shared across skins). Adding a skin = add a component
  * + one line in SKIN_REGISTRY (open–closed).
+ *
+ * Pseudo-3D shading: skins can use SVG <radialGradient> defined inline via
+ * <defs>. The gradient shifts from a lighter center to the solid edge color,
+ * giving a subtle rounded volume. A highlight overlay (small white shape) on
+ * the body top adds a specular reflection. Together this reads as "soft 3D"
+ * without any rendering engine.
+ *
+ * Design tools for new skins:
+ *   Figma (free)        — draw shapes, apply radial gradients visually,
+ *                          Copy as SVG → extract <radialGradient> defs.
+ *                          Best workflow for non-coders.
+ *   https://svggradients.com  — visual gradient builder, paste CSS/SVG out.
+ *   CodePen             — quick SVG + animation prototyping.
  */
 import { motion } from 'framer-motion';
 import type { FC } from 'react';
@@ -11,6 +24,7 @@ import { themeAlpha } from '@/utils/theme-colors';
 const EASE = [0.22, 1, 0.36, 1] as const;
 const BOTTOM = { transformBox: 'fill-box' as const, transformOrigin: 'bottom' };
 const EDGE = themeAlpha('primary', 1);
+const SHADOW = themeAlpha('primary', 0.38);
 
 export type PetSkin = 'sprite' | 'robot' | 'lobster' | 'cat' | 'jellyfish' | 'ghost';
 export interface SkinProps {
@@ -48,48 +62,68 @@ export function RobotSkin({ color }: SkinProps) {
   );
 }
 
-/** JunQi lobster 🦞 — recognizable silhouette: big claws, segmented curved
- * tail, antennae, and tiny walking legs. Feels like a lobster, not a blob. */
+/** JunQi lobster 🦞 — pseudo-3D via radial gradients + highlight overlays.
+ * Each major shape (body, claws) uses a <radialGradient> that shifts from a
+ * lighter center to the solid edge color, giving soft rounded volume. A white
+ * highlight ellipse on the body top adds a specular reflection. Together this
+ * reads as "3D-ish" without any rendering engine overhead. */
 export function LobsterSkin({ color }: SkinProps) {
+  const id = 'lob';
   return (
     <>
-      {/* Antennae — long sweeping curves */}
+      <defs>
+        <radialGradient id={`${id}-body`} cx="40%" cy="35%" r="60%">
+          <stop offset="0%" stopColor={color} stopOpacity={1} />
+          <stop offset="65%" stopColor={color} stopOpacity={0.82} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.55} />
+        </radialGradient>
+        <radialGradient id={`${id}-claw`} cx="30%" cy="30%" r="65%">
+          <stop offset="0%" stopColor={color} stopOpacity={1} />
+          <stop offset="60%" stopColor={color} stopOpacity={0.78} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.5} />
+        </radialGradient>
+        {/* Drop-shadow filter for depth behind the body */}
+        <filter id={`${id}-shadow`} x="-20%" y="-10%" width="140%" height="130%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={color} floodOpacity="0.3" />
+        </filter>
+      </defs>
+
+      {/* Antennae */}
       <motion.path d="M54,34 Q38,16 22,8" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round"
         style={BOTTOM} animate={{ rotate: [-3, 3, -3] }} transition={{ duration: 2.8, repeat: Infinity, ease: EASE }} />
       <motion.path d="M66,34 Q82,16 98,8" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round"
         style={BOTTOM} animate={{ rotate: [3, -3, 3] }} transition={{ duration: 2.8, repeat: Infinity, ease: EASE }} />
 
-      {/* Left claw — big oval pincer */}
+      {/* Left claw */}
       <motion.g style={BOTTOM} animate={{ rotate: [-5, 5, -5] }} transition={{ duration: 2.2, repeat: Infinity, ease: EASE }}>
-        {/* Left arm */}
         <path d="M44,50 Q28,54 18,42 Q12,34 16,28" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" />
-        {/* Left pincer upper */}
-        <path d="M16,28 Q8,20 14,14 Q20,12 22,20" fill={color} stroke={EDGE} strokeWidth={1} />
-        {/* Left pincer lower */}
-        <path d="M16,28 Q22,32 26,26" fill={color} stroke={EDGE} strokeWidth={1} />
+        <path d="M16,28 Q8,20 14,14 Q20,12 22,20" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+        <path d="M16,28 Q22,32 26,26" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
       </motion.g>
 
-      {/* Right claw — mirror */}
+      {/* Right claw */}
       <motion.g style={BOTTOM} animate={{ rotate: [5, -5, 5] }} transition={{ duration: 2.2, repeat: Infinity, ease: EASE }}>
         <path d="M76,50 Q92,54 102,42 Q108,34 104,28" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" />
-        <path d="M104,28 Q112,20 106,14 Q100,12 98,20" fill={color} stroke={EDGE} strokeWidth={1} />
-        <path d="M104,28 Q98,32 94,26" fill={color} stroke={EDGE} strokeWidth={1} />
+        <path d="M104,28 Q112,20 106,14 Q100,12 98,20" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+        <path d="M104,28 Q98,32 94,26" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
       </motion.g>
 
-      {/* Body — segmented curved tail */}
+      {/* Body — with 3D gradient + drop shadow */}
       <path d="M44,56 Q40,80 46,100 Q52,114 58,118 L62,118 Q68,114 74,100 Q80,80 76,56 Z"
-        fill={color} stroke={EDGE} strokeWidth={1} />
+        fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} filter={`url(#${id}-shadow)`} />
+      {/* Highlight — curved white shape simulating light hitting the top of the body */}
+      <path d="M50,64 Q60,58 70,64 Q62,68 50,64 Z" fill="#fff" opacity={0.14} />
       {/* Tail segments */}
-      <path d="M46,78 Q60,82 74,78" stroke={EDGE} strokeWidth={1} fill="none" opacity={0.35} />
-      <path d="M46,90 Q60,94 74,90" stroke={EDGE} strokeWidth={1} fill="none" opacity={0.35} />
-      <path d="M48,102 Q60,106 72,102" stroke={EDGE} strokeWidth={1} fill="none" opacity={0.35} />
+      <path d="M46,78 Q60,82 74,78" stroke={SHADOW} strokeWidth={1} fill="none" opacity={0.45} />
+      <path d="M46,90 Q60,94 74,90" stroke={SHADOW} strokeWidth={1} fill="none" opacity={0.45} />
+      <path d="M48,102 Q60,106 72,102" stroke={SHADOW} strokeWidth={1} fill="none" opacity={0.45} />
 
       {/* Tail fan */}
-      <path d="M50,114 L58,130 L64,126 L60,118 Z" fill={color} stroke={EDGE} strokeWidth={1} />
-      <path d="M58,118 L64,126 L70,118 Z" fill={color} stroke={EDGE} strokeWidth={1} />
-      <path d="M60,118 L66,130 L72,114 Z" fill={color} stroke={EDGE} strokeWidth={1} />
+      <path d="M50,114 L58,130 L64,126 L60,118 Z" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+      <path d="M58,118 L64,126 L70,118 Z" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+      <path d="M60,118 L66,130 L72,114 Z" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
 
-      {/* Walking legs — 3 pairs, tiny */}
+      {/* Walking legs */}
       <path d="M48,66 L38,64 M48,74 L36,74 M50,82 L38,84" stroke={color} strokeWidth={1.5} fill="none" strokeLinecap="round" opacity={0.7} />
       <path d="M72,66 L82,64 M72,74 L84,74 M70,82 L82,84" stroke={color} strokeWidth={1.5} fill="none" strokeLinecap="round" opacity={0.7} />
 
