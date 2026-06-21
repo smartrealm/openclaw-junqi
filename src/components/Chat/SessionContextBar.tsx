@@ -289,19 +289,22 @@ export function SessionContextBar() {
   // Session stats
   const activeSession = sessions.find((s) => s.key === activeSessionKey);
   const sessionMsgs = messagesPerSession[activeSessionKey] || [];
-  const sessionMsgCount = sessionMsgs.length;
   const firstMsgTs = sessionMsgs[0]?.timestamp
     ? new Date(sessionMsgs[0].timestamp)
     : null;
   const fmtShort = (d: Date) => `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
   const startTime = firstMsgTs ? fmtShort(firstMsgTs) : '';
   const startFull = firstMsgTs ? firstMsgTs.toLocaleString() : '';
-  const lastTs = activeSession?.lastTimestamp ? new Date(activeSession.lastTimestamp) : null;
-  const lastTime = lastTs ? fmtShort(lastTs) : '';
-  const lastFull = lastTs ? lastTs.toLocaleString() : '';
-  const sessionAge = lastTs
-    ? (() => { const diff = Date.now() - lastTs.getTime(); const m = Math.floor(diff / 60000); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d`; })()
-    : '';
+  const sessionAge = (() => {
+    const lastTs = activeSession?.lastTimestamp ? new Date(activeSession.lastTimestamp) : null;
+    if (!lastTs) return '';
+    const diff = Date.now() - lastTs.getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
+  })();
 
   // ── Elapsed timer while AI is working ──
   const [elapsed, setElapsed] = useState(0);
@@ -320,24 +323,6 @@ export function SessionContextBar() {
   const maxLabel = maxTokens >= 1_000_000
     ? `${(maxTokens / 1_000_000).toFixed(maxTokens % 1_000_000 === 0 ? 0 : 1)}M`
     : `${Math.round(maxTokens / 1000)}K`;
-
-  // ── Derive latest input/output token breakdown from renderBlocks ──
-  const latestTokenMeta = (() => {
-    for (let i = renderBlocks.length - 1; i >= 0; i--) {
-      const b = renderBlocks[i] as any;
-      if (b.role !== 'assistant') continue;
-      const ctx = b.meta?.find((m: any) => m.kind === 'context');
-      if (!ctx) continue;
-      try {
-        const parsed = JSON.parse(ctx.content);
-        if (parsed.input || parsed.output) return parsed as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; contextPercent?: number | null };
-      } catch { continue; }
-    }
-    return null;
-  })();
-  const lastInput = latestTokenMeta?.input ?? 0;
-  const lastOutput = latestTokenMeta?.output ?? 0;
-  const fmtToken = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));
 
   return (
     <div className="h-[32px] shrink-0 flex items-center gap-2 px-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[var(--aegis-bg-frosted-60)]">
@@ -360,50 +345,24 @@ export function SessionContextBar() {
         </>
       )}
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
+        {/* Token usage: compact single chip instead of 3 spans */}
         {maxTokens > 0 && (
-          <>
-            {(lastInput > 0 || lastOutput > 0) && (
-              <>
-                {lastInput > 0 && <span className="text-[10px] text-aegis-text-muted font-mono tabular-nums" title={`输入 ${lastInput.toLocaleString()} tokens`}>↑{fmtToken(lastInput)}</span>}
-                {lastOutput > 0 && <span className="text-[10px] text-aegis-text-muted font-mono tabular-nums" title={`输出 ${lastOutput.toLocaleString()} tokens`}>↓{fmtToken(lastOutput)}</span>}
-                <span className="text-aegis-text-dim opacity-20">·</span>
-              </>
-            )}
-            <span className="text-[10px] text-aegis-text-muted font-mono">
-              {usedK}K / {maxLabel}
-            </span>
-            <span className="text-[10px] text-aegis-text-dim">
-              ({Math.round((usedTokens / maxTokens) * 100)}%)
-            </span>
-            <span className="text-aegis-text-dim opacity-20">·</span>
-          </>
-        )}
-        {sessionMsgCount > 0 && (
-          <span className="text-[10px] text-aegis-text-muted font-mono" title={`${sessionMsgCount} messages`}>
-            {sessionMsgCount} msg
+          <span className="text-[10px] text-aegis-text-muted font-mono hidden lg:inline" title={`${usedK}K / ${maxLabel} (${Math.round((usedTokens / maxTokens) * 100)}%)`}>
+            {usedK}K/{maxLabel}
           </span>
         )}
+        {/* Timestamp: only show on larger screens */}
         {startTime && (
-          <span className="text-[10px] text-aegis-text-muted font-mono" title={`Started: ${startFull}`}>
+          <span className="text-[10px] text-aegis-text-muted font-mono hidden xl:inline" title={startFull}>
             {startTime}
           </span>
         )}
-        {startTime && lastTime && (
-          <span className="text-[10px] text-aegis-text-dim">~</span>
-        )}
-        {lastTime && (
-          <span className="text-[10px] text-aegis-text-muted font-mono" title={`Last: ${lastFull}`}>
-            {lastTime}
-          </span>
-        )}
         {sessionAge && (
-          <span className="text-[9px] text-aegis-text-dim" title={`${sessionAge} since last activity`}>
+          <span className="text-[9px] text-aegis-text-dim hidden xl:inline" title={`${sessionAge} since last activity`}>
             {sessionAge}
           </span>
         )}
-        {(sessionMsgCount > 0 || sessionAge) && (
-          <span className="text-aegis-text-dim opacity-20">|</span>
-        )}
+        <span className="text-aegis-text-dim opacity-20 hidden xl:inline">|</span>
         {renderBlocks.length > 0 && (
           <button
             onClick={() => exportChatMarkdown(renderBlocks, activeSessionKey)}
