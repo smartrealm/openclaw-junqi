@@ -125,7 +125,7 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
 // ═══════════════════════════════════════════════════════════
 // SessionItem — Single session row
 // ═══════════════════════════════════════════════════════════
-export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, avatarColor, icon: Icon }: {
+export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, avatarColor, icon: Icon, onClick }: {
   isMain?: boolean;
   name: string;
   model: string;
@@ -134,14 +134,18 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
   avatarBg: string;
   avatarColor: string;
   icon: React.ElementType;
+  onClick?: () => void;
 }) {
   return (
-    <div className={clsx(
-      'flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all duration-200 cursor-default',
-      isMain
-        ? 'bg-aegis-primary-surface border border-aegis-primary/10'
-        : 'hover:bg-[rgb(var(--aegis-overlay)/0.03)]'
-    )}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        'w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all duration-200',
+        isMain
+          ? 'bg-aegis-primary-surface border border-aegis-primary/10'
+          : 'hover:bg-[rgb(var(--aegis-overlay)/0.03)] cursor-pointer'
+      )}>
       <div
         className="w-[26px] h-[26px] rounded-md flex items-center justify-center flex-shrink-0"
         style={{ background: avatarBg }}
@@ -159,7 +163,7 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
         'text-[10px] font-bold font-mono flex-shrink-0',
         isMain ? 'text-aegis-primary' : 'text-aegis-text-dim'
       )}>{tokens}</span>
-    </div>
+    </button>
   );
 }
 

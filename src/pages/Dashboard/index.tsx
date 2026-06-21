@@ -647,7 +647,7 @@ export function DashboardPage() {
               <span className="text-[12px] font-semibold text-aegis-text">{t('dashboard.sessions')}</span>
             </div>
             <button
-              onClick={() => navigate('/agents')}
+              onClick={() => navigate('/chat')}
               className="flex items-center gap-0.5 text-[10px] text-aegis-primary hover:underline"
             >
               {t('dashboard.viewAll')}
@@ -666,6 +666,7 @@ export function DashboardPage() {
                 avatarBg={themeAlpha('primary', 0.12)}
                 avatarColor={themeHex('primary')}
                 icon={Shield}
+                onClick={() => { useChatStore.getState().openTab(mainSession.key); navigate('/chat'); }}
               />
             )}
             {subSessions.map((s: any) => {
@@ -686,6 +687,7 @@ export function DashboardPage() {
                   avatarBg={themeAlpha('accent', 0.1)}
                   avatarColor={themeHex('accent')}
                   icon={Bot}
+                  onClick={() => { useChatStore.getState().openTab(key); navigate('/chat'); }}
                 />
               );
             })}
