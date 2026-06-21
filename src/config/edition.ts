@@ -25,9 +25,8 @@ export type EditionFeatureKey =
   | 'sandbox'
   | 'tools'
   | 'settings'
-  | 'project'
   | 'sessionView'
-  | 'timeline';
+
 
 export type EditionFeatures = Record<EditionFeatureKey, boolean>;
 
@@ -62,9 +61,7 @@ const allEnabled = (): EditionFeatures => ({
   sandbox: true,
   tools: true,
   settings: true,
-  project: true,
   sessionView: true,
-  timeline: true,
 });
 
 /**
@@ -140,9 +137,7 @@ const APP_ROUTE_ORDER: { feature: EditionFeatureKey; path: string }[] = [
   { feature: 'calendar', path: '/calendar' },
   { feature: 'sandbox', path: '/sandbox' },
   { feature: 'tools', path: '/tools' },
-  { feature: 'project', path: '/project' },
   { feature: 'sessionView', path: '/workspace/sessions' },
-  { feature: 'timeline', path: '/timeline' },
   { feature: 'settings', path: '/settings' },
 ];
 
@@ -166,9 +161,7 @@ const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/calendar', feature: 'calendar' },
   { prefix: '/sandbox', feature: 'sandbox' },
   { prefix: '/tools', feature: 'tools' },
-  { prefix: '/project', feature: 'project' },
   { prefix: '/workspace/sessions', feature: 'sessionView' },
-  { prefix: '/timeline', feature: 'timeline' },
   { prefix: '/settings', feature: 'settings' },
   { prefix: '/chat', feature: 'chat' },
   { prefix: '/workshop', feature: 'workshop' },

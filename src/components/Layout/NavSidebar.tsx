@@ -36,11 +36,7 @@ const navItemDefs: NavItem[] = [
   { to: '/skills', icon: Puzzle, labelKey: 'nav.skills', feature: 'skills' },
   { to: '/terminal', icon: Terminal, labelKey: 'nav.terminal', feature: 'terminal' },
   { to: '/memory', icon: Brain, labelKey: 'nav.memory', badge: '🧪', feature: 'memory' },
-  { to: '/files', icon: FolderOpen, labelKey: 'nav.files', feature: 'files' },
-  { to: '/project', icon: FolderOpen, labelKey: 'nav.project', feature: 'project' },
-  { to: '/workspace/sessions', icon: History, labelKey: 'nav.sessions', feature: 'sessionView' },
-  { to: '/timeline', icon: GitBranch, labelKey: 'nav.timeline', feature: 'timeline' },
-  { to: '/calendar', icon: CalendarDays, labelKey: 'nav.calendar', feature: 'calendar' },
+  { to: '/files', icon: FolderOpen, labelKey: 'nav.files', feature: 'files' },  { to: '/workspace/sessions', icon: History, labelKey: 'nav.sessions', feature: 'sessionView' },  { to: '/calendar', icon: CalendarDays, labelKey: 'nav.calendar', feature: 'calendar' },
   { to: '/config', icon: Settings2, labelKey: 'nav.config', feature: 'configManager' },
   { to: '/perf', icon: Activity, labelKey: 'nav.performance', feature: 'logs' }, // reuse logs flag or always show
 ];
@@ -54,9 +50,7 @@ const PREFETCH_MAP: Record<string, () => void> = {
   '/costs': () => import('@/pages/FullAnalytics'),
   '/cron': () => import('@/pages/CronMonitor'),
   '/terminal': () => import('@/pages/TerminalPage'),
-  '/project': () => import('@/pages/ProjectPage'),
   '/workspace/sessions': () => import('@/pages/SessionView'),
-  '/timeline': () => import('@/pages/TimelinePage'),
 };
 
 export function NavSidebar() {
