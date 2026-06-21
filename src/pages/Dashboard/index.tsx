@@ -611,7 +611,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 flex-1 min-h-0">
 
         {/* ── Quick Actions ── */}
-        <GlassCard delay={0.20}>
+        <GlassCard delay={0.20} className="shrink-0">
           <div className="flex items-center gap-2 mb-3">
             <Zap size={15} className="text-aegis-accent" />
             <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.quickActions')}</span>
@@ -639,7 +639,7 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* ── Sessions ── */}
-        <GlassCard delay={0.22} className="flex flex-col">
+        <GlassCard delay={0.22} className="flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Bot size={15} className="text-aegis-accent" />
@@ -697,7 +697,7 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* ── Activity Feed ── */}
-        <GlassCard delay={0.24} className="flex flex-col">
+        <GlassCard delay={0.24} className="flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Activity size={15} className="text-aegis-primary" />
