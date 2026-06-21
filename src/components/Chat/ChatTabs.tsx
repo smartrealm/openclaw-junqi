@@ -611,9 +611,18 @@ function NewSessionPicker({
             {(loadingNew || newSessions.length > 0) && (
               <div className="mx-1 my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
             )}
-            {newSessions.length > 0 && (
+            {/* Filter available sessions by selected agent */}
+            {(() => {
+              const agentSessions = newSessions.filter((s) => {
+                const { agentId } = parseSessionKey(s.key);
+                return agentId === selectedAgentId;
+              });
+              return (
+                <>
+            {agentSessions.length > 0 && (
               <div className="text-[9px] text-aegis-text-dim uppercase tracking-wider px-2 py-1 mb-0.5">
                 {t('chat.availableSessions', 'Available Sessions')}
+                <span className="ml-1 opacity-50">({agentSessions.length})</span>
               </div>
             )}
             {loadingNew ? (
@@ -621,7 +630,7 @@ function NewSessionPicker({
                 {t('common.loading', 'Loading...')}
               </div>
             ) : (
-              newSessions.map((session) => {
+              agentSessions.map((session) => {
                 const displayLabel = sessionLabel(
                   session,
                   session.key,
@@ -694,6 +703,9 @@ function NewSessionPicker({
                 );
               })
             )}
+              </>
+            );
+            })()}
           </div>
         </motion.div>
       )}
