@@ -34,7 +34,6 @@ const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ de
 const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
 const GitPage = lazy(() => import('@/pages/GitPage'));
 const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
-const SessionView = lazy(() => import('@/pages/SessionView').then(m => ({ default: m.SessionView })));
 import { FeatureRoute } from '@/components/FeatureRoute';
 import { useChatStore } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
