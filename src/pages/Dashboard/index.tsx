@@ -19,7 +19,6 @@ import {
 import { GlassCard } from '@/components/shared/GlassCard';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { DashboardIcon } from '@/components/shared/DashboardIcon';
-import { StatusDot } from '@/components/shared/StatusDot';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll } from '@/stores/gatewayDataStore';
@@ -300,10 +299,34 @@ export function DashboardPage() {
           >
             <Shield size={20} className="text-aegis-primary" />
           </motion.div>
-          <div>
-            <h1 className="text-[18px] font-bold text-aegis-text tracking-tight">
-              {t('dashboard.title')}
-            </h1>
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-[18px] font-bold text-aegis-text tracking-tight">
+                {t('dashboard.title')}
+              </h1>
+              {/* Status badge — inline with title so the idle/working state reads naturally */}
+              <div className={clsx(
+                'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border',
+                connected
+                  ? agentStatus === 'working'
+                    ? 'bg-aegis-success/[0.08] border-aegis-success/30 text-aegis-success'
+                    : 'bg-aegis-text-dim/[0.06] border-aegis-text-dim/20 text-aegis-text-dim'
+                  : 'bg-aegis-danger/[0.08] border-aegis-danger/30 text-aegis-danger'
+              )}>
+                <span className={clsx(
+                  'w-1.5 h-1.5 rounded-full',
+                  connected
+                    ? agentStatus === 'working'
+                      ? 'bg-aegis-success animate-pulse-soft'
+                      : 'bg-aegis-text-dim'
+                    : 'bg-aegis-danger animate-pulse-soft'
+                )} />
+                {connected
+                  ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
+                  : t('dashboard.offline')
+                }
+              </div>
+            </div>
             <p className="text-[11px] text-aegis-text-dim">{t('dashboard.commandCenter')}</p>
           </div>
         </div>
@@ -319,24 +342,6 @@ export function DashboardPage() {
                 <span>{shortModel !== '—' ? shortModel : t('dashboard.model')}</span>
               </>
             )}
-          </div>
-
-          {/* Status badge */}
-          <div className={clsx(
-            'flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-[11px] font-semibold',
-            connected
-              ? 'bg-aegis-primary/[0.06] border-aegis-primary/20 text-aegis-primary'
-              : 'bg-aegis-danger-surface border-aegis-danger/20 text-aegis-danger'
-          )}>
-            <StatusDot
-              status={connected ? (agentStatus === 'working' ? 'active' : 'idle') : 'error'}
-              size={6}
-              beacon={agentStatus === 'working'}
-            />
-            {connected
-              ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
-              : t('dashboard.offline')
-            }
           </div>
 
           {/* Refresh button */}
