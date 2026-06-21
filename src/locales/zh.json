@@ -1784,5 +1784,15 @@
       "paused": "已暂停",
       "completedToday": "今日"
     }
+  },
+  "font": {
+    "search": "搜索字体...",
+    "loading": "加载系统字体...",
+    "noResults": "没有匹配的字体",
+    "uiFont": "界面字体",
+    "monoFont": "等宽字体",
+    "preview": "预览",
+    "previewUI": "敏捷的棕色狐狸跳过了懒狗。The quick brown fox jumps over the lazy dog.",
+    "previewMono": "console.log('你好，世界！'); // abcdef 1234567890"
   }
 }

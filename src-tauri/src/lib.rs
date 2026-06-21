@@ -32,6 +32,8 @@ pub fn run() {
             commands::system::check_git,
             commands::system::check_openclaw,
             commands::system::open_folder,
+            // Fonts
+            commands::font::get_system_fonts,
             // Screenshot
             commands::screenshot::screenshot_check_permission,
             commands::screenshot::screenshot_interactive,

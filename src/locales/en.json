@@ -1796,5 +1796,15 @@
       "paused": "Paused",
       "completedToday": "Today"
     }
+  },
+  "font": {
+    "search": "Search fonts...",
+    "loading": "Loading system fonts...",
+    "noResults": "No matching fonts",
+    "uiFont": "UI Font",
+    "monoFont": "Monospace Font",
+    "preview": "Preview",
+    "previewUI": "The quick brown fox jumps over the lazy dog.",
+    "previewMono": "console.log('Hello, world!'); // abcdef 1234567890"
   }
 }
