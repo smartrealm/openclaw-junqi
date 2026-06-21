@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="aegis-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JunQi 用量统计 — Icon 设计预览</title>
+<style>
+  :root, [data-theme="aegis-dark"] {
+    --bg: #1d212a; --surface: #242a35; --elevated: #2b313d; --card: #313847;
+    --border: rgba(255,255,255,0.07); --border-hover: rgba(255,255,255,0.12);
+    --text: #f1f4fb; --text-secondary: #d6dbe8; --text-muted: #a4adc2; --text-dim: #727b8f;
+    --primary: #7f9aff; --primary-hover: #6f8eff;
+    --accent: #6987ff;
+    --danger: #ff5555; --warning: #f5a623; --success: #3dd68c;
+  }
+  [data-theme="aegis-light"] {
+    --bg: #fdfdfe; --surface: #fdfdfd; --elevated: #fff; --card: #fff;
+    --border: rgba(15,23,42,0.08); --border-hover: rgba(15,23,42,0.14);
+    --text: #171b24; --text-secondary: #414857; --text-muted: #69758a; --text-dim: #9aa3b2;
+    --primary: #5d7cff; --primary-hover: #4d6ff2;
+    --accent: #4467f5;
+    --danger: #dc2626; --warning: #d97706; --success: #16a34a;
+  }
+  [data-theme="aegis-midnight"] {
+    --bg: #1a1b1d; --surface: #1a1b1d; --elevated: #1f2123; --card: #222427;
+    --border: #222427; --border-hover: #2c2f33;
+    --text: #f1f4fb; --text-secondary: #d6dbe8; --text-muted: #a4adc2; --text-dim: #727b8f;
+    --primary: #7f9aff; --accent: #6987ff;
+    --danger: #ff5555; --warning: #f5a623; --success: #3dd68c;
+  }
+  [data-theme="aegis-eyecare"] {
+    --bg: #f5ecd7; --surface: #f9f1dc; --elevated: #fbf5e4; --card: #fdf9ec;
+    --border: rgba(101,84,51,0.12); --border-hover: rgba(101,84,51,0.2);
+    --text: #3f3724; --text-secondary: #5a4f37; --text-muted: #7a6c4f; --text-dim: #a89876;
+    --primary: #b07b3e; --accent: #95612a;
+    --danger: #b91c1c; --warning: #b46e14; --success: #3c7832;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Pro Display', 'PingFang SC', sans-serif;
+    background: var(--bg); color: var(--text); padding: 40px;
+    transition: background 0.3s, color 0.3s;
+  }
+  h1 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .sub { font-size: 12px; color: var(--text-dim); margin-bottom: 32px; }
+
+  /* theme switcher */
+  .switcher {
+    position: fixed; top: 16px; right: 16px; display: flex; gap: 6px; z-index: 10;
+  }
+  .switcher button {
+    padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--elevated); color: var(--text-secondary); cursor: pointer;
+    font-size: 12px; font-weight: 600;
+  }
+  .switcher button.active { background: var(--primary); color: #fff; border-color: transparent; }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    max-width: 1100px; margin-bottom: 48px;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+
+  /* card */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; position: relative;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--border-hover); }
+
+  /* icon row — shows all 3 icon variants side by side */
+  .icon-row { display: flex; gap: 12px; margin-bottom: 14px; align-items: flex-end; }
+  .icon-variant { text-align: center; }
+  .icon-variant .label { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
+  .icon-variant .size { font-size: 9px; color: var(--text-dim); opacity: 0.6; }
+
+  .card-label { font-size: 10.5px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
+  .card-value { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; margin-bottom: 8px; }
+
+  /* section header */
+  .section-title {
+    font-size: 14px; font-weight: 600; color: var(--text-secondary);
+    margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+
+  /* SVG icons */
+  svg.icon { display: block; }
+
+  /* interactive preview row */
+  .preview-row {
+    display: flex; gap: 8px; align-items: center; margin-top: 8px;
+  }
+  .preview-row .chip {
+    padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600;
+  }
+  .preview-row .chip.up { background: rgba(61,214,140,0.12); color: var(--success); }
+  .preview-row .chip.down { background: rgba(255,85,85,0.12); color: var(--danger); }
+
+  /* sparkline placeholder */
+  .spark-placeholder {
+    height: 30px; margin-top: 10px; border-radius: 6px;
+    background: linear-gradient(180deg, rgba(127,154,255,0.06), transparent);
+    display: flex; align-items: flex-end; padding: 0 2px;
+  }
+  .spark-bar {
+    flex: 1; margin: 0 1px; border-radius: 2px 2px 0 0;
+    background: rgba(127,154,255,0.25);
+  }
+</style>
+</head>
+<body>
+
+<div class="switcher">
+  <button onclick="setTheme('aegis-dark')" id="btn-dark">Dark</button>
+  <button onclick="setTheme('aegis-midnight')" id="btn-midnight">Midnight</button>
+  <button onclick="setTheme('aegis-light')" id="btn-light">Light</button>
+  <button onclick="setTheme('aegis-eyecare')" id="btn-eyecare">Eyecare</button>
+</div>
+
+<h1>📊 JunQi Desktop — 用量统计图标设计</h1>
+<p class="sub">每个卡片展示 3 种图标尺寸：24px（大卡标题）/ 16px（列表行内）/ 12px（badge 内嵌）</p>
+
+<!-- ════════════════════════ Icon Design Showcase ════════════════════════ -->
+<div class="section-title">💰 Today's Cost — 今日成本</div>
+<div class="grid">
+  <div class="card">
+    <div class="icon-row">
+      <div class="icon-variant">
+        <svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" fill="var(--primary)" opacity="0.15"/>
+          <circle cx="12" cy="12" r="7" fill="var(--primary)" opacity="0.25"/>
+          <text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="var(--primary)">$</text>
+        </svg>
+        <div class="label">Large</div><div class="size">24px</div>
+      </div>
+      <div class="icon-variant">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.5" fill="var(--primary)" opacity="0.15"/>
+          <text x="8" y="11.5" text-anchor="middle" font-size="8" font-weight="700" fill="var(--primary)">$</text>
+        </svg>
+        <div class="label">Medium</div><div class="size">16px</div>
+      </div>
+      <div class="icon-variant">
+        <svg class="icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <circle cx="6" cy="6" r="5" fill="var(--primary)" opacity="0.2"/>
+          <text x="6" y="8.5" text-anchor="middle" font-size="6" font-weight="700" fill="var(--primary)">$</text>
+        </svg>
+        <div class="label">Small</div><div class="size">12px</div>
+      </div>
+    </div>
+    <div class="card-label">Today's Cost</div>
+    <div class="card-value">$0.52</div>
+    <div class="preview-row">
+      <span class="chip down">▼ 12% vs yesterday</span>
+    </div>
+    <div class="spark-placeholder">
+      <div class="spark-bar" style="height:40%"></div><div class="spark-bar" style="height:60%"></div>
+      <div class="spark-bar" style="height:35%"></div><div class="spark-bar" style="height:75%"></div>
+      <div class="spark-bar" style="height:50%"></div><div class="spark-bar" style="height:85%"></div>
+      <div class="spark-bar" style="height:100%"></div>
+    </div>
+  </div>
+
+  <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;">
+    <p style="font-size:20px;opacity:0.3;text-align:center;line-height:1.6">
+      💰 <b>DollarSign</b><br>
+      <span style="font-size:13px;font-weight:400">双层同心圆填充 + $ 符号<br>Primary Blue</span>
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════ This Month ════════════════════════ -->
+<div class="section-title">📅 This Month — 本月累计</div>
+<div class="grid">
+  <div class="card">
+    <div class="icon-row">
+      <div class="icon-variant">
+        <svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="14" width="4" height="7" rx="1" fill="var(--accent)" opacity="0.25"/>
+          <rect x="10" y="9" width="4" height="12" rx="1" fill="var(--accent)" opacity="0.4"/>
+          <rect x="17" y="4" width="4" height="17" rx="1" fill="var(--primary)" opacity="0.6"/>
+        </svg>
+        <div class="label">Large</div><div class="size">24px</div>
+      </div>
+      <div class="icon-variant">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1.5" y="9" width="3" height="5.5" rx="0.8" fill="var(--accent)" opacity="0.3"/>
+          <rect x="6.5" y="5.5" width="3" height="9" rx="0.8" fill="var(--accent)" opacity="0.45"/>
+          <rect x="11.5" y="2" width="3" height="12.5" rx="0.8" fill="var(--primary)" opacity="0.65"/>
+        </svg>
+        <div class="label">Medium</div><div class="size">16px</div>
+      </div>
+      <div class="icon-variant">
+        <svg class="icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <rect x="1" y="6.5" width="2.5" height="5" rx="0.7" fill="var(--accent)" opacity="0.35"/>
+          <rect x="4.75" y="4" width="2.5" height="7.5" rx="0.7" fill="var(--accent)" opacity="0.5"/>
+          <rect x="8.5" y="1.5" width="2.5" height="10" rx="0.7" fill="var(--primary)" opacity="0.7"/>
+        </svg>
+        <div class="label">Small</div><div class="size">12px</div>
+      </div>
+    </div>
+    <div class="card-label">This Month</div>
+    <div class="card-value">$4.27</div>
+    <div class="preview-row">
+      <span style="font-size:11px;color:var(--text-dim)">Monthly budget remaining</span>
+    </div>
+    <div class="spark-placeholder">
+      <div class="spark-bar" style="height:30%"></div><div class="spark-bar" style="height:45%"></div>
+      <div class="spark-bar" style="height:25%"></div><div class="spark-bar" style="height:60%"></div>
+      <div class="spark-bar" style="height:40%"></div><div class="spark-bar" style="height:70%"></div>
+      <div class="spark-bar" style="height:55%"></div><div class="spark-bar" style="height:90%"></div>
+      <div class="spark-bar" style="height:80%"></div><div class="spark-bar" style="height:60%"></div>
+      <div class="spark-bar" style="height:100%"></div>
+    </div>
+  </div>
+
+  <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;">
+    <p style="font-size:20px;opacity:0.3;text-align:center;line-height:1.6">
+      📊 <b>BarChart3</b><br>
+      <span style="font-size:13px;font-weight:400">三柱渐高柱状图<br>Accent Blue → Primary Blue</span>
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════ Tokens Today ════════════════════════ -->
+<div class="section-title">⚡ Tokens Today — 今日 Token 用量</div>
+<div class="grid">
+  <div class="card">
+    <div class="icon-row">
+      <div class="icon-variant">
+        <svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M13 2L5.5 13h5L9 22l8.5-12h-5.5L13 2z" fill="var(--warning)" opacity="0.2" stroke="var(--warning)" stroke-width="1.5" stroke-linejoin="round"/>
+          <circle cx="13" cy="10" r="8" fill="var(--warning)" opacity="0.08"/>
+        </svg>
+        <div class="label">Large</div><div class="size">24px</div>
+      </div>
+      <div class="icon-variant">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M9 1.5L4 9h3.5L6 14.5l5.5-8H8.5L9 1.5z" fill="var(--warning)" opacity="0.2" stroke="var(--warning)" stroke-width="1.2" stroke-linejoin="round"/>
+        </svg>
+        <div class="label">Medium</div><div class="size">16px</div>
+      </div>
+      <div class="icon-variant">
+        <svg class="icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M6.5 1L3 6.5h2.5L4.5 11l4-6H6L6.5 1z" fill="var(--warning)" opacity="0.25" stroke="var(--warning)" stroke-width="1" stroke-linejoin="round"/>
+        </svg>
+        <div class="label">Small</div><div class="size">12px</div>
+      </div>
+    </div>
+    <div class="card-label">Tokens Today</div>
+    <div class="card-value">12.4k</div>
+    <div class="preview-row" style="flex-direction:column;gap:3px;">
+      <div style="display:flex;align-items:center;gap:5px;font-size:10px;font-family:monospace;color:var(--text-muted)">
+        <span style="width:6px;height:6px;border-radius:50%;background:var(--accent)"></span>
+        Input: 8.2k
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;font-size:10px;font-family:monospace;color:var(--text-muted)">
+        <span style="width:6px;height:6px;border-radius:50%;background:var(--primary)"></span>
+        Output: 4.2k
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;">
+    <p style="font-size:20px;opacity:0.3;text-align:center;line-height:1.6">
+      ⚡ <b>Zap (Thunderbolt)</b><br>
+      <span style="font-size:13px;font-weight:400">闪电形状 + 外围光晕<br>Warning Amber</span>
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════ Context Usage ════════════════════════ -->
+<div class="section-title">🧠 Context Usage — 上下文窗口</div>
+<div class="grid">
+  <div class="card">
+    <div class="icon-row">
+      <div class="icon-variant">
+        <svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="3" width="18" height="18" rx="4" fill="var(--danger)" opacity="0.08" stroke="var(--danger)" stroke-width="1.5" stroke-dasharray="3 2"/>
+          <rect x="5" y="6" width="14" height="2.5" rx="1.2" fill="var(--danger)" opacity="0.2"/>
+          <rect x="5" y="10.5" width="10" height="2" rx="1" fill="var(--danger)" opacity="0.15"/>
+          <rect x="5" y="14.5" width="12" height="2" rx="1" fill="var(--danger)" opacity="0.12"/>
+          <circle cx="19.5" cy="4.5" r="3" fill="var(--danger)" opacity="0.3"/>
+          <circle cx="19.5" cy="4.5" r="1.5" fill="var(--danger)"/>
+        </svg>
+        <div class="label">Large</div><div class="size">24px</div>
+      </div>
+      <div class="icon-variant">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="var(--danger)" opacity="0.08" stroke="var(--danger)" stroke-width="1.2" stroke-dasharray="2 1.5"/>
+          <rect x="3.5" y="4" width="9" height="2" rx="1" fill="var(--danger)" opacity="0.2"/>
+          <rect x="3.5" y="7.5" width="7" height="1.5" rx="0.8" fill="var(--danger)" opacity="0.15"/>
+          <rect x="3.5" y="10.5" width="8" height="1.5" rx="0.8" fill="var(--danger)" opacity="0.12"/>
+          <circle cx="13" cy="3" r="2" fill="var(--danger)" opacity="0.35"/>
+          <circle cx="13" cy="3" r="1" fill="var(--danger)"/>
+        </svg>
+        <div class="label">Medium</div><div class="size">16px</div>
+      </div>
+      <div class="icon-variant">
+        <svg class="icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <rect x="1" y="1" width="10" height="10" rx="2.5" fill="var(--danger)" opacity="0.08" stroke="var(--danger)" stroke-width="1" stroke-dasharray="1.5 1"/>
+          <rect x="2.5" y="3" width="7" height="1.8" rx="0.9" fill="var(--danger)" opacity="0.2"/>
+          <rect x="2.5" y="5.8" width="5" height="1.2" rx="0.6" fill="var(--danger)" opacity="0.15"/>
+          <circle cx="10" cy="2" r="1.5" fill="var(--danger)" opacity="0.35"/>
+        </svg>
+        <div class="label">Small</div><div class="size">12px</div>
+      </div>
+    </div>
+    <div class="card-label">Context Usage</div>
+    <div class="card-value" style="display:flex;align-items:baseline;gap:6px;">
+      <span>42</span><span style="font-size:13px;font-weight:500;color:var(--text-muted)">%</span>
+    </div>
+    <!-- Context ring -->
+    <svg width="56" height="56" viewBox="0 0 56 56" style="margin-top:6px;">
+      <circle cx="28" cy="28" r="24" fill="none" stroke="var(--border)" stroke-width="4"/>
+      <circle cx="28" cy="28" r="24" fill="none" stroke="var(--danger)" stroke-width="4"
+        stroke-dasharray="151" stroke-dashoffset="87" stroke-linecap="round"
+        transform="rotate(-90 28 28)"/>
+      <text x="28" y="30" text-anchor="middle" font-size="12" font-weight="700" fill="var(--danger)">42%</text>
+    </svg>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:6px;text-align:center">84k / 200k tokens</div>
+  </div>
+
+  <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;">
+    <p style="font-size:20px;opacity:0.3;text-align:center;line-height:1.6">
+      🧠 <b>Cpu / Chip</b><br>
+      <span style="font-size:13px;font-weight:400">虚线边框矩形 + 内容行 + 红色指示灯<br>Danger Red</span>
+    </p>
+  </div>
+</div>
+
+</body>
+<script>
+function setTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('.switcher button').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-'+t.split('-')[1]).classList.add('active');
+}
+setTheme('aegis-dark');
+document.getElementById('btn-dark').classList.add('active');
+</script>
+</html>

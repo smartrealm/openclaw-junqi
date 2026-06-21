@@ -612,7 +612,6 @@ export function DashboardPage() {
 
         {/* ── Sessions ── */}
         <GlassCard delay={0.22} className="flex flex-col">
-        <GlassCard delay={0.22}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Bot size={15} className="text-aegis-accent" />
