@@ -517,7 +517,7 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* Active Agents */}
-        <GlassCard delay={0.18}>
+        <GlassCard delay={0.18} className="flex flex-col min-h-[160px]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Bot size={15} className="text-aegis-accent" />
@@ -553,11 +553,11 @@ export function DashboardPage() {
                 );
               })
             ) : !connected ? (
-              <div className="text-[11px] text-aegis-text-dim text-center py-8">
+              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
                 {t('dashboard.notConnected')}
               </div>
             ) : usageError ? (
-              <div className="text-[11px] text-aegis-text-dim text-center py-4 space-y-1">
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[11px] text-aegis-text-dim">
                 <div>{t('dashboard.agentError')}</div>
                 <button
                   onClick={handleRefresh}
@@ -567,11 +567,11 @@ export function DashboardPage() {
                 </button>
               </div>
             ) : (usageLoading && !usageData) ? (
-              <div className="text-[11px] text-aegis-text-dim text-center py-8">
+              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
                 {t('common.loading')}
               </div>
             ) : (
-              <div className="text-[11px] text-aegis-text-dim text-center py-8">
+              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
                 {t('dashboard.noAgentData')}
               </div>
             )}
@@ -611,6 +611,7 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* ── Sessions ── */}
+        <GlassCard delay={0.22} className="flex flex-col">
         <GlassCard delay={0.22}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -661,7 +662,7 @@ export function DashboardPage() {
               );
             })}
             {activeSessions.length === 0 && (
-              <div className="text-[11px] text-aegis-text-dim text-center py-6">
+              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
                 {connected ? t('dashboard.noActiveSessions') : t('dashboard.notConnected')}
               </div>
             )}
@@ -669,7 +670,7 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* ── Activity Feed ── */}
-        <GlassCard delay={0.24}>
+        <GlassCard delay={0.24} className="flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Activity size={15} className="text-aegis-primary" />
@@ -692,7 +693,7 @@ export function DashboardPage() {
                 />
               ))
             ) : (
-              <div className="text-[11px] text-aegis-text-dim text-center py-6">
+              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
                 {connected ? t('dashboard.noActiveSessions') : t('dashboard.notConnected')}
               </div>
             )}
