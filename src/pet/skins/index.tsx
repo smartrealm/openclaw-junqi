@@ -93,7 +93,7 @@ export function RobotSkin({ color }: SkinProps) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Cat — round head, triangle ears, curved tail, whiskers
+// Cat — sitting kitten: round head, big pointed ears, curved body, thick tail
 // ═══════════════════════════════════════════════════════════════════════
 
 export function CatSkin({ color }: SkinProps) {
@@ -101,39 +101,46 @@ export function CatSkin({ color }: SkinProps) {
   return (
     <>
       <defs>
-        {bodyGradient(id, color, '30%')}
+        {bodyGradient(id, color, '28%')}
         {shadowFilter(id, color)}
       </defs>
 
-      {/* Tail — curved, sways from bottom */}
-      <motion.path d="M90,100 Q108,98 104,76 Q100,58 90,54" stroke={color} strokeWidth={7}
-        fill="none" strokeLinecap="round" opacity={0.9}
-        style={BOTTOM} animate={{ rotate: [-4, 4, -4] }} transition={{ duration: 2.4, repeat: Infinity, ease: EASE }} />
+      {/* Thick swishing tail — curves down then up */}
+      <motion.path d="M86,106 Q110,100 106,78 Q102,58 90,50" stroke={color} strokeWidth={10}
+        fill="none" strokeLinecap="round" opacity={0.92}
+        style={BOTTOM} animate={{ rotate: [-3, 3, -3] }} transition={{ duration: 2.2, repeat: Infinity, ease: EASE }} />
 
-      {/* Body — round head shape */}
-      <ellipse cx={60} cy={68} rx={34} ry={38}
+      {/* Sitting body — rounded pear shape */}
+      <path d="M38,76 Q22,100 30,120 Q38,132 60,132 Q82,132 90,120 Q98,100 82,76 Z"
         fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} filter={`url(#${id}-shadow)`} />
 
-      {/* Left ear */}
-      <path d="M34,50 L28,18 L50,34 Z" fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} />
-      {/* Left ear inner */}
-      <path d="M36,48 L32,26 L46,36 Z" fill={color} opacity={0.3} />
-      {/* Right ear */}
-      <path d="M86,50 L92,18 L70,34 Z" fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} />
-      <path d="M84,48 L88,26 L74,36 Z" fill={color} opacity={0.3} />
+      {/* Front paws */}
+      <ellipse cx={44} cy={128} rx={10} ry={6} fill={color} opacity={0.7} stroke={SHADOW} strokeWidth={0.8} />
+      <ellipse cx={76} cy={128} rx={10} ry={6} fill={color} opacity={0.7} stroke={SHADOW} strokeWidth={0.8} />
 
-      {/* Whiskers — left */}
-      <line x1={22} y1={56} x2={42} y2={62} stroke={SHADOW} strokeWidth={1} opacity={0.5} />
-      <line x1={20} y1={66} x2={40} y2={68} stroke={SHADOW} strokeWidth={1} opacity={0.5} />
-      {/* Whiskers — right */}
-      <line x1={78} y1={62} x2={98} y2={56} stroke={SHADOW} strokeWidth={1} opacity={0.5} />
-      <line x1={80} y1={68} x2={100} y2={66} stroke={SHADOW} strokeWidth={1} opacity={0.5} />
+      {/* Head — large round */}
+      <ellipse cx={60} cy={58} rx={34} ry={32}
+        fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} />
 
-      {/* Nose */}
-      <path d="M56,70 L60,74 L64,70" stroke={SHADOW} strokeWidth={1.2} fill="none" strokeLinecap="round" opacity={0.6} />
+      {/* Big pointed ears */}
+      <path d="M35,44 L28,12 L52,34 Z" fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} />
+      <path d="M37,42 L33,20 L48,35 Z" fill={color} opacity={0.35} />
+      <path d="M85,44 L92,12 L68,34 Z" fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} />
+      <path d="M83,42 L87,20 L72,35 Z" fill={color} opacity={0.35} />
+
+      {/* Whiskers */}
+      <motion.g style={BOTTOM} animate={{ rotate: [-1, 1, -1] }} transition={{ duration: 3, repeat: Infinity, ease: EASE }}>
+        <line x1={22} y1={52} x2={42} y2={60} stroke={SHADOW} strokeWidth={1.2} opacity={0.55} />
+        <line x1={20} y1={62} x2={40} y2={64} stroke={SHADOW} strokeWidth={1.2} opacity={0.55} />
+        <line x1={78} y1={60} x2={98} y2={52} stroke={SHADOW} strokeWidth={1.2} opacity={0.55} />
+        <line x1={80} y1={64} x2={100} y2={62} stroke={SHADOW} strokeWidth={1.2} opacity={0.55} />
+      </motion.g>
+
+      {/* Tiny nose */}
+      <ellipse cx={60} cy={66} rx={3.5} ry={2.5} fill={color} opacity={0.5} />
 
       {/* Head highlight */}
-      <ellipse cx={56} cy={52} rx={16} ry={12} fill="#fff" opacity={0.12} />
+      <ellipse cx={54} cy={42} rx={14} ry={9} fill="#fff" opacity={0.13} />
     </>
   );
 }
@@ -184,7 +191,7 @@ export function JellyfishSkin({ color }: SkinProps) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Ghost — rounded top, wavy bottom, translucent floating feel
+// Ghost — cute floating spirit with raised nub arms and big round eyes
 // ═══════════════════════════════════════════════════════════════════════
 
 export function GhostSkin({ color }: SkinProps) {
@@ -192,29 +199,47 @@ export function GhostSkin({ color }: SkinProps) {
   return (
     <>
       <defs>
-        <radialGradient id={`${id}-body`} cx="45%" cy="25%" r="58%">
+        <radialGradient id={`${id}-body`} cx="45%" cy="22%" r="60%">
           <stop offset="0%" stopColor={color} stopOpacity={0.95} />
-          <stop offset="55%" stopColor={color} stopOpacity={0.78} />
-          <stop offset="100%" stopColor={color} stopOpacity={0.5} />
+          <stop offset="50%" stopColor={color} stopOpacity={0.76} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.44} />
         </radialGradient>
         {shadowFilter(id, color)}
       </defs>
 
-      {/* Body — classic ghost silhouette with wavy bottom */}
-      <path d="M28,70 Q28,20 60,18 Q92,20 92,70 L92,118 L82,106 L72,118 L62,106 L52,118 L42,106 L28,118 Z"
-        fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} filter={`url(#${id}-shadow)`} />
+      {/* Little arms — raised in a cute "boo" pose */}
+      <motion.g style={BOTTOM} animate={{ rotate: [-2, 2, -2] }} transition={{ duration: 2.6, repeat: Infinity, ease: EASE }}>
+        {/* Left arm */}
+        <path d="M34,84 Q24,72 30,62 Q32,58 34,60" fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1.2} />
+        {/* Right arm */}
+        <path d="M86,84 Q96,72 90,62 Q88,58 86,60" fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1.2} />
+      </motion.g>
 
-      {/* Drapery lines on the wavy hem */}
-      <path d="M62,106 L62,96 M52,118 L52,100 M42,106 L42,96" stroke={SHADOW} strokeWidth={1} fill="none" opacity={0.3} />
+      {/* Body — tall rounded ghost with wavy bottom */}
+      <path d="M26,72 Q24,18 60,14 Q96,18 94,72 L94,122 L84,108 L74,122 L64,108 L54,122 L44,108 L34,122 L26,108 Z"
+        fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1.2} filter={`url(#${id}-shadow)`} />
 
-      {/* Highlight — rounded reflection on top */}
-      <ellipse cx={56} cy={44} rx={14} ry={10} fill="#fff" opacity={0.13} />
+      {/* Big cute eyes — white ovals */}
+      <ellipse cx={47} cy={46} rx={11} ry={14} fill="#fff" opacity={0.85} />
+      <ellipse cx={75} cy={46} rx={11} ry={14} fill="#fff" opacity={0.85} />
+      {/* Pupils — dark dots looking slightly down-right */}
+      <circle cx={48} cy={48} r={5} fill={color} opacity={0.7} />
+      <circle cx={76} cy={48} r={5} fill={color} opacity={0.7} />
+      {/* Eye sparkle */}
+      <circle cx={46} cy={44} r={2} fill="#fff" opacity={0.6} />
+      <circle cx={74} cy={44} r={2} fill="#fff" opacity={0.6} />
+
+      {/* Tiny mouth — simple oval */}
+      <ellipse cx={61} cy={64} rx={4} ry={2.5} fill={color} opacity={0.35} />
+
+      {/* Top highlight */}
+      <ellipse cx={56} cy={34} rx={16} ry={8} fill="#fff" opacity={0.12} />
     </>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Lobster — big claws, segmented tail, antennae, walking legs (3D)
+// Lobster 🦞 — chibi/cartoon: oversized claws, simple curved body, cute eyes
 // ═══════════════════════════════════════════════════════════════════════
 
 export function LobsterSkin({ color }: SkinProps) {
@@ -222,59 +247,66 @@ export function LobsterSkin({ color }: SkinProps) {
   return (
     <>
       <defs>
-        {bodyGradient(id, color)}
-        <radialGradient id={`${id}-claw`} cx="30%" cy="30%" r="65%">
+        {bodyGradient(id, color, '30%')}
+        <radialGradient id={`${id}-claw`} cx="35%" cy="30%" r="60%">
           <stop offset="0%" stopColor={color} stopOpacity={1} />
-          <stop offset="60%" stopColor={color} stopOpacity={0.78} />
+          <stop offset="55%" stopColor={color} stopOpacity={0.8} />
           <stop offset="100%" stopColor={color} stopOpacity={0.5} />
         </radialGradient>
         {shadowFilter(id, color)}
       </defs>
 
-      {/* Antennae */}
-      <motion.path d="M54,34 Q38,16 22,8" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round"
-        style={BOTTOM} animate={{ rotate: [-3, 3, -3] }} transition={{ duration: 2.8, repeat: Infinity, ease: EASE }} />
-      <motion.path d="M66,34 Q82,16 98,8" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round"
-        style={BOTTOM} animate={{ rotate: [3, -3, 3] }} transition={{ duration: 2.8, repeat: Infinity, ease: EASE }} />
+      {/* Antennae — cute curly */}
+      <motion.path d="M50,36 Q32,18 24,10 Q20,6 22,10" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round"
+        style={BOTTOM} animate={{ rotate: [-3, 3, -3] }} transition={{ duration: 2.6, repeat: Infinity, ease: EASE }} />
+      <motion.path d="M70,36 Q88,18 96,10 Q100,6 98,10" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round"
+        style={BOTTOM} animate={{ rotate: [3, -3, 3] }} transition={{ duration: 2.6, repeat: Infinity, ease: EASE }} />
 
-      {/* Left claw */}
-      <motion.g style={BOTTOM} animate={{ rotate: [-5, 5, -5] }} transition={{ duration: 2.2, repeat: Infinity, ease: EASE }}>
-        <path d="M44,50 Q28,54 18,42 Q12,34 16,28" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" />
-        <path d="M16,28 Q8,20 14,14 Q20,12 22,20" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
-        <path d="M16,28 Q22,32 26,26" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+      {/* BIG left claw — cartoon proportions */}
+      <motion.g style={BOTTOM} animate={{ rotate: [-6, 6, -6] }} transition={{ duration: 2, repeat: Infinity, ease: EASE }}>
+        <path d="M42,52 Q20,58 12,42 Q6,30 14,24" fill="none" stroke={color} strokeWidth={7} strokeLinecap="round" />
+        {/* Pincer top half */}
+        <path d="M14,24 Q4,14 10,6 Q18,2 22,14" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+        {/* Pincer bottom half */}
+        <path d="M14,24 Q20,32 28,22" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
       </motion.g>
 
-      {/* Right claw */}
-      <motion.g style={BOTTOM} animate={{ rotate: [5, -5, 5] }} transition={{ duration: 2.2, repeat: Infinity, ease: EASE }}>
-        <path d="M76,50 Q92,54 102,42 Q108,34 104,28" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" />
-        <path d="M104,28 Q112,20 106,14 Q100,12 98,20" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
-        <path d="M104,28 Q98,32 94,26" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+      {/* BIG right claw */}
+      <motion.g style={BOTTOM} animate={{ rotate: [6, -6, 6] }} transition={{ duration: 2, repeat: Infinity, ease: EASE }}>
+        <path d="M78,52 Q100,58 108,42 Q114,30 106,24" fill="none" stroke={color} strokeWidth={7} strokeLinecap="round" />
+        <path d="M106,24 Q116,14 110,6 Q102,2 98,14" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+        <path d="M106,24 Q100,32 92,22" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
       </motion.g>
 
-      {/* Body */}
-      <path d="M44,56 Q40,80 46,100 Q52,114 58,118 L62,118 Q68,114 74,100 Q80,80 76,56 Z"
+      {/* Body — simple curved oval */}
+      <path d="M42,60 Q38,90 46,108 Q54,122 60,124 Q66,122 74,108 Q82,90 78,60 Z"
         fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1} filter={`url(#${id}-shadow)`} />
-      {/* Highlight */}
-      <path d="M50,64 Q60,58 70,64 Q62,68 50,64 Z" fill="#fff" opacity={0.14} />
-      {/* Tail segments */}
-      <path d="M46,78 Q60,82 74,78" stroke={SHADOW} strokeWidth={1} fill="none" opacity={0.45} />
-      <path d="M46,90 Q60,94 74,90" stroke={SHADOW} strokeWidth={1} fill="none" opacity={0.45} />
-      <path d="M48,102 Q60,106 72,102" stroke={SHADOW} strokeWidth={1} fill="none" opacity={0.45} />
 
-      {/* Tail fan */}
-      <path d="M50,114 L58,130 L64,126 L60,118 Z" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
-      <path d="M58,118 L64,126 L70,118 Z" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
-      <path d="M60,118 L66,130 L72,114 Z" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+      {/* Tail segments — simplified */}
+      <path d="M44,84 Q58,90 76,84" stroke={SHADOW} strokeWidth={1.2} fill="none" opacity={0.4} />
+      <path d="M44,96 Q60,104 76,96" stroke={SHADOW} strokeWidth={1.2} fill="none" opacity={0.4} />
 
-      {/* Walking legs */}
-      <path d="M48,66 L38,64 M48,74 L36,74 M50,82 L38,84" stroke={color} strokeWidth={1.5} fill="none" strokeLinecap="round" opacity={0.7} />
-      <path d="M72,66 L82,64 M72,74 L84,74 M70,82 L82,84" stroke={color} strokeWidth={1.5} fill="none" strokeLinecap="round" opacity={0.7} />
+      {/* Tail fan — three rounded lobes */}
+      <path d="M48,114 Q54,132 60,126 Q62,118 60,114" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+      <path d="M58,116 Q60,134 64,126 Q64,118 62,114" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
+      <path d="M66,114 Q70,128 74,120 Q72,114 68,112" fill={`url(#${id}-claw)`} stroke={SHADOW} strokeWidth={1} />
 
-      {/* Eyes */}
-      <ellipse cx={52} cy={50} rx={8} ry={11} fill="#fff" opacity={0.22} />
-      <ellipse cx={68} cy={50} rx={8} ry={11} fill="#fff" opacity={0.22} />
-      <circle cx={54} cy={49} r={3} fill={color} opacity={0.8} />
-      <circle cx={66} cy={49} r={3} fill={color} opacity={0.8} />
+      {/* Tiny walking legs — simpler */}
+      <path d="M46,68 L36,66 M46,76 L36,78" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" opacity={0.6} />
+      <path d="M74,68 L84,66 M74,76 L84,78" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" opacity={0.6} />
+
+      {/* Cute big eyes — tall white ovals */}
+      <ellipse cx={52} cy={52} rx={10} ry={14} fill="#fff" opacity={0.75} />
+      <ellipse cx={70} cy={52} rx={10} ry={14} fill="#fff" opacity={0.75} />
+      {/* Pupils */}
+      <circle cx={53} cy={54} r={4} fill={color} opacity={0.7} />
+      <circle cx={71} cy={54} r={4} fill={color} opacity={0.7} />
+      {/* Eye sparkles */}
+      <circle cx={51} cy={50} r={1.8} fill="#fff" opacity={0.5} />
+      <circle cx={69} cy={50} r={1.8} fill="#fff" opacity={0.5} />
+
+      {/* Body highlight */}
+      <path d="M50,68 Q60,62 70,68 Q62,72 50,68 Z" fill="#fff" opacity={0.13} />
     </>
   );
 }
