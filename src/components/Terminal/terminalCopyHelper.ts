@@ -1,5 +1,5 @@
 import type { Terminal } from "@xterm/xterm";
-import { APP_PLATFORM } from "./platform";
+import { APP_PLATFORM } from "@/components/Terminal/platform";
 
 /** Threshold below which we use the fast synchronous path. */
 const FAST_PATH_MAX_LINES = 200;
@@ -21,9 +21,7 @@ type TerminalWithSelectionService = Terminal & {
   };
 };
 
-function getSelectionService(
-  terminal: Terminal,
-): XtermSelectionService | undefined {
+function getSelectionService(terminal: Terminal): XtermSelectionService | undefined {
   return (terminal as TerminalWithSelectionService)._core?._selectionService;
 }
 
@@ -91,11 +89,7 @@ async function readSelectionChunked(terminal: Terminal): Promise<string> {
       trimEnd = endCol;
     }
 
-    const text = line.translateToString(
-      !isLastLine || isSingleLine,
-      trimStart,
-      trimEnd,
-    );
+    const text = line.translateToString(!isLastLine || isSingleLine, trimStart, trimEnd);
     chunks.push(text);
 
     // Add newline between lines, but not after wrapped lines or the last line
@@ -196,9 +190,8 @@ export function attachSmartCopy(
       return false;
     }
 
-    // Windows / Linux WebView: Ctrl+V doesn't trigger xterm textarea paste event,
-    // need to manually read clipboard and inject via term.paste(). macOS WKWebView
-    // uses the native Cmd+V path.
+    // Windows / Linux WebView 下 Ctrl+V 不会触发 xterm textarea 的 paste 事件，
+    // 需要手动读剪贴板并通过 term.paste() 注入。macOS WKWebView 走 Cmd+V 原生路径。
     if (
       e.type === "keydown" &&
       APP_PLATFORM !== "macos" &&

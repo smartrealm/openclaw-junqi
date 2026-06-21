@@ -7,6 +7,7 @@
 @import './themes/shadcn-tokens.css';
 @import './font-selector.css';
 
+@import './nezha-bridge.css';
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════

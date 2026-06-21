@@ -2,14 +2,13 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { IS_MAC_WEBKIT } from "./platform";
-import type { ThemeVariant } from "../../_nezha_root/types";
-// Explicit contract for xterm private field access — see types.ts header.
-import type { XTermWithPrivates } from "./types";
+import { IS_MAC_WEBKIT } from "@/components/Terminal/platform";
+import type { ThemeVariant } from "@/_nezha_root/types";
+// xterm 私有字段访问的显式契约——见 xterm-private.d.ts 头部说明。
+import type { XTermWithPrivates } from "@/components/Terminal/types";
 
-// xterm 6's custom scrollbar width is controlled by overviewRuler.width reuse;
-// FitAddon uses it to compute available columns, so it must match the CSS
-// scrollbar gutter width.
+// xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
+// 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
 const XTERM_SCROLLBAR_WIDTH = 12;
 
 // ── Theme ────────────────────────────────────────────────────────────────────
@@ -67,7 +66,7 @@ export const MIDNIGHT_THEME = {
   background: "#1a1b1d",
 };
 
-// Solarized Light-inspired warm palette to match the eyecare CSS tokens.
+// Solarized Light–inspired warm palette to match the eyecare CSS tokens.
 export const EYECARE_THEME = {
   background: "#fdf6e3",
   foreground: "#586e75",
@@ -107,17 +106,13 @@ export function minimumContrastRatioFor(variant: ThemeVariant): number {
   return variant === "dark" || variant === "midnight" ? 1 : 4.5;
 }
 
-// Terminal embedded on var(--bg-panel) surface (agent task terminal / embedded
-// shell) replaces xterm background from theme preset with actual --bg-panel value,
-// eliminating color difference at the terminal boundary vs. outer panel.
-// dark/eyecare presets differ from --bg-panel; this function converges both
-// terminal entry points onto a single path.
+// 终端嵌在 var(--bg-panel) 表面（Agent 任务终端 / 嵌入式 Shell）时，把 xterm 背景
+// 从主题预设替换成 --bg-panel 的实际值，消除终端边界与外层面板拼接时的色差。
+// dark/eyecare 下主题预设与 --bg-panel 不一致；改造前 PR #293 仅修了 Agent 终端，
+// 这里把行为收敛到共享函数，两个终端入口走同一条路径。
 function themeOnPanel(variant: ThemeVariant, container: HTMLElement) {
   const theme = themeFor(variant);
-  const background = window
-    .getComputedStyle(container)
-    .getPropertyValue("--bg-panel")
-    .trim();
+  const background = window.getComputedStyle(container).getPropertyValue("--bg-panel").trim();
   return background ? { ...theme, background } : theme;
 }
 
@@ -132,8 +127,8 @@ export function applyTerminalThemeOnPanel(
 
 // ── Watermark flow control ───────────────────────────────────────────────────
 
-const HIGH_WATER = 128 * 1024; // 128 KB: pause writing when exceeded
-const LOW_WATER = 16 * 1024; // 16 KB: resume writing
+const HIGH_WATER = 128 * 1024; // 128 KB：超过时停止写入
+const LOW_WATER  =  16 * 1024; //  16 KB：恢复写入
 
 export interface SmartWriter {
   write: (data: string, callback?: () => void) => void;
@@ -153,35 +148,30 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
   term.textarea.setAttribute("autocorrect", "off");
   term.textarea.setAttribute("autocapitalize", "off");
   term.textarea.setAttribute("spellcheck", "false");
-  // Hint WKWebView that candidate bar UI is not needed, skipping the
-  // EditorState::stringForCandidateRequest path for ICU cluster analysis —
-  // this path runs every willCommitMainFrameData frame even when textarea
-  // is blurred, uncovered by the spellcheck=false trio alone.
+  // hint WKWebView 不需要候选条 UI，跳过 EditorState::stringForCandidateRequest
+  // 路径上的 wordRangeFromPosition → ICU 簇分析——这条路径每帧 willCommitMainFrameData
+  // 都跑一次（即使 textarea 已 blur），是 spellcheck=false 三件套覆盖不到的独立入口。
   term.textarea.setAttribute("inputmode", "none");
 }
 
-// macOS WKWebView continuously queries characterIndexForPoint via
-// NSTextInputClient during xterm selection drag, triggering
-// LocalFrame::rangeForPoint -> ICU cluster analysis, pegging the main thread.
+// macOS WKWebView 在 xterm 选区拖动期间会被 NSTextInputClient 持续查询
+// characterIndexForPoint，触发 LocalFrame::rangeForPoint → ICU 簇分析，
+// 主线程被打满。
 //
-// Fix: disable textarea during drag — NSTextInputContext without a focusable
-// text input does not query, breaking the hit-test storm at the source.
-// Enable + refocus on release; normal / IME input proceeds as usual.
-// Community precedent: xterm.js Discussion #5227.
+// 修复：拖动期间把 textarea 设 disabled——NSTextInputContext 没有可接收 focus
+// 的 text input 就不查询，hit-test 风暴断在源头。松手 enable 后 refocus，
+// 普通字符 / IME 输入照常。社区先例：xterm.js Discussion #5227。
 //
-// History:
-// - Once used inert on sibling subtrees outside the terminal (attempted to
-//   block NSTextInput hit-test traversal). 2026-05-25 sample proved inert only
-//   changes interaction semantics, not RenderText presence in layout tree;
-//   hit-test still traverses. Removed.
-// - Once used textarea.blur(). 2026-05-27 user A/B testing showed Chinese IME
-//   lag / English smooth, confirming the IME path is the true cause; blur
-//   leaves textarea still focusable (may be reclaimed by RAF / internal
-//   callbacks). Switched to disabled for hard disable, more thorough.
-// - Once layered user-select:none suppression + window.getSelection()
-//   .removeAllRanges() + TERMINAL_SELECTION_ACTIVE_EVENT broadcast to
-//   RunningView/useUsageSnapshot to pause IPC polling. 2026-05-27 disabled
-//   upgrade verified Chinese IME smooth; all side defenses removed.
+// 历史：
+// - 曾经基于 inert 把终端外的 sibling 子树标为不可命中（试图阻断 NSTextInput
+//   hit-test 遍历）。2026-05-25 sample 实证 inert 只改变交互语义，不改变
+//   RenderText 在 layout tree 的存在，hit-test 照样遍历，已删。
+// - 曾用 textarea.blur()。2026-05-27 用户 A/B 实测拼音卡 / 英文不卡，印证 IME
+//   路径是真因；blur 后 textarea 仍 focusable（可能被 RAF / 内部回调夺回焦点），
+//   改为 disabled 是硬性禁用，更彻底。
+// - 曾叠加 user-select:none 抑制 + window.getSelection().removeAllRanges() +
+//   TERMINAL_SELECTION_ACTIVE_EVENT 广播给 RunningView/useUsageSnapshot 暂停
+//   IPC 轮询。2026-05-27 disabled 升级实测拼音不卡，旁支防御全部移除。
 export function attachMacWebKitTerminalGuard({
   term,
   container,
@@ -194,12 +184,10 @@ export function attachMacWebKitTerminalGuard({
   let pointerSelecting = false;
   let terminalHasSelection = term.hasSelection();
 
-  // During drag selection, use disabled to cut off IME host:
-  // - blur: textarea still focusable, subsequent RAF / internal callbacks may
-  //   reclaim focus, IME can still query
-  // - disabled: hard disable receiving focus / input, IME 100% cannot initiate
-  //   NSTextInputClient queries
-  // Reference: xterm.js Discussion #5227 (community battle-tested).
+  // 拖选期间用 disabled 切断 IME host：
+  // - blur: textarea 仍 focusable，后续 RAF / 内部回调可能把焦点夺回，IME 又能查
+  // - disabled: 硬性禁用接收 focus / input，IME 100% 无法发起 NSTextInputClient 查询
+  // 参考：xterm.js Discussion #5227（社区实战验证）。
   const disableTextarea = () => {
     if (term.textarea && !term.textarea.disabled) {
       term.textarea.disabled = true;
@@ -232,8 +220,7 @@ export function attachMacWebKitTerminalGuard({
 
   const handlePointerUp = (e: PointerEvent) => {
     if (e.button !== 0) return;
-    // document-level listener: must first confirm this is a terminal-initiated
-    // drag flow, otherwise we'd steal focus from other input fields.
+    // document 级监听：必须先确认是终端发起的拖选流程，否则会把别处输入框的焦点抢走。
     if (!pointerSelecting) return;
     pointerSelecting = false;
     writer?.setSelectionPaused(false);
@@ -253,18 +240,13 @@ export function attachMacWebKitTerminalGuard({
 
   const handleDocumentPointerDown = (e: PointerEvent) => {
     const target = e.target;
-    if (
-      !terminalHasSelection ||
-      (target instanceof Node && container.contains(target))
-    )
-      return;
+    if (!terminalHasSelection || (target instanceof Node && container.contains(target))) return;
     pointerSelecting = false;
     terminalHasSelection = false;
     writer?.setSelectionPaused(false);
     term.clearSelection();
     syncSelectionGuard();
-    // User clicked outside the terminal; focus naturally goes there, don't
-    // forcibly reclaim textarea.
+    // 用户点了终端外部，焦点本来就该去那里，不强抢回 textarea。
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -295,19 +277,18 @@ export function attachMacWebKitTerminalGuard({
     document.removeEventListener("pointercancel", handlePointerCancel);
     document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     document.removeEventListener("keydown", handleKeyDown, true);
-    // Fallback: if still in selection drag state at unmount, restore textarea
-    // to avoid losing next input.
+    // 兜底：若卸载时仍处于选区拖动状态，恢复 textarea，避免下次输入丢失。
     enableTextarea();
     writer?.setSelectionPaused(false);
   };
 }
 
 /**
- * Create a watermark-based flow-control writer.
+ * 创建基于水位线的流控写入器。
  *
- * - Pauses writing when xterm write queue exceeds HIGH_WATER
- * - Resumes below LOW_WATER
- * - selectionPaused pauses writing during mouse selection (optional use)
+ * - 当 xterm write queue 积累超过 HIGH_WATER 时暂停写入
+ * - 低于 LOW_WATER 时恢复
+ * - selectionPaused 在鼠标选择期间暂停写入（可选使用）
  */
 export function createSmartWriter(term: Terminal): SmartWriter {
   const state = {
@@ -330,11 +311,7 @@ export function createSmartWriter(term: Terminal): SmartWriter {
   }
 
   function drainPending() {
-    while (
-      state.pendingChunks.length > 0 &&
-      !state.paused &&
-      !state.selectionPaused
-    ) {
+    while (state.pendingChunks.length > 0 && !state.paused && !state.selectionPaused) {
       const next = state.pendingChunks.shift()!;
       if (state.watermark >= HIGH_WATER) {
         state.pendingChunks.unshift(next);
@@ -346,11 +323,7 @@ export function createSmartWriter(term: Terminal): SmartWriter {
   }
 
   function write(data: string, callback?: () => void) {
-    if (
-      state.paused ||
-      state.selectionPaused ||
-      state.watermark >= HIGH_WATER
-    ) {
+    if (state.paused || state.selectionPaused || state.watermark >= HIGH_WATER) {
       if (state.watermark >= HIGH_WATER) state.paused = true;
       state.pendingChunks.push({ data, callback });
       return;
@@ -371,9 +344,8 @@ export function createSmartWriter(term: Terminal): SmartWriter {
 export interface InitTerminalResult {
   term: Terminal;
   fitAddon: FitAddon;
-  /** Resolves when font is ready (1s timeout fallback), never rejects. On ready,
-   *  fontFamily is toggled to trigger xterm cell remeasure; callers should
-   *  safeFit once more after this. */
+  /** 字体 ready 后 resolve（1s 超时兜底），永不 reject。ready 时已 toggle
+   *  fontFamily 触发 xterm 重测 cell；调用方应在此之后再 safeFit 一次。 */
   whenFontsReady: Promise<void>;
 }
 
@@ -382,26 +354,15 @@ const FONT_READY_TIMEOUT_MS = 1000;
 const TEXTURE_ATLAS_REFRESH_DELAYS_MS = [0, 50, 250, 1000, 2500, 5000] as const;
 
 function primaryFontFamily(fontFamily: string): string | null {
-  const first = fontFamily
-    .split(",")[0]
-    ?.trim()
-    .replace(/^["']|["']$/g, "");
+  const first = fontFamily.split(",")[0]?.trim().replace(/^["']|["']$/g, "");
   if (!first) return null;
-  if (
-    first === "monospace" ||
-    first === "serif" ||
-    first === "sans-serif" ||
-    first === "system-ui"
-  ) {
+  if (first === "monospace" || first === "serif" || first === "sans-serif" || first === "system-ui") {
     return null;
   }
   return first;
 }
 
-function waitForFontReady(
-  fontFamily: string,
-  fontSize: number,
-): Promise<void> {
+function waitForFontReady(fontFamily: string, fontSize: number): Promise<void> {
   const key = `${fontFamily}|${fontSize}`;
   if (fontReadyCache.has(key)) return Promise.resolve();
 
@@ -414,8 +375,8 @@ function waitForFontReady(
   const primary = primaryFontFamily(fontFamily);
   const spec = primary ? `${fontSize}px "${primary}"` : null;
 
-  // nezha uses system fonts only; fonts.load does not trigger network downloads —
-  // only rejects on spec parse failure (developer concatenation bug), which we warn.
+  // nezha 用的都是系统字体，fonts.load 不会触发网络下载——仅 spec 字符串
+  // 解析失败时 reject（开发者拼接 bug），warn 出来便于排查。
   const load = spec
     ? fonts.load(spec).catch((err) => {
         console.warn(`[terminal] invalid font spec "${spec}"`, err);
@@ -437,10 +398,7 @@ function waitForFontReady(
   });
 }
 
-function whenFontEventuallyReady(
-  fontFamily: string,
-  fontSize: number,
-): Promise<void> {
+function whenFontEventuallyReady(fontFamily: string, fontSize: number): Promise<void> {
   const fonts = typeof document !== "undefined" ? document.fonts : undefined;
   if (!fonts) return Promise.resolve();
 
@@ -459,7 +417,7 @@ const domCellWidthCache = new Map<string, number>();
 
 function isFontLoaded(fontFamily: string, fontSize: number): boolean {
   const primary = primaryFontFamily(fontFamily);
-  if (!primary) return true; // Generic keywords (monospace etc.) are always ready.
+  if (!primary) return true; // 通用关键字（monospace 等）总是 ready。
   const fonts = typeof document !== "undefined" ? document.fonts : undefined;
   if (!fonts) return true;
   try {
@@ -469,10 +427,7 @@ function isFontLoaded(fontFamily: string, fontSize: number): boolean {
   }
 }
 
-function measureCellWidthInDOM(
-  fontFamily: string,
-  fontSize: number,
-): number | null {
+function measureCellWidthInDOM(fontFamily: string, fontSize: number): number | null {
   if (typeof document === "undefined" || !document.body) return null;
   const key = `${fontFamily}|${fontSize}`;
   const cached = domCellWidthCache.get(key);
@@ -485,13 +440,13 @@ function measureCellWidthInDOM(
   probe.style.fontKerning = "none";
   probe.style.fontFamily = fontFamily;
   probe.style.fontSize = `${fontSize}px`;
-  // Match xterm's DomMeasureStrategy: 32 W characters average out layout rounding errors.
+  // 与 xterm DomMeasureStrategy 保持一致：32 个 W 平均掉布局取整误差。
   probe.textContent = "W".repeat(DOM_MEASURE_REPEAT);
   document.body.appendChild(probe);
   try {
     const width = probe.offsetWidth / DOM_MEASURE_REPEAT;
     if (!Number.isFinite(width) || width <= 0) return null;
-    // Font not ready → measured fallback width; do not cache. Ready → cache.
+    // 字体未 ready 时测的是 fallback 宽度，不能缓存；ready 后会再测一次。
     if (isFontLoaded(fontFamily, fontSize)) {
       domCellWidthCache.set(key, width);
     }
@@ -502,28 +457,19 @@ function measureCellWidthInDOM(
 }
 
 /**
- * Only override the width in xterm's measurement result, without directly
- * writing `_charSizeService`'s current values.
+ * 只修正 xterm 测量结果里的 width，不直接写 `_charSizeService` 当前值。
  *
- * WKWebView/OffscreenCanvas may measure half-width CJK Nerd Font characters
- * as fullwidth via measureText. Here we use DOM width to shadow the strategy's
- * return value, letting xterm's own measure() continue to write width/height,
- * fire onCharSizeChange, and update the renderer. Height stays as xterm's
- * original result, avoiding DOM height semantics + xterm lineHeight stacking
- * from pulling the entire screen's cell dimensions out of whack.
+ * WKWebView/OffscreenCanvas 对 CJK Nerd Font 的 measureText 可能把半宽字符测成
+ * fullwidth。这里用 DOM 宽度覆盖策略返回值，让 xterm 自己的 measure() 继续负责
+ * 写入 width/height、触发 onCharSizeChange 和 renderer 更新。height 保持 xterm
+ * 原始结果，避免 DOM 高度语义和 xterm lineHeight 叠加后把整屏 cell 拉坏。
  */
 export function applyDomCharSizeOverride(term: Terminal): () => void {
   const core = (term as XTermWithPrivates)._core;
   const charSizeService = core?._charSizeService;
   const strategy = charSizeService?._measureStrategy;
-  if (
-    !charSizeService ||
-    !strategy ||
-    typeof strategy.measure !== "function"
-  ) {
-    console.warn(
-      "[terminal] xterm char size strategy inaccessible; skip DOM width override",
-    );
+  if (!charSizeService || !strategy || typeof strategy.measure !== "function") {
+    console.warn("[terminal] xterm char size strategy inaccessible; skip DOM width override");
     return () => {};
   }
 
@@ -537,12 +483,10 @@ export function applyDomCharSizeOverride(term: Terminal): () => void {
 
     const fontFamily = term.options.fontFamily;
     const fontSize = term.options.fontSize;
-    if (typeof fontFamily !== "string" || typeof fontSize !== "number")
-      return result;
+    if (typeof fontFamily !== "string" || typeof fontSize !== "number") return result;
 
     const domWidth = measureCellWidthInDOM(fontFamily, fontSize);
-    if (domWidth === null || Math.abs(result.width - domWidth) < 0.5)
-      return result;
+    if (domWidth === null || Math.abs(result.width - domWidth) < 0.5) return result;
 
     if (!warnedMismatch) {
       warnedMismatch = true;
@@ -556,7 +500,7 @@ export function applyDomCharSizeOverride(term: Terminal): () => void {
   try {
     charSizeService.measure();
   } catch {
-    /* term not fully ready — ignore; font/size changes will trigger measure again */
+    /* term 未完全就绪时忽略；字体/字号变化会再次触发 measure */
   }
 
   return () => {
@@ -565,18 +509,14 @@ export function applyDomCharSizeOverride(term: Terminal): () => void {
   };
 }
 
-// xterm OptionsService dirty-checks same-value fontFamily and skips; use toggle
-// to bypass.
-function refreshCharSizeAfterFontReady(
-  term: Terminal,
-  fontFamily: string,
-): void {
+// xterm OptionsService 对同值 fontFamily 会 dirty-check 跳过，用 toggle 绕开。
+function refreshCharSizeAfterFontReady(term: Terminal, fontFamily: string): void {
   try {
     if (term.options.fontFamily !== fontFamily) return;
     term.options.fontFamily = `${fontFamily}, monospace`;
     term.options.fontFamily = fontFamily;
   } catch {
-    /* normal race: term already disposed */
+    /* term 已 dispose 的正常 race */
   }
 }
 
@@ -596,10 +536,9 @@ export function initTerminal(
     minimumContrastRatio: minimumContrastRatioFor(variant),
     allowProposedApi: true,
      // overviewRuler removed — not in current xterm typings
-    // When running TUIs (Claude Code / Codex) with mouse reporting enabled, xterm
-    // defaults to forwarding drag as mouse events and canceling local selection,
-    // preventing macOS users from "selecting during runtime". This flag enables
-    // holding Option to force local selection (standard iTerm2 / Terminal.app convention).
+    // 当运行中的 TUI（Claude Code / Codex）开启鼠标上报时，xterm 默认把拖动当作
+    // 鼠标事件转发给程序并取消本地选区,导致 macOS 用户"运行时无法框选"。开启此项后
+    // 按住 ⌥ Option 拖动可强制本地选区（iTerm2 / Terminal.app 的标准约定）。
     macOptionClickForcesSelection: true,
   });
 
@@ -616,10 +555,7 @@ export function initTerminal(
   return { term, fitAddon, whenFontsReady };
 }
 
-export function attachTerminalScrollbarAutoHide(
-  term: Terminal,
-  container: HTMLElement,
-): () => void {
+export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLElement): () => void {
   const ownerWindow = container.ownerDocument.defaultView ?? window;
   let scrollHideTimer: number | null = null;
 
@@ -652,8 +588,7 @@ export function attachTerminalScrollbarAutoHide(
 }
 
 export interface WebglAddonHandle {
-  /** Release the WebGL addon. Safe to call even if async load hasn't completed;
-   *  marks disposed to block subsequent load. */
+  /** 释放 WebGL addon。延迟加载未完成时也安全调用，会标记 disposed 阻止后续 load。 */
   dispose: () => void;
 }
 
@@ -663,18 +598,13 @@ interface TextureAtlasRefreshState {
   timerIds: number[];
 }
 
-const textureAtlasRefreshState = new WeakMap<
-  Terminal,
-  TextureAtlasRefreshState
->();
+const textureAtlasRefreshState = new WeakMap<Terminal, TextureAtlasRefreshState>();
 
 function getTerminalOwnerWindow(term: Terminal): Window {
   return term.element?.ownerDocument.defaultView ?? window;
 }
 
-function getTextureAtlasRefreshState(
-  term: Terminal,
-): TextureAtlasRefreshState {
+function getTextureAtlasRefreshState(term: Terminal): TextureAtlasRefreshState {
   let state = textureAtlasRefreshState.get(term);
   if (!state) {
     state = { generation: 0, frameIds: [], timerIds: [] };
@@ -683,9 +613,7 @@ function getTextureAtlasRefreshState(
   return state;
 }
 
-function cancelScheduledTextureAtlasRefresh(
-  term: Terminal,
-): TextureAtlasRefreshState {
+function cancelScheduledTextureAtlasRefresh(term: Terminal): TextureAtlasRefreshState {
   const ownerWindow = getTerminalOwnerWindow(term);
   const state = getTextureAtlasRefreshState(term);
   for (const frameId of state.frameIds) {
@@ -700,9 +628,8 @@ function cancelScheduledTextureAtlasRefresh(
 }
 
 /**
- * After font or font-size change, discard the WebGL atlas so new-size glyphs
- * are re-rasterized. Silently ignored when WebGL unavailable (clearTextureAtlas
- * missing / throws).
+ * 字体或字号变更后丢掉 WebGL atlas 让新尺寸的 glyph 重新光栅化。无 WebGL
+ * 时 (`clearTextureAtlas` 不存在或抛出) 静默忽略。
  */
 function refreshTextureAtlas(term: Terminal): void {
   try {
@@ -711,7 +638,7 @@ function refreshTextureAtlas(term: Terminal): void {
       term.refresh(0, term.rows - 1);
     }
   } catch {
-    /* DOM renderer has no atlas / term disposed */
+    /* DOM renderer 没有 atlas / term 已 dispose */
   }
 }
 
@@ -739,14 +666,12 @@ function scheduleTextureAtlasRefresh(term: Terminal): void {
 }
 
 /**
- * `display:none -> re-visible` path: xterm WebGL canvas may enter corrupted
- * atlas/render state while removed from layout tree (visual garbage visible on
- * returning to the project; resizing fixes it). Wait one frame for layout to
- * settle, then clear the cache once.
+ * `display:none → 重新可见` 路径用：xterm WebGL canvas 在 layout tree 移除
+ * 期间 atlas/render 缓存可能进入坏状态（切回项目时肉眼可见乱码，改尺寸后
+ * 恢复正常），等一帧 layout 稳定后清一次缓存即可。
  *
- * Does NOT reuse scheduleTextureAtlasRefresh — that one schedules 6 delayed
- * nodes as font async-load fallback; fonts are already ready on return,
- * running 6 times would produce 6 visible flashes.
+ * 不复用 scheduleTextureAtlasRefresh —— 那个 6 个延迟节点是字体异步加载
+ * 兜底，切回时字体早就 ready，跑 6 次只会让用户看到 6 次闪烁。
  */
 export function refreshTerminalDisplay(term: Terminal): void {
   const ownerWindow = getTerminalOwnerWindow(term);
@@ -761,40 +686,31 @@ export function refreshTerminalDisplay(term: Terminal): void {
 }
 
 /**
- * Async-load WebGL addon: wait for font ready before constructing, so the
- * atlas doesn't prefill with fallback font for the first fill. Silently
- * degrades to xterm DOM renderer on failure.
+ * 异步加载 WebGL addon：等待字体 ready 后再 new，避免 atlas 用 fallback 字体
+ * 首次 prefill。失败时静默降级到 xterm DOM renderer。
  *
- * Why font-ready is required: WebGL renderer caches rasterized results in a
- * glyph atlas — whatever font fills it first is what subsequent cells render
- * with. If the atlas is filled with unloaded fallback font, characters will
- * display as fallback shapes even after cell dimensions are corrected.
+ * 为什么必须等字体 ready：WebGL renderer 用 glyph atlas 缓存光栅化结果，
+ * 第一次 fill 用什么字体后续就是什么字体——若 atlas 用未加载完的 fallback
+ * 字体填，即便后面 cell 尺寸算对了，渲染出来的字符仍是 fallback 形状。
  *
- * On "should we disable WebGL" — measured conclusions (recording8/9/10 comparison):
- * - WebGL cost: occasional 100-400ms composite spikes during large selection drag
- *   (GPU geometry upload)
- * - DOM renderer cost: sustained medium jank during high-frequency mousemove
- *   (mouse in terminal area) + high-speed text output (each mousemove triggers
- *   multiple row DOM node reflows/composites; rec10 measured 511ms single frame
- *   over 1233 mousemoves in 2.7s)
- * - Nezha's typical usage is "mouse active in terminal area"; long drag selections
- *   are relatively rare. Therefore WebGL's "occasional spike" is more acceptable
- *   than DOM's "sustained micro-jank".
+ * 关于"要不要关掉 WebGL"的实测结论（recording8/9/10 对照）：
+ * - WebGL 的代价：拖大段选区时偶发 100–400 ms composite 爆点（GPU 几何上传）
+ * - DOM renderer 的代价：高频 mousemove（鼠标在终端区域移动）+ 高速文本输出时
+ *   持续中等卡顿（每次 mousemove 触发多个 row DOM 节点的 reflow/composite，
+ *   rec10 实测 1233 mousemove/2.7s 下出现 511ms 单帧）
+ * - Nezha 日常以"鼠标在终端区域活动"为主，长拖选区相对罕见，因此 WebGL 的
+ *   "偶发爆点"比 DOM 的"持续小卡顿"更可接受。
  *
- * Do not disable WebGL here to "avoid occasional jank" — see timeline rec10.
+ * 不要为了"避免偶发卡顿"再把这里关掉——见 timeline rec10。
  *
- * Must be called after `term.open()` — term.element is only attached at open time.
+ * 必须在 `term.open()` 之后调用——term.element 在 open 时才挂上。
  */
 export function loadWebglAddon(term: Terminal): WebglAddonHandle {
   let disposed = false;
   let addon: WebglAddon | null = null;
 
-  const fontFamily =
-    typeof term.options.fontFamily === "string"
-      ? term.options.fontFamily
-      : "monospace";
-  const fontSize =
-    typeof term.options.fontSize === "number" ? term.options.fontSize : 12;
+  const fontFamily = typeof term.options.fontFamily === "string" ? term.options.fontFamily : "monospace";
+  const fontSize = typeof term.options.fontSize === "number" ? term.options.fontSize : 12;
 
   void waitForFontReady(fontFamily, fontSize).finally(() => {
     if (disposed || !term.element) return;
@@ -802,9 +718,7 @@ export function loadWebglAddon(term: Terminal): WebglAddonHandle {
     try {
       addon = new WebglAddon();
       addon.onContextLoss(() => {
-        console.warn(
-          "[terminal] WebGL context lost; falling back to xterm DOM renderer",
-        );
+        console.warn("[terminal] WebGL context lost; falling back to xterm DOM renderer");
         addon?.dispose();
         addon = null;
       });
@@ -817,11 +731,8 @@ export function loadWebglAddon(term: Terminal): WebglAddonHandle {
         }
       });
     } catch (err) {
-      console.warn(
-        "[terminal] WebGL addon unavailable; using xterm DOM renderer",
-        err,
-      );
-      /* WebGL unsupported — degrade gracefully, no functional impact */
+      console.warn("[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
+      /* 不支持 WebGL 时降级，不影响功能 */
     }
   });
 
@@ -836,22 +747,19 @@ export function loadWebglAddon(term: Terminal): WebglAddonHandle {
 }
 
 /**
- * Safely execute fitAddon.fit() and return { cols, rows }; returns null on
- * failure / invisible container.
+ * 安全地执行 fitAddon.fit() 并返回 { cols, rows }，失败/容器不可见时返回 null。
  *
- * When container is provided, two extra defenses are applied (known issues
- * from xterm.js #3029 / #4338 / #4841):
- * 1. rect width/height either 0 → container in display:none subtree, skip.
- *    This is the normal state for inactive ProjectPage during multi-project mount.
- * 2. proposeDimensions returns non-finite values or cols/rows < 2 → degenerate, skip.
+ * container 传了的话会做两道防御（xterm.js issue #3029 / #4338 / #4841 的已知坑）：
+ * 1. rect 宽高任一为 0 → 容器在 display:none 子树里，跳过。多项目挂载时这是
+ *    日常状态（非激活 ProjectPage display:none）。
+ * 2. proposeDimensions 返回非有限值或 cols/rows < 2 → 退化场景，跳过。
  *
- * Why these must be blocked: FitAddon on a 0-size container doesn't return NaN,
- * but degrades to `Math.max(MINIMUM_COLS, Math.floor(0 / cell))` = MINIMUM_COLS (2).
- * If allowed through → caller notifyResize → resize_pty → SIGWINCH → Claude Code /
- * Codex TUIs re-layout at cols=2, permanently shredding the buffer into one-character
- * lines. VS Code's equivalent defense in _resize() checks `if (isNaN(cols) ||
- * isNaN(rows)) return`, but xterm.js's NaN path doesn't exist; we must block at
- * the rect level first.
+ * 为什么必须拦：FitAddon 在 0 尺寸容器上不返回 NaN，而是退化到 `Math.max(
+ * MINIMUM_COLS, Math.floor(0 / cell))` = MINIMUM_COLS (2)；若放过 → 调用方
+ * notifyResize → resize_pty → SIGWINCH → Claude Code / Codex 这类 TUI 按
+ * cols=2 重排，buffer 永久打散成一字一行。VS Code 的同等防线在 _resize()
+ * 里是 `if (isNaN(cols) || isNaN(rows)) return`，但 xterm.js 这条 NaN 路径
+ * 不存在，必须在 rect 层先拦。
  */
 export function safeFit(
   fitAddon: FitAddon,
@@ -864,12 +772,7 @@ export function safeFit(
   }
   try {
     const dims = fitAddon.proposeDimensions();
-    if (
-      !dims ||
-      !Number.isFinite(dims.cols) ||
-      !Number.isFinite(dims.rows)
-    )
-      return null;
+    if (!dims || !Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return null;
     if (dims.cols < 2 || dims.rows < 2) return null;
     fitAddon.fit();
     return { cols: term.cols, rows: term.rows };
@@ -879,7 +782,7 @@ export function safeFit(
 }
 
 /**
- * Update terminal font size and re-fit, returning new { cols, rows } or null.
+ * 更新终端字体大小并重新 fit，返回新的 { cols, rows } 或 null。
  */
 export function applyTerminalFontSize(
   term: Terminal,
@@ -895,11 +798,9 @@ export function applyTerminalFontSize(
 }
 
 export interface FontFamilyApplyResult {
-  /** Synchronous fit result. When the new font hasn't loaded yet, this is the
-   *  fallback font's dimensions — fed to the user immediately. */
+  /** 同步 fit 的结果。新字体未加载时是 fallback 字体的尺寸，先反馈给用户。 */
   immediate: { cols: number; rows: number } | null;
-  /** After font ready, remeasure and fit. CJK monospace fonts need this step
-   *  on first load to correct cols/rows. */
+  /** 字体 ready 后重测并 fit 的结果。CJK 等宽字体首次加载需要这一步纠正 cols/rows。 */
   whenSettled: Promise<{ cols: number; rows: number } | null>;
 }
 
@@ -911,8 +812,7 @@ export function applyTerminalFontFamily(
 ): FontFamilyApplyResult | null {
   if (term.options.fontFamily === fontFamily) return null;
   term.options.fontFamily = fontFamily;
-  const fontSize =
-    typeof term.options.fontSize === "number" ? term.options.fontSize : 12;
+  const fontSize = typeof term.options.fontSize === "number" ? term.options.fontSize : 12;
   const immediate = safeFit(fitAddon, term, container);
   const whenSettled = waitForFontReady(fontFamily, fontSize).then(() => {
     refreshCharSizeAfterFontReady(term, fontFamily);

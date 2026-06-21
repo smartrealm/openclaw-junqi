@@ -3,14 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
-import { attachSmartCopy } from "./terminalCopyHelper";
+import { attachSmartCopy } from "@/components/Terminal/terminalCopyHelper";
 import {
   DEFAULT_SHIFT_ENTER_NEWLINE,
   matchesTerminalNewline,
   normalizeShiftEnterNewline,
   TERMINAL_NEWLINE_SEQUENCE,
-} from "../../_nezha_root/shortcuts";
-import type { TerminalFontSize, FontFamily, ThemeVariant } from "../../_nezha_root/types";
+} from "@/_nezha_root/shortcuts";
+import type { TerminalFontSize, FontFamily, ThemeVariant } from "@/_nezha_root/types";
 import {
   applyTerminalThemeOnPanel,
   initTerminal,
@@ -23,7 +23,7 @@ import {
   applyTerminalFontFamily,
   applyDomCharSizeOverride,
   refreshTerminalDisplay,
-} from "./terminalShared";
+} from "@/components/Terminal/terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import "@xterm/xterm/css/xterm.css";
 
@@ -74,9 +74,8 @@ export function TerminalView({
   onResizeRef.current = onResize;
   onRegisterRef.current = onRegisterTerminal;
 
-  // Only callback on real cols/rows changes; otherwise resize_pty -> SIGWINCH ->
-  // downstream TUI (Claude Code / Codex) full redraw, producing an unnecessary
-  // repaint on every return to the tab.
+  // 仅在 cols/rows 真正变化时回调；否则会触发 resize_pty → SIGWINCH →
+  // 下游 TUI（Claude Code / Codex）全屏重绘，导致每次切回都看到一次多余重画。
   const notifyResize = useCallback((cols: number, rows: number) => {
     const last = lastSizeRef.current;
     if (last && last.cols === cols && last.rows === rows) return;
@@ -102,20 +101,16 @@ export function TerminalView({
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
     term.open(container);
-    // Must be after term.open(): _charSizeService is only instantiated during open().
+    // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
     const disposeCharSizeOverride = applyDomCharSizeOverride(term);
-    const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(
-      term,
-      container,
-    );
+    const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
     const disposeInputFix = attachMacWebKitShiftInputFix(term);
     const webglHandle = loadWebglAddon(term);
 
     const size = safeFit(fitAddon, term, container);
     if (size) notifyResize(size.cols, size.rows);
 
-    // After font is ready, real cell width may change — fit again so cols/rows
-    // catch up.
+    // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
     whenFontsReady.then(() => {
       if (disposed) return;
       const s = safeFit(fitAddon, term, container);
@@ -129,11 +124,7 @@ export function TerminalView({
     };
 
     const writer = createSmartWriter(term);
-    const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({
-      term,
-      container,
-      writer,
-    });
+    const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
 
     const terminalGeneration = onRegisterRef.current(writer.write);
 
@@ -163,13 +154,10 @@ export function TerminalView({
     });
 
     const disposeSmartCopy = attachSmartCopy(term, {
-      matchesNewline: (e) =>
-        matchesTerminalNewline(e, shiftEnterNewlineRef.current),
+      matchesNewline: (e) => matchesTerminalNewline(e, shiftEnterNewlineRef.current),
       onNewline: () => onInputRef.current(TERMINAL_NEWLINE_SEQUENCE),
     });
-    const linuxIME = attachLinuxIMEFix(term, (data) =>
-      onInputRef.current(data),
-    );
+    const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
     const disposeOnData = { dispose: () => linuxIME.dispose() };
 
     const handlePointerDown = (e: PointerEvent) => {
@@ -219,10 +207,7 @@ export function TerminalView({
       disposeOnData.dispose();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
-      container.removeEventListener(
-        "pointerdown",
-        handlePointerDown as EventListener,
-      );
+      container.removeEventListener("pointerdown", handlePointerDown as EventListener);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       terminalRef.current = null;
       term.dispose();
@@ -245,27 +230,14 @@ export function TerminalView({
     }
     loadNewlineShortcut();
     window.addEventListener("nezha:app-settings-changed", loadNewlineShortcut);
-    return () =>
-      window.removeEventListener(
-        "nezha:app-settings-changed",
-        loadNewlineShortcut,
-      );
+    return () => window.removeEventListener("nezha:app-settings-changed", loadNewlineShortcut);
   }, []);
 
   useEffect(() => {
     if (!isActive) return;
     window.requestAnimationFrame(() => {
-      if (
-        !fitAddonRef.current ||
-        !terminalRef.current ||
-        !containerRef.current
-      )
-        return;
-      const s = safeFit(
-        fitAddonRef.current,
-        terminalRef.current,
-        containerRef.current,
-      );
+      if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
+      const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
       if (s) notifyResize(s.cols, s.rows);
       refreshTerminalDisplay(terminalRef.current);
       terminalRef.current.focus();
@@ -280,24 +252,14 @@ export function TerminalView({
 
   useEffect(() => {
     if (!terminalRef.current || !containerRef.current) return;
-    applyTerminalThemeOnPanel(
-      terminalRef.current,
-      themeVariant,
-      containerRef.current,
-    );
-    // Theme/contrast change recalculates xterm's final foreground color, but
-    // the WebGL atlas still caches old-color glyph textures — without refresh
-    // the user sees color and glyph misalignment.
+    applyTerminalThemeOnPanel(terminalRef.current, themeVariant, containerRef.current);
+    // 主题/对比度变化后 xterm 算出的最终前景色变了，但 WebGL atlas 仍缓存
+    // 旧色的 glyph 纹理，不刷新会看到颜色和字形错位。
     refreshTerminalDisplay(terminalRef.current);
   }, [themeVariant]);
 
   useEffect(() => {
-    if (
-      !terminalRef.current ||
-      !fitAddonRef.current ||
-      !containerRef.current
-    )
-      return;
+    if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
     const size = applyTerminalFontSize(
       terminalRef.current,
       fitAddonRef.current,
@@ -308,12 +270,7 @@ export function TerminalView({
   }, [terminalFontSize, notifyResize]);
 
   useEffect(() => {
-    if (
-      !terminalRef.current ||
-      !fitAddonRef.current ||
-      !containerRef.current
-    )
-      return;
+    if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
     const result = applyTerminalFontFamily(
       terminalRef.current,
       fitAddonRef.current,
@@ -321,8 +278,7 @@ export function TerminalView({
       containerRef.current,
     );
     if (!result) return;
-    if (result.immediate)
-      notifyResize(result.immediate.cols, result.immediate.rows);
+    if (result.immediate) notifyResize(result.immediate.cols, result.immediate.rows);
     let cancelled = false;
     result.whenSettled.then((s) => {
       if (cancelled || !s) return;

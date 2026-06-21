@@ -1,5 +1,5 @@
 import type { Terminal } from "@xterm/xterm";
-import { IS_MAC_WEBKIT, IS_OTHER_WEBKIT } from "./platform";
+import { IS_MAC_WEBKIT, IS_OTHER_WEBKIT } from "@/components/Terminal/platform";
 
 type TerminalWithInput = Pick<Terminal, "input" | "textarea">;
 
@@ -14,9 +14,7 @@ function isSymbolInputType(inputType: string): boolean {
   return inputType === "insertText" || inputType === "insertCompositionText";
 }
 
-export function attachMacWebKitShiftInputFix(
-  term: TerminalWithInput,
-): () => void {
+export function attachMacWebKitShiftInputFix(term: TerminalWithInput): () => void {
   if (!IS_MAC_WEBKIT || !term.textarea) return () => {};
 
   const textarea = term.textarea;
@@ -128,46 +126,18 @@ export function attachLinuxIMEFix(
 
   const disposable = term.onData(onDataCallback);
 
-  textarea.addEventListener(
-    "compositionstart",
-    handleCompositionStartCapture,
-    true,
-  );
-  textarea.addEventListener(
-    "compositionupdate",
-    handleCompositionUpdateCapture,
-    true,
-  );
-  textarea.addEventListener(
-    "compositionend",
-    handleCompositionEndCapture,
-    true,
-  );
+  textarea.addEventListener("compositionstart", handleCompositionStartCapture, true);
+  textarea.addEventListener("compositionupdate", handleCompositionUpdateCapture, true);
+  textarea.addEventListener("compositionend", handleCompositionEndCapture, true);
   textarea.addEventListener("beforeinput", handleBeforeInputCapture, true);
   textarea.addEventListener("keydown", handleKeyDownCapture, true);
 
   return {
     dispose: () => {
-      textarea.removeEventListener(
-        "compositionstart",
-        handleCompositionStartCapture,
-        true,
-      );
-      textarea.removeEventListener(
-        "compositionupdate",
-        handleCompositionUpdateCapture,
-        true,
-      );
-      textarea.removeEventListener(
-        "compositionend",
-        handleCompositionEndCapture,
-        true,
-      );
-      textarea.removeEventListener(
-        "beforeinput",
-        handleBeforeInputCapture,
-        true,
-      );
+      textarea.removeEventListener("compositionstart", handleCompositionStartCapture, true);
+      textarea.removeEventListener("compositionupdate", handleCompositionUpdateCapture, true);
+      textarea.removeEventListener("compositionend", handleCompositionEndCapture, true);
+      textarea.removeEventListener("beforeinput", handleBeforeInputCapture, true);
       textarea.removeEventListener("keydown", handleKeyDownCapture, true);
       disposable.dispose();
     },

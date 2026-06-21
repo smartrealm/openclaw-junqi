@@ -1,0 +1,100 @@
+/* ═══════════════════════════════════════════════════════════
+   Nezha → Aegis CSS var bridge
+   
+   Allows nezha-original components (ShellTerminalPanel,
+   TerminalView, terminalShared.ts theme presets) to run
+   verbatim — their `var(--bg-panel)` / `var(--text-primary)`
+   etc. resolve to our `--aegis-*` values transparently.
+   
+   Must be imported AFTER themes/*.css so --aegis-* are defined.
+   ═══════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme] {
+  /* surfaces */
+  --bg-root: var(--aegis-bg);
+  --bg-shell: var(--aegis-bg);
+  --bg-titlebar: var(--aegis-chrome);
+  --bg-sidebar: var(--aegis-surface);
+  --bg-sidebar-elevated: var(--aegis-surface-elevated);
+  --bg-panel: var(--aegis-elevated);
+  --bg-card: var(--aegis-card);
+  --bg-hover: var(--aegis-hover);
+  --bg-selected: var(--aegis-menu-active);
+  --bg-subtle: var(--aegis-elevated);
+  --bg-input: var(--aegis-input);
+
+  /* borders */
+  --border-dim: var(--aegis-border);
+  --border-medium: var(--aegis-border-hover);
+  --border-strong: var(--aegis-border-active);
+  --border-focus: rgb(var(--aegis-primary));
+
+  /* text */
+  --text-primary: rgb(var(--aegis-text));
+  --text-secondary: rgb(var(--aegis-text-secondary));
+  --text-muted: rgb(var(--aegis-text-muted));
+  --text-hint: rgb(var(--aegis-text-dim));
+
+  /* accent */
+  --accent: rgb(var(--aegis-primary));
+  --accent-strong: rgb(var(--aegis-primary-deep));
+  --accent-soft: rgba(var(--aegis-primary) / 0.28);
+  --accent-hover: rgb(var(--aegis-primary-hover));
+  --accent-subtle: rgba(var(--aegis-primary) / 0.12);
+
+  /* controls */
+  --control-active-bg: rgba(var(--aegis-primary) / 0.10);
+  --control-active-fg: rgb(var(--aegis-primary));
+  --control-selected-bg: rgb(var(--aegis-primary));
+  --control-selected-fg: var(--aegis-btn-primary-text);
+  --control-knob-bg: var(--aegis-card);
+  --primary-action-bg: rgb(var(--aegis-primary));
+  --primary-action-fg: var(--aegis-btn-primary-text);
+  --primary-action-hover: rgb(var(--aegis-primary-hover));
+
+  /* status */
+  --success: rgb(var(--aegis-success));
+  --warning: rgb(var(--aegis-warning));
+  --danger: rgb(var(--aegis-danger));
+
+  /* misc */
+  --fg-on-accent: var(--aegis-btn-primary-text);
+  --overlay-bg: rgba(var(--aegis-overlay) / 0.45);
+  --brand-mark-gradient: linear-gradient(145deg, rgb(var(--aegis-primary-deep)), rgb(var(--aegis-primary)));
+  --brand-mark-glow: rgba(var(--aegis-primary) / 0.14);
+  --brand-mark-inner-bg: rgba(var(--aegis-overlay) / 0.82);
+  --brand-mark-fg: rgb(var(--aegis-text));
+  --badge-muted-bg: rgba(var(--aegis-overlay) / 0.08);
+
+  /* radius — mapped for nezha components that use these directly */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* icon colors (git/file viewer) */
+  --icon-folder: rgb(var(--aegis-text-muted));
+  --icon-folder-open: rgb(var(--aegis-text-secondary));
+  --icon-folder-root: rgb(var(--aegis-text-secondary));
+  --icon-file-default: rgb(var(--aegis-text-dim));
+
+  /* diff */
+  --diff-add-bg: rgba(var(--aegis-success) / 0.12);
+  --diff-add-fg: rgb(var(--aegis-success));
+  --diff-add-marker-bg: rgba(var(--aegis-success) / 0.22);
+  --diff-delete-bg: rgba(var(--aegis-danger) / 0.12);
+  --diff-delete-fg: rgb(var(--aegis-danger));
+  --diff-delete-marker-bg: rgba(var(--aegis-danger) / 0.22);
+  --diff-hunk-bg: rgba(var(--aegis-primary) / 0.08);
+  --diff-hunk-fg: rgb(var(--aegis-primary));
+  --diff-meta-fg: rgb(var(--aegis-text-dim));
+  --diff-gutter-bg: rgba(var(--aegis-overlay) / 0.02);
+  --diff-empty-bg: rgba(var(--aegis-overlay) / 0.025);
+
+  /* code */
+  --code-line-number: rgba(var(--aegis-overlay) / 0.35);
+  --code-line-number-hover: rgba(var(--aegis-overlay) / 0.6);
+  --code-line-divider: rgba(var(--aegis-overlay) / 0.1);
+  --code-line-hover-bg: rgba(var(--aegis-overlay) / 0.05);
+  --image-checker-bg: rgba(var(--aegis-overlay) / 0.06);
+}
