@@ -272,7 +272,7 @@ export function DashboardPage() {
 
   // ── Render ───────────────────────────────────────────────────
   return (
-    <PageTransition className="p-5 space-y-4 max-w-[1280px] mx-auto overflow-y-auto h-full">
+    <PageTransition className="p-5 flex flex-col gap-3 max-w-[1280px] mx-auto h-full overflow-y-hidden">
 
       {/* ════ SECTION 1: TOP BAR ════ */}
       <div className="flex items-center justify-between">
@@ -372,7 +372,7 @@ export function DashboardPage() {
       )}
 
       {/* ════ SECTION 2: HERO CARDS (4 columns) ════ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
 
         {/* 💰 Today's Cost */}
         <GlassCard delay={0.05} className="flex flex-col gap-2">
@@ -453,7 +453,7 @@ export function DashboardPage() {
       </div>
 
       {/* ════ SECTION 3: MIDDLE ROW (Chart + Agents) ════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-3 shrink-0">
 
         {/* Daily Cost Chart */}
         <GlassCard delay={0.16}>
@@ -581,7 +581,7 @@ export function DashboardPage() {
       </div>
 
       {/* ════ SECTION 4: BOTTOM ROW (3 columns) ════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 flex-1 min-h-0">
 
         {/* ── Quick Actions ── */}
         <GlassCard delay={0.20}>
@@ -627,7 +627,7 @@ export function DashboardPage() {
             </button>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
             {mainSession && (
               <SessionItem
                 isMain
@@ -681,7 +681,7 @@ export function DashboardPage() {
             </span>
           </div>
 
-          <div className="max-h-[220px] overflow-y-auto scrollbar-hidden">
+          <div className="overflow-y-auto flex-1 min-h-0 scrollbar-hidden">
             {feedItems.length > 0 ? (
               feedItems.map((item, i) => (
                 <FeedItem

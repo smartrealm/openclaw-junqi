@@ -588,6 +588,20 @@ export function ChatView() {
     return () => window.removeEventListener('aegis:refresh', handler);
   }, [handleRefresh]);
 
+  // Quick actions from Dashboard / CommandPalette — route as chat messages
+  const handleQuickAction = useCallback(async (e: Event) => {
+    const detail = (e as CustomEvent<{ message: string; autoSend?: boolean }>).detail;
+    if (!detail?.message) return;
+    const key = activeSessionKey || 'agent:main:main';
+    try {
+      await gateway.sendMessage(detail.message, undefined, key);
+    } catch { /* gateway may be offline */ }
+  }, [activeSessionKey]);
+  useEffect(() => {
+    window.addEventListener('aegis:quick-action', handleQuickAction as EventListener);
+    return () => window.removeEventListener('aegis:quick-action', handleQuickAction as EventListener);
+  }, [handleQuickAction]);
+
   const activeHistoryMeta = historyMetaBySession[activeSessionKey];
 
   // Scroll to bottom when history first loads (or session switches)
