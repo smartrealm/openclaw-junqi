@@ -20,7 +20,7 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const INK = '#1b1b2f';
 const BOX = { transformBox: 'fill-box' as const, transformOrigin: 'center' };
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', customAsset, dragging = false, celebrating = false }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', customAsset, dragging = false, celebrating = false }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;
@@ -74,7 +74,7 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'sprite', 
     );
   }
 
-  const Skin = SKIN_REGISTRY[skin] ?? SKIN_REGISTRY.sprite;
+  const Skin = SKIN_REGISTRY[skin] ?? SKIN_REGISTRY.cat;
 
   return (
     <motion.div

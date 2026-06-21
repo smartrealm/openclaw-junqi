@@ -33,7 +33,6 @@ import clsx from 'clsx';
 /** Chinese fallback labels for the skin picker (i18n key: pet.settings.<skin>). */
 const SKIN_FALLBACK: Record<PetSkin, string> = {
   lobster: '龙虾',
-  sprite: '小精灵',
   robot: '机器人',
   cat: '猫咪',
   jellyfish: '水母',
