@@ -101,6 +101,7 @@ export function DashboardPage() {
   const costError   = useGatewayDataStore((s) => s.errors.cost);
   const usageLoading = useGatewayDataStore((s) => s.loading.usage);
   const usageError   = useGatewayDataStore((s) => s.errors.usage);
+  const agents       = useGatewayDataStore((s) => s.agents);
 
   const [quickActionLoading, setQuickActionLoading] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -290,7 +291,7 @@ export function DashboardPage() {
     });
     const totalCompactions = sessions.reduce((n: number, s: any) => n + (s.compactions || 0), 0);
     if (totalCompactions > 0) {
-      items.unshift({ color: themeHex('warning'), text: t('dashboardExtra.contextCompacted', { n: totalCompactions }), time: '—' });
+      items.unshift({ color: themeHex('warning'), text: t('dashboardExtra.contextCompacted', { n: totalCompactions }), time: '—', sessionKey: '', agentName: '' });
     }
     return items;
   }, [activeSessions, sessions, chatSessionByKey]);
