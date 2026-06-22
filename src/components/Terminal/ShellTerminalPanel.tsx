@@ -395,8 +395,9 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     return (
       <div
         style={{
+          flex: height == null ? 1 : undefined,
           flexShrink: 0,
-          height,
+          height: height ?? undefined,
           borderTop: "1px solid var(--border-dim)",
           display: "flex",
           flexDirection: "column",
