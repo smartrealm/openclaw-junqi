@@ -46,13 +46,13 @@ const MONO_FONT_WINDOWS: FontFamily = "Consolas";
 const MONO_FONT_WINDOWS_STACK: FontFamily =
   'Consolas, "Cascadia Mono", "JetBrains Mono", "Fira Code", monospace';
 const MONO_FONT_MAC: FontFamily =
-  '"JetBrains Mono", "Fira Code", "SF Mono", Menlo, ui-monospace, monospace';
+  '"MesloLGS NF", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, ui-monospace, monospace';
 const MONO_FONT_LINUX: FontFamily =
-  '"JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Liberation Mono", ui-monospace, monospace';
+  '"JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Liberation Mono", ui-monospace, monospace';
 const MONO_FONT_FALLBACK: FontFamily =
-  '"JetBrains Mono", "Fira Code", ui-monospace, monospace';
+  '"MesloLGS NF", "JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", ui-monospace, monospace';
 const MONO_FONT_PR326_INITIAL_FALLBACK: FontFamily =
-  '"JetBrains Mono", "Fira Code", "Cascadia Mono", Consolas, "SF Mono", Menlo, ui-monospace, monospace';
+  '"JetBrainsMono Nerd Font", "JetBrains Mono", "Fira Code", "Cascadia Mono", Consolas, "SF Mono", Menlo, ui-monospace, monospace';
 
 export function getDefaultMonoFont(): FontFamily {
   if (typeof navigator === "undefined") return MONO_FONT_FALLBACK;
