@@ -24,9 +24,9 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
 /** Per-emotion accent color — reactive to isDark so color updates when the
  * pet window's theme flips (no stale module-level constant). Memoised so each
  * render pass doesn't re-allocate the record. */
-function useEmotionColor(isDark: boolean): Record<PetEmotion, string> {
+function useEmotionColor(): Record<PetEmotion, string> {
   return useMemo(() => ({
-    idle: isDark ? '#9aa3b2' : '#5a6473',
+    idle: 'rgb(var(--aegis-text-dim))',
     thinking: themeHex('accent'),
     typing: themeHex('primary'),
     tool: themeHex('accent'),
@@ -34,10 +34,10 @@ function useEmotionColor(isDark: boolean): Record<PetEmotion, string> {
     happy: themeHex('success'),
     celebrate: themeHex('success'),
     error: themeHex('danger'),
-    sleepy: isDark ? '#9aa3b2' : '#5a6473',
-    sleep: isDark ? '#7a8290' : '#404a59',
+    sleepy: 'rgb(var(--aegis-text-dim))',
+    sleep: 'rgb(var(--aegis-text-muted))',
     memory: themeHex('warning'),
-  }), [isDark]);
+  }), []);
 }
 
 /** Active states get the rich multi-line bubble (label + action + elapsed). */
@@ -96,7 +96,7 @@ function useResolvedDark(): boolean {
 export function PetBubble({ state, dragging, hovered }: { state: PetState; dragging?: boolean; hovered?: boolean }) {
   const { t } = useTranslation();
   const isDark = useResolvedDark();
-  const emotionColor = useEmotionColor(isDark);
+  const emotionColor = useEmotionColor();
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
 
