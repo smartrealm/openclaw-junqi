@@ -223,11 +223,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         terminalRef.current = null;
         fitAddonRef.current = null;
         disposeCharSizeOverride();
-        webglHandle.dispose();
+        try { webglHandle.dispose(); } catch { /* addon may not have loaded */ }
         disposeScrollbarAutoHide();
         disposeMacWebKitGuard();
         disposeInputFix();
-        term.dispose();
+        try { term.dispose(); } catch { /* already gone — rapid tab close */ }
         invoke("kill_shell", { shellId }).catch(() => {});
       };
     }, [shellId, projectPath]);
