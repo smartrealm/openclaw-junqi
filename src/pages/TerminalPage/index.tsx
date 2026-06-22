@@ -10,38 +10,26 @@ import {
 import { FileExplorer } from "@/components/FileExplorer";
 import { GitChanges } from "@/components/Git";
 import { GitHistory } from "@/components/Git";
-import { useRef, useState, useCallback, useEffect, useMemo } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { homeDir } from "@tauri-apps/api/path";
+import { invoke } from "@tauri-apps/api/core";
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   getDefaultMonoFont,
 } from "@/_nezha_root/types";
 import {
-  FolderOpen, GitBranch, History, X, Terminal, Sparkles, Command,
+  FolderOpen, GitBranch, History, X, Terminal,
 } from "lucide-react";
 
-// ── CLI tool definitions ────────────────────────────────────────────
+// ── CLI tool definitions (detected at runtime) ──────────────────────
 
 interface CLITool {
   id: string;
   label: string;
-  cmd: string;
   icon: string;
-  color: string;
+  cmd: string;
 }
-
-/** Tools that write their full CLI command to the terminal on click. */
-const CLI_TOOLS: CLITool[] = [
-  { id: "codex",    label: "Codex",    cmd: "codex\n",       icon: "🧠", color: "var(--aegis-accent)" },
-  { id: "claude",   label: "Claude",   cmd: "claude\n",      icon: "🤖", color: "var(--aegis-primary)" },
-  { id: "pi",       label: "Pi",       cmd: "pi\n",          icon: "💡", color: "var(--aegis-warning)" },
-  { id: "cursor",   label: "Cursor",   cmd: "cursor-agent\n",icon: "🖱️", color: "var(--aegis-success)" },
-  { id: "gh",       label: "GH CLI",   cmd: "gh ",           icon: "🐙", color: "var(--aegis-text-dim)" },
-  { id: "docker",   label: "Docker",   cmd: "docker ",       icon: "🐳", color: "var(--aegis-text-dim)" },
-  { id: "git-log",  label: "Git Log",  cmd: "git log --oneline -10\n", icon: "📜", color: "var(--aegis-text-dim)" },
-  { id: "npm",      label: "npm",      cmd: "npm ",          icon: "📦", color: "var(--aegis-text-dim)" },
-];
 
 type RightPanel = null | "files" | "git-changes" | "git-history";
 
@@ -56,6 +44,12 @@ export function TerminalPage() {
   const [projectPath, setProjectPath] = useState("/");
   useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
   const projectName = projectPath.split("/").pop() || "home";
+
+  // ── Detect installed CLI tools dynamically ──
+  const [cliTools, setCliTools] = useState<CLITool[]>([]);
+  useEffect(() => {
+    invoke<CLITool[]>("detect_cli_tools").then(setCliTools).catch(() => setCliTools([]));
+  }, []);
 
   // Right panel
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
@@ -89,43 +83,30 @@ export function TerminalPage() {
     <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden", background: "var(--bg-root)" }}>
       {/* Main terminal area */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* CLI tool quick-launch bar */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 border-b shrink-0 overflow-x-auto scrollbar-hidden"
+        {/* CLI tool quick-launch bar — only shown when tools are detected */}
+        {cliTools.length > 0 && (
+        <div className="flex items-center gap-1 px-3 py-1 border-b shrink-0 overflow-x-auto scrollbar-hidden"
           style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
-          <Terminal size={12} style={{ color: "var(--text-dim)", flexShrink: 0 }} />
-          <span className="text-[10px] font-semibold text-aegis-text-dim uppercase tracking-wider mr-2 shrink-0 hidden sm:inline">
-            {t("terminal.tools", "Quick Launch")}
-          </span>
-          {CLI_TOOLS.map((tool) => (
+          <Terminal size={11} style={{ color: "var(--text-dim)", flexShrink: 0 }} />
+          {cliTools.map((tool) => (
             <button
               key={tool.id}
               type="button"
               onClick={() => runTool(tool.cmd)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium shrink-0 transition-colors"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 transition-colors hover:brightness-110"
               style={{
                 color: "var(--text-secondary)",
                 background: "var(--bg-subtle)",
                 border: "1px solid var(--border-dim)",
               }}
-              title={`Run: ${tool.cmd.trim()}`}
+              title={tool.label}
             >
               <span>{tool.icon}</span>
               <span className="hidden md:inline">{tool.label}</span>
             </button>
           ))}
-          {/* Divider + custom input */}
-          <span className="w-px h-4 mx-1 shrink-0 hidden sm:block" style={{ background: "var(--border-dim)" }} />
-          <input
-            placeholder="cmd…"
-            className="hidden sm:block w-[80px] bg-transparent border-none outline-none text-[11px] text-aegis-text-muted placeholder:text-aegis-text-dim"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && e.currentTarget.value.trim()) {
-                runTool(e.currentTarget.value + "\n");
-                e.currentTarget.value = "";
-              }
-            }}
-          />
         </div>
+        )}
 
         {/* Terminal */}
         <div style={{ flex: 1, minHeight: 0 }}>

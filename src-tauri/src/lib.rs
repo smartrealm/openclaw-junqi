@@ -34,6 +34,7 @@ pub fn run() {
             commands::system::open_folder,
             // Fonts
             commands::font::get_system_fonts,
+            commands::cli_tools::detect_cli_tools,
             // Screenshot
             commands::screenshot::screenshot_check_permission,
             commands::screenshot::screenshot_interactive,

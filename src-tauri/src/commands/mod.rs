@@ -1,3 +1,4 @@
+pub mod cli_tools;
 pub mod font;
 
 pub mod config;
