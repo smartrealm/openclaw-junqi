@@ -20,7 +20,7 @@ import {
   getDefaultMonoFont,
 } from "@/_nezha_root/types";
 import {
-  FolderOpen, GitBranch, History, X, Terminal, ChevronDown,
+  FolderOpen, GitBranch, History, X, ChevronDown,
 } from "lucide-react";
 
 type RightPanel = null | "files" | "git-changes" | "git-history";
@@ -155,83 +155,82 @@ function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; labe
   );
 }
 
-// ── Agent launch bar — nezha-style agent + permission picker ──
+// ── Agent launch bar — nezha-style dropdown agent + permission picker ──
 
-const AI_AGENTS = ["codex", "claude", "pi", "cursor-agent"] as const;
+const AI_AGENT_IDS = ["codex", "claude", "pi", "cursor-agent", "aider", "ollama", "qwen", "gemini", "cody", "gptme"];
 const PERM_MODES = ["ask", "auto_edit", "full_access"] as const;
 type PermMode = typeof PERM_MODES[number];
 
 function AgentLaunchBar({ tools, onLaunch }: { tools: CLITool[]; onLaunch: (cmd: string) => void }) {
-  const aiTools = tools.filter((t) => AI_AGENTS.includes(t.id as any));
+  const aiTools = tools.filter((t) => AI_AGENT_IDS.includes(t.id));
   const [agent, setAgent] = useState(aiTools[0]?.id ?? "");
   const [perm, setPerm] = useState<PermMode>("ask");
+  const [agentOpen, setAgentOpen] = useState(false);
   const [permOpen, setPermOpen] = useState(false);
-  const permRef = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!permOpen) return;
-    const h = (e: MouseEvent) => { if (permRef.current && !permRef.current.contains(e.target as Node)) setPermOpen(false); };
+    if (!agentOpen && !permOpen) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setAgentOpen(false); setPermOpen(false); } };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
-  }, [permOpen]);
+  }, [agentOpen, permOpen]);
 
   if (aiTools.length === 0) return null;
 
+  const selected = aiTools.find((t) => t.id === agent) ?? aiTools[0];
+  const needsPerm = agent === "codex" || agent === "claude";
+
   const launch = () => {
-    const cmd = agent === "codex" || agent === "claude"
-      ? `${agent} --permission-mode ${perm}\n`
-      : `${agent}\n`;
+    const cmd = needsPerm ? `${agent} --permission-mode ${perm}\n` : `${agent}\n`;
     onLaunch(cmd);
   };
 
   const permLabel = (p: PermMode) => p === "ask" ? "Ask" : p === "auto_edit" ? "Auto Edit" : "Full Access";
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
-      {/* Agent selector */}
-      <div className="flex items-center gap-1">
-        {aiTools.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setAgent(t.id)}
-            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors"
-            style={{
-              color: agent === t.id ? "var(--control-active-fg)" : "var(--text-muted)",
-              background: agent === t.id ? "var(--control-active-bg)" : "transparent",
-              border: agent === t.id ? "1px solid var(--control-active-fg)" : "1px solid transparent",
-            }}
-          >
-            <span>{t.icon}</span>
-            <span>{t.label}</span>
-          </button>
-        ))}
+    <div ref={ref} className="flex items-center gap-2 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
+      {/* Agent dropdown */}
+      <div style={{ position: "relative" }}>
+        <button
+          onClick={() => { setAgentOpen((v) => !v); setPermOpen(false); }}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors"
+          style={{ color: "var(--text-primary)", background: agentOpen ? "var(--bg-hover)" : "var(--bg-subtle)", border: "1px solid var(--border-dim)", minWidth: 90 }}
+        >
+          <span>{selected.icon}</span>
+          <span>{selected.label}</span>
+          <ChevronDown size={9} style={{ marginLeft: "auto", transform: agentOpen ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
+        </button>
+        {agentOpen && (
+          <div className="absolute top-full left-0 mt-1 z-50 rounded-lg overflow-hidden w-44"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 32px rgba(0,0,0,0.25)" }}>
+            {aiTools.map((t) => (
+              <button key={t.id} onClick={() => { setAgent(t.id); setAgentOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-left transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
+                style={{ color: t.id === agent ? "var(--control-active-fg)" : "var(--text-secondary)", background: t.id === agent ? "var(--control-active-bg)" : "transparent" }}>
+                <span>{t.icon}</span> <span className="font-medium">{t.label}</span>
+                <span className="ml-auto text-[9px] opacity-50 font-mono">{t.id}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Permission selector — only for claude/codex */}
-      {(agent === "claude" || agent === "codex") && (
-        <div ref={permRef} style={{ position: "relative" }}>
-          <button
-            onClick={() => setPermOpen((v) => !v)}
-            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium"
-            style={{
-              color: "var(--text-dim)",
-              background: permOpen ? "var(--bg-hover)" : "transparent",
-              border: "1px solid var(--border-dim)",
-            }}
-          >
-            {permLabel(perm)}
-            <ChevronDown size={8} />
+      {/* Permission dropdown — only for claude/codex */}
+      {needsPerm && (
+        <div style={{ position: "relative" }}>
+          <button onClick={() => { setPermOpen((v) => !v); setAgentOpen(false); }}
+            className="flex items-center gap-0.5 px-2 py-1 rounded text-[9px] font-medium transition-colors"
+            style={{ color: "var(--text-dim)", background: permOpen ? "var(--bg-hover)" : "transparent", border: "1px solid var(--border-dim)" }}>
+            {permLabel(perm)} <ChevronDown size={8} style={{ transform: permOpen ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
           </button>
           {permOpen && (
             <div className="absolute top-full left-0 mt-1 z-50 rounded-lg overflow-hidden w-28"
               style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" }}>
               {PERM_MODES.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => { setPerm(p); setPermOpen(false); }}
-                  className="w-full px-3 py-1.5 text-[10px] text-left transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
-                  style={{ color: p === perm ? "var(--control-active-fg)" : "var(--text-secondary)", background: p === perm ? "var(--control-active-bg)" : "transparent" }}
-                >
+                <button key={p} onClick={() => { setPerm(p); setPermOpen(false); }}
+                  className="w-full px-3 py-1.5 text-[10px] text-left transition-colors"
+                  style={{ color: p === perm ? "var(--control-active-fg)" : "var(--text-secondary)", background: p === perm ? "var(--control-active-bg)" : "transparent" }}>
                   {permLabel(p)}
                 </button>
               ))}
@@ -240,13 +239,9 @@ function AgentLaunchBar({ tools, onLaunch }: { tools: CLITool[]; onLaunch: (cmd:
         </div>
       )}
 
-      {/* Launch button */}
-      <button
-        onClick={launch}
-        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ml-auto transition-colors"
-        style={{ color: "#fff", background: "var(--primary-action-bg)" }}
-      >
-        <Terminal size={10} />
+      {/* Launch */}
+      <button onClick={launch} className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-semibold ml-auto transition-colors"
+        style={{ color: "#fff", background: "var(--primary-action-bg)" }}>
         Launch
       </button>
     </div>
