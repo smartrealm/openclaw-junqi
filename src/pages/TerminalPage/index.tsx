@@ -91,15 +91,9 @@ export function TerminalPage() {
     <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden", background: "var(--bg-root)" }}>
       {/* Main terminal area */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* AI tool launcher — dropdown like nezha agent picker */}
+        {/* Agent launcher — nezha-style: agent dropdown + permission + launch */}
         {cliTools.length > 0 && (
-        <div className="flex items-center gap-1.5 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
-          <Terminal size={11} style={{ color: "var(--text-dim)", flexShrink: 0 }} />
-          <span className="text-[10px] font-semibold text-aegis-text-dim uppercase tracking-wider mr-1 shrink-0">
-            AI Tools
-          </span>
-          <AIToolDropdown tools={cliTools.filter(t => ['codex','claude','pi','cursor-agent','aider','ollama','qwen','gemini','cody','gptme'].includes(t.id))} onSelect={runTool} />
-        </div>
+        <AgentLaunchBar tools={cliTools} onLaunch={runTool} />
         )}
 
         {/* Terminal */}
@@ -161,49 +155,100 @@ function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; labe
   );
 }
 
-function AIToolDropdown({ tools, onSelect }: { tools: CLITool[]; onSelect: (cmd: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+// ── Agent launch bar — nezha-style agent + permission picker ──
+
+const AI_AGENTS = ["codex", "claude", "pi", "cursor-agent"] as const;
+const PERM_MODES = ["ask", "auto_edit", "full_access"] as const;
+type PermMode = typeof PERM_MODES[number];
+
+function AgentLaunchBar({ tools, onLaunch }: { tools: CLITool[]; onLaunch: (cmd: string) => void }) {
+  const aiTools = tools.filter((t) => AI_AGENTS.includes(t.id as any));
+  const [agent, setAgent] = useState(aiTools[0]?.id ?? "");
+  const [perm, setPerm] = useState<PermMode>("ask");
+  const [permOpen, setPermOpen] = useState(false);
+  const permRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    if (!open) return;
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    if (!permOpen) return;
+    const h = (e: MouseEvent) => { if (permRef.current && !permRef.current.contains(e.target as Node)) setPermOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
-  }, [open]);
+  }, [permOpen]);
 
-  if (tools.length === 0) return null;
+  if (aiTools.length === 0) return null;
+
+  const launch = () => {
+    const cmd = agent === "codex" || agent === "claude"
+      ? `${agent} --permission-mode ${perm}\n`
+      : `${agent}\n`;
+    onLaunch(cmd);
+  };
+
+  const permLabel = (p: PermMode) => p === "ask" ? "Ask" : p === "auto_edit" ? "Auto Edit" : "Full Access";
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors"
-        style={{
-          color: "var(--text-secondary)",
-          background: open ? "var(--bg-hover)" : "var(--bg-subtle)",
-          border: "1px solid var(--border-dim)",
-        }}
-      >
-        <span>Launch AI</span>
-        <ChevronDown size={10} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
-      </button>
-      {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 rounded-xl overflow-hidden w-48"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 32px rgba(0,0,0,0.25)" }}>
-          {tools.map((tool) => (
-            <button
-              key={tool.id}
-              onClick={() => { onSelect(tool.cmd); setOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-left transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              <span>{tool.icon}</span>
-              <span className="font-medium">{tool.label}</span>
-              <span className="ml-auto text-[9px] opacity-50 font-mono">{tool.id}</span>
-            </button>
-          ))}
+    <div className="flex items-center gap-2 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
+      {/* Agent selector */}
+      <div className="flex items-center gap-1">
+        {aiTools.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setAgent(t.id)}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors"
+            style={{
+              color: agent === t.id ? "var(--control-active-fg)" : "var(--text-muted)",
+              background: agent === t.id ? "var(--control-active-bg)" : "transparent",
+              border: agent === t.id ? "1px solid var(--control-active-fg)" : "1px solid transparent",
+            }}
+          >
+            <span>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Permission selector — only for claude/codex */}
+      {(agent === "claude" || agent === "codex") && (
+        <div ref={permRef} style={{ position: "relative" }}>
+          <button
+            onClick={() => setPermOpen((v) => !v)}
+            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium"
+            style={{
+              color: "var(--text-dim)",
+              background: permOpen ? "var(--bg-hover)" : "transparent",
+              border: "1px solid var(--border-dim)",
+            }}
+          >
+            {permLabel(perm)}
+            <ChevronDown size={8} />
+          </button>
+          {permOpen && (
+            <div className="absolute top-full left-0 mt-1 z-50 rounded-lg overflow-hidden w-28"
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" }}>
+              {PERM_MODES.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => { setPerm(p); setPermOpen(false); }}
+                  className="w-full px-3 py-1.5 text-[10px] text-left transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
+                  style={{ color: p === perm ? "var(--control-active-fg)" : "var(--text-secondary)", background: p === perm ? "var(--control-active-bg)" : "transparent" }}
+                >
+                  {permLabel(p)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
+
+      {/* Launch button */}
+      <button
+        onClick={launch}
+        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ml-auto transition-colors"
+        style={{ color: "#fff", background: "var(--primary-action-bg)" }}
+      >
+        <Terminal size={10} />
+        Launch
+      </button>
     </div>
   );
 }
