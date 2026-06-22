@@ -37,6 +37,20 @@ export function TerminalPage() {
   useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
   const projectName = projectPath.split("/").pop() || "home";
 
+  // ── Terminal container height (ResizeObserver → exact px for xterm) ──
+  const termWrapRef = useRef<HTMLDivElement>(null);
+  const [termHeight, setTermHeight] = useState(400);
+  useEffect(() => {
+    const el = termWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      const h = e?.contentRect?.height;
+      if (h && h > 0) setTermHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // ── CLI tools: auto-detect + user-customizable (persisted to localStorage) ──
   const [cliTools, setCliTools] = useState<CLITool[]>(() => loadTools());
   useEffect(() => {
@@ -103,7 +117,7 @@ export function TerminalPage() {
         )}
 
         {/* Terminal */}
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <ShellTerminalPanel
             ref={panelRef}
             themeVariant={themeVariant}
@@ -112,6 +126,7 @@ export function TerminalPage() {
             projectPath={projectPath}
             projectId="default"
             onClose={() => {}}
+            height={termHeight}
           />
         </div>
       </div>
