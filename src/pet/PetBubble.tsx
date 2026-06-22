@@ -130,7 +130,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const bubbleStyle: CSSProperties = {
     maxWidth: 240,
     textAlign: 'center',
-    color: isDark ? '#ffffff' : '#16181f',
+    color: 'rgb(var(--aegis-text))',
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 12,
     fontWeight: 500,
