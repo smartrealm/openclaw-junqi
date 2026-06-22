@@ -13,6 +13,7 @@ import { GitHistory } from "@/components/Git";
 import { useRef, useState, useCallback, useEffect } from "react";
 import { homeDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
+import { loadTools, mergeDetected, type CLITool } from "@/utils/terminalTools";
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -21,15 +22,6 @@ import {
 import {
   FolderOpen, GitBranch, History, X, Terminal,
 } from "lucide-react";
-
-// ── CLI tool definitions (detected at runtime) ──────────────────────
-
-interface CLITool {
-  id: string;
-  label: string;
-  icon: string;
-  cmd: string;
-}
 
 type RightPanel = null | "files" | "git-changes" | "git-history";
 
@@ -45,10 +37,12 @@ export function TerminalPage() {
   useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
   const projectName = projectPath.split("/").pop() || "home";
 
-  // ── Detect installed CLI tools dynamically ──
-  const [cliTools, setCliTools] = useState<CLITool[]>([]);
+  // ── CLI tools: auto-detect + user-customizable (persisted to localStorage) ──
+  const [cliTools, setCliTools] = useState<CLITool[]>(() => loadTools());
   useEffect(() => {
-    invoke<CLITool[]>("detect_cli_tools").then(setCliTools).catch(() => setCliTools([]));
+    invoke<CLITool[]>("detect_cli_tools")
+      .then((detected) => setCliTools(mergeDetected(detected)))
+      .catch(() => { /* keep existing tools */ });
   }, []);
 
   // Right panel
