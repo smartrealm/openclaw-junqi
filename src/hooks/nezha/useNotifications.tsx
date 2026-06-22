@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { NotificationResult } from "../types";
-import { useI18n } from "../i18n";
+import type { NotificationResult } from "@/_nezha_root/types";
+import { useI18n } from "@/components/Terminal/i18n-fallback";
 
 interface NotificationsContextValue {
   result: NotificationResult | null;

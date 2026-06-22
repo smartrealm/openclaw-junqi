@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Keyboard,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -25,6 +25,8 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
+import { AboutPanel } from '@/components/settings/AboutPanel';
+import { ShortcutsPanel } from '@/components/settings/ShortcutsPanel';
 import { FontPanel } from '@/components/settings/FontPanel';
 import { AegisIcon } from '@/components/shared/AegisIcon';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
@@ -95,7 +97,7 @@ export function SettingsPageFull() {
   const [checkingVersion, setCheckingVersion] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'shortcuts' | 'about'>('appearance');
 
   const handleCheckVersion = async () => {
     if (checkingVersion) return;
@@ -361,6 +363,7 @@ export function SettingsPageFull() {
               ['pet', t('settings.tab.pet', '萌宠'), PawPrint],
               ['connect', t('settings.tab.connect', '连接'), Wifi],
               ['storage', t('settings.tab.storage', '存储'), HardDrive],
+              ['shortcuts', t('settings.tab.shortcuts', '快捷键'), Keyboard],
               ['about', t('settings.tab.about', '关于'), Info],
             ] as const).map(([key, label, Icon]) => (
               <button key={key} onClick={() => setActiveTab(key)}
