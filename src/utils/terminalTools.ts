@@ -14,13 +14,8 @@ export interface CLITool {
 
 const STORAGE_KEY = "aegis:terminal-tools";
 
-/** Default tools — used as fallback if localStorage is empty. */
-const DEFAULTS: CLITool[] = [
-  { id: "git-log",  label: "Git Log",  icon: "📜", cmd: "git log --oneline -20\n" },
-  { id: "git-stat", label: "Git Status",icon: "📋", cmd: "git status\n" },
-  { id: "npm",      label: "npm",      icon: "📦", cmd: "npm " },
-  { id: "ls",       label: "List Files",icon: "📁", cmd: "ls -la\n" },
-];
+/** Default tools — used as fallback if localStorage is empty and nothing detected. */
+const DEFAULTS: CLITool[] = [];
 
 export function loadTools(): CLITool[] {
   try {

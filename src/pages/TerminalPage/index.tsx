@@ -20,7 +20,7 @@ import {
   getDefaultMonoFont,
 } from "@/_nezha_root/types";
 import {
-  FolderOpen, GitBranch, History, X, Terminal,
+  FolderOpen, GitBranch, History, X, Terminal, ChevronDown,
 } from "lucide-react";
 
 type RightPanel = null | "files" | "git-changes" | "git-history";
@@ -91,28 +91,14 @@ export function TerminalPage() {
     <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden", background: "var(--bg-root)" }}>
       {/* Main terminal area */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* CLI tool quick-launch bar — only shown when tools are detected */}
+        {/* AI tool launcher — dropdown like nezha agent picker */}
         {cliTools.length > 0 && (
-        <div className="flex items-center gap-1 px-3 py-1 border-b shrink-0 overflow-x-auto scrollbar-hidden"
-          style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
+        <div className="flex items-center gap-1.5 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
           <Terminal size={11} style={{ color: "var(--text-dim)", flexShrink: 0 }} />
-          {cliTools.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              onClick={() => runTool(tool.cmd)}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 transition-colors hover:brightness-110"
-              style={{
-                color: "var(--text-secondary)",
-                background: "var(--bg-subtle)",
-                border: "1px solid var(--border-dim)",
-              }}
-              title={tool.label}
-            >
-              <span>{tool.icon}</span>
-              <span className="hidden md:inline">{tool.label}</span>
-            </button>
-          ))}
+          <span className="text-[10px] font-semibold text-aegis-text-dim uppercase tracking-wider mr-1 shrink-0">
+            AI Tools
+          </span>
+          <AIToolDropdown tools={cliTools.filter(t => ['codex','claude','pi','cursor-agent','aider','ollama','qwen','gemini','cody','gptme'].includes(t.id))} onSelect={runTool} />
         </div>
         )}
 
@@ -172,5 +158,52 @@ function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; labe
     <button onClick={onClick} title={label} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "var(--control-active-bg)" : "transparent", color: active ? "var(--control-active-fg)" : "var(--text-muted)", transition: "background 0.12s, color 0.12s" }}>
       {icon}
     </button>
+  );
+}
+
+function AIToolDropdown({ tools, onSelect }: { tools: CLITool[]; onSelect: (cmd: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  if (tools.length === 0) return null;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors"
+        style={{
+          color: "var(--text-secondary)",
+          background: open ? "var(--bg-hover)" : "var(--bg-subtle)",
+          border: "1px solid var(--border-dim)",
+        }}
+      >
+        <span>Launch AI</span>
+        <ChevronDown size={10} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 rounded-xl overflow-hidden w-48"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 32px rgba(0,0,0,0.25)" }}>
+          {tools.map((tool) => (
+            <button
+              key={tool.id}
+              onClick={() => { onSelect(tool.cmd); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-left transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <span>{tool.icon}</span>
+              <span className="font-medium">{tool.label}</span>
+              <span className="ml-auto text-[9px] opacity-50 font-mono">{tool.id}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
