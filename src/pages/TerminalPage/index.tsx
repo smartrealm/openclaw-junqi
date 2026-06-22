@@ -37,25 +37,8 @@ export function TerminalPage() {
   useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
   const projectName = projectPath.split("/").pop() || "home";
 
-  // ── Terminal container height — ResizeObserver, no flicker ──
+  // Terminal fills available flex space (no ResizeObserver needed)
   const termWrapRef = useRef<HTMLDivElement>(null);
-  const [termReady, setTermReady] = useState(false);
-  const termHeightRef = useRef(400);
-  useEffect(() => {
-    const el = termWrapRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => {
-      const h = e?.contentRect?.height;
-      if (h && h > 0) {
-        termHeightRef.current = h;
-        setTermReady(true);
-      }
-    });
-    ro.observe(el);
-    // Also set ready on next frame (fallback)
-    const t = setTimeout(() => setTermReady(true), 100);
-    return () => { ro.disconnect(); clearTimeout(t); };
-  }, []);
 
   // ── CLI tools: auto-detect + user-customizable (persisted to localStorage) ──
   const [cliTools, setCliTools] = useState<CLITool[]>(() => loadTools());
@@ -102,22 +85,15 @@ export function TerminalPage() {
 
         {/* Terminal */}
         <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          {termReady ? (
-            <ShellTerminalPanel
-              ref={panelRef}
-              themeVariant={themeVariant}
-              terminalFontSize={terminalFontSize}
-              monoFontFamily={monoFontFamily}
-              projectPath={projectPath}
-              projectId="default"
-              onClose={() => {}}
-              height={termHeightRef.current}
-            />
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-[12px] text-aegis-text-dim">
-              Terminal…
-            </div>
-          )}
+          <ShellTerminalPanel
+            ref={panelRef}
+            themeVariant={themeVariant}
+            terminalFontSize={terminalFontSize}
+            monoFontFamily={monoFontFamily}
+            projectPath={projectPath}
+            projectId="default"
+            onClose={() => {}}
+          />
         </div>
       </div>
 
