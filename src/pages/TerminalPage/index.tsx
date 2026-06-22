@@ -12,6 +12,7 @@ import { FileExplorer } from "@/components/FileExplorer";
 import { GitChanges } from "@/components/Git";
 import { GitHistory } from "@/components/Git";
 import { useRef, useState, useCallback, useEffect } from "react";
+import { homeDir } from "@tauri-apps/api/path";
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -31,8 +32,9 @@ export function TerminalPage() {
 
   const terminalFontSize: TerminalFontSize = DEFAULT_TERMINAL_FONT_SIZE;
   const monoFontFamily: FontFamily = getDefaultMonoFont();
-  const projectPath = ".";
-  const projectName = "workspace";
+  const [projectPath, setProjectPath] = useState("/");
+  useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
+  const projectName = projectPath.split("/").pop() || "home";
 
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
   const [rightPanelWidth, setRightPanelWidth] = useState(360);
