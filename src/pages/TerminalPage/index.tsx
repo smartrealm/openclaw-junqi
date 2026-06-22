@@ -37,18 +37,24 @@ export function TerminalPage() {
   useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
   const projectName = projectPath.split("/").pop() || "home";
 
-  // ── Terminal container height (ResizeObserver → exact px for xterm) ──
+  // ── Terminal container height — ResizeObserver, no flicker ──
   const termWrapRef = useRef<HTMLDivElement>(null);
-  const [termHeight, setTermHeight] = useState(400);
+  const [termReady, setTermReady] = useState(false);
+  const termHeightRef = useRef(400);
   useEffect(() => {
     const el = termWrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([e]) => {
       const h = e?.contentRect?.height;
-      if (h && h > 0) setTermHeight(h);
+      if (h && h > 0) {
+        termHeightRef.current = h;
+        setTermReady(true);
+      }
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    // Also set ready on next frame (fallback)
+    const t = setTimeout(() => setTermReady(true), 100);
+    return () => { ro.disconnect(); clearTimeout(t); };
   }, []);
 
   // ── CLI tools: auto-detect + user-customizable (persisted to localStorage) ──
@@ -92,22 +98,26 @@ export function TerminalPage() {
       {/* Main terminal area */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Agent launcher — nezha-style: agent dropdown + permission + launch */}
-        {cliTools.length > 0 && (
         <AgentLaunchBar tools={cliTools} onLaunch={runTool} />
-        )}
 
         {/* Terminal */}
         <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          <ShellTerminalPanel
-            ref={panelRef}
-            themeVariant={themeVariant}
-            terminalFontSize={terminalFontSize}
-            monoFontFamily={monoFontFamily}
-            projectPath={projectPath}
-            projectId="default"
-            onClose={() => {}}
-            height={termHeight}
-          />
+          {termReady ? (
+            <ShellTerminalPanel
+              ref={panelRef}
+              themeVariant={themeVariant}
+              terminalFontSize={terminalFontSize}
+              monoFontFamily={monoFontFamily}
+              projectPath={projectPath}
+              projectId="default"
+              onClose={() => {}}
+              height={termHeightRef.current}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-[12px] text-aegis-text-dim">
+              Terminal…
+            </div>
+          )}
         </div>
       </div>
 
@@ -176,7 +186,13 @@ function AgentLaunchBar({ tools, onLaunch }: { tools: CLITool[]; onLaunch: (cmd:
     return () => document.removeEventListener("mousedown", h);
   }, [agentOpen, permOpen]);
 
-  if (aiTools.length === 0) return null;
+  if (aiTools.length === 0) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
+        <span className="text-[10px] text-aegis-text-dim">Detecting AI tools…</span>
+      </div>
+    );
+  }
 
   const selected = aiTools.find((t) => t.id === agent) ?? aiTools[0];
   const needsPerm = agent === "codex" || agent === "claude";
