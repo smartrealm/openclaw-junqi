@@ -43,9 +43,19 @@ export function TerminalPage() {
   // ── CLI tools: auto-detect + user-customizable (persisted to localStorage) ──
   const [cliTools, setCliTools] = useState<CLITool[]>(() => loadTools());
   useEffect(() => {
-    invoke<CLITool[]>("detect_cli_tools")
-      .then((detected) => setCliTools(mergeDetected(detected)))
-      .catch(() => { /* keep existing tools */ });
+    const detect = () => {
+      invoke<CLITool[]>("detect_cli_tools")
+        .then((detected) => {
+          if (detected && detected.length > 0) {
+            setCliTools(mergeDetected(detected));
+          }
+        })
+        .catch((err) => {
+          console.warn("[Terminal] detect_cli_tools failed, retrying...", err);
+          setTimeout(detect, 2000);
+        });
+    };
+    detect();
   }, []);
 
   // Right panel
