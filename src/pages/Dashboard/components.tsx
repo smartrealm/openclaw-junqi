@@ -170,18 +170,22 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
 // ═══════════════════════════════════════════════════════════
 // FeedItem — Activity feed entry with connector line
 // ═══════════════════════════════════════════════════════════
-export function FeedItem({ color, text, time, isLast }: {
+export function FeedItem({ color, text, time, isLast, agentName, onClick }: {
   color: string;
   text: string;
   time: string;
   isLast?: boolean;
+  agentName?: string;
+  onClick?: () => void;
 }) {
   return (
-    <motion.div
+    <motion.button
+      type="button"
+      onClick={onClick}
       initial={{ opacity: 0, x: 6 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.25 }}
-      className="flex gap-2.5 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0"
+      className="w-full text-left flex gap-2.5 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors"
     >
       <div className="flex flex-col items-center pt-1.5">
         <div
@@ -194,9 +198,14 @@ export function FeedItem({ color, text, time, isLast }: {
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[11px] text-aegis-text leading-[1.4]">{text}</div>
-        <div className="text-[9px] text-aegis-text-muted font-mono mt-0.5">{time}</div>
+        <div className="flex items-center gap-2 mt-0.5">
+          {agentName && (
+            <span className="text-[9px] font-medium text-aegis-accent truncate max-w-[100px]">{agentName}</span>
+          )}
+          <span className="text-[9px] text-aegis-text-muted font-mono">{time}</span>
+        </div>
       </div>
-    </motion.div>
+    </motion.button>
   );
 }
 

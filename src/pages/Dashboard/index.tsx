@@ -257,9 +257,21 @@ export function DashboardPage() {
   // Uptime
   const uptime = connectedSince.current ? Date.now() - connectedSince.current : 0;
 
+  // Resolve agent name from session key
+  const agentNameByKey = useMemo(() => {
+    const map: Record<string, string> = {};
+    agents.forEach((a: any) => { map[a.id] = a.name || a.id; });
+    return map;
+  }, [agents]);
+  const agentNameFor = (key: string) => {
+    const parts = key.split(':');
+    const agentId = parts.length >= 2 ? parts[1] : 'main';
+    return agentNameByKey[agentId] || agentId;
+  };
+
   // Activity feed items
   const feedItems = useMemo(() => {
-    const items: { color: string; text: string; time: string }[] = [];
+    const items: { color: string; text: string; time: string; sessionKey: string; agentName: string }[] = [];
     activeSessions.slice(0, 6).forEach((s: any) => {
       const key    = s.key || 'unknown';
       const isMain = key === 'agent:main:main';
@@ -272,6 +284,8 @@ export function DashboardPage() {
         color: isMain ? themeHex('primary') : themeHex('accent'),
         text:  t('dashboard.feedTokens', { label, n: fmtTokens(s.totalTokens || 0) }),
         time:  timeAgo(s.lastActive),
+        sessionKey: key,
+        agentName: agentNameFor(key),
       });
     });
     const totalCompactions = sessions.reduce((n: number, s: any) => n + (s.compactions || 0), 0);
@@ -722,6 +736,8 @@ export function DashboardPage() {
                   text={item.text}
                   time={item.time}
                   isLast={i === feedItems.length - 1}
+                  agentName={item.agentName}
+                  onClick={() => { useChatStore.getState().openTab(item.sessionKey); navigate('/chat'); }}
                 />
               ))
             ) : (
