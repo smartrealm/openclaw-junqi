@@ -321,7 +321,7 @@ export function RunningView({
                 width: "100%",
                 fontSize: 14,
                 fontWeight: 600,
-                color: "var(--text-primary)",
+                color: "rgb(var(--aegis-text))",
                 background: "transparent",
                 border: "none",
                 borderBottom: "2px solid var(--border-strong)",
@@ -352,7 +352,7 @@ export function RunningView({
               style={{
                 fontSize: 14,
                 fontWeight: 600,
-                color: "var(--text-primary)",
+                color: "rgb(var(--aegis-text))",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -371,9 +371,9 @@ export function RunningView({
               style={{
                 ...s.taskRenameBtn,
                 flexShrink: 0,
-                color: "var(--text-secondary)",
+                color: "rgb(var(--aegis-text-secondary))",
                 opacity: hoverHeader ? 1 : 0.65,
-                background: hoverHeader ? "var(--bg-input)" : "transparent",
+                background: hoverHeader ? "var(--aegis-input)" : "transparent",
                 transition: "opacity 0.15s ease, background 0.15s ease",
               }}
               onClick={() => {
@@ -393,11 +393,11 @@ export function RunningView({
               style={{
                 ...s.taskRenameBtn,
                 flexShrink: 0,
-                color: isActive ? "var(--text-hint)" : "var(--text-secondary)",
+                color: isActive ? "rgb(var(--aegis-text-dim))" : "rgb(var(--aegis-text-secondary))",
                 opacity: generatingName ? 1 : isActive ? 0.4 : hoverHeader ? 1 : 0.65,
                 background:
                   hoverHeader && !isActive && !generatingName
-                    ? "var(--bg-input)"
+                    ? "var(--aegis-input)"
                     : "transparent",
                 cursor: generatingName || isActive ? "not-allowed" : "pointer",
                 transition: "opacity 0.15s ease, background 0.15s ease, color 0.15s ease",
@@ -507,7 +507,7 @@ export function RunningView({
       <div
         style={{
           padding: "4px 20px 12px",
-          borderBottom: "1px solid var(--border-dim)",
+          borderBottom: "1px solid var(--aegis-border)",
           flexShrink: 0,
         }}
       >
@@ -683,7 +683,7 @@ export function RunningView({
         <div
           style={{
             padding: "10px 20px",
-            borderTop: "1px solid var(--border-dim)",
+            borderTop: "1px solid var(--aegis-border)",
             flexShrink: 0,
             display: "flex",
             alignItems: "center",
@@ -691,7 +691,7 @@ export function RunningView({
           }}
         >
           <StatusIcon status={task.status} />
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          <span style={{ fontSize: 12, color: "rgb(var(--aegis-text-muted))" }}>
             {task.status === "done"
               ? t("task.completed")
               : task.status === "failed"
@@ -717,7 +717,7 @@ type SessionFilePillTone = "success" | "warning" | "error";
 
 const sessionFilePillToneColor: Record<SessionFilePillTone, string> = {
   success: "var(--color-success)",
-  warning: "var(--color-warning)",
+  warning: "rgb(var(--aegis-warning))",
   error: "var(--color-error)",
 };
 
@@ -775,7 +775,7 @@ function SessionFilePill({
           style={{
             ...s.railStatusDot,
             background: sessionFilePillToneColor[tone],
-            borderColor: "var(--bg-input)",
+            borderColor: "var(--aegis-input)",
             ...s.runSessionStatusDot,
           }}
         />

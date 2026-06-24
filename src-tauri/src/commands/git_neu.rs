@@ -1368,3 +1368,315 @@ pub async fn git_remote_counts(
         branch,
     })
 }
+
+// ── Worktree task helpers (ported from nezha git.rs) ─────────────────────────
+//
+// Each task can run inside its own git worktree under `<project>/.nezha/worktrees/<task_id>`,
+// on a dedicated branch `nezha-task/<task_id>`. This lets multiple agents edit the same
+// repo in parallel without stomping each other's uncommitted changes.
+//
+// All four commands share the worktrees-root invariant: every worktree_path the
+// frontend sends must canonicalize under `<project>/.nezha/worktrees/`. Otherwise
+// an attacker-controlled session_path could trigger `git worktree remove` on
+// arbitrary directories.
+
+/// Sanitize the task id into a git-safe branch suffix.
+/// Git branch names can't contain spaces, `~`, `^`, `:`, `?`, `*`, `[`, `\`.
+fn task_worktree_branch_name(task_id: &str) -> String {
+    let mut sanitized: String = task_id
+        .chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => c,
+            _ => '-',
+        })
+        .collect();
+    // Strip leading dashes/dots — git rejects refs that start with `-`.
+    while sanitized.starts_with('-') || sanitized.starts_with('.') {
+        sanitized.remove(0);
+    }
+    if sanitized.is_empty() {
+        sanitized = String::from("task");
+    }
+    format!("nezha-task/{sanitized}")
+}
+
+/// Reject any `worktree_path` that does not canonicalize under
+/// `<project>/.nezha/worktrees/`. Mirrors nezha's `ensure_path_under_worktrees_root`.
+fn ensure_path_under_worktrees_root(
+    project_path: &str,
+    worktree_path: &str,
+) -> Result<(), String> {
+    let canonical_project =
+        std::fs::canonicalize(project_path).map_err(|e| format!("Bad project path: {}", e))?;
+    let worktrees_root = canonical_project.join(".nezha").join("worktrees");
+    // Ensure the root itself exists so canonicalize on the candidate doesn't fail
+    // just because no worktree has been created yet.
+    std::fs::create_dir_all(&worktrees_root)
+        .map_err(|e| format!("Failed to create worktrees root: {}", e))?;
+    let canonical_root = std::fs::canonicalize(&worktrees_root)
+        .map_err(|e| format!("Failed to resolve worktrees root: {}", e))?;
+
+    let canonical_wt = match std::fs::canonicalize(worktree_path) {
+        Ok(p) => p,
+        Err(_) => {
+            // Worktree may not exist yet (we're about to create it). Resolve the
+            // parent and re-attach the leaf.
+            let p = std::path::Path::new(worktree_path);
+            let parent = p.parent().ok_or_else(|| "Worktree path has no parent".to_string())?;
+            let leaf = p.file_name().ok_or_else(|| "Worktree path has no leaf".to_string())?;
+            let canon_parent = std::fs::canonicalize(parent)
+                .map_err(|e| format!("Failed to canonicalize worktree parent: {}", e))?;
+            canon_parent.join(leaf)
+        }
+    };
+
+    if !canonical_wt.starts_with(&canonical_root) {
+        return Err(format!(
+            "Worktree path '{}' is outside the project's worktrees root",
+            worktree_path
+        ));
+    }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct WorktreeCreated {
+    pub worktree_path: String,
+    pub worktree_branch: String,
+    pub base_branch: String,
+}
+
+/// Spawn a fresh worktree at `<project>/.nezha/worktrees/<task_id>` on a new
+/// branch `nezha-task/<task_id>` based on `base_branch`.
+#[tauri::command]
+pub async fn create_task_worktree(
+    project_path: String,
+    task_id: String,
+    base_branch: String,
+) -> Result<WorktreeCreated, String> {
+    validate_project_path(&project_path)?;
+    if task_id.trim().is_empty() {
+        return Err("Task id is required".to_string());
+    }
+    if base_branch.trim().is_empty() {
+        return Err("Base branch is required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<WorktreeCreated, String> {
+        let worktrees_dir = std::path::Path::new(&project_path)
+            .join(".nezha")
+            .join("worktrees");
+        std::fs::create_dir_all(&worktrees_dir)
+            .map_err(|e| format!("Failed to create worktrees dir: {}", e))?;
+
+        let worktree_path = worktrees_dir.join(&task_id);
+        if worktree_path.exists() {
+            return Err(format!(
+                "Worktree path already exists: {}",
+                worktree_path.display()
+            ));
+        }
+
+        let wt_path_str = path_to_string(&worktree_path)?;
+        let branch = task_worktree_branch_name(&task_id);
+
+        let output = run_git(
+            &project_path,
+            &["worktree", "add", &wt_path_str, "-b", &branch, &base_branch],
+        )?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        Ok(WorktreeCreated {
+            worktree_path: wt_path_str,
+            worktree_branch: branch,
+            base_branch,
+        })
+    })
+    .await
+    .map_err(|e| format!("Worktree task panicked: {}", e))?
+}
+
+/// Merge `branch` back into `base_branch`. Refuses if the worktree has
+/// uncommitted changes (would risk losing work).
+#[tauri::command]
+pub async fn merge_task_worktree(
+    project_path: String,
+    worktree_path: String,
+    branch: String,
+    base_branch: String,
+) -> Result<String, String> {
+    validate_project_path(&project_path)?;
+    ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+    if branch.trim().is_empty() || base_branch.trim().is_empty() {
+        return Err("Branch and base branch are required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<String, String> {
+        // 0) worktree 自身有未提交修改 → 拒绝合并
+        let wt_status = run_git(&worktree_path, &["status", "--porcelain"])?;
+        if !wt_status.status.success() {
+            return Err(String::from_utf8_lossy(&wt_status.stderr)
+                .trim()
+                .to_string());
+        }
+        if !wt_status.stdout.is_empty() {
+            return Err(
+                "Worktree has uncommitted changes; commit or stash them before merging".into(),
+            );
+        }
+
+        // 拿主仓当前 HEAD：HEAD == base 时直接 merge，否则 fetch ff（不切走 HEAD）
+        let head_out = run_git(&project_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if !head_out.status.success() {
+            return Err(String::from_utf8_lossy(&head_out.stderr).trim().to_string());
+        }
+        let original_branch = String::from_utf8_lossy(&head_out.stdout).trim().to_string();
+
+        if original_branch == base_branch {
+            let merge_out = run_git(&project_path, &["merge", "--no-ff", &branch])?;
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&merge_out.stdout),
+                String::from_utf8_lossy(&merge_out.stderr)
+            );
+            if !merge_out.status.success() {
+                return Err(format!(
+                    "Merge failed (main repo on '{}'; please resolve manually): {}",
+                    base_branch, combined
+                ));
+            }
+            return Ok(combined.trim().to_string());
+        }
+
+        let refspec = format!("{}:{}", branch, base_branch);
+        let ff_out = run_git(&project_path, &["fetch", ".", &refspec])?;
+        if !ff_out.status.success() {
+            let err = String::from_utf8_lossy(&ff_out.stderr);
+            return Err(format!(
+                "Cannot fast-forward '{}' (worktree may have diverged from base). \
+                 Pull base into the worktree and retry, or merge manually. Detail: {}",
+                base_branch,
+                err.trim()
+            ));
+        }
+        Ok(format!("Fast-forwarded '{}' to '{}'", base_branch, branch))
+    })
+    .await
+    .map_err(|e| format!("Merge task panicked: {}", e))?
+}
+
+/// Remove the worktree directory and its branch.
+#[tauri::command]
+pub async fn remove_task_worktree(
+    project_path: String,
+    worktree_path: String,
+    branch: String,
+) -> Result<(), String> {
+    validate_project_path(&project_path)?;
+    ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let remove_out = run_git(
+            &project_path,
+            &["worktree", "remove", "--force", &worktree_path],
+        )?;
+        if !remove_out.status.success() {
+            return Err(String::from_utf8_lossy(&remove_out.stderr)
+                .trim()
+                .to_string());
+        }
+
+        if !branch.trim().is_empty() {
+            let branch_out = run_git(&project_path, &["branch", "-D", &branch])?;
+            if !branch_out.status.success() {
+                return Err(String::from_utf8_lossy(&branch_out.stderr)
+                    .trim()
+                    .to_string());
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Remove worktree task panicked: {}", e))?
+}
+
+#[derive(serde::Serialize)]
+pub struct WorktreeDiffStats {
+    pub additions: i32,
+    pub deletions: i32,
+}
+
+/// Compute `+N / -M` line counts in the worktree vs merge-base(base_branch, HEAD).
+/// Includes both tracked changes and untracked files (compared against /dev/null).
+#[tauri::command]
+pub async fn worktree_diff_stats(
+    project_path: String,
+    worktree_path: String,
+    base_branch: String,
+) -> Result<WorktreeDiffStats, String> {
+    if base_branch.trim().is_empty() {
+        return Err("Base branch is required".to_string());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<WorktreeDiffStats, String> {
+        validate_project_path(&project_path)?;
+        ensure_path_under_worktrees_root(&project_path, &worktree_path)?;
+
+        // 1) Tracked changes (working tree vs merge-base)
+        let mb_out = run_git(&worktree_path, &["merge-base", &base_branch, "HEAD"])?;
+        if !mb_out.status.success() {
+            return Err(String::from_utf8_lossy(&mb_out.stderr).trim().to_string());
+        }
+        let merge_base = String::from_utf8_lossy(&mb_out.stdout).trim().to_string();
+
+        let mut additions = 0i32;
+        let mut deletions = 0i32;
+
+        if !merge_base.is_empty() {
+            let num_out = run_git(&worktree_path, &["diff", "--numstat", &merge_base])?;
+            if !num_out.status.success() {
+                return Err(String::from_utf8_lossy(&num_out.stderr).trim().to_string());
+            }
+            accumulate_numstat(&num_out.stdout, &mut additions, &mut deletions);
+        }
+
+        // 2) Untracked files — diff against an empty temp file
+        let untracked = list_untracked_files(&worktree_path)?;
+        if !untracked.is_empty() {
+            let empty_file = create_empty_temp_file()?;
+            let empty_path = empty_file.to_string_lossy().into_owned();
+            for rel in &untracked {
+                let abs = std::path::Path::new(&worktree_path).join(rel);
+                let abs_str = abs.to_string_lossy().into_owned();
+                let no_index = run_git(
+                    &worktree_path,
+                    &["diff", "--no-index", "--numstat", &empty_path, &abs_str],
+                )?;
+                accumulate_numstat(&no_index.stdout, &mut additions, &mut deletions);
+            }
+            let _ = std::fs::remove_file(&empty_file);
+        }
+
+        Ok(WorktreeDiffStats {
+            additions,
+            deletions,
+        })
+    })
+    .await
+    .map_err(|e| format!("Diff stats task panicked: {}", e))?
+}
+
+/// Parse `git diff --numstat` output and accumulate `+ / −` line counts.
+/// Binary files show `-\t-\t<path>`; parse failures are skipped (counted as 0).
+fn accumulate_numstat(stdout: &[u8], additions: &mut i32, deletions: &mut i32) {
+    for line in String::from_utf8_lossy(stdout).lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() != 3 {
+            continue;
+        }
+        *additions += parts[0].parse::<i32>().unwrap_or(0);
+        *deletions += parts[1].parse::<i32>().unwrap_or(0);
+    }
+}

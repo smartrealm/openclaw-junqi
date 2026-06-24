@@ -163,7 +163,7 @@ export function AgentConfigPanel({
             <div
               style={{
                 height: 1,
-                background: "var(--border-dim)",
+                background: "var(--aegis-border)",
                 margin: "4px 0 16px",
                 flexShrink: 0,
               }}
@@ -173,7 +173,7 @@ export function AgentConfigPanel({
               style={{
                 fontSize: 13,
                 fontWeight: 600,
-                color: "var(--text-primary)",
+                color: "rgb(var(--aegis-text))",
                 marginBottom: 10,
                 flexShrink: 0,
               }}
@@ -188,10 +188,10 @@ export function AgentConfigPanel({
           <div
             style={{
               fontSize: 11.5,
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
               fontFamily: "var(--font-mono)",
-              background: "var(--bg-subtle)",
-              border: "1px solid var(--border-dim)",
+              background: "var(--aegis-elevated)",
+              border: "1px solid var(--aegis-border)",
               borderRadius: 6,
               padding: "4px 9px",
             }}
@@ -206,10 +206,10 @@ export function AgentConfigPanel({
                 gap: 5,
                 padding: "4px 10px",
                 background: "none",
-                border: "1px solid var(--border-medium)",
+                border: "1px solid var(--aegis-border)",
                 borderRadius: 6,
                 fontSize: 12,
-                color: "var(--text-secondary)",
+                color: "rgb(var(--aegis-text-secondary))",
                 cursor: "pointer",
               }}
               onClick={() => setEditing(true)}
@@ -238,17 +238,17 @@ export function AgentConfigPanel({
         )}
 
         {highlightError && fileState.status === "loaded" && !editing && (
-          <div style={{ color: "var(--text-hint)", fontSize: 12, marginBottom: 10 }}>
+          <div style={{ color: "rgb(var(--aegis-text-dim))", fontSize: 12, marginBottom: 10 }}>
             {t("appSettings.syntaxHighlightUnavailable")}
           </div>
         )}
 
         {fileState.status === "loading" && !error && (
-          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
+          <div style={{ color: "rgb(var(--aegis-text-dim))", fontSize: 13 }}>{t("common.loading")}</div>
         )}
 
         {fileState.status === "missing" && (
-          <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+          <div style={{ color: "rgb(var(--aegis-text-muted))", fontSize: 13 }}>
             {t("appSettings.configFileNotFound", { path: resolvedFilePath })}
           </div>
         )}
@@ -263,7 +263,7 @@ export function AgentConfigPanel({
                 minWidth: 0,
                 overflow: "auto",
                 borderRadius: 8,
-                border: "1px solid var(--border-dim)",
+                border: "1px solid var(--aegis-border)",
                 fontSize: 12.5,
               }}
               dangerouslySetInnerHTML={{ __html: highlighted }}
@@ -278,9 +278,9 @@ export function AgentConfigPanel({
                 overflow: "auto",
                 padding: "14px 16px",
                 borderRadius: 8,
-                border: "1px solid var(--border-dim)",
-                background: "var(--bg-panel)",
-                color: "var(--text-primary)",
+                border: "1px solid var(--aegis-border)",
+                background: "var(--aegis-elevated)",
+                color: "rgb(var(--aegis-text))",
                 fontSize: 12.5,
                 fontFamily: "var(--font-mono)",
                 lineHeight: 1.6,
@@ -302,7 +302,7 @@ export function AgentConfigPanel({
               minHeight: 300,
               resize: "none",
               boxSizing: "border-box",
-              caretColor: "var(--text-primary)",
+              caretColor: "rgb(var(--aegis-text))",
             }}
             value={fileState.content}
             onChange={(e) => setFileState({ status: "loaded", content: e.target.value })}

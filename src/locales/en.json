@@ -29,6 +29,8 @@
     "config": "Config Manager",
     "settings": "Settings",
     "terminal": "Terminal",
+    "agentRun": "AI Console",
+    "advanced": "Advanced",
     "notifications": "Notifications",
     "calendar": "Calendar",
     "files": "File Manager",
@@ -584,6 +586,20 @@
     "avg": "Avg",
     "comingSoonTitle": "MCP Integration — Coming Soon",
     "comingSoonDesc": "Connect external tools via Model Context Protocol (MCP). GitHub, Slack, Google, databases, and more — directly from JunQi Desktop."
+  },
+  "session": {
+    "recent": "Recent",
+    "justNow": "just now",
+    "minAgo": "{{n}}m ago",
+    "hrAgo": "{{n}}h ago",
+    "dayAgo": "{{n}}d ago"
+  },
+  "lifecycle": {
+    "idle": "idle",
+    "running": "running",
+    "attention": "attention",
+    "failed": "failed",
+    "ended": "done"
   },
   "chat": {
     "mainAgentName": "Main Agent",
@@ -1806,5 +1822,15 @@
     "preview": "Preview",
     "previewUI": "The quick brown fox jumps over the lazy dog.",
     "previewMono": "console.log('Hello, world!'); // abcdef 1234567890"
+  },
+  "usage": {
+    "title": "Usage",
+    "loading": "Loading…",
+    "failed": "Failed to load",
+    "noDataYet": "No usage data yet.",
+    "left": "% left",
+    "noWindows": "No usage windows reported.",
+    "fiveHour": "5h",
+    "sevenDay": "7d"
   }
 }

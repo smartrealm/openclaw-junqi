@@ -136,7 +136,7 @@ export function FontSelector({ value, onChange, label, hint, defaultFont, previe
               >
                 {displayName || t("fontSelector.notAvailable")}
               </span>
-              <ChevronDown size={13} strokeWidth={2} color="var(--text-hint)" style={{ flexShrink: 0 }} />
+              <ChevronDown size={13} strokeWidth={2} color="rgb(var(--aegis-text-dim))" style={{ flexShrink: 0 }} />
             </button>
           </Popover.Trigger>
           <Popover.Portal>
@@ -147,7 +147,7 @@ export function FontSelector({ value, onChange, label, hint, defaultFont, previe
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
               <div className="font-selector-search">
-                <Search size={13} strokeWidth={2} color="var(--text-hint)" />
+                <Search size={13} strokeWidth={2} color="rgb(var(--aegis-text-dim))" />
                 <input
                   ref={inputRef}
                   className="font-selector-search-input"
@@ -196,9 +196,9 @@ export function FontSelector({ value, onChange, label, hint, defaultFont, previe
                             height: FONT_ITEM_HEIGHT,
                             fontFamily: selected ? font : undefined,
                             background: focusedIndex === index
-                              ? "var(--bg-hover)"
+                              ? "var(--aegis-hover)"
                               : selected
-                                ? "var(--control-active-bg)"
+                                ? "rgba(var(--aegis-primary) / 0.10)"
                                 : undefined,
                           }}
                           onClick={() => handleSelect(font)}
@@ -206,7 +206,7 @@ export function FontSelector({ value, onChange, label, hint, defaultFont, previe
                         >
                           <span className="font-selector-item-name">{font}</span>
                           {selected && (
-                            <Check size={12} strokeWidth={2.5} color="var(--accent)" style={{ flexShrink: 0 }} />
+                            <Check size={12} strokeWidth={2.5} color="rgb(var(--aegis-primary))" style={{ flexShrink: 0 }} />
                           )}
                         </button>
                       );

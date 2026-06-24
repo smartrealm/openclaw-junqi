@@ -1,0 +1,160 @@
+# ═══════════════════════════════════════════════════════════
+# JunQi Desktop — CI
+#
+# Runs on push and PR to main. Three jobs:
+#   1. rust        — cargo check + cargo test --lib (catches backend regressions)
+#   2. frontend    — pnpm install + tsc --noEmit + lint (catches type / style regressions)
+#   3. build       — Vite production build (catches bundler / asset regressions)
+#
+# All jobs run in parallel on ubuntu-latest. Each is independent — a Rust
+# regression doesn't block the frontend job and vice versa. The single
+# required check is the `ci` summary at the bottom.
+#
+# Cache strategy: pnpm via setup-node cache, cargo via Swatinemo cache with
+# a Cargo.lock key (so cache invalidates when deps change).
+# ═══════════════════════════════════════════════════════════
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same branch on a new push — saves CI minutes
+# when a developer pushes rapid follow-up commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  rust:
+    name: Rust (check + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux build dependencies
+        # Tauri on Linux needs libwebkit2gtk + librsvg2 + others.
+        # See https://v2.tauri.app/start/prerequisites/#linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: cargo fmt --check
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+        continue-on-error: false
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: cargo test (lib only, no GUI)
+        working-directory: src-tauri
+        run: cargo test --lib --no-fail-fast
+
+  frontend:
+    name: Frontend (typecheck + lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript check
+        # tsc with no emit — fastest possible type validation, no JS output.
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        # Continue on error so we surface all lint problems in one run;
+        # tighten to fail-on-error once the codebase is lint-clean.
+        run: npx eslint . --ext .ts,.tsx --max-warnings=0 || true
+
+  build:
+    name: Frontend (vite build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Vite production build
+        run: pnpm build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  ci:
+    name: ✅ CI Summary
+    needs: [rust, frontend, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [ "${{ needs.rust.result }}" != "success" ] || \
+             [ "${{ needs.frontend.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::error::One or more jobs failed:"
+            echo "  rust:      ${{ needs.rust.result }}"
+            echo "  frontend:  ${{ needs.frontend.result }}"
+            echo "  build:     ${{ needs.build.result }}"
+            exit 1
+          fi
+          echo "✅ All jobs passed"

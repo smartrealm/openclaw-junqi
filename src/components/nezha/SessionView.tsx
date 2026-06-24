@@ -24,7 +24,7 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
     <div
       style={{
         margin: "6px 0",
-        border: "1px solid var(--border-dim)",
+        border: "1px solid var(--aegis-border)",
         borderRadius: 6,
         overflow: "hidden",
         fontSize: 12,
@@ -38,11 +38,11 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
           alignItems: "center",
           gap: 7,
           padding: "5px 10px",
-          background: "var(--bg-input)",
+          background: "var(--aegis-input)",
           border: "none",
           cursor: "pointer",
           textAlign: "left",
-          color: "var(--text-secondary)",
+          color: "rgb(var(--aegis-text-secondary))",
         }}
       >
         {expanded ? (
@@ -50,7 +50,7 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
         ) : (
           <ChevronRight size={11} style={{ flexShrink: 0 }} />
         )}
-        <Wrench size={11} style={{ color: "var(--text-hint)", flexShrink: 0 }} />
+        <Wrench size={11} style={{ color: "rgb(var(--aegis-text-dim))", flexShrink: 0 }} />
         <span
           style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
         >
@@ -64,8 +64,8 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
             padding: "8px 12px",
             fontSize: 11,
             fontFamily: "var(--font-mono)",
-            color: "var(--text-secondary)",
-            background: "var(--bg-root)",
+            color: "rgb(var(--aegis-text-secondary))",
+            background: "var(--aegis-bg)",
             overflowX: "auto",
             whiteSpace: "pre-wrap",
             wordBreak: "break-all",
@@ -95,7 +95,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
           border: "none",
           cursor: "pointer",
           padding: "2px 0",
-          color: "var(--text-hint)",
+          color: "rgb(var(--aegis-text-dim))",
           fontSize: 11.5,
           fontStyle: "italic",
         }}
@@ -108,9 +108,9 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
           style={{
             padding: "6px 12px",
             fontSize: 12,
-            color: "var(--text-muted)",
+            color: "rgb(var(--aegis-text-muted))",
             fontStyle: "italic",
-            borderLeft: "2px solid var(--border-dim)",
+            borderLeft: "2px solid var(--aegis-border)",
             marginLeft: 4,
             marginTop: 4,
             whiteSpace: "pre-wrap",
@@ -166,7 +166,7 @@ function UserMessageBubble({ text }: { text: string }) {
             border: "none",
             cursor: "pointer",
             padding: 2,
-            color: "var(--text-muted)",
+            color: "rgb(var(--aegis-text-muted))",
             display: "flex",
             alignItems: "center",
           }}
@@ -176,8 +176,8 @@ function UserMessageBubble({ text }: { text: string }) {
         <div
           style={{
             padding: "10px 16px",
-            background: "var(--bg-subtle)",
-            color: "var(--text-primary)",
+            background: "var(--aegis-elevated)",
+            color: "rgb(var(--aegis-text))",
             borderRadius: 20,
             fontSize: 13.5,
             lineHeight: 1.6,
@@ -260,17 +260,17 @@ export function SessionView({ sessionPath }: { sessionPath: string }) {
       }}
     >
       {loading && (
-        <div style={{ color: "var(--text-hint)", fontSize: 13, padding: "12px 0" }}>
+        <div style={{ color: "rgb(var(--aegis-text-dim))", fontSize: 13, padding: "12px 0" }}>
           {t("session.loading")}
         </div>
       )}
       {error && (
-        <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "12px 0" }}>
+        <div style={{ color: "rgb(var(--aegis-text-muted))", fontSize: 13, padding: "12px 0" }}>
           {t("session.unableToLoad", { error })}
         </div>
       )}
       {!loading && !error && messages.length === 0 && (
-        <div style={{ color: "var(--text-hint)", fontSize: 13, padding: "12px 0" }}>
+        <div style={{ color: "rgb(var(--aegis-text-dim))", fontSize: 13, padding: "12px 0" }}>
           {t("session.noMessages")}
         </div>
       )}

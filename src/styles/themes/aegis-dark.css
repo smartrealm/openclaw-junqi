@@ -60,6 +60,18 @@
   --aegis-success:        61 214 140;    /* #3dd68c */
   --aegis-success-surface:rgba(61, 214, 140, 0.14);
 
+  /* ── Agent lifecycle (kooky-aligned) ──
+     4-state machine: idle → running → attention (needs input) → ended/failed */
+  --aegis-status-running:       127 154 255;   /* blue #7f9aff */
+  --aegis-status-running-glow:  rgba(127, 154, 255, 0.34);
+  --aegis-status-attention:     232 176 102;   /* amber #e8b066 */
+  --aegis-status-attention-glow:rgba(232, 176, 102, 0.32);
+  --aegis-status-idle:          164 173 194;   /* muted #a4adc2 */
+  --aegis-status-idle-surface:  rgba(164, 173, 194, 0.10);
+  --aegis-status-failed:        232 102 102;   /* red #e86666 */
+  --aegis-status-failed-glow:   rgba(232, 102, 102, 0.32);
+  --aegis-status-ended:         115 192 128;   /* green #73c780 */
+
   /* ── Messages ── */
   --aegis-user-bubble:    rgba(127, 154, 255, 0.12);
   --aegis-user-border:    rgba(127, 154, 255, 0.24);

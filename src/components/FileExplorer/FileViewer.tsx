@@ -62,6 +62,56 @@ function isMarkdownFile(fileName: string): boolean {
   return ext === "md" || ext === "mdx" || ext === "markdown";
 }
 
+function isMakefile(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  // Plain "Makefile" / "makefile" / "GNUmakefile", or any *.mk / *.make.
+  if (
+    lower === "makefile" ||
+    lower === "gnumakefile" ||
+    lower === "bsdmakefile" ||
+    lower === "makefile.in"
+  ) {
+    return true;
+  }
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  return ext === "mk" || ext === "make";
+}
+
+/**
+ * Parse the first chunk of a Makefile and return its top-level targets.
+ *
+ * Heuristics:
+ * - Skip comment lines (`#`) and recipe lines (lines that start with a tab).
+ * - Skip variable assignments (lines containing `=` before `:`).
+ * - Skip `.PHONY` / `.SUFFIXES` etc. — those aren't runnable targets.
+ * - Stop after `MAX_TARGETS` matches so a 10 MB generated Makefile
+ *   doesn't lock up the UI.
+ */
+const MAX_TARGETS = 32;
+function parseMakeTargets(content: string): string[] {
+  const out: string[] = [];
+  const lines = content.split(/\r?\n/);
+  // Match lines like:  foo: deps...    or    foo bar: deps...   (multi-target)
+  const targetRe = /^([A-Za-z0-9_./-]+(?:\s+[A-Za-z0-9_./-]+)*)\s*:(?!=)/;
+  for (const raw of lines) {
+    if (out.length >= MAX_TARGETS) break;
+    const line = raw.replace(/\\\r?\n$/, ""); // join line-continuations
+    if (!line.trim() || line.trimStart().startsWith("#")) continue;
+    if (line.startsWith("\t") || line.startsWith("    ")) continue; // recipe body
+    if (/^\.[A-Z][A-Z0-9_]*\s*[:?]?=/.test(line.trim())) continue; // .PHONY, .SUFFIXES, vars
+    if (line.includes("=") && !line.includes(":")) continue; // var assignment only
+    const m = line.match(targetRe);
+    if (!m) continue;
+    const names = m[1].trim().split(/\s+/);
+    for (const n of names) {
+      if (!n || n.startsWith(".") || n === "$") continue;
+      if (!out.includes(n)) out.push(n);
+      if (out.length >= MAX_TARGETS) break;
+    }
+  }
+  return out;
+}
+
 function isPreviewableImageFile(fileName: string): boolean {
   const ext = fileName.split(".").pop()?.toLowerCase();
   return (
@@ -403,12 +453,14 @@ function FilePreviewPane({
   projectPath,
   themeVariant,
   previewMode,
+  onRunMakeTarget,
 }: {
   filePath: string;
   fileName: string;
   projectPath: string;
   themeVariant: ThemeVariant;
   previewMode: boolean;
+  onRunMakeTarget?: (target: string) => void;
 }) {
   const editorTheme =
     themeVariant === "dark" || themeVariant === "midnight"
@@ -424,6 +476,11 @@ function FilePreviewPane({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const isMarkdown = isMarkdownFile(fileName);
   const isPreviewableImage = isPreviewableImageFile(fileName);
+  const isMake = isMakefile(fileName);
+  const makeTargets = useMemo(
+    () => (isMake && content ? parseMakeTargets(content) : []),
+    [isMake, content],
+  );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -695,6 +752,65 @@ function FilePreviewPane({
         >
           {filePath}
         </span>
+        {/* Makefile target run buttons — only when we parsed targets */}
+        {isMake && makeTargets.length > 0 && onRunMakeTarget && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 4,
+              marginLeft: 12,
+              paddingLeft: 12,
+              borderLeft: "1px solid var(--aegis-border)",
+              maxHeight: 28,
+              overflowY: "auto",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: "var(--aegis-text-dim)",
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                alignSelf: "center",
+                marginRight: 4,
+              }}
+            >
+              {t("file.makeTargets", "Make")}
+            </span>
+            {makeTargets.map((target) => (
+              <button
+                key={target}
+                type="button"
+                onClick={() => onRunMakeTarget(target)}
+                title={`Run \`make ${target}\` in the project terminal`}
+                style={{
+                  fontSize: 10.5,
+                  fontFamily: "var(--aegis-mono, monospace)",
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  border: "1px solid var(--aegis-border)",
+                  background: "var(--aegis-surface)",
+                  color: "var(--aegis-text-secondary)",
+                  cursor: "pointer",
+                  lineHeight: 1.4,
+                  transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--aegis-accent)";
+                  e.currentTarget.style.color = "var(--aegis-text)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "var(--aegis-surface)";
+                  e.currentTarget.style.color = "var(--aegis-text-secondary)";
+                }}
+              >
+                ▶ {target}
+              </button>
+            ))}
+          </div>
+        )}
         {statusLabel && (
           <span
             style={{
@@ -728,6 +844,7 @@ export function FileViewer({
   onCloseTabsToLeft,
   onCloseAllTabs,
   themeVariant = "dark",
+  onRunMakeTarget,
 }: {
   tabs: OpenFileTab[];
   activeFilePath: string | null;
@@ -739,6 +856,12 @@ export function FileViewer({
   onCloseTabsToLeft: (path: string) => void;
   onCloseAllTabs: () => void;
   themeVariant?: ThemeVariant;
+  /**
+   * Called when the user clicks a target button on a parsed Makefile.
+   * Receives the target name (e.g. "build", "test", "clean") — caller is
+   * responsible for routing it to the right terminal session.
+   */
+  onRunMakeTarget?: (target: string) => void;
 }) {
   const { t } = useTranslation();
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
@@ -1134,6 +1257,7 @@ export function FileViewer({
                 projectPath={projectPath}
                 themeVariant={themeVariant}
                 previewMode={!!previewModes[tab.path]}
+                onRunMakeTarget={onRunMakeTarget}
               />
             </div>
           );

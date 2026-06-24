@@ -23,7 +23,7 @@ export const shortcutKeyStyle: React.CSSProperties = {
   border: "none",
   borderRadius: 0,
   background: "transparent",
-  color: "var(--text-secondary)",
+  color: "rgb(var(--aegis-text-secondary))",
   opacity: 1,
   fontSize: "inherit",
   lineHeight: "inherit",

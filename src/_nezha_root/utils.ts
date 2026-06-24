@@ -58,7 +58,7 @@ export function getGitStatusColor(status: string): string {
     case "U":
       return "#f85149";
     default:
-      return "var(--text-muted)";
+      return "rgb(var(--aegis-text-muted))";
   }
 }
 

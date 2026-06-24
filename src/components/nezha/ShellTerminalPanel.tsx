@@ -11,6 +11,7 @@ import {
   initTerminal,
   loadWebglAddon,
   safeFit,
+  safeOpenTerminal,
   createSmartWriter,
   attachMacWebKitTerminalGuard,
   attachTerminalScrollbarAutoHide,
@@ -108,6 +109,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let cleaned = false;
       let initTimeoutId: number | null = null;
       let readyTimeoutId: number | null = null;
+      let disposeSafeOpen: (() => void) | null = null;
 
       const { term, fitAddon, whenFontsReady } = initTerminal(
         themeVariantRef.current,
@@ -118,97 +120,125 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       applyTerminalThemeOnPanel(term, themeVariantRef.current, container);
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
-      term.open(container);
-      // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
-      const disposeCharSizeOverride = applyDomCharSizeOverride(term);
-      const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
-      const disposeInputFix = attachMacWebKitShiftInputFix(term);
-      const webglHandle = loadWebglAddon(term);
-      const writer = createSmartWriter(term);
-      const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
 
-      const fit = () => {
-        if (cleaned) return;
-        const s = safeFit(fitAddon, term, container);
-        if (!s) return;
-        const last = lastSizeRef.current;
-        if (last && last.cols === s.cols && last.rows === s.rows) return;
-        lastSizeRef.current = { cols: s.cols, rows: s.rows };
-        invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
-      };
+      // Holders for addons wired in openAndWire so the cleanup function can
+      // dispose them even when term.open() was deferred.
+      let disposeCharSizeOverride: (() => void) | null = null;
+      let disposeScrollbarAutoHide: (() => void) | null = null;
+      let disposeInputFix: (() => void) | null = null;
+      let webglHandle: { dispose(): void } | null = null;
+      let writer: ReturnType<typeof createSmartWriter> | null = null;
+      let disposeMacWebKitGuard: (() => void) | null = null;
+      let disposeSmartCopy: (() => void) | null = null;
+      let disposeOnData: { dispose(): void } | null = null;
+      let resizeObserver: ResizeObserver | null = null;
+      let unlisten: (() => void) | null = null;
+      let visibilityHandler: (() => void) | null = null;
+      let opened = false;
 
-      // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
-      whenFontsReady.then(() => {
-        if (cleaned) return;
-        fit();
-      });
+      // safeOpenTerminal defers term.open() until the container has non-zero
+      // dimensions. xterm.js throws "dimensions" / "syncScrollArea" errors
+      // when open() runs against a 0-size container (common with flex:1
+      // layouts whose final size isn't resolved on the first effect tick).
+      // All addons must be wired AFTER open — they depend on term.element.
+      const openAndWire = () => {
+        if (opened || cleaned) return;
+        opened = true;
 
-      initTimeoutId = window.setTimeout(() => {
-        if (cleaned) return;
-        fit();
-        invoke<void>("open_shell", {
-          shellId,
-          projectPath,
-          cols: term.cols,
-          rows: term.rows,
-        })
-          .then(() => {
-            if (cleaned) return;
-            readyTimeoutId = window.setTimeout(() => {
-              if (!cleaned) {
-                onReadyRef.current?.();
-              }
-            }, 300);
+        // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
+        disposeCharSizeOverride = applyDomCharSizeOverride(term);
+        disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
+        disposeInputFix = attachMacWebKitShiftInputFix(term);
+        webglHandle = loadWebglAddon(term);
+        writer = createSmartWriter(term);
+        disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
+
+        const fit = () => {
+          if (cleaned) return;
+          const s = safeFit(fitAddon, term, container);
+          if (!s) return;
+          const last = lastSizeRef.current;
+          if (last && last.cols === s.cols && last.rows === s.rows) return;
+          lastSizeRef.current = { cols: s.cols, rows: s.rows };
+          invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+        };
+
+        // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
+        whenFontsReady.then(() => {
+          if (cleaned) return;
+          fit();
+        });
+
+        initTimeoutId = window.setTimeout(() => {
+          if (cleaned) return;
+          fit();
+          invoke<void>("open_shell", {
+            shellId,
+            projectPath,
+            cols: term.cols,
+            rows: term.rows,
           })
-          .catch(console.error);
-        if (isActiveRef.current) {
-          term.focus();
-        }
-      }, 50);
-
-      const disposeSmartCopy = attachSmartCopy(term);
-      const linuxIME = attachLinuxIMEFix(term, (data) => {
-        invoke("send_input", { taskId: shellId, data }).catch(() => {});
-      });
-      const disposeOnData = { dispose: () => linuxIME.dispose() };
-
-      const resizeObserver = new ResizeObserver(() => {
-        setTimeout(() => {
+            .then(() => {
+              if (cleaned) return;
+              readyTimeoutId = window.setTimeout(() => {
+                if (!cleaned) {
+                  onReadyRef.current?.();
+                }
+              }, 300);
+            })
+            .catch(console.error);
           if (isActiveRef.current) {
-            fit();
+            term.focus();
           }
         }, 50);
-      });
-      resizeObserver.observe(container);
 
-      const handleVisibilityChange = () => {
-        if (document.visibilityState !== "visible" || !terminalRef.current || !isActiveRef.current) return;
-        window.requestAnimationFrame(() => {
-          fit();
-          const t = terminalRef.current;
-          if (t) {
-            refreshTerminalDisplay(t);
-            t.focus();
+        disposeSmartCopy = attachSmartCopy(term);
+        const linuxIME = attachLinuxIMEFix(term, (data) => {
+          invoke("send_input", { taskId: shellId, data }).catch(() => {});
+        });
+        disposeOnData = { dispose: () => linuxIME.dispose() };
+
+        resizeObserver = new ResizeObserver(() => {
+          setTimeout(() => {
+            if (isActiveRef.current) {
+              fit();
+            }
+          }, 50);
+        });
+        resizeObserver.observe(container);
+
+        const handleVisibilityChange = () => {
+          if (document.visibilityState !== "visible" || !terminalRef.current || !isActiveRef.current) return;
+          window.requestAnimationFrame(() => {
+            fit();
+            const t = terminalRef.current;
+            if (t) {
+              refreshTerminalDisplay(t);
+              t.focus();
+            }
+          });
+        };
+        visibilityHandler = handleVisibilityChange;
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        listen<ShellOutputEvent>("shell-output", (event) => {
+          if (event.payload.shell_id === shellId && terminalRef.current && writer) {
+            writer.write(event.payload.data);
+          }
+        }).then((fn) => {
+          if (cleaned) {
+            fn();
+          } else {
+            unlisten = fn;
           }
         });
       };
-      document.addEventListener("visibilitychange", handleVisibilityChange);
 
-      let unlisten: (() => void) | null = null;
-      listen<ShellOutputEvent>("shell-output", (event) => {
-        if (event.payload.shell_id === shellId && terminalRef.current) {
-          writer.write(event.payload.data);
-        }
-      }).then((fn) => {
-        if (cleaned) {
-          fn();
-        } else {
-          unlisten = fn;
-        }
-      });
+      disposeSafeOpen = safeOpenTerminal(term, container, openAndWire);
 
       return () => {
         cleaned = true;
+        disposeSafeOpen?.();
         if (initTimeoutId !== null) {
           window.clearTimeout(initTimeoutId);
         }
@@ -216,18 +246,20 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           window.clearTimeout(readyTimeoutId);
         }
         unlisten?.();
-        disposeSmartCopy();
-        disposeOnData.dispose();
-        resizeObserver.disconnect();
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        disposeSmartCopy?.();
+        disposeOnData?.dispose();
+        resizeObserver?.disconnect();
+        if (visibilityHandler) {
+          document.removeEventListener("visibilitychange", visibilityHandler);
+        }
         terminalRef.current = null;
         fitAddonRef.current = null;
-        disposeCharSizeOverride();
-        webglHandle.dispose();
-        disposeScrollbarAutoHide();
-        disposeMacWebKitGuard();
-        disposeInputFix();
-        term.dispose();
+        disposeCharSizeOverride?.();
+        try { webglHandle?.dispose(); } catch { /* addon may not have loaded */ }
+        disposeScrollbarAutoHide?.();
+        disposeMacWebKitGuard?.();
+        disposeInputFix?.();
+        try { term.dispose(); } catch { /* already gone — rapid tab close */ }
         invoke("kill_shell", { shellId }).catch(() => {});
       };
     }, [shellId, projectPath]);
@@ -395,12 +427,12 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     return (
       <div
         style={{
-          flexShrink: 0,
-          height,
-          borderTop: "1px solid var(--border-dim)",
+          flex: 1,
+          height: height != null ? height : undefined,
+          borderTop: "1px solid var(--aegis-border)",
           display: "flex",
           flexDirection: "column",
-          background: "var(--bg-panel)",
+          background: "var(--aegis-elevated)",
         }}
       >
         {onResizeStart && (
@@ -421,15 +453,15 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
             display: "flex",
             alignItems: "center",
             padding: "0 10px 0 14px",
-            borderBottom: "1px solid var(--border-dim)",
-            background: "var(--bg-sidebar)",
+            borderBottom: "1px solid var(--aegis-border)",
+            background: "var(--aegis-surface)",
             gap: 8,
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text))", flex: 1 }}>
             {t("terminal.title")}
           </span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          <span style={{ fontSize: 11, color: "rgb(var(--aegis-text-muted))" }}>
             {shells.length}/{MAX_SHELLS}
           </span>
           <button
@@ -443,7 +475,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
               borderRadius: 4,
               display: "flex",
               alignItems: "center",
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
             }}
           >
             <X size={14} />
@@ -471,8 +503,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
             style={{
               width: 104,
               flexShrink: 0,
-              borderLeft: "1px solid var(--border-dim)",
-              background: "var(--bg-sidebar)",
+              borderLeft: "1px solid var(--aegis-border)",
+              background: "var(--aegis-surface)",
               display: "flex",
               flexDirection: "column",
               minHeight: 0,
@@ -486,7 +518,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 alignItems: "center",
                 justifyContent: "flex-end",
                 padding: "0 4px",
-                borderBottom: "1px solid var(--border-dim)",
+                borderBottom: "1px solid var(--aegis-border)",
               }}
             >
               <button
@@ -500,7 +532,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                   border: "none",
                   background: "transparent",
                   color:
-                    shells.length >= MAX_SHELLS ? "var(--text-hint)" : "var(--text-secondary)",
+                    shells.length >= MAX_SHELLS ? "rgb(var(--aegis-text-dim))" : "rgb(var(--aegis-text-secondary))",
                   cursor: shells.length >= MAX_SHELLS ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
@@ -521,10 +553,10 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       height: 28,
                       padding: "0 4px 0 8px",
                       borderLeft: selected
-                        ? "2px solid var(--control-active-fg)"
+                        ? "2px solid rgb(var(--aegis-primary))"
                         : "2px solid transparent",
-                      background: selected ? "var(--bg-hover)" : "transparent",
-                      color: "var(--text-primary)",
+                      background: selected ? "var(--aegis-hover)" : "transparent",
+                      color: "rgb(var(--aegis-text))",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
@@ -533,7 +565,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                   >
                     <TerminalIcon
                       size={13}
-                      color={selected ? "var(--control-active-fg)" : "var(--text-hint)"}
+                      color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"}
                     />
                     <div
                       style={{
@@ -544,7 +576,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        color: selected ? "var(--text-primary)" : "var(--text-secondary)",
+                        color: selected ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text-secondary))",
                       }}
                     >
                       zsh
@@ -558,7 +590,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       style={{
                         background: "none",
                         border: "none",
-                        color: "var(--text-hint)",
+                        color: "rgb(var(--aegis-text-dim))",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",

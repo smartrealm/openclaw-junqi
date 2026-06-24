@@ -1,4 +1,10 @@
 // ── Global error trap (must be FIRST) ──
+// xtermSafePatch must install BEFORE the error handler so it can
+// suppress harmless "dimensions" / "syncScrollArea" errors before
+// they hit the showError trap (which replaces the entire app DOM).
+import { installXtermSafePatch } from './components/Terminal/xtermSafePatch';
+installXtermSafePatch();
+
 function showError(title: string, detail: string) {
   document.getElementById('app-root')!.innerHTML =
     `<div style="display:flex;flex-direction:column;height:100vh;align-items:center;justify-content:center;background:#0c1015;color:white;font-family:monospace;gap:8px;padding:20px">` +

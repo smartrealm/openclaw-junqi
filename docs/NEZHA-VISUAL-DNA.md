@@ -6,6 +6,8 @@
 > `src-tauri/src/nezha/`)
 > **Target**: openclaw-junqi (this repo)
 > **Branch**: `feat/port-nezha-fullsuite`
+>
+> **See also**: 功能 / UI 交互盘点见 [`NEZHA-FEATURES-AND-UI.md`](./NEZHA-FEATURES-AND-UI.md)。
 
 This document is the authoritative specification for porting nezha's
 visual language into this codebase. Every claim has a citation
@@ -14,6 +16,11 @@ visual language into this codebase. Every claim has a citation
 The "why" lives here. The "how" lives in the milestone sections.
 PRs that touch surface-level visuals MUST cite a rule from this doc
 or explain why they deviate.
+
+> **文档分工**：
+> - 本文档负责**视觉设计系统**（颜色、间距、排版、六维设计纪律）。
+> - `NEZHA-FEATURES-AND-UI.md` 负责**功能模块与 UI 交互盘点**（含覆盖度矩阵）。
+> 两者职责互不重叠，PR 同时涉及视觉与功能时应在两份文档中分别引用。
 
 ---
 

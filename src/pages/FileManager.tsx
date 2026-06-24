@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -320,7 +321,11 @@ export function FileManagerPage() {
   const [visibilityFilter, setVisibilityFilter] = useState('all');
 
   // ── Tree Explorer state ──
+  const [searchParams] = useSearchParams();
   const [treeProjectPath, setTreeProjectPath] = useState(() => {
+    // URL param wins (e.g. /files?path=/foo from WelcomePage Browse button)
+    const urlPath = searchParams.get('path');
+    if (urlPath) return urlPath;
     try {
       const config = localStorage.getItem('aegis:workspaceRoot');
       return config || '';
@@ -696,6 +701,16 @@ export function FileManagerPage() {
               onCloseAllTabs={() => {
                 setTreeTabs([]);
                 setTreeActiveFilePath(null);
+              }}
+              onRunMakeTarget={(target) => {
+                // Forward to TerminalPage via a window CustomEvent.
+                // TerminalPage listens for "junqi:run-terminal-command" and
+                // forwards to its active ShellTerminalPanel via sendCommand.
+                window.dispatchEvent(
+                  new CustomEvent("junqi:run-terminal-command", {
+                    detail: { command: `make ${target}\n`, projectPath: treeProjectPath },
+                  }),
+                );
               }}
             />
           ) : (

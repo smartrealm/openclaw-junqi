@@ -47,8 +47,8 @@ function SidebarItem({
     <div
       style={{
         ...s.sidebarItem,
-        background: active ? "var(--bg-selected)" : "transparent",
-        color: active ? "var(--text-primary)" : "var(--text-muted)",
+        background: active ? "var(--aegis-menu-active)" : "transparent",
+        color: active ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text-muted))",
       }}
       onClick={onClick}
     >
@@ -64,16 +64,16 @@ function WelcomeEmpty({ hasProjects, onOpen }: { hasProjects: boolean; onOpen: (
   return (
     <div style={s.emptyState}>
       <div style={{ marginBottom: 14, opacity: 0.4 }}>
-        <FolderOpen size={40} strokeWidth={1.2} color="var(--text-hint)" />
+        <FolderOpen size={40} strokeWidth={1.2} color="rgb(var(--aegis-text-dim))" />
       </div>
       <div
-        style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}
+        style={{ fontSize: 14, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))", marginBottom: 6 }}
       >
         {hasProjects ? t("welcome.noMatchingProjects") : t("welcome.noProjectsYet")}
       </div>
       {!hasProjects && (
         <>
-          <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 20 }}>
+          <div style={{ fontSize: 12.5, color: "rgb(var(--aegis-text-muted))", marginBottom: 20 }}>
             {t("welcome.openLocalRepo")}
           </div>
           <button style={s.emptyOpenBtn} onClick={onOpen}>
@@ -236,14 +236,14 @@ export function WelcomePage({
               <div
                 style={{
                   ...s.searchBox,
-                  borderColor: searchFocused ? "var(--border-focus)" : "var(--border-medium)",
+                  borderColor: searchFocused ? "var(--border-focus)" : "var(--aegis-border)",
                   boxShadow: searchFocused ? "0 0 0 3px var(--accent-subtle)" : "none",
                 }}
               >
                 <Search
                   size={15}
                   strokeWidth={1.9}
-                  color="var(--text-muted)"
+                  color="rgb(var(--aegis-text-muted))"
                   style={{ flexShrink: 0 }}
                 />
                 <input
@@ -291,8 +291,8 @@ export function WelcomePage({
                       key={p.id}
                       style={{
                         ...s.projectItem,
-                        background: hov === p.id ? "var(--bg-hover)" : "transparent",
-                        borderColor: hov === p.id ? "var(--border-medium)" : "transparent",
+                        background: hov === p.id ? "var(--aegis-hover)" : "transparent",
+                        borderColor: hov === p.id ? "var(--aegis-border)" : "transparent",
                       }}
                       onMouseEnter={() => setHov(p.id)}
                       onMouseLeave={() => setHov(null)}
@@ -361,7 +361,7 @@ export function WelcomePage({
                           border: "none",
                           borderRadius: 6,
                           cursor: "pointer",
-                          color: "var(--text-muted)",
+                          color: "rgb(var(--aegis-text-muted))",
                           display: "flex",
                           alignItems: "center",
                           opacity: hov === p.id ? 1 : 0,
@@ -372,7 +372,7 @@ export function WelcomePage({
                             "var(--danger)";
                         }}
                         onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
+                          (e.currentTarget as HTMLButtonElement).style.color = "rgb(var(--aegis-text-muted))";
                         }}
                         onClick={(e) => {
                           e.stopPropagation();

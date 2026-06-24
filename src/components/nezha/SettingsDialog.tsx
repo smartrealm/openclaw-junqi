@@ -180,7 +180,7 @@ function ProjectSettings({ projectPath, onClose }: { projectPath: string; onClos
     <>
       <div style={s.settingsBody}>
         {!config && !error && (
-          <div style={{ color: "var(--text-hint)", fontSize: 13 }}>{t("common.loading")}</div>
+          <div style={{ color: "rgb(var(--aegis-text-dim))", fontSize: 13 }}>{t("common.loading")}</div>
         )}
         {error && (
           <div style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 12 }}>{error}</div>
@@ -319,8 +319,8 @@ export function SettingsDialog({
               key={item.key}
               style={{
                 ...s.settingsNavItem,
-                background: activeNav === item.key ? "var(--bg-hover)" : "none",
-                color: activeNav === item.key ? "var(--text-primary)" : "var(--text-secondary)",
+                background: activeNav === item.key ? "var(--aegis-hover)" : "none",
+                color: activeNav === item.key ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text-secondary))",
                 fontWeight: activeNav === item.key ? 600 : 500,
               }}
               onClick={() => setActiveNav(item.key)}

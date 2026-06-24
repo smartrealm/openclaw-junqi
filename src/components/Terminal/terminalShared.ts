@@ -12,83 +12,50 @@ import type { XTermWithPrivates } from "./xterm-private.d";
 const XTERM_SCROLLBAR_WIDTH = 12;
 
 // ── Theme ────────────────────────────────────────────────────────────────────
+//
+// ANSI palette is now read from the --ansi-* CSS custom properties defined in
+// terminal.css. This ensures the 16-color table stays aligned with aegis tokens
+// across theme changes without duplicating hex values in JS.
+//
+// Fallback values match the dark aegis-native palette; LIGHT/MIDNIGHT/EYECARE
+// variants read the same ANSI aliases (terminals are always dark).
 
-export const DARK_THEME = {
-  background: "#1e2230",
-  foreground: "#cdd6f4",
-  cursor: "#cdd6f4",
-  selectionBackground: "#45475a",
-  black: "#484f58",
-  red: "#ff7b72",
-  green: "#3fb950",
-  yellow: "#d29922",
-  blue: "#58a6ff",
-  magenta: "#d2a8ff",
-  cyan: "#39c5cf",
-  white: "#b1bac4",
-  brightBlack: "#6e7681",
-  brightRed: "#ffa198",
-  brightGreen: "#56d364",
-  brightYellow: "#e3b341",
-  brightBlue: "#79c0ff",
-  brightMagenta: "#f0a1ff",
-  brightCyan: "#56d4dd",
-  brightWhite: "#f0f6fc",
-};
+function readAnsiColor(name: string, fallback: string): string {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  } catch { return fallback; }
+}
 
-export const LIGHT_THEME = {
-  background: "#ffffff",
-  foreground: "#24292f",
-  cursor: "#24292f",
-  selectionBackground: "#b3d7ff",
-  black: "#24292f",
-  red: "#cf222e",
-  green: "#116329",
-  yellow: "#9a6700",
-  blue: "#0550ae",
-  magenta: "#8250df",
-  cyan: "#1b7c83",
-  white: "#6e7781",
-  brightBlack: "#57606a",
-  brightRed: "#a40e26",
-  brightGreen: "#1a7f37",
-  brightYellow: "#633c01",
-  brightBlue: "#0969da",
-  brightMagenta: "#6639ba",
-  brightCyan: "#3192aa",
-  brightWhite: "#8c959f",
-};
+export function buildDarkTerminalTheme() {
+  return {
+    background:         readAnsiColor('--terminal-bg',        '#11151b'),
+    foreground:         readAnsiColor('--terminal-text',      '#f1f4fb'),
+    cursor:             readAnsiColor('--terminal-cursor',    '#ffffff'),
+    selectionBackground:readAnsiColor('--terminal-selection', 'rgba(127,154,255,0.25)'),
+    black:              readAnsiColor('--ansi-black',         '#727b8f'),
+    red:                readAnsiColor('--ansi-red',           '#ff5a5a'),
+    green:              readAnsiColor('--ansi-green',         '#3dd68c'),
+    yellow:             readAnsiColor('--ansi-yellow',        '#f5a623'),
+    blue:               readAnsiColor('--ansi-blue',          '#7f9aff'),
+    magenta:            readAnsiColor('--ansi-magenta',       '#b894f5'),
+    cyan:               readAnsiColor('--ansi-cyan',          '#56d4dd'),
+    white:              readAnsiColor('--ansi-white',         '#d6dbe8'),
+    brightBlack:        readAnsiColor('--ansi-bright-black',  '#8b95a8'),
+    brightRed:          readAnsiColor('--ansi-bright-red',    '#ff7b7b'),
+    brightGreen:        readAnsiColor('--ansi-bright-green',  '#5ee8a0'),
+    brightYellow:       readAnsiColor('--ansi-bright-yellow', '#f7bb4a'),
+    brightBlue:         readAnsiColor('--ansi-bright-blue',   '#9eb4ff'),
+    brightMagenta:      readAnsiColor('--ansi-bright-magenta','#d0a8ff'),
+    brightCyan:         readAnsiColor('--ansi-bright-cyan',   '#7ae8f0'),
+    brightWhite:        readAnsiColor('--ansi-bright-white',  '#f1f4fb'),
+  };
+}
 
-// Midnight dark: same syntax palette as DARK_THEME, but a neutral near-black
-// background (#1A1B1D) to match the `html.midnight` --bg-panel surface.
-export const MIDNIGHT_THEME = {
-  ...DARK_THEME,
-  background: "#1a1b1d",
-};
-
-// Solarized Light–inspired warm palette to match the eyecare CSS tokens.
-export const EYECARE_THEME = {
-  background: "#fdf6e3",
-  foreground: "#586e75",
-  cursor: "#586e75",
-  selectionBackground: "#eee8d5",
-  black: "#073642",
-  red: "#dc322f",
-  green: "#859900",
-  yellow: "#b58900",
-  blue: "#268bd2",
-  magenta: "#d33682",
-  cyan: "#2aa198",
-  white: "#93a1a1",
-  brightBlack: "#657b83",
-  brightRed: "#cb4b16",
-  brightGreen: "#586e75",
-  brightYellow: "#657b83",
-  brightBlue: "#839496",
-  brightMagenta: "#6c71c4",
-  brightCyan: "#93a1a1",
-  brightWhite: "#fdf6e3",
-};
+export const DARK_THEME   = buildDarkTerminalTheme();
+export const LIGHT_THEME   = { ...DARK_THEME, background: "#1a1e27", foreground: "#f1f4fb" };
+export const MIDNIGHT_THEME = { ...DARK_THEME, background: "#0a0d12" };
+export const EYECARE_THEME = { ...DARK_THEME, background: "#1c1a14" };
 
 export function themeFor(variant: ThemeVariant) {
   if (variant === "dark") return DARK_THEME;
@@ -106,13 +73,13 @@ export function minimumContrastRatioFor(variant: ThemeVariant): number {
   return variant === "dark" || variant === "midnight" ? 1 : 4.5;
 }
 
-// 终端嵌在 var(--bg-panel) 表面（Agent 任务终端 / 嵌入式 Shell）时，把 xterm 背景
-// 从主题预设替换成 --bg-panel 的实际值，消除终端边界与外层面板拼接时的色差。
-// dark/eyecare 下主题预设与 --bg-panel 不一致；改造前 PR #293 仅修了 Agent 终端，
+// 终端嵌在 var(--aegis-elevated) 表面（Agent 任务终端 / 嵌入式 Shell）时，把 xterm 背景
+// 从主题预设替换成 --aegis-elevated 的实际值，消除终端边界与外层面板拼接时的色差。
+// dark/eyecare 下主题预设与 --aegis-elevated 不一致；改造前 PR #293 仅修了 Agent 终端，
 // 这里把行为收敛到共享函数，两个终端入口走同一条路径。
 function themeOnPanel(variant: ThemeVariant, container: HTMLElement) {
   const theme = themeFor(variant);
-  const background = window.getComputedStyle(container).getPropertyValue("--bg-panel").trim();
+  const background = window.getComputedStyle(container).getPropertyValue("--terminal-bg").trim();
   return background ? { ...theme, background } : theme;
 }
 
@@ -553,6 +520,53 @@ export function initTerminal(
   });
 
   return { term, fitAddon, whenFontsReady };
+}
+
+// Safe xterm open: defers term.open() until the container has non-zero
+// dimensions. xterm.js throws "dimensions" / "syncScrollArea" errors when
+// open() runs against a 0-width / 0-height container — common when the parent
+// is flex:1 in a layout that hasn't resolved final size on first effect tick.
+// Returns a disposer that tears down the observer.
+export function safeOpenTerminal(
+  term: Terminal,
+  container: HTMLElement,
+  onReady?: () => void,
+): () => void {
+  let ro: ResizeObserver | null = null;
+  let cancelled = false;
+  let opened = false;
+
+  const open = () => {
+    if (cancelled || opened) return;  // ← guard against double-open
+    const r = container.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    try {
+      term.open(container);
+    } catch (err) {
+      // Defensive: some platforms throw inside open() even after size checks.
+      console.warn("[safeOpenTerminal] term.open failed:", err);
+      return;
+    }
+    opened = true;
+    ro?.disconnect();
+    ro = null;
+    onReady?.();
+  };
+
+  // Try synchronously — container might already be sized on remount.
+  open();
+
+  // If still unsized (open() returned early), wait for first non-zero paint.
+  if (!opened) {
+    ro = new ResizeObserver(() => open());
+    ro.observe(container);
+  }
+
+  return () => {
+    cancelled = true;
+    ro?.disconnect();
+    ro = null;
+  };
 }
 
 export function attachTerminalScrollbarAutoHide(term: Terminal, container: HTMLElement): () => void {

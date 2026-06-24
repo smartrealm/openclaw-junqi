@@ -32,8 +32,8 @@ export function AboutPanel() {
           gap: 16,
           padding: "18px",
           borderRadius: 12,
-          border: "1px solid var(--border-dim)",
-          background: "var(--bg-subtle)",
+          border: "1px solid var(--aegis-border)",
+          background: "var(--aegis-elevated)",
         }}
       >
         <img
@@ -50,21 +50,21 @@ export function AboutPanel() {
 
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>NeZha</div>
-            <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "rgb(var(--aegis-text))" }}>NeZha</div>
+            <div style={{ fontSize: 12.5, color: "rgb(var(--aegis-text-secondary))", marginTop: 4 }}>
               {t("appSettings.nezhaDescription")}
             </div>
           </div>
 
           <div style={{ display: "grid", gap: 12 }}>
             <div>
-              <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: "rgb(var(--aegis-text-dim))", marginBottom: 4 }}>
                 {t("appSettings.version")}
               </div>
               <div
                 style={{
                   fontSize: 12.5,
-                  color: "var(--text-primary)",
+                  color: "rgb(var(--aegis-text))",
                   fontFamily: "var(--font-mono)",
                 }}
               >
@@ -73,7 +73,7 @@ export function AboutPanel() {
             </div>
 
             <div>
-              <div style={{ fontSize: 11, color: "var(--text-hint)", marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: "rgb(var(--aegis-text-dim))", marginBottom: 4 }}>
                 {t("appSettings.github")}
               </div>
               <a
@@ -84,7 +84,7 @@ export function AboutPanel() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
-                  color: "var(--accent)",
+                  color: "rgb(var(--aegis-primary))",
                   fontSize: 12.5,
                   textDecoration: "none",
                   wordBreak: "break-all",
@@ -103,13 +103,13 @@ export function AboutPanel() {
               gap: 8,
               padding: "10px 12px",
               borderRadius: 10,
-              background: "color-mix(in srgb, var(--accent) 8%, transparent)",
-              color: "var(--text-secondary)",
+              background: "color-mix(in srgb, rgb(var(--aegis-primary)) 8%, transparent)",
+              color: "rgb(var(--aegis-text-secondary))",
               fontSize: 12.5,
               lineHeight: 1.5,
             }}
           >
-            <Star size={14} color="var(--text-hint)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <Star size={14} color="rgb(var(--aegis-text-dim))" style={{ flexShrink: 0, marginTop: 2 }} />
             <span>
               {t("appSettings.starHint")}
             </span>

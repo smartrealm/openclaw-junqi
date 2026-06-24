@@ -6,18 +6,18 @@ export const timeline = {
     display: "flex",
     flexDirection: "column" as const,
     overflowY: "auto" as const,
-    background: "var(--bg-panel)",
+    background: "var(--aegis-elevated)",
     padding: "28px 28px 32px",
   },
   timelineHeader: {
     fontSize: 14,
     fontWeight: 700,
-    color: "var(--text-primary)",
+    color: "rgb(var(--aegis-text))",
     marginBottom: 4,
   },
   timelineSubtitle: {
     fontSize: 12,
-    color: "var(--text-muted)",
+    color: "rgb(var(--aegis-text-muted))",
     marginBottom: 24,
   },
   timelineGroup: {
@@ -31,18 +31,18 @@ export const timeline = {
     gap: 10,
     marginBottom: 10,
     paddingBottom: 8,
-    borderBottom: "1px solid var(--border-dim)",
+    borderBottom: "1px solid var(--aegis-border)",
   },
   timelineGroupTitle: {
     fontSize: 12,
     fontWeight: 700,
-    color: "var(--text-secondary)",
+    color: "rgb(var(--aegis-text-secondary))",
     letterSpacing: 0.4,
     textTransform: "uppercase" as const,
   },
   timelineGroupCount: {
     fontSize: 11.5,
-    color: "var(--text-hint)",
+    color: "rgb(var(--aegis-text-dim))",
     fontWeight: 500,
   },
   timelineProjectBlock: {
@@ -60,14 +60,14 @@ export const timeline = {
   timelineProjectName: {
     fontSize: 13,
     fontWeight: 600,
-    color: "var(--text-primary)",
+    color: "rgb(var(--aegis-text))",
     overflow: "hidden" as const,
     textOverflow: "ellipsis" as const,
     whiteSpace: "nowrap" as const,
   },
   timelineProjectCount: {
     fontSize: 11,
-    color: "var(--text-hint)",
+    color: "rgb(var(--aegis-text-dim))",
     fontWeight: 500,
   },
   timelineList: {
@@ -89,7 +89,7 @@ export const timeline = {
   },
   timelineRowTime: {
     fontSize: 11.5,
-    color: "var(--text-hint)",
+    color: "rgb(var(--aegis-text-dim))",
     fontVariantNumeric: "tabular-nums" as const,
     width: 48,
     flexShrink: 0,
@@ -108,7 +108,7 @@ export const timeline = {
   },
   timelineRowTitle: {
     fontSize: 13,
-    color: "var(--text-primary)",
+    color: "rgb(var(--aegis-text))",
     fontWeight: 500,
     overflow: "hidden" as const,
     textOverflow: "ellipsis" as const,
@@ -119,10 +119,10 @@ export const timeline = {
     alignItems: "center" as const,
     gap: 8,
     fontSize: 11.5,
-    color: "var(--text-muted)",
+    color: "rgb(var(--aegis-text-muted))",
   },
   timelineRowMetaSep: {
-    color: "var(--text-hint)",
+    color: "rgb(var(--aegis-text-dim))",
   },
   timelineRowDiff: {
     fontVariantNumeric: "tabular-nums" as const,
@@ -141,7 +141,7 @@ export const timeline = {
     alignItems: "center" as const,
     justifyContent: "center" as const,
     padding: "60px 24px",
-    color: "var(--text-muted)",
+    color: "rgb(var(--aegis-text-muted))",
     fontSize: 13,
     textAlign: "center" as const,
     gap: 12,

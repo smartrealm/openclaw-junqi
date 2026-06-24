@@ -116,7 +116,7 @@ export function UsagePopover() {
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button style={s.sidebarIconBtn} title={t("usage.title")}>
-          <Activity size={14} strokeWidth={1.8} color="var(--text-hint)" />
+          <Activity size={14} strokeWidth={1.8} color="rgb(var(--aegis-text-dim))" />
         </button>
       </Popover.Trigger>
       <Popover.Portal>

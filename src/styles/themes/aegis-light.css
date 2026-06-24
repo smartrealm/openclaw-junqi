@@ -53,6 +53,17 @@
   --aegis-success:        22 163 74;      /* #16a34a */
   --aegis-success-surface:rgba(22, 163, 74, 0.12);
 
+  /* ── Agent lifecycle (kooky-aligned) ── */
+  --aegis-status-running:       127 154 255;
+  --aegis-status-running-glow:  rgba(127, 154, 255, 0.34);
+  --aegis-status-attention:     232 176 102;
+  --aegis-status-attention-glow:rgba(232, 176, 102, 0.32);
+  --aegis-status-idle:          114 123 143;
+  --aegis-status-idle-surface:  rgba(114, 123, 143, 0.10);
+  --aegis-status-failed:        217 45 32;
+  --aegis-status-failed-glow:   rgba(217, 45, 32, 0.30);
+  --aegis-status-ended:         36 138 61;
+
   /* ── Messages ── */
   --aegis-user-bubble:    rgba(93, 124, 255, 0.10);
   --aegis-user-border:    rgba(93, 124, 255, 0.22);

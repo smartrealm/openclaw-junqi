@@ -106,7 +106,7 @@ export function TaskPanel({
             type="button"
             style={{
               ...s.taskPanelCollapsedNewBtn,
-              color: isNewTask ? "var(--control-active-fg)" : "var(--text-muted)",
+              color: isNewTask ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-muted))",
             }}
             onClick={onNewTask}
             title={t("task.newTask")}
@@ -151,7 +151,7 @@ export function TaskPanel({
 
       {/* Search */}
       <div style={s.panelSearchWrap}>
-        <Search size={13} strokeWidth={2} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+        <Search size={13} strokeWidth={2} color="rgb(var(--aegis-text-muted))" style={{ flexShrink: 0 }} />
         <input
           style={s.panelSearchInput}
           placeholder={t("task.searchTasks")}
@@ -167,8 +167,8 @@ export function TaskPanel({
       <button
         style={{
           ...s.newTaskRow,
-          background: isNewTask ? "var(--control-active-bg)" : "var(--bg-card)",
-          color: isNewTask ? "var(--control-active-fg)" : "var(--text-secondary)",
+          background: isNewTask ? "rgba(var(--aegis-primary) / 0.10)" : "var(--aegis-card)",
+          color: isNewTask ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-secondary))",
         }}
         onClick={onNewTask}
       >

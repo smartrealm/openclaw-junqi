@@ -39,8 +39,8 @@ export function TodoTaskView({
         style={{
           width: "100%",
           maxWidth: 700,
-          background: "var(--bg-card)",
-          border: "1px solid var(--border-dim)",
+          background: "var(--aegis-card)",
+          border: "1px solid var(--aegis-border)",
           borderRadius: 10,
           padding: "24px 24px 20px",
           display: "flex",
@@ -59,7 +59,7 @@ export function TodoTaskView({
             style={{
               fontSize: 11,
               fontWeight: 700,
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
               letterSpacing: 0.7,
               textTransform: "uppercase",
             }}
@@ -79,7 +79,7 @@ export function TodoTaskView({
                 background: "transparent",
                 border: "none",
                 borderRadius: 5,
-                color: "var(--text-hint)",
+                color: "rgb(var(--aegis-text-dim))",
                 cursor: "pointer",
               }}
               onClick={() => setEditing(true)}
@@ -105,7 +105,7 @@ export function TodoTaskView({
             <div
               style={{
                 fontSize: 14,
-                color: "var(--text-primary)",
+                color: "rgb(var(--aegis-text))",
                 lineHeight: 1.65,
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
@@ -121,13 +121,13 @@ export function TodoTaskView({
                 alignItems: "center",
                 gap: 8,
                 fontSize: 12,
-                color: "var(--text-muted)",
+                color: "rgb(var(--aegis-text-muted))",
               }}
             >
               <span
                 style={{
-                  background: "var(--bg-hover)",
-                  border: "1px solid var(--border-dim)",
+                  background: "var(--aegis-hover)",
+                  border: "1px solid var(--aegis-border)",
                   borderRadius: 4,
                   padding: "2px 7px",
                 }}
@@ -136,8 +136,8 @@ export function TodoTaskView({
               </span>
               <span
                 style={{
-                  background: "var(--bg-hover)",
-                  border: "1px solid var(--border-dim)",
+                  background: "var(--aegis-hover)",
+                  border: "1px solid var(--aegis-border)",
                   borderRadius: 4,
                   padding: "2px 7px",
                 }}
@@ -151,8 +151,8 @@ export function TodoTaskView({
                   alignItems: "center",
                   gap: 6,
                   padding: "5px 12px",
-                  background: "var(--primary-action-bg)",
-                  color: "var(--primary-action-fg)",
+                  background: "rgb(var(--aegis-primary))",
+                  color: "var(--aegis-btn-primary-text)",
                   border: "none",
                   borderRadius: 6,
                   fontSize: 12,

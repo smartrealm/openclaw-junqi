@@ -29,6 +29,8 @@
     "config": "配置管理",
     "settings": "设置",
     "terminal": "终端",
+    "agentRun": "AI 工作台",
+    "advanced": "高级",
     "notifications": "通知",
     "calendar": "日历",
     "files": "文件管理",
@@ -584,6 +586,20 @@
     "avg": "平均耗时",
     "comingSoonTitle": "MCP 集成 — 即将上线",
     "comingSoonDesc": "通过 Model Context Protocol（MCP）连接外部工具：GitHub、Slack、Google、数据库等，直接在 JunQi Desktop 中使用。"
+  },
+  "session": {
+    "recent": "最近会话",
+    "justNow": "刚刚",
+    "minAgo": "{{n}}分钟前",
+    "hrAgo": "{{n}}小时前",
+    "dayAgo": "{{n}}天前"
+  },
+  "lifecycle": {
+    "idle": "空闲",
+    "running": "运行中",
+    "attention": "需关注",
+    "failed": "失败",
+    "ended": "完成"
   },
   "chat": {
     "quickChat": "快速对话",
@@ -1794,5 +1810,65 @@
     "preview": "预览",
     "previewUI": "敏捷的棕色狐狸跳过了懒狗。The quick brown fox jumps over the lazy dog.",
     "previewMono": "console.log('你好，世界！'); // abcdef 1234567890"
+  },
+  "usage": {
+    "title": "用量",
+    "loading": "加载中…",
+    "failed": "加载失败",
+    "noDataYet": "暂无用量数据。",
+    "left": "% 剩余",
+    "noWindows": "无用量窗口。",
+    "fiveHour": "5小时",
+    "sevenDay": "7天"
+  },
+  "appSettings": {
+    "general": "通用",
+    "generalDesc": "应用全局设置。",
+    "theme": "主题",
+    "themeDesc": "选择 JunQi 的外观。",
+    "fonts": "字体",
+    "fontsDesc": "自定义界面和代码字体。",
+    "shortcuts": "快捷键",
+    "shortcutsDesc": "自定义键盘快捷键。",
+    "connect": "连接",
+    "connectDesc": "Gateway 连接设置。",
+    "notify": "通知",
+    "notifyDesc": "通知偏好设置。",
+    "pet": "萌宠",
+    "petDesc": "桌面宠物设置。",
+    "hooks": "Hooks",
+    "hooksDesc": "Agent 版本检测和 Hook 就绪状态。",
+    "about": "关于",
+    "languageHint": "更改后需要重新加载才能生效。"
+  },
+  "agent": {
+    "perm": {
+      "ask": "询问",
+      "auto": "自动编辑",
+      "full": "完全访问"
+    },
+    "launch": {
+      "label": "启动模式",
+      "local": "本地",
+      "worktree": "工作树"
+    },
+    "claude": "claude",
+    "codex": "codex",
+    "pi": "pi",
+    "status": {
+      "done": "完成",
+      "failed": "失败",
+      "cancelled": "已取消",
+      "running": "运行中",
+      "queued": "排队"
+    },
+    "worktree": {
+      "merge": "合并",
+      "discard": "丢弃"
+    },
+    "session": {
+      "view": "查看",
+      "resume": "续接"
+    }
   }
 }

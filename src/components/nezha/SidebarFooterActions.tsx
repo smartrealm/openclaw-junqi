@@ -61,7 +61,7 @@ export function SidebarFooterActions({
           title={t("appSettings.title")}
           onClick={() => setShowAppSettings(true)}
         >
-          <Settings size={14} strokeWidth={1.6} color="var(--text-hint)" />
+          <Settings size={14} strokeWidth={1.6} color="rgb(var(--aegis-text-dim))" />
         </button>
         <button
           style={s.sidebarIconBtn}
@@ -69,9 +69,9 @@ export function SidebarFooterActions({
           onClick={onToggleTheme}
         >
           {isDark ? (
-            <Sun size={14} strokeWidth={1.8} color="var(--text-hint)" />
+            <Sun size={14} strokeWidth={1.8} color="rgb(var(--aegis-text-dim))" />
           ) : (
-            <Moon size={14} strokeWidth={1.8} color="var(--text-hint)" />
+            <Moon size={14} strokeWidth={1.8} color="rgb(var(--aegis-text-dim))" />
           )}
         </button>
         {ENABLE_USAGE_INSIGHTS ? <UsagePopover /> : null}

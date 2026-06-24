@@ -86,8 +86,8 @@ function ToastContainer({
                 ? "var(--danger)"
                 : t.type === "success"
                   ? "var(--success)"
-                  : "var(--warning)",
-            color: "var(--fg-on-accent)",
+                  : "rgb(var(--aegis-warning))",
+            color: "var(--aegis-btn-primary-text)",
             fontSize: 12.5,
             fontWeight: 500,
             boxShadow: "var(--shadow-toast)",

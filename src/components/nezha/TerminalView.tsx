@@ -16,6 +16,7 @@ import {
   initTerminal,
   loadWebglAddon,
   safeFit,
+  safeOpenTerminal,
   createSmartWriter,
   attachMacWebKitTerminalGuard,
   attachTerminalScrollbarAutoHide,
@@ -100,96 +101,117 @@ export function TerminalView({
 
     const serializeAddon = new SerializeAddon();
     term.loadAddon(serializeAddon);
-    term.open(container);
-    // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
-    const disposeCharSizeOverride = applyDomCharSizeOverride(term);
-    const disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
-    const disposeInputFix = attachMacWebKitShiftInputFix(term);
-    const webglHandle = loadWebglAddon(term);
 
-    const size = safeFit(fitAddon, term, container);
-    if (size) notifyResize(size.cols, size.rows);
-
-    // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
-    whenFontsReady.then(() => {
-      if (disposed) return;
-      const s = safeFit(fitAddon, term, container);
-      if (s) notifyResize(s.cols, s.rows);
-    });
-
-    const focusTerminal = () => {
-      window.requestAnimationFrame(() => {
-        term.focus();
-      });
-    };
-
-    const writer = createSmartWriter(term);
-    const disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
-
-    const terminalGeneration = onRegisterRef.current(writer.write);
-
-    const completeRestore = () => {
-      onReadyRef.current?.(terminalGeneration);
-      focusTerminal();
-    };
-
-    window.requestAnimationFrame(() => {
-      const s = safeFit(fitAddon, term, container);
-      if (s) notifyResize(s.cols, s.rows);
-      if (initialSnapshot) {
-        term.write(initialSnapshot, () => {
-          if (initialData) {
-            term.write(initialData, completeRestore);
-            return;
-          }
-          completeRestore();
-        });
-        return;
-      }
-      if (initialData) {
-        term.write(initialData, completeRestore);
-        return;
-      }
-      completeRestore();
-    });
-
-    const disposeSmartCopy = attachSmartCopy(term, {
-      matchesNewline: (e) => matchesTerminalNewline(e, shiftEnterNewlineRef.current),
-      onNewline: () => onInputRef.current(TERMINAL_NEWLINE_SEQUENCE),
-    });
-    const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
-    const disposeOnData = { dispose: () => linuxIME.dispose() };
-
-    const handlePointerDown = (e: PointerEvent) => {
-      if (e.button === 0) {
-        focusTerminal();
-      }
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible") return;
-      window.requestAnimationFrame(() => {
-        const s = safeFit(fitAddon, term, container);
-        if (s) notifyResize(s.cols, s.rows);
-        refreshTerminalDisplay(term);
-        term.focus();
-      });
-    };
-
-    container.addEventListener("pointerdown", handlePointerDown as EventListener);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
+    // Holders wired in openAndWire so the cleanup function can dispose them
+    // even when term.open() was deferred by safeOpenTerminal.
+    let disposeCharSizeOverride: (() => void) | null = null;
+    let disposeScrollbarAutoHide: (() => void) | null = null;
+    let disposeInputFix: (() => void) | null = null;
+    let webglHandle: { dispose(): void } | null = null;
+    let disposeMacWebKitGuard: (() => void) | null = null;
+    let disposeSmartCopy: (() => void) | null = null;
+    let disposeOnData: { dispose(): void } | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    let pointerHandler: ((e: PointerEvent) => void) | null = null;
+    let visibilityHandler: (() => void) | null = null;
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    const resizeObserver = new ResizeObserver(() => {
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
+    let opened = false;
+
+    const openAndWire = () => {
+      if (opened || disposed) return;
+      opened = true;
+
+      // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
+      disposeCharSizeOverride = applyDomCharSizeOverride(term);
+      disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
+      disposeInputFix = attachMacWebKitShiftInputFix(term);
+      webglHandle = loadWebglAddon(term);
+
+      const size = safeFit(fitAddon, term, container);
+      if (size) notifyResize(size.cols, size.rows);
+
+      whenFontsReady.then(() => {
+        if (disposed) return;
         const s = safeFit(fitAddon, term, container);
         if (s) notifyResize(s.cols, s.rows);
-      }, 50);
-    });
-    resizeObserver.observe(container);
+      });
+
+      const focusTerminal = () => {
+        window.requestAnimationFrame(() => {
+          term.focus();
+        });
+      };
+
+      const writer = createSmartWriter(term);
+      disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
+
+      const terminalGeneration = onRegisterRef.current(writer.write);
+
+      const completeRestore = () => {
+        onReadyRef.current?.(terminalGeneration);
+        focusTerminal();
+      };
+
+      window.requestAnimationFrame(() => {
+        const s = safeFit(fitAddon, term, container);
+        if (s) notifyResize(s.cols, s.rows);
+        if (initialSnapshot) {
+          term.write(initialSnapshot, () => {
+            if (initialData) {
+              term.write(initialData, completeRestore);
+              return;
+            }
+            completeRestore();
+          });
+          return;
+        }
+        if (initialData) {
+          term.write(initialData, completeRestore);
+          return;
+        }
+        completeRestore();
+      });
+
+      disposeSmartCopy = attachSmartCopy(term, {
+        matchesNewline: (e) => matchesTerminalNewline(e, shiftEnterNewlineRef.current),
+        onNewline: () => onInputRef.current(TERMINAL_NEWLINE_SEQUENCE),
+      });
+      const linuxIME = attachLinuxIMEFix(term, (data) => onInputRef.current(data));
+      disposeOnData = { dispose: () => linuxIME.dispose() };
+
+      pointerHandler = (e: PointerEvent) => {
+        if (e.button === 0) {
+          focusTerminal();
+        }
+      };
+      visibilityHandler = () => {
+        if (document.visibilityState !== "visible") return;
+        window.requestAnimationFrame(() => {
+          const s = safeFit(fitAddon, term, container);
+          if (s) notifyResize(s.cols, s.rows);
+          refreshTerminalDisplay(term);
+          term.focus();
+        });
+      };
+
+      container.addEventListener("pointerdown", pointerHandler as EventListener);
+      document.addEventListener("visibilitychange", visibilityHandler);
+
+      resizeObserver = new ResizeObserver(() => {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const s = safeFit(fitAddon, term, container);
+          if (s) notifyResize(s.cols, s.rows);
+        }, 50);
+      });
+      resizeObserver.observe(container);
+    };
+
+    const disposeSafeOpen = safeOpenTerminal(term, container, openAndWire);
 
     return () => {
       disposed = true;
+      disposeSafeOpen();
       try {
         const snapshot = serializeAddon.serialize();
         if (snapshot) onSnapshotRef.current?.(snapshot);
@@ -198,17 +220,21 @@ export function TerminalView({
       }
       onRegisterRef.current(null);
       fitAddonRef.current = null;
-      disposeCharSizeOverride();
-      webglHandle.dispose();
-      disposeScrollbarAutoHide();
-      disposeMacWebKitGuard();
-      disposeInputFix();
-      disposeSmartCopy();
-      disposeOnData.dispose();
+      disposeCharSizeOverride?.();
+      try { webglHandle?.dispose(); } catch { /* */ }
+      disposeScrollbarAutoHide?.();
+      disposeMacWebKitGuard?.();
+      disposeInputFix?.();
+      disposeSmartCopy?.();
+      disposeOnData?.dispose();
       if (resizeTimer) clearTimeout(resizeTimer);
-      resizeObserver.disconnect();
-      container.removeEventListener("pointerdown", handlePointerDown as EventListener);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      resizeObserver?.disconnect();
+      if (pointerHandler) {
+        container.removeEventListener("pointerdown", pointerHandler as EventListener);
+      }
+      if (visibilityHandler) {
+        document.removeEventListener("visibilitychange", visibilityHandler);
+      }
       terminalRef.current = null;
       term.dispose();
     };

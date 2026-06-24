@@ -4,12 +4,13 @@
 // ═══════════════════════════════════════════════════════════
 
 import { NavLink, useLocation } from 'react-router-dom';
+import { NavSidebarFooter } from './NavSidebarFooter';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, MessageCircle, Kanban, DollarSign,
-  Clock, Bot, Settings, Settings2, Brain, Puzzle,
-  Terminal, FolderOpen, CalendarDays, Activity,
+  Clock, Bot, Settings2, Brain, Puzzle,
+  Terminal, FolderOpen, CalendarDays, Activity, Sparkles,
   PanelLeftOpen, PanelLeftClose, History, GitBranch,
 } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -23,6 +24,8 @@ interface NavItem {
   labelKey: string;
   badge?: string;
   feature: EditionFeatureKey;
+  /** When set, the item is rendered in a submenu (e.g. 'advanced'). */
+  submenu?: 'advanced';
 }
 
 const navItemDefs: NavItem[] = [
@@ -35,6 +38,7 @@ const navItemDefs: NavItem[] = [
   { to: '/costs', icon: DollarSign, labelKey: 'nav.costs', feature: 'analytics' },
   { to: '/skills', icon: Puzzle, labelKey: 'nav.skills', feature: 'skills' },
   { to: '/terminal', icon: Terminal, labelKey: 'nav.terminal', feature: 'terminal' },
+  { to: '/agent-run', icon: Sparkles, labelKey: 'nav.agentRun', feature: 'agentRun', submenu: 'advanced' },
   { to: '/memory', icon: Brain, labelKey: 'nav.memory', badge: '🧪', feature: 'memory' },
   { to: '/files', icon: FolderOpen, labelKey: 'nav.files', feature: 'files' },    { to: '/calendar', icon: CalendarDays, labelKey: 'nav.calendar', feature: 'calendar' },
   { to: '/config', icon: Settings2, labelKey: 'nav.config', feature: 'configManager' },
@@ -86,8 +90,8 @@ export function NavSidebar() {
       )}
     >
       {/* Navigation Icons */}
-      <nav className={clsx('flex-1 flex flex-col gap-1 px-2', sidebarMode === 'mini' ? 'items-center' : 'items-stretch')}>
-        {navItems.map((item) => {
+      <nav className={clsx('flex-1 flex flex-col gap-1 px-2 overflow-y-auto', sidebarMode === 'mini' ? 'items-center' : 'items-stretch')}>
+        {navItems.filter((i) => !i.submenu).map((item) => {
           const isActive = location.pathname === item.to ||
             (item.to !== '/' && location.pathname.startsWith(item.to));
 
@@ -151,53 +155,48 @@ export function NavSidebar() {
             </NavLink>
           );
         })}
+
+        {/* Advanced submenu — collapsed by default, hides nezha-specific
+            power-user items that overlap with Chat. */}
+        {(() => {
+          const advanced = navItems.filter((i) => i.submenu === 'advanced');
+          if (advanced.length === 0) return null;
+          const isAdvancedOpen = !sidebarCollapsed;
+          return (
+            <div className={clsx('mt-3 pt-3', !sidebarCollapsed && 'border-t border-aegis-border/30')}>
+              {!sidebarCollapsed && (
+                <div className="text-[9.5px] font-bold uppercase tracking-wider text-aegis-text-dim mb-1.5 px-3">
+                  {t('nav.advanced', 'Advanced')}
+                </div>
+              )}
+              {advanced.map((item) => {
+                const isActive = location.pathname === item.to ||
+                  (item.to !== '/' && location.pathname.startsWith(item.to));
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onMouseEnter={() => PREFETCH_MAP[item.to]?.()}
+                    aria-current={isActive ? 'page' : undefined}
+                    title={sidebarCollapsed ? t(item.labelKey) : undefined}
+                    className={clsx(
+                      'relative h-[36px] rounded-md flex items-center transition-all',
+                      sidebarCollapsed ? 'w-[36px] justify-center mx-auto' : 'w-full px-3 gap-2',
+                      isActive
+                        ? 'bg-[rgb(var(--aegis-primary)/0.10)] text-aegis-primary'
+                        : 'text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.04)]',
+                    )}>
+                    <item.icon size={15} />
+                    {!sidebarCollapsed && <span className="text-[11.5px] font-medium truncate">{t(item.labelKey)}</span>}
+                  </NavLink>
+                );
+              })}
+            </div>
+          );
+        })()}
       </nav>
 
-      {/* Bottom: Settings */}
-      {isFeatureEnabled('settings') && (
-      <div className={clsx('flex flex-col gap-1 pt-3 px-2', sidebarMode === 'mini' ? 'items-center' : 'items-stretch')}>
-        <NavLink
-          to="/settings"
-          aria-current={location.pathname === '/settings' ? 'page' : undefined}
-          className={clsx(
-            'relative h-[44px] rounded-xl',
-            'flex items-center',
-            'transition-all duration-300 group',
-            sidebarCollapsed ? 'w-[44px] justify-center' : 'w-full px-3 justify-start gap-2.5',
-            location.pathname === '/settings'
-              ? 'bg-[rgb(var(--aegis-primary)/0.10)] text-aegis-primary'
-              : 'text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
-          )}
-        >
-          {location.pathname === '/settings' && (
-            <motion.div
-              layoutId="nav-active-bar"
-              className={clsx(
-                'absolute top-1/2 -translate-y-1/2',
-                'w-[3px] h-[20px] rounded-full',
-                'bg-aegis-primary',
-                'shadow-[0_0_12px_rgb(var(--aegis-primary)/0.4)]',
-                isRTL ? '-right-[12px]' : '-left-[12px]'
-              )}
-              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            />
-          )}
-          <Settings size={18} />
-          {!sidebarCollapsed && <span className="text-[12px] font-medium truncate">{t('nav.settings')}</span>}
-          {sidebarCollapsed && (
-            <div className={clsx(
-              'absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg',
-              'bg-aegis-elevated-solid border border-aegis-border shadow-lg',
-              'text-aegis-text text-[11px] font-medium whitespace-nowrap',
-              'opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50',
-              isRTL ? 'right-full mr-3' : 'left-full ml-3'
-            )}>
-              {t('nav.settings')}
-            </div>
-          )}
-        </NavLink>
-      </div>
-      )}
+      <NavSidebarFooter collapsed={sidebarCollapsed} />
     </motion.aside>
   );
 }

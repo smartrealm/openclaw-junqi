@@ -429,11 +429,11 @@ export function FileExplorer({
           title={t("common.refresh")}
           style={s.fileExplorerRefreshBtn}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
-            (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
+            (e.currentTarget as HTMLElement).style.color = "rgb(var(--aegis-text))";
+            (e.currentTarget as HTMLElement).style.background = "var(--aegis-hover)";
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "var(--text-hint)";
+            (e.currentTarget as HTMLElement).style.color = "rgb(var(--aegis-text-dim))";
             (e.currentTarget as HTMLElement).style.background = "none";
           }}
         >

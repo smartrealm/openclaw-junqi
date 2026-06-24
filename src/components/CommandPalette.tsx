@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, MessageCircle, Kanban, DollarSign, Clock, Bot, Brain,
   Settings, Wifi, WifiOff, Heart, Mail, Calendar, RefreshCw,
-  Globe, Bell, BellOff, Command
+  Globe, Bell, BellOff, Command, Sparkles, Terminal, Cpu
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -19,6 +19,16 @@ import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
 import clsx from 'clsx';
 
 const DEFAULT_GATEWAY_WS_URL = 'ws://127.0.0.1:18789';
+
+// Quick-launch agents (kooky supports 13; we expose the common ones in palette).
+const QUICK_AGENTS = [
+  { id: 'claude',  icon: '✨', label: 'Claude Code',  desc: 'Anthropic Claude',    keywords: ['claude', 'anthropic'] },
+  { id: 'codex',   icon: '🧠', label: 'Codex',         desc: 'OpenAI Codex CLI',    keywords: ['codex', 'openai'] },
+  { id: 'gemini',  icon: '🌟', label: 'Gemini CLI',    desc: 'Google Gemini',       keywords: ['gemini', 'google'] },
+  { id: 'pi',      icon: 'π', label: 'Pi',             desc: 'Pi coding agent',     keywords: ['pi'] },
+  { id: 'qwen',    icon: '🤯', label: 'Qwen CLI',      desc: 'Alibaba Qwen',        keywords: ['qwen', 'alibaba', 'tongyi'] },
+  { id: 'ollama',  icon: '🦙', label: 'Ollama',        desc: 'Local Ollama models', keywords: ['ollama', 'local'] },
+];
 
 interface PaletteCommand {
   id: string;
@@ -78,6 +88,19 @@ export function CommandPalette() {
     { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
       window.dispatchEvent(new CustomEvent('aegis:compress-session'));
     }},
+
+    // Agent launchers (kooky ⌘P pattern: type to filter, Enter to launch)
+    ...QUICK_AGENTS.map((a) => ({
+      id: `agent-${a.id}`,
+      icon: Sparkles,
+      name: a.label,
+      description: a.desc,
+      keywords: ['agent', 'launch', 'start', ...a.keywords, a.label.toLowerCase()],
+      shortcut: `→ /agent-run?agent=${a.id}`,
+      action: () => navigate(`/agent-run?agent=${a.id}`),
+    })),
+    { id: 'agent-terminal', icon: Terminal, name: t('palette.openTerminal', 'Open Terminal'), keywords: ['terminal', 'shell', 'bash', 'zsh'], shortcut: 'Ctrl+T', action: () => navigate('/terminal') },
+    { id: 'agent-status', icon: Cpu, name: t('palette.systemStatus', 'System Status'), keywords: ['status', 'system', 'health'], action: () => navigate('/perf') },
 
     // Connection
     { id: 'conn-reconnect', icon: connected ? Wifi : WifiOff, name: connected ? t('palette.reconnect') : t('palette.connectGateway'), keywords: ['connect', 'reconnect', 'اتصال', 'gateway'], action: async () => {

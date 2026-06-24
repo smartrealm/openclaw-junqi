@@ -102,11 +102,11 @@ export function ThemePanel({
           gap: 10,
           padding: 14,
           borderRadius: 12,
-          border: `1px solid ${selected ? "var(--control-active-fg)" : "var(--border-medium)"}`,
-          background: selected ? "var(--control-active-bg)" : "var(--bg-subtle)",
+          border: `1px solid ${selected ? "rgb(var(--aegis-primary))" : "var(--aegis-border)"}`,
+          background: selected ? "rgba(var(--aegis-primary) / 0.10)" : "var(--aegis-elevated)",
           cursor: "pointer",
           textAlign: "left",
-          boxShadow: selected ? "0 0 0 1px var(--control-active-bg)" : "none",
+          boxShadow: selected ? "0 0 0 1px rgba(var(--aegis-primary) / 0.10)" : "none",
           transition: "border-color 0.12s, background 0.12s, box-shadow 0.12s",
         }}
       >
@@ -314,12 +314,12 @@ export function ThemePanel({
               gap: 8,
             }}
           >
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgb(var(--aegis-text))" }}>
               {title}
             </span>
-            {selected && <Check size={14} color="var(--accent)" />}
+            {selected && <Check size={14} color="rgb(var(--aegis-primary))" />}
           </div>
-          <span style={{ fontSize: 11.5, color: "var(--text-hint)", lineHeight: 1.45 }}>
+          <span style={{ fontSize: 11.5, color: "rgb(var(--aegis-text-dim))", lineHeight: 1.45 }}>
             {description}
           </span>
         </div>
@@ -350,8 +350,8 @@ export function ThemePanel({
           gap: 14,
           padding: "16px 18px",
           borderRadius: 12,
-          border: `1px solid ${themeMode === "system" ? "var(--control-active-fg)" : "var(--border-dim)"}`,
-          background: themeMode === "system" ? "var(--control-active-bg)" : "var(--bg-subtle)",
+          border: `1px solid ${themeMode === "system" ? "rgb(var(--aegis-primary))" : "var(--aegis-border)"}`,
+          background: themeMode === "system" ? "rgba(var(--aegis-primary) / 0.10)" : "var(--aegis-elevated)",
           cursor: "pointer",
           textAlign: "left",
         }}
@@ -365,9 +365,9 @@ export function ThemePanel({
               borderRadius: 999,
               border: "none",
               padding: 3,
-              background: themeMode === "system" ? "var(--primary-action-bg)" : "var(--border-medium)",
+              background: themeMode === "system" ? "rgb(var(--aegis-primary))" : "var(--aegis-border)",
               boxShadow:
-                themeMode === "system" ? "0 0 0 4px var(--control-active-bg)" : "inset 0 0 0 1px var(--border-dim)",
+                themeMode === "system" ? "0 0 0 4px rgba(var(--aegis-primary) / 0.10)" : "inset 0 0 0 1px var(--aegis-border)",
               transition: "background 0.12s, box-shadow 0.12s",
             }}
           >
@@ -378,8 +378,8 @@ export function ThemePanel({
                 borderRadius: 999,
                 display: "grid",
                 placeItems: "center",
-                background: "var(--control-knob-bg)",
-                color: themeMode === "system" ? "var(--accent)" : "var(--text-secondary)",
+                background: "#ffffff",
+                color: themeMode === "system" ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-secondary))",
                 transform: themeMode === "system" ? "translateX(20px)" : "translateX(0)",
                 transition: "transform 0.12s ease",
               }}
@@ -397,7 +397,7 @@ export function ThemePanel({
               textAlign: "left",
             }}
           >
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgb(var(--aegis-text))" }}>
               {t("theme.followSystem")}
             </span>
           </div>
@@ -410,20 +410,20 @@ export function ThemePanel({
             gap: 6,
             padding: "6px 10px",
             borderRadius: 999,
-            background: "var(--bg-card)",
-            border: "1px solid var(--border-medium)",
-            color: "var(--text-secondary)",
+            background: "var(--aegis-card)",
+            border: "1px solid var(--aegis-border)",
+            color: "rgb(var(--aegis-text-secondary))",
             fontSize: 11.5,
             fontWeight: 600,
           }}
         >
-          {themeMode === "system" && <Check size={13} color="var(--accent)" />}
+          {themeMode === "system" && <Check size={13} color="rgb(var(--aegis-primary))" />}
           {selectedLabel}
         </div>
       </button>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))" }}>
           {t("theme.manualTheme")}
         </div>
         <div

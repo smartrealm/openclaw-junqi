@@ -319,8 +319,8 @@ export function GitChanges({
       style={{
         width,
         flexShrink: 0,
-        background: "var(--bg-sidebar)",
-        borderLeft: "1px solid var(--border-dim)",
+        background: "var(--aegis-surface)",
+        borderLeft: "1px solid var(--aegis-border)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -333,12 +333,12 @@ export function GitChanges({
           display: "flex",
           alignItems: "center",
           padding: "0 12px",
-          borderBottom: "1px solid var(--border-dim)",
+          borderBottom: "1px solid var(--aegis-border)",
           flexShrink: 0,
           gap: 6,
         }}
       >
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 650, color: "var(--text-primary)" }}>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 650, color: "rgb(var(--aegis-text))" }}>
           {t("git.changes")}
         </span>
         <button
@@ -350,7 +350,7 @@ export function GitChanges({
             cursor: "pointer",
             padding: 4,
             borderRadius: 4,
-            color: "var(--text-hint)",
+            color: "rgb(var(--aegis-text-dim))",
             display: "flex",
             alignItems: "center",
           }}
@@ -377,7 +377,7 @@ export function GitChanges({
             cursor: "pointer",
             padding: 4,
             borderRadius: 4,
-            color: "var(--text-hint)",
+            color: "rgb(var(--aegis-text-dim))",
             display: "flex",
             alignItems: "center",
           }}
@@ -406,7 +406,7 @@ export function GitChanges({
             border: "none",
             cursor: "pointer",
             background: tab === "task" ? "var(--control-selected-bg)" : "none",
-            color: tab === "task" ? "var(--control-selected-fg)" : "var(--text-muted)",
+            color: tab === "task" ? "var(--control-selected-fg)" : "rgb(var(--aegis-text-muted))",
           }}
         >
           {t("git.currentTask")} {taskCount}
@@ -421,7 +421,7 @@ export function GitChanges({
             border: "none",
             cursor: "pointer",
             background: tab === "all" ? "var(--control-selected-bg)" : "none",
-            color: tab === "all" ? "var(--control-selected-fg)" : "var(--text-muted)",
+            color: tab === "all" ? "var(--control-selected-fg)" : "rgb(var(--aegis-text-muted))",
           }}
         >
           {t("git.all")} {allCount}
@@ -459,7 +459,7 @@ export function GitChanges({
             style={{
               padding: "24px 16px",
               fontSize: 12,
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
               textAlign: "center",
             }}
           >
@@ -556,7 +556,7 @@ export function GitChanges({
       </div>
 
       {/* Commit area */}
-      <div style={{ padding: "8px 10px", borderTop: "1px solid var(--border-dim)", flexShrink: 0 }}>
+      <div style={{ padding: "8px 10px", borderTop: "1px solid var(--aegis-border)", flexShrink: 0 }}>
         <div style={{ position: "relative" }}>
           <textarea
             value={commitMsg}
@@ -572,10 +572,10 @@ export function GitChanges({
               width: "100%",
               padding: "8px 10px",
               paddingRight: 36,
-              background: "var(--bg-card)",
-              border: `1px solid ${commitMsgError ? "var(--danger-fg)" : textareaFocused ? "var(--control-active-fg)" : "var(--border-medium)"}`,
+              background: "var(--aegis-card)",
+              border: `1px solid ${commitMsgError ? "var(--danger-fg)" : textareaFocused ? "rgb(var(--aegis-primary))" : "var(--aegis-border)"}`,
               borderRadius: 6,
-              color: "var(--text-primary)",
+              color: "rgb(var(--aegis-text))",
               fontSize: 12.5,
               resize: "none",
               outline: "none",
@@ -600,7 +600,7 @@ export function GitChanges({
               cursor: generatingMsg ? "default" : "pointer",
               padding: 3,
               borderRadius: 4,
-              color: generatingMsg ? "var(--accent)" : "var(--text-hint)",
+              color: generatingMsg ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))",
               display: "flex",
               alignItems: "center",
               transition: "color 0.15s",
@@ -623,8 +623,8 @@ export function GitChanges({
               alignItems: "center",
               gap: 5,
               padding: "5px 12px",
-              background: "var(--primary-action-bg)",
-              color: "var(--primary-action-fg)",
+              background: "rgb(var(--aegis-primary))",
+              color: "var(--aegis-btn-primary-text)",
               border: "none",
               borderRadius: 6,
               fontSize: 12.5,
@@ -665,13 +665,13 @@ function TopSectionHeader({
         alignItems: "center",
         padding: "8px 10px 6px 8px",
         cursor: "pointer",
-        background: hovered ? "var(--bg-hover)" : "transparent",
+        background: hovered ? "var(--aegis-hover)" : "transparent",
         transition: "background 0.1s",
         userSelect: "none",
       }}
     >
       <span
-        style={{ color: "var(--text-hint)", display: "flex", alignItems: "center", marginRight: 4 }}
+        style={{ color: "rgb(var(--aegis-text-dim))", display: "flex", alignItems: "center", marginRight: 4 }}
       >
         {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
       </span>
@@ -680,7 +680,7 @@ function TopSectionHeader({
           flex: 1,
           fontSize: 12,
           fontWeight: 650,
-          color: "var(--text-primary)",
+          color: "rgb(var(--aegis-text))",
         }}
       >
         {label}
@@ -689,9 +689,9 @@ function TopSectionHeader({
         style={{
           fontSize: 11,
           fontWeight: 600,
-          color: "var(--text-hint)",
-          background: "var(--bg-card)",
-          border: "1px solid var(--border-dim)",
+          color: "rgb(var(--aegis-text-dim))",
+          background: "var(--aegis-card)",
+          border: "1px solid var(--aegis-border)",
           borderRadius: 10,
           padding: "0 6px",
           minWidth: 18,
@@ -729,7 +729,7 @@ function SectionHeader({
         padding: "6px 8px 2px 12px",
         fontSize: 11,
         fontWeight: 700,
-        color: "var(--text-hint)",
+        color: "rgb(var(--aegis-text-dim))",
         letterSpacing: 0.4,
         textTransform: "uppercase",
       }}
@@ -739,7 +739,7 @@ function SectionHeader({
         style={{
           fontSize: 11,
           fontWeight: 600,
-          color: "var(--text-hint)",
+          color: "rgb(var(--aegis-text-dim))",
           marginRight: onAction ? 4 : 0,
         }}
       >
@@ -760,7 +760,7 @@ function SectionHeader({
             borderRadius: 4,
             fontSize: 14,
             lineHeight: 1,
-            color: hovered ? "var(--text-primary)" : "transparent",
+            color: hovered ? "rgb(var(--aegis-text))" : "transparent",
             transition: "color 0.1s",
             fontWeight: 600,
           }}

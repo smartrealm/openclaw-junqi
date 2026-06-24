@@ -25,7 +25,7 @@ export function GeneralPanel({
   const labelStyle: React.CSSProperties = {
     fontSize: 12,
     fontWeight: 600,
-    color: "var(--text-secondary)",
+    color: "rgb(var(--aegis-text-secondary))",
     marginBottom: 5,
     display: "block",
   };
@@ -38,7 +38,7 @@ export function GeneralPanel({
 
   const hintStyle: React.CSSProperties = {
     fontSize: 11,
-    color: "var(--text-hint)",
+    color: "rgb(var(--aegis-text-dim))",
     marginTop: 3,
   };
 
@@ -80,7 +80,7 @@ export function GeneralPanel({
           <Select.Trigger aria-label={t("appSettings.appLanguage")} style={selectTriggerStyle}>
             <Select.Value>{selectedLanguageLabel}</Select.Value>
             <Select.Icon>
-              <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
+              <ChevronDown size={13} strokeWidth={2.2} color="rgb(var(--aegis-text-dim))" />
             </Select.Icon>
           </Select.Trigger>
           <Select.Portal>
@@ -122,7 +122,7 @@ export function GeneralPanel({
           >
             <Select.Value>{selectedTaskDisplayWindowLabel}</Select.Value>
             <Select.Icon>
-              <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
+              <ChevronDown size={13} strokeWidth={2.2} color="rgb(var(--aegis-text-dim))" />
             </Select.Icon>
           </Select.Trigger>
           <Select.Portal>
@@ -167,7 +167,7 @@ export function GeneralPanel({
           <span
             style={{
               ...s.settingToggleTrack,
-              background: attentionBadge ? "var(--primary-action-bg)" : "var(--border-medium)",
+              background: attentionBadge ? "rgb(var(--aegis-primary))" : "var(--aegis-border)",
             }}
           >
             <span

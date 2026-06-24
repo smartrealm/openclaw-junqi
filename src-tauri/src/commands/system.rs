@@ -132,9 +132,14 @@ pub async fn check_openclaw() -> Result<OpenclawStatus, String> {
         // asdf / mise shims (this is where many users' `node` actually lives)
         path_parts.push(home.join(".asdf").join("shims").to_string_lossy().to_string());
     }
-    // Homebrew (Apple Silicon + Intel) and the classic /usr/local prefix.
+    // Homebrew: macOS (Apple Silicon + Intel) and the classic /usr/local prefix.
     path_parts.push("/opt/homebrew/bin".to_string());
     path_parts.push("/usr/local/bin".to_string());
+    #[cfg(target_os = "linux")]
+    {
+        // Linuxbrew is the Linux port of Homebrew — only present on Linux.
+        path_parts.push("/home/linuxbrew/.linuxbrew/bin".to_string());
+    }
     if let Ok(existing) = std::env::var("PATH") {
         path_parts.push(existing);
     }

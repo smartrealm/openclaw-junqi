@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { ArrowDown, Search, X, Zap } from 'lucide-react';
+import { ArrowDown, Search, X, Zap, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
@@ -17,6 +17,8 @@ import { MessageInput } from './MessageInput';
 import { TypingIndicator } from './TypingIndicator';
 import { InlineButtonBar } from './InlineButtonBar';
 import { QuickReplyBar } from './QuickReplyBar';
+import { PreviewPanel } from './PreviewPanel';
+import { usePreviewStore } from '@/stores/previewStore';
 import type { RenderBlock } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import clsx from 'clsx';
@@ -809,14 +811,20 @@ export function ChatView() {
   }, [activeSessionKey, historyMetaBySession, t]);
 
   // ── Footer: thinking stream + typing indicator ──
+  // Suppress TypingIndicator when the latest group already contains a streaming
+  // message bubble with its own inline dots+caret — otherwise the user sees two
+  // "bubbles" stacked (the streamed content + a duplicate typing avatar below).
+  const lastGroup = responseGroups[responseGroups.length - 1];
+  const tailBlock = lastGroup?.blocks[lastGroup.blocks.length - 1];
+  const tailIsStreamingMessage = tailBlock?.type === 'message-content' && tailBlock.isStreaming;
   const Footer = useCallback(() => (
     <div className="pb-1">
       {thinkingText && (
         <ThinkingBubble content={thinkingText} isStreaming />
       )}
-      {isTyping && <TypingIndicator />}
+      {isTyping && !tailIsStreamingMessage && <TypingIndicator />}
     </div>
-  ), [thinkingText, isTyping]);
+  ), [thinkingText, isTyping, tailIsStreamingMessage]);
 
   const latestGroupHasDecision = responseGroups[responseGroups.length - 1]?.blocks.some((block) => block.type === 'decision') ?? false;
   const shouldShowConnectionBanner =
@@ -827,8 +835,12 @@ export function ChatView() {
       (hasSeenConnectionAttempt && Boolean(connectionError))
     );
 
+  const { isOpen: previewOpen, toggle: togglePreview } = usePreviewStore();
+
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-aegis-bg">
+    <div className="flex flex-1 min-h-0 bg-aegis-bg">
+      {/* ── Left: chat ── */}
+      <div className="flex flex-col flex-1 min-h-0 min-w-0">
       {/* Connection Banner */}
       {shouldShowConnectionBanner && (
         <div className={clsx(
@@ -875,6 +887,20 @@ export function ChatView() {
 
 
 
+      {/* ── Top control bar: search + preview toggle ── */}
+      <div className="shrink-0 flex items-center gap-1 px-3 py-1 border-b border-aegis-border bg-aegis-elevated/30">
+        <div className="flex-1" />
+        <button
+          onClick={togglePreview}
+          title={previewOpen ? t('preview.close', 'Close preview') : t('preview.open', 'Open preview')}
+          className="p-1.5 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-overlay/5 transition-colors"
+        >
+          {previewOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+        </button>
+        <Search size={14} className="text-aegis-text-muted shrink-0 cursor-pointer hover:text-aegis-text p-1.5" onClick={() => setSearchOpen((o) => !o)} />
+        <span className="text-[10px] text-aegis-text-dim/50 tabular-nums">{renderBlocks.length}</span>
+      </div>
+
       {/* Search Bar */}
       {searchOpen && (
         <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-aegis-border bg-aegis-elevated/50">
@@ -913,7 +939,15 @@ export function ChatView() {
           <Virtuoso
             ref={virtuosoRef}
             data={responseGroups}
-            followOutput={() => (scrollLockedRef.current || !atBottom ? false : (isTyping ? 'smooth' : 'auto'))}
+            followOutput={() => {
+              // Honor explicit user lock OR if atBottom is false. Without the
+              // atBottom gate, virtuoso auto-anchors to the tail during stream
+              // growth even when the user is reading history — the bug the user
+              // reported ("上拉时自己向下").
+              if (scrollLockedRef.current) return false;
+              if (!atBottom) return false;
+              return isTyping ? 'smooth' : 'auto';
+            }}
             overscan={{ main: 600, reverse: 600 }}
             increaseViewportBy={{ top: 400, bottom: 400 }}
             defaultItemHeight={120}
@@ -923,9 +957,18 @@ export function ChatView() {
               if (b) {
                 // User scrolled back to bottom → re-enable auto-follow.
                 scrollLockedRef.current = false;
-              } else if (responseGroups.length === prevResponseGroupsLenRef.current) {
-                // User manually scrolled up (not content growth) → lock, don't follow new output.
+                prevResponseGroupsLenRef.current = responseGroups.length;
+                return;
+              }
+              // b === false: user is reading history above the tail.
+              // Only lock if content DIDN'T grow since last at-bottom — otherwise
+              // the scroll-up was triggered by stream growth and we should
+              // re-anchor on the next paint.
+              const grew = responseGroups.length !== prevResponseGroupsLenRef.current;
+              if (!grew) {
                 scrollLockedRef.current = true;
+              } else {
+                prevResponseGroupsLenRef.current = responseGroups.length;
               }
             }}
             atBottomThreshold={100}
@@ -976,5 +1019,8 @@ export function ChatView() {
 
       <MessageInput />
     </div>
+    {/* ── Right: preview panel (kooky-style) ── */}
+    {previewOpen && <PreviewPanel />}
+  </div>
   );
 }

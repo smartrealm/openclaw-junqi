@@ -1,0 +1,292 @@
+// ── NotificationBell — minimal port of nezha's NotificationBell ──────────────
+//
+// Frontend component that:
+//   1. Polls `get_notifications` Tauri command (stub backend: returns empty list)
+//   2. Shows a bell icon in the title bar with an unread count badge
+//   3. Opens a popover with the notification list + mark-read actions
+//
+// Adapted differences from nezha:
+//   - Calls `invoke()` directly instead of a useNotifications hook (junqi
+//     doesn't have an equivalent hook yet — would be a follow-up refactor).
+//   - Uses `react-i18next` (junqi's i18n) instead of nezha's useI18n.
+//   - Style uses inline JSX (Tailwind) instead of nezha's `s.xxx` CSS-in-JS,
+//     since junqi's styles/nezha/ is excluded by tsconfig.
+//
+// Source: nezha/src/components/nezha/NotificationBell.tsx
+
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Bell, X, Check, CheckCheck, Info, AlertTriangle, AlertCircle, ExternalLink,
+} from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+
+interface NotificationItem {
+  id: string;
+  level: string;
+  title: string;
+  body: string;
+  bodyZh: string | null;
+  url: string | null;
+  createdAt: string;
+  isRead: boolean;
+}
+
+interface NotificationResult {
+  notifications: NotificationItem[];
+  unreadCount: number;
+}
+
+function LevelIcon({ level }: { level: string }) {
+  switch (level) {
+    case 'warning': return <AlertTriangle size={14} className="text-aegis-warning shrink-0" />;
+    case 'error': return <AlertCircle size={14} className="text-aegis-danger shrink-0" />;
+    default: return <Info size={14} className="text-aegis-primary shrink-0" />;
+  }
+}
+
+interface NotificationEntryProps {
+  item: NotificationItem;
+  onMarkRead: (id: string) => void;
+}
+
+function NotificationEntry({ item, onMarkRead }: NotificationEntryProps) {
+  const { t } = useTranslation();
+  const [hov, setHov] = useState(false);
+
+  const handleClick = () => {
+    if (!item.isRead) onMarkRead(item.id);
+    if (item.url) {
+      try { window.open(item.url, '_blank', 'noopener,noreferrer'); } catch { /* ignore */ }
+    }
+  };
+
+  return (
+    <div
+      onClick={handleClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      className="px-3 py-2.5 border-b flex items-start gap-2.5 cursor-pointer transition-colors"
+      style={{
+        borderColor: 'rgb(var(--aegis-overlay) / 0.06)',
+        background: hov ? 'rgb(var(--aegis-overlay) / 0.04)' : item.isRead ? 'transparent' : 'rgb(var(--aegis-primary) / 0.06)',
+      }}
+    >
+      <LevelIcon level={item.level} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-1">
+          <span
+            className="text-[12.5px] truncate"
+            style={{
+              fontWeight: item.isRead ? 500 : 600,
+              color: 'rgb(var(--aegis-text))',
+            }}
+          >
+            {item.title}
+          </span>
+          {item.url && (
+            <ExternalLink size={11} className="text-aegis-text-dim shrink-0" />
+          )}
+        </div>
+        <div
+          className="text-[11.5px] text-aegis-text-muted leading-snug overflow-hidden"
+          style={{
+            display: '-webkit-box',
+            WebkitLineClamp: 5,
+            WebkitBoxOrient: 'vertical',
+            whiteSpace: 'pre-line',
+            lineHeight: 1.5,
+          }}
+        >
+          {item.body}
+        </div>
+        {item.bodyZh && (
+          <div
+            className="text-[11.5px] text-aegis-text-muted leading-snug overflow-hidden mt-1"
+            style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 5,
+              WebkitBoxOrient: 'vertical',
+              whiteSpace: 'pre-line',
+              lineHeight: 1.5,
+            }}
+          >
+            {item.bodyZh}
+          </div>
+        )}
+        <div className="text-[10.5px] text-aegis-text-dim mt-1">
+          {item.createdAt}
+        </div>
+      </div>
+      {!item.isRead && (
+        <button
+          title={t('notification.markAsRead', 'Mark as read')}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMarkRead(item.id);
+          }}
+          className="p-0.5 rounded hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim shrink-0 mt-0.5"
+        >
+          <Check size={12} strokeWidth={2.5} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export interface NotificationBellHandle {
+  refresh: () => void;
+}
+
+interface NotificationBellProps {
+  /** Polling interval in ms; default 60s. Set to 0 to disable. */
+  pollIntervalMs?: number;
+}
+
+export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellProps) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<NotificationResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchNotifications = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await invoke<NotificationResult>('get_notifications');
+      setResult(r);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchNotifications();
+    if (pollIntervalMs > 0) {
+      const timer = window.setInterval(fetchNotifications, pollIntervalMs);
+      return () => window.clearInterval(timer);
+    }
+  }, [fetchNotifications, pollIntervalMs]);
+
+  const handleMarkRead = useCallback(async (id: string) => {
+    try {
+      await invoke('mark_notification_read', { id });
+      await fetchNotifications();
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [fetchNotifications]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    try {
+      await invoke('mark_all_notifications_read');
+      await fetchNotifications();
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [fetchNotifications]);
+
+  const unreadCount = result?.unreadCount ?? 0;
+  const bellColor = error
+    ? 'rgb(var(--aegis-danger))'
+    : unreadCount > 0
+      ? 'rgb(var(--aegis-primary))'
+      : 'rgb(var(--aegis-text-dim))';
+
+  const items = result?.notifications ?? [];
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={t('notification.title', 'Notifications')}
+        aria-label={t('notification.title', 'Notifications')}
+        className="relative w-[28px] h-[28px] flex items-center justify-center rounded-[5px] transition-colors"
+        style={{
+          background: open ? 'rgb(var(--aegis-overlay) / 0.12)' : 'transparent',
+          color: 'rgb(var(--aegis-text-secondary))',
+        }}
+      >
+        <Bell size={14} style={{ color: bellColor }} />
+        {unreadCount > 0 && (
+          <span
+            className="absolute top-0 right-0 min-w-[12px] h-[12px] px-[2px] flex items-center justify-center rounded-full text-white text-[8px] font-bold leading-none"
+            style={{ background: 'rgb(var(--aegis-danger))' }}
+          >
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]"
+          style={{ background: 'rgb(0 0 0 / 0.4)' }}
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="w-[min(720px,calc(100vw-48px))] max-h-[calc(100vh-96px)] flex flex-col rounded-[14px] overflow-hidden"
+            style={{
+              background: 'rgb(var(--aegis-card))',
+              border: '1px solid rgb(var(--aegis-border))',
+              boxShadow: '0 24px 48px rgb(0 0 0 / 0.4)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'rgb(var(--aegis-overlay) / 0.08)' }}>
+              <span className="text-[14px] font-bold text-aegis-text flex-1">
+                {t('notification.title', 'Notifications')}
+                {unreadCount > 0 && (
+                  <span className="ml-1.5 text-[11px] font-medium text-aegis-text-muted">
+                    ({unreadCount} {t('notification.unread', 'unread')})
+                  </span>
+                )}
+              </span>
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  title={t('notification.markAllAsRead', 'Mark all as read')}
+                  onClick={handleMarkAllRead}
+                  className="p-0.5 rounded hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted"
+                >
+                  <CheckCheck size={14} />
+                </button>
+              )}
+              <button
+                type="button"
+                title={t('common.close', 'Close')}
+                onClick={() => setOpen(false)}
+                className="p-0.5 rounded hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {loading && !result ? (
+                <div className="p-6 text-center text-[12px] text-aegis-text-dim">
+                  {t('common.loading', 'Loading…')}
+                </div>
+              ) : error && !result ? (
+                <div className="p-6 text-center text-[12px] text-aegis-danger" style={{ lineHeight: 1.5 }}>
+                  {error}
+                </div>
+              ) : items.length === 0 ? (
+                <div className="p-6 text-center text-[12px] text-aegis-text-dim">
+                  {t('notification.noNotifications', 'No notifications')}
+                </div>
+              ) : (
+                items.map((item) => (
+                  <NotificationEntry key={item.id} item={item} onMarkRead={handleMarkRead} />
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

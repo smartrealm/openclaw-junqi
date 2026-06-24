@@ -39,8 +39,8 @@ export function RightToolbar({
       style={{
         width: 44,
         flexShrink: 0,
-        background: "var(--bg-sidebar)",
-        borderLeft: "1px solid var(--border-dim)",
+        background: "var(--aegis-surface)",
+        borderLeft: "1px solid var(--aegis-border)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -67,7 +67,7 @@ export function RightToolbar({
         onClick={onToggleTerminal}
       />
 
-      <div style={{ width: 20, height: 1, background: "var(--border-dim)", margin: "4px 0" }} />
+      <div style={{ width: 20, height: 1, background: "var(--aegis-border)", margin: "4px 0" }} />
 
       <IconButton icon={<Search size={17} />} title={t("toolbar.search")} onClick={onOpenSearch} />
 

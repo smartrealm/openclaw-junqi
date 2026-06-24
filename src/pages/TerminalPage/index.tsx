@@ -13,15 +13,16 @@ import { GitHistory } from "@/components/Git";
 import { useRef, useState, useCallback, useEffect } from "react";
 import { homeDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
-import { loadTools, mergeDetected, type CLITool } from "@/utils/terminalTools";
+// (loadTools/mergeDetected were used by the removed AgentLaunchBar — no longer needed)
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   getDefaultMonoFont,
 } from "@/_nezha_root/types";
 import {
-  FolderOpen, GitBranch, History, X, ChevronDown,
+  X, ChevronDown,
 } from "lucide-react";
+import { Icon } from "@/components/shared/icons";
 
 type RightPanel = null | "files" | "git-changes" | "git-history";
 
@@ -39,24 +40,6 @@ export function TerminalPage() {
 
   // Terminal fills available flex space (no ResizeObserver needed)
   const termWrapRef = useRef<HTMLDivElement>(null);
-
-  // ── CLI tools: auto-detect + user-customizable (persisted to localStorage) ──
-  const [cliTools, setCliTools] = useState<CLITool[]>(() => loadTools());
-  useEffect(() => {
-    const detect = () => {
-      invoke<CLITool[]>("detect_cli_tools")
-        .then((detected) => {
-          if (detected && detected.length > 0) {
-            setCliTools(mergeDetected(detected));
-          }
-        })
-        .catch((err) => {
-          console.warn("[Terminal] detect_cli_tools failed, retrying...", err);
-          setTimeout(detect, 2000);
-        });
-    };
-    detect();
-  }, []);
 
   // Right panel
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
@@ -86,36 +69,77 @@ export function TerminalPage() {
     panelRef.current?.sendCommand(cmd);
   }, []);
 
-  return (
-    <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden", background: "var(--bg-root)" }}>
-      {/* Main terminal area */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* Agent launcher — nezha-style: agent dropdown + permission + launch */}
-        <AgentLaunchBar tools={cliTools} onLaunch={runTool} />
+  // ── Cross-page command bridge ──
+  // Listen for `junqi:run-terminal-command` events from FileViewer's Makefile
+  // run buttons (and any other component that wants to push a command into the
+  // terminal without prop-drilling). The terminal panel must already be mounted.
+  // If the user is on a different page the command silently drops — they'd need
+  // to be on /terminal for it to land.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ command: string; projectPath?: string }>;
+      const cmd = ce.detail?.command;
+      if (!cmd) return;
+      panelRef.current?.sendCommand(cmd);
+    };
+    window.addEventListener("junqi:run-terminal-command", handler);
+    return () => window.removeEventListener("junqi:run-terminal-command", handler);
+  }, []);
 
-        {/* Terminal */}
-        <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          <ShellTerminalPanel
-            ref={panelRef}
-            themeVariant={themeVariant}
-            terminalFontSize={terminalFontSize}
-            monoFontFamily={monoFontFamily}
-            projectPath={projectPath}
-            projectId="default"
-            onClose={() => {}}
-          />
-        </div>
+  return (
+    <div style={{ display: "flex", flex: 1, flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--terminal-bg)" }}>
+      {/* ── kooky 32pt top strip ── */}
+      <div style={{ height: 32, flexShrink: 0, display: "flex", alignItems: "center", padding: "0 8px 0 0", gap: 0, borderBottom: "1px solid rgb(255 255 255 / 0.07)" }}>
+        <div style={{ width: 82, flexShrink: 0 }} />
+        <div style={{ flex: 1 }} />
+        <button title="Open Agent Panel" onClick={() => togglePanel("files")} style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer" }}>
+          {Icon.chrome.grid}
+        </button>
+        <button title="Notifications" style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer", position: "relative" }}>
+          {Icon.chrome.bell}
+          <span style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: 3, background: "rgb(var(--aegis-status-running))" }} />
+        </button>
       </div>
 
-      {/* Right panel — between terminal and toolbar (nezha layout) */}
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        {/* Main terminal area — kooky 1:1: tab strip at top, terminal fills below */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
+          <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <ShellTerminalPanel
+              ref={panelRef}
+              themeVariant={themeVariant}
+              terminalFontSize={terminalFontSize}
+              monoFontFamily={monoFontFamily}
+              projectPath={projectPath}
+              projectId="default"
+              onClose={() => {}}
+              onSplitHorizontal={() => {
+                import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+                  const ws = useWorkspaceStore.getState();
+                  const active = ws.workspaces.find((w) => w.id === ws.activeWorkspaceId);
+                  if (active) ws.splitPane(active.focusedPaneId, 'horizontal');
+                });
+              }}
+              onSplitVertical={() => {
+                import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+                  const ws = useWorkspaceStore.getState();
+                  const active = ws.workspaces.find((w) => w.id === ws.activeWorkspaceId);
+                  if (active) ws.splitPane(active.focusedPaneId, 'vertical');
+                });
+              }}
+            />
+          </div>
+        </div>
+
+      {/* Right panel — between terminal and toolbar */}
       {rightPanel && (<>
-        <div onMouseDown={handleMouseDown} style={{ width: 4, flexShrink: 0, cursor: "col-resize", background: isDragging ? "var(--accent)" : "transparent" }} />
-        <div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--border-dim)", background: "var(--bg-panel)", overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--border-dim)", flexShrink: 0 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        <div onMouseDown={handleMouseDown} style={{ width: 4, flexShrink: 0, cursor: "col-resize", background: isDragging ? "rgb(var(--aegis-primary))" : "transparent" }} />
+        <div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-elevated)", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--aegis-border)", flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))", textTransform: "uppercase", letterSpacing: "0.5px" }}>
               {rightPanel === "files" ? "Files" : rightPanel === "git-changes" ? "Changes" : "History"}
             </span>
-            <button onClick={() => setRightPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "var(--text-hint)" }}>
+            <button onClick={() => setRightPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "rgb(var(--aegis-text-dim))" }}>
               <X size={14} />
             </button>
           </div>
@@ -133,11 +157,12 @@ export function TerminalPage() {
         </div>
       </>)}
 
-      {/* Right toolbar — outer-most 44px strip (nezha RightToolbar) */}
-      <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 4px", borderLeft: "1px solid var(--border-dim)", background: "var(--bg-sidebar)" }}>
-        <IconBtn icon={<FolderOpen size={18} />} label="Files" active={rightPanel === "files"} onClick={() => togglePanel("files")} />
-        <IconBtn icon={<GitBranch size={18} />} label="Changes" active={rightPanel === "git-changes"} onClick={() => togglePanel("git-changes")} />
-        <IconBtn icon={<History size={18} />} label="History" active={rightPanel === "git-history"} onClick={() => togglePanel("git-history")} />
+      {/* Right toolbar — outer-most 44px strip */}
+      <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 4px", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-surface)" }}>
+        <IconBtn icon={Icon.nav.files} label="Files" active={rightPanel === "files"} onClick={() => togglePanel("files")} />
+        <IconBtn icon={Icon.nav.git} label="Changes" active={rightPanel === "git-changes"} onClick={() => togglePanel("git-changes")} />
+        <IconBtn icon={Icon.nav.history} label="History" active={rightPanel === "git-history"} onClick={() => togglePanel("git-history")} />
+      </div>
       </div>
     </div>
   );
@@ -145,107 +170,8 @@ export function TerminalPage() {
 
 function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} title={label} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "var(--control-active-bg)" : "transparent", color: active ? "var(--control-active-fg)" : "var(--text-muted)", transition: "background 0.12s, color 0.12s" }}>
+    <button onClick={onClick} title={label} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "rgba(var(--aegis-primary) / 0.10)" : "transparent", color: active ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-muted))", transition: "background 0.12s, color 0.12s" }}>
       {icon}
     </button>
-  );
-}
-
-// ── Agent launch bar — nezha-style dropdown agent + permission picker ──
-
-const AI_AGENT_IDS = ["codex", "claude", "pi", "cursor-agent", "aider", "ollama", "qwen", "gemini", "cody", "gptme"];
-const PERM_MODES = ["ask", "auto_edit", "full_access"] as const;
-type PermMode = typeof PERM_MODES[number];
-
-function AgentLaunchBar({ tools, onLaunch }: { tools: CLITool[]; onLaunch: (cmd: string) => void }) {
-  const aiTools = tools.filter((t) => AI_AGENT_IDS.includes(t.id));
-  const [agent, setAgent] = useState(aiTools[0]?.id ?? "");
-  const [perm, setPerm] = useState<PermMode>("ask");
-  const [agentOpen, setAgentOpen] = useState(false);
-  const [permOpen, setPermOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!agentOpen && !permOpen) return;
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setAgentOpen(false); setPermOpen(false); } };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [agentOpen, permOpen]);
-
-  if (aiTools.length === 0) {
-    return (
-      <div className="flex items-center gap-2 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
-        <span className="text-[10px] text-aegis-text-dim">Detecting AI tools…</span>
-      </div>
-    );
-  }
-
-  const selected = aiTools.find((t) => t.id === agent) ?? aiTools[0];
-  const needsPerm = agent === "codex" || agent === "claude";
-
-  const launch = () => {
-    const cmd = needsPerm ? `${agent} --permission-mode ${perm}\n` : `${agent}\n`;
-    onLaunch(cmd);
-  };
-
-  const permLabel = (p: PermMode) => p === "ask" ? "Ask" : p === "auto_edit" ? "Auto Edit" : "Full Access";
-
-  return (
-    <div ref={ref} className="flex items-center gap-2 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
-      {/* Agent dropdown */}
-      <div style={{ position: "relative" }}>
-        <button
-          onClick={() => { setAgentOpen((v) => !v); setPermOpen(false); }}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors"
-          style={{ color: "var(--text-primary)", background: agentOpen ? "var(--bg-hover)" : "var(--bg-subtle)", border: "1px solid var(--border-dim)", minWidth: 90 }}
-        >
-          <span>{selected.icon}</span>
-          <span>{selected.label}</span>
-          <ChevronDown size={9} style={{ marginLeft: "auto", transform: agentOpen ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
-        </button>
-        {agentOpen && (
-          <div className="absolute top-full left-0 mt-1 z-50 rounded-lg overflow-hidden w-44"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 32px rgba(0,0,0,0.25)" }}>
-            {aiTools.map((t) => (
-              <button key={t.id} onClick={() => { setAgent(t.id); setAgentOpen(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-left transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
-                style={{ color: t.id === agent ? "var(--control-active-fg)" : "var(--text-secondary)", background: t.id === agent ? "var(--control-active-bg)" : "transparent" }}>
-                <span>{t.icon}</span> <span className="font-medium">{t.label}</span>
-                <span className="ml-auto text-[9px] opacity-50 font-mono">{t.id}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Permission dropdown — only for claude/codex */}
-      {needsPerm && (
-        <div style={{ position: "relative" }}>
-          <button onClick={() => { setPermOpen((v) => !v); setAgentOpen(false); }}
-            className="flex items-center gap-0.5 px-2 py-1 rounded text-[9px] font-medium transition-colors"
-            style={{ color: "var(--text-dim)", background: permOpen ? "var(--bg-hover)" : "transparent", border: "1px solid var(--border-dim)" }}>
-            {permLabel(perm)} <ChevronDown size={8} style={{ transform: permOpen ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
-          </button>
-          {permOpen && (
-            <div className="absolute top-full left-0 mt-1 z-50 rounded-lg overflow-hidden w-28"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" }}>
-              {PERM_MODES.map((p) => (
-                <button key={p} onClick={() => { setPerm(p); setPermOpen(false); }}
-                  className="w-full px-3 py-1.5 text-[10px] text-left transition-colors"
-                  style={{ color: p === perm ? "var(--control-active-fg)" : "var(--text-secondary)", background: p === perm ? "var(--control-active-bg)" : "transparent" }}>
-                  {permLabel(p)}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Launch */}
-      <button onClick={launch} className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-semibold ml-auto transition-colors"
-        style={{ color: "#fff", background: "var(--primary-action-bg)" }}>
-        Launch
-      </button>
-    </div>
   );
 }

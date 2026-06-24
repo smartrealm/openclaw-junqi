@@ -74,7 +74,7 @@
   --warning: #d97706;
   --danger: #dc2626;
   --color-success: var(--success);
-  --color-warning: var(--warning);
+  --color-warning: rgb(var(--aegis-warning));
   --color-error: var(--danger);
   --usage-good: #22c55e;
   --usage-warn: #f59e0b;

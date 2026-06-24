@@ -122,6 +122,11 @@ pub fn run() {
             commands::git_neu::git_pull,
             commands::git_neu::git_remote_counts,
             commands::git_neu::generate_commit_message,
+            // Worktree task commands (ported from nezha git.rs)
+            commands::git_neu::create_task_worktree,
+            commands::git_neu::merge_task_worktree,
+            commands::git_neu::remove_task_worktree,
+            commands::git_neu::worktree_diff_stats,
             // Nezha-style file system commands
             commands::fs_neu::read_dir_entries,
             commands::fs_neu::read_file_content,
@@ -133,6 +138,45 @@ pub fn run() {
             commands::fs_neu::open_in_system_file_manager,
             commands::fs_neu::list_project_files,
             commands::fs_neu::search_project_files,
+            // Session analytics (ported from nezha analytics.rs)
+            commands::session_analytics::read_session_metrics,
+            commands::session_analytics::read_session_messages,
+            commands::session_analytics::export_session_markdown,
+            // Project config (ported from nezha config.rs)
+            commands::project_config::init_project_config,
+            commands::project_config::read_project_config,
+            commands::project_config::write_project_config,
+            commands::project_config::get_agent_config_file_path,
+            commands::project_config::read_agent_config_file,
+            commands::project_config::write_agent_config_file,
+            // App settings (ported from nezha app_settings.rs, simplified)
+            commands::app_settings::load_app_settings,
+            commands::app_settings::save_app_settings,
+            commands::app_settings::detect_agent_paths,
+            // Hooks (minimal port of nezha hooks.rs)
+            commands::hooks::get_hook_readiness,
+            // Skill hub (minimal port of nezha skills.rs)
+            commands::skills::get_skill_hub_config,
+            commands::skills::set_skill_hub_path,
+            commands::skills::clear_skill_hub,
+            commands::skills::list_skills,
+            commands::skills::list_skill_installations,
+            commands::skills::install_skill,
+            commands::skills::delete_skill,
+            // Workspace path accessor (PR-15 @ file mention support)
+            commands::workspace::get_workspace_path,
+            // Notification local store (PR-0.6a — local read state only)
+            commands::notification::get_notifications,
+            commands::notification::mark_notification_read,
+            commands::notification::mark_all_notifications_read,
+            // Usage snapshot stub (PR-0.6b — unavailable for both agents)
+            commands::usage::read_usage_snapshot,
+            // Agent task PTY (PR-0.3 — minimal port)
+            commands::agent_task_pty::run_task,
+            commands::agent_task_pty::agent_send_input,
+            commands::agent_task_pty::agent_resize_pty,
+            commands::agent_task_pty::cancel_task,
+            commands::agent_task_pty::get_active_task_ids,
         ])
         .setup(|app| {
             // Use the default (Regular) activation policy so JunQi gets a Dock

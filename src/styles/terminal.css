@@ -1,11 +1,50 @@
 /* ═══════════════════════════════════════════════════════════
-   Terminal — Always black, never themed
+   Terminal — aegis-native palette, 1:1 with the rest of the app.
+
+   Every colour below is a derivative of aegis design tokens so
+   the terminal reads as part of the chrome, not a foreign island.
+   xterm.js reads them via getComputedStyle at init time.
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  --terminal-bg:        #000000;
-  --terminal-text:      #cccccc;
+  /* Terminal canvas — same as aegis-bg so the terminal feels embedded. */
+  --terminal-bg:        #1d212a;   /* = aegis-bg */
+
+  /* Chrome inside the terminal (status bars, docks, tab strips). */
+  --terminal-surface:   #242a35;   /* = aegis-surface */
+  --terminal-elevated:  #2b313d;   /* = aegis-surface-elevated */
+
+  /* Border — same hairline as aegis-border. */
+  --terminal-border:    rgba(255, 255, 255, 0.07);
+
+  /* Text — aegis text tokens. */
+  --terminal-text:      #f1f4fb;   /* = aegis-text */
+  --terminal-text-dim:  #a4adc2;   /* = aegis-text-muted */
+
   --terminal-cursor:    #ffffff;
-  --terminal-selection: rgba(255, 255, 255, 0.2);
-  --terminal-border:    rgba(255, 255, 255, 0.06);
+  --terminal-selection: rgba(127, 154, 255, 0.25);
+
+  /* ANSI 16-color palette — aegis-status-* tokens. */
+  --ansi-black:         #727b8f;
+  --ansi-red:           #ff5a5a;    /* = aegis-danger */
+  --ansi-green:         #3dd68c;    /* = aegis-success */
+  --ansi-yellow:        #f5a623;    /* = aegis-warning */
+  --ansi-blue:          #7f9aff;    /* = aegis-primary */
+  --ansi-magenta:       #b894f5;
+  --ansi-cyan:          #56d4dd;
+  --ansi-white:         #d6dbe8;
+  --ansi-bright-black:  #8b95a8;
+  --ansi-bright-red:    #ff7b7b;
+  --ansi-bright-green:  #5ee8a0;
+  --ansi-bright-yellow: #f7bb4a;
+  --ansi-bright-blue:   #9eb4ff;
+  --ansi-bright-magenta:#d0a8ff;
+  --ansi-bright-cyan:   #7ae8f0;
+  --ansi-bright-white:  #f1f4fb;
+}
+
+/* StatusBadge pulse — used by StatusDot when state === "running". */
+@keyframes aegis-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
 }

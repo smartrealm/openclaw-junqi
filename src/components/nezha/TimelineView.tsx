@@ -146,7 +146,7 @@ export function TimelineView({
       <div style={s.timelineSubtitle}>{t("timeline.subtitle")}</div>
       {groups.length === 0 ? (
         <div style={s.timelineEmpty}>
-          <Clock size={28} strokeWidth={1.2} color="var(--text-hint)" />
+          <Clock size={28} strokeWidth={1.2} color="rgb(var(--aegis-text-dim))" />
           <div>{t("timeline.empty")}</div>
         </div>
       ) : (

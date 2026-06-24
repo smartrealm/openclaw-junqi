@@ -13,6 +13,7 @@ import {
   Plus, X, Search, Filter, Activity, Trash2,
 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
 import { useWorkshopStore, Task, ActivityEntry } from '@/stores/workshopStore';
 import clsx from 'clsx';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
@@ -224,15 +225,18 @@ function TaskCard({ task, onMove, onDelete, onProgress }: {
             </div>
             {task.assignedAgent || '—'}
           </div>
-          <span
-            className="text-[9px] px-2 py-[2px] rounded font-bold uppercase tracking-wide"
-            style={isDone
-              ? { color: themeHex('success'), background: themeAlpha('success', 0.08), border: `1px solid ${themeAlpha('success', 0.15)}` }
-              : { color: ps.color, background: ps.bg, border: `1px solid ${ps.border}` }
-            }
-          >
-            {isDone ? t('workshop.doneUpper', 'DONE') : task.priority.toUpperCase()}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <StatusIcon status={task.status as StatusIconValue} size={11} />
+            <span
+              className="text-[9px] px-2 py-[2px] rounded font-bold uppercase tracking-wide"
+              style={isDone
+                ? { color: themeHex('success'), background: themeAlpha('success', 0.08), border: `1px solid ${themeAlpha('success', 0.15)}` }
+                : { color: ps.color, background: ps.bg, border: `1px solid ${ps.border}` }
+              }
+            >
+              {isDone ? t('workshop.doneUpper', 'DONE') : task.priority.toUpperCase()}
+            </span>
+          </div>
         </div>
 
         {/* Tags */}
@@ -698,7 +702,7 @@ export function WorkshopPage() {
               >
                 {/* Column header */}
                 <div className="flex items-center gap-2.5 px-4 py-3 shrink-0">
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: `rgb(var(--aegis-${dotVar}))` }} />
+                  <StatusIcon status={key as StatusIconValue} size={14} />
                   <span className="text-[13px] font-bold text-aegis-text flex-1">{t(labelKey)}</span>
                   <span
                     className="text-[11px] font-semibold w-[22px] h-[22px] flex items-center justify-center rounded-full"

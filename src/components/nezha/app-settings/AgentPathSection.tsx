@@ -17,10 +17,10 @@ const AUTO_VERSION_DETECT_DELAY_MS = 350;
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "7px 10px",
-  background: "var(--bg-input)",
-  border: "1px solid var(--border-medium)",
+  background: "var(--aegis-input)",
+  border: "1px solid var(--aegis-border)",
   borderRadius: 7,
-  color: "var(--text-primary)",
+  color: "rgb(var(--aegis-text))",
   fontSize: 12.5,
   fontFamily: "var(--font-mono)",
   outline: "none",
@@ -30,7 +30,7 @@ const inputStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 600,
-  color: "var(--text-secondary)",
+  color: "rgb(var(--aegis-text-secondary))",
   marginBottom: 5,
   display: "block",
 };
@@ -43,7 +43,7 @@ const fieldStyle: React.CSSProperties = {
 
 const hintStyle: React.CSSProperties = {
   fontSize: 11,
-  color: "var(--text-hint)",
+  color: "rgb(var(--aegis-text-dim))",
   marginTop: 3,
 };
 
@@ -53,10 +53,10 @@ const actionButtonStyle: React.CSSProperties = {
   gap: 5,
   padding: "5px 10px",
   background: "none",
-  border: "1px solid var(--border-medium)",
+  border: "1px solid var(--aegis-border)",
   borderRadius: 6,
   fontSize: 12,
-  color: "var(--text-secondary)",
+  color: "rgb(var(--aegis-text-secondary))",
   cursor: "pointer",
 };
 
@@ -233,12 +233,12 @@ export function AgentPathSection({ agentKey }: { agentKey: AgentKey }) {
           justifyContent: "space-between",
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "rgb(var(--aegis-text))" }}>
           {t("appSettings.installation")}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {loading && (
-            <span style={{ color: "var(--text-hint)", fontSize: 12 }}>{t("common.loading")}</span>
+            <span style={{ color: "rgb(var(--aegis-text-dim))", fontSize: 12 }}>{t("common.loading")}</span>
           )}
           <button
             style={{

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Paperclip, Camera, Mic, X, Loader2, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { Send, Paperclip, Camera, Mic, X, Loader2, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -75,6 +76,11 @@ export function MessageInput() {
 
   // ── Skills picker (@) + ✨ button — triggered by typing '@' or clicking sparkles ──
   const [allSkills, setAllSkills] = useState<Array<{ name: string; description?: string }>>([]);
+  // Workspace files for @ file mention. Fetched lazily on first `@` keystroke
+  // (cheaper than eagerly loading on mount), then refreshed in the background.
+  // Path = ~/.openclaw/workspace (or user-configured `agents.defaults.workspace`).
+  const [workspaceFiles, setWorkspaceFiles] = useState<Array<{ name: string; path: string }>>([]);
+  const [workspaceFilesLoaded, setWorkspaceFilesLoaded] = useState(false);
   const [atPicker, setAtPicker] = useState<{ open: boolean; query: string; idx: number }>({ open: false, query: '', idx: 0 });
   useEffect(() => {
     if (!connected) return;
@@ -83,6 +89,34 @@ export function MessageInput() {
       setAllSkills(skills.map((s: any) => ({ name: s.name, description: s.description })));
     }).catch(() => {});
   }, [connected]);
+
+  /**
+   * Lazily load workspace files via `get_workspace_path` + `list_project_files`.
+   * Called when the @ picker first opens. Cached for the session — re-fetched
+   * when the user clears cache via `clear_at_files` keyboard shortcut.
+   */
+  const ensureWorkspaceFilesLoaded = useCallback(async () => {
+    if (workspaceFilesLoaded) return;
+    try {
+      const workspacePath = await invoke<string>('get_workspace_path');
+      const files = await invoke<string[]>('list_project_files', { projectPath: workspacePath });
+      setWorkspaceFiles(
+        (files ?? []).map((p) => {
+          const name = p.split('/').pop() ?? p;
+          return { name, path: p };
+        }),
+      );
+      setWorkspaceFilesLoaded(true);
+    } catch {
+      // Workspace not initialized yet, or list failed — leave files empty.
+      // The @ picker will just show skills, which is a graceful fallback.
+    }
+  }, [workspaceFilesLoaded]);
+
+  const clearWorkspaceFiles = useCallback(() => {
+    setWorkspaceFiles([]);
+    setWorkspaceFilesLoaded(false);
+  }, []);
 
   // ── Slash commands (built-in only, no skills) ──
   const slashCommands = SLASH_COMMANDS.filter((c) => c.cmd !== '/skill:');
@@ -124,11 +158,42 @@ export function MessageInput() {
     textareaRef.current?.focus();
   };
 
-  // ── Skills picker (@) ──
-  const matchedSkills = atPicker.open ? allSkills.filter((s) => {
-    const q = atPicker.query.toLowerCase();
-    return !q || s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q);
-  }).slice(0, 10) : [];
+  // ── Skills + Workspace files picker (@) ──
+  // Merged into a single list: skills first (most relevant for @ invocation),
+  // then files (for @-file mention). Each item tagged with `kind` so the
+  // picker can render the right icon.
+  type AtItem =
+    | { kind: 'skill'; name: string; description?: string }
+    | { kind: 'file'; name: string; path: string };
+
+  // Lazy-load workspace files when picker opens. The check is racy-but-cheap:
+  // we use a ref-free pattern (workspaceFilesLoaded) so the effect only fires
+  // once per session unless the user clears.
+  useEffect(() => {
+    if (atPicker.open && !workspaceFilesLoaded) {
+      void ensureWorkspaceFilesLoaded();
+    }
+  }, [atPicker.open, workspaceFilesLoaded, ensureWorkspaceFilesLoaded]);
+
+  const matchedAtItems: AtItem[] = atPicker.open
+    ? (() => {
+        const q = atPicker.query.toLowerCase();
+        const skillHits: AtItem[] = allSkills
+          .filter((s) => !q || s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q))
+          .slice(0, 8)
+          .map((s) => ({ kind: 'skill' as const, name: s.name, description: s.description }));
+        const fileHits: AtItem[] = workspaceFiles
+          .filter((f) => !q || f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
+          .slice(0, 8)
+          .map((f) => ({ kind: 'file' as const, name: f.name, path: f.path }));
+        // Skills first, then files (each capped independently so neither dominates).
+        return [...skillHits, ...fileHits];
+      })()
+    : [];
+
+  // Keep the legacy name around so the rest of the file (keyboard handler,
+  // render loop) keeps working without churn.
+  const matchedSkills = matchedAtItems;
 
   // ── Input history (ArrowUp/Down when input is empty) ──
   const userMessageHistory = (() => {
@@ -774,7 +839,7 @@ export function MessageInput() {
                     autoFocus
                     value={atPicker.query}
                     onChange={(e) => setAtPicker((s) => ({ ...s, query: e.target.value, idx: 0 }))}
-                    placeholder="搜索技能…"
+                    placeholder="搜索技能或文件…"
                     className="flex-1 bg-transparent text-[12px] text-aegis-text placeholder:text-aegis-text-dim outline-none font-mono"
                   />
                   {atPicker.query && (
@@ -782,39 +847,47 @@ export function MessageInput() {
                       <X size={11} />
                     </button>
                   )}
-                  <span className="text-[10px] text-aegis-text-dim shrink-0">{allSkills.length} 项</span>
+                  <span className="text-[10px] text-aegis-text-dim shrink-0">
+                    {allSkills.length + workspaceFiles.length} 项
+                  </span>
                 </div>
-                {/* Skill list or empty state */}
+                {/* Skill + file list or empty state */}
                 <div className="max-h-[240px] overflow-y-auto scrollbar-hidden py-0.5">
-                  {matchedSkills.length > 0 ? matchedSkills.map((s, i) => (
-                    <button
-                      key={s.name}
-                      onClick={() => pickSkill(s)}
-                      onMouseEnter={() => setAtPicker((p) => ({ ...p, idx: i }))}
-                      className={clsx(
-                        'w-full flex items-center gap-3 px-3 py-2 text-start transition-colors',
-                        i === atPicker.idx
-                          ? 'bg-[rgb(var(--aegis-primary)/0.08)] border-l-[3px] border-l-aegis-primary pl-[9px]'
-                          : 'border-l-[3px] border-l-transparent pl-[9px] hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
-                      )}
-                    >
-                      <Sparkles size={14} className={clsx('shrink-0', i === atPicker.idx ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
-                      <div className="flex-1 min-w-0">
-                        <span className={clsx('text-[12px] font-mono', i === atPicker.idx ? 'text-aegis-primary' : 'text-aegis-text-secondary')}>
-                          @{s.name}
-                        </span>
-                        {s.description && (
-                          <span className="block text-[10px] text-aegis-text-dim truncate">{s.description}</span>
+                  {matchedSkills.length > 0 ? matchedSkills.map((item, i) => {
+                    const isSkill = item.kind === 'skill';
+                    const label = isSkill ? item.name : item.name;
+                    const sub = isSkill ? item.description : item.path;
+                    const Icon = isSkill ? Sparkles : File;
+                    return (
+                      <button
+                        key={`${item.kind}:${isSkill ? item.name : item.path}`}
+                        onClick={() => pickSkill({ name: label })}
+                        onMouseEnter={() => setAtPicker((p) => ({ ...p, idx: i }))}
+                        className={clsx(
+                          'w-full flex items-center gap-3 px-3 py-2 text-start transition-colors',
+                          i === atPicker.idx
+                            ? 'bg-[rgb(var(--aegis-primary)/0.08)] border-l-[3px] border-l-aegis-primary pl-[9px]'
+                            : 'border-l-[3px] border-l-transparent pl-[9px] hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
                         )}
-                      </div>
-                    </button>
-                  )) : allSkills.length === 0 ? (
+                      >
+                        <Icon size={14} className={clsx('shrink-0', i === atPicker.idx ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
+                        <div className="flex-1 min-w-0">
+                          <span className={clsx('text-[12px] font-mono', i === atPicker.idx ? 'text-aegis-primary' : 'text-aegis-text-secondary')}>
+                            @{label}
+                          </span>
+                          {sub && (
+                            <span className="block text-[10px] text-aegis-text-dim truncate">{sub}</span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  }) : (allSkills.length === 0 && workspaceFiles.length === 0) ? (
                     <div className="px-3 py-4 text-center text-[11px] text-aegis-text-dim">
-                      暂无可用的技能。请检查 Gateway 连接。
+                      暂无可用的技能或文件。请检查 Gateway 连接。
                     </div>
                   ) : (
                     <div className="px-3 py-4 text-center text-[11px] text-aegis-text-dim">
-                      无匹配技能
+                      无匹配项
                     </div>
                   )}
                 </div>
@@ -1081,8 +1154,8 @@ export function MessageInput() {
                 'w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0 transition-all relative',
                 text.trim() || files.length > 0
                   ? 'bg-gradient-to-br from-aegis-primary to-aegis-primary/70 text-aegis-bg shadow-[0_2px_8px_rgb(var(--aegis-primary)/0.3)] hover:shadow-[0_4px_16px_rgb(var(--aegis-primary)/0.4)] hover:-translate-y-px'
-                  : 'bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim',
-                'disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none'
+                  : 'bg-[rgb(var(--aegis-input))] border border-aegis-border text-aegis-text-muted',
+                'disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none'
               )}
               title={isHistoryWarmupGate ? t('input.historyLoading') : (isTyping ? t('input.queue', 'Queue') : t('input.send'))}>
               <Send size={16} className={dir === 'rtl' ? 'rotate-180' : ''} />

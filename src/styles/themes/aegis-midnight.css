@@ -60,6 +60,17 @@
   --aegis-success:        61 214 140;
   --aegis-success-surface:rgba(61, 214, 140, 0.14);
 
+  /* ── Agent lifecycle (kooky-aligned) ── */
+  --aegis-status-running:       110 132 234;
+  --aegis-status-running-glow:  rgba(110, 132, 234, 0.36);
+  --aegis-status-attention:     217 169 87;
+  --aegis-status-attention-glow:rgba(217, 169, 87, 0.32);
+  --aegis-status-idle:          156 163 178;
+  --aegis-status-idle-surface:  rgba(156, 163, 178, 0.10);
+  --aegis-status-failed:        224 102 102;
+  --aegis-status-failed-glow:   rgba(224, 102, 102, 0.32);
+  --aegis-status-ended:         102 178 116;
+
   /* ── Messages ──  ◆ midnight delta (subtler bot bubble alpha) */
   --aegis-user-bubble:    rgba(127, 154, 255, 0.12);
   --aegis-user-border:    rgba(127, 154, 255, 0.24);

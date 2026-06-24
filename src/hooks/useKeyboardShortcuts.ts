@@ -23,11 +23,22 @@ export function useKeyboardShortcuts() {
 
       // ── Always active (even in inputs) ──
 
-      // Ctrl+K → Command Palette
-      if (ctrl && e.key === 'k') {
+      // Ctrl+K / Ctrl+P → Command Palette (kooky-style ⌘P, plus ⌘K alias)
+      if (ctrl && (e.key === 'k' || e.key === 'p')) {
         e.preventDefault();
         setCommandPaletteOpen(!commandPaletteOpen);
         return;
+      }
+
+      // Ctrl+L → Multi-line composer (kooky-style prompt editor)
+      if (ctrl && e.key === 'l') {
+        // Don't hijack if user is selecting text outside chat/agent contexts.
+        const onComposerHost = location.pathname === '/chat' || location.pathname === '/agent-run';
+        if (onComposerHost) {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('aegis:open-multi-line-composer'));
+          return;
+        }
       }
 
       // Escape → close palette / modals
@@ -68,13 +79,64 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+W → Close current chat tab
+      // Ctrl+W → Close current chat tab OR close focused pane (kooky-style)
       if (ctrl && e.key === 'w') {
         e.preventDefault();
+        // Workspace-mode: close the focused pane
+        const wsPath = location.pathname;
+        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+          // Lazy import to keep this hook lean
+          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+            const { workspaces, activeWorkspaceId, closePane } = useWorkspaceStore.getState();
+            const ws = workspaces.find((w: { id: string }) => w.id === activeWorkspaceId);
+            if (ws?.focusedPaneId) closePane(ws.focusedPaneId);
+          });
+          return;
+        }
         if (activeSessionKey !== 'agent:main:main') {
           closeTab(activeSessionKey);
         }
         return;
+      }
+
+      // Ctrl+D / Ctrl+Shift+D → Split focused pane (kooky ⌘D / ⌘⇧D)
+      if (ctrl && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        const wsPath = location.pathname;
+        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+            const { workspaces, activeWorkspaceId, splitPane } = useWorkspaceStore.getState();
+            const ws = workspaces.find((w: { id: string }) => w.id === activeWorkspaceId);
+            if (ws?.focusedPaneId) {
+              splitPane(ws.focusedPaneId, shift ? 'vertical' : 'horizontal');
+            }
+          });
+          return;
+        }
+      }
+
+      // Ctrl+T → New shell pane in current workspace (kooky ⌘T)
+      if (ctrl && e.key === 't' && !shift) {
+        const wsPath = location.pathname;
+        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+          e.preventDefault();
+          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+            useWorkspaceStore.getState().addShellPane();
+          });
+          return;
+        }
+      }
+
+      // Ctrl+E → New agent pane in current workspace (kooky ⌘E)
+      if (ctrl && e.key === 'e' && !shift) {
+        const wsPath = location.pathname;
+        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+          e.preventDefault();
+          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+            useWorkspaceStore.getState().addAgentPane('claude');
+          });
+          return;
+        }
       }
 
       // Ctrl+Tab / Ctrl+Shift+Tab → Cycle tabs

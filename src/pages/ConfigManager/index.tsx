@@ -6,7 +6,11 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { FileJson, CheckCircle2, AlertCircle, Pencil, History, RefreshCw } from 'lucide-react';
+import {
+  FileJson, CheckCircle2, AlertCircle, Pencil, History, RefreshCw,
+  Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound,
+  Sparkles, type LucideIcon,
+} from 'lucide-react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
@@ -1015,13 +1019,13 @@ export function ConfigManagerPage() {
     config?.tools?.web?.fetch?.enabled,
   ].filter(Boolean).length;
 
-  const tabs: { id: Tab; labelKey: string; icon: string; badge?: number | string }[] = [
-    { id: 'providers', labelKey: 'config.providers', icon: '🤖', badge: providerCount           },
-    { id: 'agents',    labelKey: 'config.agents',    icon: '👥', badge: agentCount              },
-    { id: 'channels',  labelKey: 'config.channels',  icon: '💬', badge: channelCount            },
-    { id: 'tools',     labelKey: 'config.toolsConfig', icon: '🧰', badge: toolCount || undefined  },
-    { id: 'advanced',  labelKey: 'config.advanced',  icon: '🔧', badge: undefined               },
-    { id: 'secrets',   labelKey: 'config.secrets',   icon: '🔐', badge: undefined               },
+  const tabs: { id: Tab; labelKey: string; icon: LucideIcon; badge?: number | string }[] = [
+    { id: 'providers', labelKey: 'config.providers', icon: Bot,         badge: providerCount           },
+    { id: 'agents',    labelKey: 'config.agents',    icon: Users,       badge: agentCount              },
+    { id: 'channels',  labelKey: 'config.channels',  icon: MessageSquare, badge: channelCount           },
+    { id: 'tools',     labelKey: 'config.toolsConfig', icon: Wrench,     badge: toolCount || undefined  },
+    { id: 'advanced',  labelKey: 'config.advanced',  icon: SlidersHorizontal, badge: undefined          },
+    { id: 'secrets',   labelKey: 'config.secrets',   icon: KeyRound,    badge: undefined               },
   ];
 
   return (
@@ -1115,7 +1119,7 @@ export function ConfigManagerPage() {
                 : 'text-aegis-text-muted border-transparent hover:text-aegis-text-secondary hover:bg-white/[0.02]'
             )}
           >
-            <span>{tab.icon}</span>
+            <tab.icon size={15} strokeWidth={1.75} />
             <span>{t(tab.labelKey)}</span>
             {tab.badge != null && (typeof tab.badge === 'string' || tab.badge > 0) && (
               <span

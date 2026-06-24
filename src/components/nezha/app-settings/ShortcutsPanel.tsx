@@ -55,7 +55,7 @@ function ShortcutSelect({
         >
           <Select.Value>{selected ? renderShortcutKeys(selected.keys) : null}</Select.Value>
           <Select.Icon>
-            <ChevronDown size={13} strokeWidth={2.2} color="var(--text-hint)" />
+            <ChevronDown size={13} strokeWidth={2.2} color="rgb(var(--aegis-text-dim))" />
           </Select.Icon>
         </Select.Trigger>
         <Select.Portal>

@@ -9,7 +9,7 @@ import s from "../styles";
 
 const notificationBodyStyle: CSSProperties = {
   fontSize: 11.5,
-  color: "var(--text-muted)",
+  color: "rgb(var(--aegis-text-muted))",
   lineHeight: 1.5,
   whiteSpace: "pre-line",
   overflow: "hidden",
@@ -26,11 +26,11 @@ const notificationBodyZhStyle: CSSProperties = {
 function LevelIcon({ level }: { level: string }) {
   switch (level) {
     case "warning":
-      return <AlertTriangle size={14} strokeWidth={2} color="var(--color-warning)" />;
+      return <AlertTriangle size={14} strokeWidth={2} color="rgb(var(--aegis-warning))" />;
     case "error":
       return <AlertCircle size={14} strokeWidth={2} color="var(--danger)" />;
     default:
-      return <Info size={14} strokeWidth={2} color="var(--accent)" />;
+      return <Info size={14} strokeWidth={2} color="rgb(var(--aegis-primary))" />;
   }
 }
 
@@ -58,9 +58,9 @@ function NotificationEntry({
       onMouseLeave={() => setHov(false)}
       style={{
         padding: "10px 12px",
-        borderBottom: "1px solid var(--border-dim)",
+        borderBottom: "1px solid var(--aegis-border)",
         cursor: item.url ? "pointer" : "default",
-        background: hov ? "var(--bg-hover)" : item.isRead ? "transparent" : "var(--accent-subtle)",
+        background: hov ? "var(--aegis-hover)" : item.isRead ? "transparent" : "var(--accent-subtle)",
         transition: "background 0.12s",
         display: "grid",
         gridTemplateColumns: "auto minmax(0, 1fr) auto",
@@ -84,7 +84,7 @@ function NotificationEntry({
             style={{
               fontSize: 12.5,
               fontWeight: item.isRead ? 500 : 600,
-              color: "var(--text-primary)",
+              color: "rgb(var(--aegis-text))",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -97,7 +97,7 @@ function NotificationEntry({
             <ExternalLink
               size={11}
               strokeWidth={2}
-              color="var(--text-hint)"
+              color="rgb(var(--aegis-text-dim))"
               style={{ flexShrink: 0 }}
             />
           )}
@@ -107,7 +107,7 @@ function NotificationEntry({
         <div
           style={{
             fontSize: 10.5,
-            color: "var(--text-hint)",
+            color: "rgb(var(--aegis-text-dim))",
             marginTop: 4,
           }}
         >
@@ -129,7 +129,7 @@ function NotificationEntry({
             borderRadius: 4,
             display: "flex",
             alignItems: "center",
-            color: "var(--text-hint)",
+            color: "rgb(var(--aegis-text-dim))",
             flexShrink: 0,
             marginTop: 1,
           }}
@@ -151,8 +151,8 @@ export function NotificationBell() {
   const bellColor = error
     ? "var(--danger)"
     : unreadCount > 0
-      ? "var(--accent)"
-      : "var(--text-hint)";
+      ? "rgb(var(--aegis-primary))"
+      : "rgb(var(--aegis-text-dim))";
 
   function handleOverlayClick(e: React.MouseEvent<HTMLDivElement>) {
     if (e.target === e.currentTarget) {
@@ -181,7 +181,7 @@ export function NotificationBell() {
               height: 12,
               borderRadius: 6,
               background: "var(--danger)",
-              color: "var(--fg-on-accent)",
+              color: "var(--aegis-btn-primary-text)",
               fontSize: 8,
               fontWeight: 700,
               display: "flex",
@@ -205,8 +205,8 @@ export function NotificationBell() {
             style={{
               width: "min(920px, calc(100vw - 48px), calc((100vh - 96px) * 4 / 3))",
               maxHeight: "calc(100vh - 96px)",
-              background: "var(--bg-card)",
-              border: "1px solid var(--border-medium)",
+              background: "var(--aegis-card)",
+              border: "1px solid var(--aegis-border)",
               borderRadius: 14,
               boxShadow: "var(--shadow-popover)",
               display: "flex",
@@ -217,7 +217,7 @@ export function NotificationBell() {
             <div
               style={{
                 padding: "14px 16px",
-                borderBottom: "1px solid var(--border-dim)",
+                borderBottom: "1px solid var(--aegis-border)",
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
@@ -227,7 +227,7 @@ export function NotificationBell() {
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "var(--text-primary)",
+                  color: "rgb(var(--aegis-text))",
                   flex: 1,
                 }}
               >
@@ -238,7 +238,7 @@ export function NotificationBell() {
                       marginLeft: 6,
                       fontSize: 11,
                       fontWeight: 500,
-                      color: "var(--text-muted)",
+                      color: "rgb(var(--aegis-text-muted))",
                     }}
                   >
                     ({unreadCount} {t("notification.unread")})
@@ -257,7 +257,7 @@ export function NotificationBell() {
                     borderRadius: 4,
                     display: "flex",
                     alignItems: "center",
-                    color: "var(--text-muted)",
+                    color: "rgb(var(--aegis-text-muted))",
                   }}
                 >
                   <CheckCheck size={14} strokeWidth={2} />
@@ -284,7 +284,7 @@ export function NotificationBell() {
                     padding: 24,
                     textAlign: "center",
                     fontSize: 12,
-                    color: "var(--text-hint)",
+                    color: "rgb(var(--aegis-text-dim))",
                   }}
                 >
                   {t("common.loading")}
@@ -307,7 +307,7 @@ export function NotificationBell() {
                     padding: 24,
                     textAlign: "center",
                     fontSize: 12,
-                    color: "var(--text-hint)",
+                    color: "rgb(var(--aegis-text-dim))",
                   }}
                 >
                   {t("notification.noNotifications")}

@@ -97,7 +97,7 @@ function NavItemIcon({ item, size }: { item: AppSettingsNavItem; size: number })
       <Icon
         size={size}
         strokeWidth={1.8}
-        color={item.iconColor ?? "var(--text-secondary)"}
+        color={item.iconColor ?? "rgb(var(--aegis-text-secondary))"}
         fill={item.iconFill ?? "none"}
       />
     );
@@ -173,8 +173,8 @@ export function AppSettingsDialog({
                   key={item.key}
                   style={{
                     ...s.settingsNavItem,
-                    background: activeNav === item.key ? "var(--bg-hover)" : "none",
-                    color: activeNav === item.key ? "var(--text-primary)" : "var(--text-secondary)",
+                    background: activeNav === item.key ? "var(--aegis-hover)" : "none",
+                    color: activeNav === item.key ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text-secondary))",
                     fontWeight: activeNav === item.key ? 600 : 500,
                   }}
                   onClick={() => {

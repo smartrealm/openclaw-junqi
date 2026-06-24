@@ -228,8 +228,8 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       style={{
         width,
         flexShrink: 0,
-        background: "var(--bg-sidebar)",
-        borderLeft: "1px solid var(--border-dim)",
+        background: "var(--aegis-surface)",
+        borderLeft: "1px solid var(--aegis-border)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -240,7 +240,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
         style={{
           display: "flex",
           flexDirection: "column",
-          borderBottom: "1px solid var(--border-dim)",
+          borderBottom: "1px solid var(--aegis-border)",
           flexShrink: 0,
         }}
       >
@@ -253,7 +253,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
             gap: 4,
           }}
         >
-          <span style={{ fontSize: 13, fontWeight: 650, color: "var(--text-primary)", flex: 1 }}>
+          <span style={{ fontSize: 13, fontWeight: 650, color: "rgb(var(--aegis-text))", flex: 1 }}>
             {t("git.history")}
           </span>
 
@@ -267,10 +267,10 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               gap: 3,
               padding: "3px 7px",
               background: "none",
-              border: "1px solid var(--border-dim)",
+              border: "1px solid var(--aegis-border)",
               borderRadius: 5,
               fontSize: 11.5,
-              color: "var(--text-muted)",
+              color: "rgb(var(--aegis-text-muted))",
               cursor: pulling ? "not-allowed" : "pointer",
               opacity: pulling ? 0.6 : 1,
             }}
@@ -286,11 +286,11 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               alignItems: "center",
               gap: 3,
               padding: "3px 7px",
-              background: pushing ? "var(--primary-action-bg)" : "none",
-              border: `1px solid ${pushing ? "var(--primary-action-bg)" : "var(--border-dim)"}`,
+              background: pushing ? "rgb(var(--aegis-primary))" : "none",
+              border: `1px solid ${pushing ? "rgb(var(--aegis-primary))" : "var(--aegis-border)"}`,
               borderRadius: 5,
               fontSize: 11.5,
-              color: pushing ? "var(--primary-action-fg)" : "var(--text-muted)",
+              color: pushing ? "var(--aegis-btn-primary-text)" : "rgb(var(--aegis-text-muted))",
               cursor: pushing ? "not-allowed" : "pointer",
               transition: "all 0.15s",
             }}
@@ -313,7 +313,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               cursor: "pointer",
               padding: 4,
               borderRadius: 4,
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
               display: "flex",
               alignItems: "center",
             }}
@@ -332,16 +332,16 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               gap: 6,
               width: "100%",
               padding: "5px 8px",
-              background: branchOpen ? "var(--bg-hover)" : "transparent",
-              border: "1px solid var(--border-dim)",
+              background: branchOpen ? "var(--aegis-hover)" : "transparent",
+              border: "1px solid var(--aegis-border)",
               borderRadius: 6,
               cursor: "pointer",
-              color: "var(--text-primary)",
+              color: "rgb(var(--aegis-text))",
               fontSize: 12,
               transition: "background 0.1s",
             }}
           >
-            <GitBranchIcon size={11} color="var(--text-hint)" style={{ flexShrink: 0 }} />
+            <GitBranchIcon size={11} color="rgb(var(--aegis-text-dim))" style={{ flexShrink: 0 }} />
             <span
               style={{
                 flex: 1,
@@ -356,7 +356,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
             </span>
             <ChevronDown
               size={11}
-              color="var(--text-hint)"
+              color="rgb(var(--aegis-text-dim))"
               style={{
                 flexShrink: 0,
                 transition: "transform 0.15s",
@@ -372,8 +372,8 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
                 top: "calc(100% - 2px)",
                 left: 10,
                 right: 10,
-                background: "var(--bg-card)",
-                border: "1px solid var(--border-dim)",
+                background: "var(--aegis-card)",
+                border: "1px solid var(--aegis-border)",
                 borderRadius: 7,
                 boxShadow: "var(--shadow-popover)",
                 zIndex: 200,
@@ -381,7 +381,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               }}
             >
               <div className="branch-popover-search">
-                <Search size={13} color="var(--text-hint)" />
+                <Search size={13} color="rgb(var(--aegis-text-dim))" />
                 <input
                   autoFocus
                   className="branch-popover-search-input"
@@ -434,12 +434,12 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
             alignItems: "center",
             gap: 6,
             padding: "5px 9px",
-            background: "var(--bg-card)",
-            border: "1px solid var(--border-dim)",
+            background: "var(--aegis-card)",
+            border: "1px solid var(--aegis-border)",
             borderRadius: 6,
           }}
         >
-          <Search size={12} color="var(--text-hint)" />
+          <Search size={12} color="rgb(var(--aegis-text-dim))" />
           <input
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
@@ -449,11 +449,11 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
               border: "none",
               outline: "none",
               background: "transparent",
-              color: "var(--text-primary)",
+              color: "rgb(var(--aegis-text))",
               fontSize: 12,
             }}
           />
-          <Filter size={12} color="var(--text-hint)" />
+          <Filter size={12} color="rgb(var(--aegis-text-dim))" />
         </div>
       </div>
 
@@ -487,7 +487,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
             style={{
               padding: "20px 16px",
               fontSize: 12,
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
               textAlign: "center",
             }}
           >
@@ -510,7 +510,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
             style={{
               padding: "20px 16px",
               fontSize: 12,
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
               textAlign: "center",
             }}
           >
@@ -523,7 +523,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       {selectedDetail && (
         <div
           style={{
-            borderTop: "1px solid var(--border-dim)",
+            borderTop: "1px solid var(--aegis-border)",
             overflow: "hidden",
             display: "flex",
             flexDirection: "column",
@@ -573,12 +573,12 @@ function CommitRow({
         padding: "7px 12px",
         cursor: "pointer",
         background: isSelected
-          ? "var(--bg-selected, var(--bg-hover))"
+          ? "var(--bg-selected, var(--aegis-hover))"
           : hovered
-            ? "var(--bg-hover)"
+            ? "var(--aegis-hover)"
             : "transparent",
         transition: "background 0.1s",
-        borderLeft: isSelected ? "2px solid var(--accent)" : "2px solid transparent",
+        borderLeft: isSelected ? "2px solid rgb(var(--aegis-primary))" : "2px solid transparent",
       }}
     >
       {/* Dot indicator */}
@@ -589,13 +589,13 @@ function CommitRow({
             height: 8,
             borderRadius: "50%",
             background: isSelected
-              ? "var(--accent)"
+              ? "rgb(var(--aegis-primary))"
               : hasBranch
-                ? "var(--text-muted)"
-                : "var(--text-hint)",
+                ? "rgb(var(--aegis-text-muted))"
+                : "rgb(var(--aegis-text-dim))",
             border: isSelected
               ? "none"
-              : `2px solid ${hasBranch ? "var(--text-muted)" : "var(--border-medium)"}`,
+              : `2px solid ${hasBranch ? "rgb(var(--aegis-text-muted))" : "var(--aegis-border)"}`,
           }}
         />
       </div>
@@ -606,7 +606,7 @@ function CommitRow({
             style={{
               fontSize: 12.5,
               fontWeight: 500,
-              color: "var(--text-primary)",
+              color: "rgb(var(--aegis-text))",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -624,8 +624,8 @@ function CommitRow({
                 fontWeight: 600,
                 padding: "1px 6px",
                 borderRadius: 4,
-                background: "var(--bg-hover)",
-                color: "var(--text-muted)",
+                background: "var(--aegis-hover)",
+                color: "rgb(var(--aegis-text-muted))",
                 flexShrink: 0,
                 whiteSpace: "nowrap",
               }}
@@ -635,11 +635,11 @@ function CommitRow({
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-          <span style={{ fontSize: 10.5, color: "var(--text-hint)", fontFamily: "var(--font-mono)" }}>
+          <span style={{ fontSize: 10.5, color: "rgb(var(--aegis-text-dim))", fontFamily: "var(--font-mono)" }}>
             {commit.short_hash}
           </span>
-          <span style={{ fontSize: 10.5, color: "var(--text-hint)" }}>{commit.author}</span>
-          <span style={{ fontSize: 10.5, color: "var(--text-hint)" }}>{commit.date}</span>
+          <span style={{ fontSize: 10.5, color: "rgb(var(--aegis-text-dim))" }}>{commit.author}</span>
+          <span style={{ fontSize: 10.5, color: "rgb(var(--aegis-text-dim))" }}>{commit.date}</span>
         </div>
       </div>
     </div>
@@ -669,20 +669,20 @@ function BranchOption({
         gap: 8,
         padding: "6px 10px",
         cursor: "pointer",
-        background: hovered || active ? "var(--bg-hover)" : "transparent",
+        background: hovered || active ? "var(--aegis-hover)" : "transparent",
         transition: "background 0.1s",
       }}
     >
       <GitBranchIcon
         size={11}
-        color={active ? "var(--accent)" : "var(--text-hint)"}
+        color={active ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"}
         style={{ flexShrink: 0 }}
       />
       <span
         style={{
           flex: 1,
           fontSize: 12,
-          color: active ? "var(--accent)" : "var(--text-primary)",
+          color: active ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text))",
           fontWeight: active ? 600 : 400,
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -692,9 +692,9 @@ function BranchOption({
         {name}
       </span>
       {current && (
-        <span style={{ fontSize: 10, color: "var(--text-hint)", flexShrink: 0 }}>HEAD</span>
+        <span style={{ fontSize: 10, color: "rgb(var(--aegis-text-dim))", flexShrink: 0 }}>HEAD</span>
       )}
-      {active && <Check size={11} color="var(--accent)" style={{ flexShrink: 0 }} />}
+      {active && <Check size={11} color="rgb(var(--aegis-primary))" style={{ flexShrink: 0 }} />}
     </div>
   );
 }
@@ -713,7 +713,7 @@ function CommitDetailPanel({
 
   if (loading) {
     return (
-      <div style={{ padding: 16, fontSize: 12, color: "var(--text-hint)" }}>
+      <div style={{ padding: 16, fontSize: 12, color: "rgb(var(--aegis-text-dim))" }}>
         {t("common.loadingEllipsis")}
       </div>
     );
@@ -722,21 +722,21 @@ function CommitDetailPanel({
   return (
     <div style={{ overflowY: "auto", flex: 1 }}>
       {/* Commit meta */}
-      <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--border-dim)" }}>
+      <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid var(--aegis-border)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-          <GitCommitIcon size={12} color="var(--text-hint)" />
-          <span style={{ fontSize: 11, color: "var(--text-hint)", fontFamily: "var(--font-mono)" }}>
+          <GitCommitIcon size={12} color="rgb(var(--aegis-text-dim))" />
+          <span style={{ fontSize: 11, color: "rgb(var(--aegis-text-dim))", fontFamily: "var(--font-mono)" }}>
             {detail.short_hash}
           </span>
-          <span style={{ fontSize: 11, color: "var(--text-hint)" }}>{detail.author}</span>
-          <span style={{ fontSize: 11, color: "var(--text-hint)", marginLeft: "auto" }}>
+          <span style={{ fontSize: 11, color: "rgb(var(--aegis-text-dim))" }}>{detail.author}</span>
+          <span style={{ fontSize: 11, color: "rgb(var(--aegis-text-dim))", marginLeft: "auto" }}>
             {detail.date}
           </span>
         </div>
         <div
           style={{
             fontSize: 12.5,
-            color: "var(--text-primary)",
+            color: "rgb(var(--aegis-text))",
             fontWeight: 500,
             lineHeight: 1.4,
             marginBottom: 4,
@@ -745,7 +745,7 @@ function CommitDetailPanel({
           {detail.message}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ flex: 1, fontSize: 11, color: "var(--text-hint)" }}>
+          <div style={{ flex: 1, fontSize: 11, color: "rgb(var(--aegis-text-dim))" }}>
             {t(detail.files.length === 1 ? "common.fileChanged" : "common.filesChanged", {
               count: detail.files.length,
             })}{" "}

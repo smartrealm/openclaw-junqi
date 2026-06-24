@@ -42,8 +42,8 @@ function ViewToggleButton({
       aria-pressed={active}
       style={{
         ...s.diffToggleBtn,
-        background: active ? "var(--control-active-bg)" : "transparent",
-        color: active ? "var(--control-active-fg)" : "var(--text-hint)",
+        background: active ? "rgba(var(--aegis-primary) / 0.10)" : "transparent",
+        color: active ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))",
       }}
     >
       {children}
@@ -121,7 +121,7 @@ export function GitDiffViewer({
   return (
     <div style={s.diffViewer}>
       <div style={s.diffHeader}>
-        <FileCode size={15} color="var(--text-muted)" />
+        <FileCode size={15} color="rgb(var(--aegis-text-muted))" />
         <div style={s.diffHeaderTitleWrap}>
           <div style={s.diffHeaderTitle}>{title}</div>
           <div style={s.diffHeaderMeta}>

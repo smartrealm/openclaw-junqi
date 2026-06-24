@@ -184,35 +184,35 @@ const editorBaseTheme = EditorView.theme({
     height: "100%",
     fontFamily: "var(--font-mono)",
     fontSize: "13px",
-    background: "var(--bg-panel)",
+    background: "var(--aegis-elevated)",
     "-webkit-user-select": "text",
     "user-select": "text",
   },
   ".cm-editor": {
-    background: "var(--bg-panel)",
+    background: "var(--aegis-elevated)",
   },
   ".cm-scroller": {
     overflow: "auto",
     lineHeight: "1.6",
-    background: "var(--bg-panel)",
+    background: "var(--aegis-elevated)",
     "-webkit-user-select": "text",
     "user-select": "text",
   },
   ".cm-content": {
     padding: "12px 0",
-    caretColor: "var(--text-primary)",
+    caretColor: "rgb(var(--aegis-text))",
     "-webkit-user-select": "text",
     "user-select": "text",
   },
   ".cm-gutters": {
-    borderRight: "1px solid var(--border-dim)",
-    background: "var(--bg-panel)",
+    borderRight: "1px solid var(--aegis-border)",
+    background: "var(--aegis-elevated)",
     fontSize: "12px",
     minWidth: "44px",
   },
   ".cm-lineNumbers .cm-gutterElement": {
     padding: "0 8px 0 4px",
-    color: "var(--text-hint)",
+    color: "rgb(var(--aegis-text-dim))",
   },
   ".cm-activeLineGutter": {
     background: "var(--code-line-hover-bg)",
@@ -419,7 +419,7 @@ function FilePreviewPane({
         overflow: "hidden",
         minWidth: 0,
         minHeight: 0,
-        background: "var(--bg-panel)",
+        background: "var(--aegis-elevated)",
       }}
     >
       <div
@@ -440,7 +440,7 @@ function FilePreviewPane({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
               fontSize: 12,
             }}
           >
@@ -456,7 +456,7 @@ function FilePreviewPane({
               justifyContent: "center",
               height: "100%",
               gap: 10,
-              color: "var(--text-muted)",
+              color: "rgb(var(--aegis-text-muted))",
             }}
           >
             <AlertCircle size={24} strokeWidth={1.5} />
@@ -512,14 +512,14 @@ function FilePreviewPane({
           display: "flex",
           alignItems: "center",
           padding: "0 12px",
-          borderTop: "1px solid var(--border-dim)",
-          background: "var(--bg-subtle)",
+          borderTop: "1px solid var(--aegis-border)",
+          background: "var(--aegis-elevated)",
           flexShrink: 0,
           gap: 8,
         }}
       >
         <span
-          style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+          style={{ fontSize: 11, color: "rgb(var(--aegis-text-muted))", fontFamily: "var(--font-mono)" }}
         >
           {filePath}
         </span>
@@ -528,7 +528,7 @@ function FilePreviewPane({
             style={{
               marginLeft: "auto",
               fontSize: 11,
-              color: saveStatus === "error" ? "var(--danger-fg)" : "var(--text-muted)",
+              color: saveStatus === "error" ? "var(--danger-fg)" : "rgb(var(--aegis-text-muted))",
               fontFamily: "var(--font-mono)",
             }}
           >
@@ -651,7 +651,7 @@ export function FileViewer({
         overflow: "hidden",
         minWidth: 0,
         minHeight: 0,
-        background: "var(--bg-panel)",
+        background: "var(--aegis-elevated)",
       }}
     >
       <div
@@ -659,9 +659,9 @@ export function FileViewer({
           height: 40,
           display: "flex",
           alignItems: "center",
-          borderBottom: "1px solid var(--border-dim)",
+          borderBottom: "1px solid var(--aegis-border)",
           flexShrink: 0,
-          background: "var(--bg-sidebar)",
+          background: "var(--aegis-surface)",
           minWidth: 0,
         }}
       >
@@ -705,12 +705,12 @@ export function FileViewer({
                   gap: 6,
                   padding: "0 10px 0 12px",
                   border: "none",
-                  borderRight: "1px solid var(--border-dim)",
-                  borderTop: isActive ? "2px solid var(--accent)" : "2px solid transparent",
-                  background: isActive ? "var(--bg-panel)" : "transparent",
+                  borderRight: "1px solid var(--aegis-border)",
+                  borderTop: isActive ? "2px solid rgb(var(--aegis-primary))" : "2px solid transparent",
+                  background: isActive ? "var(--aegis-elevated)" : "transparent",
                   fontSize: 12.5,
                   fontWeight: isActive ? 500 : 400,
-                  color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                  color: isActive ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text-secondary))",
                   cursor: "pointer",
                   flexShrink: 0,
                 }}
@@ -747,7 +747,7 @@ export function FileViewer({
                     borderRadius: 3,
                     display: "flex",
                     alignItems: "center",
-                    color: "var(--text-hint)",
+                    color: "rgb(var(--aegis-text-dim))",
                     marginLeft: 2,
                   }}
                   role="button"
@@ -787,12 +787,12 @@ export function FileViewer({
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
-                color: activePreviewMode ? "var(--accent)" : "var(--text-hint)",
+                color: activePreviewMode ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))",
                 fontSize: 11.5,
                 fontFamily: "var(--font-ui)",
                 flexShrink: 0,
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--aegis-hover)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
             >
               {activePreviewMode ? <PencilLine size={13} /> : <Eye size={13} />}
@@ -812,9 +812,9 @@ export function FileViewer({
                   borderRadius: 4,
                   display: "flex",
                   alignItems: "center",
-                  color: "var(--text-hint)",
+                  color: "rgb(var(--aegis-text-dim))",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--aegis-hover)")}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
               >
                 <MoreHorizontal size={15} />

@@ -12,7 +12,7 @@ function StatusIcon({ ok, color }: { ok: boolean; color?: string }) {
   if (ok) {
     return <CheckCircle2 size={14} color={color ?? "var(--accent-success, #2ea043)"} />;
   }
-  return <XCircle size={14} color={color ?? "var(--text-hint)"} />;
+  return <XCircle size={14} color={color ?? "rgb(var(--aegis-text-dim))"} />;
 }
 
 export function HooksPanel() {

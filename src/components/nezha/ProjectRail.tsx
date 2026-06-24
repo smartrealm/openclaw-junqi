@@ -63,7 +63,7 @@ function AttentionIndicator({
     <span
       style={{
         ...s.railStatusDot,
-        background: isAttention ? "var(--color-warning)" : "var(--color-success)",
+        background: isAttention ? "rgb(var(--aegis-warning))" : "var(--color-success)",
         borderColor,
       }}
     />
@@ -119,9 +119,9 @@ function RailItem({
         cursor: isActive ? "default" : "pointer",
         padding: 0,
         outline: isActive
-          ? "2px solid var(--accent)"
+          ? "2px solid rgb(var(--aegis-primary))"
           : hov
-            ? "2px solid var(--border-medium)"
+            ? "2px solid var(--aegis-border)"
             : "2px solid transparent",
         outlineOffset: 1,
         transition: isActive ? "none" : "outline-color 0.12s",
@@ -141,7 +141,7 @@ function RailItem({
         status={status}
         count={attentionCount}
         showBadge={showBadge}
-        borderColor="var(--bg-sidebar)"
+        borderColor="var(--aegis-surface)"
       />
     </button>
   );
@@ -189,8 +189,8 @@ function ProjectDrawer({
         top: 0,
         bottom: 0,
         width: 220,
-        background: "var(--bg-panel)",
-        borderRight: "1px solid var(--border-dim)",
+        background: "var(--aegis-elevated)",
+        borderRight: "1px solid var(--aegis-border)",
         display: "flex",
         flexDirection: "column",
         zIndex: 50,
@@ -200,7 +200,7 @@ function ProjectDrawer({
       <div
         style={{
           padding: "12px 12px 10px",
-          borderBottom: "1px solid var(--border-dim)",
+          borderBottom: "1px solid var(--aegis-border)",
         }}
       >
         <div
@@ -208,7 +208,7 @@ function ProjectDrawer({
             margin: "0 2px 8px",
             fontSize: 11,
             fontWeight: 700,
-            color: "var(--text-hint)",
+            color: "rgb(var(--aegis-text-dim))",
             letterSpacing: 0.7,
             textTransform: "uppercase",
           }}
@@ -221,7 +221,7 @@ function ProjectDrawer({
             margin: 0,
           }}
         >
-          <Search size={13} strokeWidth={2} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <Search size={13} strokeWidth={2} color="rgb(var(--aegis-text-muted))" style={{ flexShrink: 0 }} />
           <input
             autoFocus
             value={query}
@@ -245,7 +245,7 @@ function ProjectDrawer({
             style={{
               padding: "24px 10px",
               textAlign: "center",
-              color: "var(--text-hint)",
+              color: "rgb(var(--aegis-text-dim))",
               fontSize: 12,
             }}
           >
@@ -278,7 +278,7 @@ function ProjectDrawer({
               }}
               onMouseEnter={(e) => {
                 if (!isActive)
-                  (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-hover)";
+                  (e.currentTarget as HTMLButtonElement).style.background = "var(--aegis-hover)";
               }}
               onMouseLeave={(e) => {
                 if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "none";
@@ -290,14 +290,14 @@ function ProjectDrawer({
                   status={status}
                   count={attentionCount}
                   showBadge={showBadge}
-                  borderColor="var(--bg-panel)"
+                  borderColor="var(--aegis-elevated)"
                 />
               </div>
               <span
                 style={{
                   fontSize: 13,
                   fontWeight: isActive ? 600 : 500,
-                  color: isActive ? "var(--accent)" : "var(--text-primary)",
+                  color: isActive ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text))",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
@@ -309,7 +309,7 @@ function ProjectDrawer({
                 <PinOff
                   size={12}
                   strokeWidth={2}
-                  color="var(--text-hint)"
+                  color="rgb(var(--aegis-text-dim))"
                   style={s.railHiddenIcon}
                 />
               )}
@@ -378,8 +378,8 @@ export function ProjectRail({
         position: "relative",
         width: 52,
         flexShrink: 0,
-        background: "var(--bg-sidebar)",
-        borderRight: "1px solid var(--border-dim)",
+        background: "var(--aegis-surface)",
+        borderRight: "1px solid var(--aegis-border)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -421,15 +421,15 @@ export function ProjectRail({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              background: drawerOpen ? "var(--accent-subtle)" : expandHov ? "var(--bg-hover)" : "none",
+              background: drawerOpen ? "var(--accent-subtle)" : expandHov ? "var(--aegis-hover)" : "none",
               border: "none",
               borderRadius: 8,
               cursor: "pointer",
               color: drawerOpen
-                ? "var(--accent)"
+                ? "rgb(var(--aegis-primary))"
                 : expandHov
-                  ? "var(--text-muted)"
-                  : "var(--text-hint)",
+                  ? "rgb(var(--aegis-text-muted))"
+                  : "rgb(var(--aegis-text-dim))",
               transition: "background 0.12s, color 0.12s",
             }}
           >
@@ -454,11 +454,11 @@ export function ProjectRail({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              background: addHov ? "var(--bg-hover)" : "var(--bg-card)",
-              border: "1px solid var(--border-medium)",
+              background: addHov ? "var(--aegis-hover)" : "var(--aegis-card)",
+              border: "1px solid var(--aegis-border)",
               borderRadius: 8,
               cursor: "pointer",
-              color: addHov ? "var(--text-primary)" : "var(--text-muted)",
+              color: addHov ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text-muted))",
               transition: "background 0.12s, color 0.12s",
             }}
           >

@@ -435,10 +435,10 @@ export function NewTaskView({
       {/* Missing context file warning */}
       {hasMdFile === false && (
         <div style={s.agentMissingMdBanner}>
-          <TriangleAlert size={15} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
+          <TriangleAlert size={15} style={{ color: "rgb(var(--aegis-warning))", flexShrink: 0, marginTop: 1 }} />
           <div style={s.agentMissingMdBody}>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text-secondary)" }}>
-              <span style={{ fontWeight: 650, color: "var(--text-primary)" }}>
+            <div style={{ fontSize: 13, lineHeight: 1.55, color: "rgb(var(--aegis-text-secondary))" }}>
+              <span style={{ fontWeight: 650, color: "rgb(var(--aegis-text)) }}>
                 {t("newTask.instructionsMissing", {
                   file: agent === "claude" ? "CLAUDE.md" : "AGENTS.md",
                 }).split(agent === "claude" ? "CLAUDE.md" : "AGENTS.md")[0]}
@@ -467,7 +467,7 @@ export function NewTaskView({
               style={s.agentMissingMdInitBtn}
               onClick={handleInitializeMd}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--warning-surface)";
+                e.currentTarget.style.background = "rgb(var(--aegis-warning) / 0.06)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "transparent";

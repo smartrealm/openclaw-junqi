@@ -1,0 +1,335 @@
+// Terminal Workspace — Multi-session terminal + CLI tool quick-launch
+// + right toolbar with File Explorer / Git Changes / Git History.
+
+import { useTranslation } from "react-i18next";
+import { useTheme } from "@/theme";
+import {
+  ShellTerminalPanel,
+  type ShellTerminalPanelHandle,
+} from "@/components/Terminal";
+import { FileExplorer } from "@/components/FileExplorer";
+import { GitChanges } from "@/components/Git";
+import { GitHistory } from "@/components/Git";
+import { useRef, useState, useCallback, useEffect } from "react";
+import { homeDir } from "@tauri-apps/api/path";
+import { invoke } from "@tauri-apps/api/core";
+import { loadTools, mergeDetected, type CLITool } from "@/utils/terminalTools";
+import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
+import {
+  DEFAULT_TERMINAL_FONT_SIZE,
+  getDefaultMonoFont,
+} from "@/_nezha_root/types";
+import {
+  FolderOpen, GitBranch, History, X, ChevronDown,
+} from "lucide-react";
+
+type RightPanel = null | "files" | "git-changes" | "git-history";
+
+export function TerminalPage() {
+  const { t } = useTranslation();
+  const resolvedTheme = useTheme();
+  const themeVariant: ThemeVariant = resolvedTheme.replace("aegis-", "") as ThemeVariant;
+  const panelRef = useRef<ShellTerminalPanelHandle>(null);
+
+  const terminalFontSize: TerminalFontSize = DEFAULT_TERMINAL_FONT_SIZE;
+  const monoFontFamily: FontFamily = getDefaultMonoFont();
+  const [projectPath, setProjectPath] = useState("/");
+  useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
+  const projectName = projectPath.split("/").pop() || "home";
+
+  // Terminal fills available flex space (no ResizeObserver needed)
+  const termWrapRef = useRef<HTMLDivElement>(null);
+
+  // ── CLI tools: auto-detect + user-customizable (persisted to localStorage) ──
+  const [cliTools, setCliTools] = useState<CLITool[]>(() => loadTools());
+  useEffect(() => {
+    const detect = () => {
+      invoke<CLITool[]>("detect_cli_tools")
+        .then((detected) => {
+          if (detected && detected.length > 0) {
+            setCliTools(mergeDetected(detected));
+          }
+        })
+        .catch((err) => {
+          console.warn("[Terminal] detect_cli_tools failed, retrying...", err);
+          setTimeout(detect, 2000);
+        });
+    };
+    detect();
+  }, []);
+
+  // Right panel
+  const [rightPanel, setRightPanel] = useState<RightPanel>(null);
+  const [rightPanelWidth, setRightPanelWidth] = useState(360);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const togglePanel = useCallback((panel: RightPanel) => {
+    setRightPanel((prev) => (prev === panel ? null : panel));
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (e: MouseEvent) => setRightPanelWidth(Math.max(240, Math.min(700, window.innerWidth - e.clientX)));
+    const onUp = () => setIsDragging(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [isDragging]);
+
+  // Tool click → type command into active shell
+  const runTool = useCallback((cmd: string) => {
+    panelRef.current?.sendCommand(cmd);
+  }, []);
+
+  // ── Cross-page command bridge ──
+  // Listen for `junqi:run-terminal-command` events from FileViewer's Makefile
+  // run buttons (and any other component that wants to push a command into the
+  // terminal without prop-drilling). The terminal panel must already be mounted.
+  // If the user is on a different page the command silently drops — they'd need
+  // to be on /terminal for it to land.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ command: string; projectPath?: string }>;
+      const cmd = ce.detail?.command;
+      if (!cmd) return;
+      panelRef.current?.sendCommand(cmd);
+    };
+    window.addEventListener("junqi:run-terminal-command", handler);
+    return () => window.removeEventListener("junqi:run-terminal-command", handler);
+  }, []);
+
+  return (
+    <div style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden", background: "var(--bg-root)" }}>
+      {/* Main terminal area */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {/* Agent launcher — nezha-style: agent dropdown + permission + launch */}
+        <AgentLaunchBar tools={cliTools} onLaunch={runTool} cwd={projectPath} />
+
+        {/* Terminal */}
+        <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <ShellTerminalPanel
+            ref={panelRef}
+            themeVariant={themeVariant}
+            terminalFontSize={terminalFontSize}
+            monoFontFamily={monoFontFamily}
+            projectPath={projectPath}
+            projectId="default"
+            onClose={() => {}}
+          />
+        </div>
+      </div>
+
+      {/* Right panel — between terminal and toolbar (nezha layout) */}
+      {rightPanel && (<>
+        <div onMouseDown={handleMouseDown} style={{ width: 4, flexShrink: 0, cursor: "col-resize", background: isDragging ? "var(--accent)" : "transparent" }} />
+        <div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--border-dim)", background: "var(--bg-panel)", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--border-dim)", flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              {rightPanel === "files" ? "Files" : rightPanel === "git-changes" ? "Changes" : "History"}
+            </span>
+            <button onClick={() => setRightPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "var(--text-hint)" }}>
+              <X size={14} />
+            </button>
+          </div>
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            {rightPanel === "files" && (
+              <FileExplorer projectPath={projectPath} projectName={projectName} onFileSelect={() => {}} />
+            )}
+            {rightPanel === "git-changes" && (
+              <GitChanges projectPath={projectPath} currentTaskCreatedAt={null} onFileSelect={() => {}} />
+            )}
+            {rightPanel === "git-history" && (
+              <GitHistory projectPath={projectPath} onCommitSelect={() => {}} />
+            )}
+          </div>
+        </div>
+      </>)}
+
+      {/* Right toolbar — outer-most 44px strip (nezha RightToolbar) */}
+      <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 4px", borderLeft: "1px solid var(--border-dim)", background: "var(--bg-sidebar)" }}>
+        <IconBtn icon={<FolderOpen size={18} />} label="Files" active={rightPanel === "files"} onClick={() => togglePanel("files")} />
+        <IconBtn icon={<GitBranch size={18} />} label="Changes" active={rightPanel === "git-changes"} onClick={() => togglePanel("git-changes")} />
+        <IconBtn icon={<History size={18} />} label="History" active={rightPanel === "git-history"} onClick={() => togglePanel("git-history")} />
+      </div>
+    </div>
+  );
+}
+
+function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title={label} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "var(--control-active-bg)" : "transparent", color: active ? "var(--control-active-fg)" : "var(--text-muted)", transition: "background 0.12s, color 0.12s" }}>
+      {icon}
+    </button>
+  );
+}
+
+// ── Agent launch bar — nezha-style dropdown agent + permission picker ──
+
+const AI_AGENT_IDS = ["codex", "claude", "pi", "cursor-agent", "aider", "ollama", "qwen", "gemini", "cody", "gptme"];
+const PERM_MODES = ["ask", "auto_edit", "full_access"] as const;
+type PermMode = typeof PERM_MODES[number];
+type LaunchMode = "local" | "worktree";
+
+interface LaunchResult {
+  ok: boolean;
+  worktree_path?: string;
+  base_branch?: string;
+}
+
+function AgentLaunchBar({ tools, onLaunch, cwd }: { tools: CLITool[]; onLaunch: (cmd: string) => void; cwd: string }) {
+  const aiTools = tools.filter((t) => AI_AGENT_IDS.includes(t.id));
+  const [agent, setAgent] = useState(aiTools[0]?.id ?? "");
+  const [perm, setPerm] = useState<PermMode>("ask");
+  const [launchMode, setLaunchMode] = useState<LaunchMode>("local");
+  const [baseBranch, setBaseBranch] = useState<string>("");
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [permOpen, setPermOpen] = useState(false);
+  const [modeOpen, setModeOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!agentOpen && !permOpen && !modeOpen) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setAgentOpen(false); setPermOpen(false); setModeOpen(false); } };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [agentOpen, permOpen, modeOpen]);
+
+  // Auto-fetch current branch when worktree mode is opened (best-effort).
+  useEffect(() => {
+    if (launchMode !== 'worktree' || baseBranch) return;
+    let cancelled = false;
+    invoke<{ branch: string }>('git_remote_counts', { projectPath: cwd })
+      .then((r) => { if (!cancelled) setBaseBranch(r.branch || 'main'); })
+      .catch(() => { if (!cancelled) setBaseBranch('main'); });
+    return () => { cancelled = true; };
+  }, [launchMode, cwd, baseBranch]);
+
+  if (aiTools.length === 0) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
+        <span className="text-[10px] text-aegis-text-dim">Detecting AI tools…</span>
+      </div>
+    );
+  }
+
+  const selected = aiTools.find((t) => t.id === agent) ?? aiTools[0];
+  const needsPerm = agent === "codex" || agent === "claude";
+
+  const launch = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      let targetCwd = cwd;
+      if (launchMode === 'worktree') {
+        // Create a per-task worktree via the existing backend.
+        const taskId = `wt-${Date.now().toString(36)}`;
+        const res = await invoke<LaunchResult>('create_task_worktree', {
+          projectPath: cwd,
+          taskId,
+          baseBranch: baseBranch || 'main',
+        });
+        if (!res.ok || !res.worktree_path) {
+          console.warn('[AgentLaunchBar] worktree creation failed');
+          return;
+        }
+        targetCwd = res.worktree_path;
+      }
+      const cmd = needsPerm
+        ? `cd "${targetCwd}" && ${agent} --permission-mode ${perm}\n`
+        : `cd "${targetCwd}" && ${agent}\n`;
+      onLaunch(cmd);
+    } catch (e) {
+      console.error('[AgentLaunchBar] launch failed:', e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const permLabel = (p: PermMode) => p === "ask" ? "Ask" : p === "auto_edit" ? "Auto Edit" : "Full Access";
+
+  return (
+    <div ref={ref} className="flex items-center gap-2 px-3 py-1 border-b shrink-0" style={{ borderColor: "var(--border-dim)", background: "var(--bg-sidebar)" }}>
+      {/* Agent dropdown */}
+      <div style={{ position: "relative" }}>
+        <button
+          onClick={() => { setAgentOpen((v) => !v); setPermOpen(false); }}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors"
+          style={{ color: "var(--text-primary)", background: agentOpen ? "var(--bg-hover)" : "var(--bg-subtle)", border: "1px solid var(--border-dim)", minWidth: 90 }}
+        >
+          <span>{selected.icon}</span>
+          <span>{selected.label}</span>
+          <ChevronDown size={9} style={{ marginLeft: "auto", transform: agentOpen ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
+        </button>
+        {agentOpen && (
+          <div className="absolute top-full left-0 mt-1 z-50 rounded-lg overflow-hidden w-44"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 32px rgba(0,0,0,0.25)" }}>
+            {aiTools.map((t) => (
+              <button key={t.id} onClick={() => { setAgent(t.id); setAgentOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-left transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
+                style={{ color: t.id === agent ? "var(--control-active-fg)" : "var(--text-secondary)", background: t.id === agent ? "var(--control-active-bg)" : "transparent" }}>
+                <span>{t.icon}</span> <span className="font-medium">{t.label}</span>
+                <span className="ml-auto text-[9px] opacity-50 font-mono">{t.id}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Permission dropdown — only for claude/codex */}
+      {needsPerm && (
+        <div style={{ position: "relative" }}>
+          <button onClick={() => { setPermOpen((v) => !v); setAgentOpen(false); }}
+            className="flex items-center gap-0.5 px-2 py-1 rounded text-[9px] font-medium transition-colors"
+            style={{ color: "var(--text-dim)", background: permOpen ? "var(--bg-hover)" : "transparent", border: "1px solid var(--border-dim)" }}>
+            {permLabel(perm)} <ChevronDown size={8} style={{ transform: permOpen ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
+          </button>
+          {permOpen && (
+            <div className="absolute top-full left-0 mt-1 z-50 rounded-lg overflow-hidden w-28"
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" }}>
+              {PERM_MODES.map((p) => (
+                <button key={p} onClick={() => { setPerm(p); setPermOpen(false); }}
+                  className="w-full px-3 py-1.5 text-[10px] text-left transition-colors"
+                  style={{ color: p === perm ? "var(--control-active-fg)" : "var(--text-secondary)", background: p === perm ? "var(--control-active-bg)" : "transparent" }}>
+                  {permLabel(p)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Launch mode (local / worktree) — P8b */}
+      <div style={{ position: "relative" }}>
+        <button onClick={() => { setModeOpen((v) => !v); setAgentOpen(false); setPermOpen(false); }}
+          className="flex items-center gap-0.5 px-2 py-1 rounded text-[9px] font-medium transition-colors"
+          style={{ color: "var(--text-dim)", background: modeOpen ? "var(--bg-hover)" : "transparent", border: "1px solid var(--border-dim)" }}>
+          {launchMode === 'worktree' ? `WT: ${baseBranch || '...'}` : 'Local'} <ChevronDown size={8} style={{ transform: modeOpen ? "rotate(180deg)" : "none", transition: "transform 0.12s" }} />
+        </button>
+        {modeOpen && (
+          <div className="absolute top-full left-0 mt-1 z-50 rounded-lg overflow-hidden w-36"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-dim)", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" }}>
+            {(['local', 'worktree'] as LaunchMode[]).map((m) => (
+              <button key={m} onClick={() => { setLaunchMode(m); setModeOpen(false); }}
+                className="w-full px-3 py-1.5 text-[10px] text-left transition-colors"
+                style={{ color: m === launchMode ? "var(--control-active-fg)" : "var(--text-secondary)", background: m === launchMode ? "var(--control-active-bg)" : "transparent" }}>
+                {m === 'local' ? 'Local (current dir)' : `Worktree (branch: ${baseBranch || '...'})`}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Launch */}
+      <button onClick={() => { void launch(); }} disabled={busy} className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-semibold ml-auto transition-colors disabled:opacity-50"
+        style={{ color: "#fff", background: "var(--primary-action-bg)" }}>
+        Launch
+      </button>
+    </div>
+  );
+}

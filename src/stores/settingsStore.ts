@@ -6,6 +6,7 @@ import {
   isThemeSetting,
   type ThemeSetting,
 } from '@/theme';
+import { applyTheme } from '@/theme/apply';
 
 // ═══════════════════════════════════════════════════════════
 // Settings Store
@@ -152,12 +153,18 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   accentColor: localStorage.getItem('aegis-accent-color') || 'teal',
 
   setTheme: (theme) => {
-    // Validate at the store boundary — `theme: string` was the old loose
-    // contract; tighten it here so invalid values never reach the DOM.
     if (!isThemeSetting(theme)) return;
     localStorage.setItem(THEME_STORAGE_KEY, theme);
     set({ theme });
     window.aegis?.settings?.save?.('theme', theme).catch?.(() => {});
+    // Apply CSS immediately — theme-switching class prevents flash
+    if (theme !== 'system') {
+      applyTheme(theme);
+    } else {
+      // resolve system → dark/light based on OS preference
+      const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+      applyTheme(prefersDark ? 'aegis-dark' : 'aegis-light');
+    }
   },
   setUiScale: (scale) => {
     const v = clampScale(scale);
