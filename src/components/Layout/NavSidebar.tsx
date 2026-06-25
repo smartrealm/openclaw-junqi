@@ -90,7 +90,7 @@ export function NavSidebar() {
       )}
     >
       {/* Navigation Icons */}
-      <nav className={clsx('flex-1 flex flex-col gap-1 px-2 overflow-y-auto', sidebarMode === 'mini' ? 'items-center' : 'items-stretch')}>
+      <nav className={clsx('flex-1 flex flex-col gap-1 px-2 overflow-y-auto overflow-x-hidden', sidebarMode === 'mini' ? 'items-center' : 'items-stretch')}>
         {navItems.filter((i) => !i.submenu).map((item) => {
           const isActive = location.pathname === item.to ||
             (item.to !== '/' && location.pathname.startsWith(item.to));
@@ -129,9 +129,9 @@ export function NavSidebar() {
                 />
               )}
 
-              <div className="relative">
+              <div className="relative" title={sidebarCollapsed ? t(item.labelKey, item.labelKey) : undefined}>
                 <item.icon size={18} />
-                {item.badge && (
+                {item.badge && !sidebarCollapsed && (
                   <span className="absolute -top-1.5 -right-2 text-[8px]">{item.badge}</span>
                 )}
               </div>

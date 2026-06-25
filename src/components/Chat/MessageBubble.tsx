@@ -633,9 +633,11 @@ function stripInlineCodeTicks(md: string): string {
           )}
         </div>
 
-        {/* ── Footer: timestamp + sender + model + context + actions ── */}
+        {/* ── Footer: timestamp + sender + model + context + actions ──
+            Independent hover group (group/actions) so the footer's buttons
+            are controlled separately from the bubble's copy icon. */}
         <div className={clsx(
-          'flex items-center mt-1 flex-wrap select-none',
+          'flex items-center mt-1 flex-wrap select-none group/actions',
           isUser && 'justify-end',
         )} style={{ gap: 6, rowGap: 3 }}>
 
@@ -694,16 +696,10 @@ function stripInlineCodeTicks(md: string): string {
             </span>
           )}
 
-          {/* Dot separator before actions */}
-          {(hovered || isUser) && (
+          {/* ── Action buttons (own hover group, independent of bubble copy icon) ── */}
+          <span className="inline-flex items-center gap-0.5 opacity-0 group-hover/actions:opacity-100 transition-opacity duration-150 group/actions">
+            {/* Dot separator */}
             <span className="text-aegis-border text-[10px] select-none">·</span>
-          )}
-
-          {/* ── Action buttons (visible on hover for assistant, always for user) ── */}
-          <span className={clsx(
-            'inline-flex items-center gap-0.5 transition-opacity duration-150',
-            (hovered || isUser) ? 'opacity-100' : 'opacity-0',
-          )}>
             {/* Edit (user only) */}
             {isUser && onResend && (
               <ActionBtn icon={<Pencil size={14} />} label={t('chat.edit', 'Edit')}
