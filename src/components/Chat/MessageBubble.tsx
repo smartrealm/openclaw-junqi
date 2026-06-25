@@ -657,13 +657,14 @@ function stripInlineCodeTicks(md: string): string {
             </span>
           )}
 
-          {/* Timestamp + duration — AI: "14:32 · 12s", User: "14:32" */}
+          {/* Timestamp + duration — AI: "Jun 25 14:32 · 12s", User: "14:32" */}
           {isUser ? (
             <time className="text-[10px] text-aegis-text-muted tabular-nums" dateTime={block.timestamp || ''}>
               {timeLabel}
             </time>
           ) : (
             <span className="inline-flex items-center text-[10px] text-aegis-text-muted" style={{ gap: 4 }}>
+              <span>{dateLabel}</span>
               <time className="tabular-nums" dateTime={block.timestamp || ''}>{timeLabel}</time>
               {durationStr && (
                 <>
