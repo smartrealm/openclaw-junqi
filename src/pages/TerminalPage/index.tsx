@@ -30,8 +30,8 @@ export function TerminalPage() {
 
   const terminalFontSize: TerminalFontSize = DEFAULT_TERMINAL_FONT_SIZE;
   const monoFontFamily: FontFamily = getDefaultMonoFont();
-  const [projectPath, setProjectPath] = useState("/");
-  useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
+  const [projectPath, setProjectPath] = useState(".");
+  useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath(".")); }, []);
 
   const termWrapRef = useRef<HTMLDivElement>(null);
 

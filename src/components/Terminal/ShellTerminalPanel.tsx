@@ -50,11 +50,11 @@ export interface ShellTerminalPanelHandle {
 function computeShellTitle(shell: ShellSession): string {
   if (shell.title && shell.title.trim()) return shell.title;
   const cwd = (shell as ShellSession & { cwd?: string }).cwd ?? '';
-  const home = '~';
-  if (!cwd || cwd === '/' || cwd === '') return home;
-  const trimmed = cwd.replace(/\/+$/, '');
-  if (trimmed === '') return home;
-  const seg = trimmed.split('/').pop() || home;
+  if (!cwd) return '~';
+  // Support both Unix '/' and Windows '\' path separators
+  const trimmed = cwd.replace(/[\/\\]+$/, '');
+  if (!trimmed) return '~';
+  const seg = trimmed.split(/[\/\\]/).pop() || '~';
   return seg;
 }
 

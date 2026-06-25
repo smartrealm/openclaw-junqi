@@ -10,6 +10,7 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { notifications } from '@/services/notifications';
 import { NotificationPanel } from '@/components/Layout/NotificationPanel';
+import { APP_PLATFORM } from '@/components/Terminal/_nezha-platform';
 
 type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
 
@@ -33,7 +34,7 @@ type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
 export function TopBar() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const isMac = (window.aegis?.platform ?? (navigator.userAgent.includes('Mac') ? 'darwin' : 'other')) === 'darwin';
+  const isMac = APP_PLATFORM === 'macos';
 
   // ── Sidebar collapse (three-stage cycle: expanded → mini → hidden) ──
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);

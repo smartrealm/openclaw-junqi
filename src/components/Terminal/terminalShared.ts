@@ -1,4 +1,5 @@
 import { Terminal } from "@xterm/xterm";
+import { APP_PLATFORM } from './_nezha-platform';
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -506,7 +507,8 @@ export function initTerminal(
     // 当运行中的 TUI（Claude Code / Codex）开启鼠标上报时，xterm 默认把拖动当作
     // 鼠标事件转发给程序并取消本地选区,导致 macOS 用户"运行时无法框选"。开启此项后
     // 按住 ⌥ Option 拖动可强制本地选区（iTerm2 / Terminal.app 的标准约定）。
-    macOptionClickForcesSelection: true,
+    // Alt/Option+drag forces local selection on macOS (iTerm2 convention); disabled on Windows/Linux.
+    macOptionClickForcesSelection: APP_PLATFORM === 'macos',
   });
 
   const fitAddon = new FitAddon();

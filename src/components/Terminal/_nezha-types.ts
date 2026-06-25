@@ -40,7 +40,7 @@ export function clampTerminalFontSize(value: number): TerminalFontSize {
 
 export type FontFamily = string;
 export const DEFAULT_UI_FONT: FontFamily =
-  '"SF Pro Display", "IBM Plex Sans", "PingFang SC", "Noto Sans SC", sans-serif';
+  '"SF Pro Display", "Segoe UI", "IBM Plex Sans", "PingFang SC", "Noto Sans SC", sans-serif';
 
 const MONO_FONT_WINDOWS: FontFamily = "Consolas";
 const MONO_FONT_WINDOWS_STACK: FontFamily =
@@ -57,7 +57,7 @@ const MONO_FONT_PR326_INITIAL_FALLBACK: FontFamily =
 export function getDefaultMonoFont(): FontFamily {
   if (typeof navigator === "undefined") return MONO_FONT_FALLBACK;
   const ua = navigator.userAgent;
-  if (/Windows/i.test(ua)) return MONO_FONT_WINDOWS;
+  if (/Windows/i.test(ua)) return MONO_FONT_WINDOWS_STACK;
   if (/Mac OS X|Macintosh/i.test(ua)) return MONO_FONT_MAC;
   if (/Linux/i.test(ua)) return MONO_FONT_LINUX;
   return MONO_FONT_FALLBACK;
