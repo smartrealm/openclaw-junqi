@@ -14,8 +14,41 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, FolderOpen, Plus, Trash2, Clock, Blocks, Inbox, Layers, FolderSearch, Loader2, AlertCircle } from 'lucide-react';
+import { Search, FolderOpen, Plus, Trash2, Clock, Blocks, Inbox, Layers, FolderSearch, Loader2, AlertCircle, Terminal, Container, GitBranch, Server, Codepen, Package, Box, Hammer, Settings2, Monitor, Cpu, RefreshCw } from 'lucide-react';
 import { Sparkle, Robot, Diamond, Wrench, Cube } from '@phosphor-icons/react';
+import { Icon } from '@/components/shared/icons';
+
+/** Map tool IDs from detect_cli_tools to phosphor/lucide icons. */
+function toolIcon(id: string): React.ReactNode {
+  // AI agents → phosphor (from Icon.agent registry)
+  const agent = Icon.agent[id];
+  if (agent) return agent.icon;
+  // Dev tools → lucide
+  const map: Record<string, React.ReactNode> = {
+    cody: <Robot size={14} weight="regular" />,
+    continue: <RefreshCw size={14} strokeWidth={1.75} />,
+    'shell-gpt': <Terminal size={14} strokeWidth={1.75} />,
+    gptme: <Terminal size={14} strokeWidth={1.75} />,
+    devbox: <Container size={14} strokeWidth={1.75} />,
+    gh: <GitBranch size={14} strokeWidth={1.75} />,
+    docker: <Container size={14} strokeWidth={1.75} />,
+    kubectl: <Server size={14} strokeWidth={1.75} />,
+    helm: <Server size={14} strokeWidth={1.75} />,
+    terraform: <Codepen size={14} strokeWidth={1.75} />,
+    python3: <Terminal size={14} strokeWidth={1.75} />,
+    node: <Cpu size={14} strokeWidth={1.75} />,
+    cargo: <Package size={14} strokeWidth={1.75} />,
+    pnpm: <Package size={14} strokeWidth={1.75} />,
+    yarn: <Package size={14} strokeWidth={1.75} />,
+    brew: <Package size={14} strokeWidth={1.75} />,
+    nvim: <Terminal size={14} strokeWidth={1.75} />,
+    vim: <Terminal size={14} strokeWidth={1.75} />,
+    code: <Monitor size={14} strokeWidth={1.75} />,
+    make: <Hammer size={14} strokeWidth={1.75} />,
+    just: <Settings2 size={14} strokeWidth={1.75} />,
+  };
+  return map[id] ?? <Box size={14} strokeWidth={1.75} />;
+}
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useNavigate } from 'react-router-dom';
@@ -108,7 +141,11 @@ export function WelcomePage({ onLaunchTool }: WelcomePageProps) {
       invoke<CLITool[]>('detect_cli_tools')
         .then((detected) => {
           if (!cancelled && detected && detected.length > 0) {
-            setTools(detected);
+            const withIcons = detected.map((tool) => ({
+              ...tool,
+              icon: toolIcon(tool.id),
+            }));
+            setTools(withIcons);
           }
         })
         .catch((err) => {
