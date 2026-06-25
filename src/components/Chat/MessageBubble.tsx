@@ -407,27 +407,38 @@ function stripInlineCodeTicks(md: string): string {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // AI messages get the full date+time; user messages just HH:MM (kooky-style:
-  // date on assistant side, time-only on user side, both below the bubble).
-  const timeStr = (() => {
-    try {
-      const d = new Date(block.timestamp);
-      if (isNaN(d.getTime())) return '';
-      if (i18n.language === 'zh') {
-        return `${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      }
-      // en / others: "Mar 23, 14:30"
-      return d.toLocaleString(i18n.language, {
-        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-      });
-    } catch { return ''; }
+  // ── Timestamp formatting ──────────────────────────────────────────────────
+  // Assistant: relative date label + HH:MM + duration in one compact row.
+  // User:      HH:MM only (kooky-style, sender-aware placement).
+  const now = Date.now();
+  const msgDate = (() => { try { const d = new Date(block.timestamp); return isNaN(d.getTime()) ? null : d; } catch { return null; } })();
+  const msgDayStart = msgDate ? new Date(msgDate.getFullYear(), msgDate.getMonth(), msgDate.getDate()).getTime() : 0;
+  const todayStart = new Date().setHours(0,0,0,0);
+  const dayDiff = Math.round((todayStart - msgDayStart) / 86400000);
+
+  const dateLabel = (() => {
+    if (!msgDate) return '';
+    if (dayDiff === 0) return 'Today';
+    if (dayDiff === 1) return 'Yesterday';
+    if (i18n.language === 'zh') {
+      return `${msgDate.getMonth() + 1}月${msgDate.getDate()}日`;
+    }
+    return msgDate.toLocaleString(i18n.language, { month: 'short', day: 'numeric' });
   })();
-  const timeStrShort = (() => {
-    try {
-      const d = new Date(block.timestamp);
-      if (isNaN(d.getTime())) return '';
-      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    } catch { return ''; }
+
+  const timeLabel = msgDate
+    ? `${String(msgDate.getHours()).padStart(2, '0')}:${String(msgDate.getMinutes()).padStart(2, '0')}`
+    : '';
+
+  // Duration string from base.block timestamp diff — approximate, not millisecond-exact,
+  // but good enough for the footer readout.
+  const durationStr = (() => {
+    if (!contextContent?.duration && contextContent?.duration !== 0) return '';
+    const sec = contextContent.duration;
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${s}s`;
   })();
 
   const modelInfo = (() => {
@@ -646,21 +657,20 @@ function stripInlineCodeTicks(md: string): string {
             </span>
           )}
 
-          {/* Timestamp + duration */}
-          <time
-            className="text-[10px] text-aegis-text-muted tabular-nums"
-            dateTime={block.timestamp || ''}
-            title={isUser ? timeStrShort : timeStr}>
-            {isUser ? timeStrShort : timeStr}
-          </time>
-
-          {/* Duration badge (assistant only, from context data) */}
-          {!isUser && contextContent?.duration != null && (
-            <span className="text-[10px] text-aegis-text-dim font-mono tabular-nums rounded-full px-1.5 py-0.5"
-              style={{ background: 'rgb(var(--aegis-overlay) / 0.05)' }}>
-              {contextContent.duration >= 60
-                ? `${Math.floor(contextContent.duration / 60)}m ${contextContent.duration % 60}s`
-                : `${contextContent.duration}s`}
+          {/* Timestamp + duration — AI: "14:32 · 12s", User: "14:32" */}
+          {isUser ? (
+            <time className="text-[10px] text-aegis-text-muted tabular-nums" dateTime={block.timestamp || ''}>
+              {timeLabel}
+            </time>
+          ) : (
+            <span className="inline-flex items-center text-[10px] text-aegis-text-muted" style={{ gap: 4 }}>
+              <time className="tabular-nums" dateTime={block.timestamp || ''}>{timeLabel}</time>
+              {durationStr && (
+                <>
+                  <span className="text-aegis-border">·</span>
+                  <span className="tabular-nums text-aegis-text-dim">{durationStr}</span>
+                </>
+              )}
             </span>
           )}
 
