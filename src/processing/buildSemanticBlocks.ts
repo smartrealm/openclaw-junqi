@@ -65,6 +65,7 @@ function buildAssistantMeta(markdown: string, normalized: NormalizedMessage): Me
     meta.push({
       kind: 'workshop',
       label: `Workshop (${workshopResults.length})`,
+      icon: 'Workshop',
       content: workshopResults.join('\n'),
     });
   }

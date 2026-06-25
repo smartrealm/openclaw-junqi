@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronRight, AlertTriangle, Trash2, Eye, Code2,
   Sparkles, Bot, ExternalLink, Globe, FileText,
   FileSpreadsheet, FileArchive, FileJson, FileCode2, Music, Film,
+  Kanban, Wrench, Brain, CheckCircle2, Info,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -164,6 +165,17 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
   const systemItems = items.filter((item) => item.kind === 'system');
   const otherItems = items.filter((item) => item.kind !== 'system' && item.kind !== 'context');
 
+  const metaIcon = (name?: string) => {
+    if (!name) return null;
+    switch (name) {
+      case 'Workshop': return <Kanban size={12} strokeWidth={1.75} />;
+      case 'Tool':     return <Wrench size={12} strokeWidth={1.75} />;
+      case 'Thinking': return <Brain size={12} strokeWidth={1.75} />;
+      case 'Decision': return <CheckCircle2 size={12} strokeWidth={1.75} />;
+      default:         return <Info size={12} strokeWidth={1.75} />;
+    }
+  };
+
   return (
     <div className="mt-0.5">
       {systemItems.length > 0 && (
@@ -182,6 +194,7 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
                 text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.04)]
                 transition-colors">
               {expandedIdx === idx ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {metaIcon(item.icon)}
               {item.label}
             </button>
             {expandedIdx === idx && (
