@@ -21,18 +21,20 @@ import clsx from 'clsx';
 const DEFAULT_GATEWAY_WS_URL = 'ws://127.0.0.1:18789';
 
 // Quick-launch agents (kooky supports 13; we expose the common ones in palette).
+import { Sparkle, Robot, Diamond, Pi, Brain as BrainPh, Cube } from '@phosphor-icons/react';
+
 const QUICK_AGENTS = [
-  { id: 'claude',  icon: '✨', label: 'Claude Code',  desc: 'Anthropic Claude',    keywords: ['claude', 'anthropic'] },
-  { id: 'codex',   icon: '🧠', label: 'Codex',         desc: 'OpenAI Codex CLI',    keywords: ['codex', 'openai'] },
-  { id: 'gemini',  icon: '🌟', label: 'Gemini CLI',    desc: 'Google Gemini',       keywords: ['gemini', 'google'] },
-  { id: 'pi',      icon: 'π', label: 'Pi',             desc: 'Pi coding agent',     keywords: ['pi'] },
-  { id: 'qwen',    icon: '🤯', label: 'Qwen CLI',      desc: 'Alibaba Qwen',        keywords: ['qwen', 'alibaba', 'tongyi'] },
-  { id: 'ollama',  icon: '🦙', label: 'Ollama',        desc: 'Local Ollama models', keywords: ['ollama', 'local'] },
+  { id: 'claude',  icon: <Sparkle size={14} weight="regular" />, label: 'Claude Code',  desc: 'Anthropic Claude',    keywords: ['claude', 'anthropic'] },
+  { id: 'codex',   icon: <Robot size={14} weight="regular" />, label: 'Codex',         desc: 'OpenAI Codex CLI',    keywords: ['codex', 'openai'] },
+  { id: 'gemini',  icon: <Diamond size={14} weight="regular" />, label: 'Gemini CLI',    desc: 'Google Gemini',       keywords: ['gemini', 'google'] },
+  { id: 'pi',      icon: <Pi size={14} weight="regular" />, label: 'Pi',             desc: 'Pi coding agent',     keywords: ['pi'] },
+  { id: 'qwen',    icon: <BrainPh size={14} weight="regular" />, label: 'Qwen CLI',      desc: 'Alibaba Qwen',        keywords: ['qwen', 'alibaba', 'tongyi'] },
+  { id: 'ollama',  icon: <Cube size={14} weight="regular" />, label: 'Ollama',        desc: 'Local Ollama models', keywords: ['ollama', 'local'] },
 ];
 
 interface PaletteCommand {
   id: string;
-  icon: any;
+  icon: React.ReactNode | React.ComponentType<any>;
   name: string;
   description?: string;
   shortcut?: string;
@@ -120,14 +122,45 @@ export function CommandPalette() {
 
   const enabledCommands = commands.filter((cmd) => !cmd.feature || isFeatureEnabled(cmd.feature));
 
-  // Filter
+  // ── Fuzzy matching (kooky FuzzyMatcher.score) ──────────────────────────
+  // Subsequence match with score bonuses: prefix +10, boundary +5, consecutive +3.
+  // Boundary chars: space, -, _, /, .
+  const fuzzyScore = (q: string, target: string): number => {
+    if (!q) return 0;
+    const lowerQ = q.toLowerCase();
+    const lowerT = target.toLowerCase();
+    let qi = 0, score = 0, prevMatchedAt = -2, consecutive = 0;
+    for (let ti = 0; ti < lowerT.length && qi < lowerQ.length; ti++) {
+      if (lowerT[ti] === lowerQ[qi]) {
+        let bonus = 1;
+        if (ti === 0) bonus += 10;
+        else if ([' ', '-', '_', '/', '.'].includes(target[ti - 1])) bonus += 5;
+        if (ti === prevMatchedAt + 1) { consecutive++; bonus += 3 * consecutive; }
+        else { consecutive = 0; }
+        score += bonus;
+        qi++;
+        prevMatchedAt = ti;
+        if (qi === lowerQ.length) break;
+      } else if ([' ', '-', '_', '/', '.'].includes(target[ti])) {
+        consecutive = 0;
+      }
+    }
+    return qi === lowerQ.length ? score : -1;
+  };
+
+  // Filter with fuzzy scoring, sorted by score desc
   const filtered = query.trim()
-    ? enabledCommands.filter((cmd) => {
-        const q = query.toLowerCase();
-        return cmd.name.toLowerCase().includes(q) ||
-          cmd.keywords.some((k) => k.includes(q)) ||
-          (cmd.description || '').toLowerCase().includes(q);
-      })
+    ? enabledCommands
+        .map((cmd) => {
+          const nameScore = fuzzyScore(query, cmd.name);
+          const descScore = cmd.description ? fuzzyScore(query, cmd.description) : -1;
+          const bestKeywordScore = Math.max(-1, ...cmd.keywords.map((k) => fuzzyScore(query, k)));
+          const best = Math.max(nameScore, descScore, bestKeywordScore);
+          return { cmd, score: best };
+        })
+        .filter(({ score }) => score >= 0)
+        .sort((a, b) => b.score - a.score)
+        .map(({ cmd }) => cmd)
     : enabledCommands;
 
   // Reset on open
@@ -206,7 +239,10 @@ export function CommandPalette() {
                   i === selectedIdx ? 'bg-aegis-primary/10' : 'hover:bg-[rgb(var(--aegis-overlay)/0.03)]'
                 )}
               >
-                <cmd.icon size={16} className={clsx(i === selectedIdx ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
+                {typeof cmd.icon === 'function'
+                  ? <cmd.icon size={16} className={clsx(i === selectedIdx ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
+                  : <span className={clsx('flex items-center', i === selectedIdx ? 'text-aegis-primary' : 'text-aegis-text-dim')}>{cmd.icon}</span>
+                }
                 <div className="flex-1 min-w-0">
                   <span className={clsx('text-[13px]', i === selectedIdx ? 'text-aegis-text' : 'text-aegis-text-muted')}>
                     {cmd.name}

@@ -54,65 +54,170 @@ function computeShellTitle(shell: ShellSession): string {
 }
 
 // ── kooky TabBarItem port: 40pt strip, cornerRadius 6, chromeActive bg,
-//    opacity 0.6 inactive foreground, hover-to-show close button. ────────
+//    opacity 0.6 inactive foreground, hover-to-show close button,
+//    right-click context menu (Close / Close Others / Close All / Rename). ─
+
+interface TabShellItemProps {
+  title: string;
+  selected: boolean;
+  onSelect: () => void;
+  onClose: (e: React.MouseEvent) => void;
+  onCloseOthers?: () => void;
+  onCloseAll?: () => void;
+  onRename?: (name: string) => void;
+}
+
 function TabShellItem({
   title,
   selected,
   onSelect,
   onClose,
-}: {
-  title: string;
-  selected: boolean;
-  onSelect: () => void;
-  onClose: (e: React.MouseEvent) => void;
-}) {
+  onCloseOthers,
+  onCloseAll,
+  onRename,
+}: TabShellItemProps) {
   const [hovered, setHovered] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Click-outside dismiss
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handler = () => setCtxMenu(null);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [ctxMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const menuItemStyle: React.CSSProperties = {
+    padding: '4px 12px',
+    fontSize: 11,
+    cursor: 'pointer',
+    color: 'rgb(var(--aegis-text))',
+    fontFamily: '"JetBrains Mono", monospace',
+    whiteSpace: 'nowrap',
+    background: 'transparent',
+    border: 'none',
+    textAlign: 'left' as const,
+    width: '100%',
+  };
+
   return (
-    <div
-      onClick={onSelect}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: "flex", alignItems: "center", gap: 7,
-        padding: "7px 12px", height: 40, minWidth: 0,
-        borderRadius: 6, flexShrink: 0, cursor: "pointer",
-        background: selected
-          ? "rgb(var(--aegis-overlay)/0.10)"
-          : hovered
-            ? "rgb(var(--aegis-overlay)/0.06)"
-            : "transparent",
-        color: selected
-          ? "rgb(var(--aegis-text))"
-          : "rgb(var(--aegis-text)/0.6)",
-        transition: "background 0.12s",
-      }}
-    >
-      <TerminalIcon
-        size={12}
-        color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"}
-      />
-      <span style={{
-        fontSize: 12, fontWeight: 400, whiteSpace: "nowrap",
-        overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160,
-      }}>
-        {title}
-      </span>
-      <button
-        onClick={onClose}
-        title="Close"
+    <>
+      <div
+        onClick={onSelect}
+        onContextMenu={handleContextMenu}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
-          background: "none", border: "none",
-          color: "rgb(var(--aegis-text-dim))",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: 1, borderRadius: 3, cursor: "pointer",
-          opacity: (hovered || selected) ? 1 : 0,
-          pointerEvents: (hovered || selected) ? "auto" : "none",
-          transition: "opacity 0.1s",
+          display: "flex", alignItems: "center", gap: 7,
+          padding: "7px 12px", height: 40, minWidth: 0,
+          borderRadius: 6, flexShrink: 0, cursor: "pointer",
+          background: selected
+            ? "rgb(var(--aegis-overlay)/0.10)"
+            : hovered
+              ? "rgb(var(--aegis-overlay)/0.06)"
+              : "transparent",
+          color: selected
+            ? "rgb(var(--aegis-text))"
+            : "rgb(var(--aegis-text)/0.6)",
+          transition: "background 0.12s",
         }}
       >
-        <X size={12} />
-      </button>
-    </div>
+        <TerminalIcon
+          size={12}
+          color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"}
+        />
+        <span style={{
+          fontSize: 12, fontWeight: 400, whiteSpace: "nowrap",
+          overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160,
+        }}>
+          {title}
+        </span>
+        <button
+          onClick={onClose}
+          title="Close"
+          style={{
+            background: "none", border: "none",
+            color: "rgb(var(--aegis-text-dim))",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 1, borderRadius: 3, cursor: "pointer",
+            opacity: (hovered || selected) ? 1 : 0,
+            pointerEvents: (hovered || selected) ? "auto" : "none",
+            transition: "opacity 0.1s",
+          }}
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      {/* Context menu (kooky right-click on tab) */}
+      {ctxMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            left: ctxMenu.x,
+            top: ctxMenu.y,
+            zIndex: 200,
+            background: 'rgb(var(--aegis-elevated))',
+            border: '1px solid rgb(255 255 255 / 0.08)',
+            borderRadius: 6,
+            boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
+            padding: '4px 0',
+            minWidth: 140,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <button
+            style={menuItemStyle}
+            onClick={() => { onClose(null as any); setCtxMenu(null); }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >
+            Close
+          </button>
+          {onCloseOthers && (
+            <button
+              style={menuItemStyle}
+              onClick={() => { onCloseOthers(); setCtxMenu(null); }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              Close Others
+            </button>
+          )}
+          {onCloseAll && (
+            <button
+              style={menuItemStyle}
+              onClick={() => { onCloseAll(); setCtxMenu(null); }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              Close All
+            </button>
+          )}
+          {onRename && (
+            <button
+              style={menuItemStyle}
+              onClick={() => {
+                const name = prompt('Rename tab:', title);
+                if (name && name.trim()) onRename(name.trim());
+                setCtxMenu(null);
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              Rename…
+            </button>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -139,6 +244,13 @@ interface Props {
   /** kooky TabBarView.splitButtons: split Right / Down triggers. */
   onSplitHorizontal?: () => void;
   onSplitVertical?: () => void;
+  /** PaneNode leaf config — overrides defaults when inside a PaneTreeView. */
+  paneConfig?: {
+    kind?: string;
+    agent?: string;
+    label?: string;
+    projectPath?: string;
+  };
 }
 
 const MAX_SHELLS = 5;
@@ -547,6 +659,22 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                     selected={selected}
                     onSelect={() => setActiveShellId(shell.id)}
                     onClose={(e) => { e.stopPropagation(); handleCloseShell(shell.id); }}
+                    onCloseOthers={() => {
+                      const otherIds = shells.filter((s) => s.id !== shell.id).map((s) => s.id);
+                      otherIds.forEach((id) => { delete shellRefs.current[id]; });
+                      setShells([shell]);
+                      setActiveShellId(shell.id);
+                    }}
+                    onCloseAll={() => {
+                      shells.forEach((s) => { delete shellRefs.current[s.id]; });
+                      setShells([]);
+                      onClose();
+                    }}
+                    onRename={(name) => {
+                      setShells((prev) => prev.map((s) =>
+                        s.id === shell.id ? { ...s, title: name } : s,
+                      ));
+                    }}
                   />
                 );
               })}

@@ -22,16 +22,33 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import {
   Play, Square, RotateCcw, ChevronDown, ChevronRight, AlertCircle,
-  ExternalLink, GitBranch, GitMerge, Trash2, Clock, Sparkles,
-  Bot, Loader2, BarChart3, FileText, CheckCircle2, XCircle,
+  ExternalLink, GitBranch, GitMerge, Trash2, Clock,
+  Loader2, BarChart3, FileText, CheckCircle2, XCircle,
   Activity, FileWarning, Image as ImageIcon, Bookmark, Command,
   CornerDownLeft, Laptop, GitPullRequestArrow, Plus, RefreshCw,
   Search, X, Check, Globe, List, Box, SquareTerminal, Pencil, Folder,
 } from 'lucide-react';
+import {
+  Sparkle,
+  Robot,
+  Pi,
+  Diamond,
+  CursorClick,
+  Lightning,
+  Hexagon,
+  XLogo,
+  Cloud,
+  ArrowCircleUp,
+  Moon as MoonPh,
+  BracketsCurly,
+  Wrench as WrenchPh,
+  Brain as BrainPh,
+} from '@phosphor-icons/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { PromptEditor, type ImageAttach } from '@/components/shared/PromptEditor';
 import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
 import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
+import { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from '@/components/shared/ToolCallHistoryPopover';
 import { useSessionHistoryStore } from '@/stores/sessionHistoryStore';
 
 // ── Types (matching nezha's types.ts) ──────────────────────────────────────
@@ -51,22 +68,22 @@ interface SessionMetrics {
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-// Agent GIF headers (gradient banner per agent)
+// Agent banner icons (phosphor regular — polished, SF-Symbol-grade, 24px)
 const AGENT_BRANDS: Record<string, { bg: string; icon: React.ReactNode; label: string }> = {
-  claude:     { bg: 'linear-gradient(135deg, #d97757, #a84e32)', icon: <Sparkles size={24} className="text-amber-200" />, label: 'Claude Code' },
-  codex:      { bg: 'linear-gradient(135deg, #7a9dff, #3a5dc0)', icon: <Bot size={24} className="text-blue-200" />, label: 'Codex' },
-  pi:         { bg: 'linear-gradient(135deg, #c2c5ce, #80838c)', icon: <span className="text-[20px]">π</span>, label: 'Pi' },
-  gemini:     { bg: 'linear-gradient(135deg, #3186ff, #1a47b8)', icon: <span className="text-[18px]">◆</span>, label: 'Gemini CLI' },
-  'cursor-agent': { bg: 'linear-gradient(135deg, #f54e00, #b83800)', icon: <span className="text-[18px]">◼</span>, label: 'Cursor CLI' },
-  amp:        { bg: 'linear-gradient(135deg, #e8b168, #c4852e)', icon: <span className="text-[18px]">⚡</span>, label: 'Amp' },
-  copilot:    { bg: 'linear-gradient(135deg, #6e40c9, #4520a0)', icon: <span className="text-[18px]">⎔</span>, label: 'Copilot CLI' },
-  grok:       { bg: 'linear-gradient(135deg, #e8e8e8, #999)', icon: <span className="text-[18px]">✕</span>, label: 'Grok Build' },
-  'kiro-cli': { bg: 'linear-gradient(135deg, #9046ff, #6020cc)', icon: <span className="text-[18px]">☁</span>, label: 'Kiro CLI' },
-  agy:        { bg: 'linear-gradient(135deg, #4285f4, #1a50c0)', icon: <span className="text-[18px]">↑</span>, label: 'Antigravity CLI' },
-  kimi:       { bg: 'linear-gradient(135deg, #c9c3d6, #8a7fa0)', icon: <span className="text-[18px]">🌙</span>, label: 'Kimi Code' },
-  opencode:   { bg: 'linear-gradient(135deg, #b0b0b0, #707070)', icon: <span className="text-[18px]">{`{}`}</span>, label: 'OpenCode' },
-  aider:      { bg: 'linear-gradient(135deg, #44aa44, #228822)', icon: <span className="text-[18px]">🔧</span>, label: 'Aider' },
-  qwen:       { bg: 'linear-gradient(135deg, #6600cc, #4400aa)', icon: <span className="text-[18px]">🤯</span>, label: 'Qwen CLI' },
+  claude:     { bg: 'linear-gradient(135deg, #d97757, #a84e32)', icon: <Sparkle size={24} weight="regular" className="text-amber-200" />, label: 'Claude Code' },
+  codex:      { bg: 'linear-gradient(135deg, #7a9dff, #3a5dc0)', icon: <Robot size={24} weight="regular" className="text-blue-200" />, label: 'Codex' },
+  pi:         { bg: 'linear-gradient(135deg, #c2c5ce, #80838c)', icon: <Pi size={24} weight="regular" className="text-gray-200" />, label: 'Pi' },
+  gemini:     { bg: 'linear-gradient(135deg, #3186ff, #1a47b8)', icon: <Diamond size={24} weight="regular" className="text-blue-200" />, label: 'Gemini CLI' },
+  'cursor-agent': { bg: 'linear-gradient(135deg, #f54e00, #b83800)', icon: <CursorClick size={24} weight="regular" className="text-orange-200" />, label: 'Cursor CLI' },
+  amp:        { bg: 'linear-gradient(135deg, #e8b168, #c4852e)', icon: <Lightning size={24} weight="regular" className="text-amber-200" />, label: 'Amp' },
+  copilot:    { bg: 'linear-gradient(135deg, #6e40c9, #4520a0)', icon: <Hexagon size={24} weight="regular" className="text-purple-200" />, label: 'Copilot CLI' },
+  grok:       { bg: 'linear-gradient(135deg, #e8e8e8, #999)', icon: <XLogo size={24} weight="regular" className="text-gray-200" />, label: 'Grok Build' },
+  'kiro-cli': { bg: 'linear-gradient(135deg, #9046ff, #6020cc)', icon: <Cloud size={24} weight="regular" className="text-purple-200" />, label: 'Kiro CLI' },
+  agy:        { bg: 'linear-gradient(135deg, #4285f4, #1a50c0)', icon: <ArrowCircleUp size={24} weight="regular" className="text-blue-200" />, label: 'Antigravity CLI' },
+  kimi:       { bg: 'linear-gradient(135deg, #c9c3d6, #8a7fa0)', icon: <MoonPh size={24} weight="regular" className="text-violet-200" />, label: 'Kimi Code' },
+  opencode:   { bg: 'linear-gradient(135deg, #b0b0b0, #707070)', icon: <BracketsCurly size={24} weight="regular" className="text-gray-200" />, label: 'OpenCode' },
+  aider:      { bg: 'linear-gradient(135deg, #44aa44, #228822)', icon: <WrenchPh size={24} weight="regular" className="text-green-200" />, label: 'Aider' },
+  qwen:       { bg: 'linear-gradient(135deg, #6600cc, #4400aa)', icon: <BrainPh size={24} weight="regular" className="text-purple-200" />, label: 'Qwen CLI' },
 };
 
 function AgentHeader({ agent }: { agent: AgentType }) {
@@ -211,7 +228,7 @@ function AgentToggle({ agent, onChange, disabled }: { agent: AgentType; onChange
               borderRight: a === 'claude' ? '1px solid rgb(var(--aegis-border))' : 'none',
               opacity: disabled ? 0.5 : 1,
             }}>
-            {a === 'claude' ? <Sparkles size={13} /> : <Bot size={13} />}
+            {a === 'claude' ? <Sparkle size={13} weight="regular" /> : <Robot size={13} weight="regular" />}
             {a === 'claude' ? 'Claude' : 'Codex'}
           </button>
         ))}
@@ -391,9 +408,40 @@ export function AgentRunView() {
 
   // ── Tool-call activity (kooky ToolCallActivityStrip model) ───────────────
   // Real-time counts from agent_task_pty backend — Bash / Edit / Read / Other.
-  const [toolStats, setToolStats] = useState<{ bash: number; edit: number; read: number; other: number; latest: string }>({
+  const [toolStats, setToolStats] = useState<ToolStats>({
     bash: 0, edit: 0, read: 0, other: 0, latest: '',
   });
+  const [toolEvents, setToolEvents] = useState<ToolCallEvent[]>([]);
+  const toolStartedAtRef = useRef<number>(0);
+  // Derive individual events from stat transitions (backend sends aggregate counts)
+  const prevStatsRef = useRef<ToolStats>({ bash: 0, edit: 0, read: 0, other: 0, latest: '' });
+  useEffect(() => {
+    const prev = prevStatsRef.current;
+    const total = toolStats.bash + toolStats.edit + toolStats.read + toolStats.other;
+    const prevTotal = prev.bash + prev.edit + prev.read + prev.other;
+    if (total > prevTotal && toolStats.latest) {
+      if (!toolStartedAtRef.current) toolStartedAtRef.current = Date.now();
+      const ev: ToolCallEvent = {
+        id: `tc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        toolName: toolStats.latest,
+        identifier: toolStats.latest,
+        state: 'running',
+        startedAt: Date.now(),
+        category: (() => {
+          const k = toolStats.latest.toLowerCase();
+          if (k.includes('bash')) return 'bash';
+          if (k.includes('edit') || k.includes('write') || k.includes('multiedit')) return 'edit';
+          if (k.includes('read') || k.includes('notebook')) return 'read';
+          return 'other';
+        })(),
+      };
+      setToolEvents((prev) => {
+        const next = [...prev, ev];
+        return next.length > 200 ? next.slice(next.length - 200) : next;
+      });
+    }
+    prevStatsRef.current = toolStats;
+  }, [toolStats]);
 
   // ── Defensive: terminal init failure capture ──────────────────────────────
   const [terminalError, setTerminalError] = useState<string | null>(null);
@@ -664,6 +712,14 @@ export function AgentRunView() {
 
   const isDone = status === 'done' || status === 'failed' || status === 'cancelled';
 
+  // Mark running tool events as done/error on task end (kooky PreToolUse/PostToolUse pattern)
+  useEffect(() => {
+    if (!isDone) return;
+    setToolEvents((prev) =>
+      prev.map((ev) => (ev.state === 'running' ? { ...ev, state: status === 'done' ? 'done' as const : 'error' as const, endedAt: Date.now() } : ev)),
+    );
+  }, [isDone, status]);
+
   // ── Resume support ──────────────────────────────────────────────────────
   const resumeFlag = agent === 'claude' ? '--resume' : agent === 'pi' ? '--session' : null;
   const canResume = !running && isDone && !!sessionPath && !!resumeFlag && status === 'done';
@@ -873,28 +929,13 @@ export function AgentRunView() {
                   <>
                     {metrics.duration_secs > 0 && <span>{formatDuration(metrics.duration_secs)}</span>}
                     {metrics.total_tokens > 0 && <span className="text-[rgb(var(--aegis-primary))]">{fmtNum(metrics.total_tokens)} tok</span>}
-                    {/* Kooky ToolCallActivityStrip — per-category counts + latest tool name. */}
+                    {/* Kooky ToolCallActivityPill — clickable pill + history popover */}
                     {showToolPill && (
-                      <span className="inline-flex items-center gap-1.5" title={`bash:${toolStats.bash} edit:${toolStats.edit} read:${toolStats.read} other:${toolStats.other}`}>
-                        <span title="bash" className="inline-flex items-center gap-0.5 text-[rgb(var(--aegis-warning))]">
-                          <SquareTerminal size={10} />{toolStats.bash}
-                        </span>
-                        <span title="edit" className="inline-flex items-center gap-0.5 text-[rgb(var(--aegis-primary))]">
-                          <Pencil size={10} />{toolStats.edit}
-                        </span>
-                        <span title="read" className="inline-flex items-center gap-0.5 text-[rgb(var(--aegis-text-secondary))]">
-                          <FileText size={10} />{toolStats.read}
-                        </span>
-                        <span title="other" className="inline-flex items-center gap-0.5 text-[rgb(var(--aegis-text-dim))]">
-                          <Box size={10} />{toolStats.other}
-                        </span>
-                        {toolStats.latest && (
-                          <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
-                            style={{ background: 'rgb(var(--aegis-overlay)/0.06)', color: 'rgb(var(--aegis-text-secondary))' }}>
-                            {toolStats.latest}
-                          </span>
-                        )}
-                      </span>
+                      <ToolCallActivityPill
+                        stats={toolStats}
+                        events={toolEvents}
+                        sessionStartedAt={toolStartedAtRef.current || Date.now()}
+                      />
                     )}
                     {metrics.session_file_bytes > 0 && <span>{fmtBytes(metrics.session_file_bytes)}</span>}
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>

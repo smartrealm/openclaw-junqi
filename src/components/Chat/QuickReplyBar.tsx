@@ -12,7 +12,7 @@
 
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, Check } from 'lucide-react';
 import clsx from 'clsx';
 import type { ParsedButton } from '@/utils/buttonParser';
 
@@ -87,7 +87,7 @@ export function QuickReplyBar({ buttons, onSend, onDismiss }: QuickReplyBarProps
                 >
                   {btn.text}
                   {isClicked && (
-                    <span className="ms-1.5 text-[11px] opacity-60">✓</span>
+                    <Check size={11} className="ms-1.5 opacity-60" />
                   )}
                 </motion.button>
               );

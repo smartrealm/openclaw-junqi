@@ -6,7 +6,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, Loader2, RefreshCw, Package, Globe, FolderOpen, FileArchive, Upload, CheckCircle2, AlertCircle, Zap, ExternalLink } from 'lucide-react';
+import { Search, Loader2, RefreshCw, Package, Globe, FolderOpen, FileArchive, Upload, CheckCircle2, AlertCircle, Zap, ExternalLink, CalendarDays, Plug, Brain, FileText, Settings2, Wrench, Pencil, GitBranch, Mail, BookOpen, HeartPulse, Volume2, Gem, Puzzle, CloudSun, Palette, Mic, Bug } from 'lucide-react';
+import { Cube } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { gateway } from '@/services/gateway';
 import { showAlert } from '@/components/shared/AlertDialog';
@@ -322,26 +323,26 @@ function mapHubSkill(raw: any): HubSkill {
   };
 }
 
-function guessEmoji(slug: string): string {
+function guessEmoji(slug: string): React.ReactNode {
   const s = slug.toLowerCase();
-  if (s.includes('weather')) return '🌤️';
-  if (s.includes('image') || s.includes('banana')) return '🎨';
-  if (s.includes('whisper') || s.includes('audio')) return '🎙️';
-  if (s.includes('github') || s.includes('git')) return '🐙';
-  if (s.includes('search') || s.includes('tavily')) return '🔎';
-  if (s.includes('browser')) return '🌐';
-  if (s.includes('gog') || s.includes('gmail') || s.includes('google')) return '📧';
-  if (s.includes('notion')) return '📓';
-  if (s.includes('calendar')) return '📅';
-  if (s.includes('skill') || s.includes('creator')) return '🛠️';
-  if (s.includes('health')) return '🏥';
-  if (s.includes('agent') || s.includes('improving')) return '🧠';
-  if (s.includes('summar')) return '📝';
-  if (s.includes('sonos') || s.includes('audio')) return '🔊';
-  if (s.includes('obsidian')) return '💎';
-  if (s.includes('human') || s.includes('write')) return '✍️';
-  if (s.includes('update')) return '🔄';
-  return '🧩';
+  if (s.includes('weather')) return <CloudSun size={14} strokeWidth={1.75} />;
+  if (s.includes('image') || s.includes('banana')) return <Palette size={14} strokeWidth={1.75} />;
+  if (s.includes('whisper') || s.includes('audio')) return <Mic size={14} strokeWidth={1.75} />;
+  if (s.includes('github') || s.includes('git')) return <GitBranch size={14} strokeWidth={1.75} />;
+  if (s.includes('search') || s.includes('tavily')) return <Search size={14} strokeWidth={1.75} />;
+  if (s.includes('browser')) return <Globe size={14} strokeWidth={1.75} />;
+  if (s.includes('gog') || s.includes('gmail') || s.includes('google')) return <Mail size={14} strokeWidth={1.75} />;
+  if (s.includes('notion')) return <BookOpen size={14} strokeWidth={1.75} />;
+  if (s.includes('calendar')) return <CalendarDays size={14} strokeWidth={1.75} />;
+  if (s.includes('skill') || s.includes('creator')) return <Wrench size={14} strokeWidth={1.75} />;
+  if (s.includes('health')) return <HeartPulse size={14} strokeWidth={1.75} />;
+  if (s.includes('agent') || s.includes('improving')) return <Brain size={14} strokeWidth={1.75} />;
+  if (s.includes('summar')) return <FileText size={14} strokeWidth={1.75} />;
+  if (s.includes('sonos') || s.includes('audio')) return <Volume2 size={14} strokeWidth={1.75} />;
+  if (s.includes('obsidian')) return <Gem size={14} strokeWidth={1.75} />;
+  if (s.includes('human') || s.includes('write')) return <Pencil size={14} strokeWidth={1.75} />;
+  if (s.includes('update')) return <RefreshCw size={14} strokeWidth={1.75} />;
+  return <Puzzle size={14} strokeWidth={1.75} />;
 }
 
 // Fallback for ClawHub skills that have no category field.
@@ -1195,7 +1196,7 @@ export function SkillsPage() {
 
         {/* ═══ Header ═══ */}
         <div className="flex items-center gap-3 mb-6">
-          <span className="text-[22px]">🧩</span>
+          <span className="text-[22px]"><Puzzle size={14} strokeWidth={1.75} /></span>
           <h1 className="text-[21px] font-bold tracking-tight">{t('skills.title')}</h1>
         </div>
 
@@ -1341,7 +1342,7 @@ export function SkillsPage() {
                 </div>
               ) : mySkills.length === 0 ? (
                 <div className="text-center py-20">
-                  <div className="text-[32px] mb-3">📦</div>
+                  <div className="text-[32px] mb-3"><Cube size={14} weight="regular" /></div>
                   <p className="text-[13px] text-aegis-text-dim font-medium">{t('skills.noSkills')}</p>
                   <p className="text-[11px] text-aegis-text-dim/60 mt-1">{t('skills.noSkillsHint')}</p>
                 </div>
@@ -1777,7 +1778,7 @@ function SkillsHubOffline({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (
     <div className="text-center py-16 px-8 max-w-[480px] mx-auto">
-      <div className="text-[32px] mb-3">🌐</div>
+      <div className="text-[32px] mb-3"><Globe size={14} strokeWidth={1.75} /></div>
       <p className="text-[13px] text-aegis-text-dim mb-5 leading-relaxed">
         {t('skills.skillshubApiError')}
       </p>
@@ -1915,7 +1916,7 @@ function ClawHubOffline({
   const disabled = seconds > 0;
   return (
     <div className="text-center py-16 px-8 max-w-[480px] mx-auto">
-      <div className="text-[32px] mb-3">🦞</div>
+      <div className="text-[32px] mb-3"><Bug size={14} strokeWidth={1.75} /></div>
       <p className="text-[13px] text-aegis-text-dim mb-5 leading-relaxed">
         {disabled ? t('skills.clawhubRateLimited', { seconds }) : t('skills.clawhubApiError')}
       </p>
@@ -1965,23 +1966,23 @@ function SkillGroups({ skills, onToggle, onDelete }: {
 }) {
   const { t } = useTranslation();
 
-  const groups: Array<{ id: string; label: string; emoji: string; skills: MySkill[] }> = [
+  const groups: Array<{ id: string; label: string; emoji: React.ReactNode; skills: MySkill[] }> = [
     {
       id: 'installed',
       label: t('skills.groupInstalled'),
-      emoji: '📦',
+      emoji: <Cube size={14} weight="regular" />,
       skills: skills.filter(s => getSkillGroup(s.source) === 'installed'),
     },
     {
       id: 'extra',
       label: t('skills.groupExtra'),
-      emoji: '🔌',
+      emoji: <Plug size={20} strokeWidth={1.75} />,
       skills: skills.filter(s => getSkillGroup(s.source) === 'extra'),
     },
     {
       id: 'builtin',
       label: t('skills.groupBuiltin'),
-      emoji: '⚙️',
+      emoji: <Settings2 size={14} strokeWidth={1.75} />,
       skills: skills.filter(s => getSkillGroup(s.source) === 'builtin'),
     },
   ].filter(g => g.skills.length > 0);

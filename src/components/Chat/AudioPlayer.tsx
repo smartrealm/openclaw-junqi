@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Pause, Volume2, VolumeX, RotateCcw } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, RotateCcw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -224,7 +224,10 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
   if (error) {
     return (
       <div className={clsx('flex items-center gap-2 py-2 px-3 rounded-xl bg-aegis-danger/10 border border-aegis-danger/20', className)}>
-        <span className="text-[12px] text-aegis-danger">⚠️ {t('media.audioLoadError', 'Failed to load audio')}</span>
+        <span className="inline-flex items-center gap-1.5 text-[12px] text-aegis-danger">
+          <AlertTriangle size={12} />
+          {t('media.audioLoadError', 'Failed to load audio')}
+        </span>
       </div>
     );
   }

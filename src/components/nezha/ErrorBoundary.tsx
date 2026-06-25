@@ -48,7 +48,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return (
       <div style={s.errorBoundaryWrap}>
-        <div style={s.errorBoundaryIcon}>⚠</div>
+        <div style={s.errorBoundaryIcon}><AlertTriangle size={14} strokeWidth={1.75} /></div>
         <div style={s.errorBoundaryTitle}>{label}渲染出错</div>
         <div style={s.errorBoundaryMessage}>{error.message || "未知错误"}</div>
         <button onClick={this.reset} style={s.errorBoundaryBtn}>

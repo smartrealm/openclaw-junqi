@@ -12,6 +12,10 @@ import { timeAgo as centralTimeAgo } from '@/utils/format';
 import {
   Plus, X, Search, Filter, Activity, Trash2,
 } from 'lucide-react';
+import {
+  SoccerBall, Cube, MagnifyingGlass, Lightbulb,
+  Monitor, Robot, Lightning, Note, Clock, CheckCircle,
+} from '@phosphor-icons/react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
 import { useWorkshopStore, Task, ActivityEntry } from '@/stores/workshopStore';
@@ -46,15 +50,18 @@ const PROGRESS_PRESETS = [25, 50, 75, 100];
 
 // ── Agent emoji mapping ──────────────────────────────────
 
-const AGENT_EMOJIS: Record<string, string> = {
-  main: 'O',
-  hilali: '⚽', pipeline: '📦', researcher: '🔍',
-  consultant: '💡', coder: '💻',
+const AGENT_ICONS: Record<string, React.ReactNode> = {
+  main:      <Monitor size={14} weight="regular" />,
+  hilali:    <SoccerBall size={14} weight="regular" />,
+  pipeline:  <Cube size={14} weight="regular" />,
+  researcher:<MagnifyingGlass size={14} weight="regular" />,
+  consultant:<Lightbulb size={14} weight="regular" />,
+  coder:     <Monitor size={14} weight="regular" />,
 };
 
-function agentEmoji(name?: string): string {
-  if (!name) return '🤖';
-  return AGENT_EMOJIS[name.toLowerCase()] ?? '🤖';
+function agentEmoji(name?: string): React.ReactNode {
+  if (!name) return <Robot size={14} weight="regular" />;
+  return AGENT_ICONS[name.toLowerCase()] ?? <Robot size={14} weight="regular" />;
 }
 
 // ── Time formatting (uses central utils/format.ts) ──────
@@ -72,11 +79,11 @@ function StatsRow({ tasks }: { tasks: Task[] }) {
   const done = tasks.filter((t) => t.status === 'done').length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  const cards: { emoji: string; value: number; label: string; color: 'primary' | 'accent' | 'danger' | 'warning' | 'success'; extra?: string }[] = [
-    { emoji: '📋', value: total,  label: t('workshopExtra.totalTasks'),  color: 'accent'  },
-    { emoji: '⏳', value: queue,  label: t('workshopExtra.inQueue'),     color: 'warning' },
-    { emoji: '⚡', value: active, label: t('workshopExtra.inProgress'),  color: 'primary' },
-    { emoji: '✓',  value: done,   label: t('workshopExtra.completed'),   color: 'success', extra: total > 0 ? `${pct}%` : undefined },
+  const cards: { icon: React.ReactNode; value: number; label: string; color: 'primary' | 'accent' | 'danger' | 'warning' | 'success'; extra?: string }[] = [
+    { icon: <Note size={16} weight="regular" />,     value: total,  label: t('workshopExtra.totalTasks'),  color: 'accent'  },
+    { icon: <Clock size={16} weight="regular" />,    value: queue,  label: t('workshopExtra.inQueue'),     color: 'warning' },
+    { icon: <Lightning size={16} weight="regular" />, value: active, label: t('workshopExtra.inProgress'),  color: 'primary' },
+    { icon: <CheckCircle size={16} weight="regular" />, value: done, label: t('workshopExtra.completed'),   color: 'success', extra: total > 0 ? `${pct}%` : undefined },
   ];
 
   return (
@@ -95,7 +102,7 @@ function StatsRow({ tasks }: { tasks: Task[] }) {
               border: `1px solid ${themeAlpha(c.color, 0.15)}`,
             }}
           >
-            {c.emoji}
+            {c.icon}
           </div>
           {/* Value + Label */}
           <div className="min-w-0">

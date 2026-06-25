@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare } from 'lucide-react';
+import { X, Loader2, Copy, ExternalLink, Download, Trash2, MessageSquare, AlertCircle, FileText, Key, Settings2, Bot, MessageCircle, Pencil, Monitor, BarChart3, TrendingUp, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
@@ -15,7 +15,7 @@ import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
 export interface MySkill extends SkillPersonaFields {
   slug: string;
   name: string;
-  emoji: string;
+  emoji: React.ReactNode;
   description: string;
   version: string;
   enabled: boolean;
@@ -45,7 +45,7 @@ export function isSkillDeletable(source: string): boolean {
 export interface HubSkill extends SkillPersonaFields {
   slug: string;
   name: string;
-  emoji: string;
+  emoji: React.ReactNode;
   summary: string;
   owner: string;
   ownerAvatar: string;
@@ -72,14 +72,14 @@ export interface SkillDetail extends HubSkill {
 // Category IDs mirror SkillsHub's server-side values so client filtering works
 // without any remapping. guessCategory() uses these same IDs as a ClawHub fallback.
 export const CATEGORIES = [
-  { id: 'all',                        label: 'All',           emoji: '' },
-  { id: 'developer-tools',            label: 'Dev Tools',     emoji: '💻' },
-  { id: 'productivity',               label: 'Productivity',  emoji: '📊' },
-  { id: 'ai-intelligence',            label: 'AI',            emoji: '🤖' },
-  { id: 'content-creation',           label: 'Content',       emoji: '✍️' },
-  { id: 'data-analysis',              label: 'Data',          emoji: '📈' },
-  { id: 'communication-collaboration',label: 'Communication', emoji: '💬' },
-  { id: 'security-compliance',        label: 'Security',      emoji: '🔒' },
+  { id: 'all',                        label: 'All',           emoji: null as React.ReactNode },
+  { id: 'developer-tools',            label: 'Dev Tools',     emoji: <Monitor size={14} strokeWidth={1.75} /> },
+  { id: 'productivity',               label: 'Productivity',  emoji: <BarChart3 size={14} strokeWidth={1.75} /> },
+  { id: 'ai-intelligence',            label: 'AI',            emoji: <Bot size={14} strokeWidth={1.75} /> },
+  { id: 'content-creation',           label: 'Content',       emoji: <Pencil size={14} strokeWidth={1.75} /> },
+  { id: 'data-analysis',              label: 'Data',          emoji: <TrendingUp size={14} strokeWidth={1.75} /> },
+  { id: 'communication-collaboration',label: 'Communication', emoji: <MessageCircle size={14} strokeWidth={1.75} /> },
+  { id: 'security-compliance',        label: 'Security',      emoji: <Lock size={14} strokeWidth={1.75} /> },
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -592,13 +592,13 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                   {skill.requirements.env.map(e => (
                     <span key={e} className="px-2 py-1 rounded-md text-[10.5px] font-mono
                       bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
-                      🔑 {e}
+                      <Key size={14} strokeWidth={1.75} /> {e}
                     </span>
                   ))}
                   {skill.requirements.bin.map(b => (
                     <span key={b} className="px-2 py-1 rounded-md text-[10.5px] font-mono
                       bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
-                      ⚙️ {b}
+                      <Settings2 size={14} strokeWidth={1.75} /> {b}
                     </span>
                   ))}
                 </div>
@@ -625,7 +625,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             {skill.versions.length > 0 && (
               <div className="px-6 pb-8">
                 <h3 className="text-[12px] font-semibold text-aegis-text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  📋 Versions
+                  <FileText size={14} strokeWidth={1.75} /> Versions
                 </h3>
                 <ul className="space-y-0">
                   {skill.versions.map(v => (

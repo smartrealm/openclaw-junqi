@@ -15,6 +15,8 @@ export interface NormalizedMessage {
   sessionKey: string;
   runId?: string | null;
   role: string;
+  /** Optional subtype (e.g. 'model-switch' for inline change notices). */
+  kind?: string;
   timestamp: string;
   model?: string | null;
   mediaUrl?: string;

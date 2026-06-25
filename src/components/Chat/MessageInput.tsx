@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Send, Paperclip, Camera, Mic, X, Loader2, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File } from 'lucide-react';
+import { Send, Paperclip, Camera, Mic, X, Loader2, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson } from 'lucide-react';
+import { Icon } from '@/components/shared/icons';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -464,18 +465,18 @@ export function MessageInput() {
     isHistoryWarmupGate,
   ]);
 
-  // File type icon based on MIME type
-  const getFileIcon = (mimeType: string): string => {
-    if (mimeType.startsWith('image/')) return '🖼️';
-    if (mimeType === 'application/pdf') return '📕';
-    if (mimeType.startsWith('text/csv') || mimeType.includes('spreadsheet')) return '📊';
-    if (mimeType.startsWith('text/')) return '📝';
-    if (mimeType.includes('wordprocessing') || mimeType.includes('msword')) return '📘';
-    if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return '📙';
-    if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive')) return '📦';
-    if (mimeType.startsWith('audio/')) return '🎵';
-    if (mimeType.startsWith('video/')) return '🎬';
-    return '📄';
+  // File type icon based on MIME type (uses Icon.chat.attachment palette)
+  const getFileIcon = (mimeType: string): React.ReactNode => {
+    if (mimeType.startsWith('image/')) return Icon.chat.attachment.image;
+    if (mimeType === 'application/pdf') return Icon.chat.attachment.pdf;
+    if (mimeType.startsWith('text/csv') || mimeType.includes('spreadsheet')) return Icon.chat.attachment.sheet;
+    if (mimeType.includes('wordprocessing') || mimeType.includes('msword')) return Icon.chat.attachment.document;
+    if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return Icon.chat.attachment.document;
+    if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive')) return Icon.chat.attachment.archive;
+    if (mimeType.startsWith('audio/')) return Icon.chat.attachment.audio;
+    if (mimeType.startsWith('video/')) return Icon.chat.attachment.video;
+    if (mimeType.startsWith('text/')) return Icon.chat.attachment.document;
+    return Icon.chat.attachment.generic;
   };
 
   const handleFileSelect = async () => {

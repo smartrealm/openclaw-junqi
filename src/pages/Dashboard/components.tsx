@@ -213,7 +213,7 @@ export function FeedItem({ color, text, time, isLast, agentName, onClick }: {
 // AgentItem — Agent row with relative cost bar
 // ═══════════════════════════════════════════════════════════
 export function AgentItem({ emoji, name, model, cost, costToday, maxCost, isFree }: {
-  emoji: string;
+  emoji: React.ReactNode;
   name: string;
   model: string;
   cost: string;

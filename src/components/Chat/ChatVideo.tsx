@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Maximize2, X, Play, Pause, Volume2, VolumeX } from 'lucide-react';
+import { Download, Maximize2, X, Play, Pause, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 
 // ═══════════════════════════════════════════════════════════
@@ -130,8 +130,9 @@ export function ChatVideo({ src, alt, maxWidth = '100%', maxHeight = '400px', cl
 
   if (error) {
     return (
-      <span className="inline-block my-2 px-3 py-2 rounded-lg bg-red-500/10 text-red-400 text-[12px]">
-        ⚠️ {t('media.videoLoadError')}
+      <span className="inline-flex items-center gap-1.5 my-2 px-3 py-2 rounded-lg bg-red-500/10 text-red-400 text-[12px]">
+        <AlertTriangle size={12} />
+        {t('media.videoLoadError')}
       </span>
     );
   }

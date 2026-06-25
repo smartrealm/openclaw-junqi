@@ -17,10 +17,10 @@
     "windows": [
       {
         "title": "JunQi Desktop",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 680,
         "transparent": true,
         "decorations": true,
         "titleBarStyle": "Overlay",

@@ -4,6 +4,7 @@
 // Business logic lives in useSetupFlow hook.
 // ═══════════════════════════════════════════════════════════
 
+import { Monitor, Container, Check, X, Package } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
@@ -37,7 +38,7 @@ function GatewayStoppedScreen({ flow }: { flow: SetupFlow }) {
   const { setSetupStep, setSetupComplete } = useAppStore();
   return (
     <div className="flex flex-col h-screen bg-aegis-bg items-center justify-center gap-6 px-8">
-      <div className="p-3 rounded-2xl bg-aegis-primary/10"><span style={{fontSize:32}}>🖥️</span></div>
+      <div className="p-3 rounded-2xl bg-aegis-primary/10"><Monitor size={32} strokeWidth={1.5} /></div>
       <h1 className="text-xl font-bold text-aegis-text">{t("setup.foundOclaw")}</h1>
       <p className="text-aegis-text-muted text-center max-w-md text-sm">{t("setup.gatewayNotRunning")}</p>
       <div className="flex gap-3">
@@ -60,19 +61,19 @@ function ModeSelectScreen({ flow }: { flow: SetupFlow }) {
         <div className="grid grid-cols-2 gap-4 w-full max-w-xl">
           <button onClick={() => flow.selectMode("native")} className="flex flex-col p-5 rounded-xl border border-aegis-border bg-aegis-elevated hover:border-aegis-primary hover:bg-aegis-primary/5 transition-all text-left cursor-pointer">
             <div className="flex items-center gap-3 mb-3">
-              <div className="p-2 rounded-lg bg-aegis-primary/10 text-aegis-primary"><span>🖥️</span></div>
+              <div className="p-2 rounded-lg bg-aegis-primary/10 text-aegis-primary"><Monitor size={16} strokeWidth={1.5} /></div>
               <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeNative")}</h3>
             </div>
             <p className="text-xs text-aegis-text-muted leading-relaxed">{t("setup.modeNativeDesc")}</p>
           </button>
           <div className={clsx("flex flex-col p-5 rounded-xl border border-aegis-border bg-aegis-elevated text-left transition-all", dockerAvailable ? "hover:border-aegis-primary hover:bg-aegis-primary/5 cursor-pointer" : "opacity-50")}
             onClick={() => dockerAvailable && flow.selectMode("docker")}>
-            <div className="flex items-center gap-3 mb-3"><div className={clsx("p-2 rounded-lg",dockerAvailable ? "bg-aegis-success/10 text-aegis-success":"bg-aegis-text-dim/10 text-aegis-text-dim")}><span>🐳</span></div>
+            <div className="flex items-center gap-3 mb-3"><div className={clsx("p-2 rounded-lg",dockerAvailable ? "bg-aegis-success/10 text-aegis-success":"bg-aegis-text-dim/10 text-aegis-text-dim")}><Container size={16} strokeWidth={1.5} /></div>
               <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeDocker")}</h3></div>
             <p className="text-xs text-aegis-text-muted leading-relaxed mb-3">{t("setup.modeDockerDesc")}</p>
             {flow.checkingDocker ? <span className="text-xs text-aegis-text-dim animate-pulse">{t("setup.checkingDocker")}</span>
-              : dockerAvailable ? <span className="text-xs text-aegis-success">✓ Docker {flow.dockerStatus?.version??""}</span>
-              : <span className="text-xs text-aegis-danger">✗ {t("setup.dockerNotDetected")}</span>}
+              : dockerAvailable ? <span className="text-xs text-aegis-success"><Check size={12} className="mr-1 inline" />Docker {flow.dockerStatus?.version??""}</span>
+              : <span className="text-xs text-aegis-danger"><X size={12} className="mr-1 inline" />{t("setup.dockerNotDetected")}</span>}
           </div>
         </div>
       </div>
@@ -119,7 +120,7 @@ function GitMissingScreen({ flow }: { flow: SetupFlow }) {
   return (
     <div className="flex flex-col h-screen bg-aegis-bg">
       <div className="flex-1 flex flex-col items-center justify-center gap-6 px-8">
-        <span style={{fontSize:32}}>📦</span>
+        <Package size={32} strokeWidth={1.5} />
         <h1 className="text-2xl font-bold text-aegis-text">{t("setup.gitRequired")}</h1>
         <p className="text-aegis-text-muted text-center max-w-md text-sm">{t("setup.gitRequiredDesc")}</p>
         <div className="flex gap-3">
@@ -166,7 +167,7 @@ function DebugDialog() {
       <div className="bg-aegis-card-solid border border-aegis-border rounded-2xl w-full max-w-2xl max-h-[500px] flex flex-col shadow-lg mx-4" onClick={e=>e.stopPropagation()}>
         <div className="px-4 py-3 border-b border-aegis-border flex items-center justify-between">
           <h3 className="text-sm font-mono text-aegis-text">Debug Log</h3>
-          <button onClick={()=>setOpen(false)} className="text-aegis-text-muted hover:text-aegis-text">✕</button>
+          <button onClick={()=>setOpen(false)} className="text-aegis-text-muted hover:text-aegis-text">×</button>
         </div>
         <div className="flex-1 overflow-auto p-4 font-mono text-[11px] leading-relaxed">
           {logs.length === 0 ? <span className="text-aegis-text-dim">No messages...</span>

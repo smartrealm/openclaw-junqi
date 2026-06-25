@@ -1,3 +1,4 @@
+import { CurrencyDollar, Lightning, Cube, ChatCircle, Calendar } from "@phosphor-icons/react";
 // ═══════════════════════════════════════════════════════════
 // OverviewCards — Five top-level stat cards for FullAnalytics
 // (Total Cost, Total Tokens, Sessions, API Calls, Days of Data)
@@ -32,7 +33,7 @@ export function OverviewCards({
     <div className="grid grid-cols-5 gap-3">
       {/* Total Cost */}
       <BigStatCard
-        iconEmoji="💰"
+        iconEmoji={<CurrencyDollar size={20} weight="regular" />}
         value={totals.totalCost}
         label={t('analytics.totalCost', 'Total Cost')}
         color={themeHex('accent')}
@@ -47,7 +48,7 @@ export function OverviewCards({
 
       {/* Total Tokens */}
       <BigStatCard
-        iconEmoji="⚡"
+        iconEmoji={<Lightning size={20} weight="regular" />}
         value={formatTokens(totals.totalTokens)}
         label={t('analytics.totalTokens', 'Total Tokens')}
         color={themeHex('warning')}
@@ -61,7 +62,7 @@ export function OverviewCards({
 
       {/* Sessions */}
       <BigStatCard
-        iconEmoji="📦"
+        iconEmoji={<Cube size={20} weight="regular" />}
         value={sessionsCount}
         label={t('analytics.sessions', 'Sessions')}
         color={dataColor(4)}
@@ -72,7 +73,7 @@ export function OverviewCards({
 
       {/* API Calls */}
       <BigStatCard
-        iconEmoji="💬"
+        iconEmoji={<ChatCircle size={20} weight="regular" />}
         value={totalApiCalls}
         label={t('analytics.apiCalls', 'API Calls')}
         color={themeHex('primary')}
@@ -83,7 +84,7 @@ export function OverviewCards({
 
       {/* Days of Data */}
       <BigStatCard
-        iconEmoji="📅"
+        iconEmoji={<Calendar size={20} weight="regular" />}
         value={periodInfo.days}
         label={t('analytics.periodDays', 'Days of Data')}
         color={dataColor(6)}

@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Check, Plus, X } from 'lucide-react';
+import { AlertCircle, Check, Plus, X, FileText, Sparkles } from 'lucide-react';
 import clsx from 'clsx';
 import type { OpenClawConfig } from './types';
 import {
@@ -173,7 +173,7 @@ export function AdvancedTab({ config, onChange }: AdvancedTabProps) {
         <div className="px-5 py-3.5 border-b border-aegis-border flex items-center justify-between">
           <div>
             <h3 className="text-xs font-bold uppercase tracking-widest text-aegis-text-secondary">
-              📋 {t('config.rawJson')}
+              <FileText size={14} className="inline mr-2" />{t('config.rawJson')}
             </h3>
             <p className="text-[10px] text-aegis-text-muted mt-0.5">
               {t('config.rawJsonHint')}
@@ -233,7 +233,7 @@ export function AdvancedTab({ config, onChange }: AdvancedTabProps) {
                 'transition-all duration-200',
               )}
             >
-              ✨ {t('config.format')}
+              <Sparkles size={13} className="mr-1.5" />{t('config.format')}
             </button>
             <button
               type="button"

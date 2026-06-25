@@ -5,7 +5,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, RotateCcw, Loader2, Check, X, Plus, Search } from 'lucide-react';
+import { Play, RotateCcw, Loader2, Check, X, Plus, Search , Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock} from 'lucide-react';
+import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshGroup } from '@/stores/gatewayDataStore';
@@ -60,21 +61,21 @@ interface RunEntry {
 /** Theme-aware job color palette — called at render time */
 const getJobColor = (idx: number): string => dataColor(idx);
 
-const getJobIcon = (name: string): string => {
+const getJobIcon = (name: string): React.ReactNode => {
   const n = name.toLowerCase();
-  if (n.includes('heart') || n.includes('beat')) return '💓';
-  if (n.includes('morning') || n.includes('brief')) return '⚡';
-  if (n.includes('health') || n.includes('system')) return '🔍';
-  if (n.includes('sync') || n.includes('memory') || n.includes('db')) return '🔄';
-  if (n.includes('research')) return '📡';
-  if (n.includes('github') || n.includes('stats')) return '📊';
-  if (n.includes('price') || n.includes('monitor')) return '💰';
-  if (n.includes('digest') || n.includes('weekly')) return '📝';
-  if (n.includes('check') || n.includes('nudge')) return '🧠';
-  if (n.includes('maintain') || n.includes('clean')) return '🛠️';
-  if (n.includes('hilal') || n.includes('هلال')) return '⚽';
-  return '⏰';
-};
+  if (n.includes('heart') || n.includes('beat')) return <Heart size={14} strokeWidth={1.75} />;
+  if (n.includes('morning') || n.includes('brief')) return <Zap size={14} strokeWidth={1.75} />;
+  if (n.includes('health') || n.includes('system')) return <Search size={14} strokeWidth={1.75} />;
+  if (n.includes('sync') || n.includes('memory') || n.includes('db')) return <RefreshCw size={14} strokeWidth={1.75} />;
+  if (n.includes('research')) return <Radio size={14} strokeWidth={1.75} />;
+  if (n.includes('github') || n.includes('stats')) return <BarChart3 size={14} strokeWidth={1.75} />;
+  if (n.includes('price') || n.includes('monitor')) return <DollarSign size={14} strokeWidth={1.75} />;
+  if (n.includes('digest') || n.includes('weekly')) return <FileText size={14} strokeWidth={1.75} />;
+  if (n.includes('check') || n.includes('nudge')) return <Brain size={14} strokeWidth={1.75} />;
+  if (n.includes('maintain') || n.includes('clean')) return <Wrench size={14} strokeWidth={1.75} />;
+  if (n.includes('hilal') || n.includes('هلال')) return <SoccerBall size={14} weight="regular" />;
+  return <Clock size={14} strokeWidth={1.75} />;
+}
 
 const getNextRun = (job: CronJob) => job.state?.nextRunAtMs || job.nextRun;
 const getLastRun = (job: CronJob) => job.state?.lastRunAtMs || job.lastRun;
@@ -102,25 +103,25 @@ const getDeliveryStatus = (job: CronJob): 'delivered' | 'failed' | 'unknown' | n
 function getCronTemplates(t: (key: string) => string) {
   return [
     {
-      id: 'morning-briefing', icon: '⚡', colorIdx: 2,
+      id: 'morning-briefing', icon: <Lightning size={14} weight="regular" />, colorIdx: 2,
       name: t('cronTemplates.morningName'),
       desc: t('cronTemplates.morningDesc'),
       job: { name: 'Morning Briefing', schedule: { kind: 'cron', expr: '0 6 * * *', tz: 'UTC' }, payload: { kind: 'agentTurn', message: 'Good morning! Prepare a brief morning briefing: 1) Check the weather for my location, 2) Search for top news headlines today, 3) Check memory files for any upcoming tasks, reminders, or deadlines. Keep it concise and useful.' }, sessionTarget: 'isolated', enabled: true },
     },
     {
-      id: 'weekly-digest', icon: '📝', colorIdx: 1,
+      id: 'weekly-digest', icon: <Note size={14} weight="regular" />, colorIdx: 1,
       name: t('cronTemplates.weeklyName'),
       desc: t('cronTemplates.weeklyDesc'),
       job: { name: 'Weekly Digest', schedule: { kind: 'cron', expr: '0 20 * * 5', tz: 'UTC' }, payload: { kind: 'agentTurn', message: 'Weekly review time. 1) Read through this week\'s memory files, 2) Summarize key events and decisions, 3) Update MEMORY.md with important info, 4) Clean up outdated entries.' }, sessionTarget: 'isolated', enabled: true },
     },
     {
-      id: 'check-in', icon: '🧠', colorIdx: 3,
+      id: 'check-in', icon: <Brain size={14} strokeWidth={1.75} />, colorIdx: 3,
       name: t('cronTemplates.checkInName'),
       desc: t('cronTemplates.checkInDesc'),
       job: { name: 'Check-In', schedule: { kind: 'every', everyMs: 28800000 }, payload: { kind: 'agentTurn', message: 'Time for a check-in. Review recent memory files and sessions for context. If there are pending tasks or anything worth following up on, reach out. If nothing needs attention, skip silently.' }, sessionTarget: 'isolated', enabled: true },
     },
     {
-      id: 'system-health', icon: '🔍', colorIdx: 5,
+      id: 'system-health', icon: <MagnifyingGlass size={14} weight="regular" />, colorIdx: 5,
       name: t('cronTemplates.healthName'),
       desc: t('cronTemplates.healthDesc'),
       job: { name: 'System Health Check', schedule: { kind: 'every', everyMs: 21600000 }, payload: { kind: 'agentTurn', message: 'Run a system health check: 1) Check disk space, 2) Check memory usage, 3) Check uptime, 4) Look for unusual processes. Report only if something needs attention.' }, sessionTarget: 'isolated', enabled: true },

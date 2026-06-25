@@ -6,17 +6,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Plus,
-  ChevronRight,
-  CheckCircle,
-  Save,
-  Trash2,
-  Search,
-  X,
-  Loader2,
-  Download,
-} from 'lucide-react';
+import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertCircle, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette } from 'lucide-react';
 import clsx from 'clsx';
 import type {
   GatewayRuntimeConfig,
@@ -1037,7 +1027,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
           },
         };
       });
-      setFetchResult(`✅ 已添加 ${modelIds.length} 个模型`);
+      setFetchResult(`<Check size={14} strokeWidth={1.75} /> 已添加 ${modelIds.length} 个模型`);
     } catch (err: any) {
       setFetchResult(err?.message || String(err));
     } finally {
@@ -1068,7 +1058,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
       {fetchResult && (
         <span className={clsx(
           'text-[11px]',
-          fetchResult.startsWith('✅') ? 'text-aegis-success' : 'text-aegis-warning'
+          fetchResult.startsWith('<Check size={14} strokeWidth={1.75} />') ? 'text-aegis-success' : 'text-aegis-warning'
         )}>{fetchResult}</span>
       )}
     </div>
@@ -1750,7 +1740,7 @@ function EnvOnlyRow({ unifiedProvider, onConfigure }: EnvOnlyRowProps) {
                   'bg-amber-500/15 text-amber-400 border border-amber-500/25'
                 )}
               >
-                🔑 {t('config.envKeyOnly', 'ENV Key Only')}
+                <Key size={14} strokeWidth={1.75} /> {t('config.envKeyOnly', 'ENV Key Only')}
               </span>
             </div>
             <div className="text-[11px] text-aegis-text-muted truncate">
@@ -1880,13 +1870,13 @@ function PickStep({ onPick, onClose: _onClose }: PickStepProps) {
       {/* Tab-level advisories */}
       {!isSearching && tab === 'coding' && (
         <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 leading-snug">
-          <span className="flex-shrink-0 mt-0.5">⚠️</span>
+          <span className="flex-shrink-0 mt-0.5"><AlertTriangle size={14} strokeWidth={1.75} />️</span>
           <span>{t('config.codingPlanAdvisory')}</span>
         </div>
       )}
       {!isSearching && tab === 'local' && (
         <div className="flex items-start gap-2 p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300 leading-snug">
-          <span className="flex-shrink-0 mt-0.5">🖥</span>
+          <span className="flex-shrink-0 mt-0.5"><Monitor size={14} strokeWidth={1.75} /></span>
           <span>{t('config.localProviderAdvisory')}</span>
         </div>
       )}
@@ -2473,7 +2463,7 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
       {/* Coding plan warning — shown whenever the selected catalog entry is a coding plan */}
       {catalogEntry?.planWarning && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-300 leading-snug">
-          <span className="flex-shrink-0 mt-0.5">⚠️</span>
+          <span className="flex-shrink-0 mt-0.5"><AlertTriangle size={14} strokeWidth={1.75} />️</span>
           <span>{catalogEntry.planWarning}</span>
         </div>
       )}
@@ -3035,7 +3025,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
         {/* top */}
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h2 className="text-base font-bold text-aegis-text">🤖 {t('config.providers')}</h2>
+            <h2 className="text-base font-bold text-aegis-text"><Bot size={14} strokeWidth={1.75} /> {t('config.providers')}</h2>
             <p className="text-xs text-aegis-text-muted mt-0.5">
               {t('config.manageProvidersDesc')}
             </p>
@@ -3115,7 +3105,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                 'bg-emerald-500/10 border border-emerald-500/20'
               )}
             >
-              🎨
+              <Palette size={14} strokeWidth={1.75} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
@@ -3159,14 +3149,14 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
       <div className="rounded-xl border border-aegis-border bg-aegis-elevated overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-aegis-border">
           <h3 className="text-xs font-bold uppercase tracking-widest text-aegis-text-secondary">
-              🔌 {t('config.providers')}
+              <Plug size={20} strokeWidth={1.75} /> {t('config.providers')}
             </h3>
         </div>
         <div className="p-4">
           {unifiedProviders.length === 0 ? (
             /* Empty state */
             <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <div className="text-4xl opacity-40">🤖</div>
+              <div className="text-4xl opacity-40"><Bot size={14} strokeWidth={1.75} /></div>
               <p className="text-sm font-medium text-aegis-text-secondary">
                 {t('config.noProviders')}
               </p>
@@ -3244,7 +3234,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
         <div className="rounded-xl border border-aegis-border bg-aegis-elevated overflow-hidden">
           <div className="px-5 py-3.5 border-b border-aegis-border">
             <h3 className="text-xs font-bold uppercase tracking-widest text-aegis-text-secondary">
-              📝 {t('config.modelsAndAliases')}
+              <FileText size={14} strokeWidth={1.75} /> {t('config.modelsAndAliases')}
             </h3>
           </div>
           <div className="p-4">

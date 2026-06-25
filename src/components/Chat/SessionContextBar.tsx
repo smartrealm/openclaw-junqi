@@ -54,7 +54,8 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
         addMessage({
           id: `model-switch-${Date.now()}`,
           role: 'system',
-          content: `🔄 ${t('chat.modelSwitched', '模型切换')}: ${fromModel} → ${modelId}`,
+          kind: 'model-switch',
+          content: JSON.stringify({ from: fromModel, to: modelId }),
           timestamp: new Date().toISOString(),
         }, sessionKey);
       }

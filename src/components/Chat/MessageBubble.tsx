@@ -4,7 +4,8 @@ import remarkGfm from 'remark-gfm';
 import {
   Copy, Check, User, RotateCcw, RefreshCw, Pencil,
   ChevronDown, ChevronRight, AlertTriangle, Trash2, Eye, Code2,
-  Sparkles, Bot, ExternalLink,
+  Sparkles, Bot, ExternalLink, Globe, FileText,
+  FileSpreadsheet, FileArchive, FileJson, FileCode2, Music, Film,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -17,7 +18,14 @@ import { AudioPlayer } from './AudioPlayer';
 import { SystemNoteBubble } from './SystemNoteBubble';
 import type { MessageBlock, Artifact, MetaItem } from '@/types/RenderBlock';
 import { usePreviewStore } from '@/stores/previewStore';
+import { Icon } from '@/components/shared/icons';
 import clsx from 'clsx';
+
+/** Strip leading emoji / warning glyphs that the gateway prepends to
+ *  message text. The bubble already has its own icon system. */
+function stripEmojiPrefix(text: string): string {
+  return text.replace(/^[\u{26A0}\u{FE0F}\u{2757}\u{203C}\u{1F6A8}\u{1F534}\u{1F7E0}\u{2705}\u{274C}\u{1F4A5}\s]+/gu, '').trimStart();
+}
 
 // ── Error Action Detection ──
 interface ErrorAction {
@@ -53,9 +61,16 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
       ? 'preview'
       : 'source',
   );
-  const typeIcons: Record<string, string> = {
-    html: '🌐', react: '⚛️', svg: '🎨', mermaid: '📊', code: '📝',
+  const typeIcons: Record<string, React.ReactNode> = {
+    html:    Icon.chat.artifact.html,
+    react:   Icon.chat.artifact.react,
+    svg:     Icon.chat.artifact.svg,
+    mermaid: Icon.chat.artifact.mermaid,
+    markdown:Icon.chat.artifact.markdown,
+    code:    Icon.chat.artifact.code,
   };
+
+  const defaultArtifactIcon = Icon.chat.artifact.generic;
 
   const handleOpen = async () => {
     setOpening(true);
@@ -76,7 +91,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
     <div className="my-3 rounded-xl border border-aegis-primary/20 bg-aegis-primary/[0.04] overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-aegis-primary/10">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-lg shrink-0">{typeIcons[artifact.type] || '📄'}</span>
+          <span className="shrink-0 flex items-center">{typeIcons[artifact.type] || defaultArtifactIcon}</span>
           <div className="min-w-0">
             <div className="text-[13px] font-medium text-aegis-text truncate">{artifact.title}</div>
             <div className="text-[10px] text-aegis-text-dim uppercase tracking-wider">{artifact.type} · {artifact.content.length} chars</div>
@@ -206,14 +221,25 @@ function FileCard({ path, meta }: { path: string; meta?: string }) {
   const { t } = useTranslation();
   const name = path.split(/[/\\]/).pop() || path;
   const ext = name.split('.').pop()?.toLowerCase() || '';
-  const icon: Record<string, string> = {
-    pdf: '📕', doc: '📘', docx: '📘', xls: '📗', xlsx: '📗', csv: '📗',
-    png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', svg: '🎨', webp: '🖼️',
-    mp3: '🎵', wav: '🎵', ogg: '🎵', mp4: '🎬', mkv: '🎬', mov: '🎬',
-    zip: '📦', tar: '📦', gz: '📦', '7z': '📦', rar: '📦',
-    ts: '📝', tsx: '📝', js: '📝', jsx: '📝', py: '📝', rs: '📝', go: '📝',
-    json: '📋', yaml: '📋', yml: '📋', toml: '📋', md: '📝', txt: '📝',
-  };
+  const fileIcon = (() => {
+    const imageExts = new Set(['png','jpg','jpeg','gif','svg','webp','ico','bmp']);
+    const audioExts = new Set(['mp3','wav','ogg','flac','aac','m4a']);
+    const videoExts = new Set(['mp4','mkv','mov','avi','webm']);
+    const archiveExts = new Set(['zip','tar','gz','7z','rar','bz2']);
+    const codeExts = new Set(['ts','tsx','js','jsx','py','rs','go','java','c','cpp','h','rb','swift','kt']);
+    const configExts = new Set(['json','yaml','yml','toml','xml']);
+    const docExts = new Set(['pdf','doc','docx','md','txt','rst']);
+    const sheetExts = new Set(['xls','xlsx','csv']);
+    if (imageExts.has(ext)) return Icon.chat.attachment.image;
+    if (audioExts.has(ext)) return Icon.chat.attachment.audio;
+    if (videoExts.has(ext)) return Icon.chat.attachment.video;
+    if (archiveExts.has(ext)) return Icon.chat.attachment.archive;
+    if (codeExts.has(ext)) return Icon.chat.attachment.code;
+    if (configExts.has(ext)) return Icon.chat.attachment.config;
+    if (sheetExts.has(ext)) return Icon.chat.attachment.sheet;
+    if (docExts.has(ext)) return Icon.chat.attachment.document;
+    return Icon.chat.attachment.generic;
+  })();
 
   const handleOpen = async () => {
     try {
@@ -229,7 +255,7 @@ function FileCard({ path, meta }: { path: string; meta?: string }) {
       className="relative inline-flex items-center gap-2 px-3 py-1.5 my-1 rounded-lg
       bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.08)]
       hover:border-aegis-primary/20 transition-colors cursor-pointer max-w-full text-start group/filecard">
-      <span className="text-base shrink-0">{icon[ext] || '📄'}</span>
+      <span className="shrink-0 flex items-center">{fileIcon}</span>
       <div className="min-w-0 flex flex-col">
         <span className="text-[12px] font-medium text-aegis-text truncate">{name}</span>
         <span className="text-[10px] text-aegis-text-dim truncate">{meta || t('resultCards.open', 'Open')}</span>
@@ -348,7 +374,7 @@ export const MessageBubble = memo(function MessageBubble({
   const ctxFmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
-  const content = block.markdown;
+  const content = stripEmojiPrefix(block.markdown);
   const errorAction = !isUser && !block.isStreaming && onErrorAction ? detectErrorAction(content) : null;
 
   // Strip markdown wrapper around code so the copied text is "clean" when
@@ -457,7 +483,7 @@ function stripInlineCodeTicks(md: string): string {
 
       {/* ── Content Column ── */}
       <div className="flex flex-col min-w-0"
-        style={{ width: '100%', maxWidth: 'min(900px, 68%)', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+        style={{ width: '100%', maxWidth: 'min(1000px, 78%)', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
 
         {/* Bubble */}
 
@@ -472,7 +498,7 @@ function stripInlineCodeTicks(md: string): string {
           isUser
             ? 'bg-aegis-primary/[0.10] border-aegis-primary/15 hover:border-aegis-primary/30'
             : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.05)] hover:border-[rgb(var(--aegis-overlay)/0.10)]',
-          block.isStreaming && 'border-aegis-primary/25 streaming-border',
+          block.isStreaming && 'border-aegis-primary/35 streaming-border',
         )} style={{ width: 'auto' }}>
 
           {/* Floating Copy button — top-right corner of the FIRST line, hugging
@@ -560,11 +586,21 @@ function stripInlineCodeTicks(md: string): string {
               </div>
             </div>
           ) : (
-            <div className="markdown-body text-[14px] leading-relaxed text-aegis-text">
+            <div className="markdown-body text-[15px] leading-relaxed text-aegis-text">
               {content && (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                   {content}
                 </ReactMarkdown>
+              )}
+              {/* Blinking caret — gives a clear "still typing" signal while the
+                  LLM is streaming tokens in. Goes inside the markdown flow so
+                  it sits right after the latest content. */}
+              {block.isStreaming && (
+                <span
+                  className="inline-block w-[7px] h-[16px] ms-0.5 align-text-bottom -mb-[3px] rounded-sm bg-aegis-primary/70 animate-pulse"
+                  style={{ animationDuration: '0.9s' }}
+                  aria-hidden
+                />
               )}
             </div>
           )}

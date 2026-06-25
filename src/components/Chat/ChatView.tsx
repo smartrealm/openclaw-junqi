@@ -810,10 +810,7 @@ export function ChatView() {
     return null;
   }, [activeSessionKey, historyMetaBySession, t]);
 
-  // ── Footer: thinking stream + typing indicator ──
-  // Suppress TypingIndicator when the latest group already contains a streaming
-  // message bubble with its own inline dots+caret — otherwise the user sees two
-  // "bubbles" stacked (the streamed content + a duplicate typing avatar below).
+  // ── Footer: thinking stream + typing indicator inside Virtuoso list ──
   const lastGroup = responseGroups[responseGroups.length - 1];
   const tailBlock = lastGroup?.blocks[lastGroup.blocks.length - 1];
   const tailIsStreamingMessage = tailBlock?.type === 'message-content' && tailBlock.isStreaming;
@@ -974,7 +971,7 @@ export function ChatView() {
             atBottomThreshold={100}
             itemContent={renderGroup}
             startReached={handleStartReached}
-            components={{ Footer, Header }}
+            components={{ Footer }}
             className="h-full py-3 scrollbar-thin"
             style={{ overflowX: 'clip', scrollBehavior: 'smooth' }}
           />

@@ -5,6 +5,7 @@
 
 import { motion } from 'framer-motion';
 import { Database } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowsClockwise, FloppyDisk } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { type CostTotals } from '../types';
@@ -26,28 +27,28 @@ export function TokenBreakdownSection({ totals }: TokenBreakdownSectionProps) {
       tokens: totals.input,
       cost:   totals.inputCost,
       color:  dataColor(1),
-      icon:   '📥',
+      icon:   <ArrowDown size={14} weight="regular" />,
     },
     {
       label:  t('analytics.outputTokens', 'Output Tokens'),
       tokens: totals.output,
       cost:   totals.outputCost,
       color:  dataColor(0),
-      icon:   '📤',
+      icon:   <ArrowUp size={14} weight="regular" />,
     },
     {
       label:  t('analytics.cacheRead',  'Cache Read'),
       tokens: totals.cacheRead,
       cost:   totals.cacheReadCost,
       color:  dataColor(5),
-      icon:   '🔄',
+      icon:   <ArrowsClockwise size={14} weight="regular" />,
     },
     {
       label:  t('analytics.cacheWrite', 'Cache Write'),
       tokens: totals.cacheWrite,
       cost:   totals.cacheWriteCost,
       color:  dataColor(2),
-      icon:   '💾',
+      icon:   <FloppyDisk size={14} weight="regular" />,
     },
   ].filter((s) => s.tokens > 0 || s.cost > 0);
 

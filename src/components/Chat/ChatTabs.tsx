@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Activity, Brain } from 'lucide-react';
+import { Icon } from '@/components/shared/icons';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { showConfirm } from '@/components/shared/AlertDialog';
@@ -296,19 +297,19 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
           {/* Info Rows */}
           <div className="px-4 pb-3 space-y-0">
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
-              <span className="text-xs">🗜️</span>
+              <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.compact}</span>
               <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.compactsAt', 'Compaction at')}</span>
               <span className={clsx('text-[10px] font-bold font-mono', compactPct > 80 ? 'text-aegis-danger' : compactPct > 50 ? 'text-aegis-warning' : 'text-aegis-primary')}>
                 ~{formatTokens(compactAt)}
               </span>
             </div>
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
-              <span className="text-xs">💓</span>
+              <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.state.running}</span>
               <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.heartbeat', 'Heartbeat')}</span>
               <span className="text-[10px] font-bold font-mono text-aegis-primary">{t('chat.heartbeatInterval', '15m interval')}</span>
             </div>
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
-              <span className="text-xs">🧠</span>
+              <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.memory}</span>
               <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.thinking', 'Thinking')}</span>
               <span className="text-[10px] font-bold font-mono" style={{ color: dataColor(3) }}>{thinkingLabel}</span>
             </div>

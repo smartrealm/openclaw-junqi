@@ -6,7 +6,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Search, Loader2, Plus, Pencil, Trash2, RefreshCw, Settings, X } from 'lucide-react';
+import { Search, Loader2, Plus, Pencil, Trash2, RefreshCw, Settings, X, AlertCircle, CalendarDays, FolderOpen, Plug, Network, Archive } from 'lucide-react';
+import { Brain, Gear, Cube, Lightbulb, Heart, Users, Target, Calendar, Note } from '@phosphor-icons/react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useNavigate } from 'react-router-dom';
@@ -41,15 +42,15 @@ type ViewMode = 'graph' | 'timeline' | 'cards';
 
 /** Category config — labels resolved via i18n at render time */
 const CATEGORY_KEYS = [
-  { key: 'all',         i18nKey: 'memoryExplorer.catAll',       colorIdx: 1,  icon: '🧠' },
-  { key: 'technical',   i18nKey: 'memoryExplorer.catTechnical', colorIdx: 9,  icon: '⚙️' },
-  { key: 'projects',    i18nKey: 'memoryExplorer.catProjects',  colorIdx: 5,  icon: '📦' },
-  { key: 'decisions',   i18nKey: 'memoryExplorer.catDecisions', colorIdx: 2,  icon: '💡' },
-  { key: 'preferences', i18nKey: 'memoryExplorer.catPreferences', colorIdx: 3, icon: '💜' },
-  { key: 'people',      i18nKey: 'memoryExplorer.catPeople',    colorIdx: 7,  icon: '👥' },
-  { key: 'skills',      i18nKey: 'memoryExplorer.catSkills',    colorIdx: 6,  icon: '🎯' },
-  { key: 'events',      i18nKey: 'memoryExplorer.catEvents',    colorIdx: 2,  icon: '📅' },
-  { key: 'general',     i18nKey: 'memoryExplorer.catGeneral',   colorIdx: 9,  icon: '📝' },
+  { key: 'all',         i18nKey: 'memoryExplorer.catAll',       colorIdx: 1,  icon: <Brain size={14} weight="regular" /> },
+  { key: 'technical',   i18nKey: 'memoryExplorer.catTechnical', colorIdx: 9,  icon: <Gear size={14} weight="regular" /> },
+  { key: 'projects',    i18nKey: 'memoryExplorer.catProjects',  colorIdx: 5,  icon: <Cube size={14} weight="regular" /> },
+  { key: 'decisions',   i18nKey: 'memoryExplorer.catDecisions', colorIdx: 2,  icon: <Lightbulb size={14} weight="regular" /> },
+  { key: 'preferences', i18nKey: 'memoryExplorer.catPreferences', colorIdx: 3, icon: <Heart size={14} weight="regular" /> },
+  { key: 'people',      i18nKey: 'memoryExplorer.catPeople',    colorIdx: 7,  icon: <Users size={14} weight="regular" /> },
+  { key: 'skills',      i18nKey: 'memoryExplorer.catSkills',    colorIdx: 6,  icon: <Target size={14} weight="regular" /> },
+  { key: 'events',      i18nKey: 'memoryExplorer.catEvents',    colorIdx: 2,  icon: <Calendar size={14} weight="regular" /> },
+  { key: 'general',     i18nKey: 'memoryExplorer.catGeneral',   colorIdx: 9,  icon: <Note size={14} weight="regular" /> },
 ] as const;
 
 /** Called at render time — dataColor reads current theme */
@@ -58,8 +59,8 @@ const getCatColor = (cat: string): string => {
   return found ? dataColor(found.colorIdx) : dataColor(9);
 };
 
-const getCatIcon = (cat: string): string =>
-  CATEGORY_KEYS.find(c => c.key === cat)?.icon || '📝';
+const getCatIcon = (cat: string): React.ReactNode =>
+  CATEGORY_KEYS.find(c => c.key === cat)?.icon ?? <Note size={14} weight="regular" />;
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -228,14 +229,14 @@ function MemoryDisabledView() {
           </p>
           <div className="flex items-stretch gap-3 mb-6 max-w-md mx-auto">
             <div className="flex-1 p-4 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.02)]">
-              <div className="text-[20px] mb-2">📁</div>
+              <div className="text-[20px] mb-2"><FolderOpen size={20} strokeWidth={1.75} /></div>
               <div className="text-[12px] font-semibold text-aegis-text mb-1">{t('memory.localOption', 'Local Files')}</div>
               <div className="text-[11px] text-aegis-text-muted leading-relaxed">
                 {t('memory.localOptionDesc', 'Select your workspace folder with MEMORY.md and memory/ files')}
               </div>
             </div>
             <div className="flex-1 p-4 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.02)]">
-              <div className="text-[20px] mb-2">🔌</div>
+              <div className="text-[20px] mb-2"><Plug size={20} strokeWidth={1.75} /></div>
               <div className="text-[12px] font-semibold text-aegis-text mb-1">{t('memory.apiOption', 'API Server')}</div>
               <div className="text-[11px] text-aegis-text-muted leading-relaxed">
                 {t('memory.apiOptionDesc', 'Connect to a Memory API server for semantic search and management')}
@@ -284,7 +285,7 @@ function GraphView({ memories, onSelect }: { memories: Memory[]; onSelect: (m: M
   if (memories.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-aegis-text-dim text-[13px]">
-        🕸️ {t('memoryExplorer.noMemoriesGraph')}
+        <Network size={14} strokeWidth={1.75} /> {t('memoryExplorer.noMemoriesGraph')}
       </div>
     );
   }
@@ -410,7 +411,7 @@ function TimelineView({ memories, onSelect }: { memories: Memory[]; onSelect: (m
   if (memories.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-aegis-text-dim text-[13px]">
-        📅 {t('memoryExplorer.noMemoriesTimeline')}
+        <CalendarDays size={14} strokeWidth={1.75} /> {t('memoryExplorer.noMemoriesTimeline')}
       </div>
     );
   }
@@ -482,7 +483,7 @@ function CardsView({ memories, onSelect }: { memories: Memory[]; onSelect: (m: M
   if (memories.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-aegis-text-dim text-[13px]">
-        🗃️ {t('memoryExplorer.noMemoriesCards')}
+        <Archive size={14} strokeWidth={1.75} /> {t('memoryExplorer.noMemoriesCards')}
       </div>
     );
   }
@@ -901,7 +902,7 @@ export function MemoryExplorerPage() {
         {/* Toolbar */}
         <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
           <div className="flex items-center gap-3">
-            <span className="text-[16px] font-bold text-aegis-text">🧠 {t('memoryExplorer.title')}</span>
+            <span className="text-[16px] font-bold text-aegis-text"><Brain size={14} strokeWidth={1.75} /> {t('memoryExplorer.title')}</span>
             {filtered.length > 0 && (
               <span className="text-[11px] text-aegis-text-dim">
                 {t('memoryExplorer.resultsCount', { count: filtered.length })}

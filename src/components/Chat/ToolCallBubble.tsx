@@ -1,10 +1,14 @@
 // ═══════════════════════════════════════════════════════════
 // ToolCallBubble — Console-style tool execution display
 // Compact, minimal, information-dense — inspired by Control UI
+//
+// Tool icons: @phosphor-icons/react (regular weight, polished)
+// Chrome icons: lucide-react (ChevronDown, ChevronRight, Loader2)
 // ═══════════════════════════════════════════════════════════
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Icon } from '@/components/shared/icons';
 import clsx from 'clsx';
 
 export interface ToolCallInfo {
@@ -18,25 +22,25 @@ export interface ToolCallInfo {
 // ── Tool category + style ─────────────────────────────────
 type ToolCategory = 'search' | 'file' | 'exec' | 'memory' | 'agent' | 'media' | 'misc';
 
-const TOOL_REGISTRY: Record<string, { icon: string; label: string; category: ToolCategory }> = {
-  web_search:      { icon: '🔍', label: 'Web Search',    category: 'search' },
-  web_fetch:       { icon: '🌐', label: 'Fetch URL',     category: 'search' },
-  browser:         { icon: '🖥️', label: 'Browser',       category: 'search' },
-  Read:            { icon: '📄', label: 'Read File',     category: 'file' },
-  Write:           { icon: '✍️', label: 'Write File',    category: 'file' },
-  Edit:            { icon: '✏️', label: 'Edit File',     category: 'file' },
-  exec:            { icon: '⚡', label: 'Execute',       category: 'exec' },
-  process:         { icon: '⚙️', label: 'Process',       category: 'exec' },
-  memory_search:   { icon: '🧠', label: 'Memory Search', category: 'memory' },
-  memory_get:      { icon: '🧠', label: 'Memory Get',    category: 'memory' },
-  sessions_spawn:  { icon: '🤖', label: 'Spawn Agent',  category: 'agent' },
-  sessions_send:   { icon: '📨', label: 'Send Message', category: 'agent' },
-  session_status:  { icon: '📊', label: 'Status',       category: 'agent' },
-  cron:            { icon: '⏰', label: 'Cron',          category: 'misc' },
-  image:           { icon: '🖼️', label: 'Image',         category: 'media' },
-  tts:             { icon: '🔊', label: 'TTS',           category: 'media' },
-  gateway:         { icon: '⚙️', label: 'Gateway',       category: 'misc' },
-  message:         { icon: '💬', label: 'Message',       category: 'misc' },
+const TOOL_REGISTRY: Record<string, { icon: React.ReactNode; label: string; category: ToolCategory }> = {
+  web_search:      { icon: Icon.chat.tool.search,    label: 'Web Search',    category: 'search' },
+  web_fetch:       { icon: Icon.chat.tool.web,       label: 'Fetch URL',     category: 'search' },
+  browser:         { icon: Icon.chat.tool.browser,   label: 'Browser',       category: 'search' },
+  Read:            { icon: Icon.chat.tool.read,     label: 'Read File',     category: 'file' },
+  Write:           { icon: Icon.chat.tool.edit,     label: 'Write File',    category: 'file' },
+  Edit:            { icon: Icon.chat.tool.edit,     label: 'Edit File',     category: 'file' },
+  exec:            { icon: Icon.chat.tool.bash,     label: 'Execute',       category: 'exec' },
+  process:         { icon: Icon.chat.tool.process,  label: 'Process',       category: 'exec' },
+  memory_search:   { icon: Icon.chat.tool.memory,   label: 'Memory Search', category: 'memory' },
+  memory_get:      { icon: Icon.chat.tool.memory,   label: 'Memory Get',    category: 'memory' },
+  sessions_spawn:  { icon: Icon.chat.tool.agent,    label: 'Spawn Agent',  category: 'agent' },
+  sessions_send:   { icon: Icon.chat.tool.message,  label: 'Send Message', category: 'agent' },
+  session_status:  { icon: Icon.chat.tool.stats,    label: 'Status',       category: 'agent' },
+  cron:            { icon: Icon.chat.tool.schedule, label: 'Cron',          category: 'misc' },
+  image:           { icon: Icon.chat.tool.media,    label: 'Image',         category: 'media' },
+  tts:             { icon: Icon.chat.tool.audio,    label: 'TTS',           category: 'media' },
+  gateway:         { icon: Icon.chat.tool.gateway,  label: 'Gateway',       category: 'misc' },
+  message:         { icon: Icon.chat.tool.chat,     label: 'Message',       category: 'misc' },
 };
 
 const CATEGORY_COLORS: Record<ToolCategory, string> = {
@@ -50,7 +54,7 @@ const CATEGORY_COLORS: Record<ToolCategory, string> = {
 };
 
 function getToolInfo(name: string) {
-  return TOOL_REGISTRY[name] || { icon: '🔧', label: name, category: 'misc' as ToolCategory };
+  return TOOL_REGISTRY[name] || { icon: Icon.chat.tool.default, label: name, category: 'misc' as ToolCategory };
 }
 
 function summarizeInput(toolName: string, input: Record<string, any>): string {
@@ -112,6 +116,11 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-success/60" />
             </span>
           )}
+
+          {/* Tool icon (phosphor regular, consistent weight) */}
+          <span className={clsx('shrink-0 flex items-center', catColor)}>
+            {info.icon}
+          </span>
 
           {/* Tool name */}
           <span className={clsx('text-[11px] font-medium shrink-0', catColor)}>

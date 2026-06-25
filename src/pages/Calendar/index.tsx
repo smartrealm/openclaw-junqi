@@ -5,7 +5,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, ChevronLeft, Plus, AlertCircle } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Plus, AlertCircle, CalendarDays } from 'lucide-react';
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useCalendarStore } from '@/stores/calendarStore';
@@ -179,7 +179,7 @@ export default function CalendarPage() {
         <MiniCalendar onSelectDate={(d) => { setSelectedDate(d); setView('day'); }} />
 
         <h3 className="text-[12px] font-semibold text-aegis-text-dim uppercase tracking-wider">
-          📅 {t('calendar.upcoming')}
+          <CalendarDays size={14} strokeWidth={1.75} /> {t('calendar.upcoming')}
         </h3>
         <UpcomingEvents onEventClick={handleEventClick} />
       </div>

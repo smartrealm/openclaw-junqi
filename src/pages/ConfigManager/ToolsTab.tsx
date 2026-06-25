@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, Globe, Wrench } from 'lucide-react';
 import type { OpenClawConfig, ToolsConfig } from './types';
 import { resolveConfiguredWebFetchProviders, resolveConfiguredWebSearchProviders } from './toolsProviderDetection';
 import { removeFetchProviderFromConfig, removeSearchProviderFromConfig } from './toolsProviderMutation';
@@ -303,7 +303,7 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
       <div className="rounded-xl border border-aegis-border bg-aegis-elevated overflow-hidden">
         <div className="px-5 py-3.5 border-b border-aegis-border">
           <h3 className="text-xs font-bold uppercase tracking-widest text-aegis-text-secondary">
-            🌐 {t('config.webTools')}
+            <Globe size={14} strokeWidth={1.75} /> {t('config.webTools')}
           </h3>
         </div>
         <div className="p-4 space-y-4">
@@ -543,7 +543,7 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
       <div className="rounded-xl border border-aegis-border bg-aegis-elevated overflow-hidden">
         <div className="px-5 py-3.5 border-b border-aegis-border">
           <h3 className="text-xs font-bold uppercase tracking-widest text-aegis-text-secondary">
-            🔧 {t('config.toolsAccessControl')}
+            <Wrench size={14} strokeWidth={1.75} /> {t('config.toolsAccessControl')}
           </h3>
         </div>
         <div className="p-4 space-y-4">

@@ -33,17 +33,22 @@ import {
 
 // ── Agent emoji + display name helpers ───────────────────────
 
-const AGENT_EMOJIS: Record<string, string> = {
-  main:       'O',
-  hilali:     '⚽',
-  pipeline:   '📦',
-  researcher: '🔍',
-  consultant: '💡',
-  coder:      '💻',
+import {
+  SoccerBall, Cube, MagnifyingGlass, Lightbulb,
+  Monitor, Robot,
+} from '@phosphor-icons/react';
+
+const AGENT_ICONS: Record<string, React.ReactNode> = {
+  main:       <Monitor size={14} weight="regular" />,
+  hilali:     <SoccerBall size={14} weight="regular" />,
+  pipeline:   <Cube size={14} weight="regular" />,
+  researcher: <MagnifyingGlass size={14} weight="regular" />,
+  consultant: <Lightbulb size={14} weight="regular" />,
+  coder:      <Monitor size={14} weight="regular" />,
 };
 
 const getAgentEmoji = (id: string) =>
-  AGENT_EMOJIS[id.toLowerCase()] ?? '🤖';
+  AGENT_ICONS[id.toLowerCase()] ?? <Robot size={14} weight="regular" />;
 
 const getAgentName = (id: string) => {
   // Note: keep display names i18n-driven (fallback to id)
@@ -298,7 +303,7 @@ export function DashboardPage() {
 
   // ── Render ───────────────────────────────────────────────────
   return (
-    <PageTransition className="p-5 flex flex-col gap-3 max-w-[1280px] mx-auto h-full overflow-y-hidden">
+    <PageTransition className="p-5 space-y-4 max-w-[1280px] mx-auto overflow-y-auto h-full">
 
       {/* ════ SECTION 1: TOP BAR ════ */}
       <div className="flex items-center justify-between">
@@ -623,10 +628,10 @@ export function DashboardPage() {
       </div>
 
       {/* ════ SECTION 4: BOTTOM ROW (3 columns) ════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
 
         {/* ── Quick Actions ── */}
-        <GlassCard delay={0.20} className="shrink-0">
+        <GlassCard delay={0.20}>
           <div className="flex items-center gap-2 mb-3">
             <Zap size={15} className="text-aegis-accent" />
             <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.quickActions')}</span>
@@ -654,23 +659,22 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* ── Sessions ── */}
-        <GlassCard delay={0.22} noPad className="flex flex-col min-h-0">
-          <div className="flex flex-col min-h-0 p-4 h-full">
-          <div className="flex items-center justify-between mb-2 shrink-0">
+        <GlassCard delay={0.22}>
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Bot size={13} className="text-aegis-accent" />
-              <span className="text-[12px] font-semibold text-aegis-text">{t('dashboard.sessions')}</span>
+              <Bot size={15} className="text-aegis-accent" />
+              <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.sessions')}</span>
             </div>
             <button
               onClick={() => navigate('/chat')}
               className="flex items-center gap-0.5 text-[10px] text-aegis-primary hover:underline"
             >
               {t('dashboard.viewAll')}
-              <ChevronRight size={11} />
+              <ChevronRight size={12} />
             </button>
           </div>
 
-          <div className="space-y-0.5 overflow-y-auto flex-1 min-h-0">
+          <div className="space-y-1">
             {mainSession && (
               <SessionItem
                 isMain
@@ -707,18 +711,16 @@ export function DashboardPage() {
               );
             })}
             {activeSessions.length === 0 && (
-              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
+              <div className="py-3 text-center text-[11px] text-aegis-text-dim">
                 {connected ? t('dashboard.noActiveSessions') : t('dashboard.notConnected')}
               </div>
             )}
           </div>
-          </div>
         </GlassCard>
 
         {/* ── Activity Feed ── */}
-        <GlassCard delay={0.24} noPad className="flex flex-col min-h-0">
-          <div className="flex flex-col min-h-0 p-4 h-full">
-          <div className="flex items-center justify-between mb-2 shrink-0">
+        <GlassCard delay={0.24}>
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Activity size={15} className="text-aegis-primary" />
               <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.activity')}</span>
@@ -728,7 +730,7 @@ export function DashboardPage() {
             </span>
           </div>
 
-          <div className="overflow-y-auto flex-1 min-h-0 scrollbar-hidden">
+          <div className="max-h-[220px] overflow-y-auto scrollbar-hidden">
             {feedItems.length > 0 ? (
               feedItems.map((item, i) => (
                 <FeedItem
@@ -742,11 +744,10 @@ export function DashboardPage() {
                 />
               ))
             ) : (
-              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
+              <div className="py-3 text-center text-[11px] text-aegis-text-dim">
                 {connected ? t('dashboard.noActiveSessions') : t('dashboard.notConnected')}
               </div>
             )}
-          </div>
           </div>
         </GlassCard>
       </div>

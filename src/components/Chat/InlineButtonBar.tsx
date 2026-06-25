@@ -14,6 +14,7 @@
 
 import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { Check } from 'lucide-react';
 import clsx from 'clsx';
 
 interface InlineButton {
@@ -77,7 +78,7 @@ export function InlineButtonBar({ buttons, onCallback }: InlineButtonBarProps) {
                 >
                   {btn.text}
                   {isClicked && (
-                    <span className="ms-1.5 text-[10px] opacity-60">✓</span>
+                    <Check size={9} className="ms-1.5 opacity-60" />
                   )}
                 </button>
               );

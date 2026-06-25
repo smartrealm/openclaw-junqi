@@ -3,32 +3,27 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useTranslation } from 'react-i18next';
+import { Circle, CheckCircle2, XCircle } from 'lucide-react';
 import type { ReminderStatus } from './calendarTypes';
+import React from 'react';
 
 interface ReminderBadgeProps {
   status: ReminderStatus;
   size?: 'sm' | 'md';
 }
 
-const STATUS_CONFIG: Record<ReminderStatus, { icon: string; colorClass: string; key: string }> = {
-  scheduled: { icon: '🟢', colorClass: 'text-green-400', key: 'calendar.reminder.scheduled' },
-  pending:   { icon: '🟡', colorClass: 'text-amber-400', key: 'calendar.reminder.pending' },
-  fired:     { icon: '✅', colorClass: 'text-green-400', key: 'calendar.reminder.fired' },
-  failed:    { icon: '🔴', colorClass: 'text-red-400',   key: 'calendar.reminder.failed' },
-  none:      { icon: '',   colorClass: '',                key: '' },
+const s = (size: string) => size === 'sm' ? 10 : 12;
+
+const STATUS_CONFIG: Record<ReminderStatus, React.ReactNode> = {
+  scheduled: <Circle size={12} fill="rgb(74 222 128)" stroke="none" />,
+  pending:   <Circle size={12} fill="rgb(251 191 36)" stroke="none" />,
+  fired:     <CheckCircle2 size={12} className="text-green-400" />,
+  failed:    <XCircle size={12} className="text-red-400" />,
+  none:      null,
 };
 
-export function ReminderBadge({ status, size = 'md' }: ReminderBadgeProps) {
-  const { t } = useTranslation();
-
+export function ReminderBadge({ status }: ReminderBadgeProps) {
   if (status === 'none') return null;
-
-  const cfg = STATUS_CONFIG[status];
-  const sizeClass = size === 'sm' ? 'text-[8px]' : 'text-[10px]';
-
-  return (
-    <span className={`${sizeClass} ${cfg.colorClass} shrink-0`} title={t(cfg.key)}>
-      {cfg.icon}
-    </span>
-  );
+  const icon = STATUS_CONFIG[status];
+  return <span className="shrink-0 flex items-center">{icon}</span>;
 }

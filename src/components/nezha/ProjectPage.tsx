@@ -368,7 +368,7 @@ export function ProjectPage({
             label="主内容区"
             fallback={(error, reset) => (
               <div style={s.errorBoundaryWrap}>
-                <div style={s.errorBoundaryIcon}>⚠</div>
+                <div style={s.errorBoundaryIcon}><AlertTriangle size={14} strokeWidth={1.75} /></div>
                 <div style={s.errorBoundaryTitle}>内容区渲染出错</div>
                 <div style={s.errorBoundaryMessage}>{error.message || "未知错误"}</div>
                 <div style={s.errorBoundaryActions}>

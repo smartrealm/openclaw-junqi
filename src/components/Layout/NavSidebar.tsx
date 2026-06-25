@@ -39,7 +39,7 @@ const navItemDefs: NavItem[] = [
   { to: '/skills', icon: Puzzle, labelKey: 'nav.skills', feature: 'skills' },
   { to: '/terminal', icon: Terminal, labelKey: 'nav.terminal', feature: 'terminal' },
   { to: '/agent-run', icon: Sparkles, labelKey: 'nav.agentRun', feature: 'agentRun', submenu: 'advanced' },
-  { to: '/memory', icon: Brain, labelKey: 'nav.memory', badge: '🧪', feature: 'memory' },
+  { to: '/memory', icon: Brain, labelKey: 'nav.memory', badge: 'BETA', feature: 'memory' },
   { to: '/files', icon: FolderOpen, labelKey: 'nav.files', feature: 'files' },    { to: '/calendar', icon: CalendarDays, labelKey: 'nav.calendar', feature: 'calendar' },
   { to: '/config', icon: Settings2, labelKey: 'nav.config', feature: 'configManager' },
   { to: '/perf', icon: Activity, labelKey: 'nav.performance', feature: 'logs' }, // reuse logs flag or always show
@@ -83,7 +83,7 @@ export function NavSidebar() {
       transition={{ type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.24 }}
       style={{ width: targetWidth, willChange: 'width, opacity', background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))' }}
       className={clsx(
-        'shrink-0 flex flex-col overflow-hidden',
+        'shrink-0 flex flex-col overflow-hidden overflow-x-hidden',
         'chrome-bg', borderClass, 'border-aegis-border',
         'py-3 relative',
         sidebarMode === 'mini' ? 'items-center' : 'items-stretch',

@@ -1,11 +1,20 @@
 import { useState } from 'react';
-import { Code2, Eye, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, Sparkles, ChevronDown, Loader2, type LucideIcon } from 'lucide-react';
+import { Code2, Eye, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, Sparkles, ChevronDown, Loader2, Globe, Image, FileCode2, Layers, type LucideIcon } from 'lucide-react';
+import { ArrowsClockwise } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
+
+/** Strip leading emoji / warning glyphs that the gateway may prepend to
+ *  event text. The component already renders its own icon; duplicating
+ *  it in the text looks sloppy. */
+function stripEmojiPrefix(text: string): string {
+  return text.replace(/^[\u{26A0}\u{FE0F}\u{2757}\u{203C}\u{1F6A8}\u{1F534}\u{1F7E0}\u{2705}\u{274C}\u{1F4A5}\s]+/gu, '').trimStart();
+}
 import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Artifact, DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { Icon } from '@/components/shared/icons';
 
 function isLocalFilePath(value?: string) {
   if (!value) return false;
@@ -62,12 +71,13 @@ async function resolveExistingFilePath(path: string): Promise<string> {
 export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
   const { t } = useTranslation();
   const [opening, setOpening] = useState(false);
-  const typeIcons: Record<string, string> = {
-    html: '🌐',
-    react: '⚛️',
-    svg: '🎨',
-    mermaid: '📊',
-    code: '📝',
+  const typeIcons: Record<string, React.ReactNode> = {
+    html:    Icon.chat.artifact.html,
+    react:   Icon.chat.artifact.react,
+    svg:     Icon.chat.artifact.svg,
+    mermaid: Icon.chat.artifact.mermaid,
+    markdown:Icon.chat.artifact.markdown,
+    code:    Icon.chat.artifact.code,
   };
 
   const handleOpen = async () => {
@@ -86,7 +96,7 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
       <div className="overflow-hidden rounded-xl border border-aegis-primary/20 bg-aegis-primary/[0.04]">
         <div className="flex items-center justify-between gap-3 border-b border-aegis-primary/10 px-4 py-2.5">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="text-lg shrink-0">{typeIcons[artifact.type] || '📄'}</span>
+            <span className="shrink-0 flex items-center">{typeIcons[artifact.type] || Icon.chat.artifact.generic}</span>
             <div className="min-w-0">
               <div className="truncate text-[13px] font-medium text-aegis-text">{artifact.title}</div>
               <div className="text-[10px] uppercase tracking-wider text-aegis-text-dim">{artifact.type}</div>
@@ -343,6 +353,32 @@ const sessionEventTone: Record<SessionEvent['kind'], string> = {
 };
 
 export function SessionEventCard({ event }: { event: SessionEvent }) {
+  // ── Model switch — single-line compact row ──────────────
+  // SessionContextBar writes the switch notice as JSON in the event text;
+  // try to parse it and render the dedicated compact row. Anything that
+  // doesn't look like model-switch JSON falls through to the default pill.
+  const trimmed = event.text.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const data = JSON.parse(trimmed) as { from?: string; to?: string };
+      if (data.from && data.to) {
+        return (
+          <div className="flex justify-center py-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-400/20 bg-slate-400/[0.04] text-[11px]">
+              <Layers size={11} className="text-aegis-text-dim" />
+              <span className="text-aegis-text-dim">模型切换</span>
+              <span className="font-mono text-aegis-text">{data.from}</span>
+              <ArrowsClockwise size={11} weight="bold" className="text-aegis-text-dim" />
+              <span className="font-mono text-aegis-text">{data.to}</span>
+            </div>
+          </div>
+        );
+      }
+    } catch {
+      // not JSON, fall through
+    }
+  }
+
   return (
     <div className="px-14 py-[2px]">
       <div className={clsx('rounded-xl border px-3 py-2', sessionEventTone[event.kind])}>
@@ -350,7 +386,7 @@ export function SessionEventCard({ event }: { event: SessionEvent }) {
           <Info size={14} className="mt-0.5 shrink-0 opacity-80" />
           <div className="min-w-0">
             <div className="text-[11px] font-medium uppercase tracking-wider opacity-70">{event.kind.replace('-', ' ')}</div>
-            <div className="whitespace-pre-wrap break-words text-[12px] leading-relaxed">{event.text}</div>
+            <div className="whitespace-pre-wrap break-words text-[12px] leading-relaxed">{stripEmojiPrefix(event.text)}</div>
           </div>
         </div>
       </div>
@@ -376,7 +412,7 @@ export function WorkshopEventCard({ events }: { events: WorkshopEvent[] }) {
               className="rounded-lg border border-emerald-400/10 bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text"
             >
               <div className="mb-1 text-[10px] uppercase tracking-wider text-emerald-300/70">{event.kind}</div>
-              <div className="whitespace-pre-wrap break-words leading-relaxed">{event.text}</div>
+              <div className="whitespace-pre-wrap break-words leading-relaxed">{stripEmojiPrefix(event.text)}</div>
             </div>
           ))}
         </div>

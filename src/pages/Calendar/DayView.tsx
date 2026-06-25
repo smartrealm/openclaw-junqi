@@ -4,6 +4,7 @@
 
 import { useMemo, useRef, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MapPin } from 'lucide-react';
 import { useCalendarStore } from '@/stores/calendarStore';
 import { EventCard } from './EventCard';
 import { ReminderBadge } from './ReminderBadge';
@@ -164,7 +165,7 @@ export function DayView({ onEventClick }: DayViewProps) {
                     {ev.title || t('calendar.untitled')}
                   </div>
                   {ev.location && (
-                    <div className="text-[10px] text-aegis-text-dim">📍 {ev.location}</div>
+                    <div className="text-[10px] text-aegis-text-dim"><MapPin size={14} strokeWidth={1.75} /> {ev.location}</div>
                   )}
                 </div>
               );

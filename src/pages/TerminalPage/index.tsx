@@ -7,6 +7,8 @@ import {
   ShellTerminalPanel,
   type ShellTerminalPanelHandle,
 } from "@/components/Terminal";
+import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { FileExplorer } from "@/components/FileExplorer";
 import { GitChanges } from "@/components/Git";
 import { GitHistory } from "@/components/Git";
@@ -23,8 +25,9 @@ import {
   X, ChevronDown,
 } from "lucide-react";
 import { Icon } from "@/components/shared/icons";
+import { AgentOverviewPanel, type AgentPanelMode } from "@/components/Terminal/AgentOverviewPanel";
 
-type RightPanel = null | "files" | "git-changes" | "git-history";
+type RightPanel = null | "files" | "git-changes" | "git-history" | "agents";
 
 export function TerminalPage() {
   const { t } = useTranslation();
@@ -41,10 +44,19 @@ export function TerminalPage() {
   // Terminal fills available flex space (no ResizeObserver needed)
   const termWrapRef = useRef<HTMLDivElement>(null);
 
+  // Workspace — ensure at least one workspace exists (lazy init)
+  const workspace = useWorkspaceStore((s) => {
+    const active = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return active ?? null;
+  });
+  const ensureActive = useWorkspaceStore((s) => s.ensureActive);
+  useEffect(() => { if (!workspace) ensureActive(); }, [workspace, ensureActive]);
+
   // Right panel
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
   const [rightPanelWidth, setRightPanelWidth] = useState(360);
   const [isDragging, setIsDragging] = useState(false);
+  const [agentPanelMode, setAgentPanelMode] = useState<AgentPanelMode>('full');
 
   const togglePanel = useCallback((panel: RightPanel) => {
     setRightPanel((prev) => (prev === panel ? null : panel));
@@ -92,7 +104,7 @@ export function TerminalPage() {
       <div style={{ height: 32, flexShrink: 0, display: "flex", alignItems: "center", padding: "0 8px 0 0", gap: 0, borderBottom: "1px solid rgb(255 255 255 / 0.07)" }}>
         <div style={{ width: 82, flexShrink: 0 }} />
         <div style={{ flex: 1 }} />
-        <button title="Open Agent Panel" onClick={() => togglePanel("files")} style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer" }}>
+        <button title="Open Agent Panel" onClick={() => togglePanel("agents")} style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer" }}>
           {Icon.chrome.grid}
         </button>
         <button title="Notifications" style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer", position: "relative" }}>
@@ -105,29 +117,39 @@ export function TerminalPage() {
         {/* Main terminal area — kooky 1:1: tab strip at top, terminal fills below */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
           <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <ShellTerminalPanel
-              ref={panelRef}
-              themeVariant={themeVariant}
-              terminalFontSize={terminalFontSize}
-              monoFontFamily={monoFontFamily}
-              projectPath={projectPath}
-              projectId="default"
-              onClose={() => {}}
-              onSplitHorizontal={() => {
-                import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
-                  const ws = useWorkspaceStore.getState();
-                  const active = ws.workspaces.find((w) => w.id === ws.activeWorkspaceId);
-                  if (active) ws.splitPane(active.focusedPaneId, 'horizontal');
-                });
-              }}
-              onSplitVertical={() => {
-                import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
-                  const ws = useWorkspaceStore.getState();
-                  const active = ws.workspaces.find((w) => w.id === ws.activeWorkspaceId);
-                  if (active) ws.splitPane(active.focusedPaneId, 'vertical');
-                });
-              }}
-            />
+            {workspace ? (
+              <PaneTreeView
+                workspace={workspace}
+                themeVariant={themeVariant}
+                terminalFontSize={terminalFontSize}
+                monoFontFamily={monoFontFamily}
+                projectPath={projectPath}
+              />
+            ) : (
+              <ShellTerminalPanel
+                ref={panelRef}
+                themeVariant={themeVariant}
+                terminalFontSize={terminalFontSize}
+                monoFontFamily={monoFontFamily}
+                projectPath={projectPath}
+                projectId="default"
+                onClose={() => {}}
+                onSplitHorizontal={() => {
+                  import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+                    const ws = useWorkspaceStore.getState();
+                    const active = ws.workspaces.find((w) => w.id === ws.activeWorkspaceId);
+                    if (active) ws.splitPane(active.focusedPaneId, 'horizontal');
+                  });
+                }}
+                onSplitVertical={() => {
+                  import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+                    const ws = useWorkspaceStore.getState();
+                    const active = ws.workspaces.find((w) => w.id === ws.activeWorkspaceId);
+                    if (active) ws.splitPane(active.focusedPaneId, 'vertical');
+                  });
+                }}
+              />
+            )}
           </div>
         </div>
 
@@ -137,7 +159,7 @@ export function TerminalPage() {
         <div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-elevated)", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--aegis-border)", flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              {rightPanel === "files" ? "Files" : rightPanel === "git-changes" ? "Changes" : "History"}
+              {rightPanel === "files" ? "Files" : rightPanel === "git-changes" ? "Changes" : rightPanel === "git-history" ? "History" : rightPanel === "agents" ? "Agents" : ""}
             </span>
             <button onClick={() => setRightPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "rgb(var(--aegis-text-dim))" }}>
               <X size={14} />
@@ -153,12 +175,20 @@ export function TerminalPage() {
             {rightPanel === "git-history" && (
               <GitHistory projectPath={projectPath} onCommitSelect={() => {}} />
             )}
+            {rightPanel === "agents" && (
+              <AgentOverviewPanel
+                projectPath={projectPath}
+                mode={agentPanelMode}
+                onModeChange={setAgentPanelMode}
+              />
+            )}
           </div>
         </div>
       </>)}
 
       {/* Right toolbar — outer-most 44px strip */}
       <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 4px", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-surface)" }}>
+        <IconBtn icon={Icon.chrome.grid} label="Agents" active={rightPanel === "agents"} onClick={() => togglePanel("agents")} />
         <IconBtn icon={Icon.nav.files} label="Files" active={rightPanel === "files"} onClick={() => togglePanel("files")} />
         <IconBtn icon={Icon.nav.git} label="Changes" active={rightPanel === "git-changes"} onClick={() => togglePanel("git-changes")} />
         <IconBtn icon={Icon.nav.history} label="History" active={rightPanel === "git-history"} onClick={() => togglePanel("git-history")} />

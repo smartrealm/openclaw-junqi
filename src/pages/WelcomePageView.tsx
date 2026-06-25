@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 interface CLITool {
   id: string;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   cmd: string;
 }
 

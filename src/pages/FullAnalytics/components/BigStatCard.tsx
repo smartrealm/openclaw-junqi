@@ -10,7 +10,7 @@ interface BigStatCardProps {
   /** Lucide icon component (alternative to iconEmoji) */
   icon?: ComponentType<{ size: number; style: React.CSSProperties }>;
   /** Emoji icon (takes precedence over icon) */
-  iconEmoji?: string;
+  iconEmoji?: React.ReactNode;
   value: number | string;
   label: string;
   color: string;

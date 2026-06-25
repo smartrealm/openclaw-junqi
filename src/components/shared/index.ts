@@ -9,6 +9,7 @@ export { TimelineView, type TimelineTask } from './TimelineView';
 export { WelcomePage } from './WelcomePage';
 export { AppSettingsDialog } from './AppSettingsDialog';
 export { PromptEditor, type PromptEditorProps, type ImageAttach } from './PromptEditor';
+export { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from './ToolCallHistoryPopover';
 export { GlassCard } from './GlassCard';
 export { PageTransition } from './PageTransition';
 export { AegisIcon } from './AegisIcon';

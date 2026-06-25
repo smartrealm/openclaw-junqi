@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Trash2, ArrowRight } from 'lucide-react';
+import { X, Trash2, ArrowRight, AlertCircle, CalendarDays } from 'lucide-react';
 import { useCalendarStore } from '@/stores/calendarStore';
 import { toDateStr } from './calendarUtils';
 import { ALL_CATEGORIES, ALL_CHANNELS, REMINDER_PRESETS } from './calendarTypes';
@@ -119,7 +119,7 @@ export function EventModal({ onClose, initialDate, editEvent }: EventModalProps)
     return (
       <Overlay onClose={onClose}>
         <div className="text-center py-4">
-          <div className="text-4xl mb-3">🗑️</div>
+          <div className="text-4xl mb-3"><Trash2 size={14} strokeWidth={1.75} /></div>
           <h2 className="text-[16px] font-bold text-aegis-text mb-2">{t('calendar.deleteConfirm')}</h2>
           <p className="text-[13px] text-aegis-text-dim mb-1">{editEvent?.title}</p>
           {editEvent?.reminderCronJobId && (
@@ -145,7 +145,7 @@ export function EventModal({ onClose, initialDate, editEvent }: EventModalProps)
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-[18px] font-bold text-aegis-text flex items-center gap-2">
-          📅 {isEdit ? t('calendar.editEvent') : t('calendar.newEvent')}
+          <CalendarDays size={14} strokeWidth={1.75} /> {isEdit ? t('calendar.editEvent') : t('calendar.newEvent')}
         </h2>
         <div className="flex items-center gap-1">
           {isEdit && (

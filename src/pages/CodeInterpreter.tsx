@@ -29,14 +29,16 @@ type FilterOption = (typeof FILTER_OPTIONS)[number];
 
 // ── Helpers ───────────────────────────────────────────────
 
-function getToolIcon(toolName: string): string {
+import { TerminalWindow, Gear, FileText, PencilSimple, Wrench } from '@phosphor-icons/react';
+
+function getToolIcon(toolName: string): React.ReactNode {
   switch (toolName.toLowerCase()) {
-    case 'exec':    return '⚡';
-    case 'process': return '⚙️';
-    case 'read':    return '📄';
-    case 'write':   return '✍️';
-    case 'edit':    return '✏️';
-    default:        return '🔧';
+    case 'exec':    return <TerminalWindow size={14} weight="regular" />;
+    case 'process': return <Gear size={14} weight="regular" />;
+    case 'read':    return <FileText size={14} weight="regular" />;
+    case 'write':   return <PencilSimple size={14} weight="regular" />;
+    case 'edit':    return <PencilSimple size={14} weight="regular" />;
+    default:        return <Wrench size={14} weight="regular" />;
   }
 }
 

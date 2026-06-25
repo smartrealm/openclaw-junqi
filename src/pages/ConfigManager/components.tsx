@@ -5,7 +5,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, Star, X, Save, ChevronDown, CheckCircle2, Image } from 'lucide-react';
+import { Eye, EyeOff, Star, X, Save, ChevronDown, CheckCircle2, Image, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { ModelEntry } from './types';
 
@@ -313,7 +313,7 @@ export function FloatingSaveButton({ hasChanges, saving, onSave, onDiscard }: Fl
         )}
       >
         <Save size={14} />
-        {saving ? t('config.saving') : <>💾 {t('config.reviewAndSave')}</>}
+        {saving ? t('config.saving') : <><Save size={14} strokeWidth={1.75} /> {t('config.reviewAndSave')}</>}
       </button>
     </div>
   );

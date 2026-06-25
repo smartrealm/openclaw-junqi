@@ -40,25 +40,26 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
   const charCount = content.length;
   const sizeLabel = charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : `${charCount}`;
 
-  // ── Collapsed pill (finalized) ──
+    // ── Collapsed pill (finalized) ──
   if (!isStreaming && !expanded) {
     return (
-      <div className="px-14 py-[2px] min-w-0">
+      <div className="px-4 py-[2px] min-w-0">
         <div
           onClick={() => setExpanded(true)}
-          className="inline-flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] rounded-lg cursor-pointer
-            hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors"
+          className="inline-flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] rounded-full cursor-pointer
+            border border-violet-400/15 bg-violet-500/[0.04]
+            hover:bg-violet-500/[0.07] transition-colors"
         >
           <span className="w-3 h-3 flex items-center justify-center shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400/45" />
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400/55" />
           </span>
-          <span className="text-[11px] font-medium text-violet-300/70">
+          <span className="text-[11px] font-medium text-violet-300/85">
             {t('thinking.thoughtProcess', 'Thinking')}
           </span>
-          <span className="text-[9px] text-aegis-text-dim/45 font-mono tabular-nums">
+          <span className="text-[9px] text-aegis-text-dim/55 font-mono tabular-nums">
             {lineCount}L · {sizeLabel}c
           </span>
-          <ChevronRight size={10} className="text-aegis-text-dim/30" />
+          <ChevronRight size={10} className="text-aegis-text-dim/40" />
         </div>
       </div>
     );
@@ -66,13 +67,13 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
 
   // ── Expanded / Streaming ──
   return (
-    <div className="px-14 py-[2px] min-w-0">
+    <div className="px-4 py-[2px] min-w-0">
       <div
         className={clsx(
-          'rounded-lg overflow-hidden transition-[border-color,background-color] duration-200',
+          'rounded-xl overflow-hidden transition-[border-color,background-color] duration-200',
           isStreaming
-            ? 'border border-violet-500/10 bg-violet-500/[0.018]'
-            : 'border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.02)]',
+            ? 'border border-violet-500/20 bg-violet-500/[0.04]'
+            : 'border border-violet-400/12 bg-violet-500/[0.02]',
         )}
       >
         {/* Header row */}
@@ -124,7 +125,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           <div
             ref={contentRef}
             className={clsx(
-              'px-2.5 py-2 text-[10px] leading-relaxed font-mono whitespace-pre-wrap break-words overflow-y-auto overflow-x-hidden',
+              'px-2.5 py-2 text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words overflow-y-auto overflow-x-hidden',
               isStreaming ? 'text-aegis-text-muted/58 max-h-[250px]' : 'text-aegis-text-dim/52 max-h-[300px]',
             )}
           >

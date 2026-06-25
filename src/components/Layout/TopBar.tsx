@@ -39,10 +39,10 @@ export function TopBar() {
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);
   const cycleSidebar = useSettingsStore((s) => s.cycleSidebar);
   const collapseIcon = sidebarMode === 'expanded'
-    ? <PanelLeftClose size={12} />
+    ? <PanelLeftClose size={16} />
     : sidebarMode === 'mini'
-      ? <PanelLeft size={12} />
-      : <PanelLeftOpen size={12} />;
+      ? <PanelLeft size={16} />
+      : <PanelLeftOpen size={16} />;
   const collapseTitle = sidebarMode === 'expanded'
     ? t('nav.sidebarToMini', 'Collapse to icons')
     : sidebarMode === 'mini'
@@ -167,7 +167,7 @@ export function TopBar() {
       ? `${head} · 「${sessionLabel}」`
       : head;
     const prefix = isBackground
-      ? t('topbar.backgroundPrefix', { agent: activeAgentId, defaultValue: '👁 {{agent}} · ' })
+      ? t('topbar.backgroundPrefix', { agent: activeAgentId, defaultValue: 'BG · {{agent}} · ' })
       : '';
     workingText = `${prefix}${agentPart} · ${phase} · ${modelShort} · ${elapsedText}`.replace(/\s·\s$/, '');
   }
@@ -244,7 +244,7 @@ export function TopBar() {
               : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)]',
           )}
         >
-          <Bell size={12} />
+          <Bell size={16} />
           {unread > 0 && (
             <span className="absolute top-0 end-0 min-w-[12px] h-[12px] px-[2px] flex items-center justify-center rounded-full bg-aegis-danger text-white text-[8px] font-bold leading-none">
               {unread > 9 ? '9+' : unread}

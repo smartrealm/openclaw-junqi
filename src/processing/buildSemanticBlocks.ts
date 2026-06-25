@@ -126,6 +126,16 @@ export function buildSemanticBlocks(
     if (/compact/i.test(text)) {
       return [{ ...base, type: 'compaction' } satisfies CompactionSemanticBlock];
     }
+    // Model-switch — preserve sentinel but flag via `kind` so the block
+    // doesn't get smushed into a generic session-event and lost between
+    // successive addMessage calls.
+    if (normalized.kind === 'model-switch') {
+      return [{
+        ...base,
+        type: 'session-event',
+        event: { kind: 'info', text },
+      } satisfies SessionEventSemanticBlock];
+    }
     return [{
       ...base,
       type: 'session-event',

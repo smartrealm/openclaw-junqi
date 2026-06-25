@@ -182,6 +182,8 @@ const updateSession = (
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool' | 'compaction';
+  /** Optional subtype — e.g. 'model-switch' for inline model-change notices. */
+  kind?: 'model-switch' | string;
   content: string;
   timestamp: string;
   runId?: string | null;
@@ -507,6 +509,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           sessionKey: targetKey,
           runId: msg.runId,
           role: msg.role,
+          kind: msg.kind,
           content: msg.content,
           timestamp: msg.timestamp,
           responseState: msg.responseState,

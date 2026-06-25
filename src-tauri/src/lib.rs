@@ -211,9 +211,9 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     if let (Ok(Some(monitor)), Ok(scale)) = (window.primary_monitor(), window.scale_factor()) {
                         let phys = monitor.size();
-                        // Convert physical → logical so the 78%/82% ratio is correct on HiDPI.
-                        let w = (phys.width as f64) * 0.78 / scale;
-                        let h = (phys.height as f64) * 0.82 / scale;
+                        // Convert physical → logical so the 82%/88% ratio is correct on HiDPI.
+                        let w = (phys.width as f64) * 0.82 / scale;
+                        let h = (phys.height as f64) * 0.88 / scale;
                         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: w, height: h }));
                     }
                     let _ = window.center();
@@ -255,6 +255,30 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        // ── Dock click (macOS) / taskbar click — re-show the main window
+        // ── if it was hidden via Cmd+H or window close. Tauri 2 doesn't
+        // ── do this automatically; without it the app stays in the dock
+        // ── but clicking the icon does nothing.
+        if let RunEvent::Reopen { .. } = event {
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }
+        // ── macOS: handle dock click for the activation policy case too.
+        // This fires when the dock icon is clicked and the app might
+        // have no visible windows. Fall through to handle the no-window case.
+        #[cfg(target_os = "macos")]
+        {
+            if let RunEvent::Reopen { has_visible_windows: false, .. } = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }
+        }
         if let RunEvent::Exit = event {
             // Kill the gateway child process on app exit
             let state = app_handle.state::<GatewayProcess>();

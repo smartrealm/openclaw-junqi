@@ -2,11 +2,15 @@
 // IconRegistry — aegis-aligned icon mapping.
 //
 // Every page consumes icons through this registry instead of importing
-// from lucide-react directly. Two guarantees:
+// directly from icon libraries. Two guarantees:
 //   1. Each semantic role has ONE canonical icon (no "is it Cpu or Bot?")
-//   2. The strokeWidth / size / color stay uniform across the app
+//   2. The strokeWeight / size / color stay uniform across the app
+//
+// Chrome/nav/section/action → lucide-react (stable, familiar)
+// Agent/tool brand icons        → @phosphor-icons/react (polished, SF-Symbol-grade)
 // ─────────────────────────────────────────────────────────────────
 
+import React from 'react';
 import {
   // ── Navigation / shells
   LayoutDashboard, MessageCircle, Kanban, DollarSign, Clock, Bot,
@@ -15,9 +19,10 @@ import {
   Wifi, WifiOff,
   // ── Status / lifecycle
   CheckCircle2, XCircle, AlertTriangle, AlertCircle, Loader2,
-  Play, Square, RotateCcw, RefreshCw, Pause,
+  Play, Square, RotateCcw, RefreshCw, Pause, Image as ImageIcon,
   // ── Code / tools / content
-  Code2, FileJson, FileText, FileCode, FileSearch,
+  Code2, FileJson, FileText, FileCode, FileCode2, FileSearch,
+  FileSpreadsheet, FileArchive, Music, Film,
   Wrench, Zap, Layers, Cpu, Globe, Volume2, VolumeX,
   HardDrive, MemoryStick, Server, Network,
   // ── UI primitives
@@ -25,6 +30,7 @@ import {
   Copy, Trash2, Pencil, Search, Filter, SearchCode,
   Eye, EyeOff, Maximize2, Minimize2,
   Save, Download, Upload, ExternalLink, Sun, Moon,
+  Send, Paperclip, Camera, Mic, Check,
   // ── Notifications / chrome
   Bell, BellOff, BellRing,
   PanelLeft, PanelRightOpen, PanelRightClose,
@@ -34,7 +40,56 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-/** Stroke width used everywhere — keeps icons visually consistent. */
+// ── Phosphor icons (agent brands + chat tool palette)
+import {
+  Sparkle,
+  Robot,
+  Pi,
+  Diamond,
+  CursorClick,
+  Lightning,
+  Hexagon,
+  XLogo,
+  X as XPh,
+  Cloud,
+  ArrowCircleUp,
+  Moon as MoonPh,
+  BracketsCurly,
+  Wrench as WrenchPh,
+  Brain as BrainPh,
+  TerminalWindow,
+  PencilSimple,
+  MagnifyingGlass,
+  Monitor as MonitorPh,
+  Gear as GearPh,
+  PaperPlaneRight,
+  ChartBar as ChartBarPh,
+  Clock as ClockPh,
+  Image as ImagePh,
+  SpeakerHigh,
+  WifiHigh,
+  ChatCircle,
+  DeviceMobile,
+  PuzzlePiece,
+  BookOpen,
+  Newspaper,
+  FloppyDisk,
+  CurrencyDollar,
+  Broom,
+  ArrowsClockwise,
+  SoccerBall,
+  Cube as CubePh,
+  Lightbulb,
+  Heart,
+  Users as UsersPh,
+  Target,
+  Calendar as CalendarPh,
+  Note as NotePh,
+  ArrowDown,
+  ArrowUp,
+} from '@phosphor-icons/react';
+
+/** Stroke width used everywhere — keeps lucide icons visually consistent. */
 export const ICON_STROKE = 1.75;
 
 /** Default pixel sizes (matches aegis nav + cards). */
@@ -52,15 +107,19 @@ export interface IconProps {
   strokeWidth?: number;
 }
 
-// Each semantic alias is a *pre-rendered JSX element* — callers just use
-// `Icon.section.gateway` directly. To customize (size / stroke / color)
-// at the call site, use the `<I>` wrapper below.
+// ── Pre-render helpers ──────────────────────────────────────────────────────
+
+/** Pre-render a lucide icon at a fixed size + stroke for the registry. */
 function makeRendered(Icon: LucideIcon, size: number = 16) {
   return <Icon size={size} strokeWidth={ICON_STROKE} />;
 }
 
+/** Pre-render a phosphor icon at a fixed size for the registry. */
+function phos(Icon: React.ComponentType<any>, size: number = 14) {
+  return <Icon size={size} weight="regular" />;
+}
+
 // ── Semantic alias table (kooky/aegis-aligned) ────────────────────────────
-// Each alias maps to ONE icon. Pages import by semantic name, not by icon.
 
 export const Icon = {
   // ── Navigation
@@ -167,6 +226,122 @@ export const Icon = {
   dot: {
     filled: makeRendered(CircleDot, 6),
     ring:   makeRendered(Circle, 6),
+  },
+
+  // ── Agent icons (kooky AgentTemplate.tintHex palette → phosphor regular)
+  // Phosphor's "regular" weight matches kooky's SF Symbol aesthetic — clean,
+  // geometric, consistent optical volume. Each icon is pre-rendered at 14px.
+  agent: {
+    claude:         { icon: phos(Sparkle, 14),         tint: 'D97757', label: 'Claude Code' },
+    codex:          { icon: phos(Robot, 14),            tint: '7A9DFF', label: 'Codex' },
+    pi:             { icon: phos(Pi, 14),               tint: 'C2C5CE', label: 'Pi' },
+    gemini:         { icon: phos(Diamond, 14),          tint: '3186FF', label: 'Gemini CLI' },
+    'cursor-agent': { icon: phos(CursorClick, 14),      tint: 'F54E00', label: 'Cursor CLI' },
+    amp:            { icon: phos(Lightning, 14),         tint: 'E8B168', label: 'Amp' },
+    copilot:        { icon: phos(Hexagon, 14),           tint: '6E40C9', label: 'Copilot CLI' },
+    grok:           { icon: phos(XLogo, 14),             tint: 'E8E8E8', label: 'Grok Build' },
+    'kiro-cli':     { icon: phos(Cloud, 14),             tint: '9046FF', label: 'Kiro CLI' },
+    agy:            { icon: phos(ArrowCircleUp, 14),     tint: '4285F4', label: 'Antigravity CLI' },
+    kimi:           { icon: phos(MoonPh, 14),            tint: 'C9C3D6', label: 'Kimi Code' },
+    opencode:       { icon: phos(BracketsCurly, 14),     tint: 'B0B0B0', label: 'OpenCode' },
+    aider:          { icon: phos(WrenchPh, 14),          tint: '44AA44', label: 'Aider' },
+    qwen:           { icon: phos(BrainPh, 14),           tint: '6600CC', label: 'Qwen CLI' },
+  } as Record<string, { icon: React.ReactNode; tint: string; label: string }>,
+
+  // ── Chat session icons (kooky-style 1:1) ─────────────────────────
+  // One unified namespace for every icon that appears in the chat/agent
+  // interaction surface. Each role is pre-rendered at its contextual size
+  // so callers never worry about strokeWidth/weight — just pick the role.
+  chat: {
+    // ── Input composer
+    input: {
+      send:     makeRendered(Send, 16),
+      attach:   makeRendered(Paperclip, 16),
+      camera:   makeRendered(Camera, 16),
+      mic:      makeRendered(Mic, 16),
+      sparkles: makeRendered(Sparkles, 16),
+      screen:   makeRendered(Eye, 16),
+      clear:    makeRendered(Trash2, 16),
+      close:    makeRendered(X, 16),
+      more:     makeRendered(ChevronDown, 14),
+    },
+
+    // ── Message bubble actions
+    action: {
+      copy:     makeRendered(Copy, 12),
+      copied:   makeRendered(Check, 12),
+      edit:     makeRendered(Pencil, 12),
+      refresh:  makeRendered(RefreshCw, 12),
+      retry:    makeRendered(RotateCcw, 12),
+      delete:   makeRendered(Trash2, 12),
+      expand:   makeRendered(Maximize2, 12),
+      collapse: makeRendered(Minimize2, 12),
+      more:     makeRendered(ChevronDown, 12),
+    },
+
+    // ── File attachments (extension / MIME)
+    attachment: {
+      image:    makeRendered(ImageIcon, 14),
+      audio:    makeRendered(Music, 14),
+      video:    makeRendered(Film, 14),
+      pdf:      makeRendered(FileText, 14),
+      document: makeRendered(FileText, 14),
+      sheet:    makeRendered(FileSpreadsheet, 14),
+      code:     makeRendered(FileCode, 14),
+      config:   makeRendered(FileJson, 14),
+      archive:  makeRendered(FileArchive, 14),
+      generic:  makeRendered(FileText, 14),
+    },
+
+    // ── Artifact cards (HTML/React/SVG/Code/Mermaid/Markdown)
+    artifact: {
+      html:     makeRendered(Globe, 16),
+      react:    makeRendered(Code2, 16),
+      svg:      makeRendered(ImageIcon, 16),
+      code:     makeRendered(Code2, 16),
+      mermaid:  makeRendered(FileText, 16),
+      markdown: makeRendered(FileText, 16),
+      generic:  makeRendered(FileText, 16),
+    },
+
+    // ── Tool call categories (kooky ToolCallActivityStrip palette)
+    tool: {
+      bash:     phos(TerminalWindow, 12),
+      edit:     phos(PencilSimple, 12),
+      read:     phos(FileText, 12),
+      search:   phos(MagnifyingGlass, 12),
+      web:      phos(Globe, 12),
+      browser:  phos(MonitorPh, 12),
+      process:  phos(GearPh, 12),
+      memory:   phos(BrainPh, 12),
+      agent:    phos(Robot, 12),
+      message:  phos(PaperPlaneRight, 12),
+      stats:    phos(ChartBarPh, 12),
+      schedule: phos(ClockPh, 12),
+      media:    phos(ImagePh, 12),
+      audio:    phos(SpeakerHigh, 12),
+      gateway:  phos(WifiHigh, 12),
+      chat:     phos(ChatCircle, 12),
+      default:  phos(WrenchPh, 12),
+    },
+
+    // ── Tab indicators
+    tab: {
+      compact: makeRendered(Layers, 12),
+      context: makeRendered(FileText, 12),
+      memory:  makeRendered(Brain, 12),
+      archive: makeRendered(History, 12),
+      pin:     makeRendered(Save, 12),
+    },
+
+    // ── Inline state glyphs
+    state: {
+      running: makeRendered(Loader2, 12),
+      done:    makeRendered(Check, 12),
+      error:   makeRendered(X, 12),
+      stalled: makeRendered(Circle, 12),
+      warn:    makeRendered(AlertTriangle, 12),
+    },
   },
 };
 

@@ -167,11 +167,12 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
         ? 'streaming'
         : 'final';
 
-  const textParts = extractTextParts(rawContent);
+  const textPartsRaw = extractTextParts(rawContent);
   const toolCalls = extractToolCalls(rawContent);
   const toolResults = extractToolResults(rawContent);
   const thinkingFromContent = extractThinkingContent(rawContent);
-  const text = textParts.join('');
+  // Strip gateway-emitted emoji prefixes (⚠️ etc.) before any component sees them
+  const text = textPartsRaw.join('').replace(/^[\u{26A0}\u{FE0F}\u{2757}\u{203C}\u{1F6A8}\u{1F534}\u{1F7E0}\u{2705}\u{274C}\u{1F4A5}\u{26D4}\u{23F3}\s]+/gu, '').trimStart();
 
   const contentBlocks = Array.isArray(rawContent)
     ? rawContent.filter((item) => asRecord(item))
@@ -202,6 +203,7 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
     sessionKey,
     runId,
     role,
+    kind: typeof message?.kind === 'string' ? message.kind : undefined,
     timestamp,
     model: message?.model ?? null,
     mediaUrl: message?.mediaUrl || undefined,
@@ -222,7 +224,7 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
     sessionEvents: Array.isArray(message?.sessionEvents) ? message.sessionEvents : undefined,
     usage: (message?.usage && typeof message.usage === 'object') ? message.usage as Record<string, number> : undefined,
     text,
-    textParts,
+    textParts: textPartsRaw,
     toolCalls,
     toolResults,
     hasOnlyToolCallContent,

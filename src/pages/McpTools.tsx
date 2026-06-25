@@ -7,6 +7,12 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Wrench, Plug, Clock, CheckCircle, XCircle, Zap } from 'lucide-react';
+import {
+  MagnifyingGlass, Globe, Monitor, FileText, PencilSimple,
+  TerminalWindow, Gear, Brain, Robot, PaperPlaneRight,
+  ChartBar, Image, SpeakerHigh, WifiHigh, ChatCircle,
+  DeviceMobile, Palette, PuzzlePiece, Lightning,
+} from '@phosphor-icons/react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';
 import type { ToolBlock } from '@/types/RenderBlock';
@@ -15,24 +21,24 @@ import clsx from 'clsx';
 // ─── Known Tools Catalog ────────────────────────────────────
 
 const KNOWN_TOOLS = [
-  { name: 'exec',           icon: '⚡',  desc: 'Execute shell commands',           category: 'System'        },
-  { name: 'process',        icon: '⚙️',  desc: 'Manage background processes',       category: 'System'        },
-  { name: 'Read',           icon: '📄',  desc: 'Read file contents',               category: 'Files'         },
-  { name: 'Write',          icon: '✍️',  desc: 'Write to files',                   category: 'Files'         },
-  { name: 'Edit',           icon: '✏️',  desc: 'Edit files with precise replacements', category: 'Files'     },
-  { name: 'web_search',     icon: '🔍',  desc: 'Search the web',                   category: 'Web'           },
-  { name: 'web_fetch',      icon: '🌐',  desc: 'Fetch URL content',                category: 'Web'           },
-  { name: 'browser',        icon: '🖥️',  desc: 'Browser automation',               category: 'Web'           },
-  { name: 'memory_search',  icon: '🧠',  desc: 'Search agent memory',              category: 'Memory'        },
-  { name: 'memory_get',     icon: '🧠',  desc: 'Get memory snippets',              category: 'Memory'        },
-  { name: 'sessions_spawn', icon: '🤖',  desc: 'Spawn sub-agents',                 category: 'Agents'        },
-  { name: 'sessions_send',  icon: '📨',  desc: 'Send to sessions',                 category: 'Agents'        },
-  { name: 'session_status', icon: '📊',  desc: 'Session status',                   category: 'Agents'        },
-  { name: 'image',          icon: '🖼️',  desc: 'Analyze images',                   category: 'Media'         },
-  { name: 'tts',            icon: '🔊',  desc: 'Text to speech',                   category: 'Media'         },
-  { name: 'message',        icon: '💬',  desc: 'Send messages',                    category: 'Communication' },
-  { name: 'nodes',          icon: '📱',  desc: 'Control paired devices',           category: 'Devices'       },
-  { name: 'canvas',         icon: '🎨',  desc: 'Canvas control',                   category: 'UI'            },
+  { name: 'exec',           icon: <TerminalWindow size={14} weight="regular" />, desc: 'Execute shell commands',           category: 'System'        },
+  { name: 'process',        icon: <Gear size={14} weight="regular" />,           desc: 'Manage background processes',       category: 'System'        },
+  { name: 'Read',           icon: <FileText size={14} weight="regular" />,       desc: 'Read file contents',               category: 'Files'         },
+  { name: 'Write',          icon: <PencilSimple size={14} weight="regular" />,   desc: 'Write to files',                   category: 'Files'         },
+  { name: 'Edit',           icon: <PencilSimple size={14} weight="regular" />,   desc: 'Edit files with precise replacements', category: 'Files'     },
+  { name: 'web_search',     icon: <MagnifyingGlass size={14} weight="regular" />, desc: 'Search the web',                  category: 'Web'           },
+  { name: 'web_fetch',      icon: <Globe size={14} weight="regular" />,          desc: 'Fetch URL content',                category: 'Web'           },
+  { name: 'browser',        icon: <Monitor size={14} weight="regular" />,        desc: 'Browser automation',               category: 'Web'           },
+  { name: 'memory_search',  icon: <Brain size={14} weight="regular" />,          desc: 'Search agent memory',              category: 'Memory'        },
+  { name: 'memory_get',     icon: <Brain size={14} weight="regular" />,          desc: 'Get memory snippets',              category: 'Memory'        },
+  { name: 'sessions_spawn', icon: <Robot size={14} weight="regular" />,          desc: 'Spawn sub-agents',                 category: 'Agents'        },
+  { name: 'sessions_send',  icon: <PaperPlaneRight size={14} weight="regular" />, desc: 'Send to sessions',                category: 'Agents'        },
+  { name: 'session_status', icon: <ChartBar size={14} weight="regular" />,       desc: 'Session status',                   category: 'Agents'        },
+  { name: 'image',          icon: <Image size={14} weight="regular" />,          desc: 'Analyze images',                   category: 'Media'         },
+  { name: 'tts',            icon: <SpeakerHigh size={14} weight="regular" />,    desc: 'Text to speech',                   category: 'Media'         },
+  { name: 'message',        icon: <ChatCircle size={14} weight="regular" />,     desc: 'Send messages',                    category: 'Communication' },
+  { name: 'nodes',          icon: <DeviceMobile size={14} weight="regular" />,   desc: 'Control paired devices',           category: 'Devices'       },
+  { name: 'canvas',         icon: <Palette size={14} weight="regular" />,        desc: 'Canvas control',                   category: 'UI'            },
 ];
 
 // ─── Category badge color map ───────────────────────────────
@@ -53,7 +59,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 interface ToolCardProps {
   name: string;
-  icon: string;
+  icon: React.ReactNode;
   desc: string;
   category: string;
   count?: number;
@@ -197,7 +203,7 @@ export function McpToolsPage() {
       .sort((a, b) => a.localeCompare(b))
       .map((toolName) => ({
         name: toolName,
-        icon: '🧩',
+        icon: <PuzzlePiece size={14} weight="regular" />,
         desc: t('mcpTools.unknownToolDesc', 'Observed in current session'),
         category: t('mcpTools.categoryOther', 'Other'),
       }));

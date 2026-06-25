@@ -6,11 +6,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  FileJson, CheckCircle2, AlertCircle, Pencil, History, RefreshCw,
-  Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound,
-  Sparkles, type LucideIcon,
-} from 'lucide-react';
+import { FileJson, CheckCircle2, AlertCircle, Pencil, History, RefreshCw, Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound, Sparkles, type LucideIcon, Download, Upload, Check } from 'lucide-react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
@@ -1070,7 +1066,7 @@ export function ConfigManagerPage() {
               'transition-all duration-200'
             )}
           >
-            📥 {t('config.exportConfig')}
+            <Download size={14} strokeWidth={1.75} /> {t('config.exportConfig')}
           </button>
           <button
             onClick={handleImport}
@@ -1081,7 +1077,7 @@ export function ConfigManagerPage() {
               'transition-all duration-200'
             )}
           >
-            📤 {t('config.importConfig')}
+            <Upload size={14} strokeWidth={1.75} /> {t('config.importConfig')}
           </button>
 
           {/* Restore from backup */}
@@ -1165,7 +1161,7 @@ export function ConfigManagerPage() {
                   onClick={handlePathApply}
                   className="px-2 py-1.5 rounded-lg text-xs font-medium bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors"
                 >
-                  ✅ {t('common.apply', 'Apply')}
+                  <Check size={14} strokeWidth={1.75} /> {t('common.apply', 'Apply')}
                 </button>
                 <button
                   onClick={() => setEditingPath(false)}

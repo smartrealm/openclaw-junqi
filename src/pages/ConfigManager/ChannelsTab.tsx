@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, X, Search } from 'lucide-react';
+import { Plus, Trash2, X, Search, AlertCircle, MessageCircle, Radio } from 'lucide-react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig, ChannelConfig } from './types';
 import {
@@ -829,7 +829,7 @@ export function ChannelsTab({ config, onChange }: ChannelsTabProps) {
       <div className="rounded-xl border border-aegis-border p-5 bg-white/[0.02] backdrop-blur-sm">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h2 className="text-base font-bold text-aegis-text">💬 {t('config.channels')}</h2>
+            <h2 className="text-base font-bold text-aegis-text"><MessageCircle size={14} strokeWidth={1.75} /> {t('config.channels')}</h2>
             <p className="text-xs text-aegis-text-muted mt-0.5">
               {enabledCount} of {channelKeys.length} channels enabled
             </p>
@@ -893,14 +893,14 @@ export function ChannelsTab({ config, onChange }: ChannelsTabProps) {
       <div className="rounded-xl border border-aegis-border bg-aegis-elevated overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-aegis-border">
           <h3 className="text-xs font-bold uppercase tracking-widest text-aegis-text-secondary">
-            📡 {t('config.channelList')}
+            <Radio size={14} strokeWidth={1.75} /> {t('config.channelList')}
           </h3>
         </div>
 
         <div className="p-4">
           {channelKeys.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <div className="text-4xl opacity-40">💬</div>
+              <div className="text-4xl opacity-40"><MessageCircle size={14} strokeWidth={1.75} /></div>
               <p className="text-sm font-medium text-aegis-text-secondary">{t('config.noChannels')}</p>
               <p className="text-xs text-aegis-text-muted">{t('config.addFirstChannel')}</p>
               <button

@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2 } from 'lucide-react';
+import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -51,20 +52,20 @@ type ViewMode = 'tree' | 'grid' | 'activity';
 // Worker classification
 // ═══════════════════════════════════════════════════════════
 
-interface WorkerMeta { icon: string; color: string; tag: string; }
+interface WorkerMeta { icon: React.ReactNode; color: string; tag: string; }
 
 /** Worker meta — called at render time so dataColor() reads current theme */
 const getWorkerMeta = (label: string, type: string): WorkerMeta => {
-  if (/sync/i.test(label))                     return { icon: '🔄', color: dataColor(9), tag: 'SYNC' };
-  if (/embed/i.test(label))                    return { icon: '🧠', color: dataColor(3), tag: 'EMBED' };
-  if (/maintenance|صيانة/i.test(label))        return { icon: '🧹', color: dataColor(3), tag: 'MAINTENANCE' };
-  if (/backup|نسخ/i.test(label))              return { icon: '💾', color: dataColor(5), tag: 'BACKUP' };
-  if (/stats|إحصائ/i.test(label))             return { icon: '📊', color: dataColor(6), tag: 'STATS' };
-  if (/research|بحث|تقرير/i.test(label))      return { icon: '📰', color: dataColor(2), tag: 'RESEARCH' };
-  if (/diary|يوميات|journal/i.test(label))    return { icon: '📔', color: dataColor(7), tag: 'DIARY' };
-  if (/monitor|متابعة|price|سعر/i.test(label)) return { icon: '💰', color: dataColor(4), tag: 'MONITOR' };
-  if (type === 'subagent') return { icon: '⚡', color: dataColor(2), tag: 'SUB-AGENT' };
-  return { icon: '⏰', color: dataColor(1), tag: 'CRON' };
+  if (/sync/i.test(label))                     return { icon: <ArrowsClockwise size={14} weight="regular" />, color: dataColor(9), tag: 'SYNC' };
+  if (/embed/i.test(label))                    return { icon: <BrainPh size={14} weight="regular" />, color: dataColor(3), tag: 'EMBED' };
+  if (/maintenance|صيانة/i.test(label))        return { icon: <Broom size={14} weight="regular" />, color: dataColor(3), tag: 'MAINTENANCE' };
+  if (/backup|نسخ/i.test(label))              return { icon: <FloppyDisk size={14} weight="regular" />, color: dataColor(5), tag: 'BACKUP' };
+  if (/stats|إحصائ/i.test(label))             return { icon: <ChartBar size={14} weight="regular" />, color: dataColor(6), tag: 'STATS' };
+  if (/research|بحث|تقرير/i.test(label))      return { icon: <Newspaper size={14} weight="regular" />, color: dataColor(2), tag: 'RESEARCH' };
+  if (/diary|يوميات|journal/i.test(label))    return { icon: <BookOpen size={14} weight="regular" />, color: dataColor(7), tag: 'DIARY' };
+  if (/monitor|متابعة|price|سعر/i.test(label)) return { icon: <CurrencyDollar size={14} weight="regular" />, color: dataColor(4), tag: 'MONITOR' };
+  if (type === 'subagent') return { icon: <Lightning size={14} weight="regular" />, color: dataColor(2), tag: 'SUB-AGENT' };
+  return { icon: <Clock size={14} weight="regular" />, color: dataColor(1), tag: 'CRON' };
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -90,13 +91,13 @@ const getAgentDisplay = (agent: AgentInfo): AgentDisplay => {
 
 // ── Tree node config (emoji icons for visual tree) ──
 /** Tree node config — called at render time so dataColor() reads current theme */
-function getTreeNodeConfig(id: string): { icon: string; color: string } {
-  if (/pipeline|pipe/i.test(id)) return { icon: '📦', color: dataColor(5) };
-  if (/research/i.test(id))      return { icon: '🔍', color: dataColor(2) };
-  if (/hilal/i.test(id))         return { icon: '⚽', color: dataColor(6) };
-  if (/consult|advisor/i.test(id)) return { icon: '🧠', color: dataColor(3) };
-  if (/code|dev/i.test(id))      return { icon: '💻', color: dataColor(5) };
-  return { icon: '🤖', color: dataColor(1) };
+function getTreeNodeConfig(id: string): { icon: React.ReactNode; color: string } {
+  if (/pipeline|pipe/i.test(id)) return { icon: <Cube size={14} weight="regular" />, color: dataColor(5) };
+  if (/research/i.test(id))      return { icon: <MagnifyingGlass size={14} weight="regular" />, color: dataColor(2) };
+  if (/hilal/i.test(id))         return { icon: <SoccerBall size={14} weight="regular" />, color: dataColor(6) };
+  if (/consult|advisor/i.test(id)) return { icon: <BrainPh size={14} weight="regular" />, color: dataColor(3) };
+  if (/code|dev/i.test(id))      return { icon: <Monitor size={14} weight="regular" />, color: dataColor(5) };
+  return { icon: <Robot size={14} weight="regular" />, color: dataColor(1) };
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -14,10 +14,8 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Search, FolderOpen, Plus, Trash2, Clock, Blocks,
-  Inbox, Layers, FolderSearch, Loader2,
-} from 'lucide-react';
+import { Search, FolderOpen, Plus, Trash2, Clock, Blocks, Inbox, Layers, FolderSearch, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkle, Robot, Diamond, Wrench, Cube } from '@phosphor-icons/react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useNavigate } from 'react-router-dom';
@@ -29,7 +27,7 @@ import { useWorkshopStore } from '@/stores/workshopStore';
 interface CLITool {
   id: string;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   cmd: string;
 }
 
@@ -402,10 +400,10 @@ function ProjectsView({
             </div>
             <div className="flex flex-col gap-2 w-full max-w-[320px] text-left">
               {[
-                { name: 'Claude Code', cmd: 'npm install -g @anthropic-ai/claude-code', icon: '🤖' },
-                { name: 'Codex', cmd: 'npm install -g @openai/codex', icon: '🧠' },
-                { name: 'Gemini CLI', cmd: 'npm install -g @google/gemini-cli', icon: '🌟' },
-                { name: 'Aider', cmd: 'pip install aider-chat', icon: '🔧' },
+                { name: 'Claude Code', cmd: 'npm install -g @anthropic-ai/claude-code', icon: <Sparkle size={14} weight="regular" /> },
+                { name: 'Codex', cmd: 'npm install -g @openai/codex', icon: <Robot size={14} weight="regular" /> },
+                { name: 'Gemini CLI', cmd: 'npm install -g @google/gemini-cli', icon: <Diamond size={14} weight="regular" /> },
+                { name: 'Aider', cmd: 'pip install aider-chat', icon: <Wrench size={14} weight="regular" /> },
               ].map((agent) => (
                 <div key={agent.name} className="flex items-center gap-2 px-3 py-2 rounded-lg"
                   style={{ background: 'rgb(var(--aegis-overlay) / 0.03)', border: '1px solid rgb(var(--aegis-border))' }}>
@@ -502,7 +500,7 @@ function SkillsView() {
               <div key={s.name} className="flex items-center gap-3 px-3 py-2.5 rounded-lg"
                 style={{ background: 'rgb(var(--aegis-card))', border: '1px solid rgb(var(--aegis-border))' }}>
                 <span className="w-7 h-7 rounded-md flex items-center justify-center text-[14px]"
-                  style={{ background: 'rgb(var(--aegis-overlay)/0.06)' }}>📦</span>
+                  style={{ background: 'rgb(var(--aegis-overlay)/0.06)' }}><Cube size={14} weight="regular" /></span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12px] font-semibold text-aegis-text">{s.displayName ?? s.name}</div>
                   {s.description && <div className="text-[10px] text-aegis-text-dim truncate">{s.description}</div>}

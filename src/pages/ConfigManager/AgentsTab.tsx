@@ -6,7 +6,8 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, Bot, Settings2, Activity, Cpu, Scissors } from 'lucide-react';
+import { Plus, Trash2, Bot, Settings2, Activity, Cpu, Scissors, AlertCircle } from 'lucide-react';
+import { Users } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig, AgentConfig } from './types';
 import {
@@ -853,7 +854,7 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
         <div className="p-4">
           {displayList.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <div className="text-4xl opacity-40">👥</div>
+              <div className="text-4xl opacity-40"><Users size={14} /></div>
               <p className="text-sm font-medium text-aegis-text-secondary">{t('config.noAgents')}</p>
               <p className="text-xs text-aegis-text-muted">{t('config.addFirstAgent')}</p>
               <button
