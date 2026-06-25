@@ -17,8 +17,8 @@
     "windows": [
       {
         "title": "JunQi Desktop",
-        "width": 1400,
-        "height": 900,
+        "width": 1300,
+        "height": 840,
         "minWidth": 1000,
         "minHeight": 680,
         "transparent": true,

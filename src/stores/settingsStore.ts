@@ -103,14 +103,7 @@ export const UI_SCALE_MIN = 50;
 export const UI_SCALE_MAX = 150;
 const clampScale = (n: number): number =>
   Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(n)));
-// Auto-scale UI based on window width: base 1200px = 100%.
-// If the user has manually set a scale (stored in localStorage), that takes precedence.
-const manualScale = localStorage.getItem('aegis-ui-scale');
-const autoScale = (() => {
-  const w = typeof window !== 'undefined' ? window.innerWidth : 1200;
-  return clampScale(Math.round((w / 1200) * 100));
-})();
-const savedUiScale = manualScale ? clampScale(parseInt(manualScale, 10) || 100) : autoScale;
+const savedUiScale = clampScale(parseInt(localStorage.getItem('aegis-ui-scale') || '100', 10) || 100);
 
 // Sidebar mode, migrating the legacy boolean (`aegis-sidebar-collapsed`) → 'mini'.
 const readSidebarMode = (): SidebarMode => {

@@ -211,9 +211,13 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     if let (Ok(Some(monitor)), Ok(scale)) = (window.primary_monitor(), window.scale_factor()) {
                         let phys = monitor.size();
-                        // Convert physical → logical so the 82%/88% ratio is correct on HiDPI.
-                        let w = (phys.width as f64) * 0.82 / scale;
-                        let h = (phys.height as f64) * 0.88 / scale;
+                        // Convert physical → logical; clamp between min (1000×680)
+                        // and max (1600×1000) so the window never gets absurdly large
+                        // on 4K/5K displays nor unusably small on laptops.
+                        let logical_w = phys.width as f64 / scale;
+                        let logical_h = phys.height as f64 / scale;
+                        let w = (logical_w * 0.82).clamp(1000.0, 1600.0);
+                        let h = (logical_h * 0.88).clamp(680.0, 1000.0);
                         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: w, height: h }));
                     }
                     let _ = window.center();

@@ -306,21 +306,9 @@ export default function App() {
   // ── Request notification permission (Web Notification API) ──
   useEffect(() => { notifications.requestPermission(); }, []);
 
-  // ── Auto-scale UI based on window width ─────────────────────
-  // Uses `transform: scale()` (NOT `zoom`) so the browser lays out
-  // the page at 100% native size, then scales the rendering visually.
-  // `zoom` changes the layout box, which clips bottom content.
-  const uiScale = useSettingsStore((s) => s.uiScale);
-  useEffect(() => {
-    const root = document.getElementById('app-root');
-    if (!root) return;
-    const s = uiScale / 100;
-    root.style.transform = `scale(${s})`;
-    root.style.transformOrigin = 'top left';
-    // Preserve the original layout dimensions so flex children don't overflow
-    root.style.width = `${100 / s}%`;
-    root.style.height = `${100 / s}%`;
-  }, [uiScale]);
+  // ── uiScale is applied via the TopBar inverse-zoom + native
+  // webview zoom (set by settingsStore.setUiScale). No CSS transform
+  // or zoom on #app-root — both break fixed positioning and scroll.
 
   // ── Auto-drain the message queue when an AI reply completes ──
   // Fires once per response (on the typing true→false transition) for any session,
