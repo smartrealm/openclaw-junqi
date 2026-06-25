@@ -1,4 +1,5 @@
 import type React from "react";
+import { APP_PLATFORM } from "./_nezha-platform";
 import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -747,14 +748,14 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
               </button>
               <button
                 onClick={onSplitHorizontal ?? (() => {})}
-                title="Split Right (⌘D)"
+                title={APP_PLATFORM === 'macos' ? 'Split Right (⌘D)' : 'Split Right (Ctrl+D)'}
                 style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-muted))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
                 <SplitSquareHorizontal size={14} />
               </button>
               <button
                 onClick={onSplitVertical ?? (() => {})}
-                title="Split Down (⌘⇧D)"
+                title={APP_PLATFORM === 'macos' ? 'Split Down (⌘⇧D)' : 'Split Down (Ctrl+Shift+D)'}
                 style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-muted))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
                 <SplitSquareVertical size={14} />

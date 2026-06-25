@@ -5,6 +5,7 @@
 // - ComposerToggleSlot: 铅笔图标，触发 ComposerBar 显隐
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { APP_PLATFORM } from "./_nezha-platform";
 import { invoke } from "@tauri-apps/api/core";
 
 // ──────────────────────────────────────────────
@@ -183,7 +184,7 @@ function ComposerToggleSlot({ paneId }: { paneId: string }) {
   return (
     <button
       onClick={handleClick}
-      title="内嵌 Prompt (⌘L)"
+      title={APP_PLATFORM === 'macos' ? '内嵌 Prompt (⌘L)' : '内嵌 Prompt (Ctrl+L)'}
       style={pillBase}
       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgb(var(--aegis-overlay)/0.06)"; }}
       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
@@ -246,7 +247,7 @@ export function PaneStatusBar({ projectPath, paneId, onToggleComposer, canZoom, 
       {canZoom && (
         <button
           onClick={onZoom}
-          title={isZoomed ? 'Exit Zoom (Esc)' : 'Zoom Pane (Cmd+Shift+E)'}
+          title={isZoomed ? 'Exit Zoom (Esc)' : APP_PLATFORM === 'macos' ? 'Zoom Pane (⌘⇧E)' : 'Zoom Pane (Ctrl+Shift+E)'}
           style={{ ...pillBase, color: isZoomed ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))' }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
