@@ -823,6 +823,17 @@ export function ChatView() {
     </div>
   ), [thinkingText, isTyping, tailIsStreamingMessage]);
 
+  // ── Debounce "no providers" state so gateway restart doesn't flash the banner
+  const [showNoProviderBanner, setShowNoProviderBanner] = useState(false);
+  const noProviderSignal = connected && !hasProviders && !modelsLoading;
+  useEffect(() => {
+    if (noProviderSignal) {
+      const timer = setTimeout(() => setShowNoProviderBanner(true), 3000);
+      return () => clearTimeout(timer);
+    }
+    setShowNoProviderBanner(false);
+  }, [noProviderSignal]);
+
   const latestGroupHasDecision = responseGroups[responseGroups.length - 1]?.blocks.some((block) => block.type === 'decision') ?? false;
   const shouldShowConnectionBanner =
     !connected &&
@@ -865,7 +876,7 @@ export function ChatView() {
         </div>
       )}
 
-      {connected && !hasProviders && !modelsLoading && (
+      {showNoProviderBanner && (
         <div className="shrink-0 px-4 py-3 border-b border-aegis-warning/20 bg-aegis-warning/[0.06]">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-[12px] text-aegis-warning">
