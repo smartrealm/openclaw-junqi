@@ -286,8 +286,14 @@ export function SettingsPageFull() {
     try {
       const { url, token } = await resolveConnectionUrl();
       gateway.connect(url, token);
-      await new Promise((r) => setTimeout(r, 2500));
-      setTestResult(useChatStore.getState().connected ? 'success' : 'fail');
+      // Poll the store for up to 5 s (50 × 100 ms) instead of a fixed 2.5 s sleep.
+      // This resolves faster on quick connections and is more reliable on slow ones.
+      let connected = false;
+      for (let i = 0; i < 50; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        if (useChatStore.getState().connected) { connected = true; break; }
+      }
+      setTestResult(connected ? 'success' : 'fail');
     } catch {
       setTestResult('fail');
     } finally {

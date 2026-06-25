@@ -1033,27 +1033,37 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
 
       if (modelIds.length === 0) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoneFound')); return; }
 
-      let addedCount = 0;
-      onChange((prev) => {
-        const next = { ...prev };
-        const existing = { ...(next.agents?.defaults?.models ?? {}) };
-        let added = 0;
-        for (const id of modelIds) {
-          const fullRef = normalizeProviderModelRef(providerId, id);
-          if (fullRef && !existing[fullRef]) {
-            existing[fullRef] = { alias: stripProviderNamespace(providerId, id) };
-            added++;
-          }
+      // Compute addedCount outside updater to avoid StrictMode double-invoke
+      // producing an incorrect count (side-effect inside updater is unsafe).
+      const currentModels = (() => {
+        // Read current state snapshot without triggering a re-render
+        let snapshot: Record<string, any> = {};
+        onChange((prev) => { snapshot = prev.agents?.defaults?.models ?? {}; return prev; });
+        return snapshot;
+      })();
+      const toAdd: Array<{ fullRef: string; alias: string }> = [];
+      for (const id of modelIds) {
+        const fullRef = normalizeProviderModelRef(providerId, id);
+        if (fullRef && !currentModels[fullRef]) {
+          toAdd.push({ fullRef, alias: stripProviderNamespace(providerId, id) });
         }
-        addedCount = added;
-        return {
-          ...next,
-          agents: {
-            ...next.agents,
-            defaults: { ...next.agents?.defaults, models: existing },
-          },
-        };
-      });
+      }
+      const addedCount = toAdd.length;
+      if (addedCount > 0) {
+        onChange((prev) => {
+          const existing = { ...(prev.agents?.defaults?.models ?? {}) };
+          for (const { fullRef, alias } of toAdd) {
+            existing[fullRef] = { alias };
+          }
+          return {
+            ...prev,
+            agents: {
+              ...prev.agents,
+              defaults: { ...prev.agents?.defaults, models: existing },
+            },
+          };
+        });
+      }
       setFetchSuccess(addedCount > 0);
       setFetchResult(t('config.fetchModelsAdded', { count: addedCount }));
     } catch (err: any) {
@@ -1121,6 +1131,10 @@ function ProfileRow({
   const [localMode, setLocalMode]       = useState<string>(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode ?? 'api_key');
   const [apiKeyInput, setApiKeyInput]   = useState('');
   const [apiKeySaved, setApiKeySaved]   = useState(false);
+
+  // Sync local state when prop changes (e.g. after backup restore)
+  useEffect(() => { setLocalProfile(profile.profileName ?? profileKey); }, [profile.profileName, profileKey]);
+  useEffect(() => { setLocalMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode ?? 'api_key'); }, [profile.mode, (profile as any).type, tmpl?.defaultAuthMode]);
 
   const updateProfile = (patch: Partial<AuthProfile>) => {
     onChange((prev) => {
@@ -1213,7 +1227,7 @@ function ProfileRow({
       // 4) Remove from agents.defaults.models all entries for this provider
       const existingModels = prev.agents?.defaults?.models ?? {};
       const modelsToRemove = Object.keys(existingModels).filter(
-        (id) => getProviderFromModelId(id) === providerId
+        (id) => providerNamespaceMatches(getProviderFromModelId(id), providerId)
       );
       const nextDefaultsModels = { ...existingModels };
       for (const id of modelsToRemove) delete nextDefaultsModels[id];
@@ -1445,6 +1459,7 @@ function ProfileRow({
                       ? { token: apiKeyInput.trim() }
                       : { apiKey: apiKeyInput.trim() } as any);
                     setApiKeySaved(true);
+                    setApiKeyInput('');
                   }}
                   className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors"
                 >
@@ -1518,6 +1533,8 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
   const { t } = useTranslation();
 
   const [localBaseUrl, setLocalBaseUrl] = useState(modelsProvider?.baseUrl ?? '');
+  // Sync when prop changes after backup restore
+  useEffect(() => { setLocalBaseUrl(modelsProvider?.baseUrl ?? ''); }, [modelsProvider?.baseUrl]);
 
   const updateModelsProvider = (patch: Partial<ModelProviderConfig>) => {
     onChange((prev) => ({
@@ -1542,7 +1559,7 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
 
       const existingModels = prev.agents?.defaults?.models ?? {};
       const modelsToRemove = Object.keys(existingModels).filter(
-        (id) => getProviderFromModelId(id) === provider
+        (id) => providerNamespaceMatches(getProviderFromModelId(id), provider)
       );
       const nextDefaultsModels = { ...existingModels };
       for (const id of modelsToRemove) delete nextDefaultsModels[id];
@@ -1795,7 +1812,10 @@ function EnvOnlyRow({ unifiedProvider, onConfigure }: EnvOnlyRowProps) {
                   'bg-amber-500/15 text-amber-400 border border-amber-500/25'
                 )}
               >
-                <Key size={14} strokeWidth={1.75} /> {t('config.envKeyOnly', 'ENV Key Only')}
+                <span className="flex items-center gap-1">
+                  <Key size={11} strokeWidth={1.75} className="inline" />
+                  {t('config.envKeyOnly', 'ENV Key Only')}
+                </span>
               </span>
             </div>
             <div className="text-[11px] text-aegis-text-muted truncate">
@@ -2218,11 +2238,8 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
       if (!isCustomLike) {
         return generatedCatalogModelOptions;
       }
-      if (hasDynamicCatalogOptions) {
-        return Array.from(new Set([
-          ...providerCatalogModelOptions,
-          ...gatewayModelOptions,
-        ]));
+      if (!hasDynamicCatalogOptions) {
+        return generatedCatalogModelOptions;
       }
       return Array.from(new Set([
         ...providerCatalogModelOptions,
@@ -2923,9 +2940,10 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
   };
 
   return (
-    /* backdrop — only close via header X to avoid losing half-filled form */
+    /* backdrop — allow close on pick step; block on configure/confirm to avoid losing form data */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget && step === 'pick') onClose(); }}
     >
       {/* modal */}
       <div
@@ -3085,7 +3103,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
         {/* top */}
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h2 className="text-base font-bold text-aegis-text"><Bot size={14} strokeWidth={1.75} /> {t('config.providers')}</h2>
+            <h2 className="text-base font-bold text-aegis-text flex items-center gap-1.5"><Bot size={15} strokeWidth={1.75} /> {t('config.providers')}</h2>
             <p className="text-xs text-aegis-text-muted mt-0.5">
               {t('config.manageProvidersDesc')}
             </p>
@@ -3216,7 +3234,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
           {unifiedProviders.length === 0 ? (
             /* Empty state */
             <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <div className="text-4xl opacity-40"><Bot size={14} strokeWidth={1.75} /></div>
+              <Bot size={40} strokeWidth={1.5} className="opacity-30 text-aegis-text-muted" />
               <p className="text-sm font-medium text-aegis-text-secondary">
                 {t('config.noProviders')}
               </p>

@@ -21,11 +21,14 @@ export interface WizardConfig {
 
 // ── Auth ──
 
+export type AuthProfileMode = 'api_key' | 'token' | 'oauth' | (string & {});
+
 export interface AuthProfile {
   provider: string;
-  mode: string;
+  mode: AuthProfileMode;
   token?: string;
   apiKey?: string;
+  profileName?: string;
   [key: string]: any;
 }
 

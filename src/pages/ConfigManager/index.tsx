@@ -55,6 +55,9 @@ function smartMerge(disk: any, original: any, current: any): any {
     return JSON.stringify(original) !== JSON.stringify(current) ? current : disk;
   }
 
+  // Treat null original as empty object so deletion semantics work correctly
+  if (original === null || original === undefined) original = {};
+
   const result: Record<string, any> = {};
 
   const allKeys = new Set([
@@ -801,8 +804,8 @@ export function ConfigManagerPage() {
       };
     }
     const withNormalizedChannelStreaming = {
-      ...(mutated ? next : data),
-      channels: normalizeChannelStreaming((mutated ? next : data).channels),
+      ...next,
+      channels: normalizeChannelStreaming(next.channels),
     };
     const stripped = stripProviderSecrets(withNormalizedChannelStreaming);
     return hydrateAgentModelCapabilitiesForUi(stripped);
@@ -1001,9 +1004,17 @@ export function ConfigManagerPage() {
   };
 
   // ── Derived counts ──
-  const providerCount = config?.auth?.profiles
-    ? Object.keys(config.auth.profiles).length
-    : 0;
+  const providerCount = (() => {
+    const authIds = new Set(
+      Object.values(config?.auth?.profiles ?? {}).map((p: any) =>
+        p?.provider ?? 'unknown'
+      )
+    );
+    const modelIds = new Set(Object.keys(config?.models?.providers ?? {}));
+    const allIds = new Set([...authIds, ...modelIds]);
+    allIds.delete('unknown');
+    return allIds.size;
+  })();
   const rawAgents = config?.agents?.list ?? [];
   const hasMainAgent = rawAgents.some((a) => a.id === 'main');
   // UI always shows a "Main" agent row, even when it isn't explicitly in agents.list.
@@ -1067,14 +1078,14 @@ export function ConfigManagerPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap border-aegis-border text-aegis-text-secondary hover:bg-white/[0.03] hover:border-aegis-border-hover transition-all duration-200"
           >
             <Download size={14} strokeWidth={1.75} className="shrink-0" />
-            <span className="whitespace-nowrap">{t('config.importConfig')}</span>
+            <span className="whitespace-nowrap">{t('config.exportConfig')}</span>
           </button>
           <button
             onClick={handleImport}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap border-aegis-border text-aegis-text-secondary hover:bg-white/[0.03] hover:border-aegis-border-hover transition-all duration-200"
           >
             <Upload size={14} strokeWidth={1.75} className="shrink-0" />
-            <span className="whitespace-nowrap">{t('config.exportConfig')}</span>
+            <span className="whitespace-nowrap">{t('config.importConfig')}</span>
           </button>
 
           {/* Restore from backup */}
@@ -1343,7 +1354,9 @@ export function ConfigManagerPage() {
                 <button
                   key={b.key}
                   onClick={() => {
-                    setConfig(normalizeConfig(structuredClone(b.data)));
+                    const restoredNormalized = normalizeConfig(structuredClone(b.data));
+                    setConfig(restoredNormalized);
+                    setOriginalConfig(structuredClone(restoredNormalized));
                     setShowBackups(false);
                   }}
                   className={clsx(

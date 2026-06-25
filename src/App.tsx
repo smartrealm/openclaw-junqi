@@ -195,15 +195,16 @@ export default function App() {
 
       // Auto-select guardrails:
       // 1) Preserve per-session model when present and still available.
-      // 2) For first-run/no persisted model, auto-select only if exactly one choice exists.
-      //    (Do NOT auto-fallback when list temporarily mismatches during startup.)
+      // 2) First-run (no persisted model): auto-select the first available model.
+      // 3) Persisted model no longer in list (provider renamed/rebuilt): fallback to first.
       const shouldAutoSelect = models.length > 0 && (
-        (!persistedModel && models.length === 1)
+        !persistedModel ||
+        (!!persistedModel && !persistedStillAvailable)
       );
 
       if (!shouldAutoSelect) return;
 
-      const targetModel = models[0].id;
+      const targetModel = persistedStillAvailable ? persistedModel! : models[0].id;
       if (targetModel === persistedModel) return; // already set, skip the round-trip
 
       // Use setManualModelOverride so subsequent setSessions() calls (which run during
