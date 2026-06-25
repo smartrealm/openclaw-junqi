@@ -323,6 +323,12 @@ export function ConfigManagerPage() {
       setConfig(structuredClone(normalizedSavedConfig));
       setOriginalConfig(structuredClone(normalizedSavedConfig));
 
+      // Restart gateway after successful save — temporarily mark models
+      // as loading so the chat view doesn't flash "no provider" banner.
+      const chatStore = (await import('@/stores/chatStore')).useChatStore;
+      chatStore.getState().setAvailableModels([]);
+      chatStore.setState({ modelsLoading: true });
+
       // Restart gateway after successful save
       try {
         const restartResult = await window.aegis.config.restart();

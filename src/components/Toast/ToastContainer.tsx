@@ -200,7 +200,7 @@ export function ToastContainer() {
   return (
     <div
       // bottom-4 + end-4 → logical properties, RTL-aware
-      className="fixed bottom-4 end-4 flex flex-col gap-2 pointer-events-none"
+      className="fixed top-4 end-4 flex flex-col gap-2 pointer-events-none z-[100]"
       style={{ zIndex: 9999 }}
       aria-label="Notifications"
     >

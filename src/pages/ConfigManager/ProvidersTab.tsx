@@ -1308,6 +1308,7 @@ function ProfileRow({
     });
   };
 
+
   return (
     <div className="mb-2">
       {/* ── Row header ── */}
