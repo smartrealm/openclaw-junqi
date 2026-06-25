@@ -397,12 +397,16 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         });
         disposeOnData = { dispose: () => linuxIME.dispose() };
 
+        // Use rAF instead of setTimeout so fit() runs outside the ResizeObserver
+        // notification cycle, preventing the benign but noisy Tauri JS error:
+        // "ResizeObserver loop completed with undelivered notifications"
+        let rafId: number | null = null;
         resizeObserver = new ResizeObserver(() => {
-          setTimeout(() => {
-            if (isActiveRef.current) {
-              fit();
-            }
-          }, 50);
+          if (rafId !== null) cancelAnimationFrame(rafId);
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            if (isActiveRef.current && !cleaned) fit();
+          });
         });
         resizeObserver.observe(container);
 
