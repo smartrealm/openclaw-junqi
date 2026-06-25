@@ -92,7 +92,7 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
   };
 
   return (
-    <div className="px-14 py-[2px]">
+    <div className="pl-[42px] py-[2px]">
       <div className="overflow-hidden rounded-xl border border-aegis-primary/20 bg-aegis-primary/[0.04]">
         <div className="flex items-center justify-between gap-3 border-b border-aegis-primary/10 px-4 py-2.5">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -301,7 +301,7 @@ export function FileResultCard({ files }: { files: FileRef[] }) {
   const { t } = useTranslation();
   if (files.length === 0) return null;
   return (
-    <div className="px-14 py-[2px]">
+    <div className="pl-[42px] py-[2px]">
       <div className="rounded-xl border border-aegis-accent/15 bg-aegis-accent/[0.04] px-3 py-3">
         <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-aegis-text">
           <FolderOpen size={14} className="text-aegis-accent/80" />
@@ -320,7 +320,7 @@ export function DecisionCard({ options, onSelect }: { options: DecisionOption[];
   const { t } = useTranslation();
   if (options.length === 0) return null;
   return (
-    <div className="px-14 py-[2px]">
+    <div className="pl-[42px] py-[2px]">
       <div className="rounded-xl border border-aegis-primary/15 bg-aegis-primary/[0.04] px-3 py-3">
         <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-aegis-text">
           <Sparkles size={14} className="text-aegis-primary/80" />
@@ -380,7 +380,7 @@ export function SessionEventCard({ event }: { event: SessionEvent }) {
   }
 
   return (
-    <div className="px-14 py-[2px]">
+    <div className="pl-[42px] py-[2px]">
       <div className={clsx('rounded-xl border px-3 py-2', sessionEventTone[event.kind])}>
         <div className="flex items-start gap-2">
           <Info size={14} className="mt-0.5 shrink-0 opacity-80" />
@@ -398,7 +398,7 @@ export function WorkshopEventCard({ events }: { events: WorkshopEvent[] }) {
   const { t } = useTranslation();
   if (events.length === 0) return null;
   return (
-    <div className="px-14 py-[2px]">
+    <div className="pl-[42px] py-[2px]">
       <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/[0.04] px-3 py-3">
         <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-aegis-text">
           <Sparkles size={14} className="text-emerald-300/80" />

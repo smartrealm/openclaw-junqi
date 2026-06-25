@@ -40,10 +40,11 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
   const charCount = content.length;
   const sizeLabel = charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : `${charCount}`;
 
-    // ── Collapsed pill (finalized) ──
+    // ── Collapsed pill (finalized) — pl-[42px] aligns with bubble left edge
+  // (renderGroup px-1=4px + pl-42px=42px = 46px = avatar(28px)+gap(10px)+mx-1(4px)+px-1(4px))
   if (!isStreaming && !expanded) {
     return (
-      <div className="px-4 py-[2px] min-w-0">
+      <div className="pl-[42px] py-[2px] min-w-0">
         <div
           onClick={() => setExpanded(true)}
           className="inline-flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] rounded-full cursor-pointer
@@ -65,9 +66,9 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
     );
   }
 
-  // ── Expanded / Streaming ──
+  // ── Expanded / Streaming — pl-[42px] aligns with bubble left edge ──
   return (
-    <div className="px-4 py-[2px] min-w-0">
+    <div className="pl-[42px] py-[2px] min-w-0">
       <div
         className={clsx(
           'rounded-xl overflow-hidden transition-[border-color,background-color] duration-200',

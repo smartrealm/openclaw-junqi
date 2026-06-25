@@ -408,23 +408,13 @@ function stripInlineCodeTicks(md: string): string {
   };
 
   // ── Timestamp formatting ──────────────────────────────────────────────────
-  // Assistant: relative date label + HH:MM + duration in one compact row.
-  // User:      HH:MM only (kooky-style, sender-aware placement).
-  const now = Date.now();
   const msgDate = (() => { try { const d = new Date(block.timestamp); return isNaN(d.getTime()) ? null : d; } catch { return null; } })();
-  const msgDayStart = msgDate ? new Date(msgDate.getFullYear(), msgDate.getMonth(), msgDate.getDate()).getTime() : 0;
-  const todayStart = new Date().setHours(0,0,0,0);
-  const dayDiff = Math.round((todayStart - msgDayStart) / 86400000);
 
-  const dateLabel = (() => {
-    if (!msgDate) return '';
-    if (dayDiff === 0) return 'Today';
-    if (dayDiff === 1) return 'Yesterday';
-    if (i18n.language === 'zh') {
-      return `${msgDate.getMonth() + 1}月${msgDate.getDate()}日`;
-    }
-    return msgDate.toLocaleString(i18n.language, { month: 'short', day: 'numeric' });
-  })();
+  const dateLabel = msgDate
+    ? (i18n.language === 'zh'
+        ? `${msgDate.getFullYear()}/${msgDate.getMonth() + 1}/${msgDate.getDate()}`
+        : msgDate.toLocaleString(i18n.language, { year: 'numeric', month: 'short', day: 'numeric' }))
+    : '';
 
   const timeLabel = msgDate
     ? `${String(msgDate.getHours()).padStart(2, '0')}:${String(msgDate.getMinutes()).padStart(2, '0')}`

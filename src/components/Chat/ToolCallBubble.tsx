@@ -91,7 +91,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
   const hasDetails = !!(tool.input && Object.keys(tool.input).length > 0) || !!tool.output;
 
   return (
-    <div className="px-14 py-[2px]">
+    <div className="pl-[42px] py-[2px]">
       <div
         className={clsx(
           'rounded-lg transition-all duration-150',
