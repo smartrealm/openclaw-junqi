@@ -64,7 +64,7 @@ function buildAssistantMeta(markdown: string, normalized: NormalizedMessage): Me
   if (workshopResults && workshopResults.length > 0) {
     meta.push({
       kind: 'workshop',
-      label: `📋 Workshop (${workshopResults.length})`,
+      label: `Workshop (${workshopResults.length})`,
       content: workshopResults.join('\n'),
     });
   }
