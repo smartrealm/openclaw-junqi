@@ -1028,18 +1028,18 @@ export function ConfigManagerPage() {
     <div className="flex flex-col h-full overflow-hidden">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-aegis-border bg-aegis-card/80 backdrop-blur-md flex-shrink-0 gap-4">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-aegis-border bg-aegis-card/80 backdrop-blur-md flex-shrink-0 gap-4 flex-nowrap">
         <div className="flex items-center gap-3 shrink-0">
           <h1 className="text-lg font-bold text-aegis-text whitespace-nowrap">{t('config.title')}</h1>
           {hasChanges && <ChangesPill label={t('config.unsavedChanges')} />}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-nowrap">
           <button
             onClick={handleReload}
             disabled={reloading}
             className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border',
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap',
               'transition-all duration-200',
               reloadSuccess
                 ? 'border-aegis-success/40 text-aegis-success bg-aegis-success/8'
@@ -1047,46 +1047,37 @@ export function ConfigManagerPage() {
               reloading && 'opacity-60 cursor-not-allowed',
             )}
           >
-            <RefreshCw
-              size={12}
-              className={reloading ? 'animate-spin' : ''}
-            />
-            {reloading
-              ? t('config.reloading')
-              : reloadSuccess
-                ? t('config.reloadDone')
-                : t('config.reload')}
+            <RefreshCw size={12} className={clsx('shrink-0', reloading && 'animate-spin')} />
+            <span className="whitespace-nowrap">
+              {reloading
+                ? t('config.reloading')
+                : reloadSuccess
+                  ? t('config.reloadDone')
+                  : t('config.reload')}
+            </span>
           </button>
           <button
             onClick={handleExport}
-            className={clsx(
-              'px-3 py-1.5 rounded-lg text-xs font-medium border',
-              'border-aegis-border text-aegis-text-secondary',
-              'hover:bg-white/[0.03] hover:border-aegis-border-hover',
-              'transition-all duration-200'
-            )}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap border-aegis-border text-aegis-text-secondary hover:bg-white/[0.03] hover:border-aegis-border-hover transition-all duration-200"
           >
-            <Download size={14} strokeWidth={1.75} /> {t('config.exportConfig')}
+            <Download size={14} strokeWidth={1.75} className="shrink-0" />
+            <span className="whitespace-nowrap">{t('config.importConfig')}</span>
           </button>
           <button
             onClick={handleImport}
-            className={clsx(
-              'px-3 py-1.5 rounded-lg text-xs font-medium border',
-              'border-aegis-border text-aegis-text-secondary',
-              'hover:bg-white/[0.03] hover:border-aegis-border-hover',
-              'transition-all duration-200'
-            )}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap border-aegis-border text-aegis-text-secondary hover:bg-white/[0.03] hover:border-aegis-border-hover transition-all duration-200"
           >
-            <Upload size={14} strokeWidth={1.75} /> {t('config.importConfig')}
+            <Upload size={14} strokeWidth={1.75} className="shrink-0" />
+            <span className="whitespace-nowrap">{t('config.exportConfig')}</span>
           </button>
 
           {/* Restore from backup */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               ref={backupBtnRef}
               onClick={() => showBackups ? setShowBackups(false) : openBackups()}
               className={clsx(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold',
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap',
                 'border border-aegis-border text-aegis-text-secondary',
                 'hover:bg-white/[0.03] hover:border-aegis-border-hover',
                 'transition-all duration-200',
@@ -1094,8 +1085,8 @@ export function ConfigManagerPage() {
               )}
               title={t('config.restoreBackup')}
             >
-              <History size={13} />
-              <span>{t('config.restoreBackup')}</span>
+              <History size={13} className="shrink-0" />
+              <span className="whitespace-nowrap">{t('config.restoreBackup')}</span>
             </button>
           </div>
         </div>

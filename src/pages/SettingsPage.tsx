@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -451,7 +451,7 @@ export function SettingsPageFull() {
       {/* Accent Color */}
       <GlassCard delay={0.10}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
-          <span className="text-aegis-primary">🎨</span>
+          <Palette size={16} className="text-aegis-primary" />
           {t('settings.accentColor', 'Accent Color')}
         </h3>
         <div className="flex gap-3 flex-wrap">

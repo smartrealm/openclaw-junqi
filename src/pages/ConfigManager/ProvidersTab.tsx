@@ -188,6 +188,7 @@ interface UnifiedProvider {
 
   // Env key detected
   envKeyFound?: boolean;
+  envKeyValue?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -498,9 +499,10 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     const providerConfigEntry = Object.entries(modelsProviders).find(([modelsProviderId]) =>
       providerNamespaceMatches(modelsProviderId, provider)
     )?.[1];
-    const envKeyFound = !!(
-      template?.envKey && envVarsForAuth[template.envKey] &&
-      String(envVarsForAuth[template.envKey]).trim()
+    const envKeyValue = template?.envKey
+      ? String(envVarsForAuth[template.envKey] ?? '').trim()
+      : undefined;
+    const envKeyFound = !!(envKeyValue
     ) || hasProviderConfigApiKey(providerConfigEntry?.apiKey);
 
     result.push({
@@ -514,6 +516,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
       modelCount:  Object.keys(models).length,
       template,
       envKeyFound,
+      envKeyValue: envKeyValue || undefined,
     });
   }
 
@@ -570,6 +573,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     } else {
       const models = getModelsForProvider(template.id, allModels);
 
+      const envOnlyValue = template.envKey ? String(envVars[template.envKey] ?? '').trim() : undefined;
       result.push({
         key:         `env:${template.id}`,
         provider:    template.id,
@@ -579,6 +583,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
         modelCount:  Object.keys(models).length,
         template,
         envKeyFound: true,
+        envKeyValue: envOnlyValue || undefined,
       });
     }
   }
@@ -970,12 +975,14 @@ interface ProfileRowProps {
   imageSupportMap: Map<string, boolean>;
   /** True when key is stored in env.vars (so profile has no key but it is configured) */
   apiKeyConfigured?: boolean;
+  /** Actual key value from env.vars, passed through so fetch can use it */
+  envKeyValue?: string;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
   saving?: boolean;
 }
 
 // ── Fetch Models Button (inline in expanded provider card) ──
-function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, saving, t }: {
+function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, saving, t, envKeyValue }: {
   providerId: string;
   tmpl: ProviderTemplate | undefined;
   profile: AuthProfile;
@@ -983,6 +990,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
   profileKey: string;
   saving?: boolean;
   t: any;
+  envKeyValue?: string;
 }) {
   const [fetching, setFetching] = useState(false);
   const [fetchResult, setFetchResult] = useState<string | null>(null);
@@ -991,7 +999,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
     const baseUrl = tmpl?.baseUrl?.replace(/\/$/, '');
     if (!baseUrl) { setFetchResult('未配置 API 端点'); return; }
     const apiKey: string | undefined =
-      (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key;
+      (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key ?? envKeyValue;
     if (!apiKey) { setFetchResult('未配置 API Key'); return; }
 
     setFetching(true);
@@ -1082,6 +1090,7 @@ function ProfileRow({
   imagePrimaryModel,
   imageSupportMap,
   apiKeyConfigured,
+  envKeyValue,
   onChange,
   saving = false,
 }: ProfileRowProps) {
@@ -1460,6 +1469,7 @@ function ProfileRow({
               profileKey={profileKey}
               saving={saving}
               t={t}
+              envKeyValue={envKeyValue}
             />
             <button
               onClick={removeProfile}
@@ -3218,6 +3228,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                       imagePrimaryModel={imagePrimaryModel}
                       imageSupportMap={allModelImageSupportMap}
                       apiKeyConfigured={up.envKeyFound}
+                      envKeyValue={up.envKeyValue}
                       onChange={onChange}
                       saving={saving}
                     />
