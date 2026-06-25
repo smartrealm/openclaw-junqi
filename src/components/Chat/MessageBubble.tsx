@@ -369,7 +369,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [ctxOpen, setCtxOpen] = useState(false);
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   const contextContent = contextMeta?.content
-    ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; contextPercent?: number | null; model?: string; formatted?: string }; } catch { return null; } })()
+    ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; contextPercent?: number | null; model?: string; formatted?: string; duration?: number }; } catch { return null; } })()
     : null;
   const ctxFmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));
   const isUser = block.role === 'user';
@@ -633,23 +633,20 @@ function stripInlineCodeTicks(md: string): string {
           )}
         </div>
 
-        {/* ── Footer: timestamp + sender + model + context + actions ──
-            Independent hover group (group/actions) so the footer's buttons
-            are controlled separately from the bubble's copy icon. */}
+        {/* ── Footer: agent | time + duration | context | model | actions ── */}
         <div className={clsx(
           'flex items-center mt-1 flex-wrap select-none group/actions',
           isUser && 'justify-end',
         )} style={{ gap: 6, rowGap: 3 }}>
 
-          {/* Sender name (assistant only, always visible) */}
+          {/* Sender name (assistant only) */}
           {!isUser && (
             <span className="text-[11px] font-medium text-aegis-text-muted">
               {activeAgentName}
             </span>
           )}
 
-          {/* Timestamp — long-visible below the bubble.
-              AI side: full date + time. User side: time only. */}
+          {/* Timestamp + duration */}
           <time
             className="text-[10px] text-aegis-text-muted tabular-nums"
             dateTime={block.timestamp || ''}
@@ -657,21 +654,23 @@ function stripInlineCodeTicks(md: string): string {
             {isUser ? timeStrShort : timeStr}
           </time>
 
+          {/* Duration badge (assistant only, from context data) */}
+          {!isUser && contextContent?.duration != null && (
+            <span className="text-[10px] text-aegis-text-dim font-mono tabular-nums rounded-full px-1.5 py-0.5"
+              style={{ background: 'rgb(var(--aegis-overlay) / 0.05)' }}>
+              {contextContent.duration >= 60
+                ? `${Math.floor(contextContent.duration / 60)}m ${contextContent.duration % 60}s`
+                : `${contextContent.duration}s`}
+            </span>
+          )}
+
           {/* Edit indicator */}
           {(block as { editedAt?: string }).editedAt && (
             <span className="text-[10px] text-aegis-text-dim italic">· {t('chat.edited', 'edited')}</span>
           )}
 
-          {/* Model badge */}
-          {!isUser && !contextMeta && modelInfo && (
-            <span className="rounded-full px-1.5 py-0.5 text-[10px] font-mono text-aegis-text-dim"
-              style={{ background: 'rgb(var(--aegis-overlay) / 0.05)' }}>
-              {modelInfo.model.includes('/') ? modelInfo.model.split('/').pop() : modelInfo.model}
-            </span>
-          )}
-
-          {/* Context toggle + details (assistant only) */}
-          {!isUser && contextContent && (
+          {/* Context toggle — always visible for assistant messages */}
+          {!isUser && (
             <span className="inline-flex items-center flex-wrap" style={{ gap: 4 }}>
               <button onClick={() => setCtxOpen(v => !v)}
                 className="inline-flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
@@ -682,14 +681,33 @@ function stripInlineCodeTicks(md: string): string {
               {ctxOpen && (
                 <span className="inline-flex items-center flex-wrap rounded-full px-2 py-0.5 text-[10px] font-mono tabular-nums"
                   style={{ gap: 6, border: '1px solid var(--aegis-border, rgb(var(--aegis-overlay)/0.1))', background: 'rgb(var(--aegis-overlay) / 0.03)' }}>
-                  {(contextContent.input ?? 0) > 0 && <span>↑{ctxFmt(contextContent.input!)}</span>}
-                  {(contextContent.output ?? 0) > 0 && <span>↓{ctxFmt(contextContent.output!)}</span>}
-                  {(contextContent.cacheRead ?? 0) > 0 && <span>R{ctxFmt(contextContent.cacheRead!)}</span>}
-                  {(contextContent.cacheWrite ?? 0) > 0 && <span>W{ctxFmt(contextContent.cacheWrite!)}</span>}
-                  {contextContent.contextPercent != null && (
-                    <span className={clsx((contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger' : (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : 'text-aegis-text-dim')}>
-                      {contextContent.contextPercent}% ctx
+                  {/* Model name */}
+                  {modelInfo && <span className="text-aegis-text-muted">{modelInfo.model}</span>}
+                  {/* Input / output tokens */}
+                  {contextContent?.input != null && contextContent.input > 0 && (
+                    <span className="text-blue-400">in:{ctxFmt(contextContent.input)}</span>
+                  )}
+                  {contextContent?.output != null && contextContent.output > 0 && (
+                    <span className="text-emerald-400">out:{ctxFmt(contextContent.output)}</span>
+                  )}
+                  {/* Cache */}
+                  {contextContent?.cacheRead != null && contextContent.cacheRead > 0 && (
+                    <span className="text-purple-400">R{ctxFmt(contextContent.cacheRead)}</span>
+                  )}
+                  {contextContent?.cacheWrite != null && contextContent.cacheWrite > 0 && (
+                    <span className="text-violet-400">W{ctxFmt(contextContent.cacheWrite)}</span>
+                  )}
+                  {/* Context usage % */}
+                  {contextContent?.contextPercent != null && (
+                    <span className={clsx(
+                      (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger' :
+                      (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : 'text-aegis-text-dim'
+                    )}>
+                      {contextContent.contextPercent}%
                     </span>
+                  )}
+                  {!contextContent && (
+                    <span className="text-aegis-text-dim">—</span>
                   )}
                 </span>
               )}
