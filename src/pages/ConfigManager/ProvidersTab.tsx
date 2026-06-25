@@ -130,7 +130,7 @@ export async function testProviderConnection(
       clearTimeout(t2);
       if (res2.ok) return { ok: true, message: 'OK' };
       if (res2.status === 401 || res2.status === 403) {
-        return { ok: false, message: `${res2.status} — 连接可达，请检查 API Key 或权限` };
+        return { ok: false, message: `__i18n:config.connectionReachableCheckKey:${res2.status}__` };
       }
       const text2 = await res2.text();
       const short2 = text2 ? text2.slice(0, 120).replace(/\s+/g, ' ') : '';
@@ -996,13 +996,14 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
 }) {
   const [fetching, setFetching] = useState(false);
   const [fetchResult, setFetchResult] = useState<string | null>(null);
+  const [fetchSuccess, setFetchSuccess] = useState(false);
 
   const handleFetch = async () => {
     const baseUrl = tmpl?.baseUrl?.replace(/\/$/, '');
-    if (!baseUrl) { setFetchResult('未配置 API 端点'); return; }
+    if (!baseUrl) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoEndpoint')); return; }
     const apiKey: string | undefined =
       (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key ?? envKeyValue;
-    if (!apiKey) { setFetchResult('未配置 API Key'); return; }
+    if (!apiKey) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoApiKey')); return; }
 
     setFetching(true);
     setFetchResult(null);
@@ -1015,7 +1016,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
       const res = await fetch(url, { headers, signal: controller.signal });
       clearTimeout(timer);
 
-      if (!res.ok) { setFetchResult(`${res.status} ${res.statusText}`); return; }
+      if (!res.ok) { setFetchSuccess(false); setFetchResult(`${res.status} ${res.statusText}`); return; }
 
       const data = await res.json();
       const modelIds: string[] = [];
@@ -1030,7 +1031,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
         if (id) modelIds.push(id);
       }
 
-      if (modelIds.length === 0) { setFetchResult('未找到模型'); return; }
+      if (modelIds.length === 0) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoneFound')); return; }
 
       let addedCount = 0;
       onChange((prev) => {
@@ -1053,8 +1054,10 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
           },
         };
       });
-      setFetchResult(`已添加 ${addedCount} 个模型`);
+      setFetchSuccess(addedCount > 0);
+      setFetchResult(t('config.fetchModelsAdded', { count: addedCount }));
     } catch (err: any) {
+      setFetchSuccess(false);
       setFetchResult(err?.message || String(err));
     } finally {
       setFetching(false);
@@ -1084,7 +1087,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
       {fetchResult && (
         <span className={clsx(
           'text-[11px]',
-          fetchResult.startsWith('已添加') ? 'text-aegis-success' : 'text-aegis-warning'
+          fetchSuccess ? 'text-aegis-success' : 'text-aegis-warning'
         )}>{fetchResult}</span>
       )}
     </div>
@@ -2380,7 +2383,12 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
       firstCustomModel || preferredProbeModel
     );
     setTestStatus(result.ok ? 'ok' : 'error');
-    setTestMessage(result.ok ? t('config.connected') : result.message);
+    const rawMsg = result.message ?? '';
+    const i18nMatch = rawMsg.match(/^__i18n:([^:]+):(.+)__$/);
+    const displayMsg = i18nMatch
+      ? t(i18nMatch[1], { status: i18nMatch[2] })
+      : rawMsg;
+    setTestMessage(result.ok ? t('config.connected') : displayMsg);
   };
 
   const hasCatalogRegion = catalogEntry && catalogEntry.region !== 'none';
