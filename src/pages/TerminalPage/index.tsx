@@ -106,6 +106,7 @@ export function TerminalPage() {
           <WorkspaceSidebarPanel
             mode={sidebarMode}
             onModeChange={setSidebarMode}
+            onToggleSidebar={cycleSidebarMode}
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
             onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
@@ -116,25 +117,6 @@ export function TerminalPage() {
         )}
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
-          {/* Sidebar toggle — overlaid on tab strip left edge, no extra bar */}
-          <div style={{ position: "absolute", top: 0, left: 0, zIndex: 10, display: "flex", alignItems: "center", padding: "3px 4px" }}>
-            <button
-              title="Toggle sidebar"
-              onClick={cycleSidebarMode}
-              style={{
-                width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center",
-                border: "none",
-                background: sidebarMode !== "hidden" ? "rgb(var(--aegis-primary) / 0.12)" : "transparent",
-                borderRadius: 5,
-                color: sidebarMode !== "hidden" ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-muted))",
-                cursor: "pointer", transition: "background 0.15s, color 0.15s",
-              }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
-              </svg>
-            </button>
-          </div>
 
           <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             {workspace ? (
@@ -206,8 +188,17 @@ export function TerminalPage() {
 }
 
 function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  const bg = active ? "rgb(var(--aegis-primary) / 0.10)" : hovered ? "rgb(var(--aegis-overlay) / 0.08)" : "transparent";
+  const col = active ? "rgb(var(--aegis-primary))" : hovered ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text-muted))";
   return (
-    <button onClick={onClick} title={label} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "rgb(var(--aegis-primary) / 0.10)" : "transparent", color: active ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-muted))", transition: "background 0.12s, color 0.12s" }}>
+    <button
+      onClick={onClick}
+      title={label}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: bg, color: col, transition: "background 0.12s, color 0.12s" }}
+    >
       {icon}
     </button>
   );
@@ -239,7 +230,8 @@ function WorkspaceRow({ ws, isActive, mode, index, totalCount, onSelect, onRenam
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
-  const displayName = ws.name?.trim() || '新工作区';
+  const { t } = useTranslation();
+  const displayName = ws.name?.trim() || t('terminal.workspaceDefault');
   // 首字母 badge：取前两个有效字符（忽略特殊符号）
   const initials = displayName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '').slice(0, 2).toUpperCase() || '#';
 
@@ -320,6 +312,7 @@ function WorkspaceRow({ ws, isActive, mode, index, totalCount, onSelect, onRenam
       <div
         ref={rowRef}
         onClick={() => { if (!renaming) onSelect(); }}
+        onDoubleClick={() => { if (onRename && !renaming) { setRenameVal(displayName); setRenaming(true); } }}
         onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -392,7 +385,7 @@ function WorkspaceRow({ ws, isActive, mode, index, totalCount, onSelect, onRenam
         {(hovered || isActive) && !renaming && onClose && (
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
-            title="关闭"
+            title={t('terminal.workspaceClose')}
             style={{
               width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'transparent', border: 'none', borderRadius: 3, cursor: 'pointer',
@@ -422,10 +415,10 @@ function WorkspaceRow({ ws, isActive, mode, index, totalCount, onSelect, onRenam
           onMouseDown={(e) => e.stopPropagation()}
         >
           {[
-            onRename && { label: '重命名', action: startRename, icon: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7' },
-            onDuplicate && { label: '复制工作区', action: () => { onDuplicate(); setCtxMenu(null); }, icon: 'M8 17l4 4 4-4m-4-5v9M21 15V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10' },
-            totalCount > 1 && onCloseOthers && { label: '关闭其他', action: () => { onCloseOthers(); setCtxMenu(null); }, icon: 'M18 6L6 18M6 6l12 12' },
-            totalCount > 1 && onClose && { label: '关闭', action: () => { onClose(); setCtxMenu(null); }, icon: 'M18 6L6 18M6 6l12 12', danger: true },
+            onRename && { label: t('terminal.workspaceRename'), action: startRename, icon: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7' },
+            onDuplicate && { label: t('terminal.workspaceDuplicate'), action: () => { onDuplicate(); setCtxMenu(null); }, icon: 'M8 17l4 4 4-4m-4-5v9M21 15V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10' },
+            totalCount > 1 && onCloseOthers && { label: t('terminal.workspaceCloseOthers'), action: () => { onCloseOthers(); setCtxMenu(null); }, icon: 'M18 6L6 18M6 6l12 12' },
+            totalCount > 1 && onClose && { label: t('terminal.workspaceClose'), action: () => { onClose(); setCtxMenu(null); }, icon: 'M18 6L6 18M6 6l12 12', danger: true },
           ].filter(Boolean).map((item: any, i) => (
             <button
               key={i}
@@ -456,11 +449,12 @@ function WorkspaceRow({ ws, isActive, mode, index, totalCount, onSelect, onRenam
 // WorkspaceSidebarPanel — redesigned (full 220px / compact 52px)
 // ──────────────────────────────────────────────────────────────
 function WorkspaceSidebarPanel({
-  mode, onModeChange, workspaces, activeWorkspaceId,
+  mode, onModeChange, onToggleSidebar, workspaces, activeWorkspaceId,
   onSelectWorkspace, onCreateWorkspace, onCloseWorkspace, onRenameWorkspace,
 }: {
   mode: 'full' | 'compact';
   onModeChange: (m: 'full' | 'compact' | 'hidden') => void;
+  onToggleSidebar?: () => void;
   workspaces: Array<{ id: string; name: string; focusedPaneId: string; root: any }>;
   activeWorkspaceId: string | null;
   onSelectWorkspace: (id: string) => void;
@@ -468,6 +462,7 @@ function WorkspaceSidebarPanel({
   onCloseWorkspace: (id: string) => void;
   onRenameWorkspace?: (id: string, name: string) => void;
 }) {
+  const { t } = useTranslation();
   const width = mode === 'full' ? 220 : 52;
 
   return (
@@ -497,7 +492,7 @@ function WorkspaceSidebarPanel({
           {/* 新建按钮 */}
           <button
             onClick={onCreateWorkspace}
-            title="新建工作区"
+            title={t('terminal.workspaceNew')}
             style={{
               width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'transparent', border: 'none', borderRadius: 5,
@@ -512,8 +507,8 @@ function WorkspaceSidebarPanel({
           </button>
           {/* 折叠按钮 */}
           <button
-            onClick={() => onModeChange('compact')}
-            title="折叠侧栏"
+            onClick={() => onToggleSidebar?.()}
+            title={t('terminal.workspaceToggleSidebar')}
             style={{
               width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'transparent', border: 'none', borderRadius: 5,
@@ -532,7 +527,7 @@ function WorkspaceSidebarPanel({
         <div style={{ height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <button
             onClick={onCreateWorkspace}
-            title="新建工作区"
+            title={t('terminal.workspaceNew')}
             style={{
               width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'transparent', border: 'none', borderRadius: 6,
@@ -564,7 +559,7 @@ function WorkspaceSidebarPanel({
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: '0 auto 8px', display: 'block', opacity: 0.5 }}>
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
               </svg>
-              暂无工作区
+              {t('terminal.workspaceEmpty')}
             </div>
           )
         ) : (
@@ -605,7 +600,7 @@ function WorkspaceSidebarPanel({
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            新建工作区
+            {t('terminal.workspaceNew')}
           </button>
         </>
       )}

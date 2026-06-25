@@ -523,7 +523,16 @@
     "notAvailable": "الطرفية متاحة فقط في تطبيق سطح المكتب.",
     "empty": "لا توجد تبويبات مفتوحة",
     "newTab": "طرفية جديدة",
-    "renameHint": "انقر مرتين لإعادة التسمية"
+    "renameHint": "انقر مرتين لإعادة التسمية",
+    "workspaceNew": "مساحة عمل جديدة",
+    "workspaceEmpty": "لا توجد مساحات عمل",
+    "workspaceCollapse": "طي الشريط الجانبي",
+    "workspaceRename": "إعادة التسمية",
+    "workspaceClose": "إغلاق",
+    "workspaceCloseOthers": "إغلاق الأخرى",
+    "workspaceDuplicate": "نسخ مساحة العمل",
+    "workspaceDefault": "مساحة عمل جديدة",
+    "workspaceToggleSidebar": "تبديل الشريط الجانبي"
   },
   "offline": {
     "title": "غير متصل",

@@ -739,7 +739,16 @@
     "notAvailable": "终端仅在桌面应用中可用。",
     "empty": "暂无终端标签页",
     "newTab": "新建终端",
-    "renameHint": "双击重命名"
+    "renameHint": "双击重命名",
+    "workspaceNew": "新建工作区",
+    "workspaceEmpty": "暂无工作区",
+    "workspaceCollapse": "折叠侧栏",
+    "workspaceRename": "重命名",
+    "workspaceClose": "关闭",
+    "workspaceCloseOthers": "关闭其他",
+    "workspaceDuplicate": "复制工作区",
+    "workspaceDefault": "新工作区",
+    "workspaceToggleSidebar": "切换侧栏"
   },
   "offline": {
     "title": "未连接",

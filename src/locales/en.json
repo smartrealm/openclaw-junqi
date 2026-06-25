@@ -741,7 +741,16 @@
     "notAvailable": "Terminal is only available in the desktop app.",
     "empty": "No terminal tabs open",
     "newTab": "New Terminal",
-    "renameHint": "Double-click to rename"
+    "renameHint": "Double-click to rename",
+    "workspaceNew": "New Workspace",
+    "workspaceEmpty": "No workspaces",
+    "workspaceCollapse": "Collapse sidebar",
+    "workspaceRename": "Rename",
+    "workspaceClose": "Close",
+    "workspaceCloseOthers": "Close Others",
+    "workspaceDuplicate": "Duplicate Workspace",
+    "workspaceDefault": "New Workspace",
+    "workspaceToggleSidebar": "Toggle sidebar"
   },
   "offline": {
     "title": "Not Connected",
