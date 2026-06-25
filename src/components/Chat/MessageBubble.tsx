@@ -363,6 +363,7 @@ export const MessageBubble = memo(function MessageBubble({
   const activeAgentLetter = activeAgentName.charAt(0) || 'M';
   const [copied, setCopied] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [footerHovered, setFooterHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [errorActionDone, setErrorActionDone] = useState(false);
@@ -636,9 +637,12 @@ function stripInlineCodeTicks(md: string): string {
 
         {/* ── Footer: agent | time + duration | context | model | actions ── */}
         <div className={clsx(
-          'flex items-center mt-1 flex-wrap select-none group/actions',
+          'flex items-center mt-1 flex-wrap select-none',
           isUser && 'justify-end',
-        )} style={{ gap: 6, rowGap: 3 }}>
+        )} style={{ gap: 6, rowGap: 3 }}
+          onMouseEnter={() => setFooterHovered(true)}
+          onMouseLeave={() => setFooterHovered(false)}
+        >
 
           {/* Sender name (assistant only) */}
           {!isUser && (
@@ -715,8 +719,11 @@ function stripInlineCodeTicks(md: string): string {
             </span>
           )}
 
-          {/* ── Action buttons (own hover group, independent of bubble copy icon) ── */}
-          <span className="inline-flex items-center gap-0.5 opacity-0 group-hover/actions:opacity-100 transition-opacity duration-150 group/actions">
+          {/* ── Action buttons (show on footer hover, independent of bubble) ── */}
+          <span className={clsx(
+            'inline-flex items-center gap-0.5 transition-opacity duration-150',
+            (footerHovered || isUser) ? 'opacity-100' : 'opacity-0',
+          )}>
             {/* Dot separator */}
             <span className="text-aegis-border text-[10px] select-none">·</span>
             {/* Edit (user only) */}
