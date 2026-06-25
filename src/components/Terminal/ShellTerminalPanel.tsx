@@ -23,6 +23,10 @@ import {
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import { Plus, Terminal as TerminalIcon, Trash2, X, SplitSquareHorizontal, SplitSquareVertical } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
+import { PaneStatusBar } from "./PaneStatusBar";
+import { PaneComposerBar } from "./PaneComposerBar";
+import { PaneSearchBar } from "./PaneSearchBar";
+import type { Terminal as XTermType } from '@xterm/xterm';
 import "@xterm/xterm/css/xterm.css";
 
 interface ShellOutputEvent {
@@ -55,31 +59,45 @@ function computeShellTitle(shell: ShellSession): string {
 
 // ── kooky TabBarItem port: 40pt strip, cornerRadius 6, chromeActive bg,
 //    opacity 0.6 inactive foreground, hover-to-show close button,
-//    right-click context menu (Close / Close Others / Close All / Rename). ─
+//    right-click context menu: Close / Close Others / Close to Right / Close All / Rename
+//    + HTML5 drag-and-drop reorder (Windows/macOS/Linux)
+//    + inline rename popover (no native prompt())
 
 interface TabShellItemProps {
   title: string;
   selected: boolean;
+  index: number;
+  totalCount: number;
   onSelect: () => void;
   onClose: (e: React.MouseEvent) => void;
   onCloseOthers?: () => void;
   onCloseAll?: () => void;
+  onCloseToRight?: () => void;
   onRename?: (name: string) => void;
+  onDragStart?: (index: number) => void;
+  onDragEnter?: (index: number) => void;
+  onDragEnd?: () => void;
 }
 
 function TabShellItem({
-  title,
-  selected,
-  onSelect,
-  onClose,
-  onCloseOthers,
-  onCloseAll,
-  onRename,
+  title, selected, index, totalCount,
+  onSelect, onClose, onCloseOthers, onCloseAll, onCloseToRight, onRename,
+  onDragStart, onDragEnter, onDragEnd,
 }: TabShellItemProps) {
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
-  // Click-outside dismiss
+  useEffect(() => {
+    if (renaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renaming]);
+
   useEffect(() => {
     if (!ctxMenu) return;
     const handler = () => setCtxMenu(null);
@@ -87,63 +105,77 @@ function TabShellItem({
     return () => document.removeEventListener('mousedown', handler);
   }, [ctxMenu]);
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setCtxMenu({ x: e.clientX, y: e.clientY });
-  };
-
   const menuItemStyle: React.CSSProperties = {
-    padding: '4px 12px',
-    fontSize: 11,
-    cursor: 'pointer',
-    color: 'rgb(var(--aegis-text))',
-    fontFamily: '"JetBrains Mono", monospace',
-    whiteSpace: 'nowrap',
-    background: 'transparent',
-    border: 'none',
-    textAlign: 'left' as const,
-    width: '100%',
+    padding: '4px 12px', fontSize: 11, cursor: 'pointer',
+    color: 'rgb(var(--aegis-text))', fontFamily: '"JetBrains Mono", monospace',
+    whiteSpace: 'nowrap', background: 'transparent', border: 'none',
+    textAlign: 'left' as const, width: '100%',
   };
+  const menuHover = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; };
+  const menuLeave = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; };
+
+  const startRename = () => { setRenameValue(title); setRenaming(true); setCtxMenu(null); };
+  const commitRename = () => { const v = renameValue.trim(); if (v) onRename?.(v); setRenaming(false); };
 
   return (
     <>
       <div
+        draggable
         onClick={onSelect}
-        onContextMenu={handleContextMenu}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
         onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseLeave={() => { setHovered(false); setDragOver(false); }}
+        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(index); }}
+        onDragEnter={(e) => { e.preventDefault(); setDragOver(true); onDragEnter?.(index); }}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+        onDragLeave={() => setDragOver(false)}
+        onDragEnd={() => { setDragOver(false); onDragEnd?.(); }}
         style={{
           display: "flex", alignItems: "center", gap: 7,
-          padding: "7px 12px", height: 40, minWidth: 0,
+          padding: "5px 10px", height: 32, minWidth: 0,
           borderRadius: 6, flexShrink: 0, cursor: "pointer",
-          background: selected
-            ? "rgb(var(--aegis-overlay)/0.10)"
-            : hovered
-              ? "rgb(var(--aegis-overlay)/0.06)"
-              : "transparent",
-          color: selected
-            ? "rgb(var(--aegis-text))"
-            : "rgb(var(--aegis-text)/0.6)",
+          background: dragOver ? "rgb(var(--aegis-primary)/0.15)"
+            : selected ? "rgb(var(--aegis-overlay)/0.10)"
+            : hovered ? "rgb(var(--aegis-overlay)/0.06)"
+            : "transparent",
+          color: selected ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text)/0.6)",
           transition: "background 0.12s",
+          outline: dragOver ? "1px solid rgb(var(--aegis-primary)/0.4)" : "none",
+          outlineOffset: -1,
         }}
       >
-        <TerminalIcon
-          size={12}
-          color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"}
-        />
-        <span style={{
-          fontSize: 12, fontWeight: 400, whiteSpace: "nowrap",
-          overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160,
-        }}>
-          {title}
-        </span>
+        <TerminalIcon size={12} color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"} />
+        {renaming ? (
+          <input
+            ref={renameInputRef}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+              if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); }
+              e.stopPropagation();
+            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              fontSize: 12,
+              background: 'rgb(var(--aegis-surface))',
+              border: '1px solid rgb(var(--aegis-primary)/0.5)',
+              borderRadius: 3, color: 'rgb(var(--aegis-text))',
+              padding: '0 4px', height: 20, width: 120,
+              fontFamily: '"JetBrains Mono", monospace', outline: 'none',
+            }}
+          />
+        ) : (
+          <span style={{ fontSize: 12, fontWeight: 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>
+            {title}
+          </span>
+        )}
         <button
-          onClick={onClose}
+          onClick={(e) => { e.stopPropagation(); onClose(e); }}
           title="Close"
           style={{
-            background: "none", border: "none",
-            color: "rgb(var(--aegis-text-dim))",
+            background: "none", border: "none", color: "rgb(var(--aegis-text-dim))",
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: 1, borderRadius: 3, cursor: "pointer",
             opacity: (hovered || selected) ? 1 : 0,
@@ -155,72 +187,37 @@ function TabShellItem({
         </button>
       </div>
 
-      {/* Context menu (kooky right-click on tab) */}
       {ctxMenu && (
-        <div
-          style={{
-            position: 'fixed',
-            left: ctxMenu.x,
-            top: ctxMenu.y,
-            zIndex: 200,
-            background: 'rgb(var(--aegis-elevated))',
-            border: '1px solid rgb(255 255 255 / 0.08)',
-            borderRadius: 6,
-            boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
-            padding: '4px 0',
-            minWidth: 140,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <button
-            style={menuItemStyle}
-            onClick={() => { onClose(null as any); setCtxMenu(null); }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >
-            Close
-          </button>
-          {onCloseOthers && (
-            <button
-              style={menuItemStyle}
-              onClick={() => { onCloseOthers(); setCtxMenu(null); }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              Close Others
-            </button>
+        <div style={{
+          position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 200,
+          background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(255 255 255 / 0.08)',
+          borderRadius: 6, boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
+          padding: '4px 0', minWidth: 180, display: 'flex', flexDirection: 'column',
+        }}>
+          <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            onClick={() => { onClose(null as any); setCtxMenu(null); }}>Close</button>
+          {onCloseOthers && totalCount > 1 && (
+            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+              onClick={() => { onCloseOthers(); setCtxMenu(null); }}>Close Others</button>
+          )}
+          {onCloseToRight && index < totalCount - 1 && (
+            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+              onClick={() => { onCloseToRight(); setCtxMenu(null); }}>Close Tabs to the Right</button>
           )}
           {onCloseAll && (
-            <button
-              style={menuItemStyle}
-              onClick={() => { onCloseAll(); setCtxMenu(null); }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              Close All
-            </button>
+            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+              onClick={() => { onCloseAll(); setCtxMenu(null); }}>Close All</button>
           )}
+          <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onRename && (
-            <button
-              style={menuItemStyle}
-              onClick={() => {
-                const name = prompt('Rename tab:', title);
-                if (name && name.trim()) onRename(name.trim());
-                setCtxMenu(null);
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              Rename…
-            </button>
+            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+              onClick={startRename}>Rename...</button>
           )}
         </div>
       )}
     </>
   );
 }
-
 interface ShellTerminalInstanceHandle {
   sendCommand: (cmd: string) => void;
 }
@@ -251,6 +248,10 @@ interface Props {
     label?: string;
     projectPath?: string;
   };
+  /** kooky StatusBarIconButton zoom — wired from PaneTreeView */
+  canZoom?: boolean;
+  isZoomed?: boolean;
+  onZoom?: () => void;
 }
 
 const MAX_SHELLS = 5;
@@ -562,6 +563,9 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       onSplitVertical,
       height = 240,
       onResizeStart,
+      canZoom,
+      isZoomed,
+      onZoom,
     },
     ref,
   ) {
@@ -572,6 +576,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     }
 
     const nextShellIndexRef = useRef(2);
+    const dragSrcIdxRef = useRef<number | null>(null);
+    const dragDstIdxRef = useRef<number | null>(null);
     const shellRefs = useRef<Record<string, ShellTerminalInstanceHandle | null>>({});
     const [shells, setShells] = useState<ShellSession[]>(() => [initialShellRef.current!]);
     const [activeShellId, setActiveShellId] = useState<string | null>(() => initialShellRef.current!.id);
@@ -589,6 +595,29 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       }),
       [],
     );
+
+    // ── kooky ComposerBar 状态 ──
+    const [composerOpen, setComposerOpen] = useState(false);
+    const [composerDraft, setComposerDraft] = useState("");
+    const [searchOpen, setSearchOpen] = useState(false);
+    const activeTermRef = useRef<XTermType | null>(null);
+
+    // ── ⌘L / Ctrl+L 快捷键 — 切换 ComposerBar ──
+    useEffect(() => {
+      const handler = (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "l") {
+          e.preventDefault();
+          setComposerOpen((v) => !v);
+        }
+        // Ctrl+F / Cmd+F — kooky PaneSearchBar
+        if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+          e.preventDefault();
+          setSearchOpen((v) => !v);
+        }
+      };
+      window.addEventListener("keydown", handler);
+      return () => window.removeEventListener("keydown", handler);
+    }, []);
 
     const handleAddShell = useCallback(() => {
       if (shells.length >= MAX_SHELLS) return;
@@ -647,9 +676,9 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
         )}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           {/* Tab strip — kooky TabBarView 1:1 (chromeBackground = terminal-bg) */}
-          <div style={{ display: "flex", alignItems: "center", height: 40, flexShrink: 0, padding: "0 8px", gap: 2, background: "var(--terminal-bg)" }}>
+          <div style={{ display: "flex", alignItems: "center", height: 32, flexShrink: 0, padding: "0 8px", gap: 2, background: "var(--terminal-bg)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 2, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
-              {shells.map((shell) => {
+              {shells.map((shell, idx) => {
                 const selected = activeShellId === shell.id;
                 const tabTitle = computeShellTitle(shell);
                 return (
@@ -657,13 +686,24 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                     key={shell.id}
                     title={tabTitle}
                     selected={selected}
+                    index={idx}
+                    totalCount={shells.length}
                     onSelect={() => setActiveShellId(shell.id)}
                     onClose={(e) => { e.stopPropagation(); handleCloseShell(shell.id); }}
                     onCloseOthers={() => {
-                      const otherIds = shells.filter((s) => s.id !== shell.id).map((s) => s.id);
-                      otherIds.forEach((id) => { delete shellRefs.current[id]; });
+                      const toClose = shells.filter((s) => s.id !== shell.id);
+                      toClose.forEach((s) => { delete shellRefs.current[s.id]; });
                       setShells([shell]);
                       setActiveShellId(shell.id);
+                    }}
+                    onCloseToRight={() => {
+                      const toClose = shells.slice(idx + 1);
+                      toClose.forEach((s) => { delete shellRefs.current[s.id]; });
+                      const next = shells.slice(0, idx + 1);
+                      setShells(next);
+                      if (activeShellId && toClose.some((s) => s.id === activeShellId)) {
+                        setActiveShellId(shell.id);
+                      }
                     }}
                     onCloseAll={() => {
                       shells.forEach((s) => { delete shellRefs.current[s.id]; });
@@ -674,6 +714,22 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       setShells((prev) => prev.map((s) =>
                         s.id === shell.id ? { ...s, title: name } : s,
                       ));
+                    }}
+                    onDragStart={(i) => { dragSrcIdxRef.current = i; }}
+                    onDragEnter={(i) => { dragDstIdxRef.current = i; }}
+                    onDragEnd={() => {
+                      const si = dragSrcIdxRef.current;
+                      const di = dragDstIdxRef.current;
+                      if (si !== null && di !== null && si !== di) {
+                        setShells((prev) => {
+                          const next = [...prev];
+                          const [moved] = next.splice(si, 1);
+                          next.splice(di, 0, moved);
+                          return next;
+                        });
+                      }
+                      dragSrcIdxRef.current = null;
+                      dragDstIdxRef.current = null;
                     }}
                   />
                 );
@@ -709,6 +765,11 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
               (foreground.opacity(0.07) in dark) */}
           <div style={{ height: 1, background: "rgb(255 255 255 / 0.07)", flexShrink: 0 }}></div>
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative" }}>
+            <PaneSearchBar
+              term={activeTermRef.current}
+              isOpen={searchOpen}
+              onClose={() => setSearchOpen(false)}
+            />
             {shells.map((shell) => (
               <ShellTerminalInstance
                 key={shell.id}
@@ -725,6 +786,27 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
               />
             ))}
           </div>
+          {/* kooky PaneStatusBar — 底部状态栏 */}
+          <PaneStatusBar
+            projectPath={projectPath}
+            paneId={projectId}
+            onToggleComposer={() => setComposerOpen((v) => !v)}
+            canZoom={canZoom}
+            isZoomed={isZoomed}
+            onZoom={onZoom}
+          />
+          {/* kooky PaneComposerBar — ⌘L 内嵌输入框 */}
+          <PaneComposerBar
+            isOpen={composerOpen}
+            draft={composerDraft}
+            onDraftChange={setComposerDraft}
+            onSend={(text) => {
+              const sid = activeShellIdRef.current;
+              if (sid) invoke("send_input", { taskId: sid, data: text + "\n" }).catch(() => {});
+              setComposerOpen(false);
+            }}
+            onClose={() => setComposerOpen(false)}
+          />
         </div>
       </div>
     );

@@ -41,6 +41,7 @@ function PaneNodeRenderer({
   onFocus,
   onSplit,
   onClose,
+  onZoom,
   themeVariant,
   terminalFontSize,
   monoFontFamily,
@@ -54,6 +55,7 @@ function PaneNodeRenderer({
   onFocus: (id: string) => void;
   onSplit: (leafId: string, direction: SplitDirection) => void;
   onClose: (leafId: string) => void;
+  onZoom: (paneId: string) => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
@@ -75,6 +77,8 @@ function PaneNodeRenderer({
           position: 'relative',
           outline: isFocused ? '1px solid rgb(var(--aegis-primary)/0.3)' : 'none',
           outlineOffset: -1,
+          opacity: isFocused ? 1 : 0.5,
+          transition: 'opacity 0.15s',
         }}
         onClick={() => !isFocused && onFocus(node.id)}
       >
@@ -89,6 +93,9 @@ function PaneNodeRenderer({
           onClose={() => onClose(node.id)}
           onSplitHorizontal={() => onSplit(node.id, 'horizontal')}
           onSplitVertical={() => onSplit(node.id, 'vertical')}
+          canZoom={true}
+          isZoomed={zoomedPaneId === node.id}
+          onZoom={() => onZoom(node.id)}
         />
       </div>
     );
@@ -105,6 +112,7 @@ function PaneNodeRenderer({
       onFocus={onFocus}
       onSplit={onSplit}
       onClose={onClose}
+      onZoom={onZoom}
       themeVariant={themeVariant}
       terminalFontSize={terminalFontSize}
       monoFontFamily={monoFontFamily}
@@ -124,6 +132,7 @@ function SplitRenderer({
   onFocus,
   onSplit,
   onClose,
+  onZoom,
   themeVariant,
   terminalFontSize,
   monoFontFamily,
@@ -137,6 +146,7 @@ function SplitRenderer({
   onFocus: (id: string) => void;
   onSplit: (leafId: string, direction: SplitDirection) => void;
   onClose: (leafId: string) => void;
+  onZoom: (paneId: string) => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
@@ -213,6 +223,7 @@ function SplitRenderer({
           onFocus={onFocus}
           onSplit={onSplit}
           onClose={onClose}
+          onZoom={onZoom}
           themeVariant={themeVariant}
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
@@ -296,6 +307,7 @@ function SplitRenderer({
           onFocus={onFocus}
           onSplit={onSplit}
           onClose={onClose}
+          onZoom={onZoom}
           themeVariant={themeVariant}
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
@@ -465,6 +477,7 @@ export function PaneTreeView({
         }}
         onSplit={handleSplit}
         onClose={handleClose}
+        onZoom={(id) => setZoomedPaneId((prev) => prev === id ? null : id)}
         themeVariant={themeVariant}
         terminalFontSize={terminalFontSize}
         monoFontFamily={monoFontFamily}

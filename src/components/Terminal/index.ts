@@ -4,3 +4,7 @@ export { TerminalView } from './TerminalView';
 export { AgentOverviewPanel } from './AgentOverviewPanel';
 export type { AgentMonitorEntry, AgentPanelMode } from './AgentOverviewPanel';
 export { PaneTreeView } from './PaneTreeView';
+export { PaneStatusBar } from './PaneStatusBar';
+export type { PaneStatusBarProps } from './PaneStatusBar';
+export { PaneComposerBar } from './PaneComposerBar';
+export type { PaneComposerBarProps } from './PaneComposerBar';

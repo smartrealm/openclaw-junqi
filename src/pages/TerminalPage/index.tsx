@@ -12,7 +12,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { FileExplorer } from "@/components/FileExplorer";
 import { GitChanges } from "@/components/Git";
 import { GitHistory } from "@/components/Git";
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { homeDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 // (loadTools/mergeDetected were used by the removed AgentLaunchBar — no longer needed)
@@ -58,6 +58,25 @@ export function TerminalPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [agentPanelMode, setAgentPanelMode] = useState<AgentPanelMode>('full');
 
+  // ── kooky WorkspaceSidebar 三态 ──
+  type SidebarMode = 'full' | 'compact' | 'hidden';
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('hidden');
+  const cycleSidebarMode = () => setSidebarMode((m) =>
+    m === 'hidden' ? 'full' : m === 'full' ? 'compact' : 'hidden'
+  );
+
+  // ── kooky CommandPalette (⌘P) ──
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+
+  // ── kooky InboxBell + InboxPanel (⌘⇧I) ──
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxEvents, setInboxEvents] = useState<Array<{ id: string; title: string; body: string; time: number; read: boolean }>>([]);
+  const unreadCount = inboxEvents.filter((e) => !e.read).length;
+
+  // ── 从 store 读取工作区列表 ──
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+
   const togglePanel = useCallback((panel: RightPanel) => {
     setRightPanel((prev) => (prev === panel ? null : panel));
   }, []);
@@ -98,22 +117,94 @@ export function TerminalPage() {
     return () => window.removeEventListener("junqi:run-terminal-command", handler);
   }, []);
 
+  // ── kooky 全局快捷键 ⌘P / ⌃⌘S ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+        e.preventDefault();
+        setCmdPaletteOpen((v) => !v);
+      }
+      // ⌃⌘S 切换侧栏
+      if ((e.metaKey || e.ctrlKey) && e.ctrlKey && e.key === "s") {
+        e.preventDefault();
+        cycleSidebarMode();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   return (
     <div style={{ display: "flex", flex: 1, flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--terminal-bg)" }}>
-      {/* ── kooky 32pt top strip ── */}
+      {/* ── kooky 32pt top strip — [侧栏切换] [── 拖拽 + 搜索 ──] [智能体] [铃铛] ── */}
       <div style={{ height: 32, flexShrink: 0, display: "flex", alignItems: "center", padding: "0 8px 0 0", gap: 0, borderBottom: "1px solid rgb(255 255 255 / 0.07)" }}>
         <div style={{ width: 82, flexShrink: 0 }} />
-        <div style={{ flex: 1 }} />
+        {/* 侧栏三态切换：full → compact → hidden，快捷键 ⌃⌘S */}
+        <button
+          title="切换侧栏 (⌃⌘S)"
+          onClick={cycleSidebarMode}
+          style={{
+            width: 28, height: 28, display: "flex", alignItems: "center",
+            justifyContent: "center", border: "none", background: "transparent",
+            borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer",
+          }}
+        >
+          {/* 侧栏图标：三条横线 + 矩形外框 */}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <line x1="9" y1="3" x2="9" y2="21"/>
+          </svg>
+        </button>
+        <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+          {/* kooky SearchTriggerPill — ⌘P 快速打开 */}
+          <button
+            onClick={() => setCmdPaletteOpen(true)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "0 12px", height: 22, borderRadius: 11,
+              border: "1px solid rgb(255 255 255 / 0.1)",
+              background: "rgb(var(--aegis-overlay)/0.04)",
+              color: "rgb(var(--aegis-text-dim))", cursor: "pointer",
+              fontSize: 11, fontFamily: '"JetBrains Mono", monospace',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            快速打开
+            <span style={{ opacity: 0.5 }}>⌘P</span>
+          </button>
+        </div>
         <button title="Open Agent Panel" onClick={() => togglePanel("agents")} style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer" }}>
           {Icon.chrome.grid}
         </button>
-        <button title="Notifications" style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer", position: "relative" }}>
+        {/* kooky InboxBell — 铃铛 + 红点 */}
+        <button
+          title="通知收件箱 (⌘⇧I)"
+          onClick={() => setInboxOpen((v) => !v)}
+          style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer", position: "relative" }}
+        >
           {Icon.chrome.bell}
-          <span style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: 3, background: "rgb(var(--aegis-status-running))" }} />
+          {unreadCount > 0 && (
+            <span style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: 3, background: "rgb(239 68 68)" }} />
+          )}
         </button>
       </div>
 
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        {/* kooky WorkspaceSidebar — 左侧工作区侧栏（三态：full 220px / compact 52px） */}
+        {sidebarMode !== "hidden" && (
+          <WorkspaceSidebarPanel
+            mode={sidebarMode}
+            onModeChange={setSidebarMode}
+            workspaces={workspaces}
+            activeWorkspaceId={activeWorkspaceId}
+            onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
+            onCreateWorkspace={() => useWorkspaceStore.getState().createWorkspace()}
+            onCloseWorkspace={(id) => useWorkspaceStore.getState().closeWorkspace(id)}
+            onRenameWorkspace={(id, name) => useWorkspaceStore.getState().renameWorkspace(id, name)}
+          />
+        )}
         {/* Main terminal area — kooky 1:1: tab strip at top, terminal fills below */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
           <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -194,6 +285,23 @@ export function TerminalPage() {
         <IconBtn icon={Icon.nav.history} label="History" active={rightPanel === "git-history"} onClick={() => togglePanel("git-history")} />
       </div>
       </div>
+
+      {/* kooky InboxPanel — ⌘⇧I 通知收件箱 */}
+      <InboxPanel
+        open={inboxOpen}
+        onClose={() => setInboxOpen(false)}
+        events={inboxEvents}
+        onMarkAllRead={() => setInboxEvents((prev) => prev.map((e) => ({ ...e, read: true })))}
+        onClear={() => setInboxEvents([])}
+      />
+      {/* kooky CommandPalette — ⌘P */}
+      <CommandPaletteModal
+        open={cmdPaletteOpen}
+        onClose={() => setCmdPaletteOpen(false)}
+        workspaces={workspaces}
+        onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
+        onCreateWorkspace={() => useWorkspaceStore.getState().createWorkspace()}
+      />
     </div>
   );
 }
@@ -203,5 +311,437 @@ function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; labe
     <button onClick={onClick} title={label} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "rgba(var(--aegis-primary) / 0.10)" : "transparent", color: active ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-muted))", transition: "background 0.12s, color 0.12s" }}>
       {icon}
     </button>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// kooky SidebarView 1:1 port — 工作区侧栏（三态：full 220px / compact 52px）
+// ──────────────────────────────────────────────────────────────
+
+// ── WorkspaceRow — workspace item in sidebar with inline rename (kooky SidebarWorkspaceRow) ──
+function WorkspaceRow({ ws, isActive, mode, onSelect, onRename }: {
+  ws: { id: string; name: string };
+  isActive: boolean;
+  mode: 'full' | 'compact';
+  onSelect: () => void;
+  onRename?: (name: string) => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState('');
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const shortName = ws.name || '新工作区';
+
+  useEffect(() => {
+    if (renaming && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+  }, [renaming]);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const h = () => setCtxMenu(null);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [ctxMenu]);
+
+  const commit = () => {
+    const v = renameVal.trim();
+    if (v) onRename?.(v);
+    setRenaming(false);
+  };
+
+  return (
+    <>
+      <div
+        onClick={() => { if (!renaming) onSelect(); }}
+        onContextMenu={(e) => { if (mode === 'full' && onRename) { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); } }}
+        title={mode === 'compact' ? shortName : undefined}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: mode === 'full' ? '0 12px' : '0',
+          justifyContent: mode === 'compact' ? 'center' : 'flex-start',
+          height: 36, cursor: 'pointer',
+          background: isActive ? 'rgb(var(--aegis-overlay)/0.10)' : 'transparent',
+          borderLeft: isActive ? '2px solid rgb(var(--aegis-primary))' : '2px solid transparent',
+        }}
+        onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
+        onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isActive ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))'} strokeWidth="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        {mode === 'full' && (
+          renaming ? (
+            <input
+              ref={inputRef}
+              value={renameVal}
+              onChange={(e) => setRenameVal(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commit(); }
+                if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); }
+                e.stopPropagation();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                flex: 1, fontSize: 12, fontFamily: '"JetBrains Mono", monospace',
+                background: 'rgb(var(--aegis-surface))',
+                border: '1px solid rgb(var(--aegis-primary)/0.5)',
+                borderRadius: 3, color: 'rgb(var(--aegis-text))',
+                padding: '0 4px', height: 22, outline: 'none',
+              }}
+            />
+          ) : (
+            <span style={{
+              flex: 1, fontSize: 12, fontFamily: '"JetBrains Mono", monospace',
+              color: isActive ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{shortName}</span>
+          )
+        )}
+        {isActive && !renaming && (
+          <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: 'rgb(var(--aegis-primary))', boxShadow: '0 0 4px rgb(var(--aegis-primary))' }} />
+        )}
+      </div>
+      {ctxMenu && (
+        <div style={{
+          position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 300,
+          background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(255 255 255 / 0.08)',
+          borderRadius: 6, boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
+          padding: '4px 0', minWidth: 140, display: 'flex', flexDirection: 'column',
+        }}>
+          <button
+            style={{ padding: '4px 12px', fontSize: 11, cursor: 'pointer', color: 'rgb(var(--aegis-text))', fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap', background: 'transparent', border: 'none', textAlign: 'left' as const, width: '100%' }}
+            onClick={() => { setRenameVal(shortName); setRenaming(true); setCtxMenu(null); }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >重命名</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function WorkspaceSidebarPanel({
+  mode, onModeChange, workspaces, activeWorkspaceId, onSelectWorkspace, onCreateWorkspace, onCloseWorkspace, onRenameWorkspace,
+}: {
+  mode: 'full' | 'compact';
+  onModeChange: (m: 'full' | 'compact' | 'hidden') => void;
+  workspaces: Array<{ id: string; name: string; focusedPaneId: string; root: any }>;
+  activeWorkspaceId: string | null;
+  onSelectWorkspace: (id: string) => void;
+  onCreateWorkspace: () => void;
+  onCloseWorkspace: (id: string) => void;
+  onRenameWorkspace?: (id: string, name: string) => void;
+}) {
+  const width = mode === 'full' ? 220 : 52;
+  return (
+    <div style={{
+      width, flexShrink: 0, display: 'flex', flexDirection: 'column',
+      borderRight: '1px solid rgb(255 255 255 / 0.07)',
+      background: 'rgb(var(--aegis-surface))',
+      transition: 'width 0.15s',
+      overflow: 'hidden',
+    }}>
+      {/* 标题栏（full 模式） */}
+      {mode === 'full' && (
+        <div style={{ height: 32, display: 'flex', alignItems: 'center', padding: '0 12px', gap: 6, flexShrink: 0 }}>
+          <span style={{ flex: 1, fontSize: 11, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))', fontWeight: 500, letterSpacing: '0.06em' }}>
+            工作区
+          </span>
+          <button
+            onClick={onCreateWorkspace}
+            title="新建工作区"
+            style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', borderRadius: 4, color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer', fontSize: 16 }}
+          >+</button>
+        </div>
+      )}
+      {/* 1px 分隔线 */}
+      <div style={{ height: 1, flexShrink: 0, background: 'rgb(255 255 255 / 0.07)' }} />
+      {/* 工作区列表 */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+        {workspaces.map((ws) => (
+          <WorkspaceRow
+            key={ws.id}
+            ws={ws}
+            isActive={ws.id === activeWorkspaceId}
+            mode={mode}
+            onSelect={() => onSelectWorkspace(ws.id)}
+            onRename={onRenameWorkspace ? (name) => onRenameWorkspace(ws.id, name) : undefined}
+          />
+        ))}
+      </div>
+      {/* 折叠按钮 */}
+      {mode === 'full' && (
+        <button
+          onClick={() => onModeChange('compact')}
+          style={{ height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', borderTop: '1px solid rgb(255 255 255 / 0.07)', color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer', fontSize: 10, fontFamily: '"JetBrains Mono", monospace' }}
+        >
+          折叠
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// kooky CommandPaletteWindowController 1:1 port — fuzzy search, arrow key nav
+// Supported item kinds: workspace switch, new workspace.
+// Fuzzy scorer: prefix +10, word-boundary +5, consecutive chars +3.
+// ──────────────────────────────────────────────────────────────
+
+/** Simple fuzzy score: higher is better match, -Infinity means no match. */
+function fuzzyScore(query: string, text: string): number {
+  if (!query) return 0;
+  const q = query.toLowerCase();
+  const t = text.toLowerCase();
+  if (!q) return 0;
+  let score = 0;
+  let qi = 0;
+  let lastMatch = -1;
+  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+    if (t[ti] === q[qi]) {
+      // consecutive bonus
+      if (lastMatch === ti - 1) score += 3;
+      // word boundary bonus
+      if (ti === 0 || t[ti - 1] === ' ' || t[ti - 1] === '-' || t[ti - 1] === '_' || t[ti - 1] === '/') score += 5;
+      // prefix bonus
+      if (ti === 0) score += 10;
+      score += 1;
+      lastMatch = ti;
+      qi++;
+    }
+  }
+  // Must match all query chars
+  if (qi < q.length) return -Infinity;
+  return score;
+}
+
+interface PaletteItem {
+  id: string;
+  label: string;
+  subtitle?: string;
+  kind: 'workspace' | 'new-workspace';
+}
+
+function CommandPaletteModal({
+  open, onClose, workspaces, onSelectWorkspace, onCreateWorkspace,
+}: {
+  open: boolean;
+  onClose: () => void;
+  workspaces: Array<{ id: string; name: string }>;
+  onSelectWorkspace: (id: string) => void;
+  onCreateWorkspace: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open) { setTimeout(() => inputRef.current?.focus(), 50); setQuery(''); setSelectedIdx(0); }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  // Build scored, sorted items
+  const items = useMemo((): PaletteItem[] => {
+    const ws: PaletteItem[] = workspaces.map((w) => ({
+      id: w.id, label: w.name || '新工作区', kind: 'workspace',
+    }));
+    const newWs: PaletteItem = { id: '__new__', label: '新建工作区', kind: 'new-workspace' };
+    if (!query) return [...ws, newWs];
+    const scored = ws
+      .map((item) => ({ item, score: fuzzyScore(query, item.label) }))
+      .filter((x) => x.score > -Infinity)
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.item);
+    // "new workspace" only if query roughly matches
+    if (fuzzyScore(query, '新建工作区') > -Infinity || fuzzyScore(query, 'new workspace') > -Infinity) {
+      scored.push(newWs);
+    }
+    return scored;
+  }, [query, workspaces]);
+
+  // Clamp selectedIdx
+  useEffect(() => {
+    setSelectedIdx((prev) => Math.min(prev, Math.max(0, items.length - 1)));
+  }, [items.length]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIdx((prev) => Math.min(prev + 1, items.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIdx((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const item = items[selectedIdx];
+      if (item) {
+        if (item.kind === 'new-workspace') { onCreateWorkspace(); }
+        else { onSelectWorkspace(item.id); }
+        onClose();
+      }
+    }
+  }, [items, selectedIdx, onSelectWorkspace, onCreateWorkspace, onClose]);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    if (!listRef.current) return;
+    const el = listRef.current.children[selectedIdx] as HTMLElement | undefined;
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIdx]);
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgb(0 0 0 / 0.5)' }} />
+      <div style={{
+        position: 'fixed', top: '18%', left: '50%', transform: 'translateX(-50%)',
+        zIndex: 1000, width: 500, maxHeight: 420,
+        background: 'rgb(var(--aegis-elevated))',
+        border: '1px solid rgb(255 255 255 / 0.12)',
+        borderRadius: 10, boxShadow: '0 20px 60px rgb(0 0 0 / 0.6)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+        {/* Search input */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgb(255 255 255 / 0.07)' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--aegis-text-dim))" strokeWidth="2.5">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setSelectedIdx(0); }}
+            onKeyDown={handleKeyDown}
+            placeholder="搜索工作区、操作…"
+            style={{
+              flex: 1, background: 'transparent', border: 'none', outline: 'none',
+              fontSize: 13, fontFamily: '"JetBrains Mono", monospace',
+              color: 'rgb(var(--aegis-text))',
+            }}
+          />
+          <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.5 }}>ESC 关闭</span>
+        </div>
+        {/* Results */}
+        <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+          {items.length === 0 && (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'rgb(var(--aegis-text-dim))', fontSize: 12, fontFamily: '"JetBrains Mono", monospace' }}>
+              无结果
+            </div>
+          )}
+          {items.map((item, idx) => {
+            const isSelected = idx === selectedIdx;
+            const isNew = item.kind === 'new-workspace';
+            return (
+              <div
+                key={item.id}
+                onClick={() => {
+                  if (isNew) onCreateWorkspace(); else onSelectWorkspace(item.id);
+                  onClose();
+                }}
+                onMouseEnter={() => setSelectedIdx(idx)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '0 14px', height: 40, cursor: 'pointer',
+                  background: isSelected ? 'rgb(var(--aegis-overlay)/0.10)' : 'transparent',
+                  borderTop: isNew ? '1px solid rgb(255 255 255 / 0.07)' : 'none',
+                  marginTop: isNew ? 4 : 0,
+                }}
+              >
+                {isNew ? (
+                  <span style={{ fontSize: 14, color: 'rgb(var(--aegis-primary))' }}>+</span>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--aegis-text-dim))" strokeWidth="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                )}
+                <span style={{
+                  fontSize: 12, fontFamily: '"JetBrains Mono", monospace',
+                  color: isNew ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text))',
+                  flex: 1,
+                }}>
+                  {item.label}
+                </span>
+                {isSelected && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--aegis-text-dim))" strokeWidth="2">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+// ──────────────────────────────────────────────────────────────
+// kooky AgentInbox 1:1 port — ⌘⇧I 通知收件箱
+// ──────────────────────────────────────────────────────────────
+
+function InboxPanel({
+  open, onClose, events, onMarkAllRead, onClear,
+}: {
+  open: boolean;
+  onClose: () => void;
+  events: Array<{ id: string; title: string; body: string; time: number; read: boolean }>;
+  onMarkAllRead: () => void;
+  onClear: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+      <div style={{
+        position: 'fixed', top: 40, right: 52, zIndex: 999,
+        width: 360, maxHeight: 480,
+        background: 'rgb(var(--aegis-elevated))',
+        border: '1px solid rgb(255 255 255 / 0.10)',
+        borderRadius: 10, boxShadow: '0 16px 48px rgb(0 0 0 / 0.5)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+        {/* 标题栏 */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '0 14px', height: 40, borderBottom: '1px solid rgb(255 255 255 / 0.07)', flexShrink: 0 }}>
+          <span style={{ flex: 1, fontSize: 12, fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, color: 'rgb(var(--aegis-text))' }}>
+            通知
+          </span>
+          <button onClick={onMarkAllRead} title="全部已读" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgb(var(--aegis-text-dim))', padding: '2px 6px', fontSize: 10, fontFamily: '"JetBrains Mono", monospace' }}>
+            全部已读
+          </button>
+          <button onClick={onClear} title="清空" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgb(var(--aegis-text-dim))', padding: '2px 6px', fontSize: 10, fontFamily: '"JetBrains Mono", monospace' }}>
+            清空
+          </button>
+        </div>
+        {/* 内容 */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {events.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 160, gap: 8, color: 'rgb(var(--aegis-text-dim))', opacity: 0.5 }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span style={{ fontSize: 11, fontFamily: '"JetBrains Mono", monospace' }}>暂无通知</span>
+            </div>
+          ) : (
+            events.map((ev) => (
+              <div key={ev.id} style={{ display: 'flex', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgb(255 255 255 / 0.05)', opacity: ev.read ? 0.6 : 1 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 4, flexShrink: 0, background: ev.read ? 'transparent' : 'rgb(59 130 246)', border: ev.read ? '1.5px solid rgb(var(--aegis-text-dim))' : 'none' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text))', fontWeight: 500 }}>{ev.title}</div>
+                  <div style={{ fontSize: 11, color: 'rgb(var(--aegis-text-dim))', marginTop: 2 }}>{ev.body}</div>
+                </div>
+                <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.6, flexShrink: 0 }}>
+                  {new Date(ev.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
   );
 }

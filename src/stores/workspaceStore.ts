@@ -43,6 +43,7 @@ interface WorkspaceStoreState {
   updateLeafConfig: (leafId: string, patch: Partial<LeafConfig>) => void;
   addShellPane: () => string;
   addAgentPane: (agent?: string) => string;
+  renameWorkspace: (id: string, name: string) => void;
 }
 
 function updateActive(
@@ -173,6 +174,12 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         })));
         return id;
       },
+
+      renameWorkspace: (id, name) => set((s) => ({
+        workspaces: s.workspaces.map((w) =>
+          w.id === id ? { ...w, name: name.trim() || w.name } : w
+        ),
+      })),
     }),
     {
       name: 'workspace:v1',
