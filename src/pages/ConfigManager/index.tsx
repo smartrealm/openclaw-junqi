@@ -1028,13 +1028,13 @@ export function ConfigManagerPage() {
     <div className="flex flex-col h-full overflow-hidden">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-aegis-border bg-aegis-card/80 backdrop-blur-md flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold text-aegis-text">{t('config.title')}</h1>
+      <div className="flex items-center justify-between px-6 py-4 border-b border-aegis-border bg-aegis-card/80 backdrop-blur-md flex-shrink-0 gap-4">
+        <div className="flex items-center gap-3 shrink-0">
+          <h1 className="text-lg font-bold text-aegis-text whitespace-nowrap">{t('config.title')}</h1>
           {hasChanges && <ChangesPill label={t('config.unsavedChanges')} />}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleReload}
             disabled={reloading}

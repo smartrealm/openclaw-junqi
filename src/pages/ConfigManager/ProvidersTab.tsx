@@ -6,7 +6,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertCircle, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette } from 'lucide-react';
+import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertCircle, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Sparkles, Box } from 'lucide-react';
 import clsx from 'clsx';
 import type {
   GatewayRuntimeConfig,
@@ -932,9 +932,18 @@ function maskPreviewSecrets(value: any, path = ''): any {
 // Provider Icon
 // ─────────────────────────────────────────────────────────────────────────────
 
+function resolveProviderIcon(providerId: string): React.ReactNode {
+  const id = providerId.toLowerCase();
+  if (id === 'anthropic') return <Sparkles size={14} strokeWidth={1.75} />;
+  if (id === 'openai' || id === 'xai') return <Sparkles size={14} strokeWidth={1.75} />;
+  if (id === 'ollama') return <Box size={14} strokeWidth={1.75} />;
+  return null;
+}
+
 function ProviderIcon({ providerId, size = 'md' }: { providerId: string; size?: 'sm' | 'md' }) {
   const tmpl = getTemplateById(providerId);
   const sizeClass = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm';
+  const icon = (tmpl?.icon && tmpl.icon.trim()) ? tmpl.icon : resolveProviderIcon(providerId);
   return (
     <div
       className={clsx(
@@ -943,7 +952,7 @@ function ProviderIcon({ providerId, size = 'md' }: { providerId: string; size?: 
         sizeClass
       )}
     >
-      {tmpl?.icon ?? providerId[0]?.toUpperCase() ?? '?'}
+      {icon ?? providerId[0]?.toUpperCase() ?? '?'}
     </div>
   );
 }
@@ -1027,7 +1036,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
           },
         };
       });
-      setFetchResult(`<Check size={14} strokeWidth={1.75} /> 已添加 ${modelIds.length} 个模型`);
+      setFetchResult(`已添加 ${modelIds.length} 个模型`);
     } catch (err: any) {
       setFetchResult(err?.message || String(err));
     } finally {
@@ -1058,7 +1067,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
       {fetchResult && (
         <span className={clsx(
           'text-[11px]',
-          fetchResult.startsWith('<Check size={14} strokeWidth={1.75} />') ? 'text-aegis-success' : 'text-aegis-warning'
+          fetchResult.startsWith('已添加') ? 'text-aegis-success' : 'text-aegis-warning'
         )}>{fetchResult}</span>
       )}
     </div>
@@ -1089,6 +1098,8 @@ function ProfileRow({
   // ── Inline edit state ──
   const [localProfile, setLocalProfile] = useState<string>(profile.profileName ?? profileKey);
   const [localMode, setLocalMode]       = useState<string>(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode ?? 'api_key');
+  const [apiKeyInput, setApiKeyInput]   = useState('');
+  const [apiKeySaved, setApiKeySaved]   = useState(false);
 
   const updateProfile = (patch: Partial<AuthProfile>) => {
     onChange((prev) => {
@@ -1378,26 +1389,47 @@ function ProfileRow({
             </div>
           </div>
 
-          {/* API Key */}
+          {/* API Key — inline editable with save button */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
               {t('config.apiKey')}
-            </label>
-            <div
-              className={clsx(
-                'rounded-lg border px-3 py-2 text-sm',
-                hasStoredSecret
-                  ? 'border-aegis-success/20 bg-aegis-success/8 text-aegis-success'
-                  : 'border-aegis-border bg-aegis-surface text-aegis-text-muted'
+              {hasStoredSecret && !apiKeySaved && (
+                <span className="ml-2 text-aegis-success text-[9px] font-normal">{t('config.apiKeyConfigured')}</span>
               )}
-            >
-              {hasStoredSecret
-                ? t('config.apiKeyConfigured')
-                : t('config.notSet', '未设置')}
+              {apiKeySaved && (
+                <span className="ml-2 text-aegis-success text-[9px] font-normal">{t('config.saved')}</span>
+              )}
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={apiKeyInput}
+                placeholder={hasStoredSecret ? '••••••••' : t('config.apiKeyPlaceholder', '输入 API Key')}
+                className={clsx(
+                  'flex-1 rounded-lg border px-3 py-2 text-sm font-mono outline-none transition-colors',
+                  hasStoredSecret
+                    ? 'border-aegis-success/20 bg-aegis-success/8 text-aegis-success placeholder:text-aegis-success/50'
+                    : 'border-aegis-border bg-aegis-surface text-aegis-text placeholder:text-aegis-text-muted'
+                )}
+                onChange={(e) => {
+                  setApiKeyInput(e.target.value);
+                  setApiKeySaved(false);
+                }}
+              />
+              {apiKeyInput && !apiKeySaved && (
+                <button
+                  onClick={() => {
+                    updateProfile(tmpl?.id === 'custom'
+                      ? { token: apiKeyInput.trim() }
+                      : { apiKey: apiKeyInput.trim() } as any);
+                    setApiKeySaved(true);
+                  }}
+                  className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20 hover:bg-aegis-primary/20 transition-colors"
+                >
+                  {t('common.save', '保存')}
+                </button>
+              )}
             </div>
-            <p className="text-[10px] text-aegis-text-muted mt-0.5">
-              {t('config.apiKeyReadOnlyHint', '如需更换 API 密钥，请移除后重新添加该提供方。')}
-            </p>
           </div>
 
           {/* Models */}

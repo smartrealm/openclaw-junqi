@@ -35,7 +35,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'feishu',
     nameKey: 'config.channel.feishu',
-    icon: '🪁',
+    icon: '',
     colorClass: 'from-blue-500 to-teal-500',
     // appId + appSecret are dual credentials handled as channel-specific fields
     tokenField: '',
@@ -78,7 +78,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'telegram',
     nameKey: 'config.channel.telegram',
-    icon: '✈️',
+    icon: '',
     colorClass: 'from-sky-500 to-blue-600',
     tokenField: 'botToken',
     tokenEnvKey: 'TELEGRAM_BOT_TOKEN',
@@ -100,7 +100,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'discord',
     nameKey: 'config.channel.discord',
-    icon: '🎮',
+    icon: '',
     colorClass: 'from-indigo-500 to-violet-600',
     tokenField: 'token',
     tokenEnvKey: 'DISCORD_BOT_TOKEN',
@@ -128,7 +128,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'whatsapp',
     nameKey: 'config.channel.whatsapp',
-    icon: '📱',
+    icon: '',
     colorClass: 'from-emerald-500 to-green-600',
     tokenField: '',
     tokenEnvKey: '',
@@ -148,7 +148,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'slack',
     nameKey: 'config.channel.slack',
-    icon: '🔧',
+    icon: '',
     colorClass: 'from-purple-500 to-pink-500',
     tokenField: 'botToken',
     tokenEnvKey: 'SLACK_BOT_TOKEN',
@@ -188,7 +188,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'googlechat',
     nameKey: 'config.channel.googlechat',
-    icon: '💬',
+    icon: '',
     colorClass: 'from-blue-500 to-cyan-500',
     tokenField: 'serviceAccountKeyFile',
     tokenEnvKey: '',
@@ -210,7 +210,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'mattermost',
     nameKey: 'config.channel.mattermost',
-    icon: '🧩',
+    icon: '',
     colorClass: 'from-blue-600 to-blue-800',
     tokenField: 'token',
     tokenEnvKey: '',
@@ -229,7 +229,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'signal',
     nameKey: 'config.channel.signal',
-    icon: '🔒',
+    icon: '',
     colorClass: 'from-slate-500 to-slate-700',
     tokenField: '',
     tokenEnvKey: '',
@@ -249,7 +249,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
   {
     id: 'imessage',
     nameKey: 'config.channel.imessage',
-    icon: '🍎',
+    icon: '',
     colorClass: 'from-gray-500 to-gray-700',
     tokenField: '',
     tokenEnvKey: '',
