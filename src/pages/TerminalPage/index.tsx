@@ -1,5 +1,5 @@
-// Terminal Workspace — Multi-session terminal + CLI tool quick-launch
-// + right toolbar with File Explorer / Git Changes / Git History.
+// Terminal Workspace — Multi-session terminal with workspace management
+// + optional right panel (agents overview)
 
 import { useTranslation } from "react-i18next";
 import { useTheme } from "@/theme";
@@ -9,25 +9,18 @@ import {
 } from "@/components/Terminal";
 import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { FileExplorer } from "@/components/FileExplorer";
-import { GitChanges } from "@/components/Git";
-import { GitHistory } from "@/components/Git";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { homeDir } from "@tauri-apps/api/path";
-import { invoke } from "@tauri-apps/api/core";
-// (loadTools/mergeDetected were used by the removed AgentLaunchBar — no longer needed)
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   getDefaultMonoFont,
 } from "@/_nezha_root/types";
-import {
-  X, ChevronDown,
-} from "lucide-react";
+import { X } from "lucide-react";
 import { Icon } from "@/components/shared/icons";
 import { AgentOverviewPanel, type AgentPanelMode } from "@/components/Terminal/AgentOverviewPanel";
 
-type RightPanel = null | "files" | "git-changes" | "git-history" | "agents";
+type RightPanel = null | "agents";
 
 export function TerminalPage() {
   const { t } = useTranslation();
@@ -39,12 +32,9 @@ export function TerminalPage() {
   const monoFontFamily: FontFamily = getDefaultMonoFont();
   const [projectPath, setProjectPath] = useState("/");
   useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath("/")); }, []);
-  const projectName = projectPath.split("/").pop() || "home";
 
-  // Terminal fills available flex space (no ResizeObserver needed)
   const termWrapRef = useRef<HTMLDivElement>(null);
 
-  // Workspace — ensure at least one workspace exists (lazy init)
   const workspace = useWorkspaceStore((s) => {
     const active = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return active ?? null;
@@ -52,28 +42,19 @@ export function TerminalPage() {
   const ensureActive = useWorkspaceStore((s) => s.ensureActive);
   useEffect(() => { if (!workspace) ensureActive(); }, [workspace, ensureActive]);
 
-  // Right panel
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
   const [rightPanelWidth, setRightPanelWidth] = useState(360);
   const [isDragging, setIsDragging] = useState(false);
   const [agentPanelMode, setAgentPanelMode] = useState<AgentPanelMode>('full');
 
-  // ── kooky WorkspaceSidebar 三态 ──
   type SidebarMode = 'full' | 'compact' | 'hidden';
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('hidden');
   const cycleSidebarMode = () => setSidebarMode((m) =>
     m === 'hidden' ? 'full' : m === 'full' ? 'compact' : 'hidden'
   );
 
-  // ── kooky CommandPalette (⌘P) ──
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
 
-  // ── kooky InboxBell + InboxPanel (⌘⇧I) ──
-  const [inboxOpen, setInboxOpen] = useState(false);
-  const [inboxEvents, setInboxEvents] = useState<Array<{ id: string; title: string; body: string; time: number; read: boolean }>>([]);
-  const unreadCount = inboxEvents.filter((e) => !e.read).length;
-
-  // ── 从 store 读取工作区列表 ──
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
@@ -95,17 +76,6 @@ export function TerminalPage() {
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, [isDragging]);
 
-  // Tool click → type command into active shell
-  const runTool = useCallback((cmd: string) => {
-    panelRef.current?.sendCommand(cmd);
-  }, []);
-
-  // ── Cross-page command bridge ──
-  // Listen for `junqi:run-terminal-command` events from FileViewer's Makefile
-  // run buttons (and any other component that wants to push a command into the
-  // terminal without prop-drilling). The terminal panel must already be mounted.
-  // If the user is on a different page the command silently drops — they'd need
-  // to be on /terminal for it to land.
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ command: string; projectPath?: string }>;
@@ -117,17 +87,11 @@ export function TerminalPage() {
     return () => window.removeEventListener("junqi:run-terminal-command", handler);
   }, []);
 
-  // ── kooky 全局快捷键 ⌘P / ⌃⌘S ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "p") {
         e.preventDefault();
         setCmdPaletteOpen((v) => !v);
-      }
-      // ⌃⌘S 切换侧栏
-      if ((e.metaKey || e.ctrlKey) && e.ctrlKey && e.key === "s") {
-        e.preventDefault();
-        cycleSidebarMode();
       }
     };
     window.addEventListener("keydown", handler);
@@ -136,63 +100,8 @@ export function TerminalPage() {
 
   return (
     <div style={{ display: "flex", flex: 1, flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--terminal-bg)" }}>
-      {/* ── kooky 32pt top strip — [侧栏切换] [── 拖拽 + 搜索 ──] [智能体] [铃铛] ── */}
-      <div style={{ height: 32, flexShrink: 0, display: "flex", alignItems: "center", padding: "0 8px 0 0", gap: 0, borderBottom: "1px solid rgb(255 255 255 / 0.07)" }}>
-        <div style={{ width: 82, flexShrink: 0 }} />
-        {/* 侧栏三态切换：full → compact → hidden，快捷键 ⌃⌘S */}
-        <button
-          title="切换侧栏 (⌃⌘S)"
-          onClick={cycleSidebarMode}
-          style={{
-            width: 28, height: 28, display: "flex", alignItems: "center",
-            justifyContent: "center", border: "none", background: "transparent",
-            borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer",
-          }}
-        >
-          {/* 侧栏图标：三条横线 + 矩形外框 */}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <line x1="9" y1="3" x2="9" y2="21"/>
-          </svg>
-        </button>
-        <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-          {/* kooky SearchTriggerPill — ⌘P 快速打开 */}
-          <button
-            onClick={() => setCmdPaletteOpen(true)}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "0 12px", height: 22, borderRadius: 11,
-              border: "1px solid rgb(255 255 255 / 0.1)",
-              background: "rgb(var(--aegis-overlay)/0.04)",
-              color: "rgb(var(--aegis-text-dim))", cursor: "pointer",
-              fontSize: 11, fontFamily: '"JetBrains Mono", monospace',
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-            </svg>
-            快速打开
-            <span style={{ opacity: 0.5 }}>⌘P</span>
-          </button>
-        </div>
-        <button title="Open Agent Panel" onClick={() => togglePanel("agents")} style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer" }}>
-          {Icon.chrome.grid}
-        </button>
-        {/* kooky InboxBell — 铃铛 + 红点 */}
-        <button
-          title="通知收件箱 (⌘⇧I)"
-          onClick={() => setInboxOpen((v) => !v)}
-          style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 5, color: "rgb(var(--aegis-text-muted))", cursor: "pointer", position: "relative" }}
-        >
-          {Icon.chrome.bell}
-          {unreadCount > 0 && (
-            <span style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: 3, background: "rgb(239 68 68)" }} />
-          )}
-        </button>
-      </div>
-
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        {/* kooky WorkspaceSidebar — 左侧工作区侧栏（三态：full 220px / compact 52px） */}
+
         {sidebarMode !== "hidden" && (
           <WorkspaceSidebarPanel
             mode={sidebarMode}
@@ -205,8 +114,28 @@ export function TerminalPage() {
             onRenameWorkspace={(id, name) => useWorkspaceStore.getState().renameWorkspace(id, name)}
           />
         )}
-        {/* Main terminal area — kooky 1:1: tab strip at top, terminal fills below */}
+
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
+          {/* Sidebar toggle — overlaid on tab strip left edge, no extra bar */}
+          <div style={{ position: "absolute", top: 0, left: 0, zIndex: 10, display: "flex", alignItems: "center", padding: "3px 4px" }}>
+            <button
+              title="Toggle sidebar"
+              onClick={cycleSidebarMode}
+              style={{
+                width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center",
+                border: "none",
+                background: sidebarMode !== "hidden" ? "rgb(var(--aegis-primary) / 0.12)" : "transparent",
+                borderRadius: 5,
+                color: sidebarMode !== "hidden" ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-muted))",
+                cursor: "pointer", transition: "background 0.15s, color 0.15s",
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+            </button>
+          </div>
+
           <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             {workspace ? (
               <PaneTreeView
@@ -244,57 +173,27 @@ export function TerminalPage() {
           </div>
         </div>
 
-      {/* Right panel — between terminal and toolbar */}
-      {rightPanel && (<>
-        <div onMouseDown={handleMouseDown} style={{ width: 4, flexShrink: 0, cursor: "col-resize", background: isDragging ? "rgb(var(--aegis-primary))" : "transparent" }} />
-        <div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-elevated)", overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--aegis-border)", flexShrink: 0 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              {rightPanel === "files" ? "Files" : rightPanel === "git-changes" ? "Changes" : rightPanel === "git-history" ? "History" : rightPanel === "agents" ? "Agents" : ""}
-            </span>
-            <button onClick={() => setRightPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "rgb(var(--aegis-text-dim))" }}>
-              <X size={14} />
-            </button>
+        {rightPanel && (<>
+          <div onMouseDown={handleMouseDown} style={{ width: 4, flexShrink: 0, cursor: "col-resize", background: isDragging ? "rgb(var(--aegis-primary))" : "transparent" }} />
+          <div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-elevated)", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--aegis-border)", flexShrink: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))", textTransform: "uppercase", letterSpacing: "0.5px" }}>Agents</span>
+              <button onClick={() => setRightPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "rgb(var(--aegis-text-dim))" }}>
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <AgentOverviewPanel projectPath={projectPath} mode={agentPanelMode} onModeChange={setAgentPanelMode} />
+            </div>
           </div>
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            {rightPanel === "files" && (
-              <FileExplorer projectPath={projectPath} projectName={projectName} onFileSelect={() => {}} />
-            )}
-            {rightPanel === "git-changes" && (
-              <GitChanges projectPath={projectPath} currentTaskCreatedAt={null} onFileSelect={() => {}} />
-            )}
-            {rightPanel === "git-history" && (
-              <GitHistory projectPath={projectPath} onCommitSelect={() => {}} />
-            )}
-            {rightPanel === "agents" && (
-              <AgentOverviewPanel
-                projectPath={projectPath}
-                mode={agentPanelMode}
-                onModeChange={setAgentPanelMode}
-              />
-            )}
-          </div>
+        </>)}
+
+        {/* Right toolbar — agents only */}
+        <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 4px", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-surface)" }}>
+          <IconBtn icon={Icon.chrome.grid} label="Agents" active={rightPanel === "agents"} onClick={() => togglePanel("agents")} />
         </div>
-      </>)}
-
-      {/* Right toolbar — outer-most 44px strip */}
-      <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 4px", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-surface)" }}>
-        <IconBtn icon={Icon.chrome.grid} label="Agents" active={rightPanel === "agents"} onClick={() => togglePanel("agents")} />
-        <IconBtn icon={Icon.nav.files} label="Files" active={rightPanel === "files"} onClick={() => togglePanel("files")} />
-        <IconBtn icon={Icon.nav.git} label="Changes" active={rightPanel === "git-changes"} onClick={() => togglePanel("git-changes")} />
-        <IconBtn icon={Icon.nav.history} label="History" active={rightPanel === "git-history"} onClick={() => togglePanel("git-history")} />
-      </div>
       </div>
 
-      {/* kooky InboxPanel — ⌘⇧I 通知收件箱 */}
-      <InboxPanel
-        open={inboxOpen}
-        onClose={() => setInboxOpen(false)}
-        events={inboxEvents}
-        onMarkAllRead={() => setInboxEvents((prev) => prev.map((e) => ({ ...e, read: true })))}
-        onClear={() => setInboxEvents([])}
-      />
-      {/* kooky CommandPalette — ⌘P */}
       <CommandPaletteModal
         open={cmdPaletteOpen}
         onClose={() => setCmdPaletteOpen(false)}
@@ -308,15 +207,12 @@ export function TerminalPage() {
 
 function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} title={label} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "rgba(var(--aegis-primary) / 0.10)" : "transparent", color: active ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-muted))", transition: "background 0.12s, color 0.12s" }}>
+    <button onClick={onClick} title={label} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "rgb(var(--aegis-primary) / 0.10)" : "transparent", color: active ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-muted))", transition: "background 0.12s, color 0.12s" }}>
       {icon}
     </button>
   );
 }
 
-// ──────────────────────────────────────────────────────────────
-// kooky SidebarView 1:1 port — 工作区侧栏（三态：full 220px / compact 52px）
-// ──────────────────────────────────────────────────────────────
 
 // ── WorkspaceRow — workspace item in sidebar with inline rename (kooky SidebarWorkspaceRow) ──
 // ──────────────────────────────────────────────────────────────
@@ -912,69 +808,6 @@ function CommandPaletteModal({
               </div>
             );
           })}
-        </div>
-      </div>
-    </>
-  );
-}
-// ──────────────────────────────────────────────────────────────
-// kooky AgentInbox 1:1 port — ⌘⇧I 通知收件箱
-// ──────────────────────────────────────────────────────────────
-
-function InboxPanel({
-  open, onClose, events, onMarkAllRead, onClear,
-}: {
-  open: boolean;
-  onClose: () => void;
-  events: Array<{ id: string; title: string; body: string; time: number; read: boolean }>;
-  onMarkAllRead: () => void;
-  onClear: () => void;
-}) {
-  if (!open) return null;
-  return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-      <div style={{
-        position: 'fixed', top: 40, right: 52, zIndex: 999,
-        width: 360, maxHeight: 480,
-        background: 'rgb(var(--aegis-elevated))',
-        border: '1px solid rgb(255 255 255 / 0.10)',
-        borderRadius: 10, boxShadow: '0 16px 48px rgb(0 0 0 / 0.5)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      }}>
-        {/* 标题栏 */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '0 14px', height: 40, borderBottom: '1px solid rgb(255 255 255 / 0.07)', flexShrink: 0 }}>
-          <span style={{ flex: 1, fontSize: 12, fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, color: 'rgb(var(--aegis-text))' }}>
-            通知
-          </span>
-          <button onClick={onMarkAllRead} title="全部已读" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgb(var(--aegis-text-dim))', padding: '2px 6px', fontSize: 10, fontFamily: '"JetBrains Mono", monospace' }}>
-            全部已读
-          </button>
-          <button onClick={onClear} title="清空" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgb(var(--aegis-text-dim))', padding: '2px 6px', fontSize: 10, fontFamily: '"JetBrains Mono", monospace' }}>
-            清空
-          </button>
-        </div>
-        {/* 内容 */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {events.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 160, gap: 8, color: 'rgb(var(--aegis-text-dim))', opacity: 0.5 }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              <span style={{ fontSize: 11, fontFamily: '"JetBrains Mono", monospace' }}>暂无通知</span>
-            </div>
-          ) : (
-            events.map((ev) => (
-              <div key={ev.id} style={{ display: 'flex', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgb(255 255 255 / 0.05)', opacity: ev.read ? 0.6 : 1 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 4, flexShrink: 0, background: ev.read ? 'transparent' : 'rgb(59 130 246)', border: ev.read ? '1.5px solid rgb(var(--aegis-text-dim))' : 'none' }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text))', fontWeight: 500 }}>{ev.title}</div>
-                  <div style={{ fontSize: 11, color: 'rgb(var(--aegis-text-dim))', marginTop: 2 }}>{ev.body}</div>
-                </div>
-                <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.6, flexShrink: 0 }}>
-                  {new Date(ev.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            ))
-          )}
         </div>
       </div>
     </>
