@@ -97,8 +97,9 @@ export async function testProviderConnection(
       return { ok: false, message: `${res.status} ${res.statusText}${short ? ` — ${short}` : ''}` };
     }
 
-    // 404 on /models → fallback: POST /chat/completions (Anthropic uses Messages API, no fallback)
-    if (tmpl?.api === 'anthropic') {
+    // 404 on /models → fallback: POST /chat/completions
+    // Anthropic 和 anthropic-messages（MiniMax 等兼容 provider）均不走 fallback
+    if (tmpl?.api === 'anthropic' || tmpl?.api === 'anthropic-messages') {
       const text = await res.text();
       const short = text ? text.slice(0, 120).replace(/\s+/g, ' ') : '';
       return { ok: false, message: `404 ${res.statusText}${short ? ` — ${short}` : ''}` };
@@ -502,8 +503,9 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     const envKeyValue = template?.envKey
       ? String(envVarsForAuth[template.envKey] ?? '').trim()
       : undefined;
-    const envKeyFound = !!(envKeyValue
-    ) || hasProviderConfigApiKey(providerConfigEntry?.apiKey);
+    // 同时检查 envKeyAlt（备用环境变量，如 ANTHROPIC_OAUTH_TOKEN、GH_TOKEN 等）
+    const envKeyAltFound = !!(template?.envKeyAlt?.some((k) => String(envVarsForAuth[k] ?? '').trim()));
+    const envKeyFound = !!(envKeyValue) || envKeyAltFound || hasProviderConfigApiKey(providerConfigEntry?.apiKey);
 
     result.push({
       key:         profileKey,
@@ -1017,14 +1019,20 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
 
       const data = await res.json();
       const modelIds: string[] = [];
-      const raw = (Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []) as any[];
+      // 兼容三种响应格式：{ data: [...] } | { models: [...] } | [...]
+      const raw = (
+        Array.isArray(data?.data) ? data.data :
+        Array.isArray(data?.models) ? data.models :
+        Array.isArray(data) ? data : []
+      ) as any[];
       for (const entry of raw) {
-        const id = entry?.id as string | undefined;
-        if (id && typeof id === 'string') modelIds.push(id);
+        const id = String(entry?.id ?? entry?.model ?? (typeof entry === 'string' ? entry : '')).trim();
+        if (id) modelIds.push(id);
       }
 
       if (modelIds.length === 0) { setFetchResult('未找到模型'); return; }
 
+      let addedCount = 0;
       onChange((prev) => {
         const next = { ...prev };
         const existing = { ...(next.agents?.defaults?.models ?? {}) };
@@ -1036,6 +1044,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
             added++;
           }
         }
+        addedCount = added;
         return {
           ...next,
           agents: {
@@ -1044,7 +1053,7 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
           },
         };
       });
-      setFetchResult(`已添加 ${modelIds.length} 个模型`);
+      setFetchResult(`已添加 ${addedCount} 个模型`);
     } catch (err: any) {
       setFetchResult(err?.message || String(err));
     } finally {
