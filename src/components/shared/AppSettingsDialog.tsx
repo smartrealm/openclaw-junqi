@@ -77,7 +77,7 @@ export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
   }, [navItems]);
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgb(0 0 0 / 0.55)' }} onClick={onClose}>
+    <div className="fixed inset-0 z-[2147481000] flex items-center justify-center" style={{ background: 'rgb(0 0 0 / 0.55)' }} onClick={onClose}>
       <div className="w-[min(960px,calc(100vw-48px))] max-h-[calc(100vh-96px)] rounded-2xl overflow-hidden flex"
         style={{ background: 'rgb(var(--aegis-card))', border: '1px solid rgb(var(--aegis-border))', boxShadow: '0 32px 64px rgb(0 0 0 / 0.5)' }}
         onClick={(e) => e.stopPropagation()}>

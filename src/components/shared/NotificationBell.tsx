@@ -224,7 +224,7 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]"
+          className="fixed inset-0 z-[2147481000] flex items-start justify-center pt-[10vh]"
           style={{ background: 'rgb(0 0 0 / 0.4)' }}
           onClick={() => setOpen(false)}
         >

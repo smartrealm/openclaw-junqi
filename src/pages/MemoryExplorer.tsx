@@ -586,7 +586,7 @@ function DetailPanel({ memory, onClose, onEdit, onDelete, apiUrl, isLocal }: {
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/30"
+            className="fixed top-[56px] end-0 bottom-0 start-0 z-[2147481000] bg-black/30"
             onClick={onClose}
           />
           {/* Panel */}
@@ -595,7 +595,7 @@ function DetailPanel({ memory, onClose, onEdit, onDelete, apiUrl, isLocal }: {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed top-0 end-0 w-[400px] h-full z-50 overflow-y-auto border-s border-[rgb(var(--aegis-overlay)/0.06)]"
+            className="fixed top-[56px] end-0 bottom-0 w-[400px] max-w-[92vw] z-[2147481001] overflow-y-auto border-s border-[rgb(var(--aegis-overlay)/0.06)]"
             style={{ background: 'var(--aegis-bg-solid)', backdropFilter: 'blur(40px)', boxShadow: '-10px 0 40px rgb(var(--aegis-overlay) / 0.15)' }}
           >
             <div className="p-6">

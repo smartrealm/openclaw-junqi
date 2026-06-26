@@ -1579,7 +1579,7 @@ export function SkillsPage() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                className="fixed inset-0 z-[600] bg-black/50 backdrop-blur-sm"
+                className="fixed inset-0 z-[2147481000] bg-black/50 backdrop-blur-sm"
                 onClick={() => !deleting && setDeleteConfirm(null)}
               />
               <motion.div
@@ -1587,7 +1587,7 @@ export function SkillsPage() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 8 }}
                 transition={{ duration: 0.15 }}
-                className="fixed z-[601] top-1/2 start-1/2 -translate-x-1/2 -translate-y-1/2
+                className="fixed z-[2147481001] top-1/2 start-1/2 -translate-x-1/2 -translate-y-1/2
                   w-[360px] max-w-[calc(100vw-32px)]
                   bg-aegis-bg border border-[rgb(var(--aegis-overlay)/0.08)]
                   rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.4)] p-6"
