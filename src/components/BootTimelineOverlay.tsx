@@ -1,4 +1,5 @@
 import { Check, Loader2, Circle, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { getBootProgressSummary, useBootSequenceStore, type BootStage } from '@/stores/bootSequenceStore';
 
@@ -10,6 +11,7 @@ function StageIcon({ stage }: { stage: BootStage }) {
 }
 
 export function BootTimelineOverlay() {
+  const { t } = useTranslation();
   const stages = useBootSequenceStore((s) => s.stages);
   const summary = getBootProgressSummary(stages);
   const list = Object.values(stages);
@@ -24,8 +26,8 @@ export function BootTimelineOverlay() {
               <Loader2 size={18} className="text-aegis-primary animate-spin" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-aegis-text">正在准备 OpenClaw Gateway</h2>
-              <p className="text-xs text-aegis-text-muted mt-0.5">检测、连接并同步运行时状态…</p>
+              <h2 className="text-base font-bold text-aegis-text">{t('boot.preparingGateway')}</h2>
+              <p className="text-xs text-aegis-text-muted mt-0.5">{t('boot.preparingGatewayDesc')}</p>
             </div>
           </div>
           <div className="mt-4 h-1.5 rounded-full bg-aegis-surface overflow-hidden">
@@ -48,9 +50,9 @@ export function BootTimelineOverlay() {
               </div>
               <div className="min-w-0 flex-1 pb-1">
                 <div className={clsx('text-sm font-semibold', stage.status === 'running' ? 'text-aegis-primary' : 'text-aegis-text')}>
-                  {stage.title}
+                  {t(`boot.stage.${stage.id}`, stage.title)}
                 </div>
-                <div className="text-[11px] text-aegis-text-muted truncate">{stage.detail}</div>
+                <div className="text-[11px] text-aegis-text-muted truncate">{t(`boot.detail.${stage.id}`, stage.detail)}</div>
               </div>
             </div>
           ))}

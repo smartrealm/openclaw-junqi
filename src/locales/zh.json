@@ -671,7 +671,14 @@
     "queueDeleteConfirm": "删除这条排队消息？",
     "queueWait": "等待 {{s}}s",
     "queueMore": "+{{n}} 条",
-    "queueCancelled": "已取消"
+    "queueCancelled": "已取消",
+    "contextModel": "本次模型",
+    "contextInputTokens": "输入 tokens",
+    "contextOutputTokens": "输出 tokens",
+    "contextTotalTokens": "总 tokens",
+    "contextDuration": "耗时",
+    "contextCacheRead": "cache read",
+    "contextCacheWrite": "cache write"
   },
   "titlebar": {
     "minimize": "最小化",
@@ -756,7 +763,8 @@
     "connectingTitle": "正在连接",
     "connectingDescription": "OpenClaw Gateway 正在启动并建立连接，完成后会自动进入应用。",
     "connectingHint": "首次启动或冷启动时可能需要更久，请稍候。",
-    "retrying": "正在尝试重新连接…"
+    "retrying": "正在尝试重新连接…",
+    "retryGateway": "重新连接"
   },
   "gateway": {
     "start": "启动",
@@ -1455,7 +1463,10 @@
       "global": "🌐 国际 (Global)",
       "coding": "💻 Coding / Agent",
       "local": "🖥 本地 / 自定义"
-    }
+    },
+    "providersHealth": "提供方健康状态",
+    "providersHealthSummary": "正常 {{ok}} · 损坏 {{broken}}",
+    "providerBrokenNeedSecret": "结构仍在，但 Secret 已缺失，需要补录 API Key / Token"
   },
   "calendar": {
     "title": "日历",
@@ -1892,6 +1903,22 @@
     "session": {
       "view": "查看",
       "resume": "续接"
+    }
+  },
+  "boot": {
+    "preparingGateway": "正在准备 OpenClaw Gateway",
+    "preparingGatewayDesc": "检测、连接并同步运行时状态…",
+    "stage": {
+      "connection": "连接",
+      "config": "配置",
+      "conversation": "会话",
+      "background": "后台同步"
+    },
+    "detail": {
+      "connection": "等待 WebSocket 握手",
+      "config": "等待模型 / 配置 / 定时任务",
+      "conversation": "等待最近历史和会话列表",
+      "background": "等待成本 / 用量 / Agent 同步"
     }
   }
 }

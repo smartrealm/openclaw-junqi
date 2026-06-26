@@ -673,7 +673,14 @@
     "queueDeleteConfirm": "Delete this queued message?",
     "queueWait": "waiting {{s}}s",
     "queueMore": "+{{n}} more",
-    "queueCancelled": "Cancelled"
+    "queueCancelled": "Cancelled",
+    "contextModel": "Model",
+    "contextInputTokens": "Input tokens",
+    "contextOutputTokens": "Output tokens",
+    "contextTotalTokens": "Total tokens",
+    "contextDuration": "Duration",
+    "contextCacheRead": "cache read",
+    "contextCacheWrite": "cache write"
   },
   "titlebar": {
     "minimize": "Minimize",
@@ -758,7 +765,8 @@
     "connectingTitle": "Connecting",
     "connectingDescription": "OpenClaw Gateway is starting and the app is establishing a connection automatically.",
     "connectingHint": "The first cold start can take longer. Please wait a moment.",
-    "retrying": "Attempting to reconnect..."
+    "retrying": "Attempting to reconnect...",
+    "retryGateway": "Reconnect"
   },
   "gateway": {
     "start": "Start",
@@ -1467,7 +1475,10 @@
       "global": "🌐 Global",
       "coding": "💻 Coding / Agent",
       "local": "🖥 Local / Custom"
-    }
+    },
+    "providersHealth": "Provider health",
+    "providersHealthSummary": "OK {{ok}} · Broken {{broken}}",
+    "providerBrokenNeedSecret": "Provider structure exists, but its secret is missing. Re-enter API Key / Token."
   },
   "calendar": {
     "title": "Calendar",
@@ -1855,5 +1866,21 @@
     "noWindows": "No usage windows reported.",
     "fiveHour": "5h",
     "sevenDay": "7d"
+  },
+  "boot": {
+    "preparingGateway": "Preparing OpenClaw Gateway",
+    "preparingGatewayDesc": "Detecting, connecting, and syncing runtime state…",
+    "stage": {
+      "connection": "Connection",
+      "config": "Configuration",
+      "conversation": "Conversation",
+      "background": "Background sync"
+    },
+    "detail": {
+      "connection": "Waiting for WebSocket handshake",
+      "config": "Waiting for models / config / cron",
+      "conversation": "Waiting for recent history and sessions.list",
+      "background": "Waiting for cost / usage / agents"
+    }
   }
 }

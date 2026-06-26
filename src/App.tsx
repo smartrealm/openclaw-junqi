@@ -269,7 +269,7 @@ export default function App() {
     if (bootOverlayDismissedRef.current) return;
     if (!connected) { setBootOverlayVisible(true); return; }
     const elapsed = Date.now() - bootOverlayStartedAtRef.current;
-    const delay = Math.max(0, 2800 - elapsed);
+    const delay = Math.max(0, 4000 - elapsed);
     const timer = setTimeout(() => {
       bootOverlayDismissedRef.current = true;
       setBootOverlayVisible(false);

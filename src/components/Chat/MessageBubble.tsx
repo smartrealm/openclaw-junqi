@@ -746,16 +746,16 @@ function stripInlineCodeTicks(md: string): string {
         {!isUser && ctxOpen && (
           <div className="mt-2 w-full max-w-[min(760px,100%)] rounded-xl border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
-              <div><div className="text-aegis-text-dim">本次模型</div><div className="font-mono text-aegis-text truncate">{contextModel || '—'}</div></div>
-              <div><div className="text-aegis-text-dim">输入 tokens</div><div className="font-mono text-blue-400">{contextContent?.input != null ? ctxFmt(contextContent.input) : '—'}</div></div>
-              <div><div className="text-aegis-text-dim">输出 tokens</div><div className="font-mono text-emerald-400">{contextContent?.output != null ? ctxFmt(contextContent.output) : '—'}</div></div>
-              <div><div className="text-aegis-text-dim">总 tokens</div><div className="font-mono text-aegis-text">{contextTotalTokens > 0 ? ctxFmt(contextTotalTokens) : '—'}</div></div>
+              <div><div className="text-aegis-text-dim">{t('chat.contextModel', 'Model')}</div><div className="font-mono text-aegis-text truncate">{contextModel || '—'}</div></div>
+              <div><div className="text-aegis-text-dim">{t('chat.contextInputTokens', 'Input tokens')}</div><div className="font-mono text-blue-400">{contextContent?.input != null ? ctxFmt(contextContent.input) : '—'}</div></div>
+              <div><div className="text-aegis-text-dim">{t('chat.contextOutputTokens', 'Output tokens')}</div><div className="font-mono text-emerald-400">{contextContent?.output != null ? ctxFmt(contextContent.output) : '—'}</div></div>
+              <div><div className="text-aegis-text-dim">{t('chat.contextTotalTokens', 'Total tokens')}</div><div className="font-mono text-aegis-text">{contextTotalTokens > 0 ? ctxFmt(contextTotalTokens) : '—'}</div></div>
               <div><div className="text-aegis-text-dim">Context</div><div className="font-mono text-aegis-text">{contextContent?.contextPercent != null ? `${contextContent.contextPercent}%` : '—'}</div></div>
-              <div><div className="text-aegis-text-dim">耗时</div><div className="font-mono text-aegis-text">{durationStr || '—'}</div></div>
+              <div><div className="text-aegis-text-dim">{t('chat.contextDuration', 'Duration')}</div><div className="font-mono text-aegis-text">{durationStr || '—'}</div></div>
             </div>
             {(contextContent?.cacheRead || contextContent?.cacheWrite) ? (
               <div className="mt-2 pt-2 border-t border-aegis-border text-[11px] font-mono text-aegis-text-dim">
-                cache read: {contextContent?.cacheRead ? ctxFmt(contextContent.cacheRead) : '0'} · cache write: {contextContent?.cacheWrite ? ctxFmt(contextContent.cacheWrite) : '0'}
+                {t('chat.contextCacheRead', 'cache read')}: {contextContent?.cacheRead ? ctxFmt(contextContent.cacheRead) : '0'} · {t('chat.contextCacheWrite', 'cache write')}: {contextContent?.cacheWrite ? ctxFmt(contextContent.cacheWrite) : '0'}
               </div>
             ) : null}
           </div>

@@ -455,7 +455,14 @@
     "queueDeleteConfirm": "حذف هذه الرسالة؟",
     "queueWait": "انتظار {{s}}s",
     "queueMore": "+{{n}}",
-    "queueCancelled": "ملغى"
+    "queueCancelled": "ملغى",
+    "contextModel": "النموذج",
+    "contextInputTokens": "رموز الإدخال",
+    "contextOutputTokens": "رموز الإخراج",
+    "contextTotalTokens": "إجمالي الرموز",
+    "contextDuration": "المدة",
+    "contextCacheRead": "قراءة cache",
+    "contextCacheWrite": "كتابة cache"
   },
   "titlebar": {
     "minimize": "تصغير",
@@ -540,7 +547,8 @@
     "connectingTitle": "جارٍ الاتصال",
     "connectingDescription": "يتم الآن تشغيل OpenClaw Gateway وإنشاء الاتصال تلقائياً.",
     "connectingHint": "قد يستغرق التشغيل الأول أو التشغيل البارد وقتاً أطول قليلاً.",
-    "retrying": "جاري محاولة إعادة الاتصال..."
+    "retrying": "جاري محاولة إعادة الاتصال...",
+    "retryGateway": "إعادة الاتصال"
   },
   "notifications": {
     "newMessage": "رسالة جديدة",
@@ -1054,7 +1062,10 @@
     "saveFailed": "فشل الحفظ",
     "configSaved": "تم حفظ الكونفق بنجاح",
     "pressCtrlS": "Ctrl+S للحفظ",
-    "secrets": "الأسرار"
+    "secrets": "الأسرار",
+    "providersHealth": "حالة المزوّدين",
+    "providersHealthSummary": "سليم {{ok}} · تالف {{broken}}",
+    "providerBrokenNeedSecret": "بنية المزوّد موجودة، لكن السر مفقود. أعد إدخال API Key / Token."
   },
   "calendar": {
     "title": "التقويم",
@@ -1364,5 +1375,21 @@
     "preview": "معاينة",
     "previewUI": "الثعلب البني السريع يقفز فوق الكلب الكسول.",
     "previewMono": "console.log('مرحباً بالعالم!')؛ // abcdef 1234567890"
+  },
+  "boot": {
+    "preparingGateway": "جارٍ تجهيز OpenClaw Gateway",
+    "preparingGatewayDesc": "جارٍ الفحص والاتصال ومزامنة حالة التشغيل…",
+    "stage": {
+      "connection": "الاتصال",
+      "config": "الإعدادات",
+      "conversation": "المحادثة",
+      "background": "مزامنة الخلفية"
+    },
+    "detail": {
+      "connection": "انتظار مصافحة WebSocket",
+      "config": "انتظار النماذج / الإعدادات / المهام",
+      "conversation": "انتظار السجل الحديث وقائمة الجلسات",
+      "background": "انتظار التكلفة / الاستخدام / الوكلاء"
+    }
   }
 }

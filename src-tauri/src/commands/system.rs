@@ -131,6 +131,15 @@ pub async fn check_openclaw() -> Result<OpenclawStatus, String> {
         path_parts.push(home.join(".local").join("bin").to_string_lossy().to_string());
         // asdf / mise shims (this is where many users' `node` actually lives)
         path_parts.push(home.join(".asdf").join("shims").to_string_lossy().to_string());
+        #[cfg(windows)]
+        {
+            // npm global bin on Windows. Prefer APPDATA but also include the
+            // canonical Roaming/npm path for Store/portable Node installs.
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                path_parts.push(std::path::PathBuf::from(appdata).join("npm").to_string_lossy().to_string());
+            }
+            path_parts.push(home.join("AppData").join("Roaming").join("npm").to_string_lossy().to_string());
+        }
     }
     // Homebrew: macOS (Apple Silicon + Intel) and the classic /usr/local prefix.
     path_parts.push("/opt/homebrew/bin".to_string());
@@ -145,21 +154,37 @@ pub async fn check_openclaw() -> Result<OpenclawStatus, String> {
     }
     let search_path = path_parts.join(if cfg!(windows) { ";" } else { ":" });
 
-    let (cmd, arg) = if cfg!(windows) { ("where", "openclaw.cmd") } else { ("which", "openclaw") };
-    let output = tokio::process::Command::new(cmd)
-        .arg(arg)
-        .env("PATH", &search_path)
-        .output()
-        .await
-        .ok();
-
-    let path = output.and_then(|o| {
-        if o.status.success() {
-            let first = String::from_utf8_lossy(&o.stdout).lines().next()?.trim().to_string();
-            if !first.is_empty() { return Some(first); }
-        }
-        None
-    });
+    let path = if cfg!(windows) {
+        // npm can create .cmd/.ps1 shims; some packaging creates .exe.
+        // Try all known names instead of only openclaw.cmd.
+        let candidates = ["openclaw.cmd", "openclaw.ps1", "openclaw.exe", "openclaw"];
+        candidates.iter().find_map(|name| {
+            let output = std::process::Command::new("where")
+                .arg(name)
+                .env("PATH", &search_path)
+                .output()
+                .ok()?;
+            if !output.status.success() { return None; }
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(|s| s.trim().to_string())
+                .find(|s| !s.is_empty())
+        })
+    } else {
+        tokio::process::Command::new("which")
+            .arg("openclaw")
+            .env("PATH", &search_path)
+            .output()
+            .await
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let first = String::from_utf8_lossy(&o.stdout).lines().next()?.trim().to_string();
+                    if !first.is_empty() { return Some(first); }
+                }
+                None
+            })
+    };
 
     match path {
         Some(p) => {
