@@ -9,6 +9,7 @@ import { PairingScreen } from '@/components/PairingScreen';
 import { GatewayErrorScreen } from '@/components/GatewayErrorScreen';
 import { ToastContainer } from '@/components/Toast/ToastContainer';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { BootTimelineOverlay } from '@/components/BootTimelineOverlay';
 import { useTheme } from '@/theme';
 
 // Lazy-loaded pages
@@ -136,6 +137,10 @@ export default function App() {
   const [gatewayBootError, setGatewayBootError] = useState<string | null>(null);
   const [gatewayBootLogs, setGatewayBootLogs] = useState<{ stdout: string; stderr: string } | undefined>();
   const [gatewayRetrying, setGatewayRetrying] = useState(false);
+  const connected = useChatStore((s) => s.connected);
+  const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
+  const bootOverlayStartedAtRef = useRef(Date.now());
+  const bootOverlayDismissedRef = useRef(false);
 
   // ── Load Sessions from Gateway (also updates per-session model/thinking/token data) ──
   // This is the single polling call for all session metadata. The store's setSessions
@@ -256,6 +261,20 @@ export default function App() {
 
   // ── Request notification permission (Web Notification API) ──
   useEffect(() => { notifications.requestPermission(); }, []);
+
+  // ── Cold-start boot overlay: keep visible until WebSocket is really connected
+  // and show it for a minimum duration to avoid a flash/jump effect.
+  useEffect(() => {
+    if (bootOverlayDismissedRef.current) return;
+    if (!connected) { setBootOverlayVisible(true); return; }
+    const elapsed = Date.now() - bootOverlayStartedAtRef.current;
+    const delay = Math.max(0, 1200 - elapsed);
+    const timer = setTimeout(() => {
+      bootOverlayDismissedRef.current = true;
+      setBootOverlayVisible(false);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [connected]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
@@ -534,6 +553,8 @@ export default function App() {
           onRecovered={handleGatewayRecovered}
         />
       )}
+
+      {bootOverlayVisible && !gatewayBootError && !needsPairing && <BootTimelineOverlay />}
 
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
       {needsPairing && !gatewayBootError && (

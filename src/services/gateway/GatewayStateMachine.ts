@@ -65,19 +65,27 @@ export class GatewayStateMachine {
 
   /** Process an event; returns the transition result or null if no rule. */
   transition(event: GatewayEvent): TransitionResult {
-    // Dynamic handling for STATUS_RECEIVED (depends on payload fields)
+    // Dynamic handling for STATUS_RECEIVED (depends on payload fields + current state).
+    // Important: gateway_status is polled periodically. Once WS is CONNECTED,
+    // a fresh "running=true" status must NOT downgrade the state back to CONNECTING.
     if (event.type === 'STATUS_RECEIVED') {
+      if (this.state === GatewayState.CONNECTED) {
+        return { state: this.state, actions: ['NONE'] };
+      }
+      if (this.state === GatewayState.CONNECTING && event.running && !event.error) {
+        return { state: this.state, actions: ['NONE'] };
+      }
       if (event.retrying) {
-        return this.apply(GatewayState.DETECTING, 'STATUS_RECEIVED', GatewayState.DETECTING, []);
+        return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.DETECTING, []);
       }
       if (event.error) {
-        return this.apply(GatewayState.DETECTING, 'STATUS_RECEIVED', GatewayState.ERROR, ['SHOW_ERROR']);
+        return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.ERROR, ['SHOW_ERROR']);
       }
       if (event.running) {
-        return this.apply(GatewayState.DETECTING, 'STATUS_RECEIVED', GatewayState.CONNECTING, ['CONNECT']);
+        return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.CONNECTING, ['CONNECT']);
       }
-      // Not running, no error → try starting
-      return this.apply(GatewayState.DETECTING, 'STATUS_RECEIVED', GatewayState.STARTING, ['START']);
+      // Not running, no error → try starting (only once; manager gates duplicate START).
+      return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.STARTING, ['START']);
     }
 
     // Static rule lookup
