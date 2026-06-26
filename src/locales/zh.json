@@ -777,7 +777,19 @@
     "restartTooltip": "点击重启 OpenClaw Gateway",
     "confirmRestart": "确认重启 Gateway？",
     "confirmYes": "重启",
-    "confirmNo": "取消"
+    "confirmNo": "取消",
+    "statusChanged": "Gateway 状态变更",
+    "statusConnected": "已连接",
+    "statusConnecting": "正在连接",
+    "statusRetrying": "正在重试连接",
+    "statusError": "错误：{{error}}",
+    "state": {
+      "detecting": "正在检测",
+      "starting": "正在启动",
+      "connecting": "正在连接",
+      "connected": "已连接",
+      "error": "错误"
+    }
   },
   "notifications": {
     "newMessage": "新消息",

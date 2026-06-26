@@ -779,7 +779,19 @@
     "restartTooltip": "Click to restart OpenClaw Gateway",
     "confirmRestart": "Restart Gateway?",
     "confirmYes": "Restart",
-    "confirmNo": "Cancel"
+    "confirmNo": "Cancel",
+    "statusChanged": "Gateway status changed",
+    "statusConnected": "Connected",
+    "statusConnecting": "Connecting",
+    "statusRetrying": "Retrying connection",
+    "statusError": "Error: {{error}}",
+    "state": {
+      "detecting": "Detecting",
+      "starting": "Starting",
+      "connecting": "Connecting",
+      "connected": "Connected",
+      "error": "Error"
+    }
   },
   "notifications": {
     "newMessage": "New Message",

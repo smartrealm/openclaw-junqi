@@ -1391,5 +1391,19 @@
       "conversation": "انتظار السجل الحديث وقائمة الجلسات",
       "background": "انتظار التكلفة / الاستخدام / الوكلاء"
     }
+  },
+  "gateway": {
+    "statusChanged": "تغيّرت حالة Gateway",
+    "statusConnected": "متصل",
+    "statusConnecting": "جارٍ الاتصال",
+    "statusRetrying": "جارٍ إعادة محاولة الاتصال",
+    "statusError": "خطأ: {{error}}",
+    "state": {
+      "detecting": "جارٍ الفحص",
+      "starting": "جارٍ البدء",
+      "connecting": "جارٍ الاتصال",
+      "connected": "متصل",
+      "error": "خطأ"
+    }
   }
 }

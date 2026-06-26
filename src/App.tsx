@@ -49,6 +49,7 @@ import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { ModelLoaderChain, ConfigGetLoader, FileReadLoader, AgentsSessionLoader, type ModelEntry, type ModelLoadContext } from '@/services/gateway/modelLoaders';
 import { notifications } from '@/services/notifications';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { changeLanguage } from '@/i18n';
 import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
 import { usePomodoro } from '@/pet/usePomodoro';
@@ -141,6 +142,7 @@ export default function App() {
   const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
   const bootOverlayStartedAtRef = useRef(Date.now());
   const bootOverlayDismissedRef = useRef(false);
+  const lastGatewayToastKeyRef = useRef<string | null>(null);
 
   // ── Load Sessions from Gateway (also updates per-session model/thinking/token data) ──
   // This is the single polling call for all session metadata. The store's setSessions
@@ -459,6 +461,27 @@ export default function App() {
       setGatewayBootError(snap.error);
       setGatewayBootLogs(snap.logs);
       setGatewayRetrying(snap.retrying);
+
+      const toastKey = `${snap.state}|${snap.connected}|${snap.connecting}|${snap.retrying}|${snap.error ?? ''}`;
+      const previousToastKey = lastGatewayToastKeyRef.current;
+      if (previousToastKey === null) {
+        // First snapshot is just initial state hydration; don't toast on app boot.
+        lastGatewayToastKeyRef.current = toastKey;
+      } else if (previousToastKey !== toastKey) {
+        lastGatewayToastKeyRef.current = toastKey;
+        const title = t('gateway.statusChanged', 'Gateway status changed');
+        const body = snap.error
+          ? t('gateway.statusError', { error: snap.error, defaultValue: `Error: ${snap.error}` })
+          : snap.connected
+            ? t('gateway.statusConnected', 'Connected')
+            : snap.retrying
+              ? t('gateway.statusRetrying', 'Retrying connection')
+              : snap.connecting
+                ? t('gateway.statusConnecting', 'Connecting')
+                : t(`gateway.state.${snap.state}`, snap.state);
+        useNotificationStore.getState().addToast(snap.error ? 'error' : 'info', title, body);
+      }
+
       if (snap.connected) {
         setGatewayBootError(null);
         setGatewayBootLogs(undefined);

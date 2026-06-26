@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, CheckCircle2, Info, AlertTriangle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -197,11 +198,12 @@ export function ToastContainer() {
   // Show at most 3 (store enforces it but guard here too)
   const visible = toasts.slice(-3);
 
-  return (
+  const node = (
     <div
-      // bottom-4 + end-4 → logical properties, RTL-aware
-      className="fixed top-4 end-4 flex flex-col gap-2 pointer-events-none z-[100]"
-      style={{ zIndex: 9999 }}
+      // top/end → logical properties, RTL-aware. Portal + very high z-index
+      // keeps toasts above route modals/popovers that also use z-[9999].
+      className="fixed top-4 end-4 flex flex-col gap-2 pointer-events-none"
+      style={{ zIndex: 2147483000 }}
       aria-label="Notifications"
     >
       <AnimatePresence mode="sync">
@@ -213,4 +215,6 @@ export function ToastContainer() {
       </AnimatePresence>
     </div>
   );
+
+  return createPortal(node, document.body);
 }
