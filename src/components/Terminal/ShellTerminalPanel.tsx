@@ -284,6 +284,35 @@ interface Props {
 
 const MAX_SHELLS = 5;
 
+function shellPersistKey(projectId: string): string {
+  return `junqi:terminal-shells:${projectId}`;
+}
+
+function loadShellState(projectId: string): { shells: ShellSession[]; activeShellId: string | null; nextIndex: number } | null {
+  try {
+    const raw = localStorage.getItem(shellPersistKey(projectId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const shells = Array.isArray(parsed?.shells)
+      ? parsed.shells.filter((s: any): s is ShellSession => typeof s?.id === 'string' && typeof s?.title === 'string')
+      : [];
+    if (shells.length === 0) return null;
+    return {
+      shells: shells.slice(0, MAX_SHELLS),
+      activeShellId: shells.some((s: ShellSession) => s.id === parsed?.activeShellId) ? parsed.activeShellId : shells[0].id,
+      nextIndex: Number.isFinite(parsed?.nextIndex) ? Math.max(2, Number(parsed.nextIndex)) : shells.length + 1,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveShellState(projectId: string, shells: ShellSession[], activeShellId: string | null, nextIndex: number): void {
+  try {
+    localStorage.setItem(shellPersistKey(projectId), JSON.stringify({ shells, activeShellId, nextIndex }));
+  } catch {}
+}
+
 function createShellSession(projectId: string, index: number): ShellSession {
   return {
     id: `shell:${projectId}:${index}:${Date.now()}`,
@@ -722,19 +751,26 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     ref,
   ) {
     const { t } = useI18n();
-    const initialShellRef = useRef<ShellSession | null>(null);
-    if (!initialShellRef.current) {
-      initialShellRef.current = createShellSession(projectId, 1);
+    const initialStateRef = useRef<{ shells: ShellSession[]; activeShellId: string | null; nextIndex: number } | null>(null);
+    if (!initialStateRef.current) {
+      initialStateRef.current = loadShellState(projectId) ?? (() => {
+        const initial = createShellSession(projectId, 1);
+        return { shells: [initial], activeShellId: initial.id, nextIndex: 2 };
+      })();
     }
 
-    const nextShellIndexRef = useRef(2);
+    const nextShellIndexRef = useRef(initialStateRef.current.nextIndex);
     const dragSrcIdxRef = useRef<number | null>(null);
     const dragDstIdxRef = useRef<number | null>(null);
     const shellRefs = useRef<Record<string, ShellTerminalInstanceHandle | null>>({});
-    const [shells, setShells] = useState<ShellSession[]>(() => [initialShellRef.current!]);
-    const [activeShellId, setActiveShellId] = useState<string | null>(() => initialShellRef.current!.id);
+    const [shells, setShells] = useState<ShellSession[]>(() => initialStateRef.current!.shells);
+    const [activeShellId, setActiveShellId] = useState<string | null>(() => initialStateRef.current!.activeShellId);
     const activeShellIdRef = useRef(activeShellId);
     activeShellIdRef.current = activeShellId;
+
+    useEffect(() => {
+      saveShellState(projectId, shells, activeShellId, nextShellIndexRef.current);
+    }, [projectId, shells, activeShellId]);
 
     useImperativeHandle(
       ref,
@@ -908,7 +944,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       dragDstIdxRef.current = null;
                     }}
                     onDuplicate={() => {
-                      const dup = createShellSession(projectId, shells.length + 1);
+                      const dup = createShellSession(projectId, nextShellIndexRef.current++);
                       setShells((prev) => [...prev, { ...dup, title: shell.title }]);
                       setActiveShellId(dup.id);
                     }}

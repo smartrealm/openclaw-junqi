@@ -773,7 +773,8 @@
     "copy": "复制",
     "paste": "粘贴",
     "selectAll": "全选",
-    "clear": "清屏"
+    "clear": "清屏",
+    "workspaces": "WORKSPACES"
   },
   "offline": {
     "title": "未连接",

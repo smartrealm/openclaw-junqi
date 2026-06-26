@@ -557,7 +557,8 @@
     "copy": "نسخ",
     "paste": "لصق",
     "selectAll": "تحديد الكل",
-    "clear": "مسح"
+    "clear": "مسح",
+    "workspaces": "WORKSPACES"
   },
   "offline": {
     "title": "غير متصل",

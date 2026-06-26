@@ -94,7 +94,7 @@ function PaneNodeRenderer({
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
           projectPath={node.config.projectPath || projectPath}
-          projectId="default"
+          projectId={node.id}
           paneConfig={node.config}
           onClose={() => onClose(node.id)}
           onSplitHorizontal={() => onSplit(node.id, 'horizontal')}

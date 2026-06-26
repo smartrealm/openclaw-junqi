@@ -11,6 +11,7 @@ import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { homeDir } from "@tauri-apps/api/path";
+import { invoke } from "@tauri-apps/api/core";
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -38,7 +39,15 @@ export function TerminalPage() {
   useEffect(() => { if (!workspace) ensureActive(); }, [workspace, ensureActive]);
 
   type SidebarMode = 'full' | 'compact' | 'hidden';
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('hidden');
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => {
+    try {
+      const saved = localStorage.getItem('junqi:terminal-sidebar-mode');
+      return saved === 'full' || saved === 'compact' || saved === 'hidden' ? saved : 'hidden';
+    } catch { return 'hidden'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('junqi:terminal-sidebar-mode', sidebarMode); } catch {}
+  }, [sidebarMode]);
   const cycleSidebarMode = () => setSidebarMode((m) =>
     m === 'hidden' ? 'full' : m === 'full' ? 'compact' : 'hidden'
   );
@@ -79,6 +88,7 @@ export function TerminalPage() {
             mode={sidebarMode}
             onModeChange={setSidebarMode}
             onToggleSidebar={cycleSidebarMode}
+            projectPath={projectPath}
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
             onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
@@ -382,16 +392,92 @@ function WorkspaceRow({ ws, isActive, mode, index, totalCount, onSelect, onRenam
   );
 }
 
+
+interface ProjectStatusPanelState {
+  node?: string | null;
+  go?: string | null;
+  branch?: string | null;
+  files?: number;
+  insertions?: number;
+  deletions?: number;
+}
+
+function ProjectStatusPanel({ projectPath, mode }: { projectPath: string; mode: 'full' | 'compact' }) {
+  const [status, setStatus] = useState<ProjectStatusPanelState>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const next: ProjectStatusPanelState = {};
+      try {
+        const env = await invoke<{ node_version: string | null; go_version: string | null }>('get_terminal_env', { projectPath });
+        next.node = env.node_version;
+        next.go = env.go_version;
+      } catch {}
+      try {
+        const branches = await invoke<{ name: string; current: boolean }[]>('git_list_branches', { projectPath });
+        next.branch = branches.find((b) => b.current)?.name ?? null;
+      } catch {}
+      try {
+        const diff = await invoke<{ files_changed: number; insertions: number; deletions: number }>('git_diff_shortstat', { projectPath });
+        next.files = diff.files_changed;
+        next.insertions = diff.insertions;
+        next.deletions = diff.deletions;
+      } catch {}
+      if (!cancelled) setStatus(next);
+    };
+    void refresh();
+    const timer = setInterval(refresh, 8000);
+    const onFocus = () => void refresh();
+    window.addEventListener('focus', onFocus);
+    return () => { cancelled = true; clearInterval(timer); window.removeEventListener('focus', onFocus); };
+  }, [projectPath]);
+
+  const hasGit = !!status.branch;
+  if (mode === 'compact') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '8px 0', borderBottom: '1px solid rgb(255 255 255 / 0.06)' }}>
+        <StatusDot label="node" ok={!!status.node} />
+        <StatusDot label="go" ok={!!status.go} />
+        <StatusDot label="git" ok={hasGit} />
+      </div>
+    );
+  }
+  return (
+    <div style={{ padding: '8px 10px 7px', borderBottom: '1px solid rgb(255 255 255 / 0.06)' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+        <StatusPill label="node" value={status.node || '—'} ok={!!status.node} />
+        <StatusPill label="go" value={status.go || '—'} ok={!!status.go} />
+        <StatusPill label="git" value={status.branch || '—'} ok={hasGit} />
+      </div>
+      {hasGit && (status.files || 0) > 0 && (
+        <div style={{ marginTop: 6, fontSize: 10, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))' }}>
+          {status.files} files <span style={{ color: 'rgb(34 197 94)' }}>+{status.insertions || 0}</span> <span style={{ color: 'rgb(239 68 68)' }}>-{status.deletions || 0}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusPill({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return <span title={`${label}: ${value}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 20, padding: '0 6px', borderRadius: 5, border: '1px solid rgb(var(--aegis-overlay)/0.08)', fontSize: 10, fontFamily: '"JetBrains Mono", monospace', color: ok ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))', background: ok ? 'rgb(var(--aegis-overlay)/0.05)' : 'transparent', maxWidth: 96 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: ok ? 'rgb(34 197 94)' : 'rgb(var(--aegis-text-dim)/0.35)', flexShrink: 0 }} />{label}:{value}</span>;
+}
+
+function StatusDot({ label, ok }: { label: string; ok: boolean }) {
+  return <span title={label} style={{ width: 7, height: 7, borderRadius: '50%', background: ok ? 'rgb(34 197 94)' : 'rgb(var(--aegis-text-dim)/0.35)' }} />;
+}
+
 // ──────────────────────────────────────────────────────────────
 // WorkspaceSidebarPanel — redesigned (full 220px / compact 52px)
 // ──────────────────────────────────────────────────────────────
 function WorkspaceSidebarPanel({
-  mode, onModeChange, onToggleSidebar, workspaces, activeWorkspaceId,
+  mode, onModeChange, onToggleSidebar, projectPath, workspaces, activeWorkspaceId,
   onSelectWorkspace, onCreateWorkspace, onCloseWorkspace, onRenameWorkspace,
 }: {
   mode: 'full' | 'compact';
   onModeChange: (m: 'full' | 'compact' | 'hidden') => void;
   onToggleSidebar?: () => void;
+  projectPath: string;
   workspaces: Array<{ id: string; name: string; focusedPaneId: string; root: any }>;
   activeWorkspaceId: string | null;
   onSelectWorkspace: (id: string) => void;
@@ -410,6 +496,7 @@ function WorkspaceSidebarPanel({
       transition: 'width 0.18s cubic-bezier(0.22,1,0.36,1)',
       overflow: 'hidden',
     }}>
+      <ProjectStatusPanel projectPath={projectPath} mode={mode} />
 
       {/* ── 标题栏 ─────────────────────────────────── */}
       {mode === 'full' ? (
@@ -425,7 +512,7 @@ function WorkspaceSidebarPanel({
             flex: 1, fontSize: 10, fontFamily: '"JetBrains Mono", monospace',
             color: 'rgb(var(--aegis-text-dim))', fontWeight: 600,
             letterSpacing: '0.08em', textTransform: 'uppercase',
-          }}>Workspaces</span>
+          }}>{t('terminal.workspaces', 'WORKSPACES')}</span>
           {/* 新建按钮 */}
           <button
             onClick={onCreateWorkspace}

@@ -775,7 +775,8 @@
     "copy": "Copy",
     "paste": "Paste",
     "selectAll": "Select All",
-    "clear": "Clear"
+    "clear": "Clear",
+    "workspaces": "WORKSPACES"
   },
   "offline": {
     "title": "Not Connected",
