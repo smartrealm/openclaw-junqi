@@ -33,7 +33,7 @@ import {
   GENERATED_IMAGE_GENERATION_MODELS,
   GENERATED_VIDEO_GENERATION_MODELS,
 } from '@/generated/mediaCatalog.generated';
-import { resolveProviderSecret } from './providerSecretResolver';
+import { resolveProviderSecret, buildProviderSecretPatch } from './providerSecretResolver';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider test: try GET /models first; if 404, fallback to POST /chat/completions
@@ -721,39 +721,30 @@ function applyProviderAddition(
   };
 
   const key = (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key;
-  if (storeSecretInProviderConfig) {
-    const nextProviderModels = buildNextProviderModels();
-    const providerApiKeyRef = key ? `\${${providerApiKeyEnvKey}}` : currentProviderCfg.apiKey;
-    const shouldKeepProfileMetadata = tmpl?.id === 'custom';
+  const nextProviderModels = buildNextProviderModels();
+  const effectiveBaseUrl = providerConfig?.baseUrl ?? tmpl?.baseUrl ?? currentProviderCfg.baseUrl;
+  const effectiveApi = providerConfig?.api ?? tmpl?.api ?? currentProviderCfg.api;
 
+  next = buildProviderSecretPatch({
+    prev: next,
+    providerId,
+    profileKey,
+    profile,
+    secret: key,
+    template: tmpl,
+    preferProviderConfig: storeSecretInProviderConfig,
+  });
+
+  if (key && tmpl?.envKey && !storeSecretInProviderConfig) {
+    window.aegis?.agentAuth?.syncMain?.([
+      { provider: providerId, profileKey, apiKey: key, mode: profile.mode ?? (profile as any).type ?? 'api_key' },
+    ]);
+  }
+
+  if (storeSecretInProviderConfig) {
+    const providerApiKeyRef = key ? `\${${providerApiKeyEnvKey}}` : currentProviderCfg.apiKey;
     next = {
       ...next,
-      ...(key
-        ? {
-          env: {
-            ...next.env,
-            vars: {
-              ...(next.env?.vars ?? {}),
-              [providerApiKeyEnvKey]: key,
-            },
-          },
-        }
-        : {}),
-      ...(shouldKeepProfileMetadata
-        ? {
-          auth: {
-            ...next.auth,
-            profiles: {
-              ...(next.auth?.profiles ?? {}),
-              [profileKey]: {
-                ...profile,
-                token: undefined,
-                apiKey: undefined,
-              },
-            },
-          },
-        }
-        : {}),
       models: {
         ...next.models,
         providers: {
@@ -761,85 +752,29 @@ function applyProviderAddition(
           [providerId]: {
             ...currentProviderCfg,
             ...(providerApiKeyRef ? { apiKey: providerApiKeyRef } : {}),
-            baseUrl: providerConfig?.baseUrl ?? tmpl?.baseUrl ?? currentProviderCfg.baseUrl,
-            api: providerConfig?.api ?? tmpl?.api ?? currentProviderCfg.api,
+            baseUrl: effectiveBaseUrl,
+            api: effectiveApi,
             models: nextProviderModels,
           },
         },
       },
     };
-  } else if (tmpl?.envKey && key) {
-    window.aegis?.agentAuth?.syncMain?.([
-      { provider: providerId, profileKey, apiKey: key, mode: profile.mode ?? (profile as any).type ?? 'api_key' },
-    ]);
-
+  } else if (normalizedModels.length > 0 || effectiveBaseUrl || effectiveApi) {
     next = {
       ...next,
-      env: {
-        ...next.env,
-        vars: {
-          ...(next.env?.vars ?? {}),
-          [tmpl.envKey]: key,
+      models: {
+        ...next.models,
+        providers: {
+          ...(next.models?.providers ?? {}),
+          [providerId]: {
+            ...currentProviderCfg,
+            baseUrl: effectiveBaseUrl,
+            api: effectiveApi,
+            models: nextProviderModels,
+          },
         },
       },
     };
-
-    const existingProfiles = { ...(next.auth?.profiles ?? {}) };
-    next.auth = {
-      ...next.auth,
-      profiles: {
-        ...existingProfiles,
-        [profileKey]: {
-          ...profile,
-          token: undefined,
-          apiKey: undefined,
-        },
-      },
-    };
-    const nextProviderModels = buildNextProviderModels();
-    const effectiveBaseUrl = providerConfig?.baseUrl ?? tmpl?.baseUrl ?? currentProviderCfg.baseUrl;
-    const effectiveApi = providerConfig?.api ?? tmpl?.api ?? currentProviderCfg.api;
-    if (nextProviderModels.length > 0 || effectiveBaseUrl || effectiveApi) {
-      next = {
-        ...next,
-        models: {
-          ...next.models,
-          providers: {
-            ...(next.models?.providers ?? {}),
-            [providerId]: {
-              ...currentProviderCfg,
-              baseUrl: effectiveBaseUrl,
-              api: effectiveApi,
-              models: nextProviderModels,
-            },
-          },
-        },
-      };
-    }
-  } else {
-    const profiles = { ...next.auth?.profiles, [profileKey]: profile };
-    next = {
-      ...next,
-      auth: { ...next.auth, profiles },
-    };
-    if (normalizedModels.length > 0 || providerConfig?.baseUrl || providerConfig?.api || tmpl?.api) {
-      const nextProviderModels = buildNextProviderModels();
-      next = {
-        ...next,
-        models: {
-          ...next.models,
-          providers: {
-            ...(next.models?.providers ?? {}),
-            [providerId]: {
-              ...currentProviderCfg,
-              baseUrl: providerConfig?.baseUrl ?? tmpl?.baseUrl ?? currentProviderCfg.baseUrl,
-              api: providerConfig?.api ?? tmpl?.api ?? currentProviderCfg.api,
-              models: nextProviderModels,
-            },
-          },
-        },
-      };
-    }
   }
 
   const firstSelectedModel = normalizedModels[0];
@@ -1136,64 +1071,35 @@ function ProfileRow({
 
   const updateProfile = (patch: Partial<AuthProfile>) => {
     onChange((prev) => {
-      const next: GatewayRuntimeConfig = { ...prev };
+      const existing = (prev.auth?.profiles ?? {})[profileKey] ?? profile;
+      const { token, apiKey, ...restPatch } = patch as any;
+      const key: string | undefined =
+        (token as string | undefined) ?? (apiKey as string | undefined);
 
-      // ── Canonical provider handling ─────────────────────────────
-      // For all LLM providers that declare an envKey in PROVIDER_TEMPLATES
-      // (OpenAI, DeepSeek, Z.AI, etc.), we:
-      //   - store the secret in env.vars[envKey]
-      //   - keep only non-sensitive metadata in auth.profiles[profileKey]
-      //
-      // This matches the official OpenClaw guidance where providers are
-      // configured via environment variables + models.providers, and avoids
-      // future schema breakage like the recent ZAI change.
-      if (tmpl?.envKey) {
-        const profiles = { ...(next.auth?.profiles ?? {}) };
-        const existing = profiles[profileKey] ?? profile;
+      let next = buildProviderSecretPatch({
+        prev,
+        providerId: profile.provider || providerFromProfileKey(profileKey),
+        profileKey,
+        profile: { ...existing, ...restPatch },
+        secret: key,
+        template: tmpl,
+        preferProviderConfig: !tmpl?.envKey,
+      });
 
-        const { token, apiKey, ...restPatch } = patch as any;
-        const key: string | undefined =
-          (token as string | undefined) ?? (apiKey as string | undefined);
-
-        if (key !== undefined) {
-          next.env = {
-            ...next.env,
-            vars: {
-              ...(next.env?.vars ?? {}),
-              [tmpl.envKey]: key,
-            },
-          };
-        }
-
-        next.auth = {
-          ...next.auth,
-          profiles: {
-            ...profiles,
-            [profileKey]: {
-              ...existing,
-              ...restPatch,
-              // Never persist raw secrets here for envKey-backed providers
-              token: undefined,
-              apiKey: undefined,
-            },
-          },
-        };
-
-        return next;
-      }
-
-      // Fallback for legacy / custom providers without envKey:
-      // keep previous behavior (store into auth.profiles directly).
-      return {
+      next = {
         ...next,
         auth: {
           ...next.auth,
           profiles: {
-            ...next.auth?.profiles,
-            [profileKey]: { ...profile, ...patch },
+            ...(next.auth?.profiles ?? {}),
+            [profileKey]: {
+              ...((next.auth?.profiles ?? {})[profileKey] ?? existing),
+              ...restPatch,
+            },
           },
         },
       };
+      return next;
     });
   };
 
