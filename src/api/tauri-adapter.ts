@@ -30,6 +30,12 @@ import {
   buildDeviceAuthPayload,
   signDevicePayload,
 } from "./device-identity";
+import {
+  ConfigResolverChain,
+  CachedTokenResolver,
+  EventPayloadResolver,
+  FileReadResolver,
+} from "../services/gateway/configResolvers";
 
 let _deviceIdentity: any = null;
 async function deviceIdentity() {
@@ -64,38 +70,22 @@ try {
   }).catch(() => {});
 } catch {}
 
-// ── Resolve gateway config ──
-// Priority: cached token (from start_gateway) → gateway-config event
-// (already arrived) → invoke detect_gateway_config (reads openclaw.json).
-// The invoke path is reliable and fast (~1ms file read); we don't need
-// a complex race. The event listener warms _gwConfig asynchronously.
+// ── Resolve gateway config via Chain of Responsibility ──
+// Priority: cached token → event payload → file read (openclaw.json).
 async function resolveGwConfig(): Promise<any> {
-  // 1. Fast path: token cached from a prior start_gateway call.
-  if (_cachedGatewayToken) {
-    const port = _cachedGatewayPort ?? 18789;
-    return { token: _cachedGatewayToken, ws_url: `ws://127.0.0.1:${port}` };
+  const chain = new ConfigResolverChain([
+    new CachedTokenResolver(() => _cachedGatewayToken, () => _cachedGatewayPort),
+    new EventPayloadResolver(() => _gwConfig),
+    new FileReadResolver(invoke),
+  ]);
+  const result = await chain.resolve();
+  if (result) {
+    // Cache for subsequent calls
+    _cachedGatewayToken = result.token;
+    const m = String(result.ws_url).match(/:(\d+)$/);
+    if (m) _cachedGatewayPort = parseInt(m[1], 10);
   }
-
-  // 2. If the setup event already arrived, use it.
-  if (_gwConfig?.token) return _gwConfig;
-
-  // 3. Read directly from the config file via Rust. This is the
-  //    authoritative source — detect_gateway_config parses openclaw.json
-  //    and returns the actual port + token the gateway is using.
-  try {
-    const gw: any = await invoke("detect_gateway_config");
-    if (gw?.token) {
-      // Cache for subsequent calls.
-      _cachedGatewayToken = gw.token;
-      if (gw.ws_url) {
-        const m = String(gw.ws_url).match(/:(\d+)$/);
-        if (m) _cachedGatewayPort = parseInt(m[1], 10);
-      }
-      return { token: gw.token, ws_url: gw.ws_url };
-    }
-  } catch {}
-
-  return null;
+  return result;
 }
 
 // ── Cached gateway port — read once from config, reused across all calls ──

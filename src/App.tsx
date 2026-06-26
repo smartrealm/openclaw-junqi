@@ -46,6 +46,7 @@ import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { ModelLoaderChain, ConfigGetLoader, FileReadLoader, AgentsSessionLoader, type ModelEntry, type ModelLoadContext } from '@/services/gateway/modelLoaders';
 import { notifications } from '@/services/notifications';
 import { changeLanguage } from '@/i18n';
 import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
@@ -179,153 +180,62 @@ export default function App() {
   }, [setSessions, t]);
 
   // ── Load Available Models from Gateway ──
-  // Multi-strategy: config.get → agents.list + session → fallback
-  // Labels are formatted in TitleBar via formatModelName(), so we just store IDs.
+  // Uses Chain of Responsibility: config.get(WS) → openclaw.json(file) → agents+sessions.
+  // Each strategy returns models or null (delegate to next).
   const loadAvailableModels = useCallback(async () => {
-    const applyModels = async (models: Array<{ id: string; label: string; alias?: string }>) => {
+    const applyModels = async (models: ModelEntry[]) => {
       const state = useChatStore.getState();
       const sessionKey = state.activeSessionKey || 'agent:main:main';
       const activeSession = state.sessions.find((s) => s.key === sessionKey);
       const persistedModel = activeSession?.model ?? getSessionModelPref(sessionKey) ?? state.currentModel;
-      const persistedStillAvailable = persistedModel
-        ? models.some((m) => m.id === persistedModel)
-        : false;
+      const persistedStillAvailable = persistedModel ? models.some((m) => m.id === persistedModel) : false;
 
       setAvailableModels(models);
 
-      // Auto-select guardrails:
-      // 1) Preserve per-session model when present and still available.
-      // 2) First-run (no persisted model): auto-select the first available model.
-      // 3) Persisted model no longer in list (provider renamed/rebuilt): fallback to first.
-      const shouldAutoSelect = models.length > 0 && (
-        !persistedModel ||
-        (!!persistedModel && !persistedStillAvailable)
-      );
-
+      const shouldAutoSelect = models.length > 0 && (!persistedModel || (!!persistedModel && !persistedStillAvailable));
       if (!shouldAutoSelect) return;
-
       const targetModel = persistedStillAvailable ? persistedModel! : models[0].id;
-      if (targetModel === persistedModel) return; // already set, skip the round-trip
+      if (targetModel === persistedModel) return;
 
-      // Use setManualModelOverride so subsequent setSessions() calls (which run during
-      // gateway reconnect) cannot overwrite currentModel back to null before the
-      // gateway has persisted the new model in the session.
       state.setManualModelOverride(targetModel);
       try {
         await gateway.setSessionModel(targetModel, sessionKey);
         setSessionModelPref(sessionKey, targetModel);
         setTimeout(() => void loadSessions(), 500);
-      } catch (err) {
-        console.warn('[Models] Failed to auto-select model:', err);
-      }
+      } catch (err) { console.warn('[Models] Failed to auto-select model:', err); }
     };
 
-    // ── Strategy 1: config.get → agents.defaults.models (most reliable) ──
-    // If config.get fails (e.g. gateway restarting, WS disconnected), fall
-    // back to reading openclaw.json directly via Tauri — no WebSocket needed.
-    let hasConfiguredProvider = false;
-    let modelsFromConfig: Array<{ id: string; label: string; alias?: string }> = [];
-
-    // Helper: extract provider flag + models from a config object
-    const extractFromConfig = (config: any): void => {
-      const authProfiles = config?.auth?.profiles ?? {};
-      const modelProviders = config?.models?.providers ?? {};
-      const envVars = config?.env?.vars ?? {};
-      hasConfiguredProvider =
-        Object.keys(authProfiles).length > 0 ||
-        Object.keys(modelProviders).length > 0 ||
-        Object.keys(envVars).length > 0;
-
-      const modelsSection: Record<string, any> = config?.agents?.defaults?.models ?? {};
-      modelsFromConfig = Object.entries(modelsSection).map(([id, cfg]: [string, any]) => ({
-        id,
-        label: id,
-        alias: (cfg?.alias as string) || undefined,
-      }));
+    // Build the chain context (shared extraction logic)
+    const ctx: ModelLoadContext = {
+      hasProviders: (config: any) => {
+        const p = config ?? {};
+        return Object.keys(p.auth?.profiles ?? {}).length > 0
+            || Object.keys(p.models?.providers ?? {}).length > 0
+            || Object.keys(p.env?.vars ?? {}).length > 0;
+      },
+      extractModels: (config: any) => {
+        const modelsSection: Record<string, any> = config?.agents?.defaults?.models ?? {};
+        return Object.entries(modelsSection).map(([id, cfg]: [string, any]) => ({
+          id, label: id, alias: (cfg?.alias as string) || undefined,
+        }));
+      },
     };
 
-    // 1a. Try WebSocket config.get (preferred — reflects runtime state)
-    let configGetSucceeded = false;
-    try {
-      const raw = await gateway.call('config.get', {});
-      // Validate: config.get should return {config: {...}, hash: "..."} or
-      // the config object directly. A health event (has 'plugins'/'eventLoop')
-      // means the method was rejected or scope insufficient — skip it.
-      const isHealthEvent = raw?.eventLoop || raw?.plugins?.loaded;
-      if (!isHealthEvent) {
-        const config = raw?.agents?.defaults?.models ? raw : (raw?.config ?? raw);
-        extractFromConfig(config);
-        configGetSucceeded = true;
+    // Chain: WS config.get → file read → agents+sessions
+    const chain = new ModelLoaderChain([
+      new ConfigGetLoader((m, p) => gateway.call(m, p)),
+      new FileReadLoader(async () => {
+        if (!window.aegis?.config?.read) return null;
+        const { data } = await window.aegis.config.read('');
+        return { data };
+      }),
+      new AgentsSessionLoader(() => gateway.getSessions(), () => gateway.getAgents()),
+    ]);
 
-        if (modelsFromConfig.length > 0) {
-          console.log('[Models] Loaded from config.get:', modelsFromConfig.length);
-          await applyModels(modelsFromConfig);
-          return;
-        }
-      } else {
-        console.warn('[Models] config.get returned health event, not config — falling back to file');
-      }
-    } catch (e) {
-      console.warn('[Models] config.get failed, reading openclaw.json directly:', e);
-    }
-
-    // 1b. Fallback: read openclaw.json directly via Tauri (no WS needed).
-    // Triggered when: config.get failed, returned wrong data (health event),
-    // or returned empty models. File read is always reliable.
-    if (modelsFromConfig.length === 0 && window.aegis?.config?.read) {
-      try {
-        const { data: diskConfig } = await window.aegis.config.read('');
-        extractFromConfig(diskConfig);
-        if (modelsFromConfig.length > 0) {
-          console.log('[Models] Loaded from openclaw.json (file fallback):', modelsFromConfig.length,
-            configGetSucceeded ? '(config.get returned empty)' : '(config.get failed)');
-          await applyModels(modelsFromConfig);
-          return;
-        }
-      } catch (diskErr) {
-        console.warn('[Models] openclaw.json read also failed:', diskErr);
-      }
-    }
-
-    // ── Strategy 2: Collect unique models from agents + session ──
-    // Guard: this fallback is only valid after at least one provider is configured.
-    if (!hasConfiguredProvider) {
-      setAvailableModels([]);
-      return;
-    }
-    try {
-      const modelMap = new Map<string, { id: string; label: string; alias?: string }>();
-
-      // Main session model
-      const sessionsResult = await gateway.getSessions();
-      const sessions = Array.isArray(sessionsResult?.sessions) ? sessionsResult.sessions : [];
-      const main = sessions.find((s: any) => (s.key || '') === 'agent:main:main');
-      if (main?.model) modelMap.set(main.model, { id: main.model, label: main.model });
-
-      // Agent models
-      const agentsResult = await gateway.getAgents();
-      const agents = Array.isArray(agentsResult?.agents) ? agentsResult.agents : [];
-      for (const agent of agents) {
-        const modelId = agent?.model?.primary;
-        if (modelId && !modelMap.has(modelId)) {
-          modelMap.set(modelId, { id: modelId, label: modelId });
-        }
-      }
-
-      if (modelMap.size > 0) {
-        const fromAgents = [...modelMap.values()];
-        console.log('[Models] Loaded from agents/sessions:', fromAgents.length);
-        await applyModels(fromAgents);
-        return;
-      }
-    } catch (e) {
-      console.warn('[Models] agents.list failed:', e);
-    }
-
-    // No configured models: explicitly clear stale list so UI doesn't keep showing old models.
-    setAvailableModels([]);
-    console.warn('[Models] No configured models from config or gateway');
+    const models = await chain.load(ctx);
+    await applyModels(models);
   }, [setAvailableModels, loadSessions]);
+
 
   // ── Desktop pet companion: open window + broadcast state (main window only) ──
   usePetStateEmitter();

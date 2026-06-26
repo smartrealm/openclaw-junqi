@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { startPolling, stopPolling } from '@/stores/gatewayDataStore';
+import { MessageRouter, isAuthError } from './messageRouter';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import i18n from '@/i18n';
 
@@ -117,6 +118,7 @@ export class GatewayConnection {
   // ── Heartbeat (activity-based dead connection detection) ──
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatPingTimer: ReturnType<typeof setTimeout> | null = null;
+  private msgRouter = new MessageRouter();
   private readonly HEARTBEAT_DEAD_MS = 90_000; // No traffic for 90s = dead
 
   // ── Message Queue (buffer while disconnected) ──
@@ -239,6 +241,7 @@ export class GatewayConnection {
       this.ws = null;
     }
 
+    this.initMessageRouter();
     this.connecting = true;
     this.lastError = null;
     this.contextSent = false; // Reset context injection for new connection
@@ -377,10 +380,7 @@ export class GatewayConnection {
         const errStr = String(err);
         console.error('[GW] ❌ Handshake rejected:', errStr);
         this.connecting = false;
-        if (
-          errStr.toLowerCase().includes('pairing required') ||
-          errStr.toLowerCase().includes('pairing_required')
-        ) {
+        if (isAuthError({ message: errStr })) {
           this.pairingRequired = true;
         }
         this.emitStatus({ error: errStr });
@@ -492,56 +492,45 @@ export class GatewayConnection {
   // Message Routing
   // ══════════════════════════════════════════════════════
 
-  private handleMessage(msg: any) {
-    // Any incoming message = connection alive — reset heartbeat timer
-    this.resetHeartbeat();
-
-    // Intercept connect.challenge — extract nonce and trigger handshake
-    if (msg.type === 'event' && msg.event === 'connect.challenge') {
-      const nonce = msg.payload?.nonce;
-      if (nonce && typeof nonce === 'string') {
-        console.log('[GW] 🔑 Received connect.challenge with nonce');
-        this.challengeNonce = nonce;
-        if (this.connectTimer) {
-          clearTimeout(this.connectTimer);
-          this.connectTimer = null;
+  /** Initialize the message router with all handler registrations. */
+  private initMessageRouter(): void {
+    this.msgRouter
+      // connect.challenge — extract nonce, trigger handshake
+      .on('event', (msg) => {
+        const nonce = msg.payload?.nonce;
+        if (nonce && typeof nonce === 'string') {
+          console.log('[GW] 🔑 Received connect.challenge with nonce');
+          this.challengeNonce = nonce;
+          if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
+          this.sendHandshake();
         }
-        this.sendHandshake();
-      }
-      return;
-    }
-
-    // Response
-    if (msg.type === 'res' && msg.id) {
-      const pending = this.pendingRequests.get(msg.id);
-      if (pending) {
+      }, 'connect.challenge')
+      // Response — resolve/reject pending requests
+      .on('res', (msg) => {
+        const pending = this.pendingRequests.get(msg.id);
+        if (!pending) return;
         clearTimeout(pending.timer);
         this.pendingRequests.delete(msg.id);
         if (msg.ok !== false) {
           pending.resolve(msg.payload ?? msg);
         } else {
-          const errorMsg = msg.error?.message || 'Request failed';
-          if (
-            typeof errorMsg === 'string' &&
-            (errorMsg.toLowerCase().includes('missing scope') ||
-              errorMsg.toLowerCase().includes('unauthorized') ||
-              errorMsg.toLowerCase().includes('invalid token') ||
-              errorMsg.toLowerCase().includes('token required') ||
-              errorMsg.toLowerCase().includes('auth'))
-          ) {
+          const error = msg.error || {};
+          const errorMsg = error.message || 'Request failed';
+          if (isAuthError(error)) {
             console.warn('[GW] 🔑 Scope/auth error detected:', errorMsg);
             this.callbacks?.onScopeError?.(errorMsg);
           }
           pending.reject(errorMsg);
         }
-      }
-      return;
-    }
+      })
+      // Generic events — forward to ChatHandler
+      .on('event', (msg) => { this.onEvent(msg); });
+  }
 
-    // Event — forward to ChatHandler via onEvent callback
-    if (msg.type === 'event') {
-      this.onEvent(msg);
-    }
+  private handleMessage(msg: any) {
+    // Any incoming message = connection alive — reset heartbeat timer
+    this.resetHeartbeat();
+    this.msgRouter.route(msg);
   }
 
   // ══════════════════════════════════════════════════════
