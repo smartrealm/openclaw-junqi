@@ -18,7 +18,9 @@
   --terminal-text:      var(--aegis-text);
   --terminal-text-dim:  var(--aegis-text-muted);
 
-  --terminal-cursor:    #ffffff;
+  /* Cursor must stay visible on both dark and light/elevated terminal backgrounds. */
+  --terminal-cursor:    #38bdf8;
+  --terminal-cursor-accent: #020617;
   --terminal-selection: rgba(127, 154, 255, 0.25);
 
   /* ANSI 16-color palette — aegis-status-* tokens. */
@@ -44,4 +46,20 @@
 @keyframes aegis-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.45; }
+}
+
+
+/* xterm cursor visibility fallback. WebGL/canvas normally consumes theme.cursor,
+   but DOM renderer / renderer fallback still uses these nodes. */
+.xterm .xterm-cursor-block {
+  background-color: var(--terminal-cursor) !important;
+  color: var(--terminal-cursor-accent) !important;
+}
+.xterm .xterm-cursor-bar,
+.xterm .xterm-cursor-underline {
+  background-color: var(--terminal-cursor) !important;
+}
+.xterm.focus .xterm-cursor-block,
+.xterm:focus .xterm-cursor-block {
+  outline: 1px solid var(--terminal-cursor);
 }

@@ -32,7 +32,8 @@ export function buildDarkTerminalTheme() {
   return {
     background:         readAnsiColor('--terminal-bg',        '#11151b'),
     foreground:         readAnsiColor('--terminal-text',      '#f1f4fb'),
-    cursor:             readAnsiColor('--terminal-cursor',    '#ffffff'),
+    cursor:             readAnsiColor('--terminal-cursor',    '#38bdf8'),
+    cursorAccent:       readAnsiColor('--terminal-cursor-accent', '#020617'),
     selectionBackground:readAnsiColor('--terminal-selection', 'rgba(127,154,255,0.25)'),
     black:              readAnsiColor('--ansi-black',         '#727b8f'),
     red:                readAnsiColor('--ansi-red',           '#ff5a5a'),
@@ -498,6 +499,8 @@ export function initTerminal(
     convertEol: false,
     scrollback,
     cursorBlink: true,
+    cursorStyle: 'bar',
+    cursorWidth: 2,
     fontFamily,
     fontSize,
     theme: themeFor(variant),
