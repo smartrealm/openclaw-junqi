@@ -66,9 +66,11 @@ export function useSetupFlow(
     setGatewayRunning, setInstallMode,
   } = useAppStore();
 
-  const prevSetupDone = localStorage.getItem("junqi-setup-done") === "1";
-
   // ── Auto-detect on mount ──
+  // Probe order: check_openclaw → probe_gateway_port (reads config port
+  // from openclaw.json on the Rust side). No hardcoded port, no
+  // prevSetupDone gate — if the gateway is running we connect to it
+  // regardless of whether setup was previously completed.
   useEffect(() => {
     if (setupStep !== "detecting") return;
     (async () => {
@@ -80,16 +82,20 @@ export function useSetupFlow(
           return;
         }
 
-        // Already installed: fast-path if previously completed setup
-        if (prevSetupDone) {
-          // Probe gateway port — if reachable, skip setup entirely
-          try {
-            const reachable: boolean = await invoke("probe_gateway_port", { port: 18789 });
-            if (reachable) { setSetupComplete(true); return; }
-          } catch {}
-        }
+        // OpenClaw is installed — probe if its gateway is already
+        // listening. Rust reads the actual configured port from
+        // openclaw.json (not a hardcoded 18789).
+        try {
+          // No port argument → Rust reads config. If that fails it
+          // falls back to 18789.
+          const reachable: boolean = await invoke("probe_gateway_port", {});
+          if (reachable) {
+            setSetupComplete(true);
+            return;
+          }
+        } catch {}
 
-        // Installed but gateway not responding
+        // Installed but gateway not responding → auto-start it
         setSetupStep("gateway-stopped");
       } catch {
         setSetupStep("choosing-mode");

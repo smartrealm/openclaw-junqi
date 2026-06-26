@@ -569,7 +569,14 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
 /// Probes via HTTP from Rust side — no CORS issues.
 #[tauri::command]
 pub async fn probe_gateway_port(port: Option<u16>) -> Result<bool, String> {
-    Ok(is_gateway_serving(port.unwrap_or(18789)).await)
+    // When the caller supplies a port, probe it directly. Otherwise read
+    // the configured port from openclaw.json so we detect gateways that
+    // don't run on the default 18789.
+    let target_port = match port {
+        Some(p) => p,
+        None => ConfigMetadata::load(&paths::config_path()).port,
+    };
+    Ok(is_gateway_serving(target_port).await)
 }
 
 /// Run `openclaw doctor` and return the output
