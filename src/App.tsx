@@ -144,6 +144,12 @@ export default function App() {
   const bootOverlayStartedAtRef = useRef(Date.now());
   const bootOverlayDismissedRef = useRef(false);
   const lastGatewayToastKeyRef = useRef<string | null>(null);
+  const bootRecoveryStartedRef = useRef(false);
+  const bootRecoveryTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [bootRecoveryAttempt, setBootRecoveryAttempt] = useState(0);
+  const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
+  const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
+  const [bootRecoveryLogs, setBootRecoveryLogs] = useState<string[]>([]);
 
   // ── Load Sessions from Gateway (also updates per-session model/thinking/token data) ──
   // This is the single polling call for all session metadata. The store's setSessions
@@ -279,6 +285,71 @@ export default function App() {
     }, delay);
     return () => clearTimeout(timer);
   }, [connected]);
+
+  const addBootRecoveryLog = useCallback((line: string) => {
+    const ts = new Date().toLocaleTimeString();
+    setBootRecoveryLogs((prev) => [...prev.slice(-24), `[${ts}] ${line}`]);
+  }, []);
+
+  const triggerGatewayReconnect = useCallback((label = 'manual') => {
+    addBootRecoveryLog(`Reconnect requested (${label})`);
+    try { gateway.disconnect(); } catch {}
+    try { gatewayManager.reset(); } catch {}
+  }, [addBootRecoveryLog]);
+
+  const restartGatewayFromBoot = useCallback(async () => {
+    if (!window.aegis?.gateway?.retry) return;
+    setBootRecoveryRestarting(true);
+    setBootRecoveryReady(true);
+    addBootRecoveryLog('Restarting Gateway service…');
+    try {
+      const result = await window.aegis.gateway.retry();
+      addBootRecoveryLog(result?.success === false ? `Gateway restart failed: ${result.error || 'unknown error'}` : 'Gateway restart command completed');
+      triggerGatewayReconnect('after-restart');
+    } catch (err) {
+      addBootRecoveryLog(`Gateway restart exception: ${String(err)}`);
+    } finally {
+      setBootRecoveryRestarting(false);
+    }
+  }, [addBootRecoveryLog, triggerGatewayReconnect]);
+
+  const openBootLogs = useCallback(() => {
+    try { window.location.hash = '#/logs'; } catch {}
+  }, []);
+
+  // If gateway process is running but WS handshake is stuck during cold boot,
+  // retry connection at 3s / 5s / 10s. After that, show manual restart guidance.
+  useEffect(() => {
+    if (connected) {
+      bootRecoveryTimersRef.current.forEach(clearTimeout);
+      bootRecoveryTimersRef.current = [];
+      bootRecoveryStartedRef.current = false;
+      setBootRecoveryAttempt(0);
+      setBootRecoveryReady(false);
+      setBootRecoveryRestarting(false);
+      return;
+    }
+    if (!bootOverlayVisible || bootOverlayDismissedRef.current || bootRecoveryStartedRef.current) return;
+    bootRecoveryStartedRef.current = true;
+    setBootRecoveryLogs([]);
+    addBootRecoveryLog('Waiting for Gateway WebSocket handshake…');
+    const delays = [3000, 8000, 18000];
+    bootRecoveryTimersRef.current = delays.map((delay, idx) => setTimeout(() => {
+      if (useChatStore.getState().connected) return;
+      const attempt = idx + 1;
+      setBootRecoveryAttempt(attempt);
+      addBootRecoveryLog(`Auto reconnect attempt ${attempt}/3`);
+      triggerGatewayReconnect(`auto-${attempt}`);
+      if (attempt === 3) {
+        setBootRecoveryReady(true);
+        addBootRecoveryLog('Auto reconnect attempts exhausted. Manual restart is available.');
+      }
+    }, delay));
+    return () => {
+      bootRecoveryTimersRef.current.forEach(clearTimeout);
+      bootRecoveryTimersRef.current = [];
+    };
+  }, [connected, bootOverlayVisible, addBootRecoveryLog, triggerGatewayReconnect]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
@@ -463,6 +534,8 @@ export default function App() {
       setConnectionStatus({ connected: snap.connected, connecting: snap.connecting, error: snap.error ?? undefined });
       setGatewayBootError(snap.error);
       setGatewayBootLogs(snap.logs);
+      if (snap.logs?.stdout) setBootRecoveryLogs((prev) => [...prev.slice(-24), snap.logs!.stdout]);
+      if (snap.logs?.stderr) setBootRecoveryLogs((prev) => [...prev.slice(-24), snap.logs!.stderr]);
       setGatewayRetrying(snap.retrying);
 
       const toastKey = `${snap.state}|${snap.connected}|${snap.connecting}|${snap.retrying}|${snap.error ?? ''}`;
@@ -590,7 +663,19 @@ export default function App() {
       )}
 
       <AnimatePresence mode="wait">
-        {bootOverlayVisible && !gatewayBootError && !needsPairing && <BootTimelineOverlay />}
+        {bootOverlayVisible && !gatewayBootError && !needsPairing && (
+          <BootTimelineOverlay
+            recovery={{
+              attempt: bootRecoveryAttempt,
+              showRestart: bootRecoveryReady,
+              restarting: bootRecoveryRestarting,
+              logs: bootRecoveryLogs,
+              onReconnect: () => triggerGatewayReconnect('button'),
+              onRestart: () => void restartGatewayFromBoot(),
+              onOpenLogs: openBootLogs,
+            }}
+          />
+        )}
       </AnimatePresence>
 
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}

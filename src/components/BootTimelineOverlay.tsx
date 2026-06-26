@@ -1,4 +1,4 @@
-import { Check, Loader2, Circle, AlertTriangle } from 'lucide-react';
+import { Check, Loader2, Circle, AlertTriangle, RotateCw, RefreshCw, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -11,7 +11,19 @@ function StageIcon({ stage }: { stage: BootStage }) {
   return <Circle size={11} className="text-aegis-text-dim" />;
 }
 
-export function BootTimelineOverlay() {
+interface BootTimelineOverlayProps {
+  recovery?: {
+    attempt: number;
+    showRestart: boolean;
+    restarting: boolean;
+    logs: string[];
+    onReconnect: () => void;
+    onRestart: () => void;
+    onOpenLogs: () => void;
+  };
+}
+
+export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
   const { t } = useTranslation();
   const stages = useBootSequenceStore((s) => s.stages);
   const summary = getBootProgressSummary(stages);
@@ -64,6 +76,56 @@ export function BootTimelineOverlay() {
             </div>
           ))}
         </div>
+
+        {recovery && (recovery.attempt > 0 || recovery.showRestart) && (
+          <div className="mx-5 mb-5 rounded-xl border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.035)] overflow-hidden">
+            <div className="px-4 py-3 border-b border-aegis-border flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold text-aegis-text">{t('boot.gatewayRecoveryTitle', 'Gateway connection recovery')}</div>
+                <div className="text-[11px] text-aegis-text-muted mt-0.5">
+                  {recovery.showRestart
+                    ? t('boot.gatewayRecoveryManual', 'Auto retries did not finish the handshake. Try restarting Gateway manually.')
+                    : t('boot.gatewayRecoveryRetrying', { attempt: recovery.attempt, defaultValue: `Retrying connection (${recovery.attempt}/3)` })}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={recovery.onReconnect}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/30 hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+                >
+                  <RotateCw size={12} /> {t('offline.retryGateway', 'Reconnect')}
+                </button>
+                {recovery.showRestart && (
+                  <button
+                    onClick={recovery.onRestart}
+                    disabled={recovery.restarting}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] bg-aegis-primary text-white hover:bg-aegis-primary/90 disabled:opacity-60 transition-colors"
+                  >
+                    {recovery.restarting ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    {recovery.restarting ? t('gatewayError.actions.retrying', 'Restarting…') : t('boot.restartGateway', 'Restart Gateway')}
+                  </button>
+                )}
+                <button
+                  onClick={recovery.onOpenLogs}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/30 hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+                >
+                  <FileText size={12} /> {t('offline.viewLogs', 'Logs')}
+                </button>
+              </div>
+            </div>
+            <div className="h-1 bg-aegis-surface">
+              <div className="h-full bg-aegis-primary transition-all duration-700" style={{ width: `${Math.min(100, recovery.attempt * 33 + (recovery.restarting ? 20 : 0))}%` }} />
+            </div>
+            {recovery.logs.length > 0 && (
+              <div className="max-h-28 overflow-y-auto px-4 py-2 bg-black/20">
+                <pre className="text-[10px] leading-relaxed font-mono text-aegis-text-dim whitespace-pre-wrap">
+                  {recovery.logs.slice(-8).join('\\n')}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </motion.div>
   );
