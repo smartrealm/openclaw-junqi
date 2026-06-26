@@ -3042,10 +3042,10 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
           <div className="mt-3 rounded-xl border border-aegis-border bg-aegis-elevated/60 p-4">
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle size={14} className={brokenProviders.length > 0 ? 'text-amber-400' : 'text-aegis-success'} />
-              <span className="text-sm font-semibold text-aegis-text">{t('config.providersHealth', '提供方健康状态')}</span>
+              <span className="text-sm font-semibold text-aegis-text">提供方健康状态</span>
             </div>
             <p className="text-xs text-aegis-text-muted">
-              {t('config.providersHealthSummary', { ok: okProviders.length, broken: brokenProviders.length, defaultValue: `正常 ${okProviders.length} · 损坏 ${brokenProviders.length}` })}
+              {`正常 ${okProviders.length} · 损坏 ${brokenProviders.length}`}
             </p>
             {brokenProviders.length > 0 && (
               <div className="mt-3 space-y-2">
@@ -3053,7 +3053,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                   <div key={item.providerId} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
                     <div className="text-xs font-medium text-amber-300">{item.providerId}</div>
                     <div className="text-[11px] text-aegis-text-muted">
-                      {t('config.providerBrokenNeedSecret', '结构仍在，但 Secret 已缺失，需要补录 API Key / Token')}
+                      结构仍在，但 Secret 已缺失，需要补录 API Key / Token
                     </div>
                   </div>
                 ))}
