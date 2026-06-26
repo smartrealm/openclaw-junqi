@@ -16,11 +16,6 @@ import {
   DEFAULT_TERMINAL_FONT_SIZE,
   getDefaultMonoFont,
 } from "@/_nezha_root/types";
-import { X } from "lucide-react";
-import { Icon } from "@/components/shared/icons";
-import { AgentOverviewPanel, type AgentPanelMode } from "@/components/Terminal/AgentOverviewPanel";
-
-type RightPanel = null | "agents";
 
 export function TerminalPage() {
   const { t } = useTranslation();
@@ -42,11 +37,6 @@ export function TerminalPage() {
   const ensureActive = useWorkspaceStore((s) => s.ensureActive);
   useEffect(() => { if (!workspace) ensureActive(); }, [workspace, ensureActive]);
 
-  const [rightPanel, setRightPanel] = useState<RightPanel>(null);
-  const [rightPanelWidth, setRightPanelWidth] = useState(360);
-  const [isDragging, setIsDragging] = useState(false);
-  const [agentPanelMode, setAgentPanelMode] = useState<AgentPanelMode>('full');
-
   type SidebarMode = 'full' | 'compact' | 'hidden';
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('hidden');
   const cycleSidebarMode = () => setSidebarMode((m) =>
@@ -57,24 +47,6 @@ export function TerminalPage() {
 
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-
-  const togglePanel = useCallback((panel: RightPanel) => {
-    setRightPanel((prev) => (prev === panel ? null : panel));
-  }, []);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isDragging) return;
-    const onMove = (e: MouseEvent) => setRightPanelWidth(Math.max(240, Math.min(700, window.innerWidth - e.clientX)));
-    const onUp = () => setIsDragging(false);
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [isDragging]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -157,25 +129,6 @@ export function TerminalPage() {
           </div>
         </div>
 
-        {rightPanel && (<>
-          <div onMouseDown={handleMouseDown} style={{ width: 4, flexShrink: 0, cursor: "col-resize", background: isDragging ? "rgb(var(--aegis-primary))" : "transparent" }} />
-          <div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-elevated)", overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--aegis-border)", flexShrink: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))", textTransform: "uppercase", letterSpacing: "0.5px" }}>{t('terminal.agents', 'Agents')}</span>
-              <button onClick={() => setRightPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "rgb(var(--aegis-text-dim))" }}>
-                <X size={14} />
-              </button>
-            </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              <AgentOverviewPanel projectPath={projectPath} mode={agentPanelMode} onModeChange={setAgentPanelMode} />
-            </div>
-          </div>
-        </>)}
-
-        {/* Right toolbar — agents */}
-        <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 4px", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-surface)" }}>
-          <IconBtn icon={Icon.chrome.grid} label={t('terminal.agents', 'Agents')} active={rightPanel === "agents"} onClick={() => togglePanel("agents")} />
-        </div>
       </div>
 
       <CommandPaletteModal
@@ -188,24 +141,6 @@ export function TerminalPage() {
     </div>
   );
 }
-
-function IconBtn({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
-  const [hovered, setHovered] = useState(false);
-  const bg = active ? "rgb(var(--aegis-primary) / 0.10)" : hovered ? "rgb(var(--aegis-overlay) / 0.08)" : "transparent";
-  const col = active ? "rgb(var(--aegis-primary))" : hovered ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text-muted))";
-  return (
-    <button
-      onClick={onClick}
-      title={label}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", background: bg, color: col, transition: "background 0.12s, color 0.12s" }}
-    >
-      {icon}
-    </button>
-  );
-}
-
 
 // ── WorkspaceRow — workspace item in sidebar with inline rename (kooky SidebarWorkspaceRow) ──
 // ──────────────────────────────────────────────────────────────
