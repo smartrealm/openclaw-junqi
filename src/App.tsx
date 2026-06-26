@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/components/Layout/AppLayout';
@@ -588,7 +589,9 @@ export default function App() {
         />
       )}
 
-      {bootOverlayVisible && !gatewayBootError && !needsPairing && <BootTimelineOverlay />}
+      <AnimatePresence mode="wait">
+        {bootOverlayVisible && !gatewayBootError && !needsPairing && <BootTimelineOverlay />}
+      </AnimatePresence>
 
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
       {needsPairing && !gatewayBootError && (

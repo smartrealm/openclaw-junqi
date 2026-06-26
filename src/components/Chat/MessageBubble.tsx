@@ -606,15 +606,27 @@ function stripInlineCodeTicks(md: string): string {
                   />
                 </pre>
               )}
-              {/* Typing dots — three-dot pulse, kooky/Claude.ai pattern. */}
-              <div className="flex items-center gap-1 text-aegis-text-dim text-[10px] font-medium select-none">
-                <span className="inline-block w-1.5 h-1.5 rounded-full"
-                  style={{ background: 'rgb(var(--aegis-primary))', animation: 'typing-dot 1.2s ease-in-out infinite' }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full"
-                  style={{ background: 'rgb(var(--aegis-primary))', animation: 'typing-dot 1.2s ease-in-out 0.15s infinite' }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full"
-                  style={{ background: 'rgb(var(--aegis-primary))', animation: 'typing-dot 1.2s ease-in-out 0.3s infinite' }} />
-                <span className="ml-1.5 uppercase tracking-wider">{t('chat.typing', 'typing')}</span>
+              {/* Thinking prelude — no text label; just a subtle three-dot motion. */}
+              <div
+                className={clsx(
+                  'inline-flex items-center gap-1.5 select-none',
+                  isEmptyAssistantStreaming && 'px-3 py-2 rounded-2xl border border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.025)] shadow-sm',
+                )}
+                aria-label={t('chat.assistantPreparing', 'Assistant is preparing a response')}
+              >
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="inline-block rounded-full"
+                    style={{
+                      width: i === 1 ? 7 : 6,
+                      height: i === 1 ? 7 : 6,
+                      background: i === 1 ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-primary)/0.55)',
+                      boxShadow: i === 1 ? '0 0 10px rgb(var(--aegis-primary)/0.35)' : 'none',
+                      animation: `typing-dot 1.15s ease-in-out ${i * 0.16}s infinite`,
+                    }}
+                  />
+                ))}
               </div>
             </div>
           ) : (

@@ -138,7 +138,7 @@ export function ChatView() {
   const prevResponseGroupsLenRef = useRef(0);
 
   // Reset scroll lock when switching sessions — new session should start at bottom
-  useEffect(() => { scrollLockedRef.current = false; }, [activeSessionKey]);
+  useEffect(() => { scrollLockedRef.current = false; setAtBottom(true); }, [activeSessionKey]);
 
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const [hasSeenConnectionAttempt, setHasSeenConnectionAttempt] = useState(false);
@@ -209,10 +209,10 @@ export function ChatView() {
       behavior: 'smooth',
       align: 'end',
     });
-  }, []);
+  }, [atBottom]);
 
   const revealConversationTail = useCallback((opts?: { instant?: boolean }) => {
-    if (scrollLockedRef.current) return;
+    if (scrollLockedRef.current || !atBottom) return;
     const bh = (opts?.instant ? 'auto' : 'smooth') as 'auto' | 'smooth';
     const fn = () => {
       virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: bh, align: 'end' });
@@ -278,9 +278,9 @@ export function ChatView() {
   }, [messages, isTyping, revealConversationTail]);
 
   useEffect(() => {
-    if (!isTyping) return;
+    if (!isTyping || !atBottom || scrollLockedRef.current) return;
     revealConversationTail({ instant: true });
-  }, [isTyping, bottomContentSignature, revealConversationTail]);
+  }, [isTyping, atBottom, bottomContentSignature, revealConversationTail]);
 
   useEffect(() => {
     if (connecting) setHasSeenConnectionAttempt(true);
@@ -945,7 +945,18 @@ export function ChatView() {
       )}
 
       {/* Messages Area — Virtualized */}
-      <div className={clsx('flex-1 min-h-0 relative', queueCount > 0 && 'pb-[100px]')}>
+      <div
+        className={clsx('flex-1 min-h-0 relative', queueCount > 0 && 'pb-[100px]')}
+        onWheelCapture={(e) => {
+          if (e.deltaY < -2) {
+            scrollLockedRef.current = true;
+            setAtBottom(false);
+          }
+        }}
+        onTouchMoveCapture={() => {
+          if (!atBottom) scrollLockedRef.current = true;
+        }}
+      >
         {responseGroups.length === 0 ? (
           <div className="flex-1 h-full" />
         ) : (
