@@ -161,6 +161,24 @@ function parseSessionKey(key: string): { agentId: string; isMainSession: boolean
   return { agentId, isMainSession, isDesktopSession };
 }
 
+function resolveSessionAgentId(session: Session): string {
+  const raw = session as Session & {
+    agentId?: string;
+    agent_id?: string;
+    agent?: string | { id?: string };
+    metadata?: { agentId?: string; agent_id?: string; agent?: string | { id?: string } };
+  };
+  const direct = raw.agentId || raw.agent_id;
+  if (direct) return direct;
+  if (typeof raw.agent === 'string' && raw.agent) return raw.agent;
+  if (typeof raw.agent === 'object' && raw.agent?.id) return raw.agent.id;
+  const meta = raw.metadata;
+  if (meta?.agentId || meta?.agent_id) return meta.agentId || meta.agent_id || 'main';
+  if (typeof meta?.agent === 'string' && meta.agent) return meta.agent;
+  if (typeof meta?.agent === 'object' && meta.agent?.id) return meta.agent.id;
+  return parseSessionKey(session.key).agentId;
+}
+
 function compactTabLabel(label: string, max = 36): string {
   return label.length > max ? `${label.slice(0, max - 1).trim()}…` : label;
 }
@@ -436,6 +454,9 @@ function NewSessionPicker({
             lastMessage: s.lastMessage?.content?.substring?.(0, 80),
             lastTimestamp: s.lastMessage?.timestamp || s.updatedAt,
             kind: s.kind,
+            agentId: s.agentId || s.agent_id,
+            agent: s.agent,
+            metadata: s.metadata,
           }));
           setNewSessions(list);
         } catch (err) {
@@ -614,10 +635,7 @@ function NewSessionPicker({
             )}
             {/* Filter available sessions by selected agent */}
             {(() => {
-              const agentSessions = newSessions.filter((s) => {
-                const { agentId } = parseSessionKey(s.key);
-                return agentId === selectedAgentId;
-              });
+              const agentSessions = newSessions.filter((s) => resolveSessionAgentId(s) === selectedAgentId);
               return (
                 <>
             {agentSessions.length > 0 && (
@@ -858,6 +876,9 @@ export function ChatTabs() {
               lastMessage,
               lastTimestamp: s.lastMessage?.timestamp || s.updatedAt || previous?.lastTimestamp,
               kind: s.kind || previous?.kind,
+              agentId: s.agentId || s.agent_id,
+              agent: s.agent,
+              metadata: s.metadata,
             };
           });
           setNewSessions(list.filter((s) => !openTabs.includes(s.key)));
