@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/app-store";
 import { useSetupFlow } from "@/hooks/useSetupFlow";
-import type { SetupFlow } from "@/hooks/useSetupFlow";
+import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
 import type { DockerStatus } from "@/api/tauri-commands";
 import clsx from "clsx";
 
@@ -83,6 +83,46 @@ function ModeSelectScreen({ flow }: { flow: SetupFlow }) {
   );
 }
 
+function StepIndicator({ steps }: { steps: StepState[] }) {
+  if (steps.length === 0) return null;
+  return (
+    <div className="w-full max-w-sm flex flex-col gap-2 mt-2">
+      {steps.map((s) => (
+        <div key={s.id} className="flex items-center gap-3">
+          <div className={clsx(
+            "w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold border",
+            s.status === "done"    && "bg-aegis-success/20 border-aegis-success text-aegis-success",
+            s.status === "running" && "bg-aegis-primary/20 border-aegis-primary text-aegis-primary animate-pulse",
+            s.status === "error"   && "bg-red-500/20 border-red-500 text-red-400",
+            s.status === "pending" && "bg-transparent border-aegis-border text-aegis-text-dim",
+            s.status === "skipped" && "bg-transparent border-aegis-border text-aegis-text-dim opacity-50",
+          )}>
+            {s.status === "done"    && <Check size={11} strokeWidth={3} />}
+            {s.status === "error"   && <X size={11} strokeWidth={3} />}
+            {s.status === "running" && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+            {(s.status === "pending" || s.status === "skipped") && <span className="w-1.5 h-1.5 rounded-full bg-aegis-border" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className={clsx(
+              "text-sm",
+              s.status === "done"    && "text-aegis-text",
+              s.status === "running" && "text-aegis-primary font-medium",
+              s.status === "error"   && "text-red-400",
+              (s.status === "pending" || s.status === "skipped") && "text-aegis-text-dim",
+            )}>{s.label}</span>
+            {s.detail && (
+              <span className={clsx(
+                "ml-2 text-xs",
+                s.status === "error" ? "text-red-400/70" : "text-aegis-text-dim",
+              )}>{s.detail}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ProgressScreen({ flow }: { flow: SetupFlow }) {
   const { t } = useTranslation();
   const { setupStep, setupError } = useAppStore();
@@ -97,6 +137,7 @@ function ProgressScreen({ flow }: { flow: SetupFlow }) {
           </div>
           <p className="text-sm text-aegis-text-muted mt-3 text-center">{flow.statusMessage}</p>
         </div>
+        <StepIndicator steps={flow.steps} />
         {setupStep === "error" && setupError && (
           <div className="w-full max-w-sm">
             <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
@@ -190,11 +231,13 @@ export function SetupPage() {
   const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
   const [checkingDocker, setCheckingDocker] = useState(true);
   const [needsGit, setNeedsGit] = useState(false);
+  const [steps, setSteps] = useState<StepState[]>([]);
 
   const flow = useSetupFlow(
     progress, setProgress, statusMessage, setStatusMessage,
     dockerStatus, setDockerStatus, checkingDocker, setCheckingDocker,
     needsGit, setNeedsGit,
+    steps, setSteps,
   );
 
   switch (setupStep) {

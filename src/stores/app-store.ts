@@ -31,14 +31,23 @@ interface AppState {
 const savedMode = (localStorage.getItem("junqi-install-mode") as InstallMode) || "native";
 
 export const useAppStore = create<AppState>((set) => ({
-  // null = detecting, true = skip setup, false = need setup
-  setupComplete: true,
+  // Always start with null (detecting) so the setup wizard runs a quick
+  // check on every launch. useSetupFlow will call setSetupComplete(true)
+  // immediately if openclaw is installed and the gateway responds.
+  setupComplete: null,
   setupStep: "detecting" as SetupStep,
   setupError: null,
   installMode: savedMode,
   gatewayRunning: false,
 
-  setSetupComplete: (v) => set({ setupComplete: v }),
+  setSetupComplete: (v) => {
+    if (v === true) {
+      localStorage.setItem("junqi-setup-done", "1");
+    } else if (v === false) {
+      localStorage.removeItem("junqi-setup-done");
+    }
+    set({ setupComplete: v });
+  },
   setSetupStep: (step) => set({ setupStep: step }),
   setSetupError: (err) => set({ setupError: err }),
   setInstallMode: (mode) => {
