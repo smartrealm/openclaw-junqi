@@ -464,8 +464,8 @@ export default function App() {
 
       const toastKey = `${snap.state}|${snap.connected}|${snap.connecting}|${snap.retrying}|${snap.error ?? ''}`;
       const previousToastKey = lastGatewayToastKeyRef.current;
-      if (previousToastKey === null) {
-        // First snapshot is just initial state hydration; don't toast on app boot.
+      if (previousToastKey === null || !bootOverlayDismissedRef.current) {
+        // First snapshot and cold-start transitions are part of boot UI, not user-facing notifications.
         lastGatewayToastKeyRef.current = toastKey;
       } else if (previousToastKey !== toastKey) {
         lastGatewayToastKeyRef.current = toastKey;

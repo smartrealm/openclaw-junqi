@@ -176,7 +176,7 @@ function ProgressBar({ colorKey, durationMs, rtl }: { colorKey: string; duration
 
   return (
     <motion.div
-      className="absolute bottom-0 start-0 h-[2px] rounded-b-xl"
+      className="absolute bottom-0 start-0 h-[2px] w-full rounded-b-xl"
       initial={{ scaleX: 1 }}
       animate={{ scaleX: paused ? undefined : 0 }}
       transition={paused ? undefined : {
