@@ -33,7 +33,7 @@ import {
   GENERATED_IMAGE_GENERATION_MODELS,
   GENERATED_VIDEO_GENERATION_MODELS,
 } from '@/generated/mediaCatalog.generated';
-import { hasConfiguredProviderSecret } from './configUtils';
+import { resolveProviderSecret } from './providerSecretResolver';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider test: try GET /models first; if 404, fallback to POST /chat/completions
@@ -501,8 +501,8 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     const providerConfigEntry = Object.entries(modelsProviders).find(([modelsProviderId]) =>
       providerNamespaceMatches(modelsProviderId, provider)
     )?.[1];
-    const secretState = hasConfiguredProviderSecret(config as any, provider, template);
-    const envKeyValue = secretState.envKeyValue;
+    const secretState = resolveProviderSecret(config, provider, template, profileKey);
+    const envKeyValue = secretState.value;
     const envKeyFound = secretState.configured || hasProviderConfigApiKey(providerConfigEntry?.apiKey);
 
     result.push({

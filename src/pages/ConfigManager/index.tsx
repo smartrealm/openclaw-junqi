@@ -17,7 +17,7 @@ import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
 } from './runtimeNormalization';
-import { preserveProviderEnvVars } from './configUtils';
+import { preserveProviderSecretsFromDisk } from './providerSecretResolver';
 // ModelsTab removed — models are now fetched per-provider from the ProvidersTab
 import { AgentsTab } from './AgentsTab';
 import { ChannelsTab } from './ChannelsTab';
@@ -290,7 +290,7 @@ export function ConfigManagerPage() {
       const mergedRaw = smartMerge(diskConfig, originalConfig, configToSave);
       // Preserve provider env vars from disk when the UI state lost them but the
       // provider/profile still exists. Prevents accidental API key deletion.
-      const merged = preserveProviderEnvVars(diskConfig, mergedRaw, originalConfig ?? {});
+      const merged = preserveProviderSecretsFromDisk(diskConfig, mergedRaw);
       const precheckResult = await runConnectionPrecheck(options?.connectionProbe);
       if (!precheckResult.ok) {
         const continueSave = await requestConnectionFailureConfirm(precheckResult.failures);
