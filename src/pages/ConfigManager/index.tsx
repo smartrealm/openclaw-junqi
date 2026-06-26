@@ -1322,12 +1322,16 @@ export function ConfigManagerPage() {
         </div>
       )}
 
-      {/* ── Save Success Toast ── */}
-      {saveSuccess && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary text-sm font-medium animate-[float-in_0.3s_ease-out] shadow-lg">
-          <CheckCircle2 size={15} />
-          {t('config.configSaved')}
-        </div>
+      {/* ── Save Success Toast — portal to body so it is not squeezed/covered by page stacking contexts ── */}
+      {saveSuccess && createPortal(
+        <div
+          className="fixed top-4 right-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary text-sm font-medium animate-[float-in_0.3s_ease-out] shadow-lg backdrop-blur-xl"
+          style={{ zIndex: 2147483000, minWidth: 220, maxWidth: 'min(360px, calc(100vw - 32px))' }}
+        >
+          <CheckCircle2 size={15} className="shrink-0" />
+          <span className="whitespace-nowrap overflow-hidden text-ellipsis">{t('config.configSaved')}</span>
+        </div>,
+        document.body
       )}
 
       {/* ── Backup dropdown portal — rendered to body to escape stacking contexts ── */}

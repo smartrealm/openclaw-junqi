@@ -30,8 +30,8 @@ const pillBase: React.CSSProperties = {
 
 function usePillHover() {
   const [hovered, setHovered] = useState(false);
-  const activeStyle = { background: "rgb(var(--aegis-overlay)/0.08)", borderColor: "rgb(255 255 255 / 0.14)" };
-  const idleStyle   = { background: "transparent", borderColor: "rgb(255 255 255 / 0.07)" };
+  const activeStyle = { background: "rgb(var(--aegis-overlay)/0.08)", borderColor: "rgb(var(--aegis-overlay)/0.16)" };
+  const idleStyle   = { background: "transparent", borderColor: "rgb(var(--aegis-overlay)/0.08)" };
   return {
     hovered,
     handlers: { onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false) },
@@ -45,7 +45,7 @@ function StatusBarIconButton({
 }: { children: React.ReactNode; isActive?: boolean; help: string; onClick: () => void }) {
   const [hovered, setHovered] = useState(false);
   const bg     = isActive ? "rgb(var(--aegis-primary)/0.15)" : hovered ? "rgb(var(--aegis-overlay)/0.08)" : "transparent";
-  const border = isActive ? "1px solid rgb(var(--aegis-primary)/0.3)" : hovered ? "1px solid rgb(255 255 255 / 0.14)" : "1px solid rgb(255 255 255 / 0.07)";
+  const border = isActive ? "1px solid rgb(var(--aegis-primary)/0.3)" : hovered ? "1px solid rgb(var(--aegis-overlay)/0.16)" : "1px solid rgb(var(--aegis-overlay)/0.08)";
   const color  = isActive ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))";
   return (
     <button onClick={onClick} title={help}

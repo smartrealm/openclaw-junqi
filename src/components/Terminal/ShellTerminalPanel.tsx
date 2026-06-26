@@ -22,7 +22,7 @@ import {
   refreshTerminalDisplay,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
-import { Plus, Terminal as TerminalIcon, Trash2, X, SplitSquareHorizontal, SplitSquareVertical } from "lucide-react";
+import { Plus, Terminal as TerminalIcon, Trash2, X, SplitSquareHorizontal, SplitSquareVertical, PanelLeft } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
 import { PaneComposerBar } from "./PaneComposerBar";
@@ -89,6 +89,7 @@ function TabShellItem({
   onDuplicate, onSplitH, onSplitV,
   onDragStart, onDragEnter, onDragEnd,
 }: TabShellItemProps) {
+  const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -178,15 +179,17 @@ function TabShellItem({
         )}
         <button
           onClick={(e) => { e.stopPropagation(); onClose(e); }}
-          title="Close"
+          title={t('terminal.close', 'Close')}
           style={{
             background: "none", border: "none", color: "rgb(var(--aegis-text-dim))",
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: 1, borderRadius: 3, cursor: "pointer",
             opacity: (hovered || selected) ? 1 : 0,
             pointerEvents: (hovered || selected) ? "auto" : "none",
-            transition: "opacity 0.1s",
+            transition: "opacity 0.1s, background 0.12s, color 0.12s",
           }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.10)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
         >
           <X size={12} />
         </button>
@@ -194,45 +197,45 @@ function TabShellItem({
 
       {ctxMenu && (
         <div style={{
-          position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 200,
+          position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 220), top: Math.min(ctxMenu.y, window.innerHeight - 280), zIndex: 2147482000,
           background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(255 255 255 / 0.08)',
           borderRadius: 6, boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
           padding: '4px 0', minWidth: 180, display: 'flex', flexDirection: 'column',
         }}>
           <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-            onClick={() => { onClose(null as any); setCtxMenu(null); }}>Close</button>
+            onClick={() => { onClose(null as any); setCtxMenu(null); }}>{t('terminal.close', 'Close')}</button>
           {onCloseOthers && totalCount > 1 && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onCloseOthers(); setCtxMenu(null); }}>Close Others</button>
+              onClick={() => { onCloseOthers(); setCtxMenu(null); }}>{t('terminal.closeOthers', 'Close Others')}</button>
           )}
           {onCloseToRight && index < totalCount - 1 && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onCloseToRight(); setCtxMenu(null); }}>Close Tabs to the Right</button>
+              onClick={() => { onCloseToRight(); setCtxMenu(null); }}>{t('terminal.closeTabsToRight', 'Close Tabs to the Right')}</button>
           )}
           {onCloseAll && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onCloseAll(); setCtxMenu(null); }}>Close All</button>
+              onClick={() => { onCloseAll(); setCtxMenu(null); }}>{t('terminal.closeAll', 'Close All')}</button>
           )}
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onRename && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={startRename}>Rename...</button>
+              onClick={startRename}>{t('terminal.rename', 'Rename...')}</button>
           )}
           {onDuplicate && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onDuplicate(); setCtxMenu(null); }}>Duplicate Tab</button>
+              onClick={() => { onDuplicate(); setCtxMenu(null); }}>{t('terminal.duplicateTab', 'Duplicate Tab')}</button>
           )}
           {(onSplitH || onSplitV) && <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />}
           {onSplitH && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={() => { onSplitH(); setCtxMenu(null); }}>
-              Split Right
+              {t('terminal.splitRight', 'Split Right')}
             </button>
           )}
           {onSplitV && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={() => { onSplitV(); setCtxMenu(null); }}>
-              Split Down
+              {t('terminal.splitDown', 'Split Down')}
             </button>
           )}
         </div>
@@ -274,6 +277,8 @@ interface Props {
   canZoom?: boolean;
   isZoomed?: boolean;
   onZoom?: () => void;
+  onToggleSidebar?: () => void;
+  sidebarActive?: boolean;
 }
 
 const MAX_SHELLS = 5;
@@ -293,13 +298,16 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   onReady?: () => void;
+  onActiveTermChange?: (term: XTermType | null) => void;
 }>(
   function ShellTerminalInstance(
-    { shellId, projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady },
+    { shellId, projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady, onActiveTermChange },
     ref,
   ) {
+    const { t } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<XTerm | null>(null);
+    const [termCtxMenu, setTermCtxMenu] = useState<{ x: number; y: number } | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
     const themeVariantRef = useRef(themeVariant);
     const isActiveRef = useRef(isActive);
@@ -339,6 +347,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       );
       applyTerminalThemeOnPanel(term, themeVariantRef.current, container);
       terminalRef.current = term;
+      if (isActiveRef.current) onActiveTermChange?.(term as unknown as XTermType);
       fitAddonRef.current = fitAddon;
 
       // Holders for addons wired in openAndWire so the cleanup function can
@@ -499,6 +508,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         if (visibilityHandler) {
           document.removeEventListener("visibilitychange", visibilityHandler);
         }
+        if (isActiveRef.current) onActiveTermChange?.(null);
         terminalRef.current = null;
         fitAddonRef.current = null;
         disposeCharSizeOverride?.();
@@ -513,6 +523,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
     useEffect(() => {
       if (!isActive) return;
+      if (terminalRef.current) onActiveTermChange?.(terminalRef.current as unknown as XTermType);
       window.requestAnimationFrame(() => {
         if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
         const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
@@ -526,7 +537,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         refreshTerminalDisplay(terminalRef.current);
         terminalRef.current.focus();
       });
-    }, [isActive, shellId]);
+    }, [isActive, shellId, onActiveTermChange]);
 
     useEffect(() => {
       if (terminalRef.current && containerRef.current) {
@@ -551,6 +562,40 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       lastSizeRef.current = { cols: size.cols, rows: size.rows };
       invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
     }, [terminalFontSize, shellId]);
+
+    useEffect(() => {
+      if (!termCtxMenu) return;
+      const close = () => setTermCtxMenu(null);
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+      document.addEventListener('mousedown', close);
+      document.addEventListener('keydown', onKey);
+      return () => {
+        document.removeEventListener('mousedown', close);
+        document.removeEventListener('keydown', onKey);
+      };
+    }, [termCtxMenu]);
+
+    const copySelection = async () => {
+      const selected = terminalRef.current?.getSelection?.() ?? '';
+      if (selected) await navigator.clipboard.writeText(selected);
+      setTermCtxMenu(null);
+    };
+
+    const pasteClipboard = async () => {
+      const data = await navigator.clipboard.readText().catch(() => '');
+      if (data) invoke('send_input', { taskId: shellId, data }).catch(() => {});
+      setTermCtxMenu(null);
+    };
+
+    const selectAllTerminal = () => {
+      terminalRef.current?.selectAll?.();
+      setTermCtxMenu(null);
+    };
+
+    const clearTerminal = () => {
+      terminalRef.current?.clear?.();
+      setTermCtxMenu(null);
+    };
 
     useEffect(() => {
       if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
@@ -579,10 +624,29 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       };
     }, [monoFontFamily, shellId]);
 
+    const menuItemStyle: React.CSSProperties = {
+      padding: '5px 12px',
+      fontSize: 11,
+      cursor: 'pointer',
+      color: 'rgb(var(--aegis-text))',
+      fontFamily: '"JetBrains Mono", monospace',
+      whiteSpace: 'nowrap',
+      background: 'transparent',
+      border: 'none',
+      textAlign: 'left',
+      width: '100%',
+    };
+
     return (
       <div
         ref={containerRef}
         className="nezha-xterm-host nezha-shell-xterm-host"
+        onContextMenu={(e) => {
+          if (!isActive) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setTermCtxMenu({ x: e.clientX, y: e.clientY });
+        }}
         style={{
           position: "absolute",
           inset: 0,
@@ -592,7 +656,33 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           visibility: isActive ? "visible" : "hidden",
           pointerEvents: isActive ? "auto" : "none",
         }}
-      />
+      >
+        {termCtxMenu && (
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              left: Math.max(8, Math.min(termCtxMenu.x, window.innerWidth - 180)),
+              top: Math.max(8, Math.min(termCtxMenu.y, window.innerHeight - 180)),
+              zIndex: 2147482000,
+              minWidth: 150,
+              padding: '4px 0',
+              borderRadius: 6,
+              background: 'rgb(var(--aegis-elevated))',
+              border: '1px solid rgb(var(--aegis-overlay)/0.10)',
+              boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={copySelection}>{t('terminal.copy', 'Copy')}</button>
+            <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => void pasteClipboard()}>{t('terminal.paste', 'Paste')}</button>
+            <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={selectAllTerminal}>{t('terminal.selectAll', 'Select All')}</button>
+            <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
+            <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={clearTerminal}>{t('terminal.clear', 'Clear')}</button>
+          </div>
+        )}
+      </div>
     );
   },
 );
@@ -615,6 +705,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       canZoom,
       isZoomed,
       onZoom,
+      onToggleSidebar,
+      sidebarActive,
     },
     ref,
   ) {
@@ -726,6 +818,30 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           {/* Tab strip — kooky TabBarView 1:1 (chromeBackground = terminal-bg) */}
           <div style={{ display: "flex", alignItems: "center", height: 32, flexShrink: 0, padding: "0 8px", gap: 2, background: "var(--terminal-bg)" }}>
+            {onToggleSidebar && (
+              <button
+                onClick={onToggleSidebar}
+                title={t('terminal.workspaceToggleSidebar', 'Toggle sidebar')}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 5,
+                  border: 'none',
+                  background: sidebarActive ? 'rgb(var(--aegis-primary)/0.12)' : 'transparent',
+                  color: sidebarActive ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-muted))',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  transition: 'background 0.12s, color 0.12s',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = sidebarActive ? 'rgb(var(--aegis-primary)/0.16)' : 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = sidebarActive ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text))'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = sidebarActive ? 'rgb(var(--aegis-primary)/0.12)' : 'transparent'; (e.currentTarget as HTMLElement).style.color = sidebarActive ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-muted))'; }}
+              >
+                <PanelLeft size={14} />
+              </button>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 2, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
               {shells.map((shell, idx) => {
                 const selected = activeShellId === shell.id;
@@ -797,21 +913,27 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 onClick={handleAddShell}
                 disabled={shells.length >= MAX_SHELLS}
                 title={shells.length >= MAX_SHELLS ? t("terminal.limitReached") : t("terminal.newTerminal")}
-                style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-secondary))", cursor: shells.length >= MAX_SHELLS ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-secondary))", cursor: shells.length >= MAX_SHELLS ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
+                onMouseEnter={(e) => { if (shells.length < MAX_SHELLS) { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; } }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-secondary))'; }}
               >
                 <Plus size={14} />
               </button>
               <button
                 onClick={onSplitHorizontal ?? (() => {})}
-                title={APP_PLATFORM === 'macos' ? 'Split Right (⌘D)' : 'Split Right (Ctrl+D)'}
-                style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-muted))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                title={APP_PLATFORM === 'macos' ? t('terminal.splitRightShortcutMac', 'Split Right (⌘D)') : t('terminal.splitRightShortcut', 'Split Right (Ctrl+D)')}
+                style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-muted))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-muted))'; }}
               >
                 <SplitSquareHorizontal size={14} />
               </button>
               <button
                 onClick={onSplitVertical ?? (() => {})}
-                title={APP_PLATFORM === 'macos' ? 'Split Down (⌘⇧D)' : 'Split Down (Ctrl+Shift+D)'}
-                style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-muted))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                title={APP_PLATFORM === 'macos' ? t('terminal.splitDownShortcutMac', 'Split Down (⌘⇧D)') : t('terminal.splitDownShortcut', 'Split Down (Ctrl+Shift+D)')}
+                style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-muted))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-muted))'; }}
               >
                 <SplitSquareVertical size={14} />
               </button>
@@ -839,6 +961,9 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}
                 onReady={onReady}
+                onActiveTermChange={(term) => {
+                  if (activeShellIdRef.current === shell.id) activeTermRef.current = term;
+                }}
               />
             ))}
           </div>

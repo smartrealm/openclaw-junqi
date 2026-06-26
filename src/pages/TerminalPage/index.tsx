@@ -126,6 +126,8 @@ export function TerminalPage() {
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}
                 projectPath={projectPath}
+                onToggleSidebar={cycleSidebarMode}
+                sidebarActive={sidebarMode !== 'hidden'}
               />
             ) : (
               <ShellTerminalPanel
@@ -159,7 +161,7 @@ export function TerminalPage() {
           <div onMouseDown={handleMouseDown} style={{ width: 4, flexShrink: 0, cursor: "col-resize", background: isDragging ? "rgb(var(--aegis-primary))" : "transparent" }} />
           <div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-elevated)", overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--aegis-border)", flexShrink: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))", textTransform: "uppercase", letterSpacing: "0.5px" }}>Agents</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "rgb(var(--aegis-text-secondary))", textTransform: "uppercase", letterSpacing: "0.5px" }}>{t('terminal.agents', 'Agents')}</span>
               <button onClick={() => setRightPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "rgb(var(--aegis-text-dim))" }}>
                 <X size={14} />
               </button>
@@ -170,20 +172,9 @@ export function TerminalPage() {
           </div>
         </>)}
 
-        {/* Right toolbar — workspace toggle + agents */}
+        {/* Right toolbar — agents */}
         <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "12px 4px", borderLeft: "1px solid var(--aegis-border)", background: "var(--aegis-surface)" }}>
-          {/* kooky sidebar toggle — cycle hidden→full→compact */}
-          <IconBtn
-            icon={
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>
-              </svg>
-            }
-            label={sidebarMode !== "hidden" ? t('terminal.workspaceToggleSidebar') + ' (hide)' : t('terminal.workspaceToggleSidebar')}
-            active={sidebarMode !== "hidden"}
-            onClick={cycleSidebarMode}
-          />
-          <IconBtn icon={Icon.chrome.grid} label="Agents" active={rightPanel === "agents"} onClick={() => togglePanel("agents")} />
+          <IconBtn icon={Icon.chrome.grid} label={t('terminal.agents', 'Agents')} active={rightPanel === "agents"} onClick={() => togglePanel("agents")} />
         </div>
       </div>
 
@@ -514,22 +505,6 @@ function WorkspaceSidebarPanel({
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-          </button>
-          {/* 折叠按钮 */}
-          <button
-            onClick={() => onToggleSidebar?.()}
-            title={t('terminal.workspaceToggleSidebar')}
-            style={{
-              width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: 'none', borderRadius: 5,
-              color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <polyline points="15 18 9 12 15 6"/>
             </svg>
           </button>
         </div>

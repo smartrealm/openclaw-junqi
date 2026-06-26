@@ -213,7 +213,7 @@ export function AgentOverviewPanel({
             fontFamily: '"JetBrains Mono", monospace',
           }}
         >
-          agents
+          {t('terminal.agents', 'agents')}
         </span>
         <span
           style={{
@@ -228,26 +228,6 @@ export function AgentOverviewPanel({
         >
           {entries.length}
         </span>
-        {/* Mode toggle — compact ↔ full */}
-        {onModeChange && (
-          <button
-            onClick={() => onModeChange('compact')}
-            title="Compact mode"
-            style={{
-              marginLeft: 'auto',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '2px 4px',
-              borderRadius: 4,
-              color: 'rgb(var(--aegis-text-dim))',
-              fontSize: 11,
-              fontFamily: '"JetBrains Mono", monospace',
-            }}
-          >
-            [=]
-          </button>
-        )}
       </div>
 
       {/* 1px hairline — kooky chromeHairline */}
@@ -332,36 +312,6 @@ export function AgentOverviewPanel({
         })}
       </div>
 
-      {/* Bottom: compact toggle hint */}
-      {onModeChange && (
-        <div
-          style={{
-            height: 28,
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderTop: '1px solid rgb(255 255 255 / 0.07)',
-          }}
-        >
-          <button
-            onClick={() => onModeChange('compact')}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '2px 8px',
-              borderRadius: 4,
-              color: 'rgb(var(--aegis-text-dim))',
-              fontSize: 9,
-              fontFamily: '"JetBrains Mono", monospace',
-              opacity: 0.5,
-            }}
-          >
-            collapse
-          </button>
-        </div>
-      )}
     </div>
   );
 }

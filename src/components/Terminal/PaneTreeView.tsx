@@ -28,6 +28,8 @@ interface PaneTreeViewProps {
   monoFontFamily: FontFamily;
   projectPath: string;
   onClose?: () => void;
+  onToggleSidebar?: () => void;
+  sidebarActive?: boolean;
 }
 
 // ── Recursive node renderer ─────────────────────────────────────────────────
@@ -46,6 +48,8 @@ function PaneNodeRenderer({
   terminalFontSize,
   monoFontFamily,
   projectPath,
+  onToggleSidebar,
+  sidebarActive,
 }: {
   node: PaneNode;
   workspace: Workspace;
@@ -60,6 +64,8 @@ function PaneNodeRenderer({
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   projectPath: string;
+  onToggleSidebar?: () => void;
+  sidebarActive?: boolean;
 }) {
   if (node.type === 'leaf') {
     // In zoom mode, only the zoomed pane is visible
@@ -96,6 +102,8 @@ function PaneNodeRenderer({
           canZoom={true}
           isZoomed={zoomedPaneId === node.id}
           onZoom={() => onZoom(node.id)}
+          onToggleSidebar={onToggleSidebar}
+          sidebarActive={sidebarActive}
         />
       </div>
     );
@@ -117,6 +125,8 @@ function PaneNodeRenderer({
       terminalFontSize={terminalFontSize}
       monoFontFamily={monoFontFamily}
       projectPath={projectPath}
+      onToggleSidebar={onToggleSidebar}
+      sidebarActive={sidebarActive}
     />
   );
 }
@@ -137,6 +147,8 @@ function SplitRenderer({
   terminalFontSize,
   monoFontFamily,
   projectPath,
+  onToggleSidebar,
+  sidebarActive,
 }: {
   node: PaneSplit;
   workspace: Workspace;
@@ -151,6 +163,8 @@ function SplitRenderer({
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   projectPath: string;
+  onToggleSidebar?: () => void;
+  sidebarActive?: boolean;
 }) {
   const isHorizontal = node.direction === 'horizontal';
   const [ratio, setRatio] = useState(node.sizes[0]);
@@ -228,6 +242,8 @@ function SplitRenderer({
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
           projectPath={projectPath}
+          onToggleSidebar={onToggleSidebar}
+          sidebarActive={sidebarActive}
         />
       </div>
 
@@ -312,6 +328,8 @@ function SplitRenderer({
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
           projectPath={projectPath}
+          onToggleSidebar={onToggleSidebar}
+          sidebarActive={sidebarActive}
         />
       </div>
     </div>
@@ -373,6 +391,8 @@ export function PaneTreeView({
   monoFontFamily,
   projectPath,
   onClose,
+  onToggleSidebar,
+  sidebarActive,
 }: PaneTreeViewProps) {
   const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
   const setFocus = useWorkspaceStore((s) => s.setFocus);
@@ -482,6 +502,8 @@ export function PaneTreeView({
         terminalFontSize={terminalFontSize}
         monoFontFamily={monoFontFamily}
         projectPath={projectPath}
+        onToggleSidebar={onToggleSidebar}
+        sidebarActive={sidebarActive}
       />
     </div>
   );
