@@ -209,6 +209,8 @@ export interface ChatMessage {
   decisionOptions?: DecisionOption[];
   workshopEvents?: WorkshopEvent[];
   sessionEvents?: SessionEvent[];
+  usage?: Record<string, number>;
+  model?: string | null;
 }
 
 export interface Session {
@@ -262,6 +264,8 @@ interface ChatState {
       decisionOptions?: DecisionOption[];
       workshopEvents?: WorkshopEvent[];
       sessionEvents?: SessionEvent[];
+      usage?: Record<string, number>;
+      model?: string | null;
     },
     sessionKey?: string
   ) => void;
@@ -423,6 +427,8 @@ const createRawHistoryPayload = (messages: ChatMessage[], sessionKey: string) =>
     decisionOptions: msg.decisionOptions,
     workshopEvents: msg.workshopEvents,
     sessionEvents: msg.sessionEvents,
+    usage: msg.usage,
+    model: msg.model,
     isStreaming: msg.isStreaming,
   }));
 
@@ -526,6 +532,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           decisionOptions: msg.decisionOptions,
           workshopEvents: msg.workshopEvents,
           sessionEvents: msg.sessionEvents,
+          usage: msg.usage,
+          model: msg.model,
           isStreaming: msg.isStreaming,
         },
         toolIntentEnabled,
@@ -658,6 +666,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ...(extra?.decisionOptions ? { decisionOptions: extra.decisionOptions } : {}),
           ...(extra?.workshopEvents ? { workshopEvents: extra.workshopEvents } : {}),
           ...(extra?.sessionEvents ? { sessionEvents: extra.sessionEvents } : {}),
+          ...(extra?.usage ? { usage: extra.usage } : {}),
+          ...(extra?.model !== undefined ? { model: extra.model } : {}),
         };
 
         const derived = recomputeDerived(updated, targetKey);
@@ -706,6 +716,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ...(extra?.decisionOptions ? { decisionOptions: extra.decisionOptions } : {}),
           ...(extra?.workshopEvents ? { workshopEvents: extra.workshopEvents } : {}),
           ...(extra?.sessionEvents ? { sessionEvents: extra.sessionEvents } : {}),
+          ...(extra?.usage ? { usage: extra.usage } : {}),
+          ...(extra?.model !== undefined ? { model: extra.model } : {}),
         };
         const updated = [...currentMessages, newMsg];
         const derived = recomputeDerived(updated, targetKey);

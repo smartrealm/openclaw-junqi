@@ -376,7 +376,7 @@ export class ChatHandler {
     this.currentMessageIdBySession.delete(sessionKey);
   }
 
-  private async finalizeAssistantResponse(sessionKey: string, messageId: string, messageText: string, media?: MediaInfo) {
+  private async finalizeAssistantResponse(sessionKey: string, messageId: string, messageText: string, media?: MediaInfo, usage?: Record<string, number>, model?: string | null) {
     this.clearFinalizeFallback(sessionKey);
     this.forceFlushStream(sessionKey);
 
@@ -426,6 +426,8 @@ export class ChatHandler {
         ...(fileRefs.length > 0 ? { fileRefs } : {}),
         ...(btnResult.buttons.length > 0 ? { decisionOptions: btnResult.buttons } : {}),
         ...(workshopEvents.length > 0 ? { workshopEvents } : {}),
+        ...(usage ? { usage } : {}),
+        ...(model ? { model } : {}),
       },
     );
   }
@@ -893,7 +895,13 @@ export class ChatHandler {
         if (streamContent && streamContent.length > (messageText?.length || 0)) {
           finalText = streamContent;
         }
-        void this.finalizeAssistantResponse(sessionKey, mId, finalText, media);
+        const usage = p.usage && typeof p.usage === 'object'
+          ? p.usage
+          : p.message?.usage && typeof p.message.usage === 'object'
+            ? p.message.usage
+            : undefined;
+        const model = p.model ?? p.message?.model ?? null;
+        void this.finalizeAssistantResponse(sessionKey, mId, finalText, media, usage, model);
         break;
       }
 

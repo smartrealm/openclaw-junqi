@@ -377,12 +377,26 @@ export const MessageBubble = memo(function MessageBubble({
   const [ctxOpen, setCtxOpen] = useState(false);
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   const contextContent = contextMeta?.content
-    ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; contextPercent?: number | null; model?: string; formatted?: string; duration?: number }; } catch { return null; } })()
+    ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; inputTokens?: number; output?: number; outputTokens?: number; cacheRead?: number; cacheReadInputTokens?: number; cacheWrite?: number; cacheCreationInputTokens?: number; contextPercent?: number | null; model?: string; formatted?: string; duration?: number }; } catch { return null; } })()
     : null;
-  const ctxFmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));
-  const contextTotalTokens = contextContent
-    ? (contextContent.input ?? 0) + (contextContent.output ?? 0) + (contextContent.cacheRead ?? 0) + (contextContent.cacheWrite ?? 0)
-    : 0;
+  const ctxFmt = (n: number) => {
+    if (!Number.isFinite(n)) return '0';
+    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}m`;
+    if (Math.abs(n) >= 1000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '')}k`;
+    return String(n);
+  };
+  const contextInputTokens = contextContent?.input ?? contextContent?.inputTokens ?? 0;
+  const contextOutputTokens = contextContent?.output ?? contextContent?.outputTokens ?? 0;
+  const contextCacheRead = contextContent?.cacheRead ?? contextContent?.cacheReadInputTokens ?? 0;
+  const contextCacheWrite = contextContent?.cacheWrite ?? contextContent?.cacheCreationInputTokens ?? 0;
+  const contextTotalTokens = contextInputTokens + contextOutputTokens + contextCacheRead + contextCacheWrite;
+  const inlineUsageParts = [
+    contextInputTokens ? `↑${ctxFmt(contextInputTokens)}` : '',
+    contextOutputTokens ? `↓${ctxFmt(contextOutputTokens)}` : '',
+    contextCacheRead ? `R${ctxFmt(contextCacheRead)}` : '',
+    contextCacheWrite ? `W${ctxFmt(contextCacheWrite)}` : '',
+    contextContent?.contextPercent != null ? `${contextContent.contextPercent}% ctx` : '',
+  ].filter(Boolean);
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
   const content = block.markdown;
@@ -422,8 +436,8 @@ function stripInlineCodeTicks(md: string): string {
   const msgDate = (() => { try { const d = new Date(block.timestamp); return isNaN(d.getTime()) ? null : d; } catch { return null; } })();
 
   const dateLabel = msgDate
-    ? (i18n.language === 'zh'
-        ? `${msgDate.getFullYear()}/${msgDate.getMonth() + 1}/${msgDate.getDate()}`
+    ? (i18n.language.startsWith('zh')
+        ? `${msgDate.getFullYear()}年${msgDate.getMonth() + 1}月${msgDate.getDate()}日`
         : msgDate.toLocaleString(i18n.language, { year: 'numeric', month: 'short', day: 'numeric' }))
     : '';
 
@@ -451,6 +465,7 @@ function stripInlineCodeTicks(md: string): string {
     return { provider: trimmed.slice(0, slashIndex), model: trimmed.slice(slashIndex + 1), full: trimmed };
   })();
   const contextModel = contextContent?.model || modelInfo?.full || block.model || '';
+  const isEmptyAssistantStreaming = !isUser && block.isStreaming && !content.trim() && block.images.length === 0 && block.artifacts.length === 0 && !block.audio;
 
   // ── Avatar gradient per agent ──
   const avatarGradient = (() => {
@@ -508,17 +523,19 @@ function stripInlineCodeTicks(md: string): string {
           // reserved gutter so it never gets covered, even when the button is
           // invisible. `pl-4 pr-9` = 16px left, 36px right (28px button + 8px gap).
           'pl-4 pr-9 max-w-full box-border min-w-0 break-words group/bubble',
-          isUser
-            ? 'bg-aegis-primary/[0.10] border-aegis-primary/15 hover:border-aegis-primary/30'
-            : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.05)] hover:border-[rgb(var(--aegis-overlay)/0.10)]',
-          block.isStreaming && 'border-aegis-primary/35 streaming-border',
+          isEmptyAssistantStreaming
+            ? 'bg-transparent border-transparent shadow-none py-1 pl-0 pr-0'
+            : isUser
+              ? 'bg-aegis-primary/[0.10] border-aegis-primary/15 hover:border-aegis-primary/30'
+              : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.05)] hover:border-[rgb(var(--aegis-overlay)/0.10)]',
+          block.isStreaming && !isEmptyAssistantStreaming && 'border-aegis-primary/35 streaming-border',
         )} style={{ width: 'auto' }}>
 
           {/* Floating Copy button — top-right corner of the FIRST line, hugging
               the bubble border (4px inset). opacity-0 by default and reveals on
               bubble hover, focus, or after a successful copy. Sits in the
               reserved pr-9 gutter so it never overlaps text. */}
-          {!block.isStreaming && !isEditing && (
+          {!block.isStreaming && !isEditing && !isEmptyAssistantStreaming && (
             <button onClick={handleCopy}
               className={clsx(
                 'absolute right-1 top-1 z-10',
@@ -574,19 +591,21 @@ function stripInlineCodeTicks(md: string): string {
             </div>
           ) : block.isStreaming ? (
             <div className="flex flex-col gap-2">
-              <pre className="markdown-body text-[14px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words font-[inherit]">
-                {content}
-                {/* Blinking caret — visually anchors the current write position
-                    and signals "agent is still typing" even on long pauses. */}
-                <span
-                  aria-hidden
-                  className="inline-block w-[2px] h-[1em] ml-0.5 align-text-bottom"
-                  style={{
-                    background: 'rgb(var(--aegis-primary))',
-                    animation: 'aegis-caret 1s steps(2) infinite',
-                  }}
-                />
-              </pre>
+              {content.trim() && (
+                <pre className="markdown-body text-[14px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words font-[inherit]">
+                  {content}
+                  {/* Blinking caret — visually anchors the current write position
+                      and signals "agent is still typing" even on long pauses. */}
+                  <span
+                    aria-hidden
+                    className="inline-block w-[2px] h-[1em] ml-0.5 align-text-bottom"
+                    style={{
+                      background: 'rgb(var(--aegis-primary))',
+                      animation: 'aegis-caret 1s steps(2) infinite',
+                    }}
+                  />
+                </pre>
+              )}
               {/* Typing dots — three-dot pulse, kooky/Claude.ai pattern. */}
               <div className="flex items-center gap-1 text-aegis-text-dim text-[10px] font-medium select-none">
                 <span className="inline-block w-1.5 h-1.5 rounded-full"
@@ -685,23 +704,13 @@ function stripInlineCodeTicks(md: string): string {
             <span className="text-[10px] text-aegis-text-dim italic">· {t('chat.edited', 'edited')}</span>
           )}
 
-          {/* Context toggle — always visible for assistant messages */}
+          {/* Context / usage metadata — always visible for assistant messages */}
           {!isUser && (
-            <span className="inline-flex items-center flex-wrap" style={{ gap: 4 }}>
-              <button onClick={() => setCtxOpen(v => !v)}
-                className="inline-flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
-                style={{ color: 'var(--aegis-text-muted)' }}>
-                <ChevronRight size={10} className={clsx('shrink-0 transition-transform', ctxOpen && 'rotate-90')} style={{ strokeWidth: 2 }} />
-                <span>Context</span>
-              </button>
-              {ctxOpen && (
-                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-mono tabular-nums text-aegis-text-dim"
-                  style={{ gap: 6, border: '1px solid var(--aegis-border, rgb(var(--aegis-overlay)/0.1))', background: 'rgb(var(--aegis-overlay) / 0.03)' }}>
-                  {contextModel ? <span>{contextModel.split('/').pop()}</span> : <span>—</span>}
-                  {contextTotalTokens > 0 && <span>total:{ctxFmt(contextTotalTokens)}</span>}
-                </span>
-              )}
-            </span>
+            <button onClick={() => setCtxOpen(v => !v)}
+              className="inline-flex items-center gap-1 text-[10px] rounded-full px-1.5 py-0.5 transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-dim font-mono tabular-nums">
+              <ChevronRight size={10} className={clsx('shrink-0 transition-transform', ctxOpen && 'rotate-90')} style={{ strokeWidth: 2 }} />
+              {inlineUsageParts.length > 0 ? inlineUsageParts.map((part, idx) => <span key={part} className={idx >= 2 ? 'text-aegis-text-dim/80' : undefined}>{part}</span>) : <span>ctx</span>}
+            </button>
           )}
 
           {/* ── Action buttons (show on footer hover, independent of bubble) ── */}
@@ -738,20 +747,18 @@ function stripInlineCodeTicks(md: string): string {
         </div>
 
         {!isUser && ctxOpen && (
-          <div className="mt-2 w-full max-w-[min(760px,100%)] rounded-xl border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
-              <div><div className="text-aegis-text-dim">{t('chat.contextModel', 'Model')}</div><div className="font-mono text-aegis-text truncate">{contextModel || '—'}</div></div>
-              <div><div className="text-aegis-text-dim">{t('chat.contextInputTokens', 'Input tokens')}</div><div className="font-mono text-blue-400">{contextContent?.input != null ? ctxFmt(contextContent.input) : '—'}</div></div>
-              <div><div className="text-aegis-text-dim">{t('chat.contextOutputTokens', 'Output tokens')}</div><div className="font-mono text-emerald-400">{contextContent?.output != null ? ctxFmt(contextContent.output) : '—'}</div></div>
-              <div><div className="text-aegis-text-dim">{t('chat.contextTotalTokens', 'Total tokens')}</div><div className="font-mono text-aegis-text">{contextTotalTokens > 0 ? ctxFmt(contextTotalTokens) : '—'}</div></div>
-              <div><div className="text-aegis-text-dim">Context</div><div className="font-mono text-aegis-text">{contextContent?.contextPercent != null ? `${contextContent.contextPercent}%` : '—'}</div></div>
-              <div><div className="text-aegis-text-dim">{t('chat.contextDuration', 'Duration')}</div><div className="font-mono text-aegis-text">{durationStr || '—'}</div></div>
+          <div className="mt-1 w-full max-w-[min(900px,100%)] rounded-lg border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] px-2.5 py-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums">
+              <span className="text-aegis-text-dim">agent <span className="text-aegis-text">{activeAgentName}</span></span>
+              <span className="text-aegis-text-dim">model <span className="text-aegis-text">{contextModel || '—'}</span></span>
+              <span className="text-blue-400">input {contextInputTokens ? ctxFmt(contextInputTokens) : '—'}</span>
+              <span className="text-emerald-400">output {contextOutputTokens ? ctxFmt(contextOutputTokens) : '—'}</span>
+              <span className="text-aegis-text-dim">total <span className="text-aegis-text">{contextTotalTokens > 0 ? ctxFmt(contextTotalTokens) : '—'}</span></span>
+              <span className="text-aegis-text-dim">R {contextCacheRead ? ctxFmt(contextCacheRead) : '0'}</span>
+              <span className="text-aegis-text-dim">W {contextCacheWrite ? ctxFmt(contextCacheWrite) : '0'}</span>
+              <span className="text-aegis-text-dim">ctx <span className="text-aegis-text">{contextContent?.contextPercent != null ? `${contextContent.contextPercent}%` : '—'}</span></span>
+              {durationStr && <span className="text-aegis-text-dim">duration <span className="text-aegis-text">{durationStr}</span></span>}
             </div>
-            {(contextContent?.cacheRead || contextContent?.cacheWrite) ? (
-              <div className="mt-2 pt-2 border-t border-aegis-border text-[11px] font-mono text-aegis-text-dim">
-                {t('chat.contextCacheRead', 'cache read')}: {contextContent?.cacheRead ? ctxFmt(contextContent.cacheRead) : '0'} · {t('chat.contextCacheWrite', 'cache write')}: {contextContent?.cacheWrite ? ctxFmt(contextContent.cacheWrite) : '0'}
-              </div>
-            ) : null}
           </div>
         )}
       </div>

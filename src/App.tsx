@@ -348,6 +348,8 @@ export default function App() {
             ...(meta?.decisionOptions ? { decisionOptions: meta.decisionOptions } : {}),
             ...(meta?.workshopEvents ? { workshopEvents: meta.workshopEvents } : {}),
             ...(meta?.sessionEvents ? { sessionEvents: meta.sessionEvents } : {}),
+            ...(meta?.usage ? { usage: meta.usage } : {}),
+            ...(meta?.model ? { model: meta.model } : {}),
           },
           sessionKey,
         );

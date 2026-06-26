@@ -171,8 +171,8 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
   const toolCalls = extractToolCalls(rawContent);
   const toolResults = extractToolResults(rawContent);
   const thinkingFromContent = extractThinkingContent(rawContent);
-  // Strip gateway-emitted emoji prefixes (⚠️ etc.) before any component sees them
-  const text = textPartsRaw.join('').replace(/^[\u{26A0}\u{FE0F}\u{2757}\u{203C}\u{1F6A8}\u{1F534}\u{1F7E0}\u{2705}\u{274C}\u{1F4A5}\u{26D4}\u{23F3}\s]+/gu, '').trimStart();
+  // Preserve LLM text exactly; emoji/status glyphs are part of the model output.
+  const text = textPartsRaw.join('');
 
   const contentBlocks = Array.isArray(rawContent)
     ? rawContent.filter((item) => asRecord(item))

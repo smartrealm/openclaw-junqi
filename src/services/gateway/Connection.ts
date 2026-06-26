@@ -61,6 +61,8 @@ export interface StreamEndMeta {
     kind: 'compaction' | 'fallback' | 'retry' | 'reset' | 'token-warning' | 'context-warning' | 'info';
     text: string;
   }>;
+  usage?: Record<string, number>;
+  model?: string | null;
 }
 
 export interface GatewayCallbacks {

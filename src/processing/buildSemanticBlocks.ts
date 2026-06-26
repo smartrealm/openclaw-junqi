@@ -76,10 +76,10 @@ function buildAssistantMeta(markdown: string, normalized: NormalizedMessage): Me
     const usage = normalized.usage;
     const tu = useChatStore.getState().tokenUsage;
     const model = normalized.model || useChatStore.getState().currentModel || '';
-    const input = usage?.input ?? usage?.inputTokens ?? 0;
-    const output = usage?.output ?? usage?.outputTokens ?? 0;
-    const cacheRead = usage?.cacheRead ?? usage?.cache_read_input_tokens ?? 0;
-    const cacheWrite = usage?.cacheWrite ?? usage?.cache_creation_input_tokens ?? 0;
+    const input = usage?.input ?? usage?.inputTokens ?? usage?.prompt_tokens ?? usage?.promptTokens ?? 0;
+    const output = usage?.output ?? usage?.outputTokens ?? usage?.completion_tokens ?? usage?.completionTokens ?? 0;
+    const cacheRead = usage?.cacheRead ?? usage?.cache_read_input_tokens ?? usage?.cacheReadInputTokens ?? 0;
+    const cacheWrite = usage?.cacheWrite ?? usage?.cache_creation_input_tokens ?? usage?.cacheCreationInputTokens ?? 0;
     const contextPercent = tu?.percentage ?? null;
     if (input || output || cacheRead || cacheWrite || contextPercent !== null || model) {
       const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));

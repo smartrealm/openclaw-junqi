@@ -29,6 +29,8 @@ export interface RawGatewayMessage {
   decisionOptions?: DecisionOption[];
   workshopEvents?: WorkshopEvent[];
   sessionEvents?: SessionEvent[];
+  usage?: Record<string, number>;
+  model?: string | null;
 }
 
 /**
@@ -56,6 +58,8 @@ export function normalizeHistoryMessage(raw: RawGatewayMessage): ChatMessage {
     decisionOptions: Array.isArray(raw.decisionOptions) ? raw.decisionOptions : undefined,
     workshopEvents: Array.isArray(raw.workshopEvents) ? raw.workshopEvents : undefined,
     sessionEvents: Array.isArray(raw.sessionEvents) ? raw.sessionEvents : undefined,
+    usage: raw.usage && typeof raw.usage === 'object' ? raw.usage : undefined,
+    model: raw.model ?? null,
   };
 }
 

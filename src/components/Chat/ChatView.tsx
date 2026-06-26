@@ -372,6 +372,7 @@ export function ChatView() {
             decisionOptions: Array.isArray(msg.decisionOptions) ? msg.decisionOptions : undefined,
             workshopEvents: Array.isArray(msg.workshopEvents) ? msg.workshopEvents : undefined,
             sessionEvents: Array.isArray(msg.sessionEvents) ? msg.sessionEvents : undefined,
+            usage: msg.usage && typeof msg.usage === 'object' ? msg.usage : undefined,
           })) as ChatMessage[];
 
           const previousMessages = getCachedMessages(sessionKey) ?? [];
