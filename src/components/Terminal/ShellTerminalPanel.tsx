@@ -1,4 +1,5 @@
 import type React from "react";
+import { createPortal } from "react-dom";
 import { APP_PLATFORM } from "./_nezha-platform";
 import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -579,22 +580,26 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       const selected = terminalRef.current?.getSelection?.() ?? '';
       if (selected) await navigator.clipboard.writeText(selected);
       setTermCtxMenu(null);
+      terminalRef.current?.focus();
     };
 
     const pasteClipboard = async () => {
       const data = await navigator.clipboard.readText().catch(() => '');
       if (data) invoke('send_input', { taskId: shellId, data }).catch(() => {});
       setTermCtxMenu(null);
+      terminalRef.current?.focus();
     };
 
     const selectAllTerminal = () => {
       terminalRef.current?.selectAll?.();
       setTermCtxMenu(null);
+      terminalRef.current?.focus();
     };
 
     const clearTerminal = () => {
       terminalRef.current?.clear?.();
       setTermCtxMenu(null);
+      terminalRef.current?.focus();
     };
 
     useEffect(() => {
@@ -637,52 +642,58 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       width: '100%',
     };
 
-    return (
+    const terminalMenu = termCtxMenu ? createPortal(
       <div
-        ref={containerRef}
-        className="nezha-xterm-host nezha-shell-xterm-host"
-        onContextMenu={(e) => {
-          if (!isActive) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setTermCtxMenu({ x: e.clientX, y: e.clientY });
-        }}
+        onMouseDown={(e) => e.stopPropagation()}
         style={{
-          position: "absolute",
-          inset: 0,
-          overflow: "hidden",
-          padding: "4px 0 16px 6px",
-          cursor: "text",
-          visibility: isActive ? "visible" : "hidden",
-          pointerEvents: isActive ? "auto" : "none",
+          position: 'fixed',
+          left: Math.max(8, Math.min(termCtxMenu.x, window.innerWidth - 180)),
+          top: Math.max(8, Math.min(termCtxMenu.y, window.innerHeight - 180)),
+          zIndex: 2147482000,
+          minWidth: 150,
+          padding: '4px 0',
+          borderRadius: 6,
+          background: 'rgb(var(--aegis-elevated))',
+          border: '1px solid rgb(var(--aegis-overlay)/0.10)',
+          boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        {termCtxMenu && (
-          <div
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{
-              position: 'fixed',
-              left: Math.max(8, Math.min(termCtxMenu.x, window.innerWidth - 180)),
-              top: Math.max(8, Math.min(termCtxMenu.y, window.innerHeight - 180)),
-              zIndex: 2147482000,
-              minWidth: 150,
-              padding: '4px 0',
-              borderRadius: 6,
-              background: 'rgb(var(--aegis-elevated))',
-              border: '1px solid rgb(var(--aegis-overlay)/0.10)',
-              boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={copySelection}>{t('terminal.copy', 'Copy')}</button>
-            <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => void pasteClipboard()}>{t('terminal.paste', 'Paste')}</button>
-            <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={selectAllTerminal}>{t('terminal.selectAll', 'Select All')}</button>
-            <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
-            <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={clearTerminal}>{t('terminal.clear', 'Clear')}</button>
-          </div>
-        )}
-      </div>
+        <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={copySelection}>{t('terminal.copy', 'Copy')}</button>
+        <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => void pasteClipboard()}>{t('terminal.paste', 'Paste')}</button>
+        <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={selectAllTerminal}>{t('terminal.selectAll', 'Select All')}</button>
+        <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
+        <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={clearTerminal}>{t('terminal.clear', 'Clear')}</button>
+      </div>,
+      document.body,
+    ) : null;
+
+    return (
+      <>
+        <div
+          ref={containerRef}
+          className="nezha-xterm-host nezha-shell-xterm-host"
+          onMouseDown={() => terminalRef.current?.focus()}
+          onContextMenu={(e) => {
+            if (!isActive) return;
+            e.preventDefault();
+            e.stopPropagation();
+            terminalRef.current?.focus();
+            setTermCtxMenu({ x: e.clientX, y: e.clientY });
+          }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            overflow: "hidden",
+            padding: "4px 0 16px 6px",
+            cursor: "text",
+            visibility: isActive ? "visible" : "hidden",
+            pointerEvents: isActive ? "auto" : "none",
+          }}
+        />
+        {terminalMenu}
+      </>
     );
   },
 );
