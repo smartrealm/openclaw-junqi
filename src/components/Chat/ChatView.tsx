@@ -108,6 +108,10 @@ export function ChatView() {
   const queueCount = (messageQueue[activeSessionKey] || []).length;
   const availableModels = useChatStore((s) => s.availableModels);
   const modelsLoading = useChatStore((s) => s.modelsLoading);
+  const providerHealth = (() => {
+    try { return JSON.parse(localStorage.getItem('aegis-provider-health') || '{}'); } catch { return {}; }
+  })();
+  const hasConfiguredProvidersOnDisk = Number(providerHealth?.profiles || 0) > 0 || Number(providerHealth?.providers || 0) > 0 || Number(providerHealth?.modelDefs || 0) > 0;
   const hasProviders = availableModels.length > 0;
 
   // Actions (stable references)
@@ -825,7 +829,7 @@ export function ChatView() {
 
   // ── Debounce "no providers" state so gateway restart doesn't flash the banner
   const [showNoProviderBanner, setShowNoProviderBanner] = useState(false);
-  const noProviderSignal = connected && !hasProviders && !modelsLoading;
+  const noProviderSignal = connected && !hasProviders && !modelsLoading && !hasConfiguredProvidersOnDisk;
   useEffect(() => {
     if (noProviderSignal) {
       const timer = setTimeout(() => setShowNoProviderBanner(true), 3000);

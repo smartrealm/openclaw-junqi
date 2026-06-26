@@ -233,6 +233,15 @@ export default function App() {
     ]);
 
     const models = await chain.load(ctx);
+    try {
+      if (window.aegis?.config?.read) {
+        const { data } = await window.aegis.config.read('');
+        const profiles = Object.keys(data?.auth?.profiles ?? {}).length;
+        const providers = Object.keys(data?.models?.providers ?? {}).length;
+        const modelDefs = Object.keys(data?.agents?.defaults?.models ?? {}).length;
+        localStorage.setItem('aegis-provider-health', JSON.stringify({ profiles, providers, modelDefs, loadedModels: models.length }));
+      }
+    } catch {}
     await applyModels(models);
   }, [setAvailableModels, loadSessions]);
 

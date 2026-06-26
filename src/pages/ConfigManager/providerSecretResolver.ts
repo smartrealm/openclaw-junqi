@@ -194,3 +194,53 @@ export function preserveProviderSecretsFromDisk(
   }
   return next;
 }
+
+
+export interface ProviderHealthReportItem {
+  providerId: string;
+  status: 'ok' | 'broken' | 'empty';
+  profileKeys: string[];
+  modelIds: string[];
+  configured: boolean;
+  secretSource: ProviderSecretSource;
+  envKey?: string;
+}
+
+/** Diagnose provider health from current config. */
+export function diagnoseProviders(
+  config: GatewayRuntimeConfig,
+  templates: Array<ProviderTemplateLike & { id: string }>,
+): ProviderHealthReportItem[] {
+  const profiles = config.auth?.profiles ?? {};
+  const providers = config.models?.providers ?? {};
+  const models = config.agents?.defaults?.models ?? {};
+  const templateMap = new Map(templates.map((t) => [t.id, t]));
+
+  const providerIds = new Set<string>([
+    ...Object.keys(providers),
+    ...Object.entries(profiles).map(([k, v]) => String((v as any)?.provider ?? k.split(':')[0])),
+    ...Object.keys(models).map((id) => String(id).split('/')[0]).filter(Boolean),
+  ]);
+
+  const out: ProviderHealthReportItem[] = [];
+  for (const providerId of Array.from(providerIds).sort()) {
+    const profileKeys = Object.entries(profiles)
+      .filter(([k, v]) => String((v as any)?.provider ?? k.split(':')[0]) === providerId)
+      .map(([k]) => k);
+    const modelIds = Object.keys(models).filter((id) => String(id).split('/')[0] === providerId);
+    const template = templateMap.get(providerId);
+    const secret = resolveProviderSecret(config, providerId, template, profileKeys[0]);
+    const present = profileKeys.length > 0 || providerId in providers || modelIds.length > 0;
+    const status: 'ok' | 'broken' | 'empty' = secret.configured ? 'ok' : (present ? 'broken' : 'empty');
+    out.push({
+      providerId,
+      status,
+      profileKeys,
+      modelIds,
+      configured: secret.configured,
+      secretSource: secret.source,
+      envKey: secret.envKey,
+    });
+  }
+  return out;
+}

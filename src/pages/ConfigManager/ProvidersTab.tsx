@@ -33,7 +33,7 @@ import {
   GENERATED_IMAGE_GENERATION_MODELS,
   GENERATED_VIDEO_GENERATION_MODELS,
 } from '@/generated/mediaCatalog.generated';
-import { resolveProviderSecret, buildProviderSecretPatch } from './providerSecretResolver';
+import { resolveProviderSecret, buildProviderSecretPatch, diagnoseProviders } from './providerSecretResolver';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider test: try GET /models first; if 404, fallback to POST /chat/completions
@@ -2906,6 +2906,9 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: ProvidersTabProps) {
+  const providerHealth = useMemo(() => diagnoseProviders(config, PROVIDER_TEMPLATES as any), [config]);
+  const brokenProviders = providerHealth.filter((p) => p.status === 'broken');
+  const okProviders = providerHealth.filter((p) => p.status === 'ok');
   const { t } = useTranslation();
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
@@ -3033,6 +3036,31 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
           <StatCard value={aliasCount} label={t('config.aliases')} colorClass="text-purple-400" />
         </div>
 
+
+
+        {(brokenProviders.length > 0 || okProviders.length > 0) && (
+          <div className="mt-3 rounded-xl border border-aegis-border bg-aegis-elevated/60 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={14} className={brokenProviders.length > 0 ? 'text-amber-400' : 'text-aegis-success'} />
+              <span className="text-sm font-semibold text-aegis-text">{t('config.providersHealth', '提供方健康状态')}</span>
+            </div>
+            <p className="text-xs text-aegis-text-muted">
+              {t('config.providersHealthSummary', { ok: okProviders.length, broken: brokenProviders.length, defaultValue: `正常 ${okProviders.length} · 损坏 ${brokenProviders.length}` })}
+            </p>
+            {brokenProviders.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {brokenProviders.map((item: any) => (
+                  <div key={item.providerId} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                    <div className="text-xs font-medium text-amber-300">{item.providerId}</div>
+                    <div className="text-[11px] text-aegis-text-muted">
+                      {t('config.providerBrokenNeedSecret', '结构仍在，但 Secret 已缺失，需要补录 API Key / Token')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
           <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-aegis-primary/20 rounded-xl">
             <div
