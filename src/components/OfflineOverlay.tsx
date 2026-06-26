@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useTranslation } from 'react-i18next';
-import { Loader2, WifiOff, FileText, MonitorDot } from 'lucide-react';
+import { Loader2, WifiOff, FileText, MonitorDot, RotateCw } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 
@@ -12,6 +12,14 @@ export function OfflineOverlay() {
   const { t } = useTranslation();
   const connecting = useChatStore((s) => s.connecting);
   const lastError = gateway.getLastError?.();
+
+  const openLogsPage = () => {
+    try { window.location.hash = '#/logs'; } catch {}
+  };
+
+  const retryGateway = async () => {
+    try { await window.aegis?.gateway?.retry?.(); } catch {}
+  };
 
   return (
     <div className="h-full flex items-center justify-center">
@@ -52,16 +60,22 @@ export function OfflineOverlay() {
 
         {!connecting && (
           <div className="flex items-center justify-center gap-2 flex-wrap">
-            {window.aegis?.logs && (
-              <button
-                onClick={() => window.aegis?.logs?.openElectronLogFile()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px]
-                  text-aegis-text-dim hover:text-aegis-text
-                  border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
-              >
-                <FileText size={11} /> {t('offline.viewLogs', '查看日志')}
-              </button>
-            )}
+            <button
+              onClick={() => void retryGateway()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px]
+                text-aegis-text-dim hover:text-aegis-text
+                border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
+            >
+              <RotateCw size={11} /> {t('offline.retryGateway', '重新连接')}
+            </button>
+            <button
+              onClick={openLogsPage}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px]
+                text-aegis-text-dim hover:text-aegis-text
+                border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
+            >
+              <FileText size={11} /> {t('offline.viewLogs', '查看日志')}
+            </button>
             {window.aegis?.consoleUi && (
               <button
                 onClick={() => window.aegis?.consoleUi?.open()}

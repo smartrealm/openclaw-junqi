@@ -229,11 +229,44 @@ function invalidateGatewayPortCache(): void {
     },
     onStatusChanged: (cb: any) => {
       let unlistenFn: (() => void) | null = null;
+      let lastLogs = { stdout: "", stderr: "" };
+      let stopped = false;
+
+      const emitRealStatus = async () => {
+        if (stopped) return;
+        try {
+          const s: any = await invoke("gateway_status");
+          cb({
+            running: Boolean(s.running),
+            ready: Boolean(s.running),
+            error: null,
+            logs: lastLogs,
+          });
+        } catch (e: any) {
+          cb({
+            running: false,
+            ready: false,
+            error: String(e),
+            logs: lastLogs,
+          });
+        }
+      };
+
       listen("gateway-log", (event: any) => {
-        const line = event.payload;
-        cb({ running: true, error: line.includes("Error") || line.includes("exited") ? line : null, logs: { stdout: line, stderr: "" } });
+        const line = String(event.payload ?? '');
+        lastLogs = { stdout: line, stderr: "" };
+        void emitRealStatus();
       }).then((fn: any) => { unlistenFn = fn; }).catch(() => {});
-      return () => { unlistenFn?.(); };
+
+      // Initial poll + periodic real status check (covers external gateway with no fresh logs)
+      void emitRealStatus();
+      const timer = setInterval(() => { void emitRealStatus(); }, 2000);
+
+      return () => {
+        stopped = true;
+        clearInterval(timer);
+        unlistenFn?.();
+      };
     },
   },
 
