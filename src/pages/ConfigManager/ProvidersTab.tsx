@@ -33,6 +33,7 @@ import {
   GENERATED_IMAGE_GENERATION_MODELS,
   GENERATED_VIDEO_GENERATION_MODELS,
 } from '@/generated/mediaCatalog.generated';
+import { hasConfiguredProviderSecret } from './configUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider test: try GET /models first; if 404, fallback to POST /chat/completions
@@ -500,12 +501,9 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     const providerConfigEntry = Object.entries(modelsProviders).find(([modelsProviderId]) =>
       providerNamespaceMatches(modelsProviderId, provider)
     )?.[1];
-    const envKeyValue = template?.envKey
-      ? String(envVarsForAuth[template.envKey] ?? '').trim()
-      : undefined;
-    // 同时检查 envKeyAlt（备用环境变量，如 ANTHROPIC_OAUTH_TOKEN、GH_TOKEN 等）
-    const envKeyAltFound = !!(template?.envKeyAlt?.some((k) => String(envVarsForAuth[k] ?? '').trim()));
-    const envKeyFound = !!(envKeyValue) || envKeyAltFound || hasProviderConfigApiKey(providerConfigEntry?.apiKey);
+    const secretState = hasConfiguredProviderSecret(config as any, provider, template);
+    const envKeyValue = secretState.envKeyValue;
+    const envKeyFound = secretState.configured || hasProviderConfigApiKey(providerConfigEntry?.apiKey);
 
     result.push({
       key:         profileKey,

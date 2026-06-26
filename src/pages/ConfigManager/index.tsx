@@ -17,6 +17,7 @@ import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
 } from './runtimeNormalization';
+import { preserveProviderEnvVars } from './configUtils';
 // ModelsTab removed — models are now fetched per-provider from the ProvidersTab
 import { AgentsTab } from './AgentsTab';
 import { ChannelsTab } from './ChannelsTab';
@@ -286,7 +287,10 @@ export function ConfigManagerPage() {
       const { data: diskConfig } = await window.aegis.config.read(configPath);
 
       // 2. Apply only the user's changes on top of the fresh disk version
-      const merged = smartMerge(diskConfig, originalConfig, configToSave);
+      const mergedRaw = smartMerge(diskConfig, originalConfig, configToSave);
+      // Preserve provider env vars from disk when the UI state lost them but the
+      // provider/profile still exists. Prevents accidental API key deletion.
+      const merged = preserveProviderEnvVars(diskConfig, mergedRaw, originalConfig ?? {});
       const precheckResult = await runConnectionPrecheck(options?.connectionProbe);
       if (!precheckResult.ok) {
         const continueSave = await requestConnectionFailureConfirm(precheckResult.failures);

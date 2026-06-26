@@ -189,3 +189,92 @@ export function normalizeAuthProfilesFromDisk(
   }
   return out;
 }
+
+
+const ENV_REF_RE = /^\$\{([^}]+)\}$/;
+
+/** Parse "${FOO_API_KEY}" -> "FOO_API_KEY". */
+export function extractEnvRefKey(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const m = value.trim().match(ENV_REF_RE);
+  return m?.[1];
+}
+
+/**
+ * True when a provider has an actual secret configured, from any supported source:
+ * - env.vars[TEMPLATE_ENV_KEY]
+ * - models.providers[providerId].apiKey = '${ENV_KEY}' + env.vars[ENV_KEY]
+ * - models.providers[providerId].apiKey = '<raw-secret>'
+ */
+export function hasConfiguredProviderSecret(
+  config: Record<string, any> | undefined,
+  providerId: string,
+  template?: { envKey?: string; envKeyAlt?: string[] } | undefined,
+): { configured: boolean; envKeyValue?: string } {
+  const envVars = config?.env?.vars ?? {};
+  const providerCfg = config?.models?.providers?.[providerId] ?? {};
+
+  // 1) Primary env key on template
+  if (template?.envKey) {
+    const value = String(envVars[template.envKey] ?? '').trim();
+    if (value) return { configured: true, envKeyValue: value };
+  }
+
+  // 2) Alternate env keys on template
+  for (const key of template?.envKeyAlt ?? []) {
+    const value = String(envVars[key] ?? '').trim();
+    if (value) return { configured: true, envKeyValue: value };
+  }
+
+  // 3) models.providers.apiKey references an env var
+  const refKey = extractEnvRefKey(providerCfg?.apiKey);
+  if (refKey) {
+    const value = String(envVars[refKey] ?? '').trim();
+    if (value) return { configured: true, envKeyValue: value };
+  }
+
+  // 4) models.providers.apiKey stores a raw secret directly (custom providers)
+  if (typeof providerCfg?.apiKey === 'string' && providerCfg.apiKey.trim() && !extractEnvRefKey(providerCfg.apiKey)) {
+    return { configured: true, envKeyValue: providerCfg.apiKey.trim() };
+  }
+
+  return { configured: false };
+}
+
+/**
+ * Preserve provider env vars from disk unless the user explicitly removed the provider.
+ * This prevents accidental secret loss when UI state dropped env.vars during normalization.
+ */
+export function preserveProviderEnvVars(
+  disk: Record<string, any>,
+  merged: Record<string, any>,
+  original: Record<string, any>,
+): Record<string, any> {
+  const next = structuredClone(merged ?? {});
+  const diskVars = disk?.env?.vars ?? {};
+  if (!diskVars || Object.keys(diskVars).length === 0) return next;
+
+  const nextVars = { ...(next?.env?.vars ?? {}) };
+  const currentProfiles = next?.auth?.profiles ?? {};
+  const currentProviders = next?.models?.providers ?? {};
+
+  // If a disk env key is referenced by a surviving provider/profile, preserve it.
+  for (const [envKey, envValue] of Object.entries(diskVars)) {
+    if (envKey in nextVars) continue; // already present in merged result
+
+    const referencedByProvider = Object.values(currentProviders).some((cfg: any) => extractEnvRefKey(cfg?.apiKey) === envKey);
+    const referencedByProfile = Object.values(currentProfiles).some((p: any) => {
+      const providerId = String(p?.provider ?? '').trim();
+      return providerId && typeof envKey === 'string' && envKey.startsWith(providerId.toUpperCase().replace(/[^A-Z0-9]+/g, '_'));
+    });
+
+    if (referencedByProvider || referencedByProfile) {
+      nextVars[envKey] = envValue;
+    }
+  }
+
+  if (Object.keys(nextVars).length > 0) {
+    next.env = { ...(next.env ?? {}), vars: nextVars };
+  }
+  return next;
+}
