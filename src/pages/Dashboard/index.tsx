@@ -12,7 +12,7 @@ import {
   ResponsiveContainer, CartesianGrid,
 } from 'recharts';
 import {
-  Heart, Mail, Calendar, RefreshCw, BarChart3, FileText,
+  RefreshCw, BarChart3,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
   TrendingUp, TrendingDown,
 } from 'lucide-react';
@@ -119,11 +119,10 @@ export function DashboardPage() {
     if (!connected)                             connectedSince.current = null;
   }, [connected]);
 
-  // Agent status derived from sessions
+  // Agent status derived from all sessions, not only main.
   const agentStatus: 'idle' | 'working' | 'offline' = useMemo(() => {
     if (!connected) return 'offline';
-    const main = sessions.find((s: any) => s.key === 'agent:main:main');
-    return main?.running ? 'working' : 'idle';
+    return sessions.some((s: any) => Boolean(s.running)) ? 'working' : 'idle';
   }, [connected, sessions]);
 
   // ── Manual Refresh ──────────────────────────────────────────
@@ -134,34 +133,20 @@ export function DashboardPage() {
   }, []);
 
   // ── Quick Actions ────────────────────────────────────────────
+  // Keep only actions that have a real local workflow. Prompt-only shortcuts
+  // looked functional but depended on the LLM to decide what to do.
   const handleQuickAction = (action: string) => {
     setQuickActionLoading(action);
 
     switch (action) {
       case 'compact':
-        // Trigger the existing session compaction flow
         window.dispatchEvent(new CustomEvent('aegis:compress-session'));
         break;
       case 'status':
-        // Navigate to full system performance page
         navigate('/perf');
         break;
-      default: {
-        // heartbeat / emails / calendar / summary → send as chat message
-        const messages: Record<string, string> = {
-          heartbeat: t('dashboard.quickMsg.heartbeat'),
-          emails:    t('dashboard.quickMsg.emails'),
-          calendar:  t('dashboard.quickMsg.calendar'),
-          summary:   t('dashboard.quickMsg.summary'),
-        };
-        if (messages[action]) {
-          window.dispatchEvent(new CustomEvent('aegis:quick-action', {
-            detail: { message: messages[action], autoSend: true },
-          }));
-        }
-      }
     }
-    setTimeout(() => setQuickActionLoading(null), 2000);
+    setTimeout(() => setQuickActionLoading(null), 1200);
   };
 
   // ── Derived values ───────────────────────────────────────────
@@ -247,13 +232,53 @@ export function DashboardPage() {
     }));
   }, [allDaily]);
 
-  // Agent list from usageData
+  const agentIdFromKey = useCallback((key?: string) => {
+    const parts = String(key || '').split(':');
+    return parts[0] === 'agent' && parts[1] ? parts[1] : 'main';
+  }, []);
+
+  const modelForAgent = useCallback((agentId: string, usageRow?: any) => {
+    const direct = usageRow?.model || usageRow?.totals?.model;
+    if (direct) return String(direct).split('/').pop() || direct;
+    const sessionModel = sessions.find((s: any) => agentIdFromKey(s.key) === agentId && s.model)?.model;
+    if (sessionModel) return String(sessionModel).split('/').pop() || sessionModel;
+    const agentModel = agents.find((a: any) => a.id === agentId)?.model;
+    if (agentModel) return String(agentModel).split('/').pop() || agentModel;
+    return '—';
+  }, [sessions, agents, agentIdFromKey]);
+
+  // Agent list: merge usage aggregates + currently active/running sessions.
+  // Usage-only was wrong because an active agent with zero/unknown cost disappeared.
   const agentList = useMemo(() => {
-    const raw: any[] = usageData?.aggregates?.byAgent || [];
-    return raw
-      .filter((a: any) => a.totals?.totalCost >= 0)
-      .sort((a: any, b: any) => (b.totals?.totalCost || 0) - (a.totals?.totalCost || 0));
-  }, [usageData]);
+    const byAgent = new Map<string, any>();
+    const usageRows: any[] = usageData?.aggregates?.byAgent || [];
+    for (const row of usageRows) {
+      const id = row.agentId || row.agent || row.id || 'main';
+      byAgent.set(id, { ...row, agentId: id, activeSessions: 0, running: false });
+    }
+    for (const s of sessions) {
+      const id = agentIdFromKey(s.key);
+      const prev = byAgent.get(id) || { agentId: id, totals: { totalCost: 0 }, activeSessions: 0, running: false };
+      const isActive = Boolean(s.running) || (s.totalTokens || 0) > 0 || Boolean(s.lastActive);
+      if (!isActive) continue;
+      byAgent.set(id, {
+        ...prev,
+        agentId: id,
+        activeSessions: (prev.activeSessions || 0) + 1,
+        running: Boolean(prev.running || s.running),
+        lastActive: s.lastActive || prev.lastActive,
+        model: prev.model || s.model,
+        totals: {
+          ...(prev.totals || {}),
+          totalCost: prev.totals?.totalCost || 0,
+          totalTokens: (prev.totals?.totalTokens || 0) + (s.totalTokens || 0),
+        },
+      });
+    }
+    return Array.from(byAgent.values())
+      .filter((a: any) => (a.activeSessions || 0) > 0 || (a.totals?.totalCost || 0) > 0)
+      .sort((a: any, b: any) => Number(b.running) - Number(a.running) || (b.totals?.totalCost || 0) - (a.totals?.totalCost || 0));
+  }, [usageData, sessions, agentIdFromKey]);
 
   const maxAgentCost = useMemo(
     () => Math.max(...agentList.map((a: any) => a.totals?.totalCost || 0), 0.01),
@@ -583,11 +608,9 @@ export function DashboardPage() {
           <div className="space-y-0">
             {agentList.length > 0 ? (
               agentList.slice(0, 5).map((a: any) => {
-                const id      = a.agentId || 'unknown';
+                const id      = a.agentId || a.agent || a.id || 'unknown';
                 const cost    = a.totals?.totalCost || 0;
-                const model = hasProviders
-                  ? ((a.totals?.model || usageData?.aggregates?.byModel?.find((m: any) => m)?.model || '').split('/').pop() || '—')
-                  : '—';
+                const model = hasProviders ? modelForAgent(id, a) : '—';
                 return (
                   <AgentItem
                     key={id}
@@ -636,25 +659,13 @@ export function DashboardPage() {
             <Zap size={15} className="text-aegis-accent" />
             <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.quickActions')}</span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <QuickAction icon={Heart}    label={t('dashboard.runHeartbeat')}
-              glowColor={themeAlpha('danger', 0.08)} bgColor={themeAlpha('danger', 0.1)} iconColor={themeHex('danger')}
-              onClick={() => handleQuickAction('heartbeat')} loading={quickActionLoading === 'heartbeat'} />
-            <QuickAction icon={Mail}     label={t('dashboard.checkEmails')}
-              glowColor={themeAlpha('primary', 0.08)} bgColor={themeAlpha('primary', 0.1)} iconColor={themeHex('primary')}
-              onClick={() => handleQuickAction('emails')}    loading={quickActionLoading === 'emails'} />
-            <QuickAction icon={Calendar} label={t('dashboard.checkCalendar')}
-              glowColor={themeAlpha('success', 0.08)} bgColor={themeAlpha('success', 0.1)} iconColor={themeHex('success')}
-              onClick={() => handleQuickAction('calendar')}  loading={quickActionLoading === 'calendar'} />
+          <div className="grid grid-cols-2 gap-2">
             <QuickAction icon={RefreshCw} label={t('dashboard.compact')}
               glowColor={themeAlpha('warning', 0.08)} bgColor={themeAlpha('warning', 0.1)} iconColor={themeHex('warning')}
               onClick={() => handleQuickAction('compact')}   loading={quickActionLoading === 'compact'} />
             <QuickAction icon={BarChart3} label={t('dashboard.systemStatus')}
               glowColor={themeAlpha('accent', 0.08)} bgColor={themeAlpha('accent', 0.1)} iconColor={themeHex('accent')}
               onClick={() => handleQuickAction('status')}    loading={quickActionLoading === 'status'} />
-            <QuickAction icon={FileText}  label={t('dashboard.sessionSummary')}
-              glowColor="rgb(var(--aegis-overlay) / 0.03)" bgColor="rgb(var(--aegis-overlay) / 0.04)" iconColor="rgb(var(--aegis-text-dim))"
-              onClick={() => handleQuickAction('summary')}   loading={quickActionLoading === 'summary'} />
           </div>
         </GlassCard>
 
