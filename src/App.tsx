@@ -221,39 +221,64 @@ export default function App() {
     };
 
     // ── Strategy 1: config.get → agents.defaults.models (most reliable) ──
+    // If config.get fails (e.g. gateway restarting, WS disconnected), fall
+    // back to reading openclaw.json directly via Tauri — no WebSocket needed.
     let hasConfiguredProvider = false;
-    try {
-      const raw = await gateway.call('config.get', {});
-      // Response may be config directly OR wrapped: { config: {...} }
-      const config = raw?.agents?.defaults?.models ? raw : (raw?.config ?? raw);
+    let modelsFromConfig: Array<{ id: string; label: string; alias?: string }> = [];
+
+    // Helper: extract provider flag + models from a config object
+    const extractFromConfig = (config: any): void => {
       const authProfiles = config?.auth?.profiles ?? {};
       const modelProviders = config?.models?.providers ?? {};
       const envVars = config?.env?.vars ?? {};
-
-      const hasAuthProfiles = Object.keys(authProfiles).length > 0;
-      const hasModelProviders = Object.keys(modelProviders).length > 0;
-      const hasEnvVars = Object.keys(envVars).length > 0;
-      hasConfiguredProvider = hasAuthProfiles || hasModelProviders || hasEnvVars;
+      hasConfiguredProvider =
+        Object.keys(authProfiles).length > 0 ||
+        Object.keys(modelProviders).length > 0 ||
+        Object.keys(envVars).length > 0;
 
       const modelsSection: Record<string, any> = config?.agents?.defaults?.models ?? {};
-      const fromConfig = Object.entries(modelsSection)
-        .map(([id, cfg]: [string, any]) => ({
-          id,
-          label: id,           // Raw — formatted in TitleBar
-          alias: (cfg?.alias as string) || undefined,
-        }));
-      if (fromConfig.length > 0) {
-        console.log('[Models] Loaded from config.get:', fromConfig.length);
-        await applyModels(fromConfig);
+      modelsFromConfig = Object.entries(modelsSection).map(([id, cfg]: [string, any]) => ({
+        id,
+        label: id,
+        alias: (cfg?.alias as string) || undefined,
+      }));
+    };
+
+    // 1a. Try WebSocket config.get (preferred — reflects runtime state)
+    try {
+      const raw = await gateway.call('config.get', {});
+      const config = raw?.agents?.defaults?.models ? raw : (raw?.config ?? raw);
+      extractFromConfig(config);
+
+      if (modelsFromConfig.length > 0) {
+        console.log('[Models] Loaded from config.get:', modelsFromConfig.length);
+        await applyModels(modelsFromConfig);
         return;
       }
       if (!hasConfiguredProvider) {
         setAvailableModels([]);
-        console.log('[Models] No provider configured in config.get; skip gateway model fallback');
+        console.log('[Models] No provider configured in config.get; skip fallback');
         return;
       }
     } catch (e) {
-      console.warn('[Models] config.get failed, trying agents.list:', e);
+      console.warn('[Models] config.get failed, reading openclaw.json directly:', e);
+    }
+
+    // 1b. Fallback: read openclaw.json directly via Tauri (no WS needed).
+    // This handles the case where gateway is restarting after config save
+    // and config.get times out — we still know providers exist from disk.
+    if (!hasConfiguredProvider && window.aegis?.config?.read) {
+      try {
+        const { data: diskConfig } = await window.aegis.config.read('');
+        extractFromConfig(diskConfig);
+        if (modelsFromConfig.length > 0) {
+          console.log('[Models] Loaded from openclaw.json (WS fallback):', modelsFromConfig.length);
+          await applyModels(modelsFromConfig);
+          return;
+        }
+      } catch (diskErr) {
+        console.warn('[Models] openclaw.json read also failed:', diskErr);
+      }
     }
 
     // ── Strategy 2: Collect unique models from agents + session ──
