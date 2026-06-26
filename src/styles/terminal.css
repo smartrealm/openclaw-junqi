@@ -7,19 +7,16 @@
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  /* Terminal canvas — same as aegis-bg so the terminal feels embedded. */
-  --terminal-bg:        #1d212a;   /* = aegis-bg */
+  /* Terminal canvas — follows aegis-bg so the terminal feels embedded
+     and switches correctly with light / midnight / eyecare themes. */
+  --terminal-bg:        var(--aegis-bg);
+  --terminal-surface:   var(--aegis-surface);
+  --terminal-elevated:  var(--aegis-surface-elevated);
+  --terminal-border:    var(--aegis-border);
 
-  /* Chrome inside the terminal (status bars, docks, tab strips). */
-  --terminal-surface:   #242a35;   /* = aegis-surface */
-  --terminal-elevated:  #2b313d;   /* = aegis-surface-elevated */
-
-  /* Border — same hairline as aegis-border. */
-  --terminal-border:    rgba(255, 255, 255, 0.07);
-
-  /* Text — aegis text tokens. */
-  --terminal-text:      #f1f4fb;   /* = aegis-text */
-  --terminal-text-dim:  #a4adc2;   /* = aegis-text-muted */
+  /* Text — follows aegis text tokens. */
+  --terminal-text:      var(--aegis-text);
+  --terminal-text-dim:  var(--aegis-text-muted);
 
   --terminal-cursor:    #ffffff;
   --terminal-selection: rgba(127, 154, 255, 0.25);

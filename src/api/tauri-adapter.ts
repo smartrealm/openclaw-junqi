@@ -64,7 +64,8 @@ try {
   }).catch(() => {});
 } catch {}
 
-// ── Wait a short time for the event, then use invoke as fallback ──
+// ── Resolve gateway config: try cached → event → invoke, with a short
+//    race between event and invoke so we don't block on a missed event. ──
 async function resolveGwConfig(): Promise<any> {
   // Fast path: token already cached from start_gateway result.
   if (_cachedGatewayToken) {
@@ -72,18 +73,45 @@ async function resolveGwConfig(): Promise<any> {
     return { token: _cachedGatewayToken, ws_url: `ws://127.0.0.1:${port}` };
   }
 
-  // Wait up to 500ms for the setup event to arrive
-  for (let i = 0; i < 10 && !_gwReady; i++) {
-    await new Promise(r => setTimeout(r, 50));
-  }
+  // If the setup event already arrived, use it immediately.
   if (_gwConfig?.token) return _gwConfig;
 
-  // Fallback: use invoke (available once main app renders)
-  try {
-    const gw: any = await invoke("detect_gateway_config");
-    if (gw.token) return { token: gw.token, ws_url: gw.ws_url };
-  } catch {}
+  // Race: wait briefly for the event (up to 200ms) while simultaneously
+  // invoking detect_gateway_config. Whichever returns a valid token first
+  // wins. This avoids the 500ms stall when the event was emitted before
+  // the listener was registered.
+  const eventPromise = new Promise<any>((resolve) => {
+    if (_gwReady) { resolve(_gwConfig); return; }
+    let elapsed = 0;
+    const tick = () => {
+      if (_gwReady || elapsed >= 200) { resolve(_gwConfig); return; }
+      elapsed += 50;
+      setTimeout(tick, 50);
+    };
+    setTimeout(tick, 50);
+  });
 
+  const invokePromise = invoke("detect_gateway_config")
+    .then((gw: any) => gw?.token ? { token: gw.token, ws_url: gw.ws_url } : null)
+    .catch(() => null);
+
+  const [eventResult, invokeResult] = await Promise.race([
+    Promise.all([eventPromise, invokePromise]),
+    // Safety: if both are slow, resolve after 300ms with whatever we have
+    new Promise<[any, any]>(r => setTimeout(() => r([_gwConfig, null]), 300)),
+  ]);
+
+  // Prefer invoke result (reads actual config file), then event, then null.
+  if (invokeResult?.token) {
+    // Cache for subsequent calls.
+    _cachedGatewayToken = invokeResult.token;
+    if (invokeResult.ws_url) {
+      const m = invokeResult.ws_url.match(/:(\d+)$/);
+      if (m) _cachedGatewayPort = parseInt(m[1], 10);
+    }
+    return invokeResult;
+  }
+  if (eventResult?.token) return eventResult;
   return null;
 }
 

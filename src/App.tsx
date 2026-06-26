@@ -570,14 +570,15 @@ export default function App() {
   }, [loadAvailableModels]);
 
   const initConnection = async () => {
+    // Default fallback — only used when all config resolution fails.
     const DEFAULT_URL = 'ws://127.0.0.1:18789';
     const wsStatus = gateway.getStatus();
     if (wsStatus.connected || wsStatus.connecting) return;
     useBootSequenceStore.getState().reset();
     useBootSequenceStore.getState().markStageRunning('connection', 'Connecting WebSocket');
 
-    // Priority: Settings Store (user override) → Electron config → fallback
-    // Settings fields are empty by default — only override when user explicitly fills them
+    // Priority: Settings Store (user override) → resolved gateway config
+    // (reads openclaw.json for actual port + token) → fallback default.
     const settings = useSettingsStore.getState();
     const userUrl = settings.gatewayUrl?.trim() || '';
     const userToken = settings.gatewayToken?.trim() || '';
@@ -585,6 +586,8 @@ export default function App() {
     try {
       if (window.aegis?.config) {
         const config = await window.aegis.config.get();
+        // config.gatewayUrl comes from resolveGwConfig which reads the
+        // actual configured port from openclaw.json — not hardcoded.
         const configUrl = config.gatewayUrl || config.gatewayWsUrl || DEFAULT_URL;
         const configToken = config.gatewayToken || '';
 
