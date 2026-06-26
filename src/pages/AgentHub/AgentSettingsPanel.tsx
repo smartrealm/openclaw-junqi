@@ -423,7 +423,7 @@ export function AgentSettingsPanel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
+            className="fixed top-[56px] end-0 bottom-0 start-0 bg-black/40 backdrop-blur-sm z-[2147481000]"
             onClick={onClose}
           />
 
@@ -434,12 +434,12 @@ export function AgentSettingsPanel({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed top-0 end-0 bottom-0 w-[340px] max-w-[92vw] z-50 flex flex-col bg-aegis-bg border-s border-aegis-border shadow-2xl"
+            className="fixed top-[56px] end-0 bottom-0 w-[340px] max-w-[92vw] z-[2147481001] flex flex-col bg-aegis-bg border-s border-aegis-border shadow-2xl"
           >
 
             {/* ═══ Header ═══ */}
             <div
-              className="shrink-0 px-5 pt-5 pb-4"
+              className="shrink-0 px-5 pt-4 pb-4"
               style={{ borderBottom: `1px solid ${themeAlpha('border', 0.6)}` }}
             >
               {/* Top row: name + close */}
