@@ -386,6 +386,9 @@ export const MessageBubble = memo(function MessageBubble({
     ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; contextPercent?: number | null; model?: string; formatted?: string; duration?: number }; } catch { return null; } })()
     : null;
   const ctxFmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : String(n));
+  const contextTotalTokens = contextContent
+    ? (contextContent.input ?? 0) + (contextContent.output ?? 0) + (contextContent.cacheRead ?? 0) + (contextContent.cacheWrite ?? 0)
+    : 0;
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
   const content = stripEmojiPrefix(block.markdown);
@@ -453,6 +456,7 @@ function stripInlineCodeTicks(md: string): string {
     if (slashIndex === -1 || slashIndex === trimmed.length - 1) return { provider: '', model: trimmed, full: trimmed };
     return { provider: trimmed.slice(0, slashIndex), model: trimmed.slice(slashIndex + 1), full: trimmed };
   })();
+  const contextModel = contextContent?.model || modelInfo?.full || block.model || '';
 
   // ── Avatar gradient per agent ──
   const avatarGradient = (() => {
@@ -697,36 +701,10 @@ function stripInlineCodeTicks(md: string): string {
                 <span>Context</span>
               </button>
               {ctxOpen && (
-                <span className="inline-flex items-center flex-wrap rounded-full px-2 py-0.5 text-[10px] font-mono tabular-nums"
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-mono tabular-nums text-aegis-text-dim"
                   style={{ gap: 6, border: '1px solid var(--aegis-border, rgb(var(--aegis-overlay)/0.1))', background: 'rgb(var(--aegis-overlay) / 0.03)' }}>
-                  {/* Model name */}
-                  {modelInfo && <span className="text-aegis-text-muted">{modelInfo.model}</span>}
-                  {/* Input / output tokens */}
-                  {contextContent?.input != null && contextContent.input > 0 && (
-                    <span className="text-blue-400">in:{ctxFmt(contextContent.input)}</span>
-                  )}
-                  {contextContent?.output != null && contextContent.output > 0 && (
-                    <span className="text-emerald-400">out:{ctxFmt(contextContent.output)}</span>
-                  )}
-                  {/* Cache */}
-                  {contextContent?.cacheRead != null && contextContent.cacheRead > 0 && (
-                    <span className="text-purple-400">R{ctxFmt(contextContent.cacheRead)}</span>
-                  )}
-                  {contextContent?.cacheWrite != null && contextContent.cacheWrite > 0 && (
-                    <span className="text-violet-400">W{ctxFmt(contextContent.cacheWrite)}</span>
-                  )}
-                  {/* Context usage % */}
-                  {contextContent?.contextPercent != null && (
-                    <span className={clsx(
-                      (contextContent.contextPercent ?? 0) >= 90 ? 'text-aegis-danger' :
-                      (contextContent.contextPercent ?? 0) >= 75 ? 'text-aegis-warning' : 'text-aegis-text-dim'
-                    )}>
-                      {contextContent.contextPercent}%
-                    </span>
-                  )}
-                  {!contextContent && (
-                    <span className="text-aegis-text-dim">—</span>
-                  )}
+                  {contextModel ? <span>{contextModel.split('/').pop()}</span> : <span>—</span>}
+                  {contextTotalTokens > 0 && <span>total:{ctxFmt(contextTotalTokens)}</span>}
                 </span>
               )}
             </span>
@@ -764,6 +742,24 @@ function stripInlineCodeTicks(md: string): string {
             )}
           </span>
         </div>
+
+        {!isUser && ctxOpen && (
+          <div className="mt-2 w-full max-w-[min(760px,100%)] rounded-xl border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] p-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+              <div><div className="text-aegis-text-dim">本次模型</div><div className="font-mono text-aegis-text truncate">{contextModel || '—'}</div></div>
+              <div><div className="text-aegis-text-dim">输入 tokens</div><div className="font-mono text-blue-400">{contextContent?.input != null ? ctxFmt(contextContent.input) : '—'}</div></div>
+              <div><div className="text-aegis-text-dim">输出 tokens</div><div className="font-mono text-emerald-400">{contextContent?.output != null ? ctxFmt(contextContent.output) : '—'}</div></div>
+              <div><div className="text-aegis-text-dim">总 tokens</div><div className="font-mono text-aegis-text">{contextTotalTokens > 0 ? ctxFmt(contextTotalTokens) : '—'}</div></div>
+              <div><div className="text-aegis-text-dim">Context</div><div className="font-mono text-aegis-text">{contextContent?.contextPercent != null ? `${contextContent.contextPercent}%` : '—'}</div></div>
+              <div><div className="text-aegis-text-dim">耗时</div><div className="font-mono text-aegis-text">{durationStr || '—'}</div></div>
+            </div>
+            {(contextContent?.cacheRead || contextContent?.cacheWrite) ? (
+              <div className="mt-2 pt-2 border-t border-aegis-border text-[11px] font-mono text-aegis-text-dim">
+                cache read: {contextContent?.cacheRead ? ctxFmt(contextContent.cacheRead) : '0'} · cache write: {contextContent?.cacheWrite ? ctxFmt(contextContent.cacheWrite) : '0'}
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
     </div>
   );

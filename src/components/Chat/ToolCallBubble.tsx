@@ -91,10 +91,10 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
   const hasDetails = !!(tool.input && Object.keys(tool.input).length > 0) || !!tool.output;
 
   return (
-    <div className="pl-[42px] py-[2px]">
+    <div className="ml-[42px] mr-4 py-[2px] max-w-[min(1000px,78%)]">
       <div
         className={clsx(
-          'rounded-lg transition-all duration-150',
+          'rounded-lg transition-all duration-150 w-fit max-w-full',
           hasDetails && 'cursor-pointer',
           expanded
             ? 'border border-[rgb(var(--aegis-overlay)/0.10)] bg-[rgb(var(--aegis-overlay)/0.03)]'
@@ -103,7 +103,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
         onClick={() => hasDetails && setExpanded((v) => !v)}
       >
         {/* ── Inline status row (Control UI style) ── */}
-        <div className="flex items-center gap-2 px-2.5 py-1.5 min-h-[28px]">
+        <div className="flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] max-w-full">
           {/* Status indicator */}
           {tool.status === 'running' ? (
             <Loader2 size={12} className="text-aegis-accent animate-spin shrink-0" />
@@ -129,14 +129,12 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
 
           {/* Summary / key param */}
           {summary && (
-            <span className="text-[10px] text-aegis-text-dim/60 font-mono truncate min-w-0">
+            <span className="text-[10px] text-aegis-text-dim/60 font-mono truncate min-w-0 max-w-[520px]">
               {summary}
             </span>
           )}
 
           {/* Spacer */}
-          <span className="flex-1" />
-
           {/* Duration + expand */}
           <div className="flex items-center gap-1.5 shrink-0">
             {tool.durationMs !== undefined && tool.status !== 'running' && (
