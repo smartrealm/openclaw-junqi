@@ -526,7 +526,10 @@ export default function App() {
           if (!gatewayStartAttemptedRef.current && window.aegis?.gateway?.start) {
             gatewayStartAttemptedRef.current = true;
             void window.aegis.gateway.start().then((result) => {
-              if (!result.success) {
+              if (result.success) {
+                // Gateway started (or was already serving). Now connect WebSocket.
+                initConnection();
+              } else {
                 setGatewayBootError(result.error || 'Failed to start gateway');
                 setConnectionStatus({ connected: false, connecting: false, error: result.error || 'Failed to start gateway' });
               }
