@@ -164,6 +164,14 @@ export function useSetupFlow(
     }
   }, [setSetupStep, setStatusMessage, setProgress, setSteps, setGatewayRunning, setSetupComplete, setSetupError]);
 
+  // ── Auto-start gateway when openclaw is installed but gateway is stopped ──
+  // Instead of showing a manual "Start Gateway" button, we auto-start immediately.
+  // If it fails, the error screen with retry button is shown.
+  useEffect(() => {
+    if (setupStep !== "gateway-stopped") return;
+    startGatewayAction();
+  }, [setupStep, startGatewayAction]);
+
   const runNativeSetup = useCallback(async () => {
     const s = [...INITIAL_NATIVE_STEPS];
     setSteps(s);

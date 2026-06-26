@@ -218,8 +218,8 @@ pub fn run() {
                         // on 4K/5K displays nor unusably small on laptops.
                         let logical_w = phys.width as f64 / scale;
                         let logical_h = phys.height as f64 / scale;
-                        let w = (logical_w * 0.85).clamp(1200.0, 1800.0);
-                        let h = (logical_h * 0.88).clamp(780.0, 1100.0);
+                        let w = (logical_w * 0.72).clamp(1100.0, 1600.0);
+                        let h = (logical_h * 0.80).clamp(720.0, 1000.0);
                         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: w, height: h }));
                     }
                     let _ = window.center();
