@@ -7,24 +7,11 @@ import { useTranslation } from 'react-i18next';
 import { Loader2, WifiOff, FileText, MonitorDot } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
-import { useEffect, useState } from 'react';
 
 export function OfflineOverlay() {
   const { t } = useTranslation();
   const connecting = useChatStore((s) => s.connecting);
   const lastError = gateway.getLastError?.();
-  const [diag, setDiag] = useState<string>('');
-
-  useEffect(() => {
-    const update = () => {
-      const ws = gateway.getStatus();
-      const url = (gateway as any).url || '(none)';
-      setDiag(`ws.connected=${ws.connected} ws.connecting=${ws.connecting} url=${url} err=${lastError || 'none'}`);
-    };
-    update();
-    const iv = setInterval(update, 1000);
-    return () => clearInterval(iv);
-  }, [lastError]);
 
   return (
     <div className="h-full flex items-center justify-center">
@@ -48,14 +35,7 @@ export function OfflineOverlay() {
             <span className="w-1.5 h-1.5 rounded-full bg-aegis-warning/60 animate-pulse" />
             {t('offline.connectingHint')}
           </div>
-        ) : null}
-
-        {/* DEBUG: show connection diagnostics */}
-        <div className="mb-4 px-3 py-2 rounded-lg bg-black/30 border border-white/5 text-left">
-          <p className="text-[10px] font-mono text-yellow-400/70 break-all">{diag}</p>
-        </div>
-
-        {!connecting && lastError ? (
+        ) : lastError ? (
           <div className="mb-4 px-3 py-2 rounded-lg bg-aegis-error/10 border border-aegis-error/20 text-left">
             <p className="text-[10px] font-mono text-aegis-error/80 break-all leading-relaxed">
               {lastError}

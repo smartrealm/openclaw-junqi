@@ -65,6 +65,16 @@ export class GatewayConnectionManager {
     });
   }
 
+  /** Notify that WebSocket has opened (called from App onStatusChange). */
+  notifyWsOpen(): void {
+    this.handleEvent({ type: 'WS_OPEN' });
+  }
+
+  /** Notify that WebSocket has closed (called from App onStatusChange). */
+  notifyWsClose(): void {
+    this.handleEvent({ type: 'WS_CLOSE' });
+  }
+
   /** Manually trigger a retry from ERROR state. */
   retry(): void {
     this.error = null;

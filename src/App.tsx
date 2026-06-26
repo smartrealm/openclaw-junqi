@@ -45,6 +45,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { notifications } from '@/services/notifications';
 import { changeLanguage } from '@/i18n';
 import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
@@ -127,7 +128,6 @@ export default function App() {
   const [gatewayHttpUrl, setGatewayHttpUrl] = useState('http://127.0.0.1:18789');
   const pairingTriggeredRef = useRef(false);
   const deferredModelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gatewayStartAttemptedRef = useRef(false);
 
   // ── Gateway process boot error state ──
   // Tracks whether the gateway *process* failed to start (distinct from WebSocket connection issues).
@@ -428,6 +428,12 @@ export default function App() {
       },
       onStatusChange: (status) => {
         setConnectionStatus(status);
+        // Feed WS lifecycle events into the state machine
+        if (status.connected) {
+          gatewayManager.notifyWsOpen();
+        } else if (!status.connecting) {
+          gatewayManager.notifyWsClose();
+        }
         if (status.connected) {
           // Successfully connected — dismiss pairing screen if showing
           if (needsPairing) {
@@ -500,71 +506,20 @@ export default function App() {
     // ── Check gateway boot status (main-process gateway *process* health) ──
     // Must run before initConnection so we know whether to attempt a WS connection
     // or immediately show the recovery UI.
-    let gatewayStatusUnsub: (() => void) | undefined;
-    if (window.aegis?.gateway) {
-      // Subscribe to real-time status events from the main process (retry / recovery)
-      gatewayStatusUnsub = window.aegis.gateway.onStatusChanged((status) => {
-        if (status.logs) setGatewayBootLogs(status.logs);
-        if (status.retrying) {
-          setGatewayRetrying(true);
-          setConnectionStatus({ connected: false, connecting: true });
-          return;
-        }
-        setGatewayRetrying(false);
-        if (status.error) {
-          setGatewayBootError(status.error);
-          if (status.logs) setGatewayBootLogs(status.logs);
-          setConnectionStatus({ connected: false, connecting: false, error: status.error });
-          return;
-        }
-
-        // Gate first WS connect until the gateway process is fully ready.
-        // This avoids startup-time connection churn while the process is still booting.
-        if (status.running && status.error == null && status.ready !== false) {
-          // Gateway recovered — clear error and reconnect
-          setGatewayBootError(null);
-          setGatewayBootLogs(undefined);
-          // Clear any stale "disconnected" status while transitioning to actual WS connect.
-          setConnectionStatus({ connected: false, connecting: true });
-          initConnection();
-        } else {
-          // Gateway process is still booting: surface as "connecting" instead of
-          // a misleading disconnected error on the main chat screen.
-          setConnectionStatus({ connected: false, connecting: true });
-        }
-      });
-
-      // Initial status check (catches errors that happened before the renderer mounted)
-      void window.aegis.gateway.getStatus().then((status) => {
-        if (status.logs) setGatewayBootLogs(status.logs);
-        if (status.error) {
-          setGatewayBootError(status.error);
-          setGatewayBootLogs(status.logs);
-          setConnectionStatus({ connected: false, connecting: false, error: status.error });
-          return; // Don't attempt WS connection when gateway process is down
-        }
-        if (status.running && status.error == null && status.ready !== false) {
-          setConnectionStatus({ connected: false, connecting: true });
-          initConnection();
-        } else {
-          setConnectionStatus({ connected: false, connecting: true });
-          if (!gatewayStartAttemptedRef.current && window.aegis?.gateway?.start) {
-            gatewayStartAttemptedRef.current = true;
-            void window.aegis.gateway.start().then((result) => {
-              if (result.success) {
-                // Gateway started (or was already serving). Now connect WebSocket.
-                initConnection();
-              } else {
-                setGatewayBootError(result.error || 'Failed to start gateway');
-                setConnectionStatus({ connected: false, connecting: false, error: result.error || 'Failed to start gateway' });
-              }
-            });
-          }
-        }
-      });
-    } else {
-      initConnection();
-    }
+    // ── Gateway connection lifecycle managed by GatewayConnectionManager ──
+    // State machine handles: detect → start → connect → connected → error.
+    // App.tsx only subscribes to state changes and syncs UI state accordingly.
+    const managerUnsub = gatewayManager.onStateChange((snap) => {
+      setConnectionStatus({ connected: snap.connected, connecting: snap.connecting, error: snap.error ?? undefined });
+      setGatewayBootError(snap.error);
+      setGatewayBootLogs(snap.logs);
+      setGatewayRetrying(snap.retrying);
+      if (snap.connected) {
+        setGatewayBootError(null);
+        setGatewayBootLogs(undefined);
+      }
+    });
+    gatewayManager.init();
 
     // Listen for model changes → refresh session metadata (contextTokens for new model)
     const handleModelChanged = () => void loadSessions();
@@ -585,7 +540,7 @@ export default function App() {
 
     // Cleanup — prevent orphan WebSocket connections on remount
     return () => {
-      gatewayStatusUnsub?.();
+      managerUnsub();
       if (deferredModelSyncTimerRef.current) {
         clearTimeout(deferredModelSyncTimerRef.current);
         deferredModelSyncTimerRef.current = null;
@@ -597,58 +552,6 @@ export default function App() {
     };
   }, [loadAvailableModels]);
 
-  const initConnection = async () => {
-    // Default fallback — only used when all config resolution fails.
-    const DEFAULT_URL = 'ws://127.0.0.1:18789';
-    const wsStatus = gateway.getStatus();
-    console.log('[App] initConnection called, wsStatus:', wsStatus);
-    if (wsStatus.connected || wsStatus.connecting) {
-      console.log('[App] initConnection early-return: already connected/connecting');
-      return;
-    }
-    useBootSequenceStore.getState().reset();
-    useBootSequenceStore.getState().markStageRunning('connection', 'Connecting WebSocket');
-
-    // Priority: Settings Store (user override) → resolved gateway config
-    // (reads openclaw.json for actual port + token) → fallback default.
-    const settings = useSettingsStore.getState();
-    const userUrl = settings.gatewayUrl?.trim() || '';
-    const userToken = settings.gatewayToken?.trim() || '';
-
-    try {
-      if (window.aegis?.config) {
-        const config = await window.aegis.config.get();
-        console.log('[App] config.get() result:', { gatewayUrl: config.gatewayUrl, hasToken: !!config.gatewayToken });
-        // config.gatewayUrl comes from resolveGwConfig which reads the
-        // actual configured port from openclaw.json — not hardcoded.
-        const configUrl = config.gatewayUrl || config.gatewayWsUrl || DEFAULT_URL;
-        const configToken = config.gatewayToken || '';
-
-        // User settings override ONLY if non-empty (otherwise use config as before)
-        const wsUrl = userUrl || configUrl;
-        const token = userToken || configToken;
-
-        console.log('[App] Connecting to:', wsUrl, 'token:', token ? token.slice(0,8)+'...' : '(empty)');
-
-        // Store HTTP URL for pairing flow + media resolution
-        const httpUrl = wsUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-        setGatewayHttpUrl(httpUrl);
-        localStorage.setItem('aegis-gateway-http', httpUrl);
-        if (!localStorage.getItem('aegis-language') && config.installerLanguage) {
-          const lang = config.installerLanguage as 'ar' | 'en';
-          changeLanguage(lang);
-          useSettingsStore.getState().setLanguage(lang);
-        }
-        gateway.connect(wsUrl, token);
-      } else {
-        console.log('[App] No window.aegis.config, using fallback:', userUrl || DEFAULT_URL);
-        gateway.connect(userUrl || DEFAULT_URL, userToken || '');
-      }
-    } catch (err) {
-      console.error('[App] initConnection error:', err);
-      gateway.connect(userUrl || DEFAULT_URL, userToken || '');
-    }
-  };
 
   // ── Pairing Handlers ──
   const handlePairingComplete = useCallback(async (token: string) => {
@@ -686,7 +589,7 @@ export default function App() {
     setGatewayBootLogs(undefined);
     setGatewayRetrying(false);
     // Reconnect WebSocket now that the gateway process is up
-    initConnection();
+    gatewayManager.reset();
   }, []);
 
   const setupComplete = useAppStore((s) => s.setupComplete);
