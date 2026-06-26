@@ -245,34 +245,40 @@ export default function App() {
     };
 
     // 1a. Try WebSocket config.get (preferred — reflects runtime state)
+    let configGetSucceeded = false;
     try {
       const raw = await gateway.call('config.get', {});
-      const config = raw?.agents?.defaults?.models ? raw : (raw?.config ?? raw);
-      extractFromConfig(config);
+      // Validate: config.get should return {config: {...}, hash: "..."} or
+      // the config object directly. A health event (has 'plugins'/'eventLoop')
+      // means the method was rejected or scope insufficient — skip it.
+      const isHealthEvent = raw?.eventLoop || raw?.plugins?.loaded;
+      if (!isHealthEvent) {
+        const config = raw?.agents?.defaults?.models ? raw : (raw?.config ?? raw);
+        extractFromConfig(config);
+        configGetSucceeded = true;
 
-      if (modelsFromConfig.length > 0) {
-        console.log('[Models] Loaded from config.get:', modelsFromConfig.length);
-        await applyModels(modelsFromConfig);
-        return;
-      }
-      if (!hasConfiguredProvider) {
-        setAvailableModels([]);
-        console.log('[Models] No provider configured in config.get; skip fallback');
-        return;
+        if (modelsFromConfig.length > 0) {
+          console.log('[Models] Loaded from config.get:', modelsFromConfig.length);
+          await applyModels(modelsFromConfig);
+          return;
+        }
+      } else {
+        console.warn('[Models] config.get returned health event, not config — falling back to file');
       }
     } catch (e) {
       console.warn('[Models] config.get failed, reading openclaw.json directly:', e);
     }
 
     // 1b. Fallback: read openclaw.json directly via Tauri (no WS needed).
-    // This handles the case where gateway is restarting after config save
-    // and config.get times out — we still know providers exist from disk.
-    if (!hasConfiguredProvider && window.aegis?.config?.read) {
+    // Triggered when: config.get failed, returned wrong data (health event),
+    // or returned empty models. File read is always reliable.
+    if (modelsFromConfig.length === 0 && window.aegis?.config?.read) {
       try {
         const { data: diskConfig } = await window.aegis.config.read('');
         extractFromConfig(diskConfig);
         if (modelsFromConfig.length > 0) {
-          console.log('[Models] Loaded from openclaw.json (WS fallback):', modelsFromConfig.length);
+          console.log('[Models] Loaded from openclaw.json (file fallback):', modelsFromConfig.length,
+            configGetSucceeded ? '(config.get returned empty)' : '(config.get failed)');
           await applyModels(modelsFromConfig);
           return;
         }
