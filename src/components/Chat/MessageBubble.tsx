@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -466,6 +466,20 @@ function stripInlineCodeTicks(md: string): string {
   })();
   const contextModel = contextContent?.model || modelInfo?.full || block.model || '';
   const isEmptyAssistantStreaming = !isUser && block.isStreaming && !content.trim() && block.images.length === 0 && block.artifacts.length === 0 && !block.audio;
+  const [waitElapsedSec, setWaitElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (!isEmptyAssistantStreaming) {
+      setWaitElapsedSec(0);
+      return;
+    }
+    const start = new Date(block.timestamp).getTime();
+    const startedAt = Number.isFinite(start) ? start : Date.now();
+    const update = () => setWaitElapsedSec(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [isEmptyAssistantStreaming, block.timestamp]);
 
   // ── Avatar gradient per agent ──
   const avatarGradient = (() => {
@@ -627,6 +641,11 @@ function stripInlineCodeTicks(md: string): string {
                     }}
                   />
                 ))}
+                {isEmptyAssistantStreaming && (
+                  <span className="ms-1.5 ps-2 border-s border-[rgb(var(--aegis-overlay)/0.08)] text-[10px] font-mono tabular-nums text-aegis-text-dim/80">
+                    {waitElapsedSec}s
+                  </span>
+                )}
               </div>
             </div>
           ) : (
