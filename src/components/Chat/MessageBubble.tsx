@@ -22,12 +22,6 @@ import { usePreviewStore } from '@/stores/previewStore';
 import { Icon } from '@/components/shared/icons';
 import clsx from 'clsx';
 
-/** Strip leading emoji / warning glyphs that the gateway prepends to
- *  message text. The bubble already has its own icon system. */
-function stripEmojiPrefix(text: string): string {
-  return text.replace(/^[\u{26A0}\u{FE0F}\u{2757}\u{203C}\u{1F6A8}\u{1F534}\u{1F7E0}\u{2705}\u{274C}\u{1F4A5}\s]+/gu, '').trimStart();
-}
-
 // ── Error Action Detection ──
 interface ErrorAction {
   label: string;
@@ -391,7 +385,7 @@ export const MessageBubble = memo(function MessageBubble({
     : 0;
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
-  const content = stripEmojiPrefix(block.markdown);
+  const content = block.markdown;
   const errorAction = !isUser && !block.isStreaming && onErrorAction ? detectErrorAction(content) : null;
 
   // Strip markdown wrapper around code so the copied text is "clean" when

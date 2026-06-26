@@ -3,12 +3,6 @@ import { Code2, Eye, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen,
 import { ArrowsClockwise } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
 
-/** Strip leading emoji / warning glyphs that the gateway may prepend to
- *  event text. The component already renders its own icon; duplicating
- *  it in the text looks sloppy. */
-function stripEmojiPrefix(text: string): string {
-  return text.replace(/^[\u{26A0}\u{FE0F}\u{2757}\u{203C}\u{1F6A8}\u{1F534}\u{1F7E0}\u{2705}\u{274C}\u{1F4A5}\s]+/gu, '').trimStart();
-}
 import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -386,7 +380,7 @@ export function SessionEventCard({ event }: { event: SessionEvent }) {
           <Info size={14} className="mt-0.5 shrink-0 opacity-80" />
           <div className="min-w-0">
             <div className="text-[11px] font-medium uppercase tracking-wider opacity-70">{event.kind.replace('-', ' ')}</div>
-            <div className="whitespace-pre-wrap break-words text-[12px] leading-relaxed">{stripEmojiPrefix(event.text)}</div>
+            <div className="whitespace-pre-wrap break-words text-[12px] leading-relaxed">{event.text}</div>
           </div>
         </div>
       </div>
@@ -412,7 +406,7 @@ export function WorkshopEventCard({ events }: { events: WorkshopEvent[] }) {
               className="rounded-lg border border-emerald-400/10 bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text"
             >
               <div className="mb-1 text-[10px] uppercase tracking-wider text-emerald-300/70">{event.kind}</div>
-              <div className="whitespace-pre-wrap break-words leading-relaxed">{stripEmojiPrefix(event.text)}</div>
+              <div className="whitespace-pre-wrap break-words leading-relaxed">{event.text}</div>
             </div>
           ))}
         </div>
