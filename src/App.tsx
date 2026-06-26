@@ -573,7 +573,11 @@ export default function App() {
     // Default fallback — only used when all config resolution fails.
     const DEFAULT_URL = 'ws://127.0.0.1:18789';
     const wsStatus = gateway.getStatus();
-    if (wsStatus.connected || wsStatus.connecting) return;
+    console.log('[App] initConnection called, wsStatus:', wsStatus);
+    if (wsStatus.connected || wsStatus.connecting) {
+      console.log('[App] initConnection early-return: already connected/connecting');
+      return;
+    }
     useBootSequenceStore.getState().reset();
     useBootSequenceStore.getState().markStageRunning('connection', 'Connecting WebSocket');
 
@@ -586,6 +590,7 @@ export default function App() {
     try {
       if (window.aegis?.config) {
         const config = await window.aegis.config.get();
+        console.log('[App] config.get() result:', { gatewayUrl: config.gatewayUrl, hasToken: !!config.gatewayToken });
         // config.gatewayUrl comes from resolveGwConfig which reads the
         // actual configured port from openclaw.json — not hardcoded.
         const configUrl = config.gatewayUrl || config.gatewayWsUrl || DEFAULT_URL;
@@ -594,6 +599,8 @@ export default function App() {
         // User settings override ONLY if non-empty (otherwise use config as before)
         const wsUrl = userUrl || configUrl;
         const token = userToken || configToken;
+
+        console.log('[App] Connecting to:', wsUrl, 'token:', token ? token.slice(0,8)+'...' : '(empty)');
 
         // Store HTTP URL for pairing flow + media resolution
         const httpUrl = wsUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
@@ -606,9 +613,11 @@ export default function App() {
         }
         gateway.connect(wsUrl, token);
       } else {
+        console.log('[App] No window.aegis.config, using fallback:', userUrl || DEFAULT_URL);
         gateway.connect(userUrl || DEFAULT_URL, userToken || '');
       }
-    } catch {
+    } catch (err) {
+      console.error('[App] initConnection error:', err);
       gateway.connect(userUrl || DEFAULT_URL, userToken || '');
     }
   };
