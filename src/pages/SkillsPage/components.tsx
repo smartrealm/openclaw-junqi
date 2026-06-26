@@ -392,7 +392,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[500] bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-[2147481000] bg-black/40 backdrop-blur-sm"
             onClick={onClose}
           />
         )}
@@ -401,7 +401,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
       {/* Panel: left-cast shadow only when open; when closed the box still abuts the viewport and the shadow would bleed in. */}
       <div
         className={clsx(
-          'fixed top-0 bottom-0 z-[501] w-[480px] max-w-full',
+          'fixed top-0 bottom-0 z-[2147481001] w-[480px] max-w-full',
           'bg-aegis-bg border-s border-[rgb(var(--aegis-overlay)/0.06)]',
           open && 'shadow-[-12px_0_40px_rgba(0,0,0,0.3)]',
           'overflow-y-auto',
