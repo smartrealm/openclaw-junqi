@@ -1477,8 +1477,8 @@
       "local": "🖥 Local / Custom"
     },
     "providersHealth": "Provider health",
-    "providersHealthSummary": "OK {{ok}} · Broken {{broken}}",
-    "providerBrokenNeedSecret": "Provider structure exists, but its secret is missing. Re-enter API Key / Token."
+    "providersHealthSummary": "Visible {{ok}} · Runtime/System {{unknown}}",
+    "providerBrokenNeedSecret": "Desktop cannot see this secret. It may be supplied by Gateway runtime or system environment. If OpenClaw Web UI can answer, no action is required."
   },
   "calendar": {
     "title": "Calendar",

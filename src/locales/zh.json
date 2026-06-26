@@ -1465,8 +1465,8 @@
       "local": "🖥 本地 / 自定义"
     },
     "providersHealth": "提供方健康状态",
-    "providersHealthSummary": "正常 {{ok}} · 损坏 {{broken}}",
-    "providerBrokenNeedSecret": "结构仍在，但 Secret 已缺失，需要补录 API Key / Token"
+    "providersHealthSummary": "可见 {{ok}} · 运行时/系统 {{unknown}}",
+    "providerBrokenNeedSecret": "桌面端看不到这个 Secret。它可能由 Gateway 运行时或系统环境变量提供；如果 OpenClaw Web UI 可以正常回答，无需处理。"
   },
   "calendar": {
     "title": "日历",

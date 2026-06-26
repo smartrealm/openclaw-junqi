@@ -913,6 +913,10 @@ interface ProfileRowProps {
   /** Actual key value from env.vars, passed through so fetch can use it */
   envKeyValue?: string;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
+  onApplyAndSave: (
+    updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig,
+    options?: { connectionProbe?: ConnectionPrecheckProbe }
+  ) => Promise<boolean>;
   saving?: boolean;
 }
 
@@ -1047,6 +1051,7 @@ function ProfileRow({
   apiKeyConfigured,
   envKeyValue,
   onChange,
+  onApplyAndSave,
   saving = false,
 }: ProfileRowProps) {
   const { t } = useTranslation();
@@ -1182,7 +1187,7 @@ function ProfileRow({
   };
 
   const setModelPrimary = (modelId: string) => {
-    onChange((prev) => ({
+    void onApplyAndSave((prev) => ({
       ...prev,
       agents: {
         ...prev.agents,
@@ -1195,7 +1200,7 @@ function ProfileRow({
   };
 
   const setImageModelPrimary = (modelId: string) => {
-    onChange((prev) => ({
+    void onApplyAndSave((prev) => ({
       ...prev,
       agents: {
         ...prev.agents,
@@ -2907,7 +2912,7 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
 
 export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: ProvidersTabProps) {
   const providerHealth = useMemo(() => diagnoseProviders(config, PROVIDER_TEMPLATES as any), [config]);
-  const brokenProviders = providerHealth.filter((p) => p.status === 'broken');
+  const unknownProviders = providerHealth.filter((p) => p.status === 'unknown');
   const okProviders = providerHealth.filter((p) => p.status === 'ok');
   const { t } = useTranslation();
   const [showModal, setShowModal]                   = useState(false);
@@ -3038,22 +3043,22 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
 
 
 
-        {(brokenProviders.length > 0 || okProviders.length > 0) && (
+        {(unknownProviders.length > 0 || okProviders.length > 0) && (
           <div className="mt-3 rounded-xl border border-aegis-border bg-aegis-elevated/60 p-4">
             <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle size={14} className={brokenProviders.length > 0 ? 'text-amber-400' : 'text-aegis-success'} />
+              <AlertTriangle size={14} className={unknownProviders.length > 0 ? 'text-blue-400' : 'text-aegis-success'} />
               <span className="text-sm font-semibold text-aegis-text">{t('config.providersHealth', 'Provider health')}</span>
             </div>
             <p className="text-xs text-aegis-text-muted">
-              {t('config.providersHealthSummary', { ok: okProviders.length, broken: brokenProviders.length, defaultValue: `OK ${okProviders.length} · Broken ${brokenProviders.length}` })}
+              {t('config.providersHealthSummary', { ok: okProviders.length, unknown: unknownProviders.length, defaultValue: `Visible ${okProviders.length} · Runtime/System ${unknownProviders.length}` })}
             </p>
-            {brokenProviders.length > 0 && (
+            {unknownProviders.length > 0 && (
               <div className="mt-3 space-y-2">
-                {brokenProviders.map((item: any) => (
-                  <div key={item.providerId} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-                    <div className="text-xs font-medium text-amber-300">{item.providerId}</div>
+                {unknownProviders.map((item: any) => (
+                  <div key={item.providerId} className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2">
+                    <div className="text-xs font-medium text-blue-300">{item.providerId}</div>
                     <div className="text-[11px] text-aegis-text-muted">
-                      {t('config.providerBrokenNeedSecret', 'Provider structure exists, but its secret is missing. Re-enter API Key / Token.')}
+                      {t('config.providerBrokenNeedSecret', 'Desktop cannot see this secret. It may be supplied by Gateway runtime or system environment. If OpenClaw Web UI can answer, no action is required.')}
                     </div>
                   </div>
                 ))}
@@ -3198,6 +3203,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                       apiKeyConfigured={up.envKeyFound}
                       envKeyValue={up.envKeyValue}
                       onChange={onChange}
+                      onApplyAndSave={onApplyAndSave}
                       saving={saving}
                     />
                   );
@@ -3318,7 +3324,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
               imageSupportMap={allModelImageSupportMap}
               disabled={saving}
               onSetPrimary={(id) => {
-                onChange((prev) => ({
+                void onApplyAndSave((prev) => ({
                   ...prev,
                   agents: {
                     ...prev.agents,
@@ -3330,7 +3336,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                 }));
               }}
               onSetImageModel={(id) => {
-                onChange((prev) => ({
+                void onApplyAndSave((prev) => ({
                   ...prev,
                   agents: {
                     ...prev.agents,

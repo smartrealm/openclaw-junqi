@@ -58,7 +58,10 @@ function readProviderConfigSecret(config: GatewayRuntimeConfig, providerId: stri
   const refKey = extractEnvRefKey(raw);
   if (refKey) {
     const value = String(config.env?.vars?.[refKey] ?? '').trim();
-    return { configured: Boolean(value), source: 'provider-apiKey-env-ref', envKey: refKey, value: value || undefined, providerId };
+    // ${ENV_KEY} is a valid runtime contract even if Desktop cannot read the
+    // actual value from openclaw.json. Gateway / shell / Web UI may resolve it
+    // from process environment, so do not mark this as broken.
+    return { configured: true, source: 'provider-apiKey-env-ref', envKey: refKey, value: value || undefined, providerId };
   }
 
   return { configured: true, source: 'provider-apiKey-raw', value: raw, providerId };
@@ -198,7 +201,7 @@ export function preserveProviderSecretsFromDisk(
 
 export interface ProviderHealthReportItem {
   providerId: string;
-  status: 'ok' | 'broken' | 'empty';
+  status: 'ok' | 'unknown' | 'empty';
   profileKeys: string[];
   modelIds: string[];
   configured: boolean;
@@ -231,7 +234,7 @@ export function diagnoseProviders(
     const template = templateMap.get(providerId);
     const secret = resolveProviderSecret(config, providerId, template, profileKeys[0]);
     const present = profileKeys.length > 0 || providerId in providers || modelIds.length > 0;
-    const status: 'ok' | 'broken' | 'empty' = secret.configured ? 'ok' : (present ? 'broken' : 'empty');
+    const status: 'ok' | 'unknown' | 'empty' = secret.configured ? 'ok' : (present ? 'unknown' : 'empty');
     out.push({
       providerId,
       status,

@@ -1064,8 +1064,8 @@
     "pressCtrlS": "Ctrl+S للحفظ",
     "secrets": "الأسرار",
     "providersHealth": "حالة المزوّدين",
-    "providersHealthSummary": "سليم {{ok}} · تالف {{broken}}",
-    "providerBrokenNeedSecret": "بنية المزوّد موجودة، لكن السر مفقود. أعد إدخال API Key / Token."
+    "providersHealthSummary": "مرئي {{ok}} · وقت التشغيل/النظام {{unknown}}",
+    "providerBrokenNeedSecret": "لا يستطيع تطبيق سطح المكتب رؤية هذا السر. قد يوفّره Gateway وقت التشغيل أو متغيرات بيئة النظام. إذا كان OpenClaw Web UI يجيب بشكل طبيعي فلا يلزم أي إجراء."
   },
   "calendar": {
     "title": "التقويم",

@@ -471,7 +471,15 @@ export default function App() {
     window.addEventListener('aegis:model-changed', handleModelChanged);
 
     // Listen for config saved (e.g. from Config Manager) → refresh available models after a short delay so gateway can restart/reload
-    const handleConfigSaved = () => {
+    const handleConfigSaved = (event: Event) => {
+      const primaryModel = (event as CustomEvent)?.detail?.primaryModel;
+      if (typeof primaryModel === 'string' && primaryModel.trim()) {
+        const st = useChatStore.getState();
+        st.setManualModelOverride(primaryModel.trim());
+        const key = st.activeSessionKey || 'agent:main:main';
+        setSessionModelPref(key, primaryModel.trim());
+        void gateway.setSessionModel(primaryModel.trim(), key).catch(() => {});
+      }
       setTimeout(() => loadAvailableModels(), 1500);
     };
     window.addEventListener('aegis:config-saved', handleConfigSaved);
