@@ -64,54 +64,37 @@ try {
   }).catch(() => {});
 } catch {}
 
-// ── Resolve gateway config: try cached → event → invoke, with a short
-//    race between event and invoke so we don't block on a missed event. ──
+// ── Resolve gateway config ──
+// Priority: cached token (from start_gateway) → gateway-config event
+// (already arrived) → invoke detect_gateway_config (reads openclaw.json).
+// The invoke path is reliable and fast (~1ms file read); we don't need
+// a complex race. The event listener warms _gwConfig asynchronously.
 async function resolveGwConfig(): Promise<any> {
-  // Fast path: token already cached from start_gateway result.
+  // 1. Fast path: token cached from a prior start_gateway call.
   if (_cachedGatewayToken) {
     const port = _cachedGatewayPort ?? 18789;
     return { token: _cachedGatewayToken, ws_url: `ws://127.0.0.1:${port}` };
   }
 
-  // If the setup event already arrived, use it immediately.
+  // 2. If the setup event already arrived, use it.
   if (_gwConfig?.token) return _gwConfig;
 
-  // Race: wait briefly for the event (up to 200ms) while simultaneously
-  // invoking detect_gateway_config. Whichever returns a valid token first
-  // wins. This avoids the 500ms stall when the event was emitted before
-  // the listener was registered.
-  const eventPromise = new Promise<any>((resolve) => {
-    if (_gwReady) { resolve(_gwConfig); return; }
-    let elapsed = 0;
-    const tick = () => {
-      if (_gwReady || elapsed >= 200) { resolve(_gwConfig); return; }
-      elapsed += 50;
-      setTimeout(tick, 50);
-    };
-    setTimeout(tick, 50);
-  });
-
-  const invokePromise = invoke("detect_gateway_config")
-    .then((gw: any) => gw?.token ? { token: gw.token, ws_url: gw.ws_url } : null)
-    .catch(() => null);
-
-  const [eventResult, invokeResult] = await Promise.race([
-    Promise.all([eventPromise, invokePromise]),
-    // Safety: if both are slow, resolve after 300ms with whatever we have
-    new Promise<[any, any]>(r => setTimeout(() => r([_gwConfig, null]), 300)),
-  ]);
-
-  // Prefer invoke result (reads actual config file), then event, then null.
-  if (invokeResult?.token) {
-    // Cache for subsequent calls.
-    _cachedGatewayToken = invokeResult.token;
-    if (invokeResult.ws_url) {
-      const m = invokeResult.ws_url.match(/:(\d+)$/);
-      if (m) _cachedGatewayPort = parseInt(m[1], 10);
+  // 3. Read directly from the config file via Rust. This is the
+  //    authoritative source — detect_gateway_config parses openclaw.json
+  //    and returns the actual port + token the gateway is using.
+  try {
+    const gw: any = await invoke("detect_gateway_config");
+    if (gw?.token) {
+      // Cache for subsequent calls.
+      _cachedGatewayToken = gw.token;
+      if (gw.ws_url) {
+        const m = String(gw.ws_url).match(/:(\d+)$/);
+        if (m) _cachedGatewayPort = parseInt(m[1], 10);
+      }
+      return { token: gw.token, ws_url: gw.ws_url };
     }
-    return invokeResult;
-  }
-  if (eventResult?.token) return eventResult;
+  } catch {}
+
   return null;
 }
 
