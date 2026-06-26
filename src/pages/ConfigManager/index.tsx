@@ -934,7 +934,12 @@ export function ConfigManagerPage() {
     const result = await testProviderConnection(baseUrl, apiKey, template, modelOverride);
     const failures = result.ok
       ? []
-      : [`${providerId}:${probe.profileKey} — ${result.message}`];
+      : (() => {
+          const rawMsg = result.message ?? '';
+          const i18nMatch = rawMsg.match(/^__i18n:([^:]+):(.+)__$/);
+          const displayMsg = i18nMatch ? t(i18nMatch[1], { status: i18nMatch[2] }) : rawMsg;
+          return [`${providerId}:${probe.profileKey} — ${displayMsg}`];
+        })();
 
     return { ok: failures.length === 0, failures };
   };

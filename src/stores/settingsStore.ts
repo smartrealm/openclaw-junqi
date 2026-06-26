@@ -76,6 +76,19 @@ interface SettingsState {
   setAccentColor: (color: string) => void;
 }
 
+
+// -- applyUiZoom
+// Applies UI scale via native webview zoom factor.
+// TopBar cancels it for traffic lights (zoom: 100/uiScale).
+async function applyUiZoom(scale: number): Promise<void> {
+  try {
+    const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    await getCurrentWebviewWindow().setZoom(scale / 100);
+  } catch {
+    // browser / Storybook: no-op
+  }
+}
+
 const ACCENT_SHADES: Record<string, { 400: string; 500: string; 600: string; raw400: string }> = {
   teal:    { 400: 'var(--color-teal-400)',    500: 'var(--color-teal-500)',    600: 'var(--color-teal-600)',    raw400: 'var(--color-teal-400)' },
   blue:    { 400: 'var(--color-blue-400)',    500: 'var(--color-blue-500)',    600: 'var(--color-blue-600)',    raw400: 'var(--color-blue-400)' },
@@ -170,6 +183,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const v = clampScale(scale);
     localStorage.setItem('aegis-ui-scale', String(v));
     set({ uiScale: v });
+    void applyUiZoom(v);
     window.aegis?.settings?.save?.('uiScale', v).catch?.(() => {});
   },
   setUiFont: (font) => {
@@ -249,4 +263,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 const savedAccent = localStorage.getItem('aegis-accent-color');
 if (savedAccent && savedAccent !== 'teal') {
   useSettingsStore.getState().setAccentColor(savedAccent);
+}
+
+// Restore saved UI zoom on load (savedUiScale already clamped above).
+// 100 is the default — skip the setZoom(1.0) no-op on every cold start.
+if (savedUiScale !== 100) {
+  void applyUiZoom(savedUiScale);
 }

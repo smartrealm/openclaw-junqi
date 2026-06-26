@@ -27,8 +27,16 @@ pub async fn write_config(json: String) -> Result<String, String> {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create config dir: {}", e))?;
     }
-    std::fs::write(&path, &json)
-        .map_err(|e| format!("Failed to write config: {}", e))?;
+    // Atomic write: write to a sibling temp file, then rename over the target.
+    // This prevents config corruption if the process is killed mid-write.
+    let tmp_path = path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, &json)
+        .map_err(|e| format!("Failed to write temp config: {}", e))?;
+    std::fs::rename(&tmp_path, &path)
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            format!("Failed to finalize config write: {}", e)
+        })?;
     Ok("Config saved".into())
 }
 

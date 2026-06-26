@@ -297,3 +297,100 @@ pub async fn check_git() -> Result<GitStatus, String> {
         source: None,
     })
 }
+
+// ── get_terminal_env ──────────────────────────────────────────────────────
+/// Project-level environment detection for the status bar pills, mirroring
+/// kooky `session.environment` (pythonVenv, nodeVersion, goVersion).
+#[derive(serde::Serialize)]
+pub struct TerminalEnvInfo {
+    pub node_version: Option<String>,
+    pub python_venv: Option<String>,
+    pub go_version: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, String> {
+    // Run node, go, and python detection concurrently with tokio::process::Command
+    // so NVM/asdf shims don't block the Tokio executor thread.
+    let pp = project_path.clone();
+
+    let node_fut = async {
+        tokio::process::Command::new("node")
+            .arg("--version")
+            .current_dir(&pp)
+            .output()
+            .await
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    Some(v.trim_start_matches('v').to_string())
+                } else {
+                    None
+                }
+            })
+    };
+
+    let pp2 = project_path.clone();
+    let go_fut = async {
+        tokio::process::Command::new("go")
+            .arg("version")
+            .current_dir(&pp2)
+            .output()
+            .await
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let text = String::from_utf8_lossy(&o.stdout).into_owned();
+                    text.split_whitespace()
+                        .find(|t| t.starts_with("go1.") || t.starts_with("go2."))
+                        .map(|t| t.trim_start_matches("go").to_string())
+                } else {
+                    None
+                }
+            })
+    };
+
+    // Python venv: filesystem-only detection (.venv / venv / env dirs).
+    // Deliberately skip std::env::var("VIRTUAL_ENV") -- that reads the Tauri
+    // process environment, not the PTY terminal's activated venv.
+    let pp3 = project_path.clone();
+    let python_fut = async {
+        for candidate in &[".venv", "venv", "env"] {
+            let venv_dir = std::path::Path::new(&pp3).join(candidate);
+            let py_win  = venv_dir.join("Scripts").join("python.exe");
+            let py_unix = venv_dir.join("bin").join("python");
+            // Check each path once to avoid double filesystem stat.
+            let py = if py_win.exists() {
+                Some(py_win)
+            } else if py_unix.exists() {
+                Some(py_unix)
+            } else {
+                None
+            };
+            if let Some(py_path) = py {
+                let ver = tokio::process::Command::new(&py_path)
+                    .arg("--version")
+                    .output()
+                    .await
+                    .ok()
+                    .map(|o| {
+                        let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                        if out.is_empty() {
+                            String::from_utf8_lossy(&o.stderr).trim().to_string()
+                        } else {
+                            out
+                        }
+                    })
+                    .unwrap_or_else(|| candidate.to_string());
+                let clean = ver.strip_prefix("Python ").unwrap_or(&ver).to_string();
+                return Some(clean);
+            }
+        }
+        None
+    };
+
+    let (node_version, go_version, python_venv) = tokio::join!(node_fut, go_fut, python_fut);
+
+    Ok(TerminalEnvInfo { node_version, python_venv, go_version })
+}

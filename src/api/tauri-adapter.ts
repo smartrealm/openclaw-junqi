@@ -66,6 +66,12 @@ try {
 
 // ── Wait a short time for the event, then use invoke as fallback ──
 async function resolveGwConfig(): Promise<any> {
+  // Fast path: token already cached from start_gateway result.
+  if (_cachedGatewayToken) {
+    const port = _cachedGatewayPort ?? 18789;
+    return { token: _cachedGatewayToken, ws_url: `ws://127.0.0.1:${port}` };
+  }
+
   // Wait up to 500ms for the setup event to arrive
   for (let i = 0; i < 10 && !_gwReady; i++) {
     await new Promise(r => setTimeout(r, 50));
@@ -79,6 +85,40 @@ async function resolveGwConfig(): Promise<any> {
   } catch {}
 
   return null;
+}
+
+// ── Cached gateway port — read once from config, reused across all calls ──
+// We intentionally do NOT cache at module load time because config may not
+// exist yet. Instead we cache on first successful read.
+let _cachedGatewayPort: number | null = null;
+/** Cached gateway token — populated by start_gateway result, used by resolveGwConfig. */
+let _cachedGatewayToken: string | null = null;
+
+/**
+ * Returns the gateway port configured in openclaw.json.
+ * Falls back to 18789 if the file is missing or the field is absent.
+ * Result is cached for the process lifetime to avoid repeated disk reads.
+ */
+async function readGatewayPort(): Promise<number> {
+  if (_cachedGatewayPort !== null) return _cachedGatewayPort;
+  try {
+    const d: any = await invoke("read_config");
+    const port = JSON.parse(d.raw || "{}")?.gateway?.port;
+    if (typeof port === "number" && port > 0 && port < 65536) {
+      _cachedGatewayPort = port;
+      return port;
+    }
+  } catch { /* config not yet written — use default */ }
+  return 18789;
+}
+
+/**
+ * Invalidate the port cache, e.g. after the user saves a new port in settings.
+ * The next call to readGatewayPort() will re-read from disk.
+ */
+function invalidateGatewayPortCache(): void {
+  _cachedGatewayPort = null;
+  _cachedGatewayToken = null;
 }
 
 (window as any).aegis = {
@@ -127,22 +167,24 @@ async function resolveGwConfig(): Promise<any> {
     read: async () => { try { const d: any = await invoke("read_config"); return { data: JSON.parse(d.raw || "{}"), path: d.path }; } catch { return { data: {}, path: "" }; } },
     write: async (_p: string, d: any) => { try { await invoke("write_config", { json: JSON.stringify(d, null, 2) }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
     restart: async () => {
+      // Invalidate the cache so start_gateway picks up any port change the user
+      // just saved, then resolve the (possibly updated) configured port.
+      invalidateGatewayPortCache();
+      const port = await readGatewayPort();
       try {
-        // Don't stop first — start_gateway already handles "port already in use"
-        // by detecting the external gateway and returning success without spawning.
-        // This avoids the "Gateway is not running" error from stop_gateway when
-        // the gateway is an external process not managed by this app.
-        await invoke("start_gateway", { port: 18789 });
-        return { success: true };
+        // Don't stop first — start_gateway handles "port already in use" by
+        // detecting an external gateway and returning success without spawning.
+        const result: any = await invoke("start_gateway", { port });
+        if (result?.token) _cachedGatewayToken = result.token;
+        return { success: true, method: "gateway-restart" };
       } catch {
-        // start_gateway failed — try stop+start as fallback
-        try {
-          await invoke("stop_gateway");
-        } catch { /* external gateway, ignore */ }
+        // Fallback: stop any managed child then restart.
+        try { await invoke("stop_gateway"); } catch { /* external gateway, ignore */ }
         await new Promise(r => setTimeout(r, 1000));
         try {
-          await invoke("start_gateway", { port: 18789 });
-          return { success: true };
+          const result2: any = await invoke("start_gateway", { port });
+          if (result2?.token) _cachedGatewayToken = result2.token;
+          return { success: true, method: "gateway-restart" };
         } catch (e: any) {
           return { success: false, error: String(e) };
         }
@@ -162,18 +204,25 @@ async function resolveGwConfig(): Promise<any> {
       }
     },
     start: async () => {
+      const port = await readGatewayPort();
       try {
-        await invoke("start_gateway", { port: 18789 });
+        const result: any = await invoke("start_gateway", { port });
+        // Cache the token returned by the Rust side so resolveGwConfig() can
+        // use it immediately without waiting for the gateway-config event.
+        if (result?.token) {
+          _cachedGatewayToken = result.token;
+        }
         return { success: true };
       } catch (e: any) {
         return { success: false, error: String(e) };
       }
     },
     retry: async () => {
+      const port = await readGatewayPort();
       try {
         try { await invoke("stop_gateway"); } catch {}
         await new Promise(r => setTimeout(r, 1000));
-        await invoke("start_gateway", { port: 18789 });
+        await invoke("start_gateway", { port });
         return { success: true };
       } catch (e: any) { return { success: false, error: String(e) }; }
     },
@@ -300,7 +349,7 @@ async function resolveGwConfig(): Promise<any> {
     open: async () => {
       try { await invoke("open_control_ui"); return { success: true }; }
       catch (e: any) {
-        try { const { open } = await import("@tauri-apps/plugin-shell"); await open("http://127.0.0.1:18789"); return { success: true }; }
+        try { const { open } = await import("@tauri-apps/plugin-shell"); const _cp = await readGatewayPort(); await open(`http://127.0.0.1:${_cp}`); return { success: true }; }
         catch { return { success: false, error: String(e) }; }
       }
     },

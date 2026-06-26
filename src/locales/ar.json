@@ -832,7 +832,7 @@
     "baseUrlPlaceholder": "مثال https://api.example.com/v1",
     "modelId": "معرف النموذج",
     "modelIdPlaceholder": "مثال gpt-4 أو custom/model-name",
-    "envKeyHint": "أو حدد متغير البيئة {envKey}",
+    "envKeyHint": "أو حدد متغير البيئة {{envKey}}",
     "authMode": "نوع المصادقة",
     "profileName": "اسم البروفايل",
     "suggestedModels": "النماذج المقترحة",

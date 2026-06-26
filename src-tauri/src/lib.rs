@@ -32,6 +32,7 @@ pub fn run() {
             commands::system::check_git,
             commands::system::check_openclaw,
             commands::system::open_folder,
+            commands::system::get_terminal_env,
             // Fonts
             commands::font::get_system_fonts,
             commands::cli_tools::detect_cli_tools,
@@ -127,6 +128,7 @@ pub fn run() {
             commands::git_neu::merge_task_worktree,
             commands::git_neu::remove_task_worktree,
             commands::git_neu::worktree_diff_stats,
+            commands::git_neu::git_diff_shortstat,
             // Nezha-style file system commands
             commands::fs_neu::read_dir_entries,
             commands::fs_neu::read_file_content,
@@ -211,13 +213,13 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     if let (Ok(Some(monitor)), Ok(scale)) = (window.primary_monitor(), window.scale_factor()) {
                         let phys = monitor.size();
-                        // Convert physical → logical; clamp between min (1000×680)
+                        // Convert physical → logical; clamp between min (960×640)
                         // and max (1600×1000) so the window never gets absurdly large
                         // on 4K/5K displays nor unusably small on laptops.
                         let logical_w = phys.width as f64 / scale;
                         let logical_h = phys.height as f64 / scale;
-                        let w = (logical_w * 0.82).clamp(1000.0, 1600.0);
-                        let h = (logical_h * 0.88).clamp(680.0, 1000.0);
+                        let w = (logical_w * 0.85).clamp(1200.0, 1800.0);
+                        let h = (logical_h * 0.88).clamp(780.0, 1100.0);
                         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: w, height: h }));
                     }
                     let _ = window.center();

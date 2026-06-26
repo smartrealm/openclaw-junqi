@@ -228,6 +228,7 @@ pub async fn start_docker_gateway(
         running: true,
         port,
         pid: None, // Docker manages the PID
+        token: None,
     })
 }
 
@@ -276,12 +277,14 @@ pub async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, S
                 running,
                 port,
                 pid: None,
+                token: None,
             })
         }
         _ => Ok(GatewayStatus {
             running: false,
             port,
             pid: None,
+            token: None,
         }),
     }
 }

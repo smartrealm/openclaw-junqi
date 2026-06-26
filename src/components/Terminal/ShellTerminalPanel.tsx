@@ -75,6 +75,9 @@ interface TabShellItemProps {
   onCloseAll?: () => void;
   onCloseToRight?: () => void;
   onRename?: (name: string) => void;
+  onDuplicate?: () => void;
+  onSplitH?: () => void;
+  onSplitV?: () => void;
   onDragStart?: (index: number) => void;
   onDragEnter?: (index: number) => void;
   onDragEnd?: () => void;
@@ -83,6 +86,7 @@ interface TabShellItemProps {
 function TabShellItem({
   title, selected, index, totalCount,
   onSelect, onClose, onCloseOthers, onCloseAll, onCloseToRight, onRename,
+  onDuplicate, onSplitH, onSplitV,
   onDragStart, onDragEnter, onDragEnd,
 }: TabShellItemProps) {
   const [hovered, setHovered] = useState(false);
@@ -213,6 +217,23 @@ function TabShellItem({
           {onRename && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={startRename}>Rename...</button>
+          )}
+          {onDuplicate && (
+            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+              onClick={() => { onDuplicate(); setCtxMenu(null); }}>Duplicate Tab</button>
+          )}
+          {(onSplitH || onSplitV) && <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />}
+          {onSplitH && (
+            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+              onClick={() => { onSplitH(); setCtxMenu(null); }}>
+              Split Right
+            </button>
+          )}
+          {onSplitV && (
+            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+              onClick={() => { onSplitV(); setCtxMenu(null); }}>
+              Split Down
+            </button>
           )}
         </div>
       )}
@@ -392,9 +413,32 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         }, 50);
 
         disposeSmartCopy = attachSmartCopy(term);
-        const linuxIME = attachLinuxIMEFix(term, (data) => {
+
+        // ── 微批处理缓冲：解决 UU远程桌面/VNC 等工具通过 WKWebView insertText:
+        //    逐字符注入时每字符单独触发 onData 的问题。
+        //
+        //    原理：原生终端（Terminal.app）走 NSTextInputClient.insertText:，
+        //    AppKit 天然批量；WKWebView 只有 keydown 事件，每字符一次。
+        //    用 queueMicrotask 把同一微任务检查点内收到的所有字符合并成一次
+        //    send_input，延迟 < 1ms，对正常键盘（字符间隔 > 30ms）完全透明。
+        let inputBuf = '';
+        let inputFlushPending = false;
+        const flushInputBuf = () => {
+          inputFlushPending = false;
+          if (!inputBuf) return;
+          const data = inputBuf;
+          inputBuf = '';
           invoke("send_input", { taskId: shellId, data }).catch(() => {});
-        });
+        };
+        const sendInputBuffered = (data: string) => {
+          inputBuf += data;
+          if (!inputFlushPending) {
+            inputFlushPending = true;
+            queueMicrotask(flushInputBuf);
+          }
+        };
+
+        const linuxIME = attachLinuxIMEFix(term, sendInputBuffered);
         disposeOnData = { dispose: () => linuxIME.dispose() };
 
         // Use rAF instead of setTimeout so fit() runs outside the ResizeObserver
@@ -736,6 +780,13 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       dragSrcIdxRef.current = null;
                       dragDstIdxRef.current = null;
                     }}
+                    onDuplicate={() => {
+                      const dup = createShellSession(projectId, shells.length + 1);
+                      setShells((prev) => [...prev, { ...dup, title: shell.title }]);
+                      setActiveShellId(dup.id);
+                    }}
+                    onSplitH={onSplitHorizontal}
+                    onSplitV={onSplitVertical}
                   />
                 );
               })}
@@ -796,6 +847,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
             projectPath={projectPath}
             paneId={projectId}
             onToggleComposer={() => setComposerOpen((v) => !v)}
+            composerActive={composerOpen}
             canZoom={canZoom}
             isZoomed={isZoomed}
             onZoom={onZoom}

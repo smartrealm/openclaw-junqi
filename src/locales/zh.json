@@ -1145,7 +1145,7 @@
     "baseUrlPlaceholder": "例如 https://api.example.com/v1",
     "modelId": "模型 ID",
     "modelIdPlaceholder": "例如 gpt-4 或 custom/model-name",
-    "envKeyHint": "或设置环境变量 {envKey}",
+    "envKeyHint": "或设置环境变量 {{envKey}}",
     "authMode": "认证模式",
     "profileName": "配置名称",
     "suggestedModels": "推荐模型",

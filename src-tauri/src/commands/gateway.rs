@@ -8,6 +8,9 @@ pub struct GatewayStatus {
     pub running: bool,
     pub port: u16,
     pub pid: Option<u32>,
+    /// The gateway auth token. Present when `running` is true so the frontend
+    /// can use it directly without a second round-trip to read the config file.
+    pub token: Option<String>,
 }
 
 /// Build a PATH that includes bundled Node.js, our openclaw prefix,
@@ -49,6 +52,44 @@ fn resolve_openclaw_binary() -> Option<std::path::PathBuf> {
             None
         })
 }
+
+/// Lightweight snapshot of the fields we need from openclaw.json at gateway startup.
+/// Parsed once per launch to avoid redundant disk reads across callers.
+struct ConfigMetadata {
+    /// Configured gateway port; defaults to 18789 when absent.
+    port: u16,
+    /// Provider API keys and env overrides from `env.vars`.
+    env_vars: Vec<(String, String)>,
+}
+
+impl ConfigMetadata {
+    /// Load from the config file at `path`. Infallible — missing or
+    /// malformed fields fall back to safe defaults.
+    fn load(path: &std::path::Path) -> Self {
+        let parsed: Option<serde_json::Value> = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok());
+
+        let port = parsed
+            .as_ref()
+            .and_then(|cfg| cfg.get("gateway")?.get("port")?.as_u64())
+            .map(|v| v as u16)
+            .unwrap_or(18789);
+
+        let env_vars = parsed
+            .as_ref()
+            .and_then(|cfg| cfg.get("env")?.get("vars")?.as_object())
+            .map(|vars| {
+                vars.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Self { port, env_vars }
+    }
+}
+
 
 /// Generate a random token for localhost gateway authentication.
 ///
@@ -312,14 +353,27 @@ pub async fn start_gateway(
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
 ) -> Result<GatewayStatus, String> {
-    let port = port.unwrap_or(18789);
+    // Load config metadata once. This single read serves both port resolution
+    // and env_vars injection, avoiding duplicate IO later in the function.
+    let config_path = paths::config_path();
+    let meta = ConfigMetadata::load(&config_path);
+    // Caller-supplied port takes precedence; fall back to config, then default.
+    let port = port.unwrap_or(meta.port);
 
     // "Rely on local openclaw": if a gateway is already listening on this port
     // (the user's own `openclaw gateway`, hermes, etc.), connect to it — never
     // kill or restart an external process. Only start our own when nothing is up.
     if is_gateway_serving(port).await {
         *state.port.lock().map_err(|e| e.to_string())? = port;
-        return Ok(GatewayStatus { running: true, port, pid: None });
+        // Gateway already running — read the token from config so the frontend
+        // can connect without an extra round-trip.
+        let existing_token = {
+            let raw = std::fs::read_to_string(&config_path).ok();
+            raw.as_deref()
+                .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
+                .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
+        };
+        return Ok(GatewayStatus { running: true, port, pid: None, token: existing_token });
     }
 
     // Nothing is serving — (re)start our own managed child. We only ever kill
@@ -336,7 +390,7 @@ pub async fn start_gateway(
     // Native mode always binds to loopback for security — never expose to LAN
     let bind = "loopback".to_string();
     let base_dir = paths::desktop_dir();
-    let config_path = paths::config_path();
+    // config_path already resolved above via ConfigMetadata::load.
 
     // Ensure config exists with token auth
     let _token = ensure_config_with_token(&config_path, port, &bind)?;
@@ -359,12 +413,22 @@ pub async fn start_gateway(
     })?;
 
     let gw_path = augmented_path();
+
+    // Inject env.vars into the gateway process so providers that rely on
+    // process-level environment variables (e.g. OPENAI_API_KEY) receive them
+    // even when configured via the UI rather than the user's shell profile.
+    // ConfigMetadata already parsed env.vars above — no additional disk IO here.
+    let extra_env_vars = meta.env_vars;
+
     let mut cmd = tokio::process::Command::new(&openclaw);
     cmd.args(["gateway", "run", "--bind", &bind, "--port", &port.to_string()])
         .env("PATH", &gw_path)
         .env("OPENCLAW_STATE_DIR", base_dir.to_str().unwrap())
-        .env("OPENCLAW_CONFIG_PATH", config_path.to_str().unwrap())
-        .stdout(std::process::Stdio::piped())
+        .env("OPENCLAW_CONFIG_PATH", config_path.to_str().unwrap());
+    for (k, v) in &extra_env_vars {
+        cmd.env(k, v);
+    }
+    cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
@@ -421,10 +485,19 @@ pub async fn start_gateway(
     }
     *state.port.lock().map_err(|e| e.to_string())? = port;
 
+    // Re-read the token that ensure_config_with_token just wrote/read
+    // so we return it in a single IPC round-trip.
+    let final_token = {
+        let raw = std::fs::read_to_string(&config_path).ok();
+        raw.as_deref()
+            .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
+            .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
+    };
     Ok(GatewayStatus {
         running: true,
         port,
         pid,
+        token: final_token,
     })
 }
 
@@ -458,20 +531,38 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
                     *child_lock = None;
                 }
                 Ok(None) => {
-                    return Ok(GatewayStatus { running: true, port, pid: child.id() });
+                    let status_token = {
+                        let raw = std::fs::read_to_string(&paths::config_path()).ok();
+                        raw.as_deref()
+                            .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
+                            .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
+                    };
+                    return Ok(GatewayStatus { running: true, port, pid: child.id(), token: status_token });
                 }
                 Err(e) => return Err(format!("Failed to check gateway status: {}", e)),
             }
         }
     }
 
-    // 2. No managed child: detect the user's local gateway on the standard port
-    //    so the frontend connects to it instead of trying to start its own.
-    if is_gateway_serving(18789).await {
-        return Ok(GatewayStatus { running: true, port: 18789, pid: None });
+    // 2. No managed child: probe on the last-known port (set by start_gateway).
+    //    Avoid a file read on this hot polling path. Only fall back to parsing
+    //    the config when port is still 0 (never started by us in this session).
+    let probe_port = if port == 0 {
+        ConfigMetadata::load(&paths::config_path()).port
+    } else {
+        port
+    };
+    if is_gateway_serving(probe_port).await {
+        let probe_token = {
+            let raw = std::fs::read_to_string(&paths::config_path()).ok();
+            raw.as_deref()
+                .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
+                .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
+        };
+        return Ok(GatewayStatus { running: true, port: probe_port, pid: None, token: probe_token });
     }
 
-    Ok(GatewayStatus { running: false, port, pid: None })
+    Ok(GatewayStatus { running: false, port, pid: None, token: None })
 }
 
 /// Check if ANY gateway is listening on the given port (not just Tauri-managed).

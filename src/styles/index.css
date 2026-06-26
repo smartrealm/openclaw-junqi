@@ -472,3 +472,21 @@
   .mc-grid-main { grid-template-columns: 1fr; }
   .mc-grid-main > :nth-child(2) { display: none; }
 }
+
+
+/* =================================================================
+   Responsive base font scale
+   clamp(min, preferred, max) scales with viewport width:
+     < 1200px logical  -> ~13.5px
+     1200-1600px       -> 13.5-15px (smooth ramp)
+     > 1600px          -> 15px cap
+   All em/rem-based spacing scales automatically.
+   Override: set --aegis-base-font-size on :root for user pref.
+   ================================================================= */
+:root {
+  --aegis-base-font-size: clamp(13.5px, 0.875vw + 3px, 15px);
+}
+
+html {
+  font-size: var(--aegis-base-font-size);
+}

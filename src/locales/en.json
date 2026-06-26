@@ -1147,7 +1147,7 @@
     "baseUrlPlaceholder": "e.g. https://api.example.com/v1",
     "modelId": "Model ID",
     "modelIdPlaceholder": "e.g. gpt-4 or custom/model-name",
-    "envKeyHint": "Or set {envKey} environment variable",
+    "envKeyHint": "Or set {{envKey}} environment variable",
     "authMode": "Auth Mode",
     "profileName": "Profile Name",
     "suggestedModels": "Suggested Models",

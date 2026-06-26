@@ -1680,3 +1680,56 @@ fn accumulate_numstat(stdout: &[u8], additions: &mut i32, deletions: &mut i32) {
         *deletions += parts[1].parse::<i32>().unwrap_or(0);
     }
 }
+
+// ── git_diff_shortstat ────────────────────────────────────────────────────
+/// Returns live working-tree diff stats (files changed + line insertions/
+/// deletions) for the status bar, mirroring kooky's `session.gitStatus`.
+/// Uses `git diff --shortstat HEAD` so it counts both staged and unstaged
+/// changes relative to the last commit.
+#[derive(serde::Serialize)]
+pub struct GitDiffSummary {
+    pub files_changed: i32,
+    pub insertions: i32,
+    pub deletions: i32,
+}
+
+#[tauri::command]
+pub async fn git_diff_shortstat(project_path: String) -> Result<GitDiffSummary, String> {
+    // --shortstat HEAD covers all tracked changes (staged + unstaged).
+    // Untracked-only repos return empty output → all zeros (bar hides).
+    let output = run_git_with_timeout(
+        project_path,
+        vec![
+            "diff".to_string(),
+            "--shortstat".to_string(),
+            "HEAD".to_string(),
+        ],
+        Duration::from_secs(5),
+    )
+    .await?;
+
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    // "2 files changed, 10 insertions(+), 3 deletions(-)"
+    // or "1 file changed, 5 insertions(+)"
+    // or "" when working tree is clean vs HEAD.
+    let mut files = 0i32;
+    let mut ins = 0i32;
+    let mut dels = 0i32;
+
+    for tok in text.split(',') {
+        let t = tok.trim();
+        if t.contains("file") {
+            files = t.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        } else if t.contains("insertion") {
+            ins = t.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        } else if t.contains("deletion") {
+            dels = t.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        }
+    }
+
+    Ok(GitDiffSummary {
+        files_changed: files,
+        insertions: ins,
+        deletions: dels,
+    })
+}
