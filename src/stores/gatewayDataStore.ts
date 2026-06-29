@@ -99,6 +99,25 @@ function taskIdToSessionKey(taskId: string): string | undefined {
   return taskToSession.get(taskId);
 }
 
+// ── Pending task-status buffer ────────────────────────────────────────────
+// task-status can arrive before task-session (which maps task_id → session_key).
+// We buffer the latest status per task_id and replay when task-session arrives,
+// instead of falling back to activeSessionKey (which would pollute the wrong session).
+const pendingTaskStatus = new Map<string, { status: string; ts: number }>();
+const PENDING_TASK_TTL = 30_000; // discard unresolved entries after 30s
+
+/** Apply a task-status result to a specific session key. */
+function applyTaskStatus(store: ReturnType<typeof useGatewayDataStore.getState>, sessionKey: string, isActive: boolean) {
+  store.setSessions(
+    store.sessions.map((s) =>
+      s.key === sessionKey ? { ...s, running: isActive, runningUpdatedAt: Date.now() } : s,
+    ),
+  );
+  if (!isActive) {
+    useChatStore.getState().setIsTyping(false, sessionKey);
+  }
+}
+
 // ── Running Sub-Agent Tracking ───────────────────────────
 // Detected from sessions polling (every 10s).
 // Gateway WebSocket does NOT send stream:"tool" events,
@@ -282,13 +301,35 @@ async function fetchSessions() {
   store.setLoading('sessions', true);
   try {
     const res = await gw.request('sessions.list', {});
-    const list = Array.isArray(res?.sessions) ? res.sessions : [];
-    // Skip update if data hasn't changed (avoids unnecessary React re-renders)
+    const rawList: SessionInfo[] = Array.isArray(res?.sessions) ? res.sessions : [];
+
+    // Merge: preserve event-enriched runningUpdatedAt that the server does not return.
+    // Without this, polling would overwrite freshness data and break isFreshRunning() in
+    // usePetStateEmitter, causing the pet to stop showing "working" mid-task.
     const prev = store.sessions;
+    const prevByKey = new Map(prev.map((s) => [s.key, s]));
+    const list = rawList.map((s) => {
+      const existing = prevByKey.get(s.key);
+      if (!existing) return s;
+      // If running state changed, trust the server and update the timestamp.
+      // If running state is the same, preserve the event-driven runningUpdatedAt.
+      const sameRunning = existing.running === s.running;
+      return {
+        ...s,
+        runningUpdatedAt: sameRunning && existing.runningUpdatedAt
+          ? existing.runningUpdatedAt
+          : s.running
+          ? Date.now()
+          : existing.runningUpdatedAt,
+      };
+    });
+
+    // Skip store update if nothing meaningful changed (avoids unnecessary React re-renders)
     const same = prev.length === list.length
-      && prev.every((s, i) => (s as any).key === (list[i] as any)?.key
-        && (s as any).running === (list[i] as any)?.running
-        && (s as any).totalTokens === (list[i] as any)?.totalTokens);
+      && prev.every((s, i) => s.key === list[i]?.key
+        && s.running === list[i]?.running
+        && s.totalTokens === list[i]?.totalTokens
+        && s.runningUpdatedAt === list[i]?.runningUpdatedAt);
     if (!same) {
       store.setSessions(list);
     } else {
@@ -405,7 +446,15 @@ export function stopPolling() {
   if (midTimer)   { clearInterval(midTimer);   midTimer   = null; }
   if (slowTimer)  { clearInterval(slowTimer);  slowTimer  = null; }
   gw = null;
-  useGatewayDataStore.getState().setPolling(false);
+  const store = useGatewayDataStore.getState();
+  store.setPolling(false);
+  // Clear running sub-agents on disconnect — presence-based detection is meaningless
+  // without a live sessions.list feed. Without this, stale sub-agents keep the pet
+  // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
+  if (store.runningSubAgents.length > 0) {
+    store.setRunningSubAgents([]);
+    console.log('[DataStore] 🧹 Cleared runningSubAgents on disconnect');
+  }
   console.log('[DataStore] ⏹ Polling stopped');
 }
 
@@ -543,7 +592,8 @@ export function handleGatewayEvent(event: string, payload: any) {
         );
       } else {
         // New session — add it
-        store.setSessions([...store.sessions, { key, running: true, runningUpdatedAt: Date.now(), ...payload }]);
+        // Spread payload first so our explicit fields (running, runningUpdatedAt) always win.
+        store.setSessions([...store.sessions, { ...payload, key, running: true, runningUpdatedAt: Date.now() }]);
       }
       console.log('[DataStore] 📡 Session started:', key);
       break;
@@ -555,8 +605,17 @@ export function handleGatewayEvent(event: string, payload: any) {
       const key = payload?.sessionKey || payload?.key;
       if (!key) break;
       store.setSessions(
-        store.sessions.map((s) => s.key === key ? { ...s, running: false, runningUpdatedAt: Date.now() } : s)
+        store.sessions.map((s) => s.key === key ? { ...s, running: false, runningUpdatedAt: Date.now() } : s),
       );
+      // Immediately remove from runningSubAgents if this is a sub-agent session,
+      // instead of waiting up to 10s for the next tickFast() poll cycle.
+      if (SUB_AGENT_RE.test(key)) {
+        const filtered = store.runningSubAgents.filter((r) => r.sessionKey !== key);
+        if (filtered.length !== store.runningSubAgents.length) {
+          store.setRunningSubAgents(filtered);
+          console.log('[DataStore] 🧹 Sub-agent removed on session.ended:', key);
+        }
+      }
       console.log('[DataStore] 📡 Session ended:', key);
       break;
     }
@@ -570,22 +629,20 @@ export function handleGatewayEvent(event: string, payload: any) {
       const taskId = payload?.task_id;
       const status: string = payload?.status || 'running';
       if (!taskId) break;
-      // task-session may arrive after task-status, so the task_id→session_key
-      // map might be empty. Fall back to the active session — the event fires
-      // for the session the user is currently talking to.
-      const sessionKey = taskIdToSessionKey(taskId) || useChatStore.getState().activeSessionKey;
-      if (!sessionKey) break;
-      const isActive = status === 'running' || status === 'input_required';
-      store.setSessions(
-        store.sessions.map((s) => s.key === sessionKey ? { ...s, running: isActive, runningUpdatedAt: Date.now() } : s)
-      );
-      // When the agent finishes/errors, also clear the typing flag for this
-      // session so the chat view's Footer (TypingIndicator) doesn't stay stuck
-      // on "Working" forever.
-      if (!isActive) {
-        useChatStore.getState().setIsTyping(false, sessionKey);
+      // Only 'running' is genuinely active. 'input_required' means the agent is
+      // waiting for user confirmation — not actively processing — so we do not set
+      // running=true for it (avoids the pet showing "working" while blocked).
+      const isActive = status === 'running';
+      const sessionKey = taskIdToSessionKey(taskId);
+      if (!sessionKey) {
+        // task-session has not arrived yet — buffer and replay when it does.
+        // Do NOT fall back to activeSessionKey: that would pollute the wrong session.
+        pendingTaskStatus.set(taskId, { status, ts: Date.now() });
+        console.log('[DataStore] 📡 task-status buffered (awaiting task-session):', taskId, '→', status);
+        break;
       }
-      console.log('[DataStore] 📡 task-status:', taskId, '→', status);
+      applyTaskStatus(store, sessionKey, isActive);
+      console.log('[DataStore] 📡 task-status:', taskId, '→', status, '(session:', sessionKey, ')');
       break;
     }
 
@@ -595,7 +652,20 @@ export function handleGatewayEvent(event: string, payload: any) {
       const sessionId = payload?.session_id;
       if (taskId && sessionId) {
         taskToSession.set(taskId, sessionId);
-        taskIdToSessionKey(taskId); // refresh helper
+        // Replay any buffered task-status for this task_id now that the session is known.
+        const pending = pendingTaskStatus.get(taskId);
+        if (pending) {
+          pendingTaskStatus.delete(taskId);
+          const age = Date.now() - pending.ts;
+          if (age < PENDING_TASK_TTL) {
+            const isActive = pending.status === 'running';
+            applyTaskStatus(useGatewayDataStore.getState(), sessionId, isActive);
+            console.log('[DataStore] 📡 task-status replayed:', taskId, '→', pending.status,
+              '(session:', sessionId, ', lag:', age, 'ms)');
+          } else {
+            console.log('[DataStore] 📡 task-status pending expired, discarding:', taskId);
+          }
+        }
       }
       break;
     }

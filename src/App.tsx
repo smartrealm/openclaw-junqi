@@ -455,6 +455,19 @@ export default function App() {
           gatewayManager.notifyWsOpen();
         } else if (!status.connecting) {
           gatewayManager.notifyWsClose();
+          // Clear all per-session active flags on disconnect so the pet does not
+          // stay "working/typing/thinking" indefinitely if the stream was cut off
+          // before onStreamEnd fired (network drop, gateway crash, etc.).
+          const cs = useChatStore.getState();
+          const typingKeys = Object.keys(cs.typingBySession).filter((k) => cs.typingBySession[k]);
+          typingKeys.forEach((k) => cs.setIsTyping(false, k));
+          const thinkingKeys = Object.keys(cs.thinkingBySession).filter(
+            (k) => (cs.thinkingBySession[k]?.text?.length ?? 0) > 0,
+          );
+          thinkingKeys.forEach((k) => cs.clearThinking(k));
+          if (typingKeys.length || thinkingKeys.length) {
+            console.log('[App] 🧹 Cleared stale typing/thinking on disconnect');
+          }
         }
         if (status.connected) {
           // Successfully connected — dismiss pairing screen if showing
