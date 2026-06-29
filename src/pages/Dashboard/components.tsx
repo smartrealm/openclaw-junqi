@@ -210,18 +210,18 @@ export function FeedItem({ color, text, time, isLast, agentName, onClick }: {
 }
 
 // ═══════════════════════════════════════════════════════════
-// AgentItem — Agent row with relative cost bar
+// AgentItem — Agent row with relative token bar
 // ═══════════════════════════════════════════════════════════
-export function AgentItem({ emoji, name, model, cost, costToday, maxCost, isFree }: {
+export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, sessions }: {
   emoji: React.ReactNode;
   name: string;
   model: string;
-  cost: string;
-  costToday: number;
-  maxCost: number;
-  isFree?: boolean;
+  tokens: string;
+  tokenCount: number;
+  maxTokens: number;
+  sessions?: number;
 }) {
-  const barPct = maxCost > 0 ? Math.min(100, (costToday / maxCost) * 100) : 0;
+  const barPct = maxTokens > 0 ? Math.min(100, (tokenCount / maxTokens) * 100) : 0;
   const barColor = barPct > 70 ? themeHex('danger') : barPct > 40 ? themeHex('warning') : themeHex('primary');
 
   return (
@@ -230,13 +230,7 @@ export function AgentItem({ emoji, name, model, cost, costToday, maxCost, isFree
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 mb-1">
           <span className="text-[12px] font-semibold text-aegis-text truncate">{name}</span>
-          {isFree ? (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-aegis-success/10 text-aegis-success tracking-wide flex-shrink-0">
-              FREE
-            </span>
-          ) : (
-            <span className="text-[12px] font-bold font-mono text-aegis-text flex-shrink-0">{cost}</span>
-          )}
+          <span className="text-[12px] font-bold font-mono text-aegis-text flex-shrink-0">{tokens}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex-1 h-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] overflow-hidden">
@@ -245,7 +239,8 @@ export function AgentItem({ emoji, name, model, cost, costToday, maxCost, isFree
               style={{ width: `${barPct}%`, background: barColor, boxShadow: `0 0 4px ${barColor}40` }}
             />
           </div>
-          <span className="text-[9px] text-aegis-text-muted font-mono flex-shrink-0">{model}</span>
+          <span className="text-[9px] text-aegis-text-muted font-mono flex-shrink-0 truncate max-w-[96px]">{model}</span>
+          {sessions && sessions > 1 && <span className="text-[9px] text-aegis-accent font-mono flex-shrink-0">×{sessions}</span>}
         </div>
       </div>
     </div>

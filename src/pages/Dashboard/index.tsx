@@ -280,8 +280,16 @@ export function DashboardPage() {
       .sort((a: any, b: any) => Number(b.running) - Number(a.running) || (b.totals?.totalCost || 0) - (a.totals?.totalCost || 0));
   }, [usageData, sessions, agentIdFromKey]);
 
-  const maxAgentCost = useMemo(
-    () => Math.max(...agentList.map((a: any) => a.totals?.totalCost || 0), 0.01),
+  const activeAgentTokenTotal = useMemo(
+    () => agentList.reduce((sum: number, a: any) => sum + (a.totals?.totalTokens || 0), 0),
+    [agentList],
+  );
+  const activeAgentModelCount = useMemo(
+    () => new Set(agentList.map((a: any) => modelForAgent(a.agentId || a.agent || a.id || 'unknown', a)).filter(Boolean).filter((m) => m !== '—')).size,
+    [agentList, modelForAgent],
+  );
+  const maxAgentTokens = useMemo(
+    () => Math.max(...agentList.map((a: any) => a.totals?.totalTokens || 0), 1),
     [agentList]
   );
 
@@ -592,9 +600,14 @@ export function DashboardPage() {
         {/* Active Agents */}
         <GlassCard delay={0.18} className="flex flex-col min-h-[160px]">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <Bot size={15} className="text-aegis-accent" />
               <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.activeAgents')}</span>
+              {agentList.length > 0 && (
+                <span className="text-[10px] font-mono text-aegis-text-dim truncate">
+                  {fmtTokens(activeAgentTokenTotal)} tok · {activeAgentModelCount || 0} models
+                </span>
+              )}
             </div>
             <button
               onClick={() => navigate('/agents')}
@@ -609,7 +622,7 @@ export function DashboardPage() {
             {agentList.length > 0 ? (
               agentList.slice(0, 5).map((a: any) => {
                 const id      = a.agentId || a.agent || a.id || 'unknown';
-                const cost    = a.totals?.totalCost || 0;
+                const tokenCount = a.totals?.totalTokens || 0;
                 const model = hasProviders ? modelForAgent(id, a) : '—';
                 return (
                   <AgentItem
@@ -617,9 +630,10 @@ export function DashboardPage() {
                     emoji={getAgentEmoji(id)}
                     name={t(getAgentName(id), { defaultValue: id })}
                     model={model}
-                    cost={fmtCost(cost)}
-                    costToday={cost}
-                    maxCost={maxAgentCost}
+                    tokens={fmtTokens(tokenCount)}
+                    tokenCount={tokenCount}
+                    maxTokens={maxAgentTokens}
+                    sessions={a.activeSessions || 0}
                   />
                 );
               })
