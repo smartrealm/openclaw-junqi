@@ -539,11 +539,11 @@ export function handleGatewayEvent(event: string, payload: any) {
       const existing = store.sessions.find((s) => s.key === key);
       if (existing) {
         store.setSessions(
-          store.sessions.map((s) => s.key === key ? { ...s, running: true } : s)
+          store.sessions.map((s) => s.key === key ? { ...s, running: true, runningUpdatedAt: Date.now() } : s)
         );
       } else {
         // New session — add it
-        store.setSessions([...store.sessions, { key, running: true, ...payload }]);
+        store.setSessions([...store.sessions, { key, running: true, runningUpdatedAt: Date.now(), ...payload }]);
       }
       console.log('[DataStore] 📡 Session started:', key);
       break;
@@ -555,7 +555,7 @@ export function handleGatewayEvent(event: string, payload: any) {
       const key = payload?.sessionKey || payload?.key;
       if (!key) break;
       store.setSessions(
-        store.sessions.map((s) => s.key === key ? { ...s, running: false } : s)
+        store.sessions.map((s) => s.key === key ? { ...s, running: false, runningUpdatedAt: Date.now() } : s)
       );
       console.log('[DataStore] 📡 Session ended:', key);
       break;
@@ -577,7 +577,7 @@ export function handleGatewayEvent(event: string, payload: any) {
       if (!sessionKey) break;
       const isActive = status === 'running' || status === 'input_required';
       store.setSessions(
-        store.sessions.map((s) => s.key === sessionKey ? { ...s, running: isActive } : s)
+        store.sessions.map((s) => s.key === sessionKey ? { ...s, running: isActive, runningUpdatedAt: Date.now() } : s)
       );
       // When the agent finishes/errors, also clear the typing flag for this
       // session so the chat view's Footer (TypingIndicator) doesn't stay stuck

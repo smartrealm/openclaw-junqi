@@ -68,9 +68,21 @@ export function usePetStateEmitter() {
       // chatStore.sessions fresh from sessions.list, while gatewayDataStore may
       // lag or miss agent-bound sessions. Merge both so the pet reflects real
       // active work instead of idling while another agent is running.
+      const RUNNING_STALE_MS = 2 * 60_000;
+      const isFreshRunning = (s: any) => {
+        if (!s?.running) return false;
+        const updated = Number(s.runningUpdatedAt || 0);
+        // Older records did not carry runningUpdatedAt; only trust them if there
+        // is another live signal (typing/thinking/tool) or a very recent lastActive.
+        if (!updated) {
+          const lastActive = s.lastActive ? new Date(s.lastActive).getTime() : 0;
+          return lastActive > 0 && now - lastActive < RUNNING_STALE_MS;
+        }
+        return now - updated < RUNNING_STALE_MS;
+      };
       const runningSessions = [
-        ...gw.sessions.filter((s) => s.running),
-        ...cs.sessions.filter((s: any) => Boolean(s.running)),
+        ...gw.sessions.filter(isFreshRunning),
+        ...cs.sessions.filter(isFreshRunning),
       ];
       const running = runningSessions.length > 0 || gw.runningSubAgents.length > 0;
       const tool = cs.messages.some((m) => m.toolStatus === 'running');
