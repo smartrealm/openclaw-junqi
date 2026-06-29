@@ -144,6 +144,7 @@ export default function App() {
   const bootOverlayStartedAtRef = useRef(Date.now());
   const bootOverlayDismissedRef = useRef(false);
   const lastGatewayToastKeyRef = useRef<string | null>(null);
+  const lastGatewayErrorToastRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
   const bootRecoveryTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [bootRecoveryAttempt, setBootRecoveryAttempt] = useState(0);
@@ -540,22 +541,26 @@ export default function App() {
 
       const toastKey = `${snap.state}|${snap.connected}|${snap.connecting}|${snap.retrying}|${snap.error ?? ''}`;
       const previousToastKey = lastGatewayToastKeyRef.current;
-      if (previousToastKey === null || !bootOverlayDismissedRef.current) {
-        // First snapshot and cold-start transitions are part of boot UI, not user-facing notifications.
-        lastGatewayToastKeyRef.current = toastKey;
-      } else if (previousToastKey !== toastKey) {
-        lastGatewayToastKeyRef.current = toastKey;
-        const title = t('gateway.statusChanged', 'Gateway status changed');
-        const body = snap.error
-          ? t('gateway.statusError', { error: snap.error, defaultValue: `Error: ${snap.error}` })
-          : snap.connected
-            ? t('gateway.statusConnected', 'Connected')
-            : snap.retrying
-              ? t('gateway.statusRetrying', 'Retrying connection')
-              : snap.connecting
-                ? t('gateway.statusConnecting', 'Connecting')
-                : t(`gateway.state.${snap.state}`, snap.state);
-        useNotificationStore.getState().addToast(snap.error ? 'error' : 'info', title, body);
+      const previousError = lastGatewayErrorToastRef.current;
+      lastGatewayToastKeyRef.current = toastKey;
+      // Normal reconnect/connecting/connected transitions are too noisy.
+      // Notify only when a real error appears, and once when that error recovers.
+      if (bootOverlayDismissedRef.current) {
+        if (snap.error && snap.error !== previousError) {
+          lastGatewayErrorToastRef.current = snap.error;
+          useNotificationStore.getState().addToast(
+            'error',
+            t('gateway.statusChanged', 'Gateway status changed'),
+            t('gateway.statusError', { error: snap.error, defaultValue: `Error: ${snap.error}` }),
+          );
+        } else if (!snap.error && previousError && snap.connected && previousToastKey !== toastKey) {
+          lastGatewayErrorToastRef.current = null;
+          useNotificationStore.getState().addToast(
+            'info',
+            t('gateway.statusChanged', 'Gateway status changed'),
+            t('gateway.statusConnected', 'Connected'),
+          );
+        }
       }
 
       if (snap.connected) {
