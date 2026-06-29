@@ -17,3 +17,9 @@ export { DashboardIcon } from './DashboardIcon';
 
 export { Badge, StatusDot as StatusDotCss } from './badge';
 export type { BadgeProps, BadgeTone, BadgeVariant, BadgeSize, StatusDotProps, StatusDotTone } from './badge';
+export { Button, IconButton } from './button';
+export type { ButtonProps, ButtonVariant, ButtonTone, ButtonSize, IconButtonProps } from './button';
+export { Alert } from './alert';
+export type { AlertProps, AlertTone, AlertSize, AlertLayout } from './alert';
+export { CopyButton } from './copy-button';
+export type { CopyButtonProps } from './copy-button';

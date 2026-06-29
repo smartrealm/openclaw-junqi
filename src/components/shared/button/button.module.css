@@ -1,0 +1,185 @@
+/* Button + IconButton — Aegis Design System
+ * Adapted from Hermes shared-ui button.module.css
+ * Pattern: component-local CSS vars driven by data-tone/variant/size attributes
+ */
+
+.button {
+  /* Tone color locals — overridden per data-tone */
+  --btn-fg:       rgb(var(--aegis-text-secondary));
+  --btn-bg:       transparent;
+  --btn-bg-soft:  rgb(var(--aegis-surface-elevated) / 0.6);
+  --btn-border:   rgb(var(--aegis-border));
+  --btn-contrast: rgb(var(--aegis-bg));
+
+  appearance: none;
+  min-height: var(--aegis-control-md);
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--aegis-r-md);
+  background: transparent;
+  color: rgb(var(--aegis-text-muted));
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  transition:
+    color var(--aegis-duration-fast) var(--aegis-ease-standard),
+    background-color var(--aegis-duration-fast) var(--aegis-ease-standard),
+    border-color var(--aegis-duration-fast) var(--aegis-ease-standard),
+    box-shadow var(--aegis-duration-fast) var(--aegis-ease-standard),
+    transform var(--aegis-duration-fast) var(--aegis-ease-standard),
+    opacity var(--aegis-duration-fast) var(--aegis-ease-standard);
+}
+
+/* ── Tone locals ──────────────────────────────────────── */
+.button[data-tone=primary] {
+  --btn-fg:      rgb(var(--aegis-primary));
+  --btn-bg:      rgb(var(--aegis-primary));
+  --btn-bg-soft: rgb(var(--aegis-primary) / 0.12);
+  --btn-border:  rgb(var(--aegis-primary) / 0.4);
+  --btn-contrast:var(--aegis-btn-primary-text, #fff);
+}
+.button[data-tone=success] {
+  --btn-fg:      rgb(var(--aegis-success));
+  --btn-bg:      rgb(var(--aegis-success));
+  --btn-bg-soft: var(--aegis-success-surface);
+  --btn-border:  rgb(var(--aegis-success) / 0.4);
+  --btn-contrast:#fff;
+}
+.button[data-tone=warning] {
+  --btn-fg:      rgb(var(--aegis-warning));
+  --btn-bg:      rgb(var(--aegis-warning));
+  --btn-bg-soft: var(--aegis-warning-surface);
+  --btn-border:  rgb(var(--aegis-warning) / 0.4);
+  --btn-contrast:#fff;
+}
+.button[data-tone=danger] {
+  --btn-fg:      rgb(var(--aegis-danger));
+  --btn-bg:      rgb(var(--aegis-danger));
+  --btn-bg-soft: var(--aegis-danger-surface);
+  --btn-border:  rgb(var(--aegis-danger) / 0.4);
+  --btn-contrast:#fff;
+}
+
+/* ── Variants ─────────────────────────────────────────── */
+.button[data-variant=solid] {
+  color: var(--btn-contrast);
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+}
+.button[data-variant=solid]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--btn-bg) 86%, #000);
+  border-color: color-mix(in srgb, var(--btn-bg) 86%, #000);
+}
+
+.button[data-variant=soft] {
+  color: var(--btn-fg);
+  background: var(--btn-bg-soft);
+  border-color: color-mix(in srgb, var(--btn-border) 60%, transparent);
+}
+.button[data-variant=soft]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--btn-bg-soft) 72%, var(--btn-bg));
+  border-color: var(--btn-border);
+}
+
+.button[data-variant=outline] {
+  color: var(--btn-fg);
+  background: transparent;
+  border-color: var(--btn-border);
+}
+.button[data-variant=outline]:hover:not(:disabled) {
+  background: var(--btn-bg-soft);
+  border-color: color-mix(in srgb, var(--btn-border) 80%, var(--btn-fg));
+}
+
+.button[data-variant=ghost] {
+  color: var(--btn-fg);
+  background: transparent;
+  border-color: transparent;
+}
+.button[data-variant=ghost]:hover:not(:disabled) {
+  background: var(--btn-bg-soft);
+  border-color: color-mix(in srgb, var(--btn-border) 40%, transparent);
+}
+
+.button[data-variant=plain] {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+}
+
+/* ── Sizes ────────────────────────────────────────────── */
+.button[data-size=xs] {
+  min-height: var(--aegis-control-xs);
+  padding-inline: 8px;
+  font-size: 11px;
+  border-radius: var(--aegis-r-sm);
+}
+.button[data-size=sm] {
+  min-height: var(--aegis-control-sm);
+  padding-inline: 10px;
+  font-size: 12px;
+}
+.button[data-size=lg] {
+  min-height: var(--aegis-control-lg);
+  padding-inline: 16px;
+  font-size: 14px;
+  border-radius: var(--aegis-r-lg);
+}
+
+/* ── Icon-only (square) ───────────────────────────────── */
+.button[data-icon-only="true"]                     { width: var(--aegis-control-md); padding-inline: 0; }
+.button[data-icon-only="true"][data-size="xs"]    { width: var(--aegis-control-xs); }
+.button[data-icon-only="true"][data-size="sm"]    { width: var(--aegis-control-sm); }
+.button[data-icon-only="true"][data-size="lg"]    { width: var(--aegis-control-lg); }
+
+/* ── Full width ───────────────────────────────────────── */
+.button[data-full-width="true"] { width: 100%; }
+
+/* ── Focus ring ───────────────────────────────────────── */
+.button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--aegis-primary) / 0.38);
+}
+.button[data-tone="danger"]:focus-visible {
+  box-shadow: 0 0 0 2px rgb(var(--aegis-danger) / 0.38);
+}
+
+/* ── Press + disabled + loading ──────────────────────── */
+.button:active:not(:disabled):not([data-variant="plain"]) {
+  transform: translateY(1px);
+}
+.button:disabled,
+.button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+.button[data-loading="true"] { cursor: wait; }
+
+/* ── Spinner ─────────────────────────────────────────── */
+.spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: aegisButtonSpin 650ms linear infinite;
+  flex-shrink: 0;
+}
+@keyframes aegisButtonSpin {
+  to { transform: rotate(360deg); }
+}

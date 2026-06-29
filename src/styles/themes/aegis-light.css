@@ -39,6 +39,9 @@
   --aegis-primary-deep:    68 103 245;   /* accent-strong #4467f5 */
   --aegis-primary-glow:    rgba(93, 124, 255, 0.28);
   --aegis-primary-surface: rgba(93, 124, 255, 0.12);
+  /* Focus ring tokens (box-shadow — not clipped by overflow:hidden unlike outline) */
+  --aegis-focus-ring:        0 0 0 2px rgb(var(--aegis-primary) / 0.38);
+  --aegis-focus-ring-danger: 0 0 0 2px rgb(var(--aegis-danger) / 0.34);
 
   /* ── Accent — deeper blue ── */
   --aegis-accent:        68 103 245;
