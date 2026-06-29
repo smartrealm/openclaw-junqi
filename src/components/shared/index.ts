@@ -14,3 +14,6 @@ export { GlassCard } from './GlassCard';
 export { PageTransition } from './PageTransition';
 export { AegisIcon } from './AegisIcon';
 export { DashboardIcon } from './DashboardIcon';
+
+export { Badge, StatusDot as StatusDotCss } from './badge';
+export type { BadgeProps, BadgeTone, BadgeVariant, BadgeSize, StatusDotProps, StatusDotTone } from './badge';

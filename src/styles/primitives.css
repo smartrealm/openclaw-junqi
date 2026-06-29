@@ -121,4 +121,44 @@
   --color-data-8:  #F48FB1;
   --color-data-9:  #CE93D8;
   --color-data-10: #80DEEA;
+
+  /* Motion Tokens */
+  --aegis-duration-instant:  80ms;
+  --aegis-duration-fast:    120ms;
+  --aegis-duration-normal:  180ms;
+  --aegis-duration-slow:    260ms;
+  --aegis-ease-standard:    cubic-bezier(0.22, 1, 0.36, 1);
+  --aegis-ease-pop:         cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Z-Index Layering */
+  --z-base:            0;
+  --z-above:           1;
+  --z-sticky:         20;
+  --z-popover:        50;
+  --z-drawer:        100;
+  --z-dropdown:      200;
+  --z-dialog-overlay: 300;
+  --z-dialog:        301;
+  --z-command:       400;
+  --z-toast:         500;
+  --z-tooltip:       600;
+
+  /* Control Sizes and Radius Scale */
+  --aegis-control-xs: 24px;
+  --aegis-control-sm: 28px;
+  --aegis-control-md: 32px;
+  --aegis-control-lg: 36px;
+  --aegis-control-xl: 44px;
+  --aegis-r-xs:   3px;
+  --aegis-r-sm:   5px;
+  --aegis-r-md:   8px;
+  --aegis-r-lg:  12px;
+  --aegis-r-xl:  16px;
+  --aegis-r-pill: 9999px;
+
+  /* App Shell Layout */
+  --aegis-topbar-h:         32px;
+  --aegis-sidebar-expanded: 220px;
+  --aegis-sidebar-mini:     64px;
+  --aegis-rail-w:           52px;
 }
