@@ -217,13 +217,30 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
 
   // ── Setters ──
 
-  setSessions: (sessions) =>
+  setSessions: (sessions) => {
+    // Merge incoming sessions with existing ones, preserving event-driven fields
+    // (runningUpdatedAt) that the polling API does not return. Without this,
+    // every 10s poll wipes the freshness stamp → isFreshRunning returns false →
+    // pet shows idle while an agent is actively working.
+    const existing = get().sessions;
+    const existingByKey = new Map(existing.map((s) => [s.key, s]));
+    const merged = sessions.map((s) => {
+      const prev = existingByKey.get(s.key);
+      if (!prev) return s;
+      // Poll says running=false → drop freshness stamp (task ended).
+      // Poll says running=true but prev has no stamp → mint one now.
+      const runningUpdatedAt = s.running === false
+        ? undefined
+        : (prev.runningUpdatedAt ?? (s.running ? Date.now() : undefined));
+      return { ...s, runningUpdatedAt };
+    });
     set({
-      sessions,
+      sessions: merged,
       lastFetch: { ...get().lastFetch, sessions: Date.now() },
       loading: { ...get().loading, sessions: false },
       errors: { ...get().errors, sessions: null },
-    }),
+    });
+  },
 
   setAgents: (agents) =>
     set({
