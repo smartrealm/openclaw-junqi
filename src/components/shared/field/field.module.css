@@ -1,0 +1,53 @@
+.field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--aegis-fs-sm);
+  font-weight: 600;
+  color: rgb(var(--aegis-text));
+  line-height: var(--aegis-lh-snug);
+  user-select: none;
+}
+
+.required {
+  color: rgb(var(--aegis-danger));
+  font-size: var(--aegis-fs-sm);
+}
+
+.control {
+  min-width: 0;
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--aegis-fs-xs);
+  color: rgb(var(--aegis-text-muted));
+  line-height: var(--aegis-lh-relaxed);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--aegis-fs-xs);
+  color: rgb(var(--aegis-danger));
+  line-height: var(--aegis-lh-relaxed);
+}
+
+/* Error state — highlight child inputs via CSS nesting */
+.field[data-error] :where(input, textarea, select) {
+  border-color: rgb(var(--aegis-danger) / 0.6) !important;
+}
+.field[data-error] :where(input, textarea, select):focus {
+  outline-color: rgb(var(--aegis-danger) / 0.4) !important;
+}
+
+/* Disabled state */
+.field[data-disabled] {
+  opacity: 0.55;
+  pointer-events: none;
+}

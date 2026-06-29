@@ -26,6 +26,30 @@ window.addEventListener('unhandledrejection', (e) => showError('Promise Rejectio
 import { earlyBootstrap } from './theme/earlyBootstrap';
 earlyBootstrap();
 
+// Detect host OS and stamp <html> + <body> with data-tauri-platform.
+// Used by CSS to scope -webkit-font-smoothing and font-feature-settings.
+// <html> is stamped synchronously (always exists); <body> is stamped
+// after DOMContentLoaded so CSS body selectors also match.
+(function stampPlatform() {
+  const ua = navigator.userAgent.toLowerCase();
+  const p = ua.includes('win') ? 'windows'
+          : ua.includes('mac') ? 'macos'
+          : 'linux';
+  // <html> is always present at module-eval time
+  document.documentElement.setAttribute('data-tauri-platform', p);
+  document.documentElement.setAttribute('data-platform', p);
+  // <body> may not exist yet — defer with a guaranteed-fast callback
+  const stamp = () => {
+    document.body?.setAttribute('data-tauri-platform', p);
+    document.body?.setAttribute('data-platform', p);
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', stamp, { once: true });
+  } else {
+    stamp();
+  }
+})();
+
 (async function boot() {
   // Inter UI font (weights used across the app). Imported before index.css so
   // the --font-sans stack can resolve it on first paint.

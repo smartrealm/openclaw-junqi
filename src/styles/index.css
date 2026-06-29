@@ -1,4 +1,5 @@
 @import './primitives.css';
+@import './fonts.css';
 @import './terminal.css';
 @import './themes/aegis-dark.css';
 @import './themes/aegis-midnight.css';
@@ -69,7 +70,27 @@
   --color-aegis-success: rgb(var(--aegis-success) / <alpha-value>);
 
   /* ── fonts ── */
-  --font-sans: 'SF Pro Display', 'IBM Plex Sans Arabic', 'PingFang SC', 'Noto Sans SC', 'Segoe UI', system-ui, sans-serif;
+  /* Platform-aware CJK font stack:
+     macOS   : SF Pro Text (system-ui) -> PingFang SC
+     Win11   : HarmonyOS Sans SC (local) -> Microsoft YaHei UI -> Segoe UI
+     Win8.1  : Microsoft YaHei UI -> Segoe UI
+     Linux   : Noto Sans SC -> DejaVu Sans
+     Arabic  : IBM Plex Sans Arabic (all platforms) */
+  --font-sans:
+    'SF Pro Text',
+    'SF Pro Display',
+    'HarmonyOS Sans SC',
+    'PingFang SC',
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    'IBM Plex Sans Arabic',
+    'Noto Sans SC',
+    'Inter',
+    'Segoe UI Variable',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, ui-monospace, monospace;
   --font-arabic: 'IBM Plex Sans Arabic', 'Segoe UI', 'Tahoma', sans-serif;
 
@@ -186,10 +207,33 @@
     font-family: var(--font-sans);
     line-height: 1.5;
     font-weight: 400;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    /* macOS: grayscale AA looks crisper in dark UIs.
+       Windows: keep subpixel (ClearType) by NOT setting antialiased;
+       Tauri sets data-tauri-platform at runtime so we can scope it. */
+    text-rendering: optimizeLegibility;
     background: transparent;
     overflow: hidden;
+  }
+
+  /* macOS only — grayscale antialiasing via Tauri platform attribute.
+     Both html and body are stamped; html fires synchronously on first paint. */
+  html[data-tauri-platform='macos'],
+  html[data-platform='macos'],
+  body[data-tauri-platform='macos'],
+  body[data-platform='macos'] {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Windows: disable grayscale AA so ClearType subpixel rendering works */
+  html[data-tauri-platform='windows'],
+  html[data-platform='windows'],
+  body[data-tauri-platform='windows'],
+  body[data-platform='windows'] {
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+    /* YaHei UI and HarmonyOS SC render better with slight hinting */
+    font-feature-settings: 'kern' 1;
   }
 
   button:not(:disabled),
@@ -490,4 +534,41 @@
 
 html {
   font-size: var(--aegis-base-font-size);
+}
+
+/* =================================================================
+   Popover / Dropdown animation
+   Uses Radix transform-origin vars so the scale originates from
+   the trigger edge, not the element center.
+   Applied to all [data-radix-popper-content-wrapper] children
+   and selectively to .aegis-popover / [role="listbox"] etc.
+   ================================================================= */
+@keyframes aegis-popover-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+@keyframes aegis-popover-out {
+  from { opacity: 1; transform: scale(1);    }
+  to   { opacity: 0; transform: scale(0.95); }
+}
+
+[data-radix-popper-content-wrapper] > *,
+.aegis-popover,
+[data-aegis-popover] {
+  transform-origin: var(--radix-popover-content-transform-origin,
+                    var(--radix-dropdown-menu-content-transform-origin,
+                    var(--radix-context-menu-content-transform-origin,
+                    var(--radix-select-content-transform-origin, top))));
+}
+
+[data-radix-popper-content-wrapper] > *[data-state="open"],
+.aegis-popover[data-state="open"],
+[data-aegis-popover][data-state="open"] {
+  animation: aegis-popover-in var(--aegis-duration-fast) var(--aegis-ease-standard) both;
+}
+
+[data-radix-popper-content-wrapper] > *[data-state="closed"],
+.aegis-popover[data-state="closed"],
+[data-aegis-popover][data-state="closed"] {
+  animation: aegis-popover-out var(--aegis-duration-instant) var(--aegis-ease-standard) both;
 }

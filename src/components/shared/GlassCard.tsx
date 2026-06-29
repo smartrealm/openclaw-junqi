@@ -42,8 +42,8 @@ export const GlassCard = React.memo(function GlassCard({
         'relative overflow-hidden rounded-xl',
         'border border-aegis-border',
         'bg-aegis-card',
-        hover && 'hover:border-aegis-border-hover hover:bg-aegis-hover',
-        'transition-[background,border-color] duration-200',
+        hover && 'hover:border-aegis-border-hover hover:bg-aegis-hover hover:-translate-y-px',
+        'transition-[background,border-color,transform] duration-200',
         onClick && 'cursor-pointer',
         className,
       )}

@@ -1,0 +1,91 @@
+/* ═══════════════════════════════════════════════════════════
+   AEGIS Design System — Font Stack & @font-face declarations
+   ═══════════════════════════════════════════════════════════
+
+   Strategy (no bundled woff2 required):
+   ──────────────────────────────────────────────────────────
+   1. macOS          : SF Pro Text (system-ui) → PingFang SC
+   2. Windows 10/11  : HarmonyOS Sans SC (local) → Microsoft YaHei UI
+                       Falls back gracefully if not installed.
+   3. Windows 8.1    : Microsoft YaHei → Segoe UI
+   4. Linux          : Noto Sans SC → DejaVu Sans
+   5. All platforms  : Inter (Google Fonts, preloaded) as universal fallback
+   ──────────────────────────────────────────────────────────
+   HarmonyOS Sans SC ships with Huawei PCs (Windows) and is also
+   bundled in some Harmony-ecosystem apps. It covers CJK + Latin
+   at optical sizes very close to SF Pro on macOS.
+
+   @font-face local() names are case-sensitive on some platforms;
+   we list both the display name and PostScript name variants.
+   ════════════════════════════════════════════════════════════ */
+
+/* ──────────────────────────────────────────────────────────
+   Inter — universal Latin / UI fallback (variable font).
+   Loaded from Google Fonts via link preconnect in index.html;
+   the @font-face here is a CSS-side declaration so the stack
+   works even without the preconnect hint.
+   ────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Inter';
+  font-style:  normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: local('Inter'),
+       local('Inter Variable'),
+       /* Vite will bundle this if the file exists in src/assets/fonts/;
+          otherwise the browser skips to the next source. */
+       url('/fonts/Inter.var.woff2') format('woff2 supports variations'),
+       url('/fonts/Inter.var.woff2') format('woff2');
+}
+
+/* ──────────────────────────────────────────────────────────
+   HarmonyOS Sans SC — Windows CJK (local-only, no download).
+   Ships on Huawei PCs and some Harmony-ecosystem packages.
+   If absent the cascade falls through to Microsoft YaHei UI.
+   ────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  font-style:  normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('HarmonyOS Sans SC'),
+       local('HarmonyOS Sans SC Regular'),
+       local('HarmonyOS-Sans-SC-Regular');
+}
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  font-style:  normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local('HarmonyOS Sans SC Medium'),
+       local('HarmonyOS-Sans-SC-Medium');
+}
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  font-style:  normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: local('HarmonyOS Sans SC Bold'),
+       local('HarmonyOS-Sans-SC-Bold');
+}
+
+/* ──────────────────────────────────────────────────────────
+   Microsoft YaHei UI — Windows CJK fallback (built-in Win8.1+)
+   "UI" variant has tighter metrics than the non-UI version.
+   ────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Microsoft YaHei UI';
+  font-style:  normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Microsoft YaHei UI'),
+       local('Microsoft-YaHei-UI');
+}
+@font-face {
+  font-family: 'Microsoft YaHei UI';
+  font-style:  normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Microsoft YaHei UI Bold'),
+       local('Microsoft-YaHei-UI-Bold');
+}

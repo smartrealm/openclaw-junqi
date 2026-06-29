@@ -20,7 +20,7 @@
   outline: none;
   background: transparent;
   color: rgb(var(--aegis-text));
-  font-size: 12.5px;
+  font-size: var(--aegis-fs-sm);
   font-family: var(--font-ui);
 }
 .font-selector-search-input::placeholder {
@@ -59,7 +59,7 @@
   border: none;
   background: none;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--aegis-fs-base);
   color: rgb(var(--aegis-text));
   cursor: pointer;
   text-align: left;
@@ -76,7 +76,7 @@
 }
 .font-selector-empty {
   padding: 12px 10px;
-  font-size: 12px;
+  font-size: var(--aegis-fs-sm);
   color: rgb(var(--aegis-text-dim));
   text-align: center;
 }

@@ -143,6 +143,26 @@
   --z-toast:         500;
   --z-tooltip:       600;
 
+  /* ═══════════════════════════════════════
+     Typography Scale
+     --aegis-fs-*  : font-size
+     --aegis-lh-*  : line-height
+     ═══════════════════════════════════════ */
+  --aegis-fs-2xs:  10px;
+  --aegis-fs-xs:   11px;
+  --aegis-fs-sm:   12px;
+  --aegis-fs-base: 13px;
+  --aegis-fs-md:   14px;
+  --aegis-fs-lg:   15px;
+  --aegis-fs-xl:   16px;
+  --aegis-fs-2xl:  18px;
+  --aegis-fs-3xl:  22px;
+
+  --aegis-lh-tight:   1.2;
+  --aegis-lh-snug:    1.35;
+  --aegis-lh-normal:  1.5;
+  --aegis-lh-relaxed: 1.6;
+
   /* Control Sizes and Radius Scale */
   --aegis-control-xs: 24px;
   --aegis-control-sm: 28px;
