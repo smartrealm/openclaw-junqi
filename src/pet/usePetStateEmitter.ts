@@ -69,15 +69,15 @@ export function usePetStateEmitter() {
       // lag or miss agent-bound sessions. Merge both so the pet reflects real
       // active work instead of idling while another agent is running.
       const RUNNING_STALE_MS = 2 * 60_000;
+      // Only trust running=true when we have a recent runningUpdatedAt timestamp written
+      // by an explicit event (session.started / task-status / fetchSessions merge).
+      // If runningUpdatedAt is absent the session's running flag came from an old poll
+      // with no live signal — do NOT fall back to lastActive, which would cause the pet
+      // to show "working" on cold-boot whenever a session was active within 2 minutes.
       const isFreshRunning = (s: any) => {
         if (!s?.running) return false;
         const updated = Number(s.runningUpdatedAt || 0);
-        // Older records did not carry runningUpdatedAt; only trust them if there
-        // is another live signal (typing/thinking/tool) or a very recent lastActive.
-        if (!updated) {
-          const lastActive = s.lastActive ? new Date(s.lastActive).getTime() : 0;
-          return lastActive > 0 && now - lastActive < RUNNING_STALE_MS;
-        }
+        if (!updated) return false; // no event-driven freshness stamp → treat as stale
         return now - updated < RUNNING_STALE_MS;
       };
       const runningSessions = [

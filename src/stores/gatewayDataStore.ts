@@ -304,23 +304,22 @@ async function fetchSessions() {
     const rawList: SessionInfo[] = Array.isArray(res?.sessions) ? res.sessions : [];
 
     // Merge: preserve event-enriched runningUpdatedAt that the server does not return.
-    // Without this, polling would overwrite freshness data and break isFreshRunning() in
-    // usePetStateEmitter, causing the pet to stop showing "working" mid-task.
+    // IMPORTANT: polling must NEVER generate a new runningUpdatedAt timestamp by itself.
+    // runningUpdatedAt is exclusively set by real-time events (session.started/ended,
+    // task-status). A server poll saying running=true is not a fresh live signal —
+    // it may reflect a session that was active before app launch.
+    // Rule: always carry forward the existing runningUpdatedAt; never mint a new one here.
     const prev = store.sessions;
     const prevByKey = new Map(prev.map((s) => [s.key, s]));
     const list = rawList.map((s) => {
       const existing = prevByKey.get(s.key);
-      if (!existing) return s;
-      // If running state changed, trust the server and update the timestamp.
-      // If running state is the same, preserve the event-driven runningUpdatedAt.
-      const sameRunning = existing.running === s.running;
+      if (!existing) return s; // new session: no runningUpdatedAt — isFreshRunning returns false
+      // Always preserve the event-driven runningUpdatedAt regardless of running state change.
+      // If running changed to false (server confirms stopped), clear the timestamp so
+      // isFreshRunning() correctly returns false for this session going forward.
       return {
         ...s,
-        runningUpdatedAt: sameRunning && existing.runningUpdatedAt
-          ? existing.runningUpdatedAt
-          : s.running
-          ? Date.now()
-          : existing.runningUpdatedAt,
+        runningUpdatedAt: s.running ? existing.runningUpdatedAt : undefined,
       };
     });
 
