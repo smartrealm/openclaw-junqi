@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useChatStore } from './chatStore';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -90,6 +91,12 @@ export interface CronJob {
   lastRunStatus?: string;
   lastDeliveryStatus?: string;
   [k: string]: any;
+}
+
+// ── task_id → session_key map (populated by 'task-session' events) ──
+const taskToSession = new Map<string, string>();
+function taskIdToSessionKey(taskId: string): string | undefined {
+  return taskToSession.get(taskId);
 }
 
 // ── Running Sub-Agent Tracking ───────────────────────────
@@ -551,6 +558,45 @@ export function handleGatewayEvent(event: string, payload: any) {
         store.sessions.map((s) => s.key === key ? { ...s, running: false } : s)
       );
       console.log('[DataStore] 📡 Session ended:', key);
+      break;
+    }
+
+    // ── Task status (from backend hook events: PostToolUse/Stop/Notification etc.) ──
+    // Backend emits { task_id, status: 'running' | 'input_required' | ... }.
+    // We need to map task_id → session key. The map is populated by 'task-session'
+    // events which carry both fields. The running flag is what the AgentHub uses
+    // to determine active vs idle vs input_required.
+    case 'task-status': {
+      const taskId = payload?.task_id;
+      const status: string = payload?.status || 'running';
+      if (!taskId) break;
+      // task-session may arrive after task-status, so the task_id→session_key
+      // map might be empty. Fall back to the active session — the event fires
+      // for the session the user is currently talking to.
+      const sessionKey = taskIdToSessionKey(taskId) || useChatStore.getState().activeSessionKey;
+      if (!sessionKey) break;
+      const isActive = status === 'running' || status === 'input_required';
+      store.setSessions(
+        store.sessions.map((s) => s.key === sessionKey ? { ...s, running: isActive } : s)
+      );
+      // When the agent finishes/errors, also clear the typing flag for this
+      // session so the chat view's Footer (TypingIndicator) doesn't stay stuck
+      // on "Working" forever.
+      if (!isActive) {
+        useChatStore.getState().setIsTyping(false, sessionKey);
+      }
+      console.log('[DataStore] 📡 task-status:', taskId, '→', status);
+      break;
+    }
+
+    // ── task-session: build the task_id → session_key map ──
+    case 'task-session': {
+      const taskId = payload?.task_id;
+      const sessionId = payload?.session_id;
+      if (taskId && sessionId) {
+        taskToSession.set(taskId, sessionId);
+        taskIdToSessionKey(taskId); // refresh helper
+      }
       break;
     }
 

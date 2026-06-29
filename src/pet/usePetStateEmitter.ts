@@ -64,7 +64,15 @@ export function usePetStateEmitter() {
 
       const typing = Object.values(cs.typingBySession).some(Boolean);
       const thinking = Object.values(cs.thinkingBySession).some((e) => (e?.text?.length ?? 0) > 0);
-      const running = gw.sessions.some((s) => s.running) || gw.runningSubAgents.length > 0;
+      // GatewayDataStore is not the only source of truth anymore: App.tsx keeps
+      // chatStore.sessions fresh from sessions.list, while gatewayDataStore may
+      // lag or miss agent-bound sessions. Merge both so the pet reflects real
+      // active work instead of idling while another agent is running.
+      const runningSessions = [
+        ...gw.sessions.filter((s) => s.running),
+        ...cs.sessions.filter((s: any) => Boolean(s.running)),
+      ];
+      const running = runningSessions.length > 0 || gw.runningSubAgents.length > 0;
       const tool = cs.messages.some((m) => m.toolStatus === 'running');
       const isActive = typing || thinking || tool || running;
 
@@ -125,13 +133,14 @@ export function usePetStateEmitter() {
 
       // "What is it doing right now" → second line of the bubble.
       let message: string | undefined;
+      const runningSessionLabel = runningSessions[0]?.label || runningSessions[0]?.key;
       if (emotion === 'thinking') message = (cs.thinkingText || '').slice(0, 60) || undefined;
-      else if (emotion === 'working') message = gw.runningSubAgents[0]?.label;
+      else if (emotion === 'working') message = gw.runningSubAgents[0]?.label || runningSessionLabel;
 
       emitPetState({
         ...derived,
         message,
-        taskLabel: gw.runningSubAgents[0]?.label,
+        taskLabel: gw.runningSubAgents[0]?.label || runningSessionLabel,
         elapsedMs: mem.activeStartedAt ? now - mem.activeStartedAt : undefined,
         skin: usePetStore.getState().skin,
         pomodoro: pomodoro.enabled
