@@ -34,6 +34,7 @@ import {
   GENERATED_VIDEO_GENERATION_MODELS,
 } from '@/generated/mediaCatalog.generated';
 import { resolveProviderSecret, buildProviderSecretPatch, diagnoseProviders } from './providerSecretResolver';
+import { Badge, StatusDot } from '@/components/shared/badge';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider test: try GET /models first; if 404, fallback to POST /chat/completions
@@ -3045,9 +3046,15 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
 
         {(unknownProviders.length > 0 || okProviders.length > 0) && (
           <div className="mt-3 rounded-xl border border-aegis-border bg-aegis-elevated/60 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle size={14} className={unknownProviders.length > 0 ? 'text-blue-400' : 'text-aegis-success'} />
-              <span className="text-sm font-semibold text-aegis-text">{t('config.providersHealth', 'Provider health')}</span>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="flex items-center gap-2">
+                <StatusDot tone={unknownProviders.length > 0 ? 'info' : 'ok'} size="md" live={unknownProviders.length === 0} />
+                <span className="text-sm font-semibold text-aegis-text">{t('config.providersHealth', 'Provider health')}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Badge tone="ok" size="sm" variant="soft">Visible {okProviders.length}</Badge>
+                <Badge tone={unknownProviders.length > 0 ? 'info' : 'neutral'} size="sm" variant="soft">Runtime/System {unknownProviders.length}</Badge>
+              </div>
             </div>
             <p className="text-xs text-aegis-text-muted">
               {t('config.providersHealthSummary', { ok: okProviders.length, unknown: unknownProviders.length, defaultValue: `Visible ${okProviders.length} · Runtime/System ${unknownProviders.length}` })}
@@ -3055,9 +3062,12 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
             {unknownProviders.length > 0 && (
               <div className="mt-3 space-y-2">
                 {unknownProviders.map((item: any) => (
-                  <div key={item.providerId} className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2">
-                    <div className="text-xs font-medium text-blue-300">{item.providerId}</div>
-                    <div className="text-[11px] text-aegis-text-muted">
+                  <div key={item.providerId} className="rounded-lg border border-[color-mix(in_srgb,rgb(var(--aegis-primary))_28%,rgb(var(--aegis-border)))] bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_7%,transparent)] px-3 py-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-aegis-primary">
+                      <StatusDot tone="info" size="sm" />
+                      {item.providerId}
+                    </div>
+                    <div className="mt-1 text-[11px] text-aegis-text-muted">
                       {t('config.providerBrokenNeedSecret', 'Desktop cannot see this secret. It may be supplied by Gateway runtime or system environment. If OpenClaw Web UI can answer, no action is required.')}
                     </div>
                   </div>

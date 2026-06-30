@@ -21,12 +21,40 @@
 .badge[data-size="sm"] { min-height: 18px; padding: 1px 7px; font-size: 10px; }
 .badge[data-size="md"] { min-height: 20px; padding: 2px 8px; }
 .badge[data-size="lg"] { min-height: 24px; padding: 3px 10px; font-size: 12px; }
-.badge[data-tone="primary"]   { --badge-fg: rgb(var(--aegis-primary)); --badge-bg: rgb(var(--aegis-primary)/0.12); --badge-border: rgb(var(--aegis-primary)/0.3); }
-.badge[data-tone="success"]   { --badge-fg: rgb(var(--aegis-success)); --badge-bg: var(--aegis-success-surface); --badge-border: rgb(var(--aegis-success)/0.3); }
-.badge[data-tone="warning"]   { --badge-fg: rgb(var(--aegis-warning)); --badge-bg: var(--aegis-warning-surface); --badge-border: rgb(var(--aegis-warning)/0.3); }
-.badge[data-tone="danger"]    { --badge-fg: rgb(var(--aegis-danger));  --badge-bg: var(--aegis-danger-surface);  --badge-border: rgb(var(--aegis-danger)/0.3); }
-.badge[data-tone="running"]   { --badge-fg: rgb(var(--aegis-status-running));   --badge-bg: rgb(var(--aegis-status-running)/0.12);   --badge-border: rgb(var(--aegis-status-running)/0.3); }
-.badge[data-tone="attention"] { --badge-fg: rgb(var(--aegis-status-attention)); --badge-bg: rgb(var(--aegis-status-attention)/0.12); --badge-border: rgb(var(--aegis-status-attention)/0.3); }
+.badge[data-tone="primary"],
+.badge[data-tone="info"] {
+  --badge-fg: rgb(var(--aegis-primary));
+  --badge-bg: color-mix(in srgb, rgb(var(--aegis-primary)) 11%, transparent);
+  --badge-border: color-mix(in srgb, rgb(var(--aegis-primary)) 32%, rgb(var(--aegis-border)));
+}
+.badge[data-tone="success"],
+.badge[data-tone="ok"] {
+  --badge-fg: rgb(var(--aegis-success));
+  --badge-bg: color-mix(in srgb, rgb(var(--aegis-success)) 11%, transparent);
+  --badge-border: color-mix(in srgb, rgb(var(--aegis-success)) 30%, rgb(var(--aegis-border)));
+}
+.badge[data-tone="warning"],
+.badge[data-tone="warn"] {
+  --badge-fg: rgb(var(--aegis-warning));
+  --badge-bg: color-mix(in srgb, rgb(var(--aegis-warning)) 12%, transparent);
+  --badge-border: color-mix(in srgb, rgb(var(--aegis-warning)) 34%, rgb(var(--aegis-border)));
+}
+.badge[data-tone="danger"],
+.badge[data-tone="err"] {
+  --badge-fg: rgb(var(--aegis-danger));
+  --badge-bg: color-mix(in srgb, rgb(var(--aegis-danger)) 12%, transparent);
+  --badge-border: color-mix(in srgb, rgb(var(--aegis-danger)) 34%, rgb(var(--aegis-border)));
+}
+.badge[data-tone="running"] {
+  --badge-fg: rgb(var(--aegis-status-running));
+  --badge-bg: color-mix(in srgb, rgb(var(--aegis-status-running)) 12%, transparent);
+  --badge-border: color-mix(in srgb, rgb(var(--aegis-status-running)) 34%, rgb(var(--aegis-border)));
+}
+.badge[data-tone="attention"] {
+  --badge-fg: rgb(var(--aegis-status-attention));
+  --badge-bg: color-mix(in srgb, rgb(var(--aegis-status-attention)) 12%, transparent);
+  --badge-border: color-mix(in srgb, rgb(var(--aegis-status-attention)) 34%, rgb(var(--aegis-border)));
+}
 .badge[data-variant="outline"] { background: transparent; }
 .badge[data-variant="solid"]   { color: rgb(var(--aegis-bg)); background: var(--badge-fg); border-color: var(--badge-fg); }
 
@@ -46,8 +74,12 @@
 .dot[data-tone="danger"],
 .dot[data-tone="failed"]     { background: rgb(var(--aegis-status-failed)); }
 .dot[data-tone="idle"]       { background: rgb(var(--aegis-status-idle)); }
-.dot[data-tone="warning"]    { background: rgb(var(--aegis-warning)); }
-.dot[data-tone="primary"]    { background: rgb(var(--aegis-primary)); }
+.dot[data-tone="warning"],
+.dot[data-tone="warn"]       { background: rgb(var(--aegis-warning)); }
+.dot[data-tone="primary"],
+.dot[data-tone="info"]       { background: rgb(var(--aegis-primary)); }
+.dot[data-tone="ok"]         { background: rgb(var(--aegis-success)); }
+.dot[data-tone="err"]        { background: rgb(var(--aegis-danger)); }
 .dot[data-tone="live"],
 .dot[data-tone="running"][data-live="true"] {
   background: rgb(var(--aegis-status-running));

@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { themeHex } from '@/utils/theme-colors';
+import { Badge, StatusDot } from '@/components/shared/badge';
 
 // ── Format helpers (shared with index.tsx) ──────────────────
 import { formatTokens } from '@/utils/format';
@@ -222,15 +223,19 @@ export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, s
   sessions?: number;
 }) {
   const barPct = maxTokens > 0 ? Math.min(100, (tokenCount / maxTokens) * 100) : 0;
-  const barColor = barPct > 70 ? themeHex('danger') : barPct > 40 ? themeHex('warning') : themeHex('primary');
+  const tone = barPct > 70 ? 'err' : barPct > 40 ? 'warn' : 'info';
+  const barColor = tone === 'err' ? themeHex('danger') : tone === 'warn' ? themeHex('warning') : themeHex('primary');
 
   return (
     <div className="flex items-center gap-3 py-2.5 border-b border-[rgb(var(--aegis-overlay)/0.04)] last:border-b-0">
-      <span className="text-[18px] flex-shrink-0 leading-none w-6 text-center">{emoji}</span>
+      <span className="text-[18px] flex-shrink-0 leading-none w-6 text-center relative">
+        {emoji}
+        <StatusDot tone={tone} size="sm" className="absolute -right-1 -bottom-0.5" />
+      </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 mb-1">
           <span className="text-[12px] font-semibold text-aegis-text truncate">{name}</span>
-          <span className="text-[12px] font-bold font-mono text-aegis-text flex-shrink-0">{tokens}</span>
+          <Badge tone={tone} size="sm" variant="soft" className="font-mono flex-shrink-0">{tokens}</Badge>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex-1 h-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] overflow-hidden">
@@ -240,7 +245,7 @@ export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, s
             />
           </div>
           <span className="text-[9px] text-aegis-text-muted font-mono flex-shrink-0 truncate max-w-[96px]">{model}</span>
-          {sessions && sessions > 1 && <span className="text-[9px] text-aegis-accent font-mono flex-shrink-0">×{sessions}</span>}
+          {sessions && sessions > 1 && <Badge tone="info" size="sm" variant="outline" className="font-mono flex-shrink-0">×{sessions}</Badge>}
         </div>
       </div>
     </div>

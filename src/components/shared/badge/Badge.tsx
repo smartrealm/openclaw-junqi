@@ -10,9 +10,13 @@ import s from './badge.module.css';
 export type BadgeTone =
   | 'neutral'
   | 'primary'
+  | 'info'
   | 'success'
+  | 'ok'
   | 'warning'
+  | 'warn'
   | 'danger'
+  | 'err'
   | 'running'
   | 'attention';
 
@@ -51,15 +55,19 @@ export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
 export type StatusDotTone =
   | 'neutral'
   | 'primary'
+  | 'info'
   | 'running'
   | 'live'        // running + pulse animation
   | 'attention'
   | 'success'
+  | 'ok'
   | 'ended'
   | 'failed'
   | 'danger'
+  | 'err'
   | 'idle'
-  | 'warning';
+  | 'warning'
+  | 'warn';
 
 export type StatusDotSize = 'sm' | 'md' | 'lg';
 

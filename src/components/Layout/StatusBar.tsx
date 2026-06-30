@@ -11,6 +11,7 @@ import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActio
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { applyTheme } from '@/theme/apply';
 import clsx from 'clsx';
+import { Badge, StatusDot } from '@/components/shared/badge';
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -65,7 +66,7 @@ export function StatusBar() {
     <footer className="flex items-center gap-0 h-[26px] min-w-0 border-t border-aegis-border bg-aegis-surface text-[11px] shrink-0 select-none overflow-hidden whitespace-nowrap" role="status">
       {/* 网关 + 端口 */}
       <span className="flex items-center gap-1.5 px-3 h-full border-r border-aegis-border/50">
-        <span className="w-[5px] h-[5px] rounded-full" style={{ background: connected ? 'var(--aegis-success)' : 'var(--aegis-danger)' }} />
+        <StatusDot tone={connected ? 'ok' : 'err'} size="sm" live={connected} />
         <span className="text-aegis-text-secondary">{t('statusBar.gateway', '网关')}</span>
         <span className="text-aegis-text font-mono">:{port}</span>
       </span>
@@ -98,9 +99,9 @@ export function StatusBar() {
 
       {/* 运行 */}
       {runningCount > 0 && (
-        <span className="flex items-center gap-1 px-3 h-full border-r border-aegis-border/50 text-aegis-text-dim">
-          <span className="w-[5px] h-[5px] rounded-full bg-aegis-success shadow-[0_0_0_2px_rgb(61_214_140/0.18)]" />
-          <span className="text-aegis-text-secondary">{runningCount} 运行</span>
+        <span className="flex items-center gap-1.5 px-3 h-full border-r border-aegis-border/50 text-aegis-text-dim">
+          <StatusDot tone="running" size="sm" live />
+          <Badge tone="running" size="sm" variant="soft">{runningCount} 运行</Badge>
         </span>
       )}
 
