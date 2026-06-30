@@ -168,27 +168,17 @@ function invalidateGatewayPortCache(): void {
     read: async () => { try { const d: any = await invoke("read_config"); return { data: JSON.parse(d.raw || "{}"), path: d.path }; } catch { return { data: {}, path: "" }; } },
     write: async (_p: string, d: any) => { try { await invoke("write_config", { json: JSON.stringify(d, null, 2) }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
     restart: async () => {
-      // Invalidate the cache so start_gateway picks up any port change the user
-      // just saved, then resolve the (possibly updated) configured port.
+      // Config saves should restart the real local OpenClaw Gateway service,
+      // not merely reconnect to an already-running listener. Keep this aligned
+      // with window.aegis.gateway.retry().
       invalidateGatewayPortCache();
       const port = await readGatewayPort();
       try {
-        // Don't stop first — start_gateway handles "port already in use" by
-        // detecting an external gateway and returning success without spawning.
-        const result: any = await invoke("start_gateway", { port });
+        const result: any = await invoke("restart_gateway", { port });
         if (result?.token) _cachedGatewayToken = result.token;
         return { success: true, method: "gateway-restart" };
-      } catch {
-        // Fallback: stop any managed child then restart.
-        try { await invoke("stop_gateway"); } catch { /* external gateway, ignore */ }
-        await new Promise(r => setTimeout(r, 1000));
-        try {
-          const result2: any = await invoke("start_gateway", { port });
-          if (result2?.token) _cachedGatewayToken = result2.token;
-          return { success: true, method: "gateway-restart" };
-        } catch (e: any) {
-          return { success: false, error: String(e) };
-        }
+      } catch (e: any) {
+        return { success: false, error: String(e) };
       }
     },
     validateOpenclawJson: async () => { try { const d: any = await invoke("read_config"); return { valid: true, path: d.path, exists: true }; } catch { return { valid: false, path: "", exists: false }; } },
