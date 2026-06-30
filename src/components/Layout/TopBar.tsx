@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
 import { PanelLeftOpen, PanelLeftClose, PanelLeft, Bell } from 'lucide-react';
 import clsx from 'clsx';
@@ -114,7 +115,10 @@ export function TopBar() {
 
   const onStatusClick = useCallback(() => {
     if (status === 'working') navigate('/chat');
-    else if (status === 'disconnected') window.dispatchEvent(new Event('aegis:reconnect'));
+    else if (status === 'disconnected') {
+      try { gatewayManager.reset(); } catch {}
+      try { void window.aegis?.gateway?.retry?.(); } catch {}
+    }
   }, [status, navigate]);
 
   const statusClickable = status === 'working' || status === 'disconnected';

@@ -2,19 +2,18 @@
 import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Palette, PawPrint, Timer, Play, Pause, Square } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
 import { AEGIS_THEMES, isAegisTheme } from '@/theme/types';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { applyTheme } from '@/theme/apply';
 import clsx from 'clsx';
 
 export function StatusBar() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const connected = useChatStore((st) => st.connected);
   const currentModel = useChatStore((st) => st.currentModel);
   const tokenUsage = useChatStore((st) => st.tokenUsage);
@@ -39,7 +38,7 @@ export function StatusBar() {
 
   const port = useMemo(() => {
     const m = String(gatewayUrl || '').match(/:(\d+)/);
-    return m ? m[1] : '—';
+    return m ? m[1] : '18789';
   }, [gatewayUrl]);
 
   const bootSummary = useMemo(() => getBootProgressSummary(bootStages ?? {}), [bootStages]);
@@ -47,7 +46,9 @@ export function StatusBar() {
   const bootPct = bootSummary?.total ? Math.round((bootSummary.completed / bootSummary.total) * 100) : 0;
 
   const handleRestart = () => {
-    window.dispatchEvent(new Event('aegis:reconnect'));
+    // Reconnect the WebSocket; if the gateway process itself is down, retry it.
+    try { gatewayManager.reset(); } catch {}
+    try { void window.aegis?.gateway?.retry?.(); } catch {}
   };
 
   const cycleTheme = () => {
