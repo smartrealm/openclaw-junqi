@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { ArrowDown, Search, X, Zap, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { ArrowDown, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
@@ -125,12 +125,6 @@ export function ChatView() {
   const clearSessionTokens = useChatStore((s) => s.clearSessionTokens);
   const clearSessionMessages = useChatStore((s) => s.clearSessionMessages);
 
-  // ── Search state ──
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<number[]>([]); // indices in responseGroups
-  const [searchIndex, setSearchIndex] = useState(0); // current highlight index
-
   // ── Virtuoso ref & scroll state ──
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -154,54 +148,7 @@ export function ChatView() {
   const bottomSeenSignatureRef = useRef('');
   const lastAutoRevealedUserMessageIdRef = useRef('');
 
-  // ── Keyboard shortcut: Ctrl+F to open search ──
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-      if (e.key === 'Escape' && searchOpen) {
-        setSearchOpen(false);
-        setSearchQuery('');
-        setSearchResults([]);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [searchOpen]);
-
   useEffect(() => { prevResponseGroupsLenRef.current = responseGroups.length; });
-
-  const searchableGroups = useMemo(() => responseGroups, [responseGroups]);
-
-  // ── Search logic: compute matching group indices ──
-  useEffect(() => {
-    if (!searchQuery.trim()) { setSearchResults([]); return; }
-    const q = searchQuery.toLowerCase();
-    const results: number[] = [];
-    searchableGroups.forEach((group, groupIndex) => {
-      const matched = group.blocks.some((block) => {
-        if (block.type === 'message-content') {
-          return block.markdown.toLowerCase().includes(q);
-        }
-        if (block.type === 'tool-activity') {
-          return block.toolName.toLowerCase().includes(q) || (block.output || '').toLowerCase().includes(q);
-        }
-        return false;
-      });
-      if (matched) results.push(groupIndex);
-    });
-    setSearchResults(results);
-    setSearchIndex(0);
-  }, [searchQuery, searchableGroups]);
-
-  // ── Navigate to current search result ──
-  useEffect(() => {
-    if (searchResults.length > 0 && virtuosoRef.current) {
-      virtuosoRef.current.scrollToIndex({ index: searchResults[searchIndex], behavior: 'smooth', align: 'center' });
-    }
-  }, [searchIndex, searchResults]);
 
   const scrollToBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({
@@ -848,7 +795,7 @@ export function ChatView() {
       (hasSeenConnectionAttempt && Boolean(connectionError))
     );
 
-  const { isOpen: previewOpen, toggle: togglePreview } = usePreviewStore();
+  const previewOpen = usePreviewStore((s) => s.isOpen);
 
   return (
     <div className="flex flex-1 min-h-0 bg-aegis-bg">
@@ -899,50 +846,6 @@ export function ChatView() {
       )}
 
 
-
-      {/* ── Top control bar: search + preview toggle ── */}
-      <div className="shrink-0 flex items-center gap-1 px-3 py-1 border-b border-aegis-border bg-aegis-elevated/30">
-        <div className="flex-1" />
-        <button
-          onClick={togglePreview}
-          title={previewOpen ? t('preview.close', 'Close preview') : t('preview.open', 'Open preview')}
-          className="p-1.5 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-overlay/5 transition-colors"
-        >
-          {previewOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
-        </button>
-        <Search size={14} className="text-aegis-text-muted shrink-0 cursor-pointer hover:text-aegis-text p-1.5" onClick={() => setSearchOpen((o) => !o)} />
-        <span className="text-[10px] text-aegis-text-dim/50 tabular-nums">{renderBlocks.length}</span>
-      </div>
-
-      {/* Search Bar */}
-      {searchOpen && (
-        <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-aegis-border bg-aegis-elevated/50">
-          <Search size={14} className="text-aegis-text-muted shrink-0" />
-          <input
-            autoFocus
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') setSearchIndex((prev) => (prev + 1) % Math.max(searchResults.length, 1));
-              if (e.key === 'Enter' && e.shiftKey) setSearchIndex((prev) => (prev - 1 + searchResults.length) % Math.max(searchResults.length, 1));
-            }}
-            placeholder={t('chat.searchMessages', 'Search messages...')}
-            className="flex-1 bg-transparent text-[12px] text-aegis-text outline-none placeholder:text-aegis-text-dim"
-          />
-          {searchResults.length > 0 && (
-            <span className="text-[10px] font-mono text-aegis-text-muted shrink-0">
-              {searchIndex + 1}/{searchResults.length}
-            </span>
-          )}
-          {searchQuery && searchResults.length === 0 && (
-            <span className="text-[10px] text-aegis-text-dim shrink-0">{t('chat.noSearchResults', 'No results')}</span>
-          )}
-          <button onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchResults([]); }}
-            className="p-1 rounded hover:bg-[rgb(var(--aegis-overlay)/0.06)]">
-            <X size={12} className="text-aegis-text-muted" />
-          </button>
-        </div>
-      )}
 
       {/* Messages Area — Virtualized */}
       <div

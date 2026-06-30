@@ -94,7 +94,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
     <div className="ml-[42px] mr-4 py-[2px]">
       <div
         className={clsx(
-          'w-fit max-w-[min(640px,72%)] rounded-lg transition-all duration-150',
+          'w-full max-w-[min(640px,72%)] rounded-lg transition-all duration-150',
           hasDetails && 'cursor-pointer',
           expanded && 'bg-[rgb(var(--aegis-overlay)/0.03)]',
           !expanded && 'hover:bg-[rgb(var(--aegis-overlay)/0.02)]',
@@ -102,7 +102,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
         onClick={() => hasDetails && setExpanded((v) => !v)}
       >
         {/* ── Inline status row (Control UI style) ── */}
-        <div className="inline-flex max-w-full items-center gap-2 px-0 py-1 min-h-[28px]">
+        <div className="flex max-w-full items-center gap-2 px-0 py-1 min-h-[28px]">
           {/* Status indicator */}
           {tool.status === 'running' ? (
             <Loader2 size={12} className="text-aegis-accent animate-spin shrink-0" />
@@ -134,7 +134,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
           )}
 
           {/* Duration + expand — 右对齐 */}
-          <div className="flex items-center gap-1.5 shrink-0 ml-1">
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
             {tool.durationMs !== undefined && tool.status !== 'running' && (
               <span className="text-[11px] text-aegis-text-secondary font-mono tabular-nums font-medium px-1.5 py-0.5 rounded bg-[rgb(var(--aegis-overlay)/0.10)]">
                 {formatDuration(tool.durationMs)}

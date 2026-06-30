@@ -296,6 +296,15 @@ function ActionBtn({ icon, label, onClick, danger }: {
 }
 
 // ── Markdown Components ──
+async function openExternalHref(href: string): Promise<void> {
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell');
+    await open(href);
+  } catch {
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }
+}
+
 const markdownComponents = {
   table({ children }: any) {
     return <div className="table-wrapper"><table>{children}</table></div>;
@@ -345,7 +354,7 @@ const markdownComponents = {
         if (!href) return;
         const openManagedPath = window.aegis?.managedFiles?.open || window.aegis?.uploads?.open;
         if (isLocalFilePath(href) && openManagedPath) { await openManagedPath(href); return; }
-        window.open(href, '_blank');
+        await openExternalHref(href);
       }} className="text-aegis-primary hover:text-aegis-primary/70 underline underline-offset-2">
         {children}
       </a>
@@ -536,8 +545,8 @@ function stripInlineCodeTicks(md: string): string {
           isEmptyAssistantStreaming
             ? 'bg-transparent shadow-none p-0 pl-0 pr-0 py-0'
             : isUser
-              ? 'bg-aegis-primary/[0.10]'
-              : 'bg-[rgb(var(--aegis-overlay)/0.03)] hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
+              ? 'bg-aegis-primary/[0.10] border border-aegis-primary/20 shadow-sm'
+              : 'bg-[rgb(var(--aegis-overlay)/0.03)] hover:bg-[rgb(var(--aegis-overlay)/0.06)] border border-[rgb(var(--aegis-overlay)/0.06)]',
           block.isStreaming && !isEmptyAssistantStreaming && 'ring-1 ring-aegis-primary/30',
         )} style={{ width: 'auto' }}>
 
@@ -621,7 +630,7 @@ function stripInlineCodeTicks(md: string): string {
               <div
                 className={clsx(
                   'inline-flex items-center gap-1.5 select-none',
-                  'px-3 py-2 rounded-xl border border-aegis-primary/20 bg-aegis-primary/10 shadow-[0_0_18px_rgb(var(--aegis-primary)/0.08)]',
+                  'px-3 py-2 rounded-xl border border-aegis-primary/25 bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_14%,rgb(var(--aegis-elevated)))] shadow-[0_0_18px_rgb(var(--aegis-primary)/0.12)]',
                 )}
                 aria-label={t('chat.assistantPreparing', 'Assistant is preparing a response')}
               >
