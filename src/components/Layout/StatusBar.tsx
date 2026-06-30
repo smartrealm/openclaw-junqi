@@ -56,7 +56,7 @@ export function StatusBar() {
   };
 
   return (
-    <footer className="flex items-center gap-0 h-[26px] border-t border-aegis-border bg-aegis-surface text-[11px] shrink-0 select-none overflow-hidden" role="status">
+    <footer className="flex items-center gap-0 h-[26px] min-w-0 border-t border-aegis-border bg-aegis-surface text-[11px] shrink-0 select-none overflow-hidden whitespace-nowrap" role="status">
       {/* 网关 + 端口 */}
       <span className="flex items-center gap-1.5 px-3 h-full border-r border-aegis-border/50">
         <span className="w-[5px] h-[5px] rounded-full" style={{ background: connected ? 'var(--aegis-success)' : 'var(--aegis-danger)' }} />
@@ -105,7 +105,7 @@ export function StatusBar() {
         </span>
       )}
 
-      <span className="flex-1 min-w-0" />
+      <span className="min-w-0 shrink" />
 
       {/* 番茄钟 */}
       {pomoEnabled ? (
@@ -147,7 +147,7 @@ export function StatusBar() {
         className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
         title={t('statusBar.switchTheme', '切换主题')}>
         <Palette size={10} />
-        <span>{t('statusBar.theme', '主题')}</span>
+        <span>{t('statusBar.theme', '切换')}</span>
       </button>
 
       {uiScale && uiScale !== 100 && <span className="px-2 text-aegis-text-dim opacity-50 font-mono text-[10px]">{uiScale}%</span>}
