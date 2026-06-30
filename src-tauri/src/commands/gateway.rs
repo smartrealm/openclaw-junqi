@@ -460,6 +460,17 @@ pub async fn restart_gateway(
     Err("Gateway restart completed but health check did not pass in time".to_string())
 }
 
+/// Front-end bridge (`aegis-adapter.ts → gateway.retry()`) invokes the command
+/// named `restart_local_gateway`. Exposed as a thin alias so the existing
+/// bridge keeps working without renaming JS-side code.
+#[tauri::command]
+pub async fn restart_local_gateway(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+) -> Result<GatewayStatus, String> {
+    restart_gateway(app, state, None).await
+}
+
 #[tauri::command]
 pub async fn start_gateway(
     app: AppHandle,
@@ -650,28 +661,43 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         return Ok(GatewayStatus { running: true, port, pid: None, token });
     }
 
-    // 1. Our own managed child takes priority. Scope the lock so it is dropped
-    //    before any `.await` below (std Mutex guards are not Send across await).
-    {
+    // 1. Our own managed child takes priority. Compute the "still alive" flag
+    //    and PID first (synchronously), then drop the lock, then await the
+    //    healthz probe — std Mutex guards are not Send across await.
+    let (child_alive, child_pid) = {
         let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
         if let Some(ref mut child) = *child_lock {
             match child.try_wait() {
                 Ok(Some(_status)) => {
                     // Process exited — clear it and fall through to external probe.
                     *child_lock = None;
+                    (false, None)
                 }
                 Ok(None) => {
-                    let status_token = {
-                        let raw = std::fs::read_to_string(&paths::config_path()).ok();
-                        raw.as_deref()
-                            .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
-                            .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
-                    };
-                    return Ok(GatewayStatus { running: true, port, pid: child.id(), token: status_token });
+                    // Process is still running — keep the lock here and capture
+                    // the PID. The lock is dropped at the end of this block.
+                    (true, child.id())
                 }
                 Err(e) => return Err(format!("Failed to check gateway status: {}", e)),
             }
+        } else {
+            (false, None)
         }
+    };
+    if child_alive {
+        // Probe the actual HTTP /healthz endpoint so `running` reflects
+        // "ready to serve" not just "process is alive". Returning false here
+        // causes the UI to keep waiting — BootTimelineOverlay will retry.
+        if !is_gateway_serving(port).await {
+            return Ok(GatewayStatus { running: false, port, pid: child_pid, token: None });
+        }
+        let status_token = {
+            let raw = std::fs::read_to_string(&paths::config_path()).ok();
+            raw.as_deref()
+                .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
+                .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
+        };
+        return Ok(GatewayStatus { running: true, port, pid: child_pid, token: status_token });
     }
 
     // 2. No managed child: probe on the last-known port (set by start_gateway).
