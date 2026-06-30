@@ -1913,5 +1913,33 @@
       "conversation": "Waiting for recent history and sessions.list",
       "background": "Waiting for cost / usage / agents"
     }
+  },
+  "sessions": {
+    "title": "Sessions",
+    "subtitle": "Active and idle agent sessions",
+    "filterAll": "All",
+    "filterRunning": "Running",
+    "filterIdle": "Idle",
+    "filterSubagent": "Sub-agents",
+    "refresh": "Refresh",
+    "loading": "Loading sessions…",
+    "empty": "No sessions found",
+    "emptyFilter": "Try switching to a different filter",
+    "emptyHint": "Sessions will appear here when agents are active",
+    "statusRunning": "Running",
+    "statusIdle": "Idle",
+    "typeMain": "Main",
+    "typeSubagent": "Sub-agent",
+    "typeAgent": "Agent",
+    "typeSession": "Session",
+    "context": "Context",
+    "tokensUsed": "{{tokens}} tokens used",
+    "totalTokens": "{{tokens}} total",
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago",
+    "searchPlaceholder": "Search by agent, model, session key...",
+    "clearSearch": "Clear"
   }
 }

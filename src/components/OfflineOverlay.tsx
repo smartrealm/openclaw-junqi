@@ -58,8 +58,7 @@ export function OfflineOverlay() {
           </div>
         )}
 
-        {!connecting && (
-          <div className="flex items-center justify-center gap-2 flex-wrap">
+        <div className="flex items-center justify-center gap-2 flex-wrap">
             <button
               onClick={() => void retryGateway()}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px]
@@ -86,8 +85,7 @@ export function OfflineOverlay() {
                 <MonitorDot size={11} /> {t('settings.controlUi', 'Control UI')}
               </button>
             )}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

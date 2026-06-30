@@ -1424,5 +1424,33 @@
       "connected": "متصل",
       "error": "خطأ"
     }
+  },
+  "sessions": {
+    "title": "الجلسات",
+    "subtitle": "جلسات الوكلاء النشطة والخاملة",
+    "filterAll": "الكل",
+    "filterRunning": "قيد التشغيل",
+    "filterIdle": "خامل",
+    "filterSubagent": "الوكلاء الفرعيون",
+    "refresh": "تحديث",
+    "loading": "جارٍ تحميل الجلسات…",
+    "empty": "لم يتم العثور على جلسات",
+    "emptyFilter": "جرّب تغيير عامل التصفية",
+    "emptyHint": "ستظهر الجلسات هنا عندما تكون الوكلاء نشطة",
+    "statusRunning": "قيد التشغيل",
+    "statusIdle": "خامل",
+    "typeMain": "رئيسية",
+    "typeSubagent": "وكيل فرعي",
+    "typeAgent": "وكيل",
+    "typeSession": "جلسة",
+    "context": "السياق",
+    "tokensUsed": "{{tokens}} رموز مستخدمة",
+    "totalTokens": "{{tokens}} إجمالي",
+    "justNow": "الآن",
+    "minutesAgo": "قبل {{count}} د",
+    "hoursAgo": "قبل {{count}} س",
+    "daysAgo": "قبل {{count}} يوم",
+    "searchPlaceholder": "ابحث حسب الوكيل أو النموذج أو مفتاح الجلسة...",
+    "clearSearch": "مسح"
   }
 }

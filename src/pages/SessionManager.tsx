@@ -5,30 +5,31 @@
 
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Users, RefreshCw, Loader2, Zap, Clock, Bot, Activity } from 'lucide-react';
+import { Users, RefreshCw, Loader2, Zap, Clock, Bot, Activity, Search } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useGatewayDataStore, refreshGroup } from '@/stores/gatewayDataStore';
 import { formatTokens } from '@/utils/format';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
-import type { SessionInfo } from '@/stores/gatewayDataStore';
+import type { AgentInfo, SessionInfo } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
+import { Badge, StatusDot } from '@/components/shared/badge';
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
 /** Relative time — e.g. "2m ago", "1h ago", "just now" */
-function formatTimeAgo(ts: string | undefined | null): string {
+function formatTimeAgo(ts: string | undefined | null, t: ReturnType<typeof useTranslation>['t']): string {
   if (!ts) return '—';
   try {
     const d = new Date(ts);
     if (isNaN(d.getTime())) return '—';
     const diff = Date.now() - d.getTime();
-    if (diff < 0) return 'just now';
-    if (diff < 60_000) return 'just now';
-    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-    return `${Math.floor(diff / 86_400_000)}d ago`;
+    if (diff < 0) return t('sessions.justNow', 'just now');
+    if (diff < 60_000) return t('sessions.justNow', 'just now');
+    if (diff < 3_600_000) return t('sessions.minutesAgo', { count: Math.floor(diff / 60_000), defaultValue: `${Math.floor(diff / 60_000)}m ago` });
+    if (diff < 86_400_000) return t('sessions.hoursAgo', { count: Math.floor(diff / 3_600_000), defaultValue: `${Math.floor(diff / 3_600_000)}h ago` });
+    return t('sessions.daysAgo', { count: Math.floor(diff / 86_400_000), defaultValue: `${Math.floor(diff / 86_400_000)}d ago` });
   } catch {
     return '—';
   }
@@ -63,18 +64,41 @@ const FILTERS: { id: FilterType; labelKey: string; fallback: string }[] = [
   { id: 'subagent', labelKey: 'sessions.filterSubagent', fallback: 'Sub-agents' },
 ];
 
+
+function getAgentId(session: SessionInfo): string | undefined {
+  if (typeof session.agentId === 'string' && session.agentId.trim()) return session.agentId.trim();
+  const parts = String(session.key || '').split(':');
+  return parts[0] === 'agent' && parts[1] ? parts[1] : undefined;
+}
+
+function getSessionKind(session: SessionInfo): 'main' | 'subagent' | 'agent' | 'session' {
+  if (session.key === 'agent:main:main') return 'main';
+  if (String(session.key || '').includes(':subagent:')) return 'subagent';
+  if (String(session.key || '').startsWith('agent:')) return 'agent';
+  return 'session';
+}
+
+function shortModel(model?: string): string | undefined {
+  if (!model) return undefined;
+  return String(model).split('/').pop() || model;
+}
+
 // ═══════════════════════════════════════════════════════════
 // SessionCard
 // ═══════════════════════════════════════════════════════════
 
 interface SessionCardProps {
   session: SessionInfo;
+  agentNameById: Record<string, string>;
 }
 
-function SessionCard({ session }: SessionCardProps) {
+function SessionCard({ session, agentNameById }: SessionCardProps) {
   const { t } = useTranslation();
   const isRunning = session.running === true;
-  const isSubAgent = session.key.includes(':subagent:');
+  const kind = getSessionKind(session);
+  const isSubAgent = kind === 'subagent';
+  const agentId = getAgentId(session);
+  const agentName = agentId ? (agentNameById[agentId] || agentId) : undefined;
   const pct = tokenPercent(session.contextTokens, session.maxTokens);
 
   const displayName = getSessionDisplayLabel(session, {
@@ -127,44 +151,42 @@ function SessionCard({ session }: SessionCardProps) {
         </div>
 
         {/* Status pill */}
-        <div
-          className={clsx(
-            'shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-[0.5px] border',
-            isRunning
-              ? 'bg-emerald-500/[0.08] border-emerald-500/20 text-emerald-400'
-              : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim',
-          )}
-        >
-          <span
-            className={clsx(
-              'w-[6px] h-[6px] rounded-full',
-              isRunning ? 'bg-emerald-400' : 'bg-[rgb(var(--aegis-overlay)/0.25)]',
-            )}
-            style={isRunning ? { animation: 'mc-dot-ping 2s ease-in-out infinite' } : undefined}
-          />
-          {isRunning ? 'Running' : 'Idle'}
-        </div>
+        <Badge tone={isRunning ? 'running' : 'neutral'} size="sm" variant="soft" className="shrink-0 uppercase tracking-[0.5px]">
+          <StatusDot tone={isRunning ? 'running' : 'idle'} size="sm" live={isRunning} />
+          {isRunning ? t('sessions.statusRunning', 'Running') : t('sessions.statusIdle', 'Idle')}
+        </Badge>
       </div>
 
-      {/* ── Row 2: model badge + compactions ── */}
+      {/* ── Row 2: agent + type + model tags ── */}
       <div className="flex items-center gap-2 flex-wrap">
-        {session.model && (
-          <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary/70">
-            {session.model}
-          </span>
+        {agentName && (
+          <Badge tone={agentId === 'main' ? 'ok' : 'info'} size="sm" variant="soft" className="font-medium">
+            <Bot size={10} />
+            {agentName}
+          </Badge>
         )}
 
-        {session.kind && (
-          <span className="text-[9px] px-2 py-0.5 rounded-md bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-dim">
-            {session.kind}
-          </span>
+        <Badge tone={isSubAgent ? 'attention' : kind === 'main' ? 'ok' : 'neutral'} size="sm" variant="outline">
+          {kind === 'main'
+            ? t('sessions.typeMain', 'Main')
+            : kind === 'subagent'
+              ? t('sessions.typeSubagent', 'Sub-agent')
+              : kind === 'agent'
+                ? t('sessions.typeAgent', 'Agent')
+                : t('sessions.typeSession', 'Session')}
+        </Badge>
+
+        {session.model && (
+          <Badge tone="info" size="sm" variant="soft" className="font-mono">
+            {shortModel(session.model)}
+          </Badge>
         )}
 
         {(session.compactions ?? 0) > 0 && (
-          <span className="flex items-center gap-0.5 text-[9px] text-aegis-warning/70 bg-aegis-warning/[0.06] border border-aegis-warning/10 px-2 py-0.5 rounded-md">
+          <Badge tone="warn" size="sm" variant="soft">
             <Zap size={9} />
             {session.compactions}
-          </span>
+          </Badge>
         )}
       </div>
 
@@ -174,7 +196,7 @@ function SessionCard({ session }: SessionCardProps) {
           <div className="flex items-center justify-between text-[9px] text-aegis-text-dim">
             <span className="flex items-center gap-1">
               <Activity size={9} />
-              Context
+              {t('sessions.context', 'Context')}
             </span>
             <span className="font-mono">
               {fmtTokens(session.contextTokens)} / {fmtTokens(session.maxTokens)}
@@ -191,18 +213,18 @@ function SessionCard({ session }: SessionCardProps) {
       ) : session.contextTokens ? (
         <div className="text-[9px] text-aegis-text-dim flex items-center gap-1">
           <Activity size={9} />
-          <span className="font-mono">{fmtTokens(session.contextTokens)} tokens used</span>
+          <span className="font-mono">{t('sessions.tokensUsed', { tokens: fmtTokens(session.contextTokens), defaultValue: `${fmtTokens(session.contextTokens)} tokens used` })}</span>
         </div>
       ) : null}
 
       {/* ── Row 4: last active ── */}
       <div className="flex items-center gap-1 text-[9px] text-aegis-text-dim">
         <Clock size={9} className="shrink-0" />
-        <span>{formatTimeAgo(session.lastActive)}</span>
+        <span>{formatTimeAgo(session.lastActive, t)}</span>
         {session.totalTokens != null && (
           <>
             <span className="mx-1 opacity-30">·</span>
-            <span className="font-mono">{fmtTokens(session.totalTokens)} total</span>
+            <span className="font-mono">{t('sessions.totalTokens', { tokens: fmtTokens(session.totalTokens), defaultValue: `${fmtTokens(session.totalTokens)} total` })}</span>
           </>
         )}
       </div>
@@ -217,31 +239,50 @@ function SessionCard({ session }: SessionCardProps) {
 export function SessionManagerPage() {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<FilterType>('all');
+  const [query, setQuery] = useState('');
 
   // ── Store ──
   const sessions = useGatewayDataStore((s) => s.sessions);
+  const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
   const loading   = useGatewayDataStore((s) => s.loading.sessions);
+
+  const agentNameById = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a.name || a.id])), [agents]);
 
   // ── Filtered list ──
   const filtered = useMemo<SessionInfo[]>(() => {
-    switch (filter) {
-      case 'running':
-        return sessions.filter((s) => s.running === true);
-      case 'idle':
-        return sessions.filter((s) => s.running !== true);
-      case 'subagent':
-        return sessions.filter((s) => s.key.includes(':subagent:'));
-      default:
-        return sessions;
-    }
-  }, [sessions, filter]);
+    const base = (() => {
+      switch (filter) {
+        case 'running':
+          return sessions.filter((s) => s.running === true);
+        case 'idle':
+          return sessions.filter((s) => s.running !== true);
+        case 'subagent':
+          return sessions.filter((s) => getSessionKind(s) === 'subagent');
+        default:
+          return sessions;
+      }
+    })();
+    const q = query.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter((s) => {
+      const agentId = getAgentId(s) || '';
+      const agentName = agentId ? (agentNameById[agentId] || agentId) : '';
+      const label = getSessionDisplayLabel(s, {
+        mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+        genericSessionLabel: t('dashboard.session', 'Session'),
+      });
+      return [label, s.key, s.model, s.kind, agentId, agentName]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [sessions, filter, query, agentNameById, t]);
 
   // ── Counts for filter badges ──
   const counts = useMemo(() => ({
     all:      sessions.length,
     running:  sessions.filter((s) => s.running === true).length,
     idle:     sessions.filter((s) => s.running !== true).length,
-    subagent: sessions.filter((s) => s.key.includes(':subagent:')).length,
+    subagent: sessions.filter((s) => getSessionKind(s) === 'subagent').length,
   }), [sessions]);
 
   // ═══ RENDER ═══
@@ -320,6 +361,22 @@ export function SessionManagerPage() {
         })}
       </div>
 
+      {/* ── Search ── */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)]">
+        <Search size={14} className="text-aegis-text-dim shrink-0" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('sessions.searchPlaceholder', 'Search by agent, model, session key...')}
+          className="flex-1 bg-transparent outline-none text-[12px] text-aegis-text placeholder:text-aegis-text-dim"
+        />
+        {query && (
+          <button onClick={() => setQuery('')} className="text-[10px] text-aegis-text-dim hover:text-aegis-text">
+            {t('sessions.clearSearch', 'Clear')}
+          </button>
+        )}
+      </div>
+
       {/* ── Content ── */}
       {loading && sessions.length === 0 ? (
         /* Initial loading state */
@@ -352,7 +409,7 @@ export function SessionManagerPage() {
         /* Sessions grid — 2 columns */
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 auto-rows-max overflow-y-auto pb-2">
           {filtered.map((session) => (
-            <SessionCard key={session.key} session={session} />
+            <SessionCard key={session.key} session={session} agentNameById={agentNameById} />
           ))}
         </div>
       )}

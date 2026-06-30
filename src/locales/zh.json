@@ -1951,5 +1951,33 @@
       "conversation": "等待最近历史和会话列表",
       "background": "等待成本 / 用量 / Agent 同步"
     }
+  },
+  "sessions": {
+    "title": "会话",
+    "subtitle": "查看当前活跃与空闲的智能体会话",
+    "filterAll": "全部",
+    "filterRunning": "运行中",
+    "filterIdle": "空闲",
+    "filterSubagent": "子智能体",
+    "refresh": "刷新",
+    "loading": "正在加载会话…",
+    "empty": "没有找到会话",
+    "emptyFilter": "试试切换筛选条件",
+    "emptyHint": "智能体开始运行后，会话会显示在这里",
+    "statusRunning": "运行中",
+    "statusIdle": "空闲",
+    "typeMain": "主会话",
+    "typeSubagent": "子智能体",
+    "typeAgent": "智能体",
+    "typeSession": "会话",
+    "context": "上下文",
+    "tokensUsed": "{{tokens}} tokens 已用",
+    "totalTokens": "{{tokens}} 总计",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}}分钟前",
+    "hoursAgo": "{{count}}小时前",
+    "daysAgo": "{{count}}天前",
+    "searchPlaceholder": "按智能体、模型、会话 key 搜索…",
+    "clearSearch": "清除"
   }
 }

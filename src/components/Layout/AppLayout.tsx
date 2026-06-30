@@ -51,21 +51,22 @@ export function AppLayout() {
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
           <div className="flex-1 overflow-y-auto scrollbar-thin h-full">
             <ErrorBoundary>
-              {showOffline ? (
-                <OfflineOverlay />
-              ) : (
-                <Suspense fallback={
-                  <div className="flex-1 flex items-center justify-center h-full">
-                    <Loader2 className="w-6 h-6 animate-spin text-aegis-primary/50" />
-                  </div>
-                }>
-                  <Outlet />
-                </Suspense>
-              )}
+              <Suspense fallback={
+                <div className="flex-1 flex items-center justify-center h-full">
+                  <Loader2 className="w-6 h-6 animate-spin text-aegis-primary/50" />
+                </div>
+              }>
+                <Outlet />
+              </Suspense>
             </ErrorBoundary>
           </div>
         </main>
       </div>
+      {showOffline && (
+        <div className="fixed inset-0 z-[9000] bg-aegis-bg/94 backdrop-blur-xl">
+          <OfflineOverlay />
+        </div>
+      )}
       {/* Bottom status bar — gateway / model / restart */}
       <StatusBar />
       {/* Command Palette overlay */}
