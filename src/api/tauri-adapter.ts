@@ -122,6 +122,18 @@ function invalidateGatewayPortCache(): void {
   _cachedGatewayToken = null;
 }
 
+async function restartLocalGateway(): Promise<{ success: boolean; method?: string; error?: string }> {
+  invalidateGatewayPortCache();
+  const port = await readGatewayPort();
+  try {
+    const result: any = await invoke("restart_gateway", { port });
+    if (result?.token) _cachedGatewayToken = result.token;
+    return { success: true, method: "gateway-restart" };
+  } catch (e: any) {
+    return { success: false, error: String(e) };
+  }
+}
+
 (window as any).aegis = {
   platform: detectPlatform(),
 
@@ -167,20 +179,7 @@ function invalidateGatewayPortCache(): void {
     detect: async () => { try { const d: any = await invoke("read_config"); return { path: d.path, exists: !!(d.raw && d.raw !== "{}") }; } catch { return { path: "", exists: false }; } },
     read: async () => { try { const d: any = await invoke("read_config"); return { data: JSON.parse(d.raw || "{}"), path: d.path }; } catch { return { data: {}, path: "" }; } },
     write: async (_p: string, d: any) => { try { await invoke("write_config", { json: JSON.stringify(d, null, 2) }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
-    restart: async () => {
-      // Config saves should restart the real local OpenClaw Gateway service,
-      // not merely reconnect to an already-running listener. Keep this aligned
-      // with window.aegis.gateway.retry().
-      invalidateGatewayPortCache();
-      const port = await readGatewayPort();
-      try {
-        const result: any = await invoke("restart_gateway", { port });
-        if (result?.token) _cachedGatewayToken = result.token;
-        return { success: true, method: "gateway-restart" };
-      } catch (e: any) {
-        return { success: false, error: String(e) };
-      }
-    },
+    restart: restartLocalGateway,
     validateOpenclawJson: async () => { try { const d: any = await invoke("read_config"); return { valid: true, path: d.path, exists: true }; } catch { return { valid: false, path: "", exists: false }; } },
     backupAndResetOpenclaw: async () => { try { await invoke("write_config", { json: "{}" }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
   },
@@ -208,14 +207,7 @@ function invalidateGatewayPortCache(): void {
         return { success: false, error: String(e) };
       }
     },
-    retry: async () => {
-      const port = await readGatewayPort();
-      try {
-        const result: any = await invoke("restart_gateway", { port });
-        if (result?.token) _cachedGatewayToken = result.token;
-        return { success: true, method: "gateway-restart" };
-      } catch (e: any) { return { success: false, error: String(e) }; }
-    },
+    retry: restartLocalGateway,
     onStatusChanged: (cb: any) => {
       let unlistenFn: (() => void) | null = null;
       let lastLogs = { stdout: "", stderr: "" };
