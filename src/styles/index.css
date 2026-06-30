@@ -194,6 +194,14 @@
     transition-timing-function: ease;
   }
 
+  /* Sidebar width animation — CSS-driven (not framer) so theme-switch
+     re-renders don't refire it and squeeze the content area. Suppressed
+     during theme swap by the .theme-switching rule below. */
+  .sidebar-width-anim {
+    transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: width;
+  }
+
   /* Theme switch suppression */
   html.theme-switching,
   html.theme-switching *,

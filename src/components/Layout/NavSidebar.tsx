@@ -3,7 +3,6 @@
 
 import { useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -266,20 +265,20 @@ export function NavSidebar() {
   if (isHidden) return null;
 
   return (
-    <motion.aside
-      initial={false}
-      animate={{ width: targetWidth, opacity: 1 }}
-      transition={{ type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.24 }}
+    <aside
       className={clsx(
-        'shrink-0 flex flex-col overflow-hidden py-3',
+        'shrink-0 flex flex-col overflow-hidden py-3 sidebar-width-anim',
         isMini ? 'items-center' : 'items-stretch',
         'border-r border-aegis-border',
       )}
-      style={{ background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))' }}
+      style={{
+        width: targetWidth,
+        background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))',
+      }}
       aria-label="侧边导航栏"
     >
       {isMini  ? <MiniView tab={tab} /> : null}
       {isExpanded ? <ExpandedView tab={tab} /> : null}
-    </motion.aside>
+    </aside>
   );
 }
