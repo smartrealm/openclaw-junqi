@@ -126,7 +126,7 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
   );
 }
 
-const PREVIEWABLE_EXTS = ['md', 'markdown', 'txt', 'text', 'log', 'json', 'html', 'htm', 'csv', 'xml', 'yml', 'yaml', 'js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'sh', 'sql'];
+const PREVIEWABLE_EXTS = ['md', 'markdown', 'txt', 'text', 'log', 'json', 'html', 'htm', 'csv', 'xml', 'yml', 'yaml', 'js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'sh', 'sql', 'ppt', 'pptx'];
 
 function getFileIconByExt(ext: string): LucideIcon {
   const e = ext.toLowerCase();

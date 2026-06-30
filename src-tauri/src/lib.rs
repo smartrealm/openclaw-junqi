@@ -57,6 +57,8 @@ pub fn run() {
             commands::managed_files::managed_file_open,
             commands::managed_files::managed_file_reveal,
             commands::managed_files::managed_file_exists,
+            commands::managed_files::list_directory,
+            commands::managed_files::read_file_text,
 
             commands::console::write_models_log,
             // Config

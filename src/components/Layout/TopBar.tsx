@@ -189,7 +189,7 @@ export function TopBar() {
         // for the traffic-light cluster, 28×28 icon buttons, items-center so
         // everything (native lights, sidebar toggle, AI pill, bell) shares
         // the same horizontal centre line at y=16.
-        'h-[32px] shrink-0 flex items-center gap-1.5 chrome-bg border-b border-aegis-border select-none relative z-20',
+        'h-[32px] shrink-0 flex items-center gap-1.5 chrome-bg select-none relative z-20 border-b border-aegis-border/30',
         isMac ? 'ps-[82px] pe-3' : 'px-3',
       )}
     >

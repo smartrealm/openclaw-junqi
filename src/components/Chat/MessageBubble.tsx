@@ -525,24 +525,20 @@ function stripInlineCodeTicks(md: string): string {
 
       {/* ── Content Column ── */}
       <div className="flex flex-col min-w-0"
-        style={{ width: '100%', maxWidth: 'min(1000px, 78%)', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+        style={{ width: '100%', maxWidth: 'min(640px, 72%)', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
 
         {/* Bubble */}
 
         {/* Bubble */}
         <div className={clsx(
-          'relative block border rounded-2xl py-3 transition-colors duration-150',
-          // Always reserve right padding for the Copy button (kooky/Claude-style).
-          // The button sits absolutely on the right edge; text wraps around the
-          // reserved gutter so it never gets covered, even when the button is
-          // invisible. `pl-4 pr-9` = 16px left, 36px right (28px button + 8px gap).
+          'relative block rounded-xl py-2.5 transition-colors duration-150',
           'pl-4 pr-9 max-w-full box-border min-w-0 break-words group/bubble',
           isEmptyAssistantStreaming
-            ? 'bg-transparent border-transparent shadow-none py-1 pl-0 pr-0'
+            ? 'bg-[rgb(var(--aegis-overlay)/0.04)] shadow-sm py-2 px-3'
             : isUser
-              ? 'bg-aegis-primary/[0.10] border-aegis-primary/15 hover:border-aegis-primary/30'
-              : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.05)] hover:border-[rgb(var(--aegis-overlay)/0.10)]',
-          block.isStreaming && !isEmptyAssistantStreaming && 'border-aegis-primary/35 streaming-border',
+              ? 'bg-aegis-primary/[0.10]'
+              : 'bg-[rgb(var(--aegis-overlay)/0.03)] hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
+          block.isStreaming && !isEmptyAssistantStreaming && 'ring-1 ring-aegis-primary/30',
         )} style={{ width: 'auto' }}>
 
           {/* Floating Copy button — top-right corner of the FIRST line, hugging
@@ -620,11 +616,12 @@ function stripInlineCodeTicks(md: string): string {
                   />
                 </pre>
               )}
-              {/* Thinking prelude — no text label; just a subtle three-dot motion. */}
+              {/* Thinking prelude — only when empty, otherwise blink caret is enough */}
+              {isEmptyAssistantStreaming && (
               <div
                 className={clsx(
                   'inline-flex items-center gap-1.5 select-none',
-                  isEmptyAssistantStreaming && 'px-3 py-2 rounded-2xl border border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.025)] shadow-sm',
+                  'px-3 py-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.12)] bg-[rgb(var(--aegis-overlay)/0.06)] shadow-sm',
                 )}
                 aria-label={t('chat.assistantPreparing', 'Assistant is preparing a response')}
               >
@@ -647,6 +644,7 @@ function stripInlineCodeTicks(md: string): string {
                   </span>
                 )}
               </div>
+              )}
             </div>
           ) : (
             <div className="markdown-body text-[15px] leading-relaxed text-aegis-text">

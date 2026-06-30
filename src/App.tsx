@@ -186,6 +186,7 @@ export default function App() {
           totalTokens: s.totalTokens,
           contextTokens: s.contextTokens,
           compactionCount: s.compactionCount,
+          running: s.running ?? false,
         };
       });
       // Always sync sessions/defaults, even when the session list is currently empty.

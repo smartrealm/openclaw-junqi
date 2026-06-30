@@ -638,7 +638,7 @@ export function MessageInput() {
         const hidden = queue.length - visible.length;
         return (
         <div className="px-4 pt-3" dir={dir}>
-          <div className="rounded-xl border border-aegis-warning/25 bg-aegis-warning/[0.07] overflow-hidden">
+          <div className="rounded-xl ring-1 ring-aegis-warning/15 bg-aegis-warning/[0.06] overflow-hidden">
             {/* Header */}
             <div className="flex items-center gap-2 px-3 py-2">
               <Clock size={13} className="text-aegis-warning shrink-0" />
@@ -688,7 +688,7 @@ export function MessageInput() {
                           value={editingQueueText}
                           onChange={(e) => setEditingQueueText(e.target.value)}
                           rows={2}
-                          className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[12px] text-aegis-text border border-aegis-border outline-none focus:border-aegis-primary/30 resize-none"
+                          className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] rounded-lg p-2 text-[12px] text-aegis-text outline-none resize-none"
                         />
                         <div className="flex gap-1.5 mt-1.5">
                           <button
@@ -1141,7 +1141,7 @@ export function MessageInput() {
               className={clsx(
                 'flex-1 resize-none bg-transparent border-none text-[14px]',
                 'text-aegis-text placeholder:text-aegis-text-muted',
-                'focus:outline-none py-1.5 px-1 leading-[1.2]',
+                'focus:outline-none focus-visible:shadow-none py-1.5 px-1 leading-[1.2]',
                 'max-h-[180px] scrollbar-hidden'
               )}
               dir={dir} />
@@ -1154,8 +1154,8 @@ export function MessageInput() {
               className={clsx(
                 'w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0 transition-all relative',
                 text.trim() || files.length > 0
-                  ? 'bg-gradient-to-br from-aegis-primary to-aegis-primary/70 text-aegis-bg shadow-[0_2px_8px_rgb(var(--aegis-primary)/0.3)] hover:shadow-[0_4px_16px_rgb(var(--aegis-primary)/0.4)] hover:-translate-y-px'
-                  : 'bg-[rgb(var(--aegis-input))] border border-aegis-border text-aegis-text-muted',
+                  ? 'bg-aegis-primary text-white shadow-[0_2px_8px_rgb(var(--aegis-primary)/0.3)] hover:shadow-[0_4px_16px_rgb(var(--aegis-primary)/0.4)] hover:-translate-y-px'
+                  : 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
                 'disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none'
               )}
               title={isHistoryWarmupGate ? t('input.historyLoading') : (isTyping ? t('input.queue', 'Queue') : t('input.send'))}>

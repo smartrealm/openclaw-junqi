@@ -1,203 +1,402 @@
-// ═══════════════════════════════════════════════════════════
-// NavSidebar — Compact icon-only sidebar (64px)
-// Matches conceptual design: icons + active bar + user avatar
-// ═══════════════════════════════════════════════════════════
+// NavSidebar — Context-sensitive sidebar (Strategy Pattern)
+//
+// 顶层组件只负责容器 + 状态路由。Tab → Panel 的映射通过 PanelRegistry
+// 注入，避免组件内 switch case。新增 Tab 只需在 registry 注册，
+// 不必修改 NavSidebar。
 
-import { NavLink, useLocation } from 'react-router-dom';
-import { NavSidebarFooter } from './NavSidebarFooter';
-import { useTranslation } from 'react-i18next';
+import { useMemo, type ReactNode, type ComponentType } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import {
-  LayoutDashboard, MessageCircle, Kanban, DollarSign,
-  Clock, Bot, Settings2, Brain, Puzzle,
-  Terminal, FolderOpen, CalendarDays, Activity, Sparkles,
-  PanelLeftOpen, PanelLeftClose, History, GitBranch,
-} from 'lucide-react';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { getDirection } from '@/i18n';
-import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { resolveTab, type SidebarTab } from './tab-utils';
+import { sessionTitle, isSessionActive, partitionSessions, type PanelActions } from './sidebarUtils';
+import { SidebarRow, SidebarSection } from './SidebarRow';
 
-interface NavItem {
-  to: string;
-  icon: any;
-  labelKey: string;
-  badge?: string;
-  feature: EditionFeatureKey;
-  /** When set, the item is rendered in a submenu (e.g. 'advanced'). */
-  submenu?: 'advanced';
+// ═══════════════════════════════════════════════════════════
+// Strategy 接口
+// ═══════════════════════════════════════════════════════════
+
+interface PanelStrategy {
+  /** 主操作按钮（顶部） */
+  primary: {
+    label: string;
+    icon: ReactNode;
+    onClick: (navigate: ReturnType<typeof useNavigate>) => void;
+    filled?: boolean;
+  } | null;
+  /** 分组列表 */
+  groups: Array<{
+    label: string;
+    rows: Array<{
+      key: string;
+      icon?: ReactNode;
+      title: string;
+      meta?: string;
+      live?: boolean;
+      active?: boolean;
+      to?: string;
+      onClick?: () => void;
+    }>;
+  }>;
+  /** 空状态文案 */
+  emptyText?: string;
 }
 
-const navItemDefs: NavItem[] = [
-  { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', feature: 'dashboard' },
-  { to: '/chat', icon: MessageCircle, labelKey: 'nav.chat', feature: 'chat' },
-  { to: '/workshop', icon: Kanban, labelKey: 'nav.workshop', feature: 'workshop' },
-  { to: '/kanban', icon: LayoutDashboard, labelKey: 'nav.kanban', feature: 'workshop' },
-  { to: '/cron', icon: Clock, labelKey: 'nav.cron', feature: 'cron' },
-  { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
-  { to: '/costs', icon: DollarSign, labelKey: 'nav.costs', feature: 'analytics' },
-  { to: '/skills', icon: Puzzle, labelKey: 'nav.skills', feature: 'skills' },
-  { to: '/terminal', icon: Terminal, labelKey: 'nav.terminal', feature: 'terminal' },
-  { to: '/agent-run', icon: Sparkles, labelKey: 'nav.agentRun', feature: 'agentRun', submenu: 'advanced' },
-  { to: '/memory', icon: Brain, labelKey: 'nav.memory', badge: 'BETA', feature: 'memory' },
-  { to: '/files', icon: FolderOpen, labelKey: 'nav.files', feature: 'files' },    { to: '/calendar', icon: CalendarDays, labelKey: 'nav.calendar', feature: 'calendar' },
-  { to: '/config', icon: Settings2, labelKey: 'nav.config', feature: 'configManager' },
-  { to: '/perf', icon: Activity, labelKey: 'nav.performance', feature: 'logs' }, // reuse logs flag or always show
-];
+type PanelComponent = (actions: PanelActions) => PanelStrategy;
 
-const navItems = navItemDefs.filter((item) => isFeatureEnabled(item.feature));
+// ═══════════════════════════════════════════════════════════
+// 工具函数：useNavigate 同步桥
+// ═══════════════════════════════════════════════════════════
 
+function useNavActions(): PanelActions {
+  const navigate = useNavigate();
+  return {
+    navigate: (to: string) => navigate(to),
+    goSession: (key: string) => {
+      useChatStore.getState().setActiveSession(key);
+      navigate('/chat');
+    },
+    navigateActiveSession: (key: string) => {
+      useChatStore.getState().setActiveSession(key);
+      navigate('/chat');
+    },
+  };
+}
 
-// Prefetch heavy lazy chunks on hover (before click)
-const PREFETCH_MAP: Record<string, () => void> = {
-  '/chat': () => import('@/pages/ChatPage'),
-  '/costs': () => import('@/pages/FullAnalytics'),
-  '/cron': () => import('@/pages/CronMonitor'),
-  '/terminal': () => import('@/pages/TerminalPage'),
-};
+// ═══════════════════════════════════════════════════════════
+// 4 个 Panel 策略实现
+// ═══════════════════════════════════════════════════════════
 
-export function NavSidebar() {
+const workbenchPanel: PanelComponent = (act) => {
   const { t } = useTranslation();
   const location = useLocation();
-  // Collapse toggle now lives in the TopBar; sidebar only reads the state.
-  const { language, sidebarCollapsed, sidebarMode } = useSettingsStore();
-  const dir = getDirection(language);
-  const isRTL = dir === 'rtl';
+  const sessions = useChatStore((st) => st.sessions) ?? [];
+  const typingBySession = useChatStore((st) => st.typingBySession) ?? {};
+  const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
+  const { active, recent } = partitionSessions(sessions, typingBySession);
 
-  const borderClass = isRTL ? 'border-l' : 'border-r';
+  return {
+    primary: {
+      label: t('sidebar.newChat', '新建对话'),
+      icon: <Plus size={14} />,
+      onClick: (n) => n('/chat'),
+      filled: true,
+    },
+    groups: [
+      ...(active.length > 0 ? [{
+        label: t('sidebar.active', '进行中'),
+        rows: active.map((sx) => ({
+          key: sx.key,
+          live: true,
+          title: sessionTitle(sx),
+          meta: typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined,
+          onClick: () => act.goSession(sx.key),
+        })),
+      }] : []),
+      ...(recent.length > 0 ? [{
+        label: t('sidebar.recent', '最近对话'),
+        rows: recent.slice(0, 20).map((sx) => ({
+          key: sx.key,
+          active: sx.key === activeKey,
+          title: sessionTitle(sx),
+          meta: typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined,
+          onClick: () => act.goSession(sx.key),
+        })),
+      }] : []),
+    ],
+    emptyText: t('sidebar.noSessions', '暂无对话'),
+  };
+};
 
-  // The element stays mounted across all three states so the width/opacity
-  // can animate smoothly. expanded = 220, mini = 64, hidden = 0.
-  const targetWidth = sidebarMode === 'expanded' ? 220
-    : sidebarMode === 'mini' ? 64
-      : 0;
-  const visible = sidebarMode !== 'hidden';
+const agentsPanel: PanelComponent = (act) => {
+  const { t } = useTranslation();
+  const agents: any[] = useGatewayDataStore((st) => st.agents) ?? [];
+  const sessions = useChatStore((st) => st.sessions) ?? [];
 
+  const runningIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const sx of sessions) {
+      if (isSessionActive(sx)) {
+        const parts = sx.key.split(':');
+        if (parts[0] === 'agent' && parts[1]) set.add(parts[1]);
+      }
+    }
+    return set;
+  }, [sessions]);
+
+  return {
+    primary: {
+      label: t('sidebar.newAgent', '新建智能体'),
+      icon: <Plus size={14} />,
+      onClick: (n) => n('/agents?new=1'),
+      filled: true,
+    },
+    groups: [
+      ...(agents.length > 0 ? [{
+        label: t('sidebar.active', '在线智能体'),
+        rows: agents.map((a) => ({
+          key: a.id,
+          live: runningIds.has(a.id),
+          title: a.name || a.id,
+          meta: typeof a.model === 'string' ? a.model.split('/').pop() : undefined,
+          onClick: () => act.navigate(`/agents?agent=${encodeURIComponent(a.id)}`),
+        })),
+      }] : []),
+      {
+        label: t('sidebar.subAgents', '子页面'),
+        rows: [
+          { key: '/memory',    icon: <Brain size={14} />,    title: t('nav.memory', '记忆管理'), onClick: () => act.navigate('/memory') },
+          { key: '/agent-run', icon: <Activity size={14} />, title: t('nav.agentRun', 'Agent 运行'), onClick: () => act.navigate('/agent-run') },
+          { key: '/skills',    icon: <Puzzle size={14} />,   title: t('nav.skills', '技能市场'), onClick: () => act.navigate('/skills') },
+        ],
+      },
+    ],
+    emptyText: t('sidebar.noAgents', '暂无已配置的智能体'),
+  };
+};
+
+const toolsPanel: PanelComponent = (act) => {
+  const { t } = useTranslation();
+  const location = useLocation();
+  return {
+    primary: {
+      label: t('sidebar.openTerminal', '快速打开终端'),
+      icon: <Terminal size={14} />,
+      onClick: (n) => n('/terminal'),
+      filled: false,
+    },
+    groups: [{
+      label: t('sidebar.toolCategories', '工具分类'),
+      rows: TOOL_CATEGORIES.map((it) => ({
+        key: it.to,
+        icon: it.icon,
+        title: it.label,
+        active: location.pathname === it.to,
+        onClick: () => act.navigate(it.to),
+      })),
+    }],
+  };
+};
+
+const settingsPanel: PanelComponent = (act) => {
+  const { t } = useTranslation();
+  const location = useLocation();
+  return {
+    primary: undefined as never, // settings panel 无顶部按钮
+    groups: SETTINGS_GROUPS.map((g) => ({
+      label: g.label,
+      rows: g.items.map((it) => ({
+        key: it.to,
+        icon: it.icon,
+        title: it.label,
+        active: location.pathname === it.to,
+        onClick: () => act.navigate(it.to),
+      })),
+    })),
+  };
+};
+
+// ═══════════════════════════════════════════════════════════
+// 静态数据
+// ═══════════════════════════════════════════════════════════
+
+const TOOL_CATEGORIES: ReadonlyArray<{ to: string; icon: ReactNode; label: string }> = [
+  { to: '/sessions', icon: <ListChecks size={14} />, label: '会话历史' },
+  { to: '/workshop', icon: <Folder size={14} />,    label: '工作空间' },
+  { to: '/terminal', icon: <Terminal size={14} />,  label: '终端' },
+  { to: '/files',    icon: <FileText size={14} />,  label: '文件管理' },
+  { to: '/tools',    icon: <Database size={14} />,  label: 'MCP 工具' },
+  { to: '/cron',     icon: <Clock size={14} />,     label: '定时任务' },
+  { to: '/calendar', icon: <Calendar size={14} />,  label: '日历' },
+  { to: '/sandbox',  icon: <Wrench size={14} />,   label: '代码沙盒' },
+  { to: '/git',      icon: <Cpu size={14} />,       label: 'Git 仓库' },
+  { to: '/files',    icon: <Volume2 size={14} />,   label: '媒体预览' },
+] as const;
+
+interface SettingsGroup {
+  label: string;
+  items: ReadonlyArray<{ to: string; icon: ReactNode; label: string }>;
+}
+
+const SETTINGS_GROUPS: ReadonlyArray<SettingsGroup> = [
+  { label: '通用', items: [
+    { to: '/settings', icon: <Settings size={14} />, label: '通用设置' },
+    { to: '/config',   icon: <Bot size={14} />,      label: '智能体配置' },
+    { to: '/memory',   icon: <Brain size={14} />,    label: '记忆' },
+  ]},
+  { label: '诊断与监控', items: [
+    { to: '/logs',     icon: <FileText size={14} />,  label: '日志' },
+    { to: '/perf',     icon: <Activity size={14} />,  label: '性能' },
+    { to: '/analytics', icon: <BarChart3 size={14} />, label: '用量' },
+  ]},
+  { label: '管理', items: [
+    { to: '/sessions', icon: <MessageSquare size={14} />, label: '会话管理' },
+    { to: '/skills',   icon: <Puzzle size={14} />,       label: '技能' },
+  ]},
+] as const;
+
+// ═══════════════════════════════════════════════════════════
+// Panel Registry
+// ═══════════════════════════════════════════════════════════
+
+const PANEL_REGISTRY: Record<SidebarTab, PanelComponent> = {
+  workbench: workbenchPanel,
+  agents:    agentsPanel,
+  tools:     toolsPanel,
+  settings:  settingsPanel,
+};
+
+// ═══════════════════════════════════════════════════════════
+// Sidebar 子组件 — 纯展示，由父组件传入 strategy
+// ═══════════════════════════════════════════════════════════
+
+function PrimaryButton({ spec, onClick }: { spec: PanelStrategy['primary'] | undefined; onClick: (n: ReturnType<typeof useNavigate>) => void }) {
+  const navigate = useNavigate();
+  if (!spec) return null;
   return (
-    <motion.aside
-      // Seed the initial paint from the same target so the first frame is
-      // already at the right width (avoids framer defaulting to 0 and "popping"
-      // into view). Subsequent updates animate smoothly via tween.
-      initial={false}
-      animate={{ width: targetWidth, opacity: visible ? 1 : 0 }}
-      transition={{ type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.24 }}
-      style={{ width: targetWidth, willChange: 'width, opacity', background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))' }}
-      className={clsx(
-        'shrink-0 flex flex-col overflow-hidden overflow-x-hidden',
-        'chrome-bg', borderClass, 'border-aegis-border',
-        'py-3 relative',
-        sidebarMode === 'mini' ? 'items-center' : 'items-stretch',
-      )}
-    >
-      {/* Navigation Icons */}
-      <nav className={clsx('flex-1 flex flex-col gap-1 px-2 overflow-y-auto overflow-x-hidden', sidebarMode === 'mini' ? 'items-center' : 'items-stretch')}>
-        {navItems.filter((i) => !i.submenu).map((item) => {
-          const isActive = location.pathname === item.to ||
-            (item.to !== '/' && location.pathname.startsWith(item.to));
-
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onMouseEnter={() => PREFETCH_MAP[item.to]?.()}
-              aria-current={isActive ? 'page' : undefined}
-              className={clsx(
-                'relative h-[44px] rounded-lg',
-                'flex items-center',
-                'transition-all duration-300 group',
-                sidebarCollapsed ? 'w-[44px] justify-center' : 'w-full px-3 justify-start gap-2.5',
-                isActive
-                  ? 'bg-[rgb(var(--aegis-primary)/0.10)] text-aegis-primary'
-                  : 'text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
-              )}
-            >
-              {/* Active indicator bar — animated slide */}
-              {isActive && (
-                <motion.div
-                  layoutId="nav-active-bar"
-                  className={clsx(
-                    'absolute top-1/2 -translate-y-1/2',
-                    'w-[3px] h-[20px] rounded-full',
-                    'bg-aegis-primary',
-                    isRTL ? '-right-[12px]' : '-left-[12px]'
-                  )}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 400,
-                    damping: 30,
-                  }}
-                />
-              )}
-
-              <div className="relative" title={sidebarCollapsed ? t(item.labelKey, item.labelKey) : undefined}>
-                <item.icon size={18} />
-                {item.badge && !sidebarCollapsed && (
-                  <span className="absolute -top-1.5 -right-2 text-[8px]">{item.badge}</span>
-                )}
-              </div>
-
-              {!sidebarCollapsed && (
-                <span className="text-[12px] font-medium truncate">{t(item.labelKey)}</span>
-              )}
-
-              {/* Tooltip on hover */}
-              {sidebarCollapsed && (
-                <div className={clsx(
-                  'absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg',
-                  'bg-aegis-elevated-solid border border-aegis-border shadow-lg',
-                  'text-aegis-text text-[11px] font-medium whitespace-nowrap',
-                  'opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50',
-                  isRTL ? 'right-full mr-3' : 'left-full ml-3'
-                )}>
-                  {t(item.labelKey)}
-                </div>
-              )}
-            </NavLink>
-          );
-        })}
-
-        {/* Advanced submenu — collapsed by default, hides nezha-specific
-            power-user items that overlap with Chat. */}
-        {(() => {
-          const advanced = navItems.filter((i) => i.submenu === 'advanced');
-          if (advanced.length === 0) return null;
-          const isAdvancedOpen = !sidebarCollapsed;
-          return (
-            <div className={clsx('mt-3 pt-3', !sidebarCollapsed && 'border-t border-aegis-border/30')}>
-              {!sidebarCollapsed && (
-                <div className="text-[9.5px] font-bold uppercase tracking-wider text-aegis-text-dim mb-1.5 px-3">
-                  {t('nav.advanced', 'Advanced')}
-                </div>
-              )}
-              {advanced.map((item) => {
-                const isActive = location.pathname === item.to ||
-                  (item.to !== '/' && location.pathname.startsWith(item.to));
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    onMouseEnter={() => PREFETCH_MAP[item.to]?.()}
-                    aria-current={isActive ? 'page' : undefined}
-                    title={sidebarCollapsed ? t(item.labelKey) : undefined}
-                    className={clsx(
-                      'relative h-[36px] rounded-md flex items-center transition-all',
-                      sidebarCollapsed ? 'w-[36px] justify-center mx-auto' : 'w-full px-3 gap-2',
-                      isActive
-                        ? 'bg-[rgb(var(--aegis-primary)/0.10)] text-aegis-primary'
-                        : 'text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.04)]',
-                    )}>
-                    <item.icon size={15} />
-                    {!sidebarCollapsed && <span className="text-[11.5px] font-medium truncate">{t(item.labelKey)}</span>}
-                  </NavLink>
-                );
-              })}
-            </div>
-          );
-        })()}
-      </nav>
-
-      <NavSidebarFooter collapsed={sidebarCollapsed} />
-    </motion.aside>
+    <div className="px-3 mb-1">
+      <button
+        type="button"
+        onClick={() => spec.onClick(navigate)}
+        className={clsx(
+          'w-full h-9 rounded font-semibold text-[13px] flex items-center justify-center gap-1.5 transition-colors',
+          spec.filled
+            ? 'bg-aegis-primary text-white hover:opacity-90'
+            : 'bg-aegis-overlay/[0.05] border border-aegis-border text-aegis-text hover:bg-aegis-hover/40',
+        )}
+      >
+        {spec.icon}{spec.label}
+      </button>
+    </div>
   );
 }
 
+function PanelBody({ strategy }: { strategy: PanelStrategy }) {
+  const hasContent = strategy.groups.some((g) => g.rows.length > 0);
+  return (
+    <div className="flex-1 overflow-y-auto min-h-0">
+      {strategy.groups.map((g) => (
+        <SidebarSection key={g.label} label={g.label}>
+          {g.rows.map((r) => (
+            <SidebarRow
+              key={r.key}
+              icon={r.icon}
+              title={r.title}
+              meta={r.meta}
+              live={r.live}
+              active={r.active}
+              onClick={r.onClick ?? (() => {})}
+            />
+          ))}
+        </SidebarSection>
+      ))}
+      {!hasContent && strategy.emptyText && (
+        <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{strategy.emptyText}</div>
+      )}
+    </div>
+  );
+}
+
+/** 包装为真正的 React 组件 — PanelComponent 是返回 strategy 数据的纯函数，
+ *  不能直接作为 JSX 组件使用（会触发 hooks 规则违规）。
+ *  这里用一个空壳组件固定 hooks 调用点，确保每次 render 走同一条路径。 */
+function PanelRenderer({ tab, actions }: { tab: SidebarTab; actions: PanelActions }) {
+  const Panel: PanelComponent = PANEL_REGISTRY[tab] ?? workbenchPanel;
+  const strategy = Panel(actions);
+  return (
+    <>
+      <PrimaryButton spec={strategy.primary} onClick={() => {}} />
+      <PanelBody strategy={strategy} />
+    </>
+  );
+}
+
+function ExpandedView({ tab }: { tab: SidebarTab }) {
+  const actions = useNavActions();
+  return <PanelRenderer tab={tab} actions={actions} />;
+}
+
+function MiniView({ tab }: { tab: SidebarTab }) {
+  const navigate = useNavigate();
+  const items = miniItemsFor(tab);
+  return (
+    <nav className="flex flex-col items-center gap-1 px-2">
+      {items.map((it) => (
+        <button
+          key={it.to}
+          type="button"
+          title={it.label}
+          onClick={() => navigate(it.to)}
+          className="w-10 h-10 flex items-center justify-center rounded-lg text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40"
+        >
+          {it.icon}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function miniItemsFor(tab: SidebarTab): ReadonlyArray<{ to: string; icon: ReactNode; label: string }> {
+  switch (tab) {
+    case 'agents': return [
+      { to: '/agents?new=1', icon: <Plus size={18} />, label: '新建智能体' },
+      { to: '/agents', icon: <Bot size={18} />, label: '智能体' },
+      { to: '/memory', icon: <Brain size={18} />, label: '记忆' },
+    ];
+    case 'tools': return [
+      { to: '/terminal', icon: <Terminal size={18} />, label: '终端' },
+      { to: '/files', icon: <Folder size={18} />, label: '文件' },
+      { to: '/tools', icon: <Cpu size={18} />, label: 'MCP 工具' },
+    ];
+    case 'settings': return [
+      { to: '/settings', icon: <Settings size={18} />, label: '设置' },
+      { to: '/config', icon: <Bot size={18} />, label: '配置' },
+      { to: '/logs', icon: <FileText size={18} />, label: '日志' },
+    ];
+    case 'workbench':
+      return [
+        { to: '/chat', icon: <Plus size={18} />, label: '新建对话' },
+        { to: '/chat', icon: <MessageSquare size={18} />, label: '对话' },
+        { to: '/workshop', icon: <Folder size={18} />, label: '工作空间' },
+      ];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// NavSidebar 顶层 — 纯容器 + 状态路由
+// ═══════════════════════════════════════════════════════════
+
+export function NavSidebar() {
+  const location = useLocation();
+  const { sidebarMode } = useSettingsStore();
+  const isHidden = sidebarMode === 'hidden';
+  const isMini = sidebarMode === 'mini';
+  const isExpanded = sidebarMode === 'expanded';
+  const targetWidth = isExpanded ? 220 : isMini ? 64 : 0;
+  const tab = resolveTab(location.pathname);
+
+  if (isHidden) return null;
+
+  return (
+    <motion.aside
+      initial={false}
+      animate={{ width: targetWidth, opacity: 1 }}
+      transition={{ type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.24 }}
+      className={clsx(
+        'shrink-0 flex flex-col overflow-hidden py-3',
+        isMini ? 'items-center' : 'items-stretch',
+        'border-r border-aegis-border',
+      )}
+      style={{ background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))' }}
+      aria-label="侧边导航栏"
+    >
+      {isMini  ? <MiniView tab={tab} /> : null}
+      {isExpanded ? <ExpandedView tab={tab} /> : null}
+    </motion.aside>
+  );
+}

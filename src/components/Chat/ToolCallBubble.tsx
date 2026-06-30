@@ -91,19 +91,18 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
   const hasDetails = !!(tool.input && Object.keys(tool.input).length > 0) || !!tool.output;
 
   return (
-    <div className="ml-[42px] mr-4 py-[2px] max-w-[min(1000px,78%)]">
+    <div className="ml-[42px] mr-4 py-[2px]">
       <div
         className={clsx(
-          'rounded-lg transition-all duration-150 w-fit max-w-full',
+          'transition-all duration-150',
           hasDetails && 'cursor-pointer',
-          expanded
-            ? 'border border-[rgb(var(--aegis-overlay)/0.10)] bg-[rgb(var(--aegis-overlay)/0.03)]'
-            : 'hover:bg-[rgb(var(--aegis-overlay)/0.02)]',
+          expanded && 'bg-[rgb(var(--aegis-overlay)/0.03)]',
+          !expanded && 'hover:bg-[rgb(var(--aegis-overlay)/0.02)]',
         )}
         onClick={() => hasDetails && setExpanded((v) => !v)}
       >
         {/* ── Inline status row (Control UI style) ── */}
-        <div className="flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] max-w-full">
+        <div className="flex items-center gap-2 px-0 py-1 min-h-[28px]">
           {/* Status indicator */}
           {tool.status === 'running' ? (
             <Loader2 size={12} className="text-aegis-accent animate-spin shrink-0" />
@@ -129,14 +128,13 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
 
           {/* Summary / key param */}
           {summary && (
-            <span className="text-[10px] text-aegis-text-dim/60 font-mono truncate min-w-0 max-w-[520px]">
+            <span className="text-[10px] text-aegis-text-dim/60 font-mono truncate min-w-0">
               {summary}
             </span>
           )}
 
-          {/* Spacer */}
-          {/* Duration + expand */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Duration + expand — 右对齐 */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
             {tool.durationMs !== undefined && tool.status !== 'running' && (
               <span className="text-[11px] text-aegis-text-secondary font-mono tabular-nums font-medium px-1.5 py-0.5 rounded bg-[rgb(var(--aegis-overlay)/0.10)]">
                 {formatDuration(tool.durationMs)}
@@ -152,7 +150,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
 
         {/* ── Expanded detail panel ── */}
         {expanded && hasDetails && (
-          <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)] px-2.5 py-2 space-y-2">
+          <div className="px-2.5 py-2 space-y-2">
             {tool.input && Object.keys(tool.input).length > 0 && (
               <div>
                 <div className="text-[9px] font-medium text-aegis-text-dim/50 uppercase tracking-wider mb-1">Input</div>

@@ -228,6 +228,8 @@ export interface Session {
   totalTokens?: number;
   contextTokens?: number;
   compactionCount?: number;
+  // Runtime state from gateway
+  running?: boolean;
 }
 
 export interface TokenUsage {
