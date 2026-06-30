@@ -75,14 +75,15 @@ export function usePetStateEmitter() {
       // a timeout. The only stale case to reject is cold-boot residue: a session
       // whose running=true came from an old poll with NO event-driven timestamp
       // (runningUpdatedAt === 0). Any real running session has a timestamp.
+      // chatStore.Session has no runningUpdatedAt field, so only gatewayDataStore
+      // sessions can be trusted for "working" detection (running flag there is
+      // set by real-time events with an event-driven timestamp). Don't merge a
+      // cs.sessions branch that would be dead code.
       const isFreshRunning = (s: any) => {
         if (!s?.running) return false;
         return Number(s.runningUpdatedAt || 0) > 0;
       };
-      const runningSessions = [
-        ...gw.sessions.filter(isFreshRunning),
-        ...cs.sessions.filter(isFreshRunning),
-      ];
+      const runningSessions = gw.sessions.filter(isFreshRunning);
       const running = runningSessions.length > 0 || gw.runningSubAgents.length > 0;
       const isActive = typing || thinking || tool || running;
 
