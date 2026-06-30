@@ -21,6 +21,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Gateway
             commands::gateway::start_gateway,
+            commands::gateway::restart_gateway,
             commands::gateway::stop_gateway,
             commands::gateway::gateway_status,
             commands::gateway::probe_gateway_port,

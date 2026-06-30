@@ -221,10 +221,9 @@ function invalidateGatewayPortCache(): void {
     retry: async () => {
       const port = await readGatewayPort();
       try {
-        try { await invoke("stop_gateway"); } catch {}
-        await new Promise(r => setTimeout(r, 1000));
-        await invoke("start_gateway", { port });
-        return { success: true };
+        const result: any = await invoke("restart_gateway", { port });
+        if (result?.token) _cachedGatewayToken = result.token;
+        return { success: true, method: "gateway-restart" };
       } catch (e: any) { return { success: false, error: String(e) }; }
     },
     onStatusChanged: (cb: any) => {
@@ -252,11 +251,16 @@ function invalidateGatewayPortCache(): void {
         }
       };
 
-      listen("gateway-log", (event: any) => {
+      const handleProgress = (event: any) => {
         const line = String(event.payload ?? '');
         lastLogs = { stdout: line, stderr: "" };
+        cb({ running: false, ready: false, retrying: true, error: null, logs: lastLogs });
         void emitRealStatus();
-      }).then((fn: any) => { unlistenFn = fn; }).catch(() => {});
+      };
+
+      listen("gateway-log", handleProgress).then((fn: any) => { unlistenFn = fn; }).catch(() => {});
+      let unlistenRestartFn: (() => void) | null = null;
+      listen("gateway-restart-progress", handleProgress).then((fn: any) => { unlistenRestartFn = fn; }).catch(() => {});
 
       // Initial poll + periodic real status check (covers external gateway with no fresh logs)
       void emitRealStatus();
@@ -266,6 +270,7 @@ function invalidateGatewayPortCache(): void {
         stopped = true;
         clearInterval(timer);
         unlistenFn?.();
+        unlistenRestartFn?.();
       };
     },
   },

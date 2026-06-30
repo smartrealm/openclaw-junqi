@@ -347,6 +347,106 @@ async fn is_gateway_serving(port: u16) -> bool {
     matches!(reqwest::get(&url).await, Ok(resp) if resp.status().is_success())
 }
 
+
+fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
+    let line = line.as_ref().to_string();
+    let _ = app.emit("gateway-restart-progress", &line);
+    let _ = app.emit("gateway-log", &line);
+}
+
+#[tauri::command]
+pub async fn restart_gateway(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+    port: Option<u16>,
+) -> Result<GatewayStatus, String> {
+    let config_path = paths::config_path();
+    let meta = ConfigMetadata::load(&config_path);
+    let port = port.unwrap_or(meta.port);
+    *state.port.lock().map_err(|e| e.to_string())? = port;
+
+    emit_restart_progress(&app, format!("Restarting OpenClaw Gateway service on port {}...", port));
+
+    // Stop any foreground gateway spawned by this desktop app first. This does
+    // not affect a user-managed LaunchAgent/systemd/schtasks service.
+    let old_child = {
+        let mut lock = state.child.lock().map_err(|e| e.to_string())?;
+        lock.take()
+    };
+    if let Some(mut old) = old_child {
+        emit_restart_progress(&app, "Stopping desktop-managed gateway process...");
+        let _ = old.kill().await;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    let openclaw = resolve_openclaw_binary().ok_or_else(|| {
+        "OpenClaw not found. Run: npm install -g openclaw".to_string()
+    })?;
+    let gw_path = augmented_path();
+
+    // Restart the installed Gateway service (launchd/systemd/schtasks). This is
+    // the real local OpenClaw restart path; unlike start_gateway(), it does not
+    // simply return success when an external listener is already serving.
+    let mut cmd = tokio::process::Command::new(&openclaw);
+    cmd.args(["gateway", "--port", &port.to_string(), "restart"])
+        .env("PATH", &gw_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to restart gateway service: {}", e))?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    fn spawn_progress_reader(app: AppHandle, reader: impl tokio::io::AsyncRead + Unpin + Send + 'static) {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(reader).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                emit_restart_progress(&app, line);
+            }
+        });
+    }
+
+    if let Some(out) = stdout { spawn_progress_reader(app.clone(), out); }
+    if let Some(err) = stderr { spawn_progress_reader(app.clone(), err); }
+
+    let status = tokio::time::timeout(std::time::Duration::from_secs(45), child.wait())
+        .await
+        .map_err(|_| "Timed out while restarting gateway service".to_string())?
+        .map_err(|e| format!("Failed waiting for gateway restart: {}", e))?;
+    if !status.success() {
+        let msg = format!("openclaw gateway restart exited with {}", status);
+        emit_restart_progress(&app, &msg);
+        return Err(msg);
+    }
+
+    emit_restart_progress(&app, "Gateway service restart command completed; waiting for health check...");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
+    while std::time::Instant::now() < deadline {
+        if is_gateway_serving(port).await {
+            let token = std::fs::read_to_string(&config_path)
+                .ok()
+                .and_then(|r| serde_json::from_str::<serde_json::Value>(&r).ok())
+                .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()));
+            emit_restart_progress(&app, "Gateway health check passed.");
+            return Ok(GatewayStatus { running: true, port, pid: None, token });
+        }
+        emit_restart_progress(&app, "Waiting for Gateway to become reachable...");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    Err("Gateway restart completed but health check did not pass in time".to_string())
+}
+
 #[tauri::command]
 pub async fn start_gateway(
     app: AppHandle,

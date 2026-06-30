@@ -3,15 +3,26 @@
 // Transparent overlay with centered status — no blocking, no errors
 // ═══════════════════════════════════════════════════════════
 
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, WifiOff, FileText, MonitorDot, RotateCw } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 
 export function OfflineOverlay() {
   const { t } = useTranslation();
   const connecting = useChatStore((s) => s.connecting);
   const lastError = gateway.getLastError?.();
+  const [restartInfo, setRestartInfo] = useState({ retrying: false, logs: [] as string[] });
+
+  useEffect(() => gatewayManager.onStateChange((snap) => {
+    const latest = snap.logs?.stdout || snap.logs?.stderr;
+    setRestartInfo((prev) => ({
+      retrying: snap.retrying,
+      logs: latest ? [...prev.logs.slice(-7), latest] : prev.logs,
+    }));
+  }), []);
 
   const openLogsPage = () => {
     try { window.location.hash = '#/logs'; } catch {}
@@ -50,6 +61,24 @@ export function OfflineOverlay() {
             </p>
           </div>
         ) : null}
+
+        {(restartInfo.retrying || restartInfo.logs.length > 0) && (
+          <div className="mb-4 rounded-xl border border-aegis-primary/15 bg-[rgb(var(--aegis-overlay)/0.035)] overflow-hidden text-left">
+            <div className="h-1 bg-aegis-surface overflow-hidden">
+              <div className="h-full w-2/3 bg-aegis-primary animate-pulse" />
+            </div>
+            <div className="px-3 py-2">
+              <div className="text-[10px] font-semibold text-aegis-primary mb-1">
+                {restartInfo.retrying ? t('offline.restartInProgress', 'Restarting local OpenClaw Gateway…') : t('offline.restartProgress', 'Gateway restart progress')}
+              </div>
+              {restartInfo.logs.length > 0 && (
+                <pre className="max-h-24 overflow-y-auto text-[10px] leading-relaxed font-mono text-aegis-text-dim whitespace-pre-wrap">
+                  {restartInfo.logs.slice(-6).join('\n')}
+                </pre>
+              )}
+            </div>
+          </div>
+        )}
 
         {!connecting && (
           <div className="flex items-center justify-center gap-2 text-[11px] text-aegis-text-dim mb-4">
