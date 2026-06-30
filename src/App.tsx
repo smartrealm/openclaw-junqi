@@ -275,12 +275,15 @@ export default function App() {
 
   // ── Cold-start boot overlay: keep visible until WebSocket is really connected
   // and show it for a minimum duration to avoid a flash/jump effect.
-  // Keep it perceptible enough for users to understand the boot steps.
+  // Close boot overlay as soon as we're connected. A minimum 2s display prevents
+  // a jarring flash for fast local boots — the previous 4s was too long when
+  // users were waiting through a real failure and caused the 'still connecting'
+  // perception. The ref guard prevents re-opening on transient disconnects.
   useEffect(() => {
     if (bootOverlayDismissedRef.current) return;
     if (!connected) { setBootOverlayVisible(true); return; }
     const elapsed = Date.now() - bootOverlayStartedAtRef.current;
-    const delay = Math.max(0, 4000 - elapsed);
+    const delay = Math.max(0, 2000 - elapsed);
     const timer = setTimeout(() => {
       bootOverlayDismissedRef.current = true;
       setBootOverlayVisible(false);
