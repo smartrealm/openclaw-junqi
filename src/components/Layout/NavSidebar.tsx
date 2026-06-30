@@ -203,7 +203,9 @@ const PANEL_REGISTRY: Record<SidebarTab, React.ComponentType> = {
 
 function ExpandedView({ tab }: { tab: SidebarTab }) {
   const Panel = PANEL_REGISTRY[tab] ?? WorkbenchPanel;
-  return <Panel />;
+  // key={tab} forces a clean remount on tab change so no hook state from the
+  // previous panel can leak into the next (defensive against React #310).
+  return <Panel key={tab} />;
 }
 
 function MiniView({ tab }: { tab: SidebarTab }) {

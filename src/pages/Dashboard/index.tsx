@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import { motion } from 'framer-motion';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -67,8 +68,11 @@ const getAgentName = (id: string) => {
 // ── Tooltip for recharts ─────────────────────────────────────
 
 function CostTooltip({ active, payload, label }: any) {
-  const { t } = useTranslation();
+  // NOTE: no React hooks here — recharts conditionally mounts the tooltip
+  // content, so a hook + early-return would change hook count between renders
+  // and crash with React #310. Use the global i18n instance instead.
   if (!active || !payload?.length) return null;
+  const tr = (k: string, d: string) => i18n.t(k, { defaultValue: d }) as string;
   const input  = payload.find((p: any) => p.dataKey === 'input')?.value  || 0;
   const output = payload.find((p: any) => p.dataKey === 'output')?.value || 0;
   return (
@@ -76,14 +80,14 @@ function CostTooltip({ active, payload, label }: any) {
       <div className="text-aegis-text-dim font-mono mb-1.5">{label}</div>
       <div className="flex items-center gap-1.5 text-aegis-accent">
         <span className="w-2 h-2 rounded-full bg-aegis-accent" />
-        {t('dashboard.input', 'Input')}: {fmtCost(input)}
+        {tr('dashboard.input', 'Input')}: {fmtCost(input)}
       </div>
       <div className="flex items-center gap-1.5 text-aegis-primary">
         <span className="w-2 h-2 rounded-full bg-aegis-primary" />
-        {t('dashboard.output', 'Output')}: {fmtCost(output)}
+        {tr('dashboard.output', 'Output')}: {fmtCost(output)}
       </div>
       <div className="text-aegis-text font-semibold mt-1.5 pt-1.5 border-t border-[rgb(var(--aegis-overlay)/0.06)]">
-        {t('dashboard.total', 'Total')}: {fmtCost(input + output)}
+        {tr('dashboard.total', 'Total')}: {fmtCost(input + output)}
       </div>
     </div>
   );

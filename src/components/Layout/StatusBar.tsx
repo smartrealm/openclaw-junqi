@@ -9,6 +9,7 @@ import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
 import { AEGIS_THEMES, isAegisTheme } from '@/theme/types';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
+import { applyTheme } from '@/theme/apply';
 import clsx from 'clsx';
 
 export function StatusBar() {
@@ -52,7 +53,11 @@ export function StatusBar() {
   const cycleTheme = () => {
     const current = isAegisTheme(theme) ? theme : 'aegis-dark';
     const idx = AEGIS_THEMES.indexOf(current);
-    setTheme(AEGIS_THEMES[(idx + 1) % AEGIS_THEMES.length]);
+    const next = AEGIS_THEMES[(idx + 1) % AEGIS_THEMES.length];
+    // Apply CSS tokens first (DOM-only) so the visual swap is instant, then
+    // persist to the store. Avoids the brief flash of old colors.
+    applyTheme(next);
+    setTheme(next);
   };
 
   return (
@@ -133,11 +138,11 @@ export function StatusBar() {
         </button>
       )}
 
-      {/* 萌宠 — 点击跳转到宠物设置 */}
-      <button onClick={() => navigate('/settings')}
+      {/* 萌宠 — 点击直接开关桌面宠物 */}
+      <button onClick={() => setPetEnabled(!petEnabled)}
         className={clsx('flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 transition-colors',
           petEnabled ? 'text-aegis-primary' : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30')}
-        title={t('statusBar.togglePet', '宠物设置')}>
+        title={petEnabled ? t('statusBar.petOnTip', '点击关闭桌面宠物') : t('statusBar.petOffTip', '点击开启桌面宠物')}>
         <PawPrint size={10} />
         <span>{petEnabled ? t('statusBar.petOn', '萌宠开') : t('statusBar.petOff', '萌宠关')}</span>
       </button>
