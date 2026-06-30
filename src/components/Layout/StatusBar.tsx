@@ -1,15 +1,11 @@
 // StatusBar — 底部状态栏（参照 Hermes AppStatusBar）
-import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Palette, PawPrint, Timer, Play, Pause, Square } from 'lucide-react';
+import { Wifi, WifiOff, RotateCcw, HardDrive, Zap } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
-import { AEGIS_THEMES, isAegisTheme } from '@/theme/types';
-import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
-import { applyTheme } from '@/theme/apply';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 
@@ -20,16 +16,7 @@ export function StatusBar() {
   const tokenUsage = useChatStore((st) => st.tokenUsage);
   const sessions = useChatStore((st) => st.sessions);
   const uiScale = useSettingsStore((st) => st.uiScale);
-  const theme = useSettingsStore((st) => (st as any).theme);
-  const setTheme = useSettingsStore((st) => (st as any).setTheme);
   const gatewayUrl = useSettingsStore((st) => (st as any).gatewayUrl);
-  const petEnabled = usePetStore((st) => (st as any).enabled);
-  const setPetEnabled = usePetStore((st) => (st as any).setEnabled);
-  const pomoEnabled = usePetStore((st) => (st as any).pomodoro.enabled);
-  const pomoRunning = usePetStore((st) => (st as any).pomodoro.running);
-  const pomoPaused = usePetStore((st) => (st as any).pomodoro.paused);
-  const pomoPhase = usePetStore((st) => (st as any).pomodoro.phase);
-  const setPomodoro = usePetStore((st) => (st as any).setPomodoro);
   const bootStages = useBootSequenceStore((st) => (st as any).stages);
 
   const modelLabel = (currentModel || '').split('/').pop() || '';
@@ -50,16 +37,6 @@ export function StatusBar() {
     // Reconnect the WebSocket; if the gateway process itself is down, retry it.
     try { gatewayManager.reset(); } catch {}
     try { void window.aegis?.gateway?.retry?.(); } catch {}
-  };
-
-  const cycleTheme = () => {
-    const current = isAegisTheme(theme) ? theme : 'aegis-dark';
-    const idx = AEGIS_THEMES.indexOf(current);
-    const next = AEGIS_THEMES[(idx + 1) % AEGIS_THEMES.length];
-    // Apply CSS tokens first (DOM-only) so the visual swap is instant, then
-    // persist to the store. Avoids the brief flash of old colors.
-    applyTheme(next);
-    setTheme(next);
   };
 
   return (
@@ -113,49 +90,6 @@ export function StatusBar() {
       )}
 
       <span className="min-w-0 shrink" />
-
-      {/* 番茄钟 */}
-      {pomoEnabled ? (
-        pomoRunning ? (
-          <button onClick={togglePausePomodoro}
-            className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-warning hover:bg-aegis-hover/30 transition-colors"
-            title={pomoPaused ? t('statusBar.pomoResume', '继续') : t('statusBar.pomoPause', '暂停')}>
-            {pomoPaused ? <Play size={10} /> : <Pause size={10} />}
-            <span>{pomoPhase === 'work' ? t('statusBar.work', '工作') : t('statusBar.break', '休息')}</span>
-          </button>
-        ) : (
-          <button onClick={startPomodoro}
-            className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-warning hover:bg-aegis-hover/30 transition-colors"
-            title={t('statusBar.pomoStart', '开始番茄')}>
-            <Play size={10} />
-            <span>{t('statusBar.pomoStart', '开始')}</span>
-          </button>
-        )
-      ) : (
-        <button onClick={() => setPomodoro({ enabled: true })}
-          className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
-          title={t('statusBar.togglePomodoro', '开启番茄钟')}>
-          <Timer size={10} />
-          <span>{t('statusBar.pomoOff', '番茄')}</span>
-        </button>
-      )}
-
-      {/* 萌宠 — 点击直接开关桌面宠物 */}
-      <button onClick={() => setPetEnabled(!petEnabled)}
-        className={clsx('flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 transition-colors',
-          petEnabled ? 'text-aegis-primary' : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30')}
-        title={petEnabled ? t('statusBar.petOnTip', '点击关闭桌面宠物') : t('statusBar.petOffTip', '点击开启桌面宠物')}>
-        <PawPrint size={10} />
-        <span>{petEnabled ? t('statusBar.petOn', '萌宠开') : t('statusBar.petOff', '萌宠关')}</span>
-      </button>
-
-      {/* 主题切换 */}
-      <button onClick={cycleTheme}
-        className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
-        title={t('statusBar.switchTheme', '切换主题')}>
-        <Palette size={10} />
-        <span>{t('statusBar.theme', '切换')}</span>
-      </button>
 
       {uiScale && uiScale !== 100 && <span className="px-2 text-aegis-text-dim opacity-50 font-mono text-[10px]">{uiScale}%</span>}
       <span className="px-3 text-aegis-text-dim opacity-40 font-mono text-[10px]">v0.5.0</span>
