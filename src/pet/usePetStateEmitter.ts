@@ -64,28 +64,26 @@ export function usePetStateEmitter() {
 
       const typing = Object.values(cs.typingBySession).some(Boolean);
       const thinking = Object.values(cs.thinkingBySession).some((e) => (e?.text?.length ?? 0) > 0);
-      // GatewayDataStore is not the only source of truth anymore: App.tsx keeps
-      // chatStore.sessions fresh from sessions.list, while gatewayDataStore may
-      // lag or miss agent-bound sessions. Merge both so the pet reflects real
-      // active work instead of idling while another agent is running.
-      const RUNNING_STALE_MS = 2 * 60_000;
-      // Only trust running=true when we have a recent runningUpdatedAt timestamp written
-      // by an explicit event (session.started / task-status / fetchSessions merge).
-      // If runningUpdatedAt is absent the session's running flag came from an old poll
-      // with no live signal — do NOT fall back to lastActive, which would cause the pet
-      // to show "working" on cold-boot whenever a session was active within 2 minutes.
+      const tool = cs.messages.some((m) => m.toolStatus === 'running');
+      // "working" means an agent is actively running. `session.running` is the
+      // authoritative state set by real-time events (session.running / stopped /
+      // task-status); polls only carry it forward and never mint a timestamp.
+      //
+      // Previously a 2-minute ceiling on runningUpdatedAt dropped long-running
+      // agents back to idle during quiet reasoning gaps — but `running:true` IS
+      // the signal that an agent is working, so we must not second-guess it with
+      // a timeout. The only stale case to reject is cold-boot residue: a session
+      // whose running=true came from an old poll with NO event-driven timestamp
+      // (runningUpdatedAt === 0). Any real running session has a timestamp.
       const isFreshRunning = (s: any) => {
         if (!s?.running) return false;
-        const updated = Number(s.runningUpdatedAt || 0);
-        if (!updated) return false; // no event-driven freshness stamp → treat as stale
-        return now - updated < RUNNING_STALE_MS;
+        return Number(s.runningUpdatedAt || 0) > 0;
       };
       const runningSessions = [
         ...gw.sessions.filter(isFreshRunning),
         ...cs.sessions.filter(isFreshRunning),
       ];
       const running = runningSessions.length > 0 || gw.runningSubAgents.length > 0;
-      const tool = cs.messages.some((m) => m.toolStatus === 'running');
       const isActive = typing || thinking || tool || running;
 
       // Track when the current stretch of activity began (for the elapsed timer).
