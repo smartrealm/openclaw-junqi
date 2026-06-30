@@ -26,4 +26,5 @@ pub mod system_metrics;
 pub mod terminal;
 pub mod usage;
 pub mod voice;
+pub mod voice_wake;
 pub mod workspace;

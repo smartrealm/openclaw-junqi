@@ -22,6 +22,7 @@ pub fn run() {
             // Gateway
             commands::gateway::start_gateway,
             commands::gateway::restart_gateway,
+            commands::gateway::restart_local_gateway,
             commands::gateway::stop_gateway,
             commands::gateway::gateway_status,
             commands::gateway::probe_gateway_port,
@@ -47,6 +48,9 @@ pub fn run() {
             commands::voice::voice_start_recording,
             commands::voice::voice_stop_recording,
             commands::voice::voice_is_recording,
+            commands::voice_wake::voice_wake_start,
+            commands::voice_wake::voice_wake_stop,
+            commands::voice_wake::voice_wake_status,
             // Setup
             commands::setup::install_node,
             commands::setup::install_git,

@@ -712,7 +712,11 @@
     "attachImage": "Attach Image",
     "screenshot": "Screenshot",
     "voiceRecord": "Voice Record",
-    "emoji": "Emoji"
+    "emoji": "Emoji",
+    "voiceWakeStart": "Start voice wake",
+    "voiceWakeStop": "Stop voice wake",
+    "voiceWakeListening": "Listening for wake…",
+    "voiceWakeCaptured": "Voice wake captured (no transcription on this webview; audio saved)"
   },
   "screenshot": {
     "title": "Screenshot",

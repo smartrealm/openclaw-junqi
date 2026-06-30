@@ -494,7 +494,11 @@
     "attachImage": "إرفاق صورة",
     "screenshot": "سكرين شوت",
     "voiceRecord": "تسجيل صوتي",
-    "emoji": "إيموجي"
+    "emoji": "إيموجي",
+    "voiceWakeStart": "بدء الاستماع الصوتي",
+    "voiceWakeStop": "إيقاف الاستماع الصوتي",
+    "voiceWakeListening": "جارٍ الاستماع…",
+    "voiceWakeCaptured": "تم التقاط الاستماع الصوتي (لا يوجد تحويل على هذا الويبفيو؛ تم حفظ الصوت)"
   },
   "screenshot": {
     "title": "سكرين شوت",

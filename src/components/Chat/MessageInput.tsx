@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Send, Paperclip, Camera, Mic, X, Loader2, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson } from 'lucide-react';
+import { Send, Paperclip, Camera, Mic, X, Loader2, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio } from 'lucide-react';
+import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { Icon } from '@/components/shared/icons';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
@@ -64,6 +65,20 @@ export function MessageInput() {
   const [screenshotOpen, setScreenshotOpen] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null); // image preview URL
+  // Voice wake (phase 1: VAD placeholder). Transcribed text fills the input;
+  // if no ASR is available on this webview, the captured utterance is sent as a
+  // voice attachment instead so the feature still works end-to-end.
+  const voiceWake = useVoiceWake({
+    onTranscript: (tr) => { setText((prev) => (prev ? `${prev} ${tr}` : tr)); textareaRef.current?.focus(); },
+    onCaptureFallback: (wavDataUrl) => {
+      const b64 = wavDataUrl.split(',')[1] || '';
+      addMessage({
+        id: `voice-wake-${Date.now()}`, role: 'assistant', timestamp: new Date().toISOString(),
+        content: `🎤 ${t('input.voiceWakeCaptured', '语音唤醒捕获（该 webview 不支持转写，已保存音频）')}`,
+        attachments: [{ type: 'base64', mimeType: 'audio/wav', content: b64, fileName: `voice-${Date.now()}.wav` }],
+      } as any, activeSessionKey);
+    },
+  });
   // Queue strip UI states
   const [queueExpanded, setQueueExpanded] = useState(false);
   const [editingQueueIdx, setEditingQueueIdx] = useState<number | null>(null);
@@ -785,12 +800,25 @@ export function MessageInput() {
                 title: t('input.voiceRecord'),
                 disabled: !connected || isHistoryWarmupGate,
               },
-            ].map(({ icon: Icon, action, title, disabled }) => (
+              {
+                icon: Radio,
+                action: () => { void (voiceWake.enabled ? voiceWake.stop() : voiceWake.start()); },
+                title: voiceWake.enabled
+                  ? (voiceWake.phase === 'wake_detected'
+                      ? t('input.voiceWakeListening', '语音唤醒中…')
+                      : t('input.voiceWakeStop', '关闭语音唤醒'))
+                  : t('input.voiceWakeStart', '开启语音唤醒'),
+                disabled: !connected,
+                active: voiceWake.enabled,
+              },
+            ].map(({ icon: Icon, action, title, disabled, active }) => (
               <button key={title} onClick={action} disabled={disabled}
                 className={clsx(
                   'w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0',
                   'bg-[rgb(var(--aegis-overlay)/0.03)] border-none',
-                  'text-aegis-text-muted hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)]',
+                  active
+                    ? 'text-aegis-primary bg-aegis-primary/10 hover:bg-aegis-primary/15'
+                    : 'text-aegis-text-muted hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)]',
                   'transition-colors disabled:opacity-30'
                 )}
                 title={title}>

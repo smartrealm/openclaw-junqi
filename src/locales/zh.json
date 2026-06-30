@@ -710,7 +710,11 @@
     "attachImage": "添加图片",
     "screenshot": "截图",
     "voiceRecord": "语音录制",
-    "emoji": "表情"
+    "emoji": "表情",
+    "voiceWakeStart": "开启语音唤醒",
+    "voiceWakeStop": "关闭语音唤醒",
+    "voiceWakeListening": "语音唤醒中…",
+    "voiceWakeCaptured": "语音唤醒捕获（该 webview 不支持转写，已保存音频）"
   },
   "screenshot": {
     "title": "截图",
