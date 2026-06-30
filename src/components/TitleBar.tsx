@@ -25,7 +25,6 @@ function useTitleContext() {
   const routes: Record<string, { label: string; detail?: string }> = {
     '/chat':     { label: t('nav.chat'),     detail: [modelLabel, sessionLabel].filter(Boolean).join(' · ') },
     '/workshop': { label: t('nav.workshop') },
-    '/costs':    { label: t('nav.analytics') },
     '/analytics':{ label: t('nav.analytics') },
     '/cron':     { label: t('nav.cron') },
     '/agents':   { label: t('nav.agents') },

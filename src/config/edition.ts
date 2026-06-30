@@ -122,7 +122,7 @@ const APP_ROUTE_ORDER: { feature: EditionFeatureKey; path: string }[] = [
   { feature: 'chat', path: '/chat' },
   { feature: 'dashboard', path: '/' },
   { feature: 'workshop', path: '/workshop' },
-  { feature: 'analytics', path: '/costs' },
+  { feature: 'analytics', path: '/analytics' },
   { feature: 'cron', path: '/cron' },
   { feature: 'agents', path: '/agents' },
   { feature: 'skills', path: '/skills' },
@@ -152,7 +152,6 @@ export function getFirstEnabledAppPath(): string {
 const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/agents/live', feature: 'liveAgents' },
   { prefix: '/analytics', feature: 'analytics' },
-  { prefix: '/costs', feature: 'analytics' },
   { prefix: '/config', feature: 'configManager' },
   { prefix: '/sessions', feature: 'sessions' },
   { prefix: '/logs', feature: 'logs' },

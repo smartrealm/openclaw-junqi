@@ -71,7 +71,7 @@ export function CommandPalette() {
     { id: 'nav-dashboard', feature: 'dashboard', icon: LayoutDashboard, name: t('nav.dashboard'), shortcut: 'Ctrl+1', keywords: ['dashboard', 'home', 'لوحة'], action: () => navigate('/') },
     { id: 'nav-chat', feature: 'chat', icon: MessageCircle, name: t('nav.chat'), shortcut: 'Ctrl+2', keywords: ['chat', 'شات', 'محادثة'], action: () => navigate('/chat') },
     { id: 'nav-workshop', feature: 'workshop', icon: Kanban, name: t('nav.workshop'), shortcut: 'Ctrl+3', keywords: ['workshop', 'kanban', 'ورشة', 'مهام'], action: () => navigate('/workshop') },
-    { id: 'nav-costs', feature: 'analytics', icon: DollarSign, name: t('nav.costs'), shortcut: 'Ctrl+4', keywords: ['costs', 'تكاليف', 'tokens'], action: () => navigate('/costs') },
+    { id: 'nav-costs', feature: 'analytics', icon: DollarSign, name: t('nav.costs'), shortcut: 'Ctrl+4', keywords: ['costs', 'تكاليف', 'tokens'], action: () => navigate('/analytics') },
     { id: 'nav-cron', feature: 'cron', icon: Clock, name: t('nav.cron'), shortcut: 'Ctrl+5', keywords: ['cron', 'schedule', 'جدولة'], action: () => navigate('/cron') },
     { id: 'nav-agents', feature: 'agents', icon: Bot, name: t('nav.agents'), shortcut: 'Ctrl+6', keywords: ['agents', 'وكلاء', 'sessions'], action: () => navigate('/agents') },
     { id: 'nav-memory', feature: 'memory', icon: Brain, name: t('nav.memory'), shortcut: 'Ctrl+7', keywords: ['memory', 'ذاكرة', 'search'], action: () => navigate('/memory') },

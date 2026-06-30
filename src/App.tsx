@@ -717,7 +717,6 @@ export default function App() {
                 <Route path="/" element={<FeatureRoute feature="dashboard"><DashboardPage /></FeatureRoute>} />
                 <Route path="/chat" element={<FeatureRoute feature="chat"><ChatPage /></FeatureRoute>} />
                 <Route path="/workshop" element={<FeatureRoute feature="workshop"><WorkshopPage /></FeatureRoute>} />
-                <Route path="/costs" element={<FeatureRoute feature="analytics"><FullAnalyticsPage /></FeatureRoute>} />
                 <Route path="/analytics" element={<FeatureRoute feature="analytics"><FullAnalyticsPage /></FeatureRoute>} />
                 <Route path="/cron" element={<FeatureRoute feature="cron"><CronMonitorPage /></FeatureRoute>} />
                 <Route path="/agents" element={<FeatureRoute feature="agents"><AgentHubPage /></FeatureRoute>} />
