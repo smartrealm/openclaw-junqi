@@ -1,5 +1,7 @@
 // TabBar — 顶部标签导航
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useSettingsStore } from '@/stores/settingsStore';
+import type { SidebarTab } from './tab-utils';
 import { LayoutDashboard, Bot, Wrench, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -14,17 +16,18 @@ export function TabBar() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const activeTab = useSettingsStore((s) => s.activeSidebarTab);
+  const setActiveTab = useSettingsStore((s) => s.setActiveSidebarTab);
+
   return (
     <div className="flex items-center gap-0.5 h-[32px] shrink-0 chrome-bg border-b border-aegis-border pr-2" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
       {TABS.map((tab) => {
-        const active = tab.path === '/'
-          ? location.pathname === '/'
-          : location.pathname.startsWith(tab.path);
+        const active = activeTab === (tab.id as SidebarTab);
         return (
           <button
             key={tab.id}
             type="button"
-            onClick={() => navigate(tab.path)}
+            onClick={() => { setActiveTab(tab.id as SidebarTab); navigate(tab.path); }}
             className={clsx(
               'h-[26px] px-2.5 rounded text-[11.5px] font-medium transition-colors flex items-center gap-1.5',
               active

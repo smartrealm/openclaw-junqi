@@ -1,7 +1,7 @@
 // NavSidebar — Context-sensitive sidebar (4 Panel 组件, Tab 切换整体替换)
 // 每个 Panel 是真 React 组件，hooks 各自管理。Registry 按 tab 分发。
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -256,7 +256,14 @@ export function NavSidebar() {
   const isMini = sidebarMode === 'mini';
   const isExpanded = sidebarMode === 'expanded';
   const targetWidth = isExpanded ? 220 : isMini ? 64 : 0;
-  const tab = resolveTab(location.pathname);
+  const tab = useSettingsStore((s) => s.activeSidebarTab);
+  const setActiveTab = useSettingsStore((s) => s.setActiveSidebarTab);
+
+  // Sync explicit selection from URL for deep links / sidebar-internal navigation.
+  useEffect(() => {
+    const resolved = resolveTab(location.pathname);
+    setActiveTab(resolved);
+  }, [location.pathname, setActiveTab]);
 
   if (isHidden) return null;
 

@@ -7,6 +7,7 @@ import {
   type ThemeSetting,
 } from '@/theme';
 import { applyTheme } from '@/theme/apply';
+import { resolveTab, type SidebarTab } from '@/components/Layout/tab-utils';
 
 // ═══════════════════════════════════════════════════════════
 // Settings Store
@@ -46,6 +47,8 @@ interface SettingsState {
   gatewayToken: string;
   sidebarCollapsed: boolean;
   sidebarMode: SidebarMode;
+  /** Explicitly selected sidebar section (decoupled from URL for direct selection). */
+  activeSidebarTab: SidebarTab;
 
   setTheme: (theme: ThemeSetting) => void;
   setUiScale: (scale: number) => void;
@@ -72,6 +75,7 @@ interface SettingsState {
   setGatewayToken: (token: string) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   cycleSidebar: () => void;
+  setActiveSidebarTab: (tab: SidebarTab) => void;
   accentColor: string;
   setAccentColor: (color: string) => void;
 }
@@ -163,6 +167,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   gatewayToken: localStorage.getItem('aegis-gateway-token') || '',
   sidebarCollapsed: savedSidebarMode === 'mini',
   sidebarMode: savedSidebarMode,
+  activeSidebarTab: typeof window !== 'undefined' ? resolveTab(window.location.pathname) : 'workbench',
   accentColor: localStorage.getItem('aegis-accent-color') || 'teal',
 
   setTheme: (theme) => {
@@ -233,6 +238,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     window.aegis?.settings?.save?.('sidebarCollapsed', collapsed).catch?.(() => {});
   },
   // Three-stage cycle: expanded → mini → hidden → expanded …
+  setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab }),
   cycleSidebar: () => set((s) => {
     const next: SidebarMode =
       s.sidebarMode === 'expanded' ? 'mini'
