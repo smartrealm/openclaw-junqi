@@ -534,7 +534,7 @@ function stripInlineCodeTicks(md: string): string {
           'relative block rounded-xl py-2.5 transition-colors duration-150',
           'pl-4 pr-9 max-w-full box-border min-w-0 break-words group/bubble',
           isEmptyAssistantStreaming
-            ? 'bg-[rgb(var(--aegis-overlay)/0.04)] shadow-sm py-2 px-3'
+            ? 'bg-transparent shadow-none p-0 pl-0 pr-0 py-0'
             : isUser
               ? 'bg-aegis-primary/[0.10]'
               : 'bg-[rgb(var(--aegis-overlay)/0.03)] hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
@@ -621,7 +621,7 @@ function stripInlineCodeTicks(md: string): string {
               <div
                 className={clsx(
                   'inline-flex items-center gap-1.5 select-none',
-                  'px-3 py-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.12)] bg-[rgb(var(--aegis-overlay)/0.06)] shadow-sm',
+                  'px-3 py-2 rounded-xl border border-aegis-primary/20 bg-aegis-primary/10 shadow-[0_0_18px_rgb(var(--aegis-primary)/0.08)]',
                 )}
                 aria-label={t('chat.assistantPreparing', 'Assistant is preparing a response')}
               >
@@ -632,14 +632,16 @@ function stripInlineCodeTicks(md: string): string {
                     style={{
                       width: i === 1 ? 7 : 6,
                       height: i === 1 ? 7 : 6,
-                      background: i === 1 ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-primary)/0.55)',
-                      boxShadow: i === 1 ? '0 0 10px rgb(var(--aegis-primary)/0.35)' : 'none',
+                      background: i === 1
+                        ? 'rgb(var(--aegis-primary))'
+                        : 'color-mix(in srgb, rgb(var(--aegis-primary)) 62%, rgb(var(--aegis-text)) 18%)',
+                      boxShadow: i === 1 ? '0 0 10px rgb(var(--aegis-primary)/0.45)' : 'none',
                       animation: `typing-dot 1.15s ease-in-out ${i * 0.16}s infinite`,
                     }}
                   />
                 ))}
                 {isEmptyAssistantStreaming && (
-                  <span className="ms-1.5 ps-2 border-s border-[rgb(var(--aegis-overlay)/0.08)] text-[10px] font-mono tabular-nums text-aegis-text-dim/80">
+                  <span className="ms-1.5 ps-2 border-s border-aegis-primary/20 text-[10px] font-mono tabular-nums text-aegis-primary/90">
                     {waitElapsedSec}s
                   </span>
                 )}
