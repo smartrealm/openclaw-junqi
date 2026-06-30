@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use crate::paths;
 use crate::state::GatewayProcess;
 use serde::Serialize;
@@ -365,6 +366,18 @@ pub async fn restart_gateway(
     let port = port.unwrap_or(meta.port);
     *state.port.lock().map_err(|e| e.to_string())? = port;
 
+    // Mark restarting so the status poller / start_gateway don't race us:
+    // gateway_status returns running=true, start_gateway refuses to spawn.
+    *state.restarting.lock().map_err(|e| e.to_string())? = true;
+    // Guard: clear the flag no matter how we exit (success, error, panic).
+    struct RestartGuard<'a> { flag: &'a Mutex<bool> }
+    impl<'a> Drop for RestartGuard<'a> {
+        fn drop(&mut self) {
+            if let Ok(mut g) = self.flag.lock() { *g = false; }
+        }
+    }
+    let _restart_guard = RestartGuard { flag: &state.restarting };
+
     emit_restart_progress(&app, format!("Restarting OpenClaw Gateway service on port {}...", port));
 
     // Stop any foreground gateway spawned by this desktop app first. This does
@@ -459,6 +472,13 @@ pub async fn start_gateway(
     let meta = ConfigMetadata::load(&config_path);
     // Caller-supplied port takes precedence; fall back to config, then default.
     let port = port.unwrap_or(meta.port);
+
+    // A real `openclaw gateway restart` owns the lifecycle right now — do not
+    // spawn a competing foreground child. Report the configured port so the
+    // caller retries status instead of racing the restart.
+    if *state.restarting.lock().map_err(|e| e.to_string())? {
+        return Ok(GatewayStatus { running: true, port, pid: None, token: None });
+    }
 
     // "Rely on local openclaw": if a gateway is already listening on this port
     // (the user's own `openclaw gateway`, hermes, etc.), connect to it — never
@@ -619,6 +639,16 @@ pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, St
 #[tauri::command]
 pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayStatus, String> {
     let port = *state.port.lock().map_err(|e| e.to_string())?;
+
+    // If a real restart is in progress, report running=true so the frontend
+    // status poller does NOT see a down→up flap and trigger a competing
+    // start_gateway. The restart command owns the lifecycle right now.
+    if *state.restarting.lock().map_err(|e| e.to_string())? {
+        let token = std::fs::read_to_string(&paths::config_path()).ok()
+            .and_then(|r| serde_json::from_str::<serde_json::Value>(&r).ok())
+            .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()));
+        return Ok(GatewayStatus { running: true, port, pid: None, token });
+    }
 
     // 1. Our own managed child takes priority. Scope the lock so it is dropped
     //    before any `.await` below (std Mutex guards are not Send across await).

@@ -29,6 +29,9 @@ export function OfflineOverlay() {
   };
 
   const retryGateway = async () => {
+    // Match StatusBar: reset the WS state machine so a successful restart
+    // actually triggers a fresh WebSocket connect, not just a status poll.
+    try { gatewayManager.reset(); } catch {}
     try { await window.aegis?.gateway?.retry?.(); } catch {}
   };
 
