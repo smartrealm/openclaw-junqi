@@ -320,7 +320,11 @@ export default function App() {
   }, []);
 
   // If gateway process is running but WS handshake is stuck during cold boot,
-  // retry connection at 3s / 5s / 10s. After that, show manual restart guidance.
+  // retry at 4s / 9s / 16s with exponential backoff. After 3 failed attempts,
+  // surface the manual restart button to the user. Each attempt calls
+  // `restartGatewayFromBoot` — the only path that actually re-invokes the Rust
+  // gateway.retry command. `triggerGatewayReconnect` (WS-only) is reserved for
+  // the user's manual reconnect button, not the auto-recovery loop.
   useEffect(() => {
     if (connected) {
       bootRecoveryTimersRef.current.forEach(clearTimeout);
@@ -332,16 +336,18 @@ export default function App() {
       return;
     }
     if (!bootOverlayVisible || bootOverlayDismissedRef.current || bootRecoveryStartedRef.current) return;
+    if (!window.aegis?.gateway?.retry) return; // not under Tauri — nothing to restart
     bootRecoveryStartedRef.current = true;
     setBootRecoveryLogs([]);
     addBootRecoveryLog('Waiting for Gateway WebSocket handshake…');
-    const delays = [3000, 8000, 18000];
+    const delays = [4000, 9000, 16000];
     bootRecoveryTimersRef.current = delays.map((delay, idx) => setTimeout(() => {
       if (useChatStore.getState().connected) return;
       const attempt = idx + 1;
       setBootRecoveryAttempt(attempt);
-      addBootRecoveryLog(`Auto reconnect attempt ${attempt}/3`);
-      triggerGatewayReconnect(`auto-${attempt}`);
+      addBootRecoveryLog(`Auto reconnect attempt ${attempt}/3 (Gateway restart)`);
+      // No await — fire-and-forget, status is observed via bootRecoveryRestarting state.
+      void restartGatewayFromBoot();
       if (attempt === 3) {
         setBootRecoveryReady(true);
         addBootRecoveryLog('Auto reconnect attempts exhausted. Manual restart is available.');
@@ -351,7 +357,7 @@ export default function App() {
       bootRecoveryTimersRef.current.forEach(clearTimeout);
       bootRecoveryTimersRef.current = [];
     };
-  }, [connected, bootOverlayVisible, addBootRecoveryLog, triggerGatewayReconnect]);
+  }, [connected, bootOverlayVisible, addBootRecoveryLog, restartGatewayFromBoot]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
