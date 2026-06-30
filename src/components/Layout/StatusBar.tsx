@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { usePetStore } from '@/stores/petStore';
+import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
 import { AEGIS_THEMES, isAegisTheme } from '@/theme/types';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import clsx from 'clsx';
@@ -20,6 +21,7 @@ export function StatusBar() {
   const uiScale = useSettingsStore((st) => st.uiScale);
   const theme = useSettingsStore((st) => (st as any).theme);
   const setTheme = useSettingsStore((st) => (st as any).setTheme);
+  const gatewayUrl = useSettingsStore((st) => (st as any).gatewayUrl);
   const petEnabled = usePetStore((st) => (st as any).enabled);
   const setPetEnabled = usePetStore((st) => (st as any).setEnabled);
   const pomoEnabled = usePetStore((st) => (st as any).pomodoro.enabled);
@@ -27,11 +29,25 @@ export function StatusBar() {
   const pomoPaused = usePetStore((st) => (st as any).pomodoro.paused);
   const pomoPhase = usePetStore((st) => (st as any).pomodoro.phase);
   const setPomodoro = usePetStore((st) => (st as any).setPomodoro);
+  const bootStages = useBootSequenceStore((st) => (st as any).stages);
 
   const modelLabel = (currentModel || '').split('/').pop() || '';
   const ctxPct = tokenUsage?.percentage ?? 0;
   const runningCount = useMemo(() => sessions.filter((sx) => sx.running).length, [sessions]);
   const totalTokens = useMemo(() => sessions.reduce((s, sx) => s + (sx.totalTokens ?? 0), 0), [sessions]);
+
+  const port = useMemo(() => {
+    const m = String(gatewayUrl || '').match(/:(\d+)/);
+    return m ? m[1] : '—';
+  }, [gatewayUrl]);
+
+  const bootSummary = useMemo(() => getBootProgressSummary(bootStages ?? {}), [bootStages]);
+  const isBooting = (bootSummary?.completed ?? 0) < (bootSummary?.total ?? 0) && (bootSummary?.active?.status === 'running' || bootSummary?.active?.status === 'pending');
+  const bootPct = bootSummary?.total ? Math.round((bootSummary.completed / bootSummary.total) * 100) : 0;
+
+  const handleRestart = () => {
+    window.dispatchEvent(new Event('aegis:reconnect'));
+  };
 
   const cycleTheme = () => {
     const current = isAegisTheme(theme) ? theme : 'aegis-dark';
@@ -41,18 +57,23 @@ export function StatusBar() {
 
   return (
     <footer className="flex items-center gap-0 h-[26px] border-t border-aegis-border bg-aegis-surface text-[11px] shrink-0 select-none overflow-hidden" role="status">
-      {/* 网关 */}
+      {/* 网关 + 端口 */}
       <span className="flex items-center gap-1.5 px-3 h-full border-r border-aegis-border/50">
         <span className="w-[5px] h-[5px] rounded-full" style={{ background: connected ? 'var(--aegis-success)' : 'var(--aegis-danger)' }} />
-        <span className="text-aegis-text-secondary">{connected ? t('statusBar.gateway', '接收服务') : t('statusBar.disconnected', '未连接')}</span>
+        <span className="text-aegis-text-secondary">{t('statusBar.gateway', '网关')}</span>
+        <span className="text-aegis-text font-mono">:{port}</span>
       </span>
 
-      {/* 重连按钮 */}
-      <button onClick={() => window.dispatchEvent(new Event('aegis:reconnect'))}
-        className="flex items-center gap-1 px-2 h-full border-r border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
-        title={t('statusBar.restart', '重启接收服务')}>
-        <RotateCcw size={10} />
-        <span>{t('statusBar.restart', '重启')}</span>
+      {/* 重连按钮（带进度） */}
+      <button onClick={handleRestart} disabled={isBooting}
+        className={clsx('flex items-center gap-1 px-2 h-full border-r border-aegis-border/50 transition-colors',
+          isBooting
+            ? 'text-aegis-warning'
+            : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
+          isBooting && 'animate-pulse')}
+        title={isBooting ? `${t('statusBar.reconnecting', '重连中')} ${bootPct}%` : t('statusBar.reconnect', '重连')}>
+        <RotateCcw size={10} className={isBooting ? 'animate-spin' : ''} />
+        <span>{isBooting ? `${bootPct}%` : t('statusBar.reconnect', '重连')}</span>
       </button>
 
       {/* 模型 */}
