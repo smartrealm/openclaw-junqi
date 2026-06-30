@@ -18,7 +18,6 @@ import { SidebarRow, SidebarSection } from './SidebarRow';
 // ═══════════════════════════════════════════════════════════
 
 const TOOL_CATEGORIES: ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> = [
-  { to: '/sessions', icon: <ListChecks size={14} />, label: '会话历史' },
   { to: '/workshop', icon: <Folder size={14} />,    label: '工作空间' },
   { to: '/terminal', icon: <Terminal size={14} />,  label: '终端' },
   { to: '/files',    icon: <FileText size={14} />,  label: '文件管理' },
@@ -27,14 +26,12 @@ const TOOL_CATEGORIES: ReadonlyArray<{ to: string; icon: React.ReactNode; label:
   { to: '/calendar', icon: <Calendar size={14} />,  label: '日历' },
   { to: '/sandbox',  icon: <Wrench size={14} />,   label: '代码沙盒' },
   { to: '/git',      icon: <Cpu size={14} />,       label: 'Git 仓库' },
-  { to: '/files',    icon: <Volume2 size={14} />,   label: '媒体预览' },
 ];
 
 const SETTINGS_GROUPS: ReadonlyArray<{ label: string; items: ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> }> = [
   { label: '通用', items: [
     { to: '/settings', icon: <Settings size={14} />, label: '通用设置' },
     { to: '/config',   icon: <Bot size={14} />,      label: '智能体配置' },
-    { to: '/memory',   icon: <Brain size={14} />,    label: '记忆' },
   ]},
   { label: '诊断与监控', items: [
     { to: '/logs',     icon: <FileText size={14} />,  label: '日志' },
@@ -43,7 +40,6 @@ const SETTINGS_GROUPS: ReadonlyArray<{ label: string; items: ReadonlyArray<{ to:
   ]},
   { label: '管理', items: [
     { to: '/sessions', icon: <MessageSquare size={14} />, label: '会话管理' },
-    { to: '/skills',   icon: <Puzzle size={14} />,       label: '技能' },
   ]},
 ];
 
