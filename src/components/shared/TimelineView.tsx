@@ -109,12 +109,15 @@ export function TimelineView({
   title,
   subtitle,
   emptyMessage,
+  now: nowProp,
 }: {
   tasks: TimelineTask[];
   onTaskClick?: (task: TimelineTask) => void;
   title?: string;
   subtitle?: string;
   emptyMessage?: string;
+  /** Reference "now" for date bucketing. Defaults to real time; tests inject a fixed value. */
+  now?: Date;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -124,7 +127,7 @@ export function TimelineView({
   });
 
   const groups = useMemo(() => {
-    const now = new Date();
+    const now = nowProp ?? new Date();
     const cutoff = startOfDay(now) - 6 * 24 * 60 * 60 * 1000;
     const byBucket: Record<Bucket, TimelineTask[]> = {
       today: [],
@@ -142,7 +145,7 @@ export function TimelineView({
       { bucket: 'yesterday' as Bucket, items: byBucket.yesterday },
       { bucket: 'earlier' as Bucket, items: byBucket.earlier },
     ].filter((g) => g.items.length > 0);
-  }, [tasks]);
+  }, [tasks, nowProp]);
 
   const bucketLabel = (b: Bucket) =>
     b === 'today'

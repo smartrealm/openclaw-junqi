@@ -167,7 +167,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   gatewayToken: localStorage.getItem('aegis-gateway-token') || '',
   sidebarCollapsed: savedSidebarMode === 'mini',
   sidebarMode: savedSidebarMode,
-  activeSidebarTab: typeof window !== 'undefined' ? resolveTab(window.location.pathname) : 'workbench',
+  activeSidebarTab: (typeof window !== 'undefined' && window.location) ? resolveTab(window.location.pathname) : 'workbench',
   accentColor: localStorage.getItem('aegis-accent-color') || 'teal',
 
   setTheme: (theme) => {

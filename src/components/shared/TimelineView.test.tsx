@@ -26,7 +26,7 @@ function render(tasks: TimelineTask[], props: Record<string, unknown> = {}) {
     createElement(
       MemoryRouter,
       null,
-      createElement(TimelineView, { tasks, ...props }),
+      createElement(TimelineView, { tasks, now: new Date(NOW), ...props }),
     ),
   );
 }
