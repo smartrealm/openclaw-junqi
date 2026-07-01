@@ -7,7 +7,8 @@ import { useTranslation } from 'react-i18next';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound,
+  Cpu, Server, FolderTree,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -25,6 +26,11 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
+import { ModelsPanel } from '@/components/settings/ModelsPanel';
+import { ChannelsPanel } from '@/components/settings/ChannelsPanel';
+import { McpPanel } from '@/components/settings/McpPanel';
+import { WorkspacePanel } from '@/components/settings/WorkspacePanel';
+import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import clsx from 'clsx';
 
@@ -49,6 +55,9 @@ export function SettingsPageFull() {
     gatewayUrl, setGatewayUrl,
     gatewayToken, setGatewayToken,
     accentColor, setAccentColor,
+    picovoiceAccessKey, setPicovoiceAccessKey,
+    wakeWord, setWakeWord,
+    wakeSensitivity, setWakeSensitivity,
   } = useSettingsStore();
   const { connected, connecting } = useChatStore();
   const prefersDark = usePrefersDark();
@@ -91,7 +100,7 @@ export function SettingsPageFull() {
   const [checkingVersion, setCheckingVersion] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about' | 'models' | 'channels' | 'mcp' | 'workspace'>('appearance');
 
   const handleCheckVersion = async () => {
     if (checkingVersion) return;
@@ -354,7 +363,7 @@ export function SettingsPageFull() {
       </div>
 
       {/* Horizontal tab bar */}
-      <div className="flex gap-1 border-b border-aegis-border pb-0">
+      <div className="flex gap-1 border-b border-aegis-border pb-0 overflow-x-auto">
         {([
           ['appearance', t('settings.tab.appearance', '外观'), Sun],
           ['notify', t('settings.tab.notify', '通知'), Bell],
@@ -362,10 +371,14 @@ export function SettingsPageFull() {
           ['connect', t('settings.tab.connect', '连接'), Wifi],
           ['storage', t('settings.tab.storage', '存储'), HardDrive],
           ['about', t('settings.tab.about', '关于'), Info],
+          ['models', t('settings.tab.models', 'Models'), Cpu],
+          ['channels', t('settings.tab.channels', 'Channels'), Radio],
+          ['mcp', t('settings.tab.mcp', 'MCP'), Server],
+          ['workspace', t('settings.tab.workspace', 'Workspace'), FolderTree],
         ] as const).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className={clsx(
-              'flex items-center gap-1.5 px-3.5 py-2 rounded-t-lg text-[13px] font-medium transition-colors border-b-2 -mb-[1px]',
+              'flex items-center gap-1.5 px-3.5 py-2 rounded-t-lg text-[13px] font-medium transition-colors border-b-2 -mb-[1px] whitespace-nowrap',
               activeTab === key
                 ? 'text-aegis-primary border-aegis-primary bg-aegis-primary/[0.06]'
                 : 'text-aegis-text-muted border-transparent hover:text-aegis-text hover:border-aegis-border'
@@ -676,6 +689,73 @@ export function SettingsPageFull() {
           </span>
         </div>
       </GlassCard>
+
+      {/* Voice Wake (phase 2 config) */}
+      <GlassCard delay={0.14}>
+        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
+          <Radio size={16} className="text-aegis-primary" />
+          {t('voiceWake.title', '语音唤醒')}
+        </h3>
+        <div className="space-y-4">
+          <div className="rounded-lg border border-aegis-border/20 bg-[rgb(var(--aegis-overlay)/0.02)] p-3 text-[11px] leading-relaxed text-aegis-text-dim">
+            {t('voiceWake.hint', '语音唤醒使用 Porcupine 引擎。在 Picovoice Console 免费注册获取 AccessKey，填入后启用真唤醒词；未配置时回退到 VAD 占位（检测到说话即触发）。')}
+          </div>
+
+          <div>
+            <label className="text-[12px] text-aegis-text-dim mb-1.5 flex items-center gap-1.5">
+              <KeyRound size={12} />
+              {t('voiceWake.accessKey', 'Picovoice AccessKey')}
+            </label>
+            <input
+              type="password"
+              value={picovoiceAccessKey}
+              onChange={(e) => setPicovoiceAccessKey(e.target.value)}
+              placeholder={t('voiceWake.accessKeyPlaceholder', '在 console.picovoice.ai 免费获取')}
+              className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border/30 rounded-lg px-3 py-2 text-[13px] text-aegis-text outline-none focus:border-aegis-primary/40 font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="text-[12px] text-aegis-text-dim mb-1.5">{t('voiceWake.keyword', '唤醒词')}</label>
+            <input
+              type="text"
+              value={wakeWord}
+              onChange={(e) => setWakeWord(e.target.value)}
+              placeholder={t('voiceWake.keywordPlaceholder', '内置词如 porcupine / hey google，留空用默认')}
+              className="w-full bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border/30 rounded-lg px-3 py-2 text-[13px] text-aegis-text outline-none focus:border-aegis-primary/40"
+            />
+          </div>
+
+          <div>
+            <label className="text-[12px] text-aegis-text-dim mb-1.5 flex items-center justify-between">
+              <span>{t('voiceWake.sensitivity', '灵敏度')}</span>
+              <span className="font-mono text-aegis-text-muted">{wakeSensitivity.toFixed(2)}</span>
+            </label>
+            <input
+              type="range" min="0" max="1" step="0.05" value={wakeSensitivity}
+              onChange={(e) => setWakeSensitivity(Number(e.target.value))}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, rgb(var(--aegis-primary)) 0%, rgb(var(--aegis-primary)) ${wakeSensitivity * 100}%, rgb(var(--aegis-overlay) / 0.15) ${wakeSensitivity * 100}%, rgb(var(--aegis-overlay) / 0.15) 100%)`,
+                accentColor: 'rgb(var(--aegis-primary))',
+              }}
+            />
+            <div className="flex justify-between text-[10px] text-aegis-text-dim mt-1">
+              <span>{t('voiceWake.sensLow', '低误触')}</span>
+              <span>{t('voiceWake.sensHigh', '高灵敏')}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px]">
+            <StatusDot status={picovoiceAccessKey.trim() ? 'active' : 'idle'} size={8} />
+            <span className="text-aegis-text-dim">
+              {picovoiceAccessKey.trim()
+                ? t('voiceWake.configured', '已配置 AccessKey，将使用 Porcupine 真唤醒词')
+                : t('voiceWake.notConfigured', '未配置，使用 VAD 占位（检测说话即触发）')}
+            </span>
+          </div>
+        </div>
+      </GlassCard>
         </>
       )}
 
@@ -852,6 +932,9 @@ export function SettingsPageFull() {
           )}
         </div>
       </GlassCard>
+
+      {/* Gateway Log (SPEC §M6, T5) — 200-entry circular buffer viewer. */}
+      <GatewayLogPanel />
         </>
       )}
 
@@ -936,6 +1019,12 @@ export function SettingsPageFull() {
       </GlassCard>
         </>
       )}
+
+      {/* New tabs (SPEC §6 M5): stubs only */}
+      {activeTab === 'models' && <ModelsPanel />}
+      {activeTab === 'channels' && <ChannelsPanel />}
+      {activeTab === 'mcp' && <McpPanel />}
+      {activeTab === 'workspace' && <WorkspacePanel />}
       </div>
     </PageTransition>
   );
