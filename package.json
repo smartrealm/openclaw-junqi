@@ -13,6 +13,8 @@
     "tauri": "tauri",
     "test": "node --import ./test-setup.ts --import tsx --test src/**/*.test.ts src/**/*.test.tsx",
     "test:watch": "node --import ./test-setup.ts --import tsx --test --watch src/**/*.test.ts src/**/*.test.tsx",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "lint": "npm run check:boundaries && tsc --noEmit",
     "generate:provider-catalog": "node scripts/generate-provider-catalog.js"
   },
   "dependencies": {
