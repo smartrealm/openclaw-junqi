@@ -679,7 +679,11 @@
     "contextTotalTokens": "总 tokens",
     "contextDuration": "耗时",
     "contextCacheRead": "cache read",
-    "contextCacheWrite": "cache write"
+    "contextCacheWrite": "cache write",
+    "budgetExceededTitle": "已达预算上限",
+    "budgetExceededDesc": "近 30 天已花费 ${{used}}，达到上限 ${{limit}}。请在设置中调高预算或暂停使用。",
+    "budgetLimit": "30 天预算上限 ($)",
+    "budgetLimitHint": "设为 0 表示不限制。超限后新消息将被拦截。"
   },
   "titlebar": {
     "minimize": "最小化",

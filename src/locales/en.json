@@ -681,7 +681,11 @@
     "contextTotalTokens": "Total tokens",
     "contextDuration": "Duration",
     "contextCacheRead": "cache read",
-    "contextCacheWrite": "cache write"
+    "contextCacheWrite": "cache write",
+    "budgetExceededTitle": "Budget limit reached",
+    "budgetExceededDesc": "30-day spend $${used} reached the limit $${limit}. Raise the budget in Settings or pause usage.",
+    "budgetLimit": "30-day budget limit ($)",
+    "budgetLimitHint": "0 = no limit. New messages are blocked once exceeded."
   },
   "titlebar": {
     "minimize": "Minimize",

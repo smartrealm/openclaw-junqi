@@ -7,13 +7,14 @@ import { useTranslation } from 'react-i18next';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
@@ -48,6 +49,7 @@ export function SettingsPageFull() {
     soundEnabled, setSoundEnabled,
     dndMode, setDndMode,
     gatewayUrl, setGatewayUrl,
+    budgetLimit, setBudgetLimit,
     gatewayToken, setGatewayToken,
     accentColor, setAccentColor,
     picovoiceAccessKey, setPicovoiceAccessKey,
@@ -456,6 +458,47 @@ export function SettingsPageFull() {
           </button>
           <span>150%</span>
         </div>
+      </GlassCard>
+
+      {/* Budget Limit */}
+      <GlassCard delay={0.09}>
+        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
+          <Wallet size={16} className="text-aegis-primary" />
+          {t('chat.budgetLimit', '30-day budget limit ($)')}
+        </h3>
+        <div className="flex items-center gap-3">
+          <span className="text-[12px] text-aegis-text-muted">$</span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={budgetLimit || 0}
+            onChange={(e) => setBudgetLimit(Math.max(0, Number(e.target.value) || 0))}
+            className="w-28 bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border rounded-lg px-3 py-1.5 text-[13px] text-aegis-text outline-none focus:border-aegis-primary/50"
+          />
+          <span className="text-[11px] text-aegis-text-dim">
+            {t('chat.budgetLimitHint', '0 = no limit. New messages are blocked once exceeded.')}
+          </span>
+        </div>
+        {budgetLimit > 0 && (() => {
+          const used = useGatewayDataStore.getState().costSummary?.totals?.totalCost ?? 0;
+          const pct = Math.min(100, Math.round((used / budgetLimit) * 100));
+          const over = used >= budgetLimit;
+          return (
+            <div className="mt-3">
+              <div className="flex justify-between text-[10px] mb-1">
+                <span className={over ? 'text-aegis-danger' : 'text-aegis-text-dim'}>
+                  {'$' + used.toFixed(2) + ' / $' + budgetLimit.toFixed(2)}
+                </span>
+                <span className={over ? 'text-aegis-danger font-bold' : 'text-aegis-text-muted'}>{pct}%</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-[rgb(var(--aegis-overlay)/0.06)] overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500"
+                  style={{ width: pct + '%', background: over ? 'rgb(var(--aegis-danger))' : 'rgb(var(--aegis-primary))' }} />
+              </div>
+            </div>
+          );
+        })()}
       </GlassCard>
 
       {/* Accent Color */}

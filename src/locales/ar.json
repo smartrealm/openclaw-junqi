@@ -463,7 +463,9 @@
     "contextTotalTokens": "إجمالي الرموز",
     "contextDuration": "المدة",
     "contextCacheRead": "قراءة cache",
-    "contextCacheWrite": "كتابة cache"
+    "contextCacheWrite": "كتابة cache",
+    "budgetExceededTitle": "تم بلوغ حد الميزانية",
+    "budgetExceededDesc": "بلغ الإنفاق خلال 30 يومًا $${used} الحد $${limit}. ارفع الميزانية في الإعدادات أو توقف."
   },
   "titlebar": {
     "minimize": "تصغير",

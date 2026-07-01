@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Send, Paperclip, Camera, Mic, X, Loader2, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio } from 'lucide-react';
+import { showAlert } from '@/components/shared/AlertDialog';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { Icon } from '@/components/shared/icons';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
 import { ScreenshotPicker } from './ScreenshotPicker';
@@ -434,6 +436,31 @@ export function MessageInput() {
       timestamp: new Date().toISOString(),
       ...(!usedManagedMarkers && previewImageAttachments.length > 0 ? { attachments: previewImageAttachments } : {}),
     };
+
+    // ── Token/cost budget guard ──
+    // budgetLimit (USD) is a 30-day rolling cap. If the user set a limit and the
+    // accumulated 30d cost already exceeds it, block new messages and tell them
+    // instead of silently burning tokens. budgetLimit === 0 means "no limit".
+    {
+      const { budgetLimit } = useSettingsStore.getState();
+      if (budgetLimit > 0) {
+        const costSummary = useGatewayDataStore.getState().costSummary;
+        const used = costSummary?.totals?.totalCost ?? 0;
+        if (used >= budgetLimit) {
+          showAlert(
+            t('chat.budgetExceededTitle', '已达预算上限'),
+            t('chat.budgetExceededDesc', {
+              used: used.toFixed(2),
+              limit: budgetLimit.toFixed(2),
+              defaultValue: `近 30 天已花费 $${used.toFixed(2)}，达到上限 $${budgetLimit.toFixed(2)}。请在设置中调高预算或暂停使用。`,
+            }),
+            'warning',
+          );
+          setIsSending(false);
+          return;
+        }
+      }
+    }
 
     setText('');
     setFiles([]);
