@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore } from 'lucide-react';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore, History } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -22,34 +22,38 @@ import { applySessionRename } from '@/utils/sessionRename';
 // 静态配置
 // ═══════════════════════════════════════════════════════════
 
-const TOOL_CATEGORIES: ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> = [
-  { to: '/workshop', icon: <Folder size={14} />,    label: '工作空间' },
-  { to: '/terminal', icon: <Terminal size={14} />,  label: '终端' },
-  { to: '/files',    icon: <FileText size={14} />,  label: '文件管理' },
-  { to: '/tools',    icon: <Database size={14} />,  label: 'MCP 工具' },
-  { to: '/cron',     icon: <Clock size={14} />,     label: '定时任务' },
-  { to: '/calendar', icon: <Calendar size={14} />,  label: '日历' },
-  { to: '/sandbox',  icon: <Wrench size={14} />,   label: '代码沙盒' },
-  { to: '/git',      icon: <Cpu size={14} />,       label: 'Git 仓库' },
-  { to: '/kanban',   icon: <ListChecks size={14} />, label: '看板' },
-  { to: '/timeline', icon: <Clock size={14} />,     label: '时间线' },
-];
+function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
+  return [
+    { to: '/workshop', icon: <Folder size={14} />,    label: t('nav.workspace', '工作空间') },
+    { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端') },
+    { to: '/files',    icon: <FileText size={14} />,  label: t('nav.files', '文件管理') },
+    { to: '/tools',    icon: <Database size={14} />,  label: t('nav.mcpTools', 'MCP 工具') },
+    { to: '/cron',     icon: <Clock size={14} />,     label: t('nav.cron', '定时任务') },
+    { to: '/calendar', icon: <Calendar size={14} />,  label: t('nav.calendar', '日历') },
+    { to: '/sandbox',  icon: <Wrench size={14} />,   label: t('nav.sandbox', '代码沙盒') },
+    { to: '/git',      icon: <Cpu size={14} />,       label: t('nav.gitRepo', 'Git 仓库') },
+    { to: '/kanban',   icon: <ListChecks size={14} />, label: t('nav.kanban', '看板') },
+    { to: '/timeline', icon: <History size={14} />,   label: t('nav.timeline', '时间线') },
+  ];
+}
 
-const SETTINGS_GROUPS: ReadonlyArray<{ label: string; items: ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> }> = [
-  { label: '通用', items: [
-    { to: '/settings', icon: <Settings size={14} />, label: '通用设置' },
-    { to: '/config',   icon: <Bot size={14} />,      label: '智能体配置' },
-  ]},
-  { label: '诊断与监控', items: [
-    { to: '/logs',     icon: <FileText size={14} />,  label: '日志' },
-    { to: '/perf',     icon: <Activity size={14} />,  label: '性能' },
-    { to: '/analytics', icon: <BarChart3 size={14} />, label: '用量' },
-  ]},
-  { label: '管理', items: [
-    { to: '/sessions', icon: <MessageSquare size={14} />, label: '会话管理' },
-    { to: '/skill-hub', icon: <Puzzle size={14} />,       label: '技能管理' },
-  ]},
-];
+function settingsGroups(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ label: string; items: ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> }> {
+  return [
+    { label: t('nav.general', '通用'), items: [
+      { to: '/settings', icon: <Settings size={14} />, label: t('nav.generalSettings', '通用设置') },
+      { to: '/config',   icon: <Bot size={14} />,      label: t('nav.agentConfig', '智能体配置') },
+    ]},
+    { label: t('nav.diagMonitor', '诊断与监控'), items: [
+      { to: '/logs',     icon: <FileText size={14} />,  label: t('nav.logs', '日志') },
+      { to: '/perf',     icon: <Activity size={14} />,  label: t('nav.perf', '性能') },
+      { to: '/analytics', icon: <BarChart3 size={14} />, label: t('nav.usage', '用量') },
+    ]},
+    { label: t('nav.management', '管理'), items: [
+      { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理') },
+      { to: '/skill-hub', icon: <Puzzle size={14} />,       label: t('nav.skillManager', '技能管理') },
+    ]},
+  ];
+}
 
 // ═══════════════════════════════════════════════════════════
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
@@ -354,7 +358,7 @@ function AgentsPanel() {
             ))}
           </SidebarSection>
         )}
-        <SidebarSection label={t('sidebar.subAgents', '子页面')}>
+        <SidebarSection label={t('nav.agentTools', '智能体工具')}>
           <SidebarRow icon={<Brain size={14} />} title={t('nav.memory', '记忆管理')} onClick={() => navigate('/memory')} />
           <SidebarRow icon={<Activity size={14} />} title={t('nav.agentRun', 'Agent 运行')} onClick={() => navigate('/agent-run')} />
           <SidebarRow icon={<Bot size={14} />} title={t('nav.liveAgents', '多智能体视图')} onClick={() => navigate('/agents/live')} />
@@ -380,7 +384,7 @@ function ToolsPanel() {
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
         <SidebarSection label={t('sidebar.toolCategories', '工具分类')}>
-          {TOOL_CATEGORIES.map((it) => (
+          {toolCategories(t).map((it) => (
             <SidebarRow key={it.to} icon={it.icon} title={it.label} active={location.pathname === it.to} onClick={() => navigate(it.to)} />
           ))}
         </SidebarSection>
@@ -395,7 +399,7 @@ function SettingsPanel() {
   const location = useLocation();
   return (
     <div className="flex-1 overflow-y-auto min-h-0">
-      {SETTINGS_GROUPS.map((g) => (
+      {settingsGroups(t).map((g) => (
         <SidebarSection key={g.label} label={g.label}>
           {g.items.map((it) => (
             <SidebarRow key={it.to} icon={it.icon} title={it.label} active={location.pathname === it.to} onClick={() => navigate(it.to)} />
