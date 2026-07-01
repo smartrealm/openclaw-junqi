@@ -1,13 +1,25 @@
 // StatusBar — 底部状态栏（参照 Hermes AppStatusBar）
-import { Wifi, WifiOff, RotateCcw, HardDrive, Zap } from 'lucide-react';
+import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause, Palette } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
+import { usePetStore } from '@/stores/petStore';
+import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { applyTheme } from '@/theme/apply';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
+import type { AegisTheme } from '@/theme/types';
+
+const THEME_CYCLE: AegisTheme[] = ['aegis-dark', 'aegis-light', 'aegis-eyecare', 'aegis-midnight'];
+
+function nextTheme(current: AegisTheme): AegisTheme {
+  const idx = THEME_CYCLE.indexOf(current);
+  if (idx < 0) return 'aegis-dark';
+  return THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
+}
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -16,6 +28,14 @@ export function StatusBar() {
   const tokenUsage = useChatStore((st) => st.tokenUsage);
   const sessions = useChatStore((st) => st.sessions);
   const uiScale = useSettingsStore((st) => st.uiScale);
+  const theme = useSettingsStore((st) => st.theme);
+  const setTheme = useSettingsStore((st) => st.setTheme);
+  const petEnabled = usePetStore((st) => st.enabled);
+  const setPetEnabled = usePetStore((st) => st.setEnabled);
+  const pomoEnabled = usePetStore((st) => st.pomodoro.enabled);
+  const pomoRunning = usePetStore((st) => st.pomodoro.running);
+  const pomoPaused = usePetStore((st) => st.pomodoro.paused);
+  const setPomodoro = usePetStore((st) => st.setPomodoro);
   const gatewayUrl = useSettingsStore((st) => (st as any).gatewayUrl);
   const bootStages = useBootSequenceStore((st) => (st as any).stages);
 
@@ -37,6 +57,16 @@ export function StatusBar() {
     // Reconnect the WebSocket; if the gateway process itself is down, retry it.
     try { gatewayManager.reset(); } catch {}
     try { void window.aegis?.gateway?.retry?.(); } catch {}
+  };
+
+  const resolvedTheme: AegisTheme = theme.startsWith('aegis-') ? (theme as AegisTheme) : 'aegis-dark';
+  const isDarkish = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
+  const themeLabel = t(`theme.${resolvedTheme.replace('aegis-', '')}`, resolvedTheme.replace('aegis-', ''));
+
+  const handleThemeCycle = () => {
+    const next = nextTheme(resolvedTheme);
+    applyTheme(next);
+    setTheme(next);
   };
 
   return (
@@ -92,7 +122,65 @@ export function StatusBar() {
       <span className="min-w-0 shrink" />
 
       {uiScale && uiScale !== 100 && <span className="px-2 text-aegis-text-dim opacity-50 font-mono text-[10px]">{uiScale}%</span>}
-      <span className="px-3 text-aegis-text-dim opacity-40 font-mono text-[10px]">v0.5.0</span>
+
+      {/* ── Bottom-right cluster: theme cycle | pet toggle | pomodoro toggle ── */}
+      <button
+        onClick={handleThemeCycle}
+        title={themeLabel}
+        aria-label={t('theme.cycle', 'Cycle theme')}
+        className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
+      >
+        <Palette size={11} />
+        {isDarkish ? <Moon size={11} /> : <Sun size={11} />}
+        <span className="text-[10px]">{themeLabel}</span>
+      </button>
+
+      <button
+        onClick={() => setPetEnabled(!petEnabled)}
+        title={petEnabled ? t('statusBar.petOnTip', '点击关闭桌面宠物') : t('statusBar.petOffTip', '点击开启桌面宠物')}
+        aria-label={t('statusBar.petToggle', 'Toggle pet')}
+        className={clsx(
+          'flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 transition-colors',
+          petEnabled
+            ? 'text-aegis-primary hover:bg-aegis-hover/30'
+            : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
+        )}
+      >
+        <PawPrint size={11} />
+      </button>
+
+      {pomoEnabled ? (
+        pomoRunning ? (
+          <button
+            onClick={() => togglePausePomodoro()}
+            title={pomoPaused ? t('statusBar.pomoResume', '继续') : t('statusBar.pomoPause', '暂停')}
+            aria-label={t('statusBar.pomoToggle', 'Toggle pomodoro')}
+            className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-warning hover:bg-aegis-hover/30 transition-colors"
+          >
+            {pomoPaused ? <Play size={11} /> : <Pause size={11} />}
+          </button>
+        ) : (
+          <button
+            onClick={() => startPomodoro()}
+            title={t('statusBar.pomoStart', '开始番茄')}
+            aria-label={t('statusBar.pomoStart', '开始番茄')}
+            className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
+          >
+            <Timer size={11} />
+          </button>
+        )
+      ) : (
+        <button
+          onClick={() => setPomodoro({ enabled: true })}
+          title={t('statusBar.togglePomodoro', '开启番茄钟')}
+          aria-label={t('statusBar.togglePomodoro', '开启番茄钟')}
+          className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
+        >
+          <Timer size={11} />
+        </button>
+      )}
+
+      <span className="px-3 text-aegis-text-dim opacity-40 font-mono text-[10px] border-l border-aegis-border/50">v0.5.0</span>
     </footer>
   );
 }
