@@ -4,12 +4,13 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore, History } from 'lucide-react';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore, History, Power, PowerOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway } from '@/services/gateway';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -340,6 +341,16 @@ function AgentsPanel() {
   const navigate = useNavigate();
   const agents = useGatewayDataStore((st) => (st as any).agents) ?? [];
   const sessions = useChatStore((st) => st.sessions) ?? [];
+  const skillList = useSkillsStore((s) => s.skills);
+  const refreshSkills = useSkillsStore((s) => s.refresh);
+  const setSkillEnabled = useSkillsStore((s) => s.setEnabled);
+
+  // Load skills once when the Agents panel mounts. Refresh is cheap (one
+  // gateway RPC) so we don't cache across panels — the value here is
+  // always fresh when the user opens this panel.
+  useEffect(() => {
+    void refreshSkills();
+  }, [refreshSkills]);
 
   const runningIds = useMemo(() => {
     const set = new Set<string>();
@@ -351,6 +362,8 @@ function AgentsPanel() {
     }
     return set;
   }, [sessions]);
+
+  const skillEntries = Object.entries(skillList);
 
   return (
     <>
@@ -375,6 +388,35 @@ function AgentsPanel() {
             <SidebarRow key={it.to} icon={it.icon} title={it.label} onClick={() => navigate(it.to)} />
           ))}
         </SidebarSection>
+        {skillEntries.length > 0 && (
+          <SidebarSection label={t('nav.agentSkills', '智能体技能')}>
+            {skillEntries.map(([slug, info]) => {
+              const enabled = info.enabled !== false;
+              return (
+                <div key={slug} className="flex items-center gap-2 px-4 py-1.5 group">
+                  <Puzzle size={12} className={enabled ? 'text-aegis-primary opacity-80' : 'text-aegis-text-dim opacity-50'} />
+                  <span
+                    onClick={() => navigate('/skill-hub')}
+                    className={clsx('flex-1 text-[12px] truncate cursor-pointer', enabled ? 'text-aegis-text' : 'text-aegis-text-dim line-through')}>
+                    {info.name}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={enabled ? t('skills.disable', 'Disable') : t('skills.enable', 'Enable')}
+                    title={enabled ? t('skills.disable', 'Disable') : t('skills.enable', 'Enable')}
+                    onClick={() => void setSkillEnabled(slug, !enabled)}
+                    className={clsx('shrink-0 w-6 h-6 rounded flex items-center justify-center transition-colors',
+                      enabled
+                        ? 'text-aegis-primary hover:bg-aegis-primary/15'
+                        : 'text-aegis-text-dim hover:bg-aegis-hover/40')}
+                  >
+                    {enabled ? <Power size={11} /> : <PowerOff size={11} />}
+                  </button>
+                </div>
+              );
+            })}
+          </SidebarSection>
+        )}
         <SidebarSection label={t('nav.agentTools', '智能体工具')}>
           <SidebarRow icon={<Brain size={14} />} title={t('nav.memory', '记忆管理')} onClick={() => navigate('/memory')} />
           <SidebarRow icon={<Activity size={14} />} title={t('nav.agentRun', 'Agent 运行')} onClick={() => navigate('/agent-run')} />
