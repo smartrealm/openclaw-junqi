@@ -629,6 +629,22 @@ export default function App() {
     };
     window.addEventListener('aegis:session-reset', handleSessionReset);
 
+    // StatusBar "重连" button fires this event. We run the full restart
+    // pipeline here (same as the boot overlay's 'triggerGatewayReconnect')
+    // so the WS reconnect logic lives in ONE place.
+    const handleManualReconnect = () => {
+      void window.aegis?.gateway?.ensureRunning?.().then((r: any) => {
+        if (r?.healthy) {
+          triggerGatewayReconnect('button');
+        } else {
+          void restartGatewayFromBoot();
+        }
+      }).catch(() => {
+        void restartGatewayFromBoot();
+      });
+    };
+    window.addEventListener('aegis:manual-reconnect', handleManualReconnect);
+
     // Cleanup — prevent orphan WebSocket connections on remount
     return () => {
       managerUnsub();
@@ -639,6 +655,7 @@ export default function App() {
       window.removeEventListener('aegis:model-changed', handleModelChanged);
       window.removeEventListener('aegis:config-saved', handleConfigSaved);
       window.removeEventListener('aegis:session-reset', handleSessionReset);
+      window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
       gateway.disconnect();
     };
   }, [loadAvailableModels]);

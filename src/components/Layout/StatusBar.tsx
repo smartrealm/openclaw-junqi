@@ -7,7 +7,6 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
 import { usePetStore } from '@/stores/petStore';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
-import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { applyTheme } from '@/theme/apply';
 import clsx from 'clsx';
@@ -55,37 +54,20 @@ export function StatusBar() {
   const bootPct = bootSummary?.total ? Math.round((bootSummary.completed / bootSummary.total) * 100) : 0;
 
   const [reconnecting, setReconnecting] = useState(false);
-  const handleRestart = async () => {
+  const handleRestart = () => {
     if (reconnecting) return;
     setReconnecting(true);
-    try {
-      // 1. Disconnect existing WebSocket and reset state.
-      try { gatewayManager.reset(); } catch {}
-      // 2. Call the Rust-side orchestrator (native→docker fallback).
-      //    Must pull AppHandle through window.aegis — the Tauri IPC
-      //    bridge is the only path from the React tree to Rust.
-      if (window.aegis?.gateway?.ensureRunning) {
-        await window.aegis.gateway.ensureRunning();
-      } else {
-        try { void window.aegis?.gateway?.retry?.(); } catch {}
-      }
-      // 3. Wait briefly for the process to start.
-      await new Promise((r) => setTimeout(r, 1_500));
-      // 4. Reconnect WebSocket AFTER the process is ready (the old
-      //    code skipped this step — it only restarted the process but
-      //    never re-established the WebSocket, so the user saw
-      //    "connecting" forever).
-      try {
-        const gw = useSettingsStore.getState();
-        const url = gw.gatewayUrl || 'ws://127.0.0.1:18789';
-        const token = gw.gatewayToken || '';
-        gateway.connect(url, token);
-      } catch {
-        try { void window.aegis?.gateway?.retry?.(); } catch {}
-      }
-    } finally {
-      setReconnecting(false);
-    }
+    // 1. Disconnect WS + reset state.
+    try { gatewayManager.reset(); } catch {}
+    // 2. Dispatch a global event so App.tsx's triggerGatewayReconnect
+    //    callback picks this up and runs the full restart pipeline
+    //    (ensure_gateway_running → wait → reconnect WS). This keeps the
+    //    reconnect logic in ONE place (App.tsx) rather than duplicating
+    //    it here. StatusBar should not know how to reconnect — it just
+    //    signals the intent.
+    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect'));
+    // 3. Spinner runs for at most 5s then self-clears.
+    setTimeout(() => setReconnecting(false), 5_000);
   };
 
   const resolvedTheme: AegisTheme = theme.startsWith('aegis-') ? (theme as AegisTheme) : 'aegis-dark';
