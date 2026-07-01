@@ -16,6 +16,7 @@
     "generate:provider-catalog": "node scripts/generate-provider-catalog.js"
   },
   "dependencies": {
+    "@junqi/shared-tokens": "workspace:*",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-go": "^6.0.1",

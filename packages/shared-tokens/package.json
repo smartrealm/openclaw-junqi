@@ -1,0 +1,16 @@
+{
+  "name": "@junqi/shared-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-package design tokens for JunQi (CSS variables, OKLCH scales, brand colors). Zero runtime dependencies; consumed by src/ via pnpm workspace.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./css/*": "./src/*.css",
+    "./brand-oklch.css": "./src/brand-oklch.css"
+  },
+  "files": [
+    "src/"
+  ]
+}

@@ -8,6 +8,11 @@
 @import './themes/shadcn-tokens.css';
 @import './font-selector.css';
 
+/* Workspace-consumed OKLCH token layer (SPEC §2.7, M8).
+   Lives in packages/shared-tokens so future cross-package consumers
+   (mobile, browser ext, etc.) can pull the same brand tokens. */
+@import '@junqi/shared-tokens/brand-oklch.css';
+
 @import './nezha-bridge.css';
 @import "tailwindcss";
 
