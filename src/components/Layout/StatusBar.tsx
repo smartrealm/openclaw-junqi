@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
 import { usePetStore } from '@/stores/petStore';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
+import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { applyTheme } from '@/theme/apply';
 import clsx from 'clsx';
@@ -58,23 +59,30 @@ export function StatusBar() {
     if (reconnecting) return;
     setReconnecting(true);
     try {
-      // 1. Reset the WebSocket connection manager.
+      // 1. Disconnect existing WebSocket and reset state.
       try { gatewayManager.reset(); } catch {}
-      // 2. If our Rust-side orchestrator is available (Tauri runtime),
-      //    use the full native→docker fallback chain. Otherwise fall
-      //    back to the legacy retry path.
+      // 2. Call the Rust-side orchestrator (native→docker fallback).
+      //    Must pull AppHandle through window.aegis — the Tauri IPC
+      //    bridge is the only path from the React tree to Rust.
       if (window.aegis?.gateway?.ensureRunning) {
-        const result: any = await window.aegis.gateway.ensureRunning();
-        if (!result?.healthy) {
-          // Still not up — one last attempt via the legacy retry.
-          try { void window.aegis?.gateway?.retry?.(); } catch {}
-        }
+        await window.aegis.gateway.ensureRunning();
       } else {
         try { void window.aegis?.gateway?.retry?.(); } catch {}
       }
-      // Give the gateway a moment to accept connections before the
-      // frontend status poller picks up the new state.
-      await new Promise((r) => setTimeout(r, 1500));
+      // 3. Wait briefly for the process to start.
+      await new Promise((r) => setTimeout(r, 1_500));
+      // 4. Reconnect WebSocket AFTER the process is ready (the old
+      //    code skipped this step — it only restarted the process but
+      //    never re-established the WebSocket, so the user saw
+      //    "connecting" forever).
+      try {
+        const gw = useSettingsStore.getState();
+        const url = gw.gatewayUrl || 'ws://127.0.0.1:18789';
+        const token = gw.gatewayToken || '';
+        gateway.connect(url, token);
+      } catch {
+        try { void window.aegis?.gateway?.retry?.(); } catch {}
+      }
     } finally {
       setReconnecting(false);
     }
