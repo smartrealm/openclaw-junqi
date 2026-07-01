@@ -10,6 +10,7 @@ import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { gateway } from '@/services/gateway';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { resolveTab, type SidebarTab } from './tab-utils';
@@ -112,7 +113,7 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta }: {
       t('chat.deleteSession', '删除会话'),
       t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
       async () => {
-        try { await (await import('@/services/gateway')).gateway.deleteSession(sessionKey); } catch {}
+        try { await gateway.deleteSession(sessionKey); } catch {}
         useChatStore.getState().removeSession(sessionKey);
       }
     );
@@ -125,7 +126,7 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta }: {
       t('chat.resetSessionConfirm', '确定清除此会话的对话历史？会话本身会保留。'),
       async () => {
         const { clearSessionMessages, clearSessionTokens } = useChatStore.getState();
-        try { await (await import('@/services/gateway')).gateway.resetSession(sessionKey); } catch {}
+        try { await gateway.resetSession(sessionKey); } catch {}
         clearSessionMessages(sessionKey);
         clearSessionTokens(sessionKey);
         window.dispatchEvent(new CustomEvent('aegis:session-reset'));
