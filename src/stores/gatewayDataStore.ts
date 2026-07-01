@@ -534,8 +534,10 @@ const SUB_AGENT_RE = /^agent:([^:]+):subagent:/;
  * Sync runningSubAgents from sessions data.
  * Called every 10s in tickFast() after fetchSessions().
  * Sessions with key "agent:<id>:subagent:<uuid>" that appear in sessions.list
- * are running — completed sub-agent sessions are removed from the list automatically.
- * Note: sessions.list does NOT return a "running" field, so presence = active.
+ * that are ACTUALLY running. sessions.list also returns ended sub-agent
+ * sessions (status=done / endedAt set), so presence alone is NOT "active" —
+ * we must filter out ended ones, otherwise AgentHub shows long-dead sub-agents
+ * as perpetually running (and users think tokens are being burned).
  */
 function syncRunningSubAgents() {
   const store = useGatewayDataStore.getState();
@@ -552,6 +554,11 @@ function syncRunningSubAgents() {
   for (const s of sessions) {
     const match = s.key?.match(SUB_AGENT_RE);
     if (!match) continue;
+
+    // Skip ended sub-agents. The gateway keeps done sessions in sessions.list,
+    // but they are NOT running. Without this filter they'd show as perpetually
+    // active (and mislead users into thinking tokens are still being burned).
+    if ((s as any).status === 'done' || (s as any).endedAt) continue;
 
     const agentId = match[1];
     const existing = prev.find((r) => r.sessionKey === s.key);
