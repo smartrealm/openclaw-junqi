@@ -11,10 +11,12 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --import ./test-setup.ts --import tsx --test src/**/*.test.ts src/**/*.test.tsx",
+    "test": "node --import ./test-setup.ts --import tsx --test src/**/*.test.ts src/**/*.test.tsx && node --test scripts/check-boundaries.test.mjs",
+    "test:rust": "cd src-tauri && cargo test --lib",
     "test:watch": "node --import ./test-setup.ts --import tsx --test --watch src/**/*.test.ts src/**/*.test.tsx",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "lint": "npm run check:boundaries && tsc --noEmit",
+    "test:boundaries": "node --test scripts/check-boundaries.test.mjs",
     "generate:provider-catalog": "node scripts/generate-provider-catalog.js"
   },
   "dependencies": {

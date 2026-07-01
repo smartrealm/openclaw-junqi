@@ -67,14 +67,14 @@ const RULES = [
   {
     pattern: /^components\//,
     forbid: [
-      '@/services/',
+      '@/services/**',
     ],
     message: 'components/* must not import services/ directly. Go through stores/ so the state machine owns the side effects. See SPEC §1.',
   },
   {
     pattern: /^pages\//,
     forbid: [
-      '@/state/',
+      '@/state/**',
     ],
     message: 'pages/* must not import Rust state/ directly. Use services/ + IPC commands. See SPEC §1.',
   },
