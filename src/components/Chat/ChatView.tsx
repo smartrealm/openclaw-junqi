@@ -887,10 +887,18 @@ export function ChatView() {
                 prevResponseGroupsLenRef.current = responseGroups.length;
                 return;
               }
-              // b === false: user is reading history above the tail.
-              // Only lock if content DIDN'T grow since last at-bottom — otherwise
-              // the scroll-up was triggered by stream growth and we should
-              // re-anchor on the next paint.
+              // b === false: user left the bottom.
+              // If the user already locked the scroll (explicit wheel up /
+              // touch drag), respect that — don't let content growth override
+              // the user's reading position. Pre-fix: the grew check below
+              // would unlock the scroll when new tokens arrived, pushing the
+              // user back to the bottom against their will.
+              if (scrollLockedRef.current) {
+                prevResponseGroupsLenRef.current = responseGroups.length;
+                return;
+              }
+              // Auto-lock when the user scrolls up while content is NOT
+              // growing (reading idle history — harmless to lock).
               const grew = responseGroups.length !== prevResponseGroupsLenRef.current;
               if (!grew) {
                 scrollLockedRef.current = true;
