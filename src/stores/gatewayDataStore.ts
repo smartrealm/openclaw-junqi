@@ -556,9 +556,17 @@ function syncRunningSubAgents() {
     if (!match) continue;
 
     // Skip ended sub-agents. The gateway keeps done sessions in sessions.list,
-    // but they are NOT running. Without this filter they'd show as perpetually
-    // active (and mislead users into thinking tokens are still being burned).
-    if ((s as any).status === 'done' || (s as any).endedAt) continue;
+    // and the API response may NOT include status/endedAt fields (those exist in
+    // sessions.json but not necessarily in sessions.list output). So we cannot
+    // rely on status==='done' alone.
+    //
+    // Use a updatedAt timeout instead: a sub-agent that hasn't updated in
+    // STALE_MS is considered finished. This is robust regardless of which
+    // fields the API returns, and prevents dead sub-agents from showing as
+    // perpetually RUNNING (which kept the pet stuck in "working" state).
+    const SUBAGENT_STALE_MS = 2 * 60_000; // 2 min
+    const upd = Number((s as any).updatedAt || 0);
+    if (upd > 0 && Date.now() - upd > SUBAGENT_STALE_MS) continue;
 
     const agentId = match[1];
     const existing = prev.find((r) => r.sessionKey === s.key);
