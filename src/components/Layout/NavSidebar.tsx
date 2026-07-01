@@ -9,6 +9,7 @@ import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { resolveTab, type SidebarTab } from './tab-utils';
 import { sessionTitle, partitionSessions } from './sidebarUtils';
 import { SidebarRow, SidebarSection } from './SidebarRow';
@@ -209,15 +210,34 @@ function ExpandedView({ tab }: { tab: SidebarTab }) {
 
 function MiniView({ tab }: { tab: SidebarTab }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const items = miniItemsFor(tab);
   return (
     <nav className="flex flex-col items-center gap-1 px-2">
+      {/* Active-tab chip — single text label at top so users always know
+          which panel they're seeing in mini mode. Without this the icons
+          alone give no semantic context. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="w-10 h-7 mt-0.5 mb-1 flex items-center justify-center rounded-md
+            bg-aegis-primary/15 border border-aegis-primary/25
+            text-aegis-primary text-[10px] font-bold uppercase tracking-wider select-none">
+            {t(`sidebar.tab.${tab}`, tab.slice(0, 1).toUpperCase())}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="right">{t(`sidebar.tab.${tab}`, tab)}</TooltipContent>
+      </Tooltip>
       {items.map((it) => (
-        <button key={`${it.to}:${it.label}`} type="button" title={it.label}
-          onClick={() => navigate(it.to)}
-          className="w-10 h-10 flex items-center justify-center rounded-lg text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40">
-          {it.icon}
-        </button>
+        <Tooltip key={`${it.to}:${it.label}`}>
+          <TooltipTrigger asChild>
+            <button type="button"
+              onClick={() => navigate(it.to)}
+              className="w-10 h-10 flex items-center justify-center rounded-lg text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40">
+              {it.icon}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{it.label}</TooltipContent>
+        </Tooltip>
       ))}
     </nav>
   );
@@ -226,25 +246,25 @@ function MiniView({ tab }: { tab: SidebarTab }) {
 function miniItemsFor(tab: SidebarTab): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
   switch (tab) {
     case 'agents': return [
-      { to: '/agents?new=1', icon: <Plus size={18} />, label: '新建智能体' },
-      { to: '/agents', icon: <Bot size={18} />, label: '智能体' },
-      { to: '/memory', icon: <Brain size={18} />, label: '记忆' },
+      { to: '/agents?new=1', icon: <Plus size={20} />, label: '新建智能体' },
+      { to: '/agents', icon: <Bot size={20} />, label: '智能体' },
+      { to: '/memory', icon: <Brain size={20} />, label: '记忆' },
     ];
     case 'tools': return [
-      { to: '/terminal', icon: <Terminal size={18} />, label: '终端' },
-      { to: '/files', icon: <Folder size={18} />, label: '文件' },
-      { to: '/tools', icon: <Cpu size={18} />, label: 'MCP 工具' },
+      { to: '/terminal', icon: <Terminal size={20} />, label: '终端' },
+      { to: '/files', icon: <Folder size={20} />, label: '文件' },
+      { to: '/tools', icon: <Cpu size={20} />, label: 'MCP 工具' },
     ];
     case 'settings': return [
-      { to: '/settings', icon: <Settings size={18} />, label: '设置' },
-      { to: '/config', icon: <Bot size={18} />, label: '配置' },
-      { to: '/logs', icon: <FileText size={18} />, label: '日志' },
+      { to: '/settings', icon: <Settings size={20} />, label: '设置' },
+      { to: '/config', icon: <Bot size={20} />, label: '配置' },
+      { to: '/logs', icon: <FileText size={20} />, label: '日志' },
     ];
     case 'workbench':
     default: return [
-      { to: '/chat', icon: <Plus size={18} />, label: '新建对话' },
-      { to: '/chat', icon: <MessageSquare size={18} />, label: '对话' },
-      { to: '/workshop', icon: <Folder size={18} />, label: '工作空间' },
+      { to: '/chat', icon: <Plus size={20} />, label: '新建对话' },
+      { to: '/chat', icon: <MessageSquare size={20} />, label: '对话' },
+      { to: '/workshop', icon: <Folder size={20} />, label: '工作空间' },
     ];
   }
 }

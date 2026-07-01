@@ -13,6 +13,7 @@ import { StatusBar } from '@/components/Layout/StatusBar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { OfflineOverlay } from '@/components/OfflineOverlay';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -35,6 +36,7 @@ export function AppLayout() {
   const showOffline = !connected && !isOfflinePage;
 
   return (
+    <TooltipProvider delayDuration={150}>
     <div className="h-screen flex flex-col overflow-hidden bg-aegis-bg relative">
       {/* ── Ambient Background Glow (from conceptual JSX) ── */}
       <div className="ambient-glow-teal" />
@@ -72,5 +74,6 @@ export function AppLayout() {
       {/* Command Palette overlay */}
       <CommandPalette />
     </div>
+    </TooltipProvider>
   );
 }
