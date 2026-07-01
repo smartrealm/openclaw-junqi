@@ -28,6 +28,7 @@ reqwest = { version = "0.12", features = ["stream", "json"] }
 url = "2"
 sha2 = "0.10"
 zip = "2"
+rand = "0.8"
 flate2 = "1"
 tar = "0.4"
 portable-pty = "0.8"

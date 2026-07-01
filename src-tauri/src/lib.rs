@@ -35,6 +35,7 @@ pub fn run() {
             commands::secret_store::get_provider_secret,
             commands::secret_store::delete_provider_secret,
             commands::secret_store::list_provider_secrets,
+            commands::provider_oauth::start_provider_oauth,
             commands::gateway::get_gateway_token,
             commands::gateway::run_doctor,
             // System
