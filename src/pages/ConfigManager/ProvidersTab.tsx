@@ -1314,24 +1314,29 @@ function ProfileRow({
               <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
                 {t('config.authMode')}
               </label>
-              <select
-                value={localMode}
-                onChange={(e) => {
-                  setLocalMode(e.target.value);
-                  updateProfile({ mode: e.target.value });
-                }}
-                className={clsx(
-                  'bg-aegis-menu-bg border border-aegis-menu-border rounded-lg px-3 py-2',
-                  'text-aegis-text text-sm outline-none focus:border-aegis-primary',
-                  'transition-colors duration-200 cursor-pointer'
-                )}
-              >
-                {(tmpl?.authModes ?? ['api_key']).map((m) => (
-                  <option key={m} value={m}>
-                    {t(`config.authModeOption.${m}` as const, m)}
-                  </option>
-                ))}
-              </select>
+              <div className="flex gap-1 flex-wrap">
+                {(tmpl?.authModes ?? ['api_key']).map((m) => {
+                  const isSelected = localMode === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setLocalMode(m);
+                        updateProfile({ mode: m });
+                      }}
+                      className={clsx(
+                        'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                        isSelected
+                          ? 'bg-aegis-primary/15 text-aegis-primary border-aegis-primary/30'
+                          : 'bg-aegis-overlay/[0.04] text-aegis-text-dim border-transparent hover:border-aegis-border/40',
+                      )}
+                    >
+                      {t(`config.authModeOption.${m}` as const, m)}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
