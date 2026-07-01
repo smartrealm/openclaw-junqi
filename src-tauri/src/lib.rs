@@ -31,6 +31,10 @@ pub fn run() {
             commands::ensure::ensure_gateway_running,
             commands::gateway_supervisor::openclaw_doctor_repair,
             commands::gateway_supervisor::get_gateway_lifecycle,
+            commands::secret_store::store_provider_secret,
+            commands::secret_store::get_provider_secret,
+            commands::secret_store::delete_provider_secret,
+            commands::secret_store::list_provider_secrets,
             commands::gateway::get_gateway_token,
             commands::gateway::run_doctor,
             // System

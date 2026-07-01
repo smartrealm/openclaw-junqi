@@ -22,6 +22,7 @@ pub mod project_config;
 pub mod pty_neu;
 pub mod screenshot;
 pub mod session_analytics;
+pub mod secret_store;
 pub mod setup;
 pub mod startup;
 pub mod skills;
