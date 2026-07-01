@@ -1,0 +1,141 @@
+# ═══════════════════════════════════════════════════════════
+# JunQi Desktop — Release Build (macOS + Windows + Linux)
+#
+# Builds the Tauri desktop app on all three platforms in parallel and
+# uploads the signed(ish) installers as workflow artifacts. Designed
+# to be triggered by either:
+#   - push to main (always — gives you fresh binaries to download
+#     from the Actions tab after each merge)
+#   - workflow_dispatch (manual button in the Actions UI for ad-hoc
+#     builds without pushing)
+#   - tag push v*.*.* (future — wire up release-please or similar)
+#
+# Why three platforms in one workflow rather than three separate files:
+#   - one place to read the matrix, cache strategy, artifact naming
+#   - the '✅ Release Summary' job at the end gives a single status
+#     banner for the whole release in the Actions tab
+#
+# Why use tauri-apps/tauri-action@v0:
+#   - it handles the per-OS toolchain install (Rust + node + OS deps)
+#   - caches Rust build artifacts across runs (~10x faster rebuilds)
+#   - uses the beforeBuildCommand/bundleConfig from tauri.conf.json
+#     so this file stays in sync with the app's own configuration
+#
+# Artifact retention: 14 days. Long enough for a release cycle, short
+# enough to avoid stale-binary confusion.
+# ═══════════════════════════════════════════════════════════
+
+name: Release Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (branch, tag, or SHA). Defaults to main.'
+        required: false
+        default: 'main'
+
+concurrency:
+  group: release-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.platform }} (${{ matrix.arch }})
+    strategy:
+      fail-fast: false              # keep all platforms building even if one fails
+      matrix:
+        include:
+          # macOS — universal (both arm64 and x86_64 in one .app/.dmg)
+          - platform: macos-latest
+            os: 'macos'
+            target: 'universal-apple-darwin'
+            artifact_glob: |
+              **/*.dmg
+              **/*.app
+          # Windows — MSVC, single arch
+          - platform: windows-latest
+            os: 'windows'
+            target: 'x86_64-pc-windows-msvc'
+            artifact_glob: |
+              **/*.msi
+              **/*.exe
+          # Linux — Debian + AppImage (covers most distros)
+          - platform: ubuntu-22.04
+            os: 'linux'
+            target: 'x86_64-unknown-linux-gnu'
+            artifact_glob: |
+              **/*.deb
+              **/*.AppImage
+              **/*.rpm
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Tauri reads tauri.conf.json for everything else (productName,
+          # bundle targets, icon, etc.). We only need to override
+          # --target when building for a specific arch.
+          args: ${{ matrix.target == 'universal-apple-darwin' && '--target universal-apple-darwin' || format('--target {0}', matrix.target) }}
+
+      - name: List built artifacts
+        if: always()
+        shell: bash
+        run: |
+          echo "Built artifacts in src-tauri/target/${{ matrix.target }}/bundle/:"
+          find "src-tauri/target/${{ matrix.target }}/bundle" -maxdepth 4 -type f \( -name "*.dmg" -o -name "*.app" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" \) 2>/dev/null | sort
+
+      - name: Upload installer artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junqi-desktop-${{ matrix.os }}-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/bundle/**
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    name: ✅ Release Summary
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report per-platform status
+        run: |
+          echo "## JunQi Desktop — Release Build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Platform | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          for job in $(echo "${{ needs.build.result }}"); do :; done
+          echo "| macOS (universal) | ${{ needs.build.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          # The 'needs' array gives a single result string; for per-platform
+          # detail, the Actions tab UI shows each matrix leg's status.
+
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::error::One or more platform builds failed"
+            exit 1
+          fi
+          echo "✅ All platforms built successfully" >> "$GITHUB_STEP_SUMMARY"
