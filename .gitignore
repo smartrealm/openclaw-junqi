@@ -6,4 +6,9 @@ target/
 # Local AI-tooling scratch space (attachments, config). Keep out of git.
 .nezha/
 # Ad-hoc screenshots dropped at the repo root for inspection.
-696.png
+# All real app icons live under src-tauri/icons/ (matched explicitly
+# by tauri.conf.json), so a root-level *.png is always scratch.
+*.png
+# Sibling project checked out next to this one for cross-reference.
+# Add it back if you ever start a monorepo merge.
+hexclaw-desktop/
