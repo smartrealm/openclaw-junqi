@@ -55,6 +55,18 @@ function settingsGroups(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
   ];
 }
 
+/**
+ * Sub-resources of an Agent — sessions, skills, etc. These are scoped
+ * to a specific agent so they live under the Agents panel rather than
+ * the top-level Settings panel.
+ */
+function agentSubResources(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
+  return [
+    { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理') },
+    { to: '/skill-hub', icon: <Puzzle size={14} />,       label: t('nav.skillManager', '技能管理') },
+  ];
+}
+
 // ═══════════════════════════════════════════════════════════
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
@@ -358,11 +370,15 @@ function AgentsPanel() {
             ))}
           </SidebarSection>
         )}
+        <SidebarSection label={t('nav.agentSubResources', '智能体子资源')}>
+          {agentSubResources(t).map((it) => (
+            <SidebarRow key={it.to} icon={it.icon} title={it.label} onClick={() => navigate(it.to)} />
+          ))}
+        </SidebarSection>
         <SidebarSection label={t('nav.agentTools', '智能体工具')}>
           <SidebarRow icon={<Brain size={14} />} title={t('nav.memory', '记忆管理')} onClick={() => navigate('/memory')} />
           <SidebarRow icon={<Activity size={14} />} title={t('nav.agentRun', 'Agent 运行')} onClick={() => navigate('/agent-run')} />
           <SidebarRow icon={<Bot size={14} />} title={t('nav.liveAgents', '多智能体视图')} onClick={() => navigate('/agents/live')} />
-          <SidebarRow icon={<Puzzle size={14} />} title={t('nav.skills', '技能市场')} onClick={() => navigate('/skills')} />
         </SidebarSection>
         {agents.length === 0 && <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}
       </div>
