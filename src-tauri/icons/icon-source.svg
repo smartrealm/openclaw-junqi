@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  JunQi Desktop app icon: matches the in-app brand mark + the nezha
+  visual DNA (docs/NEZHA-VISUAL-DNA.md):
+    Outer: rounded square with a subtle gradient border
+      (blue to cyan to green): restrained, not rainbow
+    Inner: opaque dark navy card (matches aegis-bg = #1d212a)
+    Center: bold "JQ" wordmark in white (matches in-app brand mark
+      at src/pages/SettingsPage.tsx)
+    Subtle 1px highlight on the inner card top edge for depth
+      (paper-stack discipline)
+
+  Source size: 1024x1024. Down-scaled by rsvg-convert to the bundle
+  variants in tauri.conf.json. Regenerate with:
+    bash scripts/render-app-icon.sh
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Outer gradient border: blue → cyan → green, restrained -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7f9aff"/>
+      <stop offset="50%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#4ade80"/>
+    </linearGradient>
+    <!-- Top edge highlight (1px line on inner card top for paper-stack depth) -->
+    <linearGradient id="topHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Mask: keep the gradient stroke OUTSIDE the inner card so the
+         border stays 1px-thick visually (paper-stack: outer = border,
+         inner = opaque card). -->
+    <mask id="cardMask">
+      <rect width="1024" height="1024" fill="black"/>
+      <!-- The visible area is the gradient ring = outer rounded square
+           minus inner rounded square -->
+      <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="white"/>
+      <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- Layer 1: gradient border ring (the outside of the icon) -->
+  <g mask="url(#cardMask)">
+    <rect width="1024" height="1024" rx="220" ry="220" fill="url(#borderGrad)"/>
+  </g>
+
+  <!-- Layer 2: inner dark navy card (matches aegis-bg #1d212a) -->
+  <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="#1d212a"/>
+
+  <!-- Layer 3: top-edge highlight (paper-stack depth, very subtle) -->
+  <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="url(#topHighlight)"/>
+
+  <!-- Layer 4: JQ wordmark (white, bold, matches in-app brand) -->
+  <text
+    x="512" y="512"
+    font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
+    font-size="460"
+    font-weight="800"
+    letter-spacing="-12"
+    text-anchor="middle"
+    dominant-baseline="central"
+    fill="#ffffff">JQ</text>
+</svg>
