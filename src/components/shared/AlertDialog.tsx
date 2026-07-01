@@ -3,6 +3,7 @@
 
 import { X, ShieldAlert, AlertTriangle, Info, CheckCircle, HelpCircle } from 'lucide-react';
 import clsx from 'clsx';
+import i18n from '@/i18n';
 
 export type AlertVariant = 'info' | 'warning' | 'error' | 'success' | 'confirm';
 
@@ -85,7 +86,7 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
             {confirmLabel && onConfirm && (
               <>
                 <button onClick={onClose} className="px-3.5 py-1.5 rounded-lg text-[12px] font-medium text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors">
-                  {cancelLabel || '取消'}
+                  {cancelLabel || (i18n.t('common.cancel') as string)}
                 </button>
                 <button
                   onClick={() => { onConfirm(); onClose(); }}
@@ -100,7 +101,7 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
                 onClick={onClose}
                 className={clsx('px-3.5 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors', colors.btn, colors.btnHover)}
               >
-                {dismissLabel || '知道了'}
+                {dismissLabel || (i18n.t('common.dismiss') as string)}
               </button>
             )}
           </div>
@@ -159,5 +160,5 @@ export function showAlert(title: string, message: string, variant: AlertVariant 
   useAlertStore.getState().alert({ title, message, variant });
 }
 export function showConfirm(title: string, message: string, onConfirm: () => void) {
-  useAlertStore.getState().confirm({ title, message, variant: 'confirm', confirmLabel: '确认', onConfirm });
+  useAlertStore.getState().confirm({ title, message, variant: 'confirm', confirmLabel: (i18n.t('common.confirm') as string), onConfirm });
 }

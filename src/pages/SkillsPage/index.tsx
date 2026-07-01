@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import { Search, Loader2, RefreshCw, Package, Globe, FolderOpen, FileArchive, Upload, CheckCircle2, AlertCircle, Zap, ExternalLink, CalendarDays, Plug, Brain, FileText, Settings2, Wrench, Pencil, GitBranch, Mail, BookOpen, HeartPulse, Volume2, Gem, Puzzle, CloudSun, Palette, Mic, Bug } from 'lucide-react';
 import { Cube } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1087,10 +1088,10 @@ export function SkillsPage() {
         }
         setDeleteConfirm(null);
       } else {
-        showAlert('删除失败', String(res?.error ?? '未知错误'), 'error');
+        showAlert(i18n.t('common.deleteFailed') as string, String(res?.error ?? (i18n.t('common.unknownError') as string)), 'error');
       }
     } catch (err: any) {
-      showAlert('删除失败', String(err?.message ?? err), 'error');
+      showAlert(i18n.t('common.deleteFailed') as string, String(err?.message ?? err), 'error');
     } finally {
       setDeleting(false);
     }

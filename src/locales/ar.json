@@ -56,7 +56,9 @@
     "diagMonitor": "التشخيص والمراقبة",
     "management": "إدارة",
     "agentTools": "أدوات الوكيل",
-    "subPages": "صفحات فرعية"
+    "subPages": "صفحات فرعية",
+    "workbench": "مساحة العمل",
+    "tools": "أدوات"
   },
   "skills": {
     "title": "المهارات",
@@ -397,7 +399,14 @@
     "cancel": "إلغاء",
     "confirm": "تأكيد",
     "close": "إغلاق",
-    "loading": "جاري التحميل..."
+    "loading": "جاري التحميل...",
+    "dismiss": "حسنًا",
+    "error": "خطأ",
+    "unknownError": "خطأ غير معروف",
+    "deleteFailed": "فشل الحذف",
+    "screenRecordPermission": "إذن تسجيل الشاشة مطلوب",
+    "screenRecordHint": "افتح إعدادات النظام → الخصوصية والأمان → تسجيل الشاشة،",
+    "enterPrompt": "أدخل الموجه…"
   },
   "mcpTools": {
     "otherActiveTools": "أدوات نشطة أخرى",
@@ -526,7 +535,9 @@
     "fullScreenDesc": "يصغّر التطبيق ويصور الشاشة",
     "openWindows": "النوافذ المفتوحة ({{count}})",
     "loading": "جاري تحميل النوافذ...",
-    "noWindows": "ما في نوافذ مفتوحة"
+    "noWindows": "ما في نوافذ مفتوحة",
+    "permissionRequired": "إذن تسجيل الشاشة مطلوب",
+    "permissionHint": "افتح إعدادات النظام → الخصوصية والأمان → تسجيل الشاشة، فعّل JunQi Desktop ثم أعد المحاولة."
   },
   "voice": {
     "cancel": "إلغاء",
@@ -582,7 +593,8 @@
     "paste": "لصق",
     "selectAll": "تحديد الكل",
     "clear": "مسح",
-    "workspaces": "WORKSPACES"
+    "workspaces": "WORKSPACES",
+    "searchWorkspace": "ابحث في مساحات العمل، الإجراءات…"
   },
   "offline": {
     "title": "غير متصل",
@@ -1360,7 +1372,7 @@
       "replace": "استبدال",
       "clear": "مسح",
       "cat": "قطة",
-      "jellyfish": "قنديل البحر",
+      "jellyfish": "قنديل",
       "ghost": "شبح",
       "showPet": "إظهار الرفيق",
       "showPetHint": "استدعِه بعد الإخفاء (أيقونة الشريط / ⌘⇧H)",

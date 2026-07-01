@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2 } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
@@ -607,14 +608,14 @@ export function AgentHubPage() {
       await gateway.createAgent(newAgent);
       setShowAddForm(false); setNewAgent({ id: '', name: '', model: '', workspace: '' });
       await refreshGroup('agents');
-    } catch (err: any) { showAlert('错误', err?.message || String(err), 'error'); }
+    } catch (err: any) { showAlert(i18n.t('common.error') as string, err?.message || String(err), 'error'); }
   };
 
   const handleDeleteAgent = async (agentId: string) => {
     if (deletingAgentId === agentId) {
       try { await gateway.deleteAgent(agentId); setDeletingAgentId(null);
         await refreshGroup('agents');
-      } catch (err: any) { showAlert('错误', err?.message || String(err), 'error'); setDeletingAgentId(null); }
+      } catch (err: any) { showAlert(i18n.t('common.error') as string, err?.message || String(err), 'error'); setDeletingAgentId(null); }
     } else {
       setDeletingAgentId(agentId);
       setTimeout(() => setDeletingAgentId(prev => prev === agentId ? null : prev), 3000);

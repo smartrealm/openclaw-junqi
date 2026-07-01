@@ -102,16 +102,15 @@ export function ScreenshotPicker({ open, onClose, onCapture }: ScreenshotPickerP
                   <ShieldAlert size={15} className="text-amber-400" />
                 </div>
                 <div>
-                  <div className="text-[13px] font-semibold text-amber-300 mb-1.5">需要屏幕录制权限</div>
+                  <div className="text-[13px] font-semibold text-amber-300 mb-1.5">{t('screenshot.permissionRequired', '需要屏幕录制权限')}</div>
                   <p className="text-[11px] text-aegis-text-muted leading-relaxed mb-3">
-                    打开 <b>系统设置 → 隐私与安全性 → 屏幕录制</b>，<br />
-                    启用 <b>JunQi Desktop</b> 后重新截图。
+                    {t('screenshot.permissionHint', '打开 系统设置 → 隐私与安全性 → 屏幕录制，启用 JunQi Desktop 后重新截图。')}
                   </p>
                   <button
                     onClick={() => { onClose(); }}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 transition-colors border border-amber-500/20"
                   >
-                    知道了
+                    {t('common.dismiss', '知道了')}
                   </button>
                 </div>
               </div>

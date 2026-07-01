@@ -58,7 +58,9 @@
     "diagMonitor": "诊断与监控",
     "management": "管理",
     "agentTools": "智能体工具",
-    "subPages": "子页面"
+    "subPages": "子页面",
+    "workbench": "工作台",
+    "tools": "工具"
   },
   "skills": {
     "title": "技能",
@@ -482,7 +484,14 @@
     "show": "显示",
     "hide": "隐藏",
     "remove": "移除",
-    "create": "创建"
+    "create": "创建",
+    "dismiss": "知道了",
+    "error": "错误",
+    "unknownError": "未知错误",
+    "deleteFailed": "删除失败",
+    "screenRecordPermission": "需要屏幕录制权限",
+    "screenRecordHint": "打开 系统设置 → 隐私与安全性 → 屏幕录制，",
+    "enterPrompt": "输入 Prompt…"
   },
   "agentHub": {
     "depth0": "深度 0 — 调度器",
@@ -744,7 +753,9 @@
     "fullScreenDesc": "最小化应用并截取屏幕",
     "openWindows": "打开的窗口（{{count}} 个）",
     "loading": "正在加载窗口列表…",
-    "noWindows": "没有可用窗口"
+    "noWindows": "没有可用窗口",
+    "permissionRequired": "需要屏幕录制权限",
+    "permissionHint": "打开 系统设置 → 隐私与安全性 → 屏幕录制，启用 JunQi Desktop 后重新截图。"
   },
   "voice": {
     "cancel": "取消",
@@ -800,7 +811,8 @@
     "paste": "粘贴",
     "selectAll": "全选",
     "clear": "清屏",
-    "workspaces": "WORKSPACES"
+    "workspaces": "WORKSPACES",
+    "searchWorkspace": "搜索工作区、操作…"
   },
   "offline": {
     "title": "未连接",

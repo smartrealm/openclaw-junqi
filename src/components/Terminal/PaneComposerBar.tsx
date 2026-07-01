@@ -2,6 +2,7 @@
 // 默认隐藏，⌘L 触发滑出。Return 发送，Shift+Return 换行，Esc 关闭。
 
 import { useRef, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 
 export interface PaneComposerBarProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export function PaneComposerBar({
   onClose,
 }: PaneComposerBarProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { t } = useTranslation();
 
   // 打开时自动聚焦
   useEffect(() => {
@@ -70,7 +72,7 @@ export function PaneComposerBar({
         value={draft}
         onChange={(e) => onDraftChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="输入 Prompt…"
+        placeholder={t('common.enterPrompt', '输入 Prompt…')}
         style={{
           flex: 1,
           minHeight: 80,

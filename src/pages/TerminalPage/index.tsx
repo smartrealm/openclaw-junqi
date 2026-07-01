@@ -666,6 +666,7 @@ function CommandPaletteModal({
   onSelectWorkspace: (id: string) => void;
   onCreateWorkspace: () => void;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -754,7 +755,7 @@ function CommandPaletteModal({
             value={query}
             onChange={(e) => { setQuery(e.target.value); setSelectedIdx(0); }}
             onKeyDown={handleKeyDown}
-            placeholder="搜索工作区、操作…"
+            placeholder={t('terminal.searchWorkspace', '搜索工作区、操作…')}
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
               fontSize: 13, fontFamily: '"JetBrains Mono", monospace',

@@ -1,18 +1,20 @@
 // TabBar — 顶部标签导航
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { SidebarTab } from './tab-utils';
 import { LayoutDashboard, Bot, Wrench, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
 const TABS = [
-  { id: 'workbench', label: '工作台', path: '/', Icon: LayoutDashboard },
-  { id: 'agents',    label: '智能体', path: '/agents', Icon: Bot },
-  { id: 'tools',     label: '工具',   path: '/terminal', Icon: Wrench },
-  { id: 'settings',  label: '设置',   path: '/settings', Icon: Settings },
-];
+  { id: 'workbench', labelKey: 'nav.workbench', labelFallback: '工作台', path: '/', Icon: LayoutDashboard },
+  { id: 'agents',    labelKey: 'nav.agents',     labelFallback: '智能体', path: '/agents', Icon: Bot },
+  { id: 'tools',     labelKey: 'nav.tools',      labelFallback: '工具',   path: '/terminal', Icon: Wrench },
+  { id: 'settings',  labelKey: 'nav.settings',   labelFallback: '设置',   path: '/settings', Icon: Settings },
+] as const;
 
 export function TabBar() {
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -36,7 +38,7 @@ export function TabBar() {
             )}
           >
             <tab.Icon size={13} />
-            {tab.label}
+            {t(tab.labelKey, tab.labelFallback)}
           </button>
         );
       })}

@@ -58,7 +58,9 @@
     "diagMonitor": "Diagnostics & Monitor",
     "management": "Management",
     "agentTools": "Agent Tools",
-    "subPages": "Sub-pages"
+    "subPages": "Sub-pages",
+    "workbench": "Workbench",
+    "tools": "Tools"
   },
   "skills": {
     "title": "Skills",
@@ -482,7 +484,14 @@
     "show": "Show",
     "hide": "Hide",
     "remove": "Remove",
-    "create": "Create"
+    "create": "Create",
+    "dismiss": "Got it",
+    "error": "Error",
+    "unknownError": "Unknown error",
+    "deleteFailed": "Delete failed",
+    "screenRecordPermission": "Screen recording permission required",
+    "screenRecordHint": "Open System Settings → Privacy & Security → Screen Recording,",
+    "enterPrompt": "Enter prompt…"
   },
   "agentHub": {
     "depth0": "Depth 0 — Orchestrator",
@@ -746,7 +755,9 @@
     "fullScreenDesc": "Minimize app and capture screen",
     "openWindows": "Open Windows ({{count}})",
     "loading": "Loading windows...",
-    "noWindows": "No open windows"
+    "noWindows": "No open windows",
+    "permissionRequired": "Screen recording permission required",
+    "permissionHint": "Open System Settings → Privacy & Security → Screen Recording, enable JunQi Desktop then retry."
   },
   "voice": {
     "cancel": "Cancel",
@@ -802,7 +813,8 @@
     "paste": "Paste",
     "selectAll": "Select All",
     "clear": "Clear",
-    "workspaces": "WORKSPACES"
+    "workspaces": "WORKSPACES",
+    "searchWorkspace": "Search workspaces, actions…"
   },
   "offline": {
     "title": "Not Connected",
