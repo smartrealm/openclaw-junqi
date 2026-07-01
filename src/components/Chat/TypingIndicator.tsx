@@ -50,6 +50,17 @@ export function TypingIndicator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTyping]);
 
+  // Adaptive format: under a minute reads as "Ns" (3s, 12s, 59s); at
+  // and beyond one minute it flips to "m:ss" (1:00, 1:23, 10:00). The
+  // flip avoids the visual jump from "59s" to "60s" and gives a stable
+  // width once the agent has been waiting for a while.
+  const formatElapsed = (sec: number): string => {
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+
   return (
     <div className="group flex gap-2.5 items-start mx-1 mr-4 mb-2 animate-fade-in" dir={dir}>
       {/* Avatar — identical size/style to MessageBubble assistant avatar */}
@@ -85,11 +96,12 @@ export function TypingIndicator() {
             ))}
           </div>
           {/* Elapsed-time chip on the right side of the indicator border.
-              0s is hidden so a fresh indicator doesn't flash "0s". */}
+              Hidden for the first second so a fresh indicator doesn't
+              flash "0s". Format adapts: Ns under a minute, m:ss beyond. */}
           {isTyping && elapsedSec >= 1 && (
             <div className="flex items-center px-2.5 border-l border-[rgb(var(--aegis-overlay)/0.06)]
               text-[10px] font-mono tabular-nums text-aegis-text-dim">
-              {elapsedSec}s
+              {formatElapsed(elapsedSec)}
             </div>
           )}
         </div>
