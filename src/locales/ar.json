@@ -38,7 +38,8 @@
     "collapseSidebar": "طي الشريط الجانبي",
     "sidebarToMini": "طيّ إلى الأيقونات",
     "sidebarHide": "إخفاء الشريط الجانبي",
-    "sidebarExpand": "توسيع الشريط الجانبي"
+    "sidebarExpand": "توسيع الشريط الجانبي",
+    "liveAgents": "عرض الوكلاء المتعددين"
   },
   "skills": {
     "title": "المهارات",

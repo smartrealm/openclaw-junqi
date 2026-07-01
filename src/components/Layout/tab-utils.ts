@@ -2,10 +2,10 @@
 export type SidebarTab = 'workbench' | 'agents' | 'tools' | 'settings';
 
 const TAB_ROUTE_MAP: [SidebarTab, string[]][] = [
-  ['workbench', ['/', '/chat', '/kanban', '/workshop', '/timeline', '/welcome']],
-  ['agents',    ['/agents', '/agent-run', '/memory']],
-  ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools']],
-  ['settings',  ['/settings', '/config', '/logs', '/perf', '/sessions', '/skills', '/analytics', '/skill-hub', '/ui-showcase']],
+  ['workbench', ['/', '/chat', '/welcome']],
+  ['agents',    ['/agents', '/agent-run', '/agents/live', '/memory']],
+  ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools', '/kanban', '/timeline']],
+  ['settings',  ['/settings', '/config', '/logs', '/perf', '/sessions', '/skills', '/skill-hub', '/analytics', '/ui-showcase']],
 ];
 
 const CACHE = new Map<string, SidebarTab>();

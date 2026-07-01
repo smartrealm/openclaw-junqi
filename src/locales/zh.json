@@ -40,7 +40,8 @@
     "collapseSidebar": "收起侧栏",
     "sidebarToMini": "收起为图标",
     "sidebarHide": "隐藏侧栏",
-    "sidebarExpand": "展开侧栏"
+    "sidebarExpand": "展开侧栏",
+    "liveAgents": "多智能体视图"
   },
   "skills": {
     "title": "技能",

@@ -26,6 +26,8 @@ const TOOL_CATEGORIES: ReadonlyArray<{ to: string; icon: React.ReactNode; label:
   { to: '/calendar', icon: <Calendar size={14} />,  label: '日历' },
   { to: '/sandbox',  icon: <Wrench size={14} />,   label: '代码沙盒' },
   { to: '/git',      icon: <Cpu size={14} />,       label: 'Git 仓库' },
+  { to: '/kanban',   icon: <ListChecks size={14} />, label: '看板' },
+  { to: '/timeline', icon: <Clock size={14} />,     label: '时间线' },
 ];
 
 const SETTINGS_GROUPS: ReadonlyArray<{ label: string; items: ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> }> = [
@@ -40,6 +42,7 @@ const SETTINGS_GROUPS: ReadonlyArray<{ label: string; items: ReadonlyArray<{ to:
   ]},
   { label: '管理', items: [
     { to: '/sessions', icon: <MessageSquare size={14} />, label: '会话管理' },
+    { to: '/skill-hub', icon: <Puzzle size={14} />,       label: '技能管理' },
   ]},
 ];
 
@@ -133,6 +136,7 @@ function AgentsPanel() {
         <SidebarSection label={t('sidebar.subAgents', '子页面')}>
           <SidebarRow icon={<Brain size={14} />} title={t('nav.memory', '记忆管理')} onClick={() => navigate('/memory')} />
           <SidebarRow icon={<Activity size={14} />} title={t('nav.agentRun', 'Agent 运行')} onClick={() => navigate('/agent-run')} />
+          <SidebarRow icon={<Bot size={14} />} title={t('nav.liveAgents', '多智能体视图')} onClick={() => navigate('/agents/live')} />
           <SidebarRow icon={<Puzzle size={14} />} title={t('nav.skills', '技能市场')} onClick={() => navigate('/skills')} />
         </SidebarSection>
         {agents.length === 0 && <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}

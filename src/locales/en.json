@@ -40,7 +40,8 @@
     "collapseSidebar": "Collapse sidebar",
     "sidebarToMini": "Collapse to icons",
     "sidebarHide": "Hide sidebar",
-    "sidebarExpand": "Expand sidebar"
+    "sidebarExpand": "Expand sidebar",
+    "liveAgents": "Multi-agent view"
   },
   "skills": {
     "title": "Skills",
