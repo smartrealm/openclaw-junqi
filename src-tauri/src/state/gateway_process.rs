@@ -2,11 +2,23 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 use serde::Serialize;
 use tokio::process::Child;
+use crate::state::restart_governor::RestartGovernor;
 
 /// Maximum number of log entries kept in the circular buffer.
 /// Matches the maxauto behaviour: small enough to ship over IPC cheaply,
 /// large enough to cover a typical restart cycle's diagnostics.
 pub const LOG_BUFFER_CAP: usize = 200;
+
+/// Ported from ClawX process-policy.ts: canonical lifecycle state machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GatewayLifecycle {
+    Stopped,
+    Starting,
+    Running,
+    Error,
+    Reconnecting,
+}
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -53,6 +65,10 @@ pub struct GatewayProcess {
     /// Circular buffer of recent log entries (SPEC §2.4, M6).
     /// Push path evicts the oldest entry once length exceeds LOG_BUFFER_CAP.
     pub logs: Mutex<VecDeque<LogEntry>>,
+    /// Ported from ClawX: rate-limit restarts to once per 2.5s.
+    pub restart_governor: Mutex<RestartGovernor>,
+    /// Ported from ClawX: canonical lifecycle state machine.
+    pub lifecycle: Mutex<GatewayLifecycle>,
 }
 
 impl GatewayProcess {
@@ -62,8 +78,18 @@ impl GatewayProcess {
             port: Mutex::new(51789),
             restarting: Mutex::new(false),
             logs: Mutex::new(VecDeque::with_capacity(LOG_BUFFER_CAP)),
+            restart_governor: Mutex::new(RestartGovernor::new(None)),
+            lifecycle: Mutex::new(GatewayLifecycle::Stopped),
         }
     }
+}
+
+/// Ported from ClawX process-policy.ts: shouldDeferRestart.
+/// Restart requests should not interrupt an in-flight startup or reconnect
+/// flow — doing so can kill a just-spawned process and leave the manager
+/// stuck in a phantom "running" state with no real process behind it.
+pub fn should_defer_restart(lifecycle: GatewayLifecycle, start_lock: bool) -> bool {
+    start_lock || lifecycle == GatewayLifecycle::Starting || lifecycle == GatewayLifecycle::Reconnecting
 }
 
 /// Push a log entry into the buffer. Evicts the oldest entry if the buffer
