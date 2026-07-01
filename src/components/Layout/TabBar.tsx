@@ -7,7 +7,7 @@ import { LayoutDashboard, Bot, Wrench, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
 const TABS = [
-  { id: 'workbench', labelKey: 'nav.workbench', labelFallback: '工作台', path: '/', Icon: LayoutDashboard },
+  { id: 'workbench', labelKey: 'nav.dashboard', labelFallback: '仪表盘', path: '/', Icon: LayoutDashboard },
   { id: 'agents',    labelKey: 'nav.agents',     labelFallback: '智能体', path: '/agents', Icon: Bot },
   { id: 'tools',     labelKey: 'nav.tools',      labelFallback: '工具',   path: '/terminal', Icon: Wrench },
   { id: 'settings',  labelKey: 'nav.settings',   labelFallback: '设置',   path: '/settings', Icon: Settings },
