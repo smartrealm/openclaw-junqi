@@ -1,0 +1,69 @@
+/* ═══════════════════════════════════════════════════════════
+   GoClaw-style OKLCH token system for JunQi
+   - 品牌色 (oklch hue 220 = blue, 38 = orange)
+   - 一族 token 用同一 hue 派生
+   - dark/light 模式共用同一套 token 路径
+   ═══════════════════════════════════════════════════════════ */
+
+/* Dark mode (default) */
+:root {
+  /* Surface scale (L: 0.15 → 0.30) */
+  --h-bg-app:        oklch(0.18 0.02 250);
+  --h-bg-pane:       oklch(0.22 0.02 250);
+  --h-bg-elevated:   oklch(0.27 0.02 250);
+  --h-bg-card:       oklch(0.32 0.02 250);
+  --h-bg-input:      oklch(0.30 0.02 250);
+  --h-bg-chip:       oklch(0.35 0.02 250);
+  --h-bg-hover:      oklch(0.40 0.02 250);
+
+  /* Text scale (L: 0.55 → 0.96) */
+  --h-text:          oklch(0.96 0.01 250);
+  --h-text-2:        oklch(0.82 0.015 250);
+  --h-text-3:        oklch(0.68 0.015 250);
+  --h-text-4:        oklch(0.55 0.02 250);
+
+  /* Accent (brand blue, hue 220) */
+  --h-accent:        oklch(0.68 0.18 220);
+  --h-accent-hover:  oklch(0.74 0.20 220);
+  --h-accent-soft:   oklch(0.68 0.18 220 / 0.14);
+  --h-accent-border: oklch(0.68 0.18 220 / 0.30);
+  --h-accent-contrast: oklch(0.18 0.02 250); /* text on accent */
+
+  /* Borders */
+  --h-line:          oklch(0.30 0.02 250);
+  --h-line-soft:     oklch(0.25 0.02 250);
+  --h-line-strong:   oklch(0.40 0.02 250);
+
+  /* Status — same hue for all, lightness for severity */
+  --h-ok:            oklch(0.65 0.15 145);   /* green */
+  --h-ok-soft:       oklch(0.65 0.15 145 / 0.14);
+  --h-warn:          oklch(0.78 0.15 75);    /* amber */
+  --h-warn-soft:     oklch(0.78 0.15 75 / 0.14);
+  --h-err:           oklch(0.65 0.23 25);    /* red */
+  --h-err-soft:      oklch(0.65 0.23 25 / 0.12);
+
+  /* Agent lifecycle — derived from status */
+  --h-status-running:   var(--h-accent);
+  --h-status-attention: var(--h-warn);
+  --h-status-failed:    var(--h-err);
+  --h-status-idle:      var(--h-text-3);
+  --h-status-ended:     var(--h-ok);
+
+  /* Layout dimensions */
+  --h-topbar-h:     44px;
+  --h-sidebar-w:    220px;
+  --h-sidebar-mini: 64px;
+  --h-statusbar-h:  26px;
+  --h-window-safe-top: 0px;
+
+  /* Radii */
+  --h-radius-sm:  5px;
+  --h-radius-md:  8px;
+  --h-radius-lg: 12px;
+
+  /* Motion */
+  --h-duration-instant:  80ms;
+  --h-duration-fast:     120ms;
+  --h-duration-normal:   180ms;
+  --h-ease-standard:     cubic-bezier(0.22, 1, 0.36, 1);
+}
