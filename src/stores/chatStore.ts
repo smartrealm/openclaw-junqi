@@ -230,6 +230,9 @@ export interface Session {
   compactionCount?: number;
   // Runtime state from gateway
   running?: boolean;
+  // User-controlled lifecycle flags (SPEC: archive + pin)
+  pinned?: boolean;
+  archived?: boolean;
 }
 
 export interface TokenUsage {
@@ -292,6 +295,14 @@ interface ChatState {
   setSessions: (sessions: Session[], defaults?: { model: string | null; contextTokens: number | null }) => void;
   /** Update a single session's label locally without a full sessions.list refetch. */
   setSessionLabel: (key: string, label: string) => void;
+  /** Pin/unpin a session. Pinned sessions surface at the top of the
+   *  sidebar above the active/recent sections. Pure local state — no
+   *  backend round-trip. */
+  togglePinSession: (key: string) => void;
+  /** Archive/restore a session. Archived sessions are filtered out
+   *  of the default sidebar view; a "Show archived (N)" toggle at the
+   *  bottom of the sidebar exposes them. Pure local state. */
+  setSessionArchived: (key: string, archived: boolean) => void;
   setActiveSession: (key: string) => void;
   incrementSessionUnread: (key: string, amount?: number) => void;
   markSessionCompleted: (key: string) => void;
@@ -973,6 +984,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     sessions: updateSession(state.sessions, key, (session) =>
       session.label === label ? session : { ...session, label },
     ),
+  })),
+
+  togglePinSession: (key) => set((state) => ({
+    sessions: updateSession(state.sessions, key, (s) => ({ ...s, pinned: !s.pinned })),
+  })),
+
+  setSessionArchived: (key, archived) => set((state) => ({
+    sessions: updateSession(state.sessions, key, (s) => ({ ...s, archived })),
   })),
 
   // ── Tabs ──

@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X } from 'lucide-react';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -55,11 +55,13 @@ const SETTINGS_GROUPS: ReadonlyArray<{ label: string; items: ReadonlyArray<{ to:
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
 
-function SessionRowItem({ sessionKey, currentTitle, isActive, meta }: {
+function SessionRowItem({ sessionKey, currentTitle, isActive, meta, currentPinned = false, currentArchived = false }: {
   sessionKey: string;
   currentTitle: string;
   isActive: boolean;
   meta?: string;
+  currentPinned?: boolean;
+  currentArchived?: boolean;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -134,6 +136,16 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta }: {
     );
   }, [sessionKey, t]);
 
+  const togglePin = useCallback(() => {
+    setCtxMenu(null);
+    useChatStore.getState().togglePinSession(sessionKey);
+  }, [sessionKey]);
+
+  const toggleArchive = useCallback(() => {
+    setCtxMenu(null);
+    useChatStore.getState().setSessionArchived(sessionKey, !currentArchived);
+  }, [sessionKey, currentArchived]);
+
   // Close context menu on outside click.
   useEffect(() => {
     if (!ctxMenu) return;
@@ -198,6 +210,22 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta }: {
             {t('chat.renameSession', 'Rename session')}
           </button>
           <button
+            onClick={togglePin}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+          >
+            {currentPinned
+              ? <><PinOff size={13} className="opacity-60" />{t('chat.unpinSession', 'Unpin')}</>
+              : <><Pin size={13} className="opacity-60" />{t('chat.pinSession', 'Pin to top')}</>}
+          </button>
+          <button
+            onClick={toggleArchive}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+          >
+            {currentArchived
+              ? <><ArchiveRestore size={13} className="opacity-60" />{t('chat.unarchiveSession', 'Unarchive')}</>
+              : <><Archive size={13} className="opacity-60" />{t('chat.archiveSession', 'Archive')}</>}
+          </button>
+          <button
             onClick={handleReset}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
           >
@@ -225,7 +253,8 @@ function WorkbenchPanel() {
   const sessions = useChatStore((st) => st.sessions) ?? [];
   const typingBySession = useChatStore((st) => st.typingBySession) ?? {};
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
-  const { active, recent } = partitionSessions(sessions, typingBySession);
+  const [showArchived, setShowArchived] = useState(false);
+  const { pinned, active, recent, archived } = partitionSessions(sessions, typingBySession, showArchived);
 
   const goSession = (key: string) => {
     useChatStore.getState().setActiveSession(key);
@@ -241,11 +270,22 @@ function WorkbenchPanel() {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
+        {pinned.length > 0 && (
+          <SidebarSection label={t('sidebar.pinned', '已置顶')}>
+            {pinned.map((sx) => (
+              <SessionRowItem key={sx.key} sessionKey={sx.key}
+                currentTitle={sessionTitle(sx)} isActive={sx.key === activeKey}
+                currentPinned={!!sx.pinned} currentArchived={!!sx.archived}
+                meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
+            ))}
+          </SidebarSection>
+        )}
         {active.length > 0 && (
           <SidebarSection label={t('sidebar.active', '进行中')}>
             {active.map((sx) => (
               <SessionRowItem key={sx.key} sessionKey={sx.key}
                 currentTitle={sessionTitle(sx)} isActive={sx.key === activeKey}
+                currentPinned={!!sx.pinned} currentArchived={!!sx.archived}
                 meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
             ))}
           </SidebarSection>
@@ -255,12 +295,24 @@ function WorkbenchPanel() {
             {recent.slice(0, 20).map((sx) => (
               <SessionRowItem key={sx.key} sessionKey={sx.key}
                 currentTitle={sessionTitle(sx)} isActive={sx.key === activeKey}
+                currentPinned={!!sx.pinned} currentArchived={!!sx.archived}
                 meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
             ))}
           </SidebarSection>
         )}
-        {active.length === 0 && recent.length === 0 && (
+        {pinned.length === 0 && active.length === 0 && recent.length === 0 && (
           <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
+        )}
+        {archived.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowArchived((v) => !v)}
+            className="w-full px-4 py-2 text-[10px] text-aegis-text-dim hover:text-aegis-text-secondary transition-colors border-t border-aegis-border/15"
+          >
+            {showArchived
+              ? t('sidebar.hideArchived', { count: archived.length, defaultValue: `Hide archived (${archived.length})` })
+              : t('sidebar.showArchived', { count: archived.length, defaultValue: `Show archived (${archived.length})` })}
+          </button>
         )}
       </div>
     </>

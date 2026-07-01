@@ -18,19 +18,62 @@ export function isSessionActive(sx: Session): boolean {
   return false;
 }
 
+/**
+ * 4-bucket session partition for the sidebar.
+ *   pinned:  user-pinned sessions, sorted to the very top, regardless of
+ *            activity (most recently pinned first by array order — caller
+ *            passes sessions in stable order, pinned are surfaced first
+ *            so the user sees the pinstick take effect immediately).
+ *   active:  currently running or streaming.
+ *   recent:  the rest, excluding archived.
+ *   archived: hidden by default; exposed via the "Show archived (N)" toggle.
+ *
+ * Archived sessions are filtered OUT of the default sidebar view so they
+ * don't clutter the working set. The toggle at the bottom of the
+ * sidebar opts in to showing them.
+ */
+export interface PartitionResult {
+  pinned: Session[];
+  active: Session[];
+  recent: Session[];
+  archived: Session[];
+}
+
 export function partitionSessions(
   sessions: Session[],
   typingBySession: Record<string, boolean>,
-): { active: Session[]; recent: Session[] } {
+  showArchived: boolean = false,
+): PartitionResult {
+  // Filter sub-agents + empty sessions out of the working set.
+  // Archived sessions ARE preserved in the result (in `archived`), they
+  // just don't appear in active/recent/pinned unless showArchived.
   const visible = sessions.filter((sx) => {
     if (sx.key?.includes(':subagent:')) return false;
     const hasContent = Boolean(sx.lastMessage) || (sx.totalTokens ?? 0) > 0 || sx.label !== 'Main Session';
     if (!hasContent && !isSessionActive(sx) && !typingBySession[sx.key]) return false;
     return true;
   });
-  const active = visible.filter((sx) => isSessionActive(sx) || typingBySession[sx.key]);
+
+  const archived = visible.filter((sx) => sx.archived === true);
+
+  // Working set = visible minus archived (unless toggle is on).
+  const working = showArchived ? visible : visible.filter((sx) => !sx.archived);
+
+  // Pinned bucket surfaces regardless of activity, so a pinned-but-idle
+  // session still sits at the top.
+  const pinned = working.filter((sx) => sx.pinned === true);
+  const pinnedKeys = new Set(pinned.map((sx) => sx.key));
+
+  const active = working.filter(
+    (sx) => !pinnedKeys.has(sx.key) && (isSessionActive(sx) || typingBySession[sx.key]),
+  );
   const activeKeys = new Set(active.map((sx) => sx.key));
-  return { active, recent: visible.filter((sx) => !activeKeys.has(sx.key)) };
+
+  const recent = working.filter(
+    (sx) => !pinnedKeys.has(sx.key) && !activeKeys.has(sx.key),
+  );
+
+  return { pinned, active, recent, archived };
 }
 
 export function sessionTitle(sx: Session): string {
