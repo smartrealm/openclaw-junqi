@@ -47,6 +47,7 @@ export function AppLayout() {
       <TabBar />
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
+        <NavSidebar />
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
           <div className="flex-1 overflow-y-auto scrollbar-thin h-full">
             <ErrorBoundary>
@@ -60,7 +61,6 @@ export function AppLayout() {
             </ErrorBoundary>
           </div>
         </main>
-        <NavSidebar />
       </div>
       {showOffline && (
         <div className="fixed inset-0 z-[9000] bg-aegis-bg/94 backdrop-blur-xl">
