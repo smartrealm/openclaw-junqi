@@ -272,7 +272,7 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession, isTyping } = useChatStore();
+  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const hasProviders = availableModels.length > 0;
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -284,17 +284,6 @@ export function SessionContextBar() {
   const agent = agents.find((a) => a.id === agentId);
   const mainAgentName = agents.find((a) => a.id === 'main')?.name || 'Main Agent';
   const agentDisplayName = agent?.name ?? (agentId === 'main' ? mainAgentName : agentId);
-
-  // ── Elapsed timer while AI is working ──
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!isTyping) { setElapsed(0); return; }
-    const id = setInterval(() => setElapsed(e => e + 1), 1000);
-    return () => clearInterval(id);
-  }, [isTyping]);
-  const elapsedText = isTyping
-    ? (elapsed >= 60 ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` : `${elapsed}s`)
-    : null;
 
   const usedTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
@@ -309,11 +298,6 @@ export function SessionContextBar() {
         {agentDisplayName}
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />
-      {elapsedText && (
-        <span className="text-[9px] font-mono text-aegis-warning px-1.5 py-0.5 rounded-md bg-aegis-warning/[0.08] border border-aegis-warning/20">
-          {elapsedText}
-        </span>
-      )}
 
       <SessionModelPicker currentModel={currentModel} />
       {hasProviders && (
