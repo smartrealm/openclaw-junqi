@@ -1489,5 +1489,16 @@
     "daysAgo": "قبل {{count}} يوم",
     "searchPlaceholder": "ابحث حسب الوكيل أو النموذج أو مفتاح الجلسة...",
     "clearSearch": "مسح"
-  }
+  },
+  "sidebar.pinned": "مثبت",
+  "sidebar.showArchived": "إظهار المؤرشفة ({{count}})",
+  "sidebar.hideArchived": "إخفاء المؤرشفة ({{count}})",
+  "chat.pinSession": "تثبيت",
+  "chat.unpinSession": "إلغاء التثبيت",
+  "chat.archiveSession": "أرشفة",
+  "chat.unarchiveSession": "إلغاء الأرشفة",
+  "nav.agentSubResources": "موارد الوكيل",
+  "nav.agentSkills": "مهارات الوكيل",
+  "skills.disable": "تعطيل",
+  "skills.enable": "تمكين"
 }

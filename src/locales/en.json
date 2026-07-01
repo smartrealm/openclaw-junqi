@@ -1980,5 +1980,16 @@
     "daysAgo": "{{count}}d ago",
     "searchPlaceholder": "Search by agent, model, session key...",
     "clearSearch": "Clear"
-  }
+  },
+  "sidebar.pinned": "Pinned",
+  "sidebar.showArchived": "Show archived ({{count}})",
+  "sidebar.hideArchived": "Hide archived ({{count}})",
+  "chat.pinSession": "Pin to top",
+  "chat.unpinSession": "Unpin",
+  "chat.archiveSession": "Archive",
+  "chat.unarchiveSession": "Unarchive",
+  "nav.agentSubResources": "Agent Resources",
+  "nav.agentSkills": "Agent Skills",
+  "skills.disable": "Disable",
+  "skills.enable": "Enable"
 }

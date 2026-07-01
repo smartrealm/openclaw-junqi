@@ -2018,5 +2018,16 @@
     "daysAgo": "{{count}}天前",
     "searchPlaceholder": "按智能体、模型、会话 key 搜索…",
     "clearSearch": "清除"
-  }
+  },
+  "sidebar.pinned": "已置顶",
+  "sidebar.showArchived": "显示已归档 ({{count}})",
+  "sidebar.hideArchived": "隐藏已归档 ({{count}})",
+  "chat.pinSession": "置顶",
+  "chat.unpinSession": "取消置顶",
+  "chat.archiveSession": "归档",
+  "chat.unarchiveSession": "取消归档",
+  "nav.agentSubResources": "智能体子资源",
+  "nav.agentSkills": "智能体技能",
+  "skills.disable": "禁用",
+  "skills.enable": "启用"
 }
