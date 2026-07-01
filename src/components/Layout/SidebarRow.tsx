@@ -27,10 +27,14 @@ export function SidebarRow({ icon, title, meta, live, active, onClick }: Sidebar
       onClick={onClick}
       onKeyDown={handleKey}
       className={clsx(
-        'flex items-start gap-2.5 px-4 py-2 border-l-2 cursor-pointer transition-colors',
+        'flex items-start gap-2.5 px-4 py-2 cursor-pointer transition-colors',
+        // Selection state: opaque accent-tinted background + left accent stripe.
+        // Was bg-aegis-primary/15 — too subtle, read as "same as unselected".
+        // Now uses a denser overlay + a 2px-wide accent stripe so the active
+        // row is unmistakably distinct from the unselected rows around it.
         active
-          ? 'border-l-aegis-primary bg-aegis-primary/15'
-          : 'border-l-transparent hover:bg-aegis-overlay/[0.04]',
+          ? 'bg-[rgb(var(--aegis-primary)/0.22)] border-l-2 border-l-aegis-primary shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.55)]'
+          : 'border-l-2 border-l-transparent hover:bg-aegis-overlay/[0.04]',
       )}
     >
       {live ? (
@@ -41,7 +45,7 @@ export function SidebarRow({ icon, title, meta, live, active, onClick }: Sidebar
         <span className="w-[5px] h-[5px] mt-[5px] shrink-0" />
       )}
       <div className="min-w-0 flex-1">
-        <div className="text-[12px] text-aegis-text truncate">{title}</div>
+        <div className={clsx('text-[12px] truncate', active ? 'text-aegis-text font-semibold' : 'text-aegis-text')}>{title}</div>
         {meta && <div className="text-[10px] text-aegis-text-dim mt-0.5 truncate">{meta}</div>}
       </div>
     </div>

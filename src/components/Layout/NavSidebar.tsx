@@ -276,7 +276,7 @@ export function NavSidebar() {
       className={clsx(
         'shrink-0 flex flex-col overflow-hidden py-3 sidebar-width-anim',
         isMini ? 'items-center' : 'items-stretch',
-        'border-r border-aegis-border',
+        'border-l border-aegis-border',
       )}
       style={{
         width: targetWidth,
