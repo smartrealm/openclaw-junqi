@@ -71,21 +71,24 @@ export function TypingIndicator() {
 
       {/* Indicator + timer row — same width column + border treatment as
           the assistant bubble so the indicator visually reads as a
-          small live bubble attached to the same avatar column. */}
+          small live bubble attached to the same avatar column.
+          Vertical padding py-2.5 matches MessageBubble's py-2.5 so
+          the indicator row sits at the same baseline height as a
+          single-line bubble. */}
       <div className="flex flex-col min-w-0" style={{ width: '100%', maxWidth: 'min(640px, 72%)', alignItems: 'flex-start' }}>
         <div className="inline-flex items-stretch select-none rounded-xl
           bg-[rgb(var(--aegis-overlay)/0.03)] border border-[rgb(var(--aegis-overlay)/0.06)]
           hover:bg-[rgb(var(--aegis-overlay)/0.06)]
           shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.18)]">
-          {/* Dots pill */}
-          <div className="flex items-center gap-1.5 px-3 py-2">
+          {/* Dots pill — py-2.5 + slightly larger dots to fill the bubble-height slot */}
+          <div className="flex items-center gap-1.5 px-3 py-2.5">
             {[0, 1, 2].map((i) => (
               <span
                 key={i}
                 className="inline-block rounded-full"
                 style={{
-                  width: i === 1 ? 7 : 6,
-                  height: i === 1 ? 7 : 6,
+                  width: i === 1 ? 8 : 7,
+                  height: i === 1 ? 8 : 7,
                   background: i === 1
                     ? 'rgb(var(--aegis-primary))'
                     : 'color-mix(in srgb, rgb(var(--aegis-primary)) 62%, rgb(var(--aegis-text)) 18%)',
@@ -95,11 +98,11 @@ export function TypingIndicator() {
               />
             ))}
           </div>
-          {/* Elapsed-time chip on the right side of the indicator border.
+          {/* Elapsed-time chip — py-2.5 so it matches the dots pill height via items-stretch.
               Hidden for the first second so a fresh indicator doesn't
               flash "0s". Format adapts: Ns under a minute, m:ss beyond. */}
           {isTyping && elapsedSec >= 1 && (
-            <div className="flex items-center px-2.5 border-l border-[rgb(var(--aegis-overlay)/0.06)]
+            <div className="flex items-center px-2.5 py-2.5 border-l border-[rgb(var(--aegis-overlay)/0.06)]
               text-[10px] font-mono tabular-nums text-aegis-text-dim">
               {formatElapsed(elapsedSec)}
             </div>
