@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -6,7 +7,9 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
 
 // ═══════════════════════════════════════════════════════════
-// Typing Indicator — smooth animated dots
+// Typing Indicator — smooth animated dots + elapsed-time chip
+// Visual style matches the assistant bubble's outer container so the
+// indicator reads as a "live bubble" rather than a separate pill.
 // ═══════════════════════════════════════════════════════════
 
 export function TypingIndicator() {
@@ -14,6 +17,7 @@ export function TypingIndicator() {
   const { language } = useSettingsStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const isTyping = useChatStore((s) => s.isTyping);
   const dir = getDirection(language);
   const activeAgentId = (() => {
     if (!activeSessionKey) return 'main';
@@ -25,31 +29,69 @@ export function TypingIndicator() {
     || (activeAgentId === 'main' ? t('agents.mainAgent', 'Main Agent') : activeAgentId);
   const activeAgentLetter = activeAgentName.charAt(0) || 'M';
 
+  // Track when streaming began so we can render an elapsed-time chip
+  // alongside the dots. Reset on every re-mount of the indicator (which
+  // happens whenever isTyping flips false→true, since ChatView conditionally
+  // renders this component). The interval ticks every second while
+  // visible; cheap and avoids a global timer in the store.
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [elapsedSec, setElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!isTyping) return;
+    setStartedAt(Date.now());
+    setElapsedSec(0);
+    const id = setInterval(() => {
+      setElapsedSec(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 1000);
+    return () => clearInterval(id);
+    // startedAt intentionally excluded — the interval is reset only when
+    // isTyping flips, not on every startedAt change. Adding it would
+    // restart the timer every second.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTyping]);
+
   return (
     <div className="group flex gap-2.5 items-start mx-1 mr-4 mb-2 animate-fade-in" dir={dir}>
-      {/* Avatar */}
-      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-aegis-primary to-aegis-accent flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-white/5">
+      {/* Avatar — identical size/style to MessageBubble assistant avatar */}
+      <div className="w-7 h-7 rounded-full bg-gradient-to-br flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-white/5"
+        style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-accent)))' }}>
         <span className="text-[10px] font-bold text-white">{activeAgentLetter}</span>
       </div>
 
-      {/* Dots container — aligned with assistant message content column */}
+      {/* Indicator + timer row — same width column + border treatment as
+          the assistant bubble so the indicator visually reads as a
+          small live bubble attached to the same avatar column. */}
       <div className="flex flex-col min-w-0" style={{ width: '100%', maxWidth: 'min(640px, 72%)', alignItems: 'flex-start' }}>
-        <div className="inline-flex items-center gap-1.5 select-none px-3 py-2 rounded-xl border border-aegis-primary/25 bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_14%,rgb(var(--aegis-elevated)))] shadow-[0_0_18px_rgb(var(--aegis-primary)/0.12)]">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="inline-block rounded-full"
-              style={{
-                width: i === 1 ? 7 : 6,
-                height: i === 1 ? 7 : 6,
-                background: i === 1
-                  ? 'rgb(var(--aegis-primary))'
-                  : 'color-mix(in srgb, rgb(var(--aegis-primary)) 62%, rgb(var(--aegis-text)) 18%)',
-                boxShadow: i === 1 ? '0 0 10px rgb(var(--aegis-primary)/0.45)' : 'none',
-                animation: `typing-dot 1.15s ease-in-out ${i * 0.16}s infinite`,
-              }}
-            />
-          ))}
+        <div className="inline-flex items-stretch select-none rounded-xl
+          bg-[rgb(var(--aegis-overlay)/0.03)] border border-[rgb(var(--aegis-overlay)/0.06)]
+          hover:bg-[rgb(var(--aegis-overlay)/0.06)]
+          shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.18)]">
+          {/* Dots pill */}
+          <div className="flex items-center gap-1.5 px-3 py-2">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="inline-block rounded-full"
+                style={{
+                  width: i === 1 ? 7 : 6,
+                  height: i === 1 ? 7 : 6,
+                  background: i === 1
+                    ? 'rgb(var(--aegis-primary))'
+                    : 'color-mix(in srgb, rgb(var(--aegis-primary)) 62%, rgb(var(--aegis-text)) 18%)',
+                  boxShadow: i === 1 ? '0 0 10px rgb(var(--aegis-primary)/0.45)' : 'none',
+                  animation: `typing-dot 1.15s ease-in-out ${i * 0.16}s infinite`,
+                }}
+              />
+            ))}
+          </div>
+          {/* Elapsed-time chip on the right side of the indicator border.
+              0s is hidden so a fresh indicator doesn't flash "0s". */}
+          {isTyping && elapsedSec >= 1 && (
+            <div className="flex items-center px-2.5 border-l border-[rgb(var(--aegis-overlay)/0.06)]
+              text-[10px] font-mono tabular-nums text-aegis-text-dim">
+              {elapsedSec}s
+            </div>
+          )}
         </div>
       </div>
     </div>
