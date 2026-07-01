@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2 } from 'lucide-react';
@@ -584,6 +585,21 @@ export function AgentHubPage() {
     agents.map(a => agentModels[a.id] ? { ...a, model: agentModels[a.id] } : a),
     [agents, agentModels]
   );
+
+  // Sidebar "在线智能体" click navigates to /agents?agent=<id>. Open that
+  // agent's settings panel automatically, matching in-page card click behavior.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get('agent');
+    if (!id) return;
+    const target = enrichedAgents.find((a) => a.id === id);
+    if (target) {
+      setSettingsAgent(target);
+      const next = new URLSearchParams(searchParams);
+      next.delete('agent');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, enrichedAgents, setSearchParams]);
 
   const handleCreateAgent = async () => {
     if (!newAgent.id.trim()) return;
