@@ -154,6 +154,12 @@ export function buildSemanticBlocks(
       toolName: tool.name || 'unknown',
       input: tool.input ?? {},
       status: 'done',
+      // Preserve the original message's toolDurationMs so the duration chip
+      // survives session switches and re-renders. Before this fix the
+      // tool block was rebuilt without durationMs on every recomputeBlocks
+      // call, so the chip disappeared whenever the user navigated away
+      // and back (or any other cache miss triggered recomputeBlocks).
+      durationMs: normalized.toolDurationMs,
     }) satisfies ToolActivitySemanticBlock);
   }
 
