@@ -23,6 +23,7 @@ pub mod pty_neu;
 pub mod screenshot;
 pub mod session_analytics;
 pub mod setup;
+pub mod startup;
 pub mod skills;
 pub mod system;
 pub mod system_metrics;

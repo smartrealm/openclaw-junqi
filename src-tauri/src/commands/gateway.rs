@@ -343,7 +343,7 @@ pub async fn get_gateway_token() -> Result<String, String> {
 /// Returns true if an OpenClaw gateway is already responding on the given port.
 /// Used to detect the user's local gateway so we connect to it instead of
 /// starting (or killing) a competing process.
-async fn is_gateway_serving(port: u16) -> bool {
+pub async fn is_gateway_serving(port: u16) -> bool {
     let url = format!("http://127.0.0.1:{}/healthz", port);
     matches!(reqwest::get(&url).await, Ok(resp) if resp.status().is_success())
 }
