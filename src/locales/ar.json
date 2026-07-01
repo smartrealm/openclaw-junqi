@@ -1390,7 +1390,8 @@
       "resume": "متابعة",
       "paused": "متوقفة",
       "completedToday": "اليوم"
-    }
+    },
+    "dreaming": "حلم (ذاكرة)"
   },
   "font": {
     "search": "البحث عن الخطوط...",

@@ -5,6 +5,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
 import { derivePetState, type CelebrateKind, type PetState } from './pet-states';
+import i18n from '@/i18n';
 
 const TICK_MS = 250;
 
@@ -84,8 +85,28 @@ export function usePetStateEmitter() {
         return Number(s.runningUpdatedAt || 0) > 0;
       };
       const runningSessions = gw.sessions.filter(isFreshRunning);
-      const running = runningSessions.length > 0 || gw.runningSubAgents.length > 0;
-      const isActive = typing || thinking || tool || running;
+
+      // Distinguish high-priority conversational work from low-priority
+      // background maintenance (memory dreaming cron). A cron session key looks
+      // like "agent:<id>:cron:<uuid>". Dreaming runs at lowest priority: it
+      // only keeps the pet "working" when nothing else is active.
+      const isCronSession = (s: any) => String(s?.key || '').includes(':cron:');
+      const conversationalRunning = runningSessions.filter((s) => !isCronSession(s));
+      const backgroundRunning = runningSessions.filter((s) => isCronSession(s));
+      const hasHighPriorityWork = typing || thinking || tool
+        || conversationalRunning.length > 0 || gw.runningSubAgents.length > 0;
+      const backgroundWork = !hasHighPriorityWork && backgroundRunning.length > 0;
+
+      const running = hasHighPriorityWork || backgroundWork;
+      const isActive = running;
+
+      // Which agent is the pet "working for" right now? Prefer the active
+      // conversational agent; fall back to sub-agent label; dreaming is a
+      // background task with no specific agent.
+      const activeAgentId = conversationalRunning[0]
+        ? (String(conversationalRunning[0].key || '').split(':')[1] || 'main')
+        : (gw.runningSubAgents[0]?.agentId || 'main');
+      const activeAgentName = gw.agents.find((a) => a.id === activeAgentId)?.name || activeAgentId;
 
       // Track when the current stretch of activity began (for the elapsed timer).
       if (isActive && !prevActive) mem.activeStartedAt = now;
@@ -130,7 +151,8 @@ export function usePetStateEmitter() {
         thinking,
         typing,
         tool,
-        running,
+        running: hasHighPriorityWork,
+        backgroundWork,
         lastReplyTs: mem.lastReplyTs,
         lastTaskDoneTs: mem.lastTaskDoneTs,
         lastCompactionTs: mem.lastCompactionTs,
@@ -144,14 +166,26 @@ export function usePetStateEmitter() {
 
       // "What is it doing right now" → second line of the bubble.
       let message: string | undefined;
-      const runningSessionLabel = runningSessions[0]?.label || runningSessions[0]?.key;
-      if (emotion === 'thinking') message = (cs.thinkingText || '').slice(0, 60) || undefined;
-      else if (emotion === 'working') message = gw.runningSubAgents[0]?.label || runningSessionLabel;
+      let taskLabel: string | undefined;
+      if (emotion === 'thinking') {
+        message = (cs.thinkingText || '').slice(0, 60) || undefined;
+        taskLabel = activeAgentName;
+      } else if (emotion === 'working') {
+        if (hasHighPriorityWork) {
+          // Show which agent is handling the conversation / sub-task.
+          taskLabel = activeAgentName;
+          message = gw.runningSubAgents[0]?.label || conversationalRunning[0]?.label || activeAgentName;
+        } else if (backgroundWork) {
+          // Dreaming / memory maintenance — no specific agent.
+          taskLabel = undefined;
+          message = (i18n.t('pet.dreaming', { defaultValue: '梦境整理中' }) as string);
+        }
+      }
 
       emitPetState({
         ...derived,
         message,
-        taskLabel: gw.runningSubAgents[0]?.label || runningSessionLabel,
+        taskLabel,
         elapsedMs: mem.activeStartedAt ? now - mem.activeStartedAt : undefined,
         skin: usePetStore.getState().skin,
         pomodoro: pomodoro.enabled

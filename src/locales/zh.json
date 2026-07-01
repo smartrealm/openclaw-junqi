@@ -1873,7 +1873,8 @@
       "resume": "继续",
       "paused": "已暂停",
       "completedToday": "今日"
-    }
+    },
+    "dreaming": "梦境整理中"
   },
   "font": {
     "search": "搜索字体...",

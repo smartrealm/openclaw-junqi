@@ -1885,7 +1885,8 @@
       "resume": "Resume",
       "paused": "Paused",
       "completedToday": "Today"
-    }
+    },
+    "dreaming": "Dreaming (memory)"
   },
   "font": {
     "search": "Search fonts...",

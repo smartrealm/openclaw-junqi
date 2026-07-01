@@ -67,6 +67,11 @@ export interface PetInputs {
   typing: boolean;
   tool: boolean;
   running: boolean;
+  /** Low-priority background work (e.g. memory dreaming cron) is active.
+   *  Only surfaces as 'working' when no higher-priority activity is running,
+   *  so the pet idles during real work but shows "working" during background
+   *  maintenance when it would otherwise be idle. */
+  backgroundWork?: boolean;
   /** epoch ms of the most recent reply finalization, or 0 */
   lastReplyTs: number;
   /** epoch ms of the most recent workshop task moved to done, or 0 */
@@ -110,6 +115,10 @@ export function derivePetState(i: PetInputs): PetState {
   if (i.tool) return { emotion: 'tool', ...base };
   if (i.typing) return { emotion: 'typing', ...base };
   if (i.running) return { emotion: 'working', ...base };
+
+  // Idle branch — but low-priority background work (dreaming etc.) still counts
+  // as "working" so the pet doesn't sleep while the system is maintaining memory.
+  if (i.backgroundWork) return { emotion: 'working', ...base };
 
   // Idle branch: transient celebration windows, then drowsiness.
   if (i.lastCompactionTs && i.now - i.lastCompactionTs < MEMORY_WINDOW)
