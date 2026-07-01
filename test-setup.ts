@@ -16,7 +16,10 @@ const pkg = await import(resolve(here, 'package.json'), {
   with: { type: 'json' },
 }).then((m) => m.default);
 
-globalThis.__APP_VERSION__ = pkg.version ?? 'test';
+// __APP_VERSION__ is defined by Vite at build time (see vite.config.ts).
+// Cast to `any` to avoid a typecheck error when this file is type-checked
+// by tsc — the shim is only used at runtime.
+(globalThis as { __APP_VERSION__?: string }).__APP_VERSION__ = pkg.version ?? 'test';
 
 // Minimal `localStorage` shim. jsdom / happy-dom aren't installed and we
 // want zero extra deps. i18n.ts reads it at module-load time.
