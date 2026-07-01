@@ -18,8 +18,17 @@ export interface ProviderTemplate {
   envKey: string;
   envKeyAlt?: string[];
   baseUrl?: string;
-  /** API protocol: openai-completions | anthropic | anthropic-messages */
-  api?: string;
+  /**
+   * API protocol — values must be in OPENCLAW_API_PROTOCOLS
+   * (see src/types/openclawApiProtocol.ts, ported from ClawX).
+   * The legacy string 'anthropic' is kept as an alias to
+   * 'anthropic-messages' for old saved configs; normalizeApi()
+   * handles the mapping at write time.
+   */
+  api?: 'openai-completions' | 'openai-responses' | 'openai-chatgpt-responses'
+      | 'anthropic' | 'anthropic-messages' | 'google-generative-ai'
+      | 'github-copilot' | 'bedrock-converse-stream' | 'ollama'
+      | 'azure-openai-responses';
   popularModels: { id: string; suggestedAlias?: string; supportsImage?: boolean }[];
   docsUrl?: string;
   /** If true, user must supply a URL (like vllm/custom). */
