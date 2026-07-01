@@ -12,6 +12,6 @@ export { AEGIS_THEMES, AEGIS_FONTS_STORAGE_KEYS, isAegisTheme, isThemeSetting } 
 export type { AegisTheme, NativeTitleBarMode, ThemeSetting } from './types';
 export { DEFAULT_SETTING, DEFAULT_THEME, HTML_ATTR, NATIVE_TITLE_BAR_MAP, STORAGE_KEY } from './constants';
 export { detectOSPreference, resolveTheme } from './resolver';
-export { applyTheme, applyToDocument, applyDerivedVars, syncNativeTitleBar } from './apply';
+export { applyTheme, applyToDocument, syncNativeTitleBar } from './apply';
 export { earlyBootstrap } from './earlyBootstrap';
 export { useTheme } from './useTheme';

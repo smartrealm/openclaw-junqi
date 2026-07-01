@@ -14,7 +14,7 @@
  * and would either block boot or race the React mount. The React
  * `useTheme` hook owns that sync once the app is alive.
  */
-import { applyDerivedVars, applyToDocument } from './apply';
+import { applyToDocument } from './apply';
 import { STORAGE_KEY } from './constants';
 import { AEGIS_FONTS_STORAGE_KEYS } from './types';
 import { detectOSPreference, resolveTheme } from './resolver';
@@ -30,10 +30,6 @@ export function earlyBootstrap(): void {
   }
   const resolved = resolveTheme(saved, detectOSPreference());
   applyToDocument(resolved);
-  // M3: also write the derived CSS variables inline. The static CSS file
-  // (aegis-<id>.css) provides a fallback for the first paint when this
-  // function hasn't run yet, but once it has, derive output is canonical.
-  applyDerivedVars(resolved);
 
   // ── Apply persisted fonts as CSS custom properties ──────────
   const root = document.documentElement;
