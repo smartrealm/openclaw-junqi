@@ -5,6 +5,8 @@
  */
 import type { AegisTheme } from './types';
 import { HTML_ATTR, NATIVE_TITLE_BAR_MAP } from './constants';
+import { deriveThemeVariables } from './derive';
+import { THEME_PRESETS } from './presets';
 
 /**
  * Marker class added to <html> during a theme swap so the global
@@ -43,6 +45,25 @@ export function applyToDocument(theme: AegisTheme): void {
 }
 
 /**
+ * Writes the 25 derived CSS variables to :root. Synchronous, idempotent.
+ * Called by applyTheme() so user-triggered theme switches use the derive
+ * output, not just the CSS attribute selector.
+ *
+ * Setting via html.style.setProperty (not attribute) lets us override
+ * whatever the static CSS file provided. This is the bridge from the
+ * "static CSS fallback" architecture (M2) to the "live derivation" (M3).
+ */
+export function applyDerivedVars(theme: AegisTheme): void {
+  const derived = deriveThemeVariables(THEME_PRESETS[theme]);
+  const html = document.documentElement;
+  for (const [key, value] of Object.entries(derived)) {
+    // Internal field — not a CSS var — skip.
+    if (!key.startsWith('--')) continue;
+    html.style.setProperty(key, value);
+  }
+}
+
+/**
  * Asks the Tauri shell to repaint the native title bar to match the
  * theme. Dynamically imported so the browser/preview build (where
  * `@tauri-apps/api` may fail to load) silently degrades to a no-op.
@@ -58,8 +79,9 @@ export function syncNativeTitleBar(theme: AegisTheme): void {
     .catch(() => { /* not running under Tauri — no native chrome to sync */ });
 }
 
-/** Convenience: apply both the CSS attribute and the native chrome in one call. */
+/** Convenience: apply CSS attribute + derived vars + native chrome in one call. */
 export function applyTheme(theme: AegisTheme): void {
   applyToDocument(theme);
+  applyDerivedVars(theme);
   syncNativeTitleBar(theme);
 }

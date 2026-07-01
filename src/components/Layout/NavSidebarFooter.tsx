@@ -20,6 +20,12 @@ const THEME_I18N_KEYS: Record<AegisTheme, string> = {
   'aegis-light': 'theme.light',
   'aegis-eyecare': 'theme.eyecare',
   'aegis-midnight': 'theme.midnight',
+  'ocean': 'theme.ocean',
+  'rosewood': 'theme.rosewood',
+  'forest': 'theme.forest',
+  'solar': 'theme.solar',
+  'slate': 'theme.slate',
+  'lavender': 'theme.lavender',
 };
 
 function nextTheme(current: AegisTheme): AegisTheme {

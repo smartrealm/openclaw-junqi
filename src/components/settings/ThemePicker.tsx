@@ -28,19 +28,35 @@ import type { AegisTheme, ThemeSetting } from '@/theme';
 
 // ── Mode translation between our store shape and nezha's shape ──
 
-/** Nezha's narrower mode union (no `aegis-` prefix). */
-type NezhaMode = 'system' | 'dark' | 'midnight' | 'light' | 'eyecare';
+/** Nezha's narrower mode union (no `aegis-` prefix).
+ *  The 4 original themes have an `aegis-` prefix in `AegisTheme` (legacy
+ *  storage format), so `toAegisSetting` re-adds it for them. The 6 new
+ *  presets (`ocean`, `rosewood`, …) are stored without a prefix — they
+ *  match NezhaMode directly. */
+type NezhaMode =
+  | 'system'
+  | 'dark' | 'midnight' | 'light' | 'eyecare'
+  | 'ocean' | 'rosewood' | 'forest' | 'solar' | 'slate' | 'lavender';
 type NezhaManualMode = Exclude<NezhaMode, 'system'>;
 
 function toNezhaMode(setting: ThemeSetting): NezhaMode {
   if (setting === 'system') return 'system';
-  // ThemeSetting concrete values are all 'aegis-<mode>' — strip the prefix.
-  return setting.replace(/^aegis-/, '') as NezhaManualMode;
+  // Original 4 are stored as 'aegis-<mode>' — strip the prefix.
+  // The 6 new presets are stored without the prefix already.
+  if (setting.startsWith('aegis-')) {
+    return setting.replace(/^aegis-/, '') as NezhaManualMode;
+  }
+  return setting as NezhaManualMode;
 }
 
 function toAegisSetting(mode: NezhaMode): ThemeSetting {
   if (mode === 'system') return 'system';
-  return `aegis-${mode}` as AegisTheme;
+  // Original 4 need the 'aegis-' prefix re-added for backward compatibility
+  // with localStorage values written by earlier versions.
+  if (mode === 'dark' || mode === 'midnight' || mode === 'light' || mode === 'eyecare') {
+    return `aegis-${mode}` as AegisTheme;
+  }
+  return mode as AegisTheme;
 }
 
 // ── Component ──
@@ -59,17 +75,17 @@ export function ThemePicker({ value, onChange, systemPrefersDark }: ThemePickerP
   const themeMode = toNezhaMode(value);
   const setThemeMode = (mode: NezhaMode) => onChange(toAegisSetting(mode));
 
-  // Order matters — used for arrow-key navigation, matches nezha verbatim.
-  const manualThemeModes: NezhaManualMode[] = ['dark', 'midnight', 'light', 'eyecare'];
+  // Order matters — used for arrow-key navigation. 4 original (matching
+  // the nezha port's order), then 6 new presets.
+  const manualThemeModes: NezhaManualMode[] = [
+    'dark', 'midnight', 'light', 'eyecare',
+    'ocean', 'rosewood', 'forest', 'solar', 'slate', 'lavender',
+  ];
 
   // Chip on the right of the system row: "Following system · Dark" /
-  // "Manual · Eye-care". Built from two i18n strings + a {mode} interp.
+  // "Manual · Ocean". Built from two i18n strings + a {mode} interp.
   const currentModeLabel = systemPrefersDark ? t('theme.dark') : t('theme.light');
-  const manualModeLabel =
-    themeMode === 'dark' ? t('theme.dark')
-      : themeMode === 'midnight' ? t('theme.midnight')
-        : themeMode === 'eyecare' ? t('theme.eyecare')
-          : t('theme.light');
+  const manualModeLabel = t(`theme.${themeMode}`, themeMode);
   const selectedLabel =
     themeMode === 'system'
       ? t('theme.followingSystem', { mode: currentModeLabel })
@@ -123,7 +139,10 @@ export function ThemePicker({ value, onChange, systemPrefersDark }: ThemePickerP
     previewAccent: string;
   }) {
     const selected = themeMode === mode;
-    const isDark = mode === 'dark' || mode === 'midnight';
+    // All dark-mode presets use dark preview chrome; light/eyecare/lavender use light chrome.
+    const isDark = mode === 'dark' || mode === 'midnight'
+      || mode === 'ocean' || mode === 'rosewood' || mode === 'forest'
+      || mode === 'solar' || mode === 'slate';
 
     return (
       <button
@@ -379,13 +398,13 @@ export function ThemePicker({ value, onChange, systemPrefersDark }: ThemePickerP
         </div>
       </button>
 
-      {/* ── Manual theme 2×2 cards ── */}
+      {/* ── Manual theme cards (5×2 grid for 10 presets) ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: 'rgb(var(--aegis-text-secondary))' }}>
           {t('theme.manualTheme')}
         </div>
         <div
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 12 }}
           role="radiogroup"
           aria-label={t('theme.manualThemeAria')}
         >
@@ -420,6 +439,54 @@ export function ThemePicker({ value, onChange, systemPrefersDark }: ThemePickerP
             previewBackground: '#f5ecd7',
             previewBorder: 'rgba(101,84,51,0.16)',
             previewAccent: '#5a4a30',
+          })}
+          {renderThemeOption({
+            mode: 'ocean',
+            title: t('theme.ocean'),
+            description: t('theme.oceanDescription'),
+            previewBackground: '#0c1e2e',
+            previewBorder: 'rgba(56,189,248,0.18)',
+            previewAccent: '#bae6fd',
+          })}
+          {renderThemeOption({
+            mode: 'rosewood',
+            title: t('theme.rosewood'),
+            description: t('theme.rosewoodDescription'),
+            previewBackground: '#2a1414',
+            previewBorder: 'rgba(244,63,94,0.20)',
+            previewAccent: '#fecdd3',
+          })}
+          {renderThemeOption({
+            mode: 'forest',
+            title: t('theme.forest'),
+            description: t('theme.forestDescription'),
+            previewBackground: '#0f1f15',
+            previewBorder: 'rgba(74,222,128,0.18)',
+            previewAccent: '#bbf7d0',
+          })}
+          {renderThemeOption({
+            mode: 'solar',
+            title: t('theme.solar'),
+            description: t('theme.solarDescription'),
+            previewBackground: '#1c1410',
+            previewBorder: 'rgba(245,158,11,0.22)',
+            previewAccent: '#fde68a',
+          })}
+          {renderThemeOption({
+            mode: 'slate',
+            title: t('theme.slate'),
+            description: t('theme.slateDescription'),
+            previewBackground: '#1e293b',
+            previewBorder: 'rgba(148,163,184,0.18)',
+            previewAccent: '#e2e8f0',
+          })}
+          {renderThemeOption({
+            mode: 'lavender',
+            title: t('theme.lavender'),
+            description: t('theme.lavenderDescription'),
+            previewBackground: '#faf5ff',
+            previewBorder: 'rgba(168,85,247,0.22)',
+            previewAccent: '#3b0764',
           })}
         </div>
       </div>

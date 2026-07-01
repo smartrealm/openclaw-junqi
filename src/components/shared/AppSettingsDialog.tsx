@@ -41,7 +41,18 @@ interface NavItem { key: NavKey; label: string; icon: React.ReactNode; section: 
 
 const SECTION_ORDER: NavSection[] = ['application', 'connectivity', 'agents', 'about'];
 const SECTION_LABELS: Record<NavSection, string> = { application: 'Application', connectivity: 'Connectivity', agents: 'Agents', about: 'About' };
-const THEME_I18N: Record<AegisTheme, string> = { 'aegis-dark': 'theme.dark', 'aegis-light': 'theme.light', 'aegis-eyecare': 'theme.eyecare', 'aegis-midnight': 'theme.midnight' };
+const THEME_I18N: Record<AegisTheme, string> = {
+  'aegis-dark': 'theme.dark',
+  'aegis-light': 'theme.light',
+  'aegis-eyecare': 'theme.eyecare',
+  'aegis-midnight': 'theme.midnight',
+  'ocean': 'theme.ocean',
+  'rosewood': 'theme.rosewood',
+  'forest': 'theme.forest',
+  'solar': 'theme.solar',
+  'slate': 'theme.slate',
+  'lavender': 'theme.lavender',
+};
 
 // ── Shell ───────────────────────────────────────────────────────────────────
 
