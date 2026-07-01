@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Download, Plus, RotateCcw } from 'lucide-react';
+import { Check, ChevronDown, Download, Folder, Plus, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import { exportChatMarkdown } from '@/utils/exportChat';
 
@@ -92,6 +93,89 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
         placeholder={switching ? '…' : t('config.notSet', 'Not set')}
         disabled={switching}
       />
+    </div>
+  );
+}
+
+function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [recents, setRecents] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('aegis:recent-workspaces') || '[]'); } catch { return []; }
+  });
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const persist = (ws: string) => {
+    const next = [ws, ...recents.filter((w) => w !== ws)].slice(0, 8);
+    setRecents(next);
+    localStorage.setItem('aegis:recent-workspaces', JSON.stringify(next));
+  };
+  const switchTo = async (ws: string) => {
+    setOpen(false);
+    setQuery('');
+    persist(ws);
+    try { await gateway.updateAgent(agentId, { workspace: ws }); } catch (e) { console.error('[WorkspacePicker] switch failed:', e); }
+  };
+  const pickFolder = async () => {
+    const openDialog = (window.aegis?.file as any)?.openDialog;
+    const result = typeof openDialog === 'function' ? await openDialog({ properties: ['openDirectory'] }) : null;
+    if (result?.filePaths?.[0]) await switchTo(result.filePaths[0]);
+  };
+  const label = current ? (current.split(/[\\/]/).pop() || current) : t('chat.workspaceDefault', 'default');
+  const filtered = query.trim()
+    ? recents.filter((ws) => ws.toLowerCase().includes(query.toLowerCase()) || (ws.split(/[\\/]/).pop() || '').toLowerCase().includes(query.toLowerCase()))
+    : recents;
+
+  return (
+    <div ref={ref} className="relative no-drag">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+        title={current || t('chat.workspaceDefault', 'default')}
+      >
+        <Folder size={11} />
+        <span className="font-mono max-w-[120px] truncate">{label}</span>
+        <ChevronDown size={9} className={clsx('transition-transform duration-150', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 w-[260px] rounded-xl overflow-hidden bg-aegis-menu-bg border border-aegis-menu-border" style={{ boxShadow: 'var(--aegis-menu-shadow)' }}>
+          <div className="p-2 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('chat.workspaceSearch', 'Search workspaces…')}
+              className="w-full rounded-md bg-[rgb(var(--aegis-overlay)/0.06)] px-2 py-1 text-[11px] text-aegis-text placeholder:text-aegis-text-dim outline-none focus:bg-[rgb(var(--aegis-overlay)/0.1)]"
+            />
+          </div>
+          <div className="max-h-[200px] overflow-y-auto scrollbar-hidden">
+            {filtered.length > 0 ? filtered.map((ws) => {
+              const isActive = current === ws;
+              const name = ws.split(/[\\/]/).pop() || ws;
+              return (
+                <button key={ws} onClick={() => switchTo(ws)} className={clsx('w-full text-start px-3 py-1.5 text-[11px] truncate font-mono transition-colors', isActive ? 'bg-aegis-primary/10 text-aegis-primary' : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)]')} title={ws}>
+                  <span className="font-sans font-medium">{name}</span>
+                  <span className="ml-1.5 text-[10px] text-aegis-text-dim">{ws}</span>
+                </button>
+              );
+            }) : (
+              <div className="px-3 py-2 text-[11px] text-aegis-text-dim">{t('chat.workspaceNoResults', 'No match')}</div>
+            )}
+          </div>
+          <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)]">
+            <button onClick={pickFolder} className="w-full flex items-center gap-1.5 text-start px-3 py-2 text-[11px] text-aegis-primary hover:bg-aegis-primary/10 transition-colors">
+              <Plus size={11} /> {t('chat.workspacePick', 'Choose folder…')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -188,10 +272,18 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, isTyping } = useChatStore();
+  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession, isTyping } = useChatStore();
+  const agents = useGatewayDataStore((s) => s.agents);
   const hasProviders = availableModels.length > 0;
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshed, setIsRefreshed] = useState(false);
+
+  // Parse agentId from session key (same logic as ChatTabs)
+  const keyParts = activeSessionKey.split(':');
+  const agentId = keyParts.length >= 3 ? (keyParts[1] ?? 'main') : 'main';
+  const agent = agents.find((a) => a.id === agentId);
+  const mainAgentName = agents.find((a) => a.id === 'main')?.name || 'Main Agent';
+  const agentDisplayName = agent?.name ?? (agentId === 'main' ? mainAgentName : agentId);
 
   // ── Elapsed timer while AI is working ──
   const [elapsed, setElapsed] = useState(0);
@@ -213,6 +305,10 @@ export function SessionContextBar() {
 
   return (
     <div className="h-[32px] shrink-0 flex items-center gap-2 px-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[var(--aegis-bg-frosted-60)]">
+      <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim">
+        {agentDisplayName}
+      </span>
+      <WorkspacePicker agentId={agentId} current={agent?.workspace} />
       {elapsedText && (
         <span className="text-[9px] font-mono text-aegis-warning px-1.5 py-0.5 rounded-md bg-aegis-warning/[0.08] border border-aegis-warning/20">
           {elapsedText}
