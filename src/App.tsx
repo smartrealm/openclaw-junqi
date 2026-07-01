@@ -343,6 +343,17 @@ export default function App() {
     bootRecoveryStartedRef.current = true;
     setBootRecoveryLogs([]);
     addBootRecoveryLog('Waiting for Gateway WebSocket handshake…');
+    // First-pass: try the orchestrator (native → docker fallback).
+    // If native is down AND Docker has a usable container, this swaps
+    // modes and the boot completes without user intervention.
+    void window.aegis.gateway.ensureRunning?.().then((r: any) => {
+      if (r?.healthy) {
+        addBootRecoveryLog(`Gateway ready via ${r.mode}${r.attempted_fallback ? ' (fallback)' : ''}`);
+        triggerGatewayReconnect('after-ensure');
+      } else if (r?.error) {
+        addBootRecoveryLog(`ensure_gateway_running: ${r.error}`);
+      }
+    }).catch(() => { /* swallow — retry path below */ });
     const delays = [4000, 9000, 16000];
     bootRecoveryTimersRef.current = delays.map((delay, idx) => setTimeout(() => {
       if (useChatStore.getState().connected) return;

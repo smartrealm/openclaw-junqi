@@ -2,7 +2,7 @@ use crate::commands::gateway::{ensure_config_with_token, GatewayStatus};
 use crate::paths;
 use crate::platform;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 const OPENCLAW_IMAGE: &str = "ghcr.io/openclaw/openclaw";
 
@@ -224,12 +224,71 @@ pub async fn start_docker_gateway(
 
     let _ = app.emit("setup-progress", "Gateway is ready!");
 
+    // SPEC M10: tail the container's log stream into the Rust-side circular
+    // buffer so the Settings → Storage panel can show what just happened.
+    // Detached from this command's lifetime — runs until the container exits
+    // or the desktop process exits.
+    spawn_docker_log_tailer(app.clone());
+
     Ok(GatewayStatus {
         running: true,
         port,
         pid: None, // Docker manages the PID
         token: None,
     })
+}
+
+/// Spawn `docker logs -f --tail 50 maxauto-openclaw` and pipe its lines into
+/// the 200-entry circular buffer. Runs as a detached tokio task; logs are
+/// tagged as `DockerStdout` / `DockerStderr` so the frontend can distinguish
+/// them from native child logs.
+fn spawn_docker_log_tailer(app: AppHandle) {
+    use crate::state::gateway_process::{push_log, LogLevel, LogSource};
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+
+    let docker_bin = platform::bin_name("docker");
+    let mut cmd = Command::new(&docker_bin);
+    cmd.args(["logs", "-f", "--tail", "50", "maxauto-openclaw"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("docker log tailer spawn failed: {}", e);
+            return;
+        }
+    };
+
+    // Clone the AppHandle so we can move it into each spawned task. Tauri
+    // AppHandle is cheap to clone (Arc-wrapped internally).
+    let app_out = app.clone();
+    if let Some(stdout) = child.stdout.take() {
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = app_out.emit("gateway-log", &line);
+                let state = app_out.state::<crate::state::GatewayProcess>();
+                push_log(&state.logs, LogSource::DockerStdout, LogLevel::Info, line);
+            }
+        });
+    }
+    let app_err = app.clone();
+    if let Some(stderr) = child.stderr.take() {
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = app_err.emit("gateway-log", &line);
+                let state = app_err.state::<crate::state::GatewayProcess>();
+                push_log(&state.logs, LogSource::DockerStderr, LogLevel::Warn, line);
+            }
+        });
+    }
+    // The child is intentionally dropped here — the readers above hold stdout
+    // and stderr, so the process keeps running until the container exits or
+    // we kill it via stop_docker_gateway.
 }
 
 /// Stop the OpenClaw Docker container (without removing it).
