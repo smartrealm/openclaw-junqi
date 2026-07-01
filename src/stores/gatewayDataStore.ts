@@ -542,21 +542,31 @@ function syncRunningSubAgents() {
   const sessions = store.sessions;
   const prev = store.runningSubAgents;
 
-  // Any sub-agent session in sessions.list is active (completed ones get removed)
+  // Any sub-agent session in sessions.list is active (completed ones get removed).
+  // IMPORTANT: reuse the existing RunningSubAgent object when its fields are
+  // unchanged so that the resulting array elements share references with `prev`.
+  // This lets `changed` (below) stay false on a no-op poll and prevents
+  // subscribers (AgentHub TreeView) from re-rendering and restarting SVG
+  // <animateMotion> animations, which caused the visible flicker.
   const running: RunningSubAgent[] = [];
   for (const s of sessions) {
     const match = s.key?.match(SUB_AGENT_RE);
     if (!match) continue;
 
     const agentId = match[1];
-    // Preserve startTime for already-tracked entries
     const existing = prev.find((r) => r.sessionKey === s.key);
-    running.push({
-      agentId,
-      startTime: existing?.startTime || Date.now(),
-      label: s.label || s.displayName || '',
-      sessionKey: s.key,
-    });
+    const label = s.label || s.displayName || '';
+    // Reuse the exact same object reference if nothing changed.
+    if (existing && existing.agentId === agentId && existing.label === label) {
+      running.push(existing);
+    } else {
+      running.push({
+        agentId,
+        startTime: existing?.startTime || Date.now(),
+        label,
+        sessionKey: s.key,
+      });
+    }
   }
 
   // Only update store if list actually changed

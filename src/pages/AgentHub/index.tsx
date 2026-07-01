@@ -284,10 +284,10 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
               <g key={`mc${i}`}>
                 <path d={`M 500,0 L 500,20 L ${cx},20 L ${cx},56`}
                   stroke="url(#grad-main-tree)" strokeWidth={1.5} fill="none" strokeDasharray="4,3" />
-                {/* Animated dot (alternate to reduce clutter) */}
+                {/* Animated dot — key by path so SMIL animation isn't rebuilt on re-render */}
                 {i % 2 === 0 && (
                   <circle r={3} fill={mainColor()} opacity={0.7}>
-                    <animateMotion dur={`${3 + i * 0.5}s`} repeatCount="indefinite"
+                    <animateMotion key={`mc-anim-${cx}`} dur={`${3 + i * 0.5}s`} repeatCount="indefinite"
                       path={`M 500,0 L 500,20 L ${cx},20 L ${cx},56`} />
                   </circle>
                 )}
@@ -384,7 +384,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                     stroke={meta.color} strokeOpacity={0.5} strokeWidth={1.2} fill="none" strokeDasharray="3,3" />
                   {i < 6 && (
                     <circle r={2.5} fill={meta.color} opacity={0.6}>
-                      <animateMotion dur={`${2 + i * 0.6}s`} repeatCount="indefinite"
+                      <animateMotion key={`wc-anim-${item.parentX}-${childX}`} dur={`${2 + i * 0.6}s`} repeatCount="indefinite"
                         path={`M ${item.parentX},0 L ${item.parentX},18 L ${childX},18 L ${childX},48`} />
                     </circle>
                   )}
