@@ -13,6 +13,7 @@ import { useGatewayDataStore, type AgentInfo } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
 import { themeHex, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
+import { applySessionRename } from '@/utils/sessionRename';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
@@ -25,23 +26,10 @@ import clsx from 'clsx';
 const MAIN_SESSION = 'agent:main:main';
 
 /**
- * Apply a rename via gateway.setSessionLabel + chatStore.setSessionLabel.
- * Returns true if the rename was sent, false if it was a no-op (empty or
- * unchanged). Used by both the tab rename path and the available-session
- * rename path — extracted so the guard + error handling stay consistent.
+ * Renaming helper lives in src/utils/sessionRename.ts — shared with the
+ * NavSidebar session list so both surfaces call the same gateway + store
+ * path. See that file for the contract.
  */
-async function applySessionRename(key: string, next: string): Promise<boolean> {
-  const trimmed = next.trim();
-  if (!trimmed) return false;
-  try {
-    await gateway.setSessionLabel(trimmed, key);
-    useChatStore.getState().setSessionLabel(key, trimmed);
-    return true;
-  } catch (err) {
-    console.warn('[ChatTabs] setSessionLabel failed:', err);
-    return false;
-  }
-}
 
 // ── Helpers ──────────────────────────────────────────────
 

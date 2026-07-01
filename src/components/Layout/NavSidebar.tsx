@@ -1,18 +1,21 @@
 // NavSidebar — Context-sensitive sidebar (4 Panel 组件, Tab 切换整体替换)
 // 每个 Panel 是真 React 组件，hooks 各自管理。Registry 按 tab 分发。
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { showConfirm } from '@/components/shared/AlertDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { resolveTab, type SidebarTab } from './tab-utils';
 import { sessionTitle, partitionSessions } from './sidebarUtils';
 import { SidebarRow, SidebarSection } from './SidebarRow';
+import { applySessionRename } from '@/utils/sessionRename';
 
 // ═══════════════════════════════════════════════════════════
 // 静态配置
@@ -51,6 +54,170 @@ const SETTINGS_GROUPS: ReadonlyArray<{ label: string; items: ReadonlyArray<{ to:
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
 
+function SessionRowItem({ sessionKey, currentTitle, isActive, meta }: {
+  sessionKey: string;
+  currentTitle: string;
+  isActive: boolean;
+  meta?: string;
+}) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(currentTitle);
+  const [renamingInFlight, setRenamingInFlight] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
+
+  const goSession = () => {
+    useChatStore.getState().setActiveSession(sessionKey);
+    navigate('/chat');
+  };
+
+  const startRename = useCallback(() => {
+    setCtxMenu(null);
+    setRenameValue(currentTitle);
+    setRenaming(true);
+    // Focus after the row re-renders with the input.
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [currentTitle]);
+
+  const cancelRename = useCallback(() => {
+    setRenaming(false);
+    setRenameValue('');
+  }, []);
+
+  const submitRename = useCallback(async () => {
+    if (renamingInFlight) return;
+    if (!renameValue.trim() || renameValue.trim() === currentTitle) {
+      cancelRename();
+      return;
+    }
+    setRenamingInFlight(true);
+    try {
+      await applySessionRename(sessionKey, renameValue);
+      // Both the sidebar row and the chat tab read from the same
+      // useChatStore.sessions record, so the rename auto-syncs to
+      // the top ChatTabs row without any extra wiring.
+      window.dispatchEvent(new Event('aegis:refresh'));
+    } finally {
+      setRenamingInFlight(false);
+      cancelRename();
+    }
+  }, [renameValue, currentTitle, renamingInFlight, cancelRename, sessionKey]);
+
+  const handleDelete = useCallback(() => {
+    setCtxMenu(null);
+    showConfirm(
+      t('chat.deleteSession', '删除会话'),
+      t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
+      async () => {
+        try { await (await import('@/services/gateway')).gateway.deleteSession(sessionKey); } catch {}
+        useChatStore.getState().removeSession(sessionKey);
+      }
+    );
+  }, [sessionKey, t]);
+
+  const handleReset = useCallback(() => {
+    setCtxMenu(null);
+    showConfirm(
+      t('chat.resetSession', '重置会话'),
+      t('chat.resetSessionConfirm', '确定清除此会话的对话历史？会话本身会保留。'),
+      async () => {
+        const { clearSessionMessages, clearSessionTokens } = useChatStore.getState();
+        try { await (await import('@/services/gateway')).gateway.resetSession(sessionKey); } catch {}
+        clearSessionMessages(sessionKey);
+        clearSessionTokens(sessionKey);
+        window.dispatchEvent(new CustomEvent('aegis:session-reset'));
+      }
+    );
+  }, [sessionKey, t]);
+
+  // Close context menu on outside click.
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [ctxMenu]);
+
+  if (renaming) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-1.5 bg-[rgb(var(--aegis-primary)/0.10)] border-l-2 border-l-aegis-primary">
+        <input
+          ref={inputRef}
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={() => void submitRename()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); void submitRename(); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+          }}
+          disabled={renamingInFlight}
+          className="flex-1 min-w-0 h-[24px] px-2 rounded bg-aegis-bg border border-aegis-primary/40 text-[12px] text-aegis-text outline-none focus:border-aegis-primary"
+        />
+        <button
+          onClick={(e) => { e.stopPropagation(); cancelRename(); }}
+          className="p-1 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/40"
+          title={t('common.cancel', '取消')}
+        >
+          <X size={11} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div
+        onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
+        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
+      >
+        <SidebarRow
+          title={currentTitle}
+          active={isActive}
+          meta={meta}
+          onClick={goSession}
+        />
+      </div>
+      {ctxMenu && createPortal(
+        <div
+          ref={ctxRef}
+          className="fixed z-[9999] min-w-[160px] py-1 rounded-lg border bg-aegis-menu-bg border-aegis-menu-border text-[12px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y, boxShadow: 'var(--aegis-menu-shadow)' }}
+        >
+          <button
+            onClick={startRename}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+          >
+            <Pencil size={13} className="opacity-60" />
+            {t('chat.renameSession', 'Rename session')}
+          </button>
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+          >
+            <RefreshCw size={13} className="opacity-60" />
+            {t('chat.resetSession', 'Reset session')}
+          </button>
+          <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
+          <button
+            onClick={handleDelete}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 size={13} />
+            {t('chat.deleteSession', 'Delete session')}
+          </button>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function WorkbenchPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -76,18 +243,18 @@ function WorkbenchPanel() {
         {active.length > 0 && (
           <SidebarSection label={t('sidebar.active', '进行中')}>
             {active.map((sx) => (
-              <SidebarRow key={sx.key} live title={sessionTitle(sx)}
-                meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined}
-                onClick={() => goSession(sx.key)} />
+              <SessionRowItem key={sx.key} sessionKey={sx.key}
+                currentTitle={sessionTitle(sx)} isActive={sx.key === activeKey}
+                meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
             ))}
           </SidebarSection>
         )}
         {recent.length > 0 && (
           <SidebarSection label={t('sidebar.recent', '最近对话')}>
             {recent.slice(0, 20).map((sx) => (
-              <SidebarRow key={sx.key} title={sessionTitle(sx)} active={sx.key === activeKey}
-                meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined}
-                onClick={() => goSession(sx.key)} />
+              <SessionRowItem key={sx.key} sessionKey={sx.key}
+                currentTitle={sessionTitle(sx)} isActive={sx.key === activeKey}
+                meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
             ))}
           </SidebarSection>
         )}
