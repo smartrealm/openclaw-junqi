@@ -1,6 +1,6 @@
 // StatusBar — 底部状态栏（参照 Hermes AppStatusBar）
 import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause, Palette } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -53,10 +53,31 @@ export function StatusBar() {
   const isBooting = (bootSummary?.completed ?? 0) < (bootSummary?.total ?? 0) && (bootSummary?.active?.status === 'running' || bootSummary?.active?.status === 'pending');
   const bootPct = bootSummary?.total ? Math.round((bootSummary.completed / bootSummary.total) * 100) : 0;
 
-  const handleRestart = () => {
-    // Reconnect the WebSocket; if the gateway process itself is down, retry it.
-    try { gatewayManager.reset(); } catch {}
-    try { void window.aegis?.gateway?.retry?.(); } catch {}
+  const [reconnecting, setReconnecting] = useState(false);
+  const handleRestart = async () => {
+    if (reconnecting) return;
+    setReconnecting(true);
+    try {
+      // 1. Reset the WebSocket connection manager.
+      try { gatewayManager.reset(); } catch {}
+      // 2. If our Rust-side orchestrator is available (Tauri runtime),
+      //    use the full native→docker fallback chain. Otherwise fall
+      //    back to the legacy retry path.
+      if (window.aegis?.gateway?.ensureRunning) {
+        const result: any = await window.aegis.gateway.ensureRunning();
+        if (!result?.healthy) {
+          // Still not up — one last attempt via the legacy retry.
+          try { void window.aegis?.gateway?.retry?.(); } catch {}
+        }
+      } else {
+        try { void window.aegis?.gateway?.retry?.(); } catch {}
+      }
+      // Give the gateway a moment to accept connections before the
+      // frontend status poller picks up the new state.
+      await new Promise((r) => setTimeout(r, 1500));
+    } finally {
+      setReconnecting(false);
+    }
   };
 
   const resolvedTheme: AegisTheme = theme.startsWith('aegis-') ? (theme as AegisTheme) : 'aegis-dark';
@@ -78,16 +99,16 @@ export function StatusBar() {
         <span className="text-aegis-text font-mono">:{port}</span>
       </span>
 
-      {/* 重连按钮（带进度） */}
-      <button onClick={handleRestart} disabled={isBooting}
+      {/* 重连按钮（带进度 / 自旋 / 本地 loading 状态） */}
+      <button onClick={() => void handleRestart()} disabled={isBooting || reconnecting}
         className={clsx('flex items-center gap-1 px-2 h-full border-r border-aegis-border/50 transition-colors',
-          isBooting
+          isBooting || reconnecting
             ? 'text-aegis-warning'
             : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
-          isBooting && 'animate-pulse')}
-        title={isBooting ? `${t('statusBar.reconnecting', '重连中')} ${bootPct}%` : t('statusBar.reconnect', '重连')}>
-        <RotateCcw size={10} className={isBooting ? 'animate-spin' : ''} />
-        <span>{isBooting ? `${bootPct}%` : t('statusBar.reconnect', '重连')}</span>
+          (isBooting || reconnecting) && 'animate-pulse')}
+        title={isBooting ? `${t('statusBar.reconnecting', '重连中')} ${bootPct}%` : reconnecting ? t('statusBar.reconnecting', '重连中...') : t('statusBar.reconnect', '重连')}>
+        <RotateCcw size={10} className={isBooting || reconnecting ? 'animate-spin' : ''} />
+        <span>{isBooting ? `${bootPct}%` : reconnecting ? '…' : t('statusBar.reconnect', '重连')}</span>
       </button>
 
       {/* 模型 */}
