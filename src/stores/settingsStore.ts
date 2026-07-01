@@ -43,6 +43,12 @@ interface SettingsState {
   context1mEnabled: boolean;
   toolIntentEnabled: boolean;
   audioAutoPlay: boolean;
+  /** Picovoice AccessKey for Porcupine wake-word engine (phase 2). Free from Picovoice Console. */
+  picovoiceAccessKey: string;
+  /** Builtin wake word id (e.g. 'porcupine') or empty to use the default. */
+  wakeWord: string;
+  /** Wake-word sensitivity 0..1 (higher = more sensitive, more false alarms). */
+  wakeSensitivity: number;
   gatewayUrl: string;
   gatewayToken: string;
   sidebarCollapsed: boolean;
@@ -71,6 +77,9 @@ interface SettingsState {
   setContext1mEnabled: (enabled: boolean) => void;
   setToolIntentEnabled: (enabled: boolean) => void;
   setAudioAutoPlay: (enabled: boolean) => void;
+  setPicovoiceAccessKey: (key: string) => void;
+  setWakeWord: (word: string) => void;
+  setWakeSensitivity: (s: number) => void;
   setGatewayUrl: (url: string) => void;
   setGatewayToken: (token: string) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -163,6 +172,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   context1mEnabled: localStorage.getItem('aegis-context1m') === 'true',
   toolIntentEnabled: localStorage.getItem('aegis-tool-intent') === 'true',
   audioAutoPlay: localStorage.getItem('aegis-audio-autoplay') === 'true',
+  picovoiceAccessKey: localStorage.getItem('aegis-picovoice-access-key') || '',
+  wakeWord: localStorage.getItem('aegis-wake-word') || '',
+  wakeSensitivity: parseFloat(localStorage.getItem('aegis-wake-sensitivity') || '0.7') || 0.7,
   gatewayUrl: localStorage.getItem('aegis-gateway-url') || '',
   gatewayToken: localStorage.getItem('aegis-gateway-token') || '',
   sidebarCollapsed: savedSidebarMode === 'mini',
@@ -220,6 +232,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setContext1mEnabled: (enabled) => { localStorage.setItem('aegis-context1m', String(enabled)); set({ context1mEnabled: enabled }); },
   setToolIntentEnabled: (enabled) => { localStorage.setItem('aegis-tool-intent', String(enabled)); set({ toolIntentEnabled: enabled }); },
   setAudioAutoPlay: (enabled) => { localStorage.setItem('aegis-audio-autoplay', String(enabled)); set({ audioAutoPlay: enabled }); },
+  setPicovoiceAccessKey: (key) => { localStorage.setItem('aegis-picovoice-access-key', key); set({ picovoiceAccessKey: key }); },
+  setWakeWord: (word) => { localStorage.setItem('aegis-wake-word', word); set({ wakeWord: word }); },
+  setWakeSensitivity: (s) => { const v = Math.min(1, Math.max(0, s)); localStorage.setItem('aegis-wake-sensitivity', String(v)); set({ wakeSensitivity: v }); },
   setGatewayUrl: (url) => {
     localStorage.setItem('aegis-gateway-url', url);
     set({ gatewayUrl: url });
