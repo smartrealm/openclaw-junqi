@@ -36,7 +36,7 @@ fn augmented_path() -> String {
 }
 
 /// Resolve `openclaw` on the augmented PATH — same as desktop's resolveOpenclawBinary.
-fn resolve_openclaw_binary() -> Option<std::path::PathBuf> {
+pub fn resolve_openclaw_binary() -> Option<std::path::PathBuf> {
     let path = augmented_path();
     let (cmd, arg) = if cfg!(windows) { ("where", "openclaw.cmd") } else { ("which", "openclaw") };
     std::process::Command::new(cmd)
@@ -509,13 +509,21 @@ pub async fn start_gateway(
 
     // Nothing is serving — (re)start our own managed child. We only ever kill
     // our OWN previously-spawned child here, never a foreign process.
+    // Ported from ClawX: transition lifecycle → Starting before spawn.
+    crate::commands::gateway_supervisor::transition_lifecycle(
+        &state,
+        crate::state::gateway_process::GatewayLifecycle::Starting,
+        "start_gateway: beginning spawn sequence",
+    );
     let old_child = {
         let mut lock = state.child.lock().map_err(|e| e.to_string())?;
         lock.take()
     };
     if let Some(mut old) = old_child {
-        let _ = old.kill().await;
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old).await;
+        // Ported from ClawX: wait for port to free after killing old child
+        // (handles TCP TIME_WAIT on Windows, launchd respawn on macOS).
+        let _ = crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await;
     }
 
     // Native mode always binds to loopback for security — never expose to LAN
@@ -639,6 +647,12 @@ pub async fn start_gateway(
         *child_lock = Some(child);
     }
     *state.port.lock().map_err(|e| e.to_string())? = port;
+    // Ported from ClawX: transition lifecycle → Running once child is spawned.
+    crate::commands::gateway_supervisor::transition_lifecycle(
+        &state,
+        crate::state::gateway_process::GatewayLifecycle::Running,
+        "start_gateway: child spawned",
+    );
 
     // Re-read the token that ensure_config_with_token just wrote/read
     // so we return it in a single IPC round-trip.

@@ -29,6 +29,8 @@ pub fn run() {
             commands::gateway_logs::get_gateway_logs,
             commands::gateway_logs::clear_gateway_logs,
             commands::ensure::ensure_gateway_running,
+            commands::gateway_supervisor::openclaw_doctor_repair,
+            commands::gateway_supervisor::get_gateway_lifecycle,
             commands::gateway::get_gateway_token,
             commands::gateway::run_doctor,
             // System
