@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use crate::paths;
 use crate::state::GatewayProcess;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Debug, Serialize)]
 pub struct GatewayStatus {
@@ -577,25 +577,49 @@ pub async fn start_gateway(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    fn spawn_log_reader(app: AppHandle, reader: impl tokio::io::AsyncRead + Unpin + Send + 'static) {
+    fn spawn_log_reader(
+        app: AppHandle,
+        reader: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+        source: crate::state::gateway_process::LogSource,
+    ) {
+        use crate::state::gateway_process::{push_log, LogLevel};
         use tokio::io::{AsyncBufReadExt, BufReader};
         tokio::spawn(async move {
+            // Look up the GatewayProcess state via AppHandle — this gives
+            // us a State<'_, T> handle inside the 'static task without
+            // requiring the command-level State borrow to escape.
+            let state = app.state::<crate::state::GatewayProcess>();
             let mut lines = BufReader::new(reader).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 let _ = app.emit("gateway-log", &line);
+                push_log(&state.logs, source, LogLevel::Info, line);
             }
         });
     }
 
     if let Some(out) = stdout {
-        spawn_log_reader(app.clone(), out);
+        spawn_log_reader(
+            app.clone(),
+            out,
+            crate::state::gateway_process::LogSource::ChildStdout,
+        );
     }
     if let Some(err) = stderr {
-        spawn_log_reader(app.clone(), err);
+        spawn_log_reader(
+            app.clone(),
+            err,
+            crate::state::gateway_process::LogSource::ChildStderr,
+        );
     }
 
     // Emit initial status
     let _ = app.emit("gateway-log", "Gateway process started, waiting for ready...");
+    crate::state::gateway_process::push_log(
+        &state.logs,
+        crate::state::gateway_process::LogSource::Lifecycle,
+        crate::state::gateway_process::LogLevel::Info,
+        format!("start_gateway invoked (port={})", port),
+    );
 
     // Wait briefly and check if the process crashed on startup
     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;

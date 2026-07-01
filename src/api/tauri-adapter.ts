@@ -23,6 +23,7 @@ export interface SystemMetricsPayload {
 }
 
 import { invoke } from "@tauri-apps/api/core";
+import type { EnsureResult, LogEntry } from './tauri-commands';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -206,6 +207,29 @@ async function restartLocalGateway(): Promise<{ success: boolean; method?: strin
       } catch (e: any) {
         return { success: false, error: String(e) };
       }
+    },
+    /**
+     * Boot-time / on-demand orchestrator. Native → Docker fallback chain.
+     * Returns mode + healthy + attempted_fallback so the UI can decide
+     * whether to show a "switched to Docker" toast.
+     */
+    ensureRunning: async () => {
+      try {
+        const r: EnsureResult = await invoke("ensure_gateway_running");
+        if (r.token) _cachedGatewayToken = r.token;
+        return r;
+      } catch (e: any) {
+        return { mode: 'unavailable', healthy: false, port: 0, token: null, attempted_fallback: false, error: String(e) } as EnsureResult;
+      }
+    },
+    /** Fetch up to `limit` most-recent entries from the 200-entry circular log buffer. */
+    getLogs: async (limit = 200) => {
+      try { return await invoke<LogEntry[]>("get_gateway_logs", { limit }); }
+      catch { return [] as LogEntry[]; }
+    },
+    clearLogs: async () => {
+      try { await invoke("clear_gateway_logs"); return true; }
+      catch { return false; }
     },
     retry: restartLocalGateway,
     onStatusChanged: (cb: any) => {

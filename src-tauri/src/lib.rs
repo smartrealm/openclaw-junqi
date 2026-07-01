@@ -26,6 +26,9 @@ pub fn run() {
             commands::gateway::stop_gateway,
             commands::gateway::gateway_status,
             commands::gateway::probe_gateway_port,
+            commands::gateway_logs::get_gateway_logs,
+            commands::gateway_logs::clear_gateway_logs,
+            commands::ensure::ensure_gateway_running,
             commands::gateway::get_gateway_token,
             commands::gateway::run_doctor,
             // System
