@@ -39,9 +39,23 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          "syntax-highlighter": ["react-syntax-highlighter"],
-          markdown: ["react-markdown", "remark-gfm"],
+        manualChunks(id) {
+          // Vendor splits for heavy libs.
+          if (id.includes("node_modules")) {
+            if (id.includes("react-syntax-highlighter")) return "syntax-highlighter";
+            if (id.includes("react-markdown") || id.includes("remark-gfm")) return "markdown";
+          }
+          // Keep tightly-coupled internal modules in ONE named chunk to avoid
+          // circular cross-chunk dependencies (barrel ↔ sub-modules). Returning
+          // undefined lets Rollup still split them; a shared chunk name forces
+          // them together and eliminates the "broken execution order" warning.
+          if (
+            id.includes("/src/services/gateway/") ||
+            id.includes("/src/theme/") ||
+            id.includes("/src/stores/")
+          ) {
+            return "app-core";
+          }
         },
       },
     },

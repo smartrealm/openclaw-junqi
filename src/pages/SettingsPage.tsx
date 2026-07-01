@@ -8,7 +8,6 @@ import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
   MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound,
-  Cpu, Server, FolderTree,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -26,10 +25,6 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
-import { ModelsPanel } from '@/components/settings/ModelsPanel';
-import { ChannelsPanel } from '@/components/settings/ChannelsPanel';
-import { McpPanel } from '@/components/settings/McpPanel';
-import { WorkspacePanel } from '@/components/settings/WorkspacePanel';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import clsx from 'clsx';
@@ -100,7 +95,7 @@ export function SettingsPageFull() {
   const [checkingVersion, setCheckingVersion] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about' | 'models' | 'channels' | 'mcp' | 'workspace'>('appearance');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
 
   const handleCheckVersion = async () => {
     if (checkingVersion) return;
@@ -371,10 +366,6 @@ export function SettingsPageFull() {
           ['connect', t('settings.tab.connect', '连接'), Wifi],
           ['storage', t('settings.tab.storage', '存储'), HardDrive],
           ['about', t('settings.tab.about', '关于'), Info],
-          ['models', t('settings.tab.models', 'Models'), Cpu],
-          ['channels', t('settings.tab.channels', 'Channels'), Radio],
-          ['mcp', t('settings.tab.mcp', 'MCP'), Server],
-          ['workspace', t('settings.tab.workspace', 'Workspace'), FolderTree],
         ] as const).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className={clsx(
@@ -1020,11 +1011,6 @@ export function SettingsPageFull() {
         </>
       )}
 
-      {/* New tabs (SPEC §6 M5): stubs only */}
-      {activeTab === 'models' && <ModelsPanel />}
-      {activeTab === 'channels' && <ChannelsPanel />}
-      {activeTab === 'mcp' && <McpPanel />}
-      {activeTab === 'workspace' && <WorkspacePanel />}
       </div>
     </PageTransition>
   );
