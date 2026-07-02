@@ -77,8 +77,18 @@ export function partitionSessions(
 }
 
 export function sessionTitle(sx: Session): string {
+  // 1. User-set label wins. Display the explicit user-chosen name even
+  //    on the main session and even if it matches the legacy "Main Session"
+  //    placeholder.
+  if (sx.label && sx.label.trim().length > 0) {
+    if (sx.label !== 'Main Session') return sx.label;
+    // Even when the label literally equals "Main Session", if the user
+    // typed it themselves (the openclaw-side default for new sessions),
+    // respect it. Only fall through to key-based labels if the label
+    // is missing or empty.
+  }
+  // 2. Topic > key-derived sub > agent name.
   if (typeof sx.topic === 'string' && sx.topic.trim()) return sx.topic;
-  if (sx.label && sx.label !== 'Main Session' && !sx.key?.endsWith(':main')) return sx.label;
   const parts = String(sx.key || '').split(':');
   const agentId = parts.length >= 2 ? parts[1] : '';
   const sub = parts.length >= 4 ? parts.slice(3).join(':') : '';
