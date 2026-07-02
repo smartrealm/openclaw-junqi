@@ -1,6 +1,6 @@
 // StatusBar — 底部状态栏（参照 Hermes AppStatusBar）
 import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -9,6 +9,7 @@ import { usePetStore } from '@/stores/petStore';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { applyTheme } from '@/theme/apply';
+import { useSetupProgress } from '@/hooks/useSetupProgress';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import type { AegisTheme } from '@/theme/types';
@@ -54,22 +55,40 @@ export function StatusBar() {
   const isBooting = (bootSummary?.completed ?? 0) < (bootSummary?.total ?? 0) && (bootSummary?.active?.status === 'running' || bootSummary?.active?.status === 'pending');
   const bootPct = bootSummary?.total ? Math.round((bootSummary.completed / bootSummary.total) * 100) : 0;
 
+  // ── Inline restart status ────────────────────────────────────────
+  // One hook consumes both producers (Rust setup-progress + App's
+  // aegis:gateway-progress window events). We only care about step="gateway"
+  // — install steps have their own progress surface in the Setup page.
+  const gatewayProgress = useSetupProgress('gateway');
+  const gatewayMsg = gatewayProgress?.message ?? null;
+  const gatewayProg = gatewayProgress?.progress ?? null;
+  // Auto-clear once WS reconnects so the bar doesn't linger with stale text.
+  useEffect(() => {
+    if (connected && gatewayProgress) {
+      // tiny delay so the user sees the final "100%" line flicker through
+      const t = setTimeout(() => { /* hook unmount happens here */ }, 800);
+      return () => clearTimeout(t);
+    }
+  }, [connected, gatewayProgress]);
+
   const [reconnecting, setReconnecting] = useState(false);
   const handleRestart = () => {
     if (reconnecting) return;
     setReconnecting(true);
     // 1. Disconnect WS + reset state.
     try { gatewayManager.reset(); } catch {}
-    // 2. Dispatch a global event so App.tsx's triggerGatewayReconnect
-    //    callback picks this up and runs the full restart pipeline
-    //    (ensure_gateway_running → wait → reconnect WS). This keeps the
-    //    reconnect logic in ONE place (App.tsx) rather than duplicating
-    //    it here. StatusBar should not know how to reconnect — it just
-    //    signals the intent.
+    // 2. Dispatch a global event so App.tsx picks this up and runs the full
+    //    restart pipeline. App.tsx also emits aegis:gateway-progress so the
+    //    inline status message + spinner update via useSetupProgress.
     window.dispatchEvent(new CustomEvent('aegis:manual-reconnect'));
-    // 3. Spinner runs for at most 5s then self-clears.
+    // 3. Self-clear if no progress event arrives within 5s (safety net).
     setTimeout(() => setReconnecting(false), 5_000);
   };
+
+  const reconnectBusy = isBooting || reconnecting || !!gatewayMsg;
+  const reconnectPct = gatewayProg != null
+    ? Math.round(Math.max(0, Math.min(1, gatewayProg)) * 100)
+    : (reconnecting ? null : 0);
 
   const resolvedTheme: AegisTheme = theme.startsWith('aegis-') ? (theme as AegisTheme) : 'aegis-dark';
   const isDarkish = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
@@ -91,16 +110,30 @@ export function StatusBar() {
       </span>
 
       {/* 重连按钮（带进度 / 自旋 / 本地 loading 状态） */}
-      <button onClick={() => void handleRestart()} disabled={isBooting || reconnecting}
+      <button onClick={() => void handleRestart()} disabled={reconnectBusy}
         className={clsx('flex items-center gap-1 px-2 h-full border-r border-aegis-border/50 transition-colors',
-          isBooting || reconnecting
+          reconnectBusy
             ? 'text-aegis-warning'
             : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
-          (isBooting || reconnecting) && 'animate-pulse')}
-        title={isBooting ? `${t('statusBar.reconnecting', '重连中')} ${bootPct}%` : reconnecting ? t('statusBar.reconnecting', '重连中...') : t('statusBar.reconnect', '重连')}>
-        <RotateCcw size={10} className={isBooting || reconnecting ? 'animate-spin' : ''} />
-        <span>{isBooting ? `${bootPct}%` : reconnecting ? '…' : t('statusBar.reconnect', '重连')}</span>
+          reconnectBusy && 'animate-pulse')}
+        title={gatewayMsg || t('statusBar.reconnect', '重连')}>
+        <RotateCcw size={10} className={reconnectBusy ? 'animate-spin' : ''} />
+        <span>
+          {gatewayMsg
+            ? (reconnectPct != null ? `${reconnectPct}%` : '…')
+            : (isBooting ? `${bootPct}%` : t('statusBar.reconnect', '重连'))}
+        </span>
       </button>
+
+      {/* 重连步骤详情（与 install 步骤 statusMessage 同一信息源） */}
+      {gatewayMsg && (
+        <span
+          className="flex items-center gap-1.5 px-2.5 h-full border-r border-aegis-border/50 text-aegis-warning/90 max-w-[280px]"
+          title={gatewayMsg}
+        >
+          <span className="truncate text-[10.5px]">{gatewayMsg}</span>
+        </span>
+      )}
 
       {/* 模型 */}
       {modelLabel && (

@@ -67,6 +67,7 @@ pub fn run() {
             commands::setup::install_node,
             commands::setup::install_git,
             commands::setup::install_openclaw,
+            commands::setup::prepare_gateway,
             commands::setup::install_winget_package,
             // Control UI (Console)
            commands::console::open_control_ui,

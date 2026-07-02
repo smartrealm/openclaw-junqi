@@ -10,6 +10,7 @@ import { useAppStore } from "@/stores/app-store";
 import {
   checkNode, checkGit, checkOpenclaw,
   installNode, installGit, installOpenclaw,
+  prepareGateway,
   startGateway, checkDocker, pullOpenclawImage, startDockerGateway,
   type DockerStatus,
 } from "@/api/tauri-commands";
@@ -234,9 +235,21 @@ export function useSetupFlow(
         patchStep("openclaw", "done", oclawStatus.version ?? undefined);
       }
 
-      // Gateway
-      patchStep("gateway", "running", "Starting...");
-      setProgress(70); setStatusMessage("Starting Gateway...");
+      // Gateway — 准备阶段。前端 `setup-progress` 监听会把 Rust 端
+      // 通过 `prepare_gateway` 流式上报的每一条 step="gateway" 文案
+      // 原样展示到 statusMessage 上，与 install_* 的呈现形态完全一致。
+      patchStep("gateway", "running", "Preparing…");
+      setSetupStep("install-openclaw");
+      setProgress(55);
+      try {
+        await prepareGateway();
+      } catch (e) {
+        // 即便 Rust 端 prepare 失败也要继续尝试 start_gateway
+        console.warn('[setup] prepare_gateway failed, continuing to start_gateway:', e);
+      }
+      setProgress(70);
+      patchStep("gateway", "running", "Starting…");
+      setStatusMessage("Starting Gateway...");
       await startGateway(18789);
       setGatewayRunning(true);
       patchStep("gateway", "done");

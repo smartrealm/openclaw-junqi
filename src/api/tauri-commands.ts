@@ -11,6 +11,7 @@ export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
 export const installNode = () => invoke<string>("install_node");
 export const installGit = () => invoke<string>("install_git");
 export const installOpenclaw = () => invoke<string>("install_openclaw");
+export const prepareGateway = () => invoke<string>("prepare_gateway");
 export const startGateway = (port?: number) => invoke<any>("start_gateway", { port });
 export const checkDocker = () => invoke<DockerStatus>("check_docker");
 export const pullOpenclawImage = (tag?: string) => invoke<string>("pull_openclaw_image", { tag });

@@ -267,8 +267,8 @@ function WorkbenchPanel() {
   const typingBySession = useChatStore((st) => st.typingBySession) ?? {};
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
   const [showArchived, setShowArchived] = useState(false);
-  // Collapse state per agent group — remembered across renders. Default: all expanded.
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Accordion: only one agent group open at a time. Default: 主智能体 (main).
+  const [openGroupId, setOpenGroupId] = useState<string | null>('main');
   const { pinned, active, recent, archived } = partitionSessions(sessions, typingBySession, showArchived);
 
   // Per-session first user message, keyed for O(1) lookups during render.
@@ -290,6 +290,17 @@ function WorkbenchPanel() {
   const visibleSessions = [...pinned, ...active, ...recent];
   const groups = useMemo(() => groupSessionsByAgent(visibleSessions), [visibleSessions]);
 
+  // Accordion: when the active session changes, auto-expand its group and
+  // collapse all others so the user always sees their active context.
+  useEffect(() => {
+    if (!activeKey) return;
+    const group = groups.find((g) => g.sessions.some((s) => s.key === activeKey));
+    if (group && group.agentId !== openGroupId) {
+      setOpenGroupId(group.agentId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey]);
+
   const renderRow = (sx: typeof visibleSessions[number]) => (
     <SessionRowItem key={sx.key} sessionKey={sx.key}
       currentTitle={sessionTitle(sx, firstUserByKey[sx.key])} isActive={sx.key === activeKey}
@@ -298,7 +309,7 @@ function WorkbenchPanel() {
   );
 
   const toggleGroup = (agentId: string) => {
-    setCollapsed((prev) => ({ ...prev, [agentId]: !prev[agentId] }));
+    setOpenGroupId((prev) => (prev === agentId ? null : agentId));
   };
 
   // Quick-create dropdown. The "split button" pattern: the left half
@@ -327,8 +338,9 @@ function WorkbenchPanel() {
     };
   }, [quickMenuOpen]);
 
-  const quickItems: Array<{ key: string; icon: React.ReactNode; label: string; to: string; hint?: string }> = [
-    { key: 'agent',  icon: <Bot size={14} />,           label: t('sidebar.newAgent', '新建智能体'),  to: '/agents?new=1' },
+  const createItems: Array<{ key: string; icon: React.ReactNode; label: string; to: string }> = [
+    { key: 'chat',   icon: <MessageSquare size={14} />, label: t('sidebar.newChat', '新建对话'),    to: '/chat' },
+    { key: 'agent',  icon: <Bot size={14} />,           label: t('sidebar.newAgent', '新建智能体'), to: '/agents?new=1' },
     { key: 'model',  icon: <Cpu size={14} />,           label: t('sidebar.addModel', '添加模型'),   to: '/config?tab=providers' },
     { key: 'channel', icon: <MessageSquare size={14} />, label: t('sidebar.addChannel', '添加通道'), to: '/config?tab=channels' },
     { key: 'cron',   icon: <Clock size={14} />,         label: t('sidebar.newCron', '新建定时任务'), to: '/cron?new=1' },
@@ -341,25 +353,17 @@ function WorkbenchPanel() {
   return (
     <>
       <div className="px-3 mb-1">
-        <div ref={quickMenuRef} className="relative flex items-stretch gap-1">
-          {/* Primary action — left side: new chat */}
+        <div ref={quickMenuRef} className="relative">
           <button
             type="button"
-            onClick={() => navigate('/chat')}
-            className="flex-1 h-9 bg-aegis-primary text-white rounded-l-lg font-semibold text-[13px] flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity"
-          >
-            <Plus size={14} />{t('sidebar.newChat', '新建对话')}
-          </button>
-          {/* Quick-create menu trigger — right chevron */}
-          <button
-            type="button"
-            aria-label={t('sidebar.moreCreate', '更多创建')}
             aria-haspopup="menu"
             aria-expanded={quickMenuOpen}
             onClick={() => setQuickMenuOpen((v) => !v)}
-            className="w-8 h-9 bg-aegis-primary text-white rounded-r-lg font-semibold flex items-center justify-center hover:opacity-90 transition-opacity border-l border-white/20"
+            className="w-full h-9 bg-aegis-primary text-white rounded-lg font-semibold text-[13px] flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity"
           >
-            <ChevronDown size={13} className={clsx('transition-transform', quickMenuOpen && 'rotate-180')} />
+            <Plus size={14} />
+            <span>{t('sidebar.newCreate', '新建')}</span>
+            <ChevronDown size={12} className={clsx('ml-0.5 transition-transform duration-150', quickMenuOpen && 'rotate-180')} />
           </button>
           {quickMenuOpen && (
             <div
@@ -370,20 +374,25 @@ function WorkbenchPanel() {
                 <Sparkles size={9} className="text-aegis-accent" />
                 {t('sidebar.quickCreate', '快速创建')}
               </div>
-              {quickItems.map((it) => (
-                <button
-                  key={it.key}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => goQuick(it.to)}
-                  className="w-full px-3 py-2 flex items-center gap-2.5 text-[12.5px] text-aegis-text hover:bg-aegis-hover/40 hover:text-aegis-accent transition-colors text-left group"
-                >
-                  <span className="text-aegis-accent/70 group-hover:text-aegis-accent transition-colors">
-                    {it.icon}
-                  </span>
-                  <span className="flex-1">{it.label}</span>
-                  <ChevronRight size={11} className="text-aegis-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
+              {createItems.map((it, idx) => (
+                <>
+                  {idx === 1 && (
+                    <div key="sep" className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
+                  )}
+                  <button
+                    key={it.key}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => goQuick(it.to)}
+                    className="w-full px-3 py-2 flex items-center gap-2.5 text-[12.5px] text-aegis-text hover:bg-aegis-hover/40 hover:text-aegis-accent transition-colors text-left group"
+                  >
+                    <span className="text-aegis-accent/70 group-hover:text-aegis-accent transition-colors">
+                      {it.icon}
+                    </span>
+                    <span className="flex-1">{it.label}</span>
+                    <ChevronRight size={11} className="text-aegis-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                </>
               ))}
             </div>
           )}
@@ -394,7 +403,7 @@ function WorkbenchPanel() {
           <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
         {groups.map((g: AgentGroup) => {
-          const isCollapsed = collapsed[g.agentId] === true;
+          const isOpen = openGroupId === g.agentId;
           return (
             <div key={g.agentId} className="mb-1">
               <button
@@ -402,14 +411,14 @@ function WorkbenchPanel() {
                 onClick={() => toggleGroup(g.agentId)}
                 className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim hover:text-aegis-text-secondary transition-colors"
               >
-                {isCollapsed
-                  ? <ChevronRight size={11} className="opacity-60" />
-                  : <ChevronDown size={11} className="opacity-60" />}
+                {isOpen
+                  ? <ChevronDown size={11} className="opacity-60" />
+                  : <ChevronRight size={11} className="opacity-60" />}
                 <Bot size={11} className="opacity-60" />
                 <span className="flex-1 text-left truncate">{g.label}</span>
                 <span className="text-[9.5px] text-aegis-text-dim/70 font-mono">{g.sessions.length}</span>
               </button>
-              {!isCollapsed && g.sessions.map(renderRow)}
+              {isOpen && g.sessions.map(renderRow)}
             </div>
           );
         })}

@@ -23,11 +23,19 @@ fn augmented_path() -> String {
     // Our openclaw --prefix install
     parts.push(paths::desktop_dir().join("openclaw").join("bin").to_string_lossy().to_string());
     if let Some(home) = dirs::home_dir() {
-        // Native npm installs
+        // Native npm installs (Unix)
         parts.push(home.join(".npm-global").join("bin").to_string_lossy().to_string());
         parts.push(home.join(".local").join("bin").to_string_lossy().to_string());
         // asdf / mise version managers (shim node, npm, etc.)
         parts.push(home.join(".asdf").join("shims").to_string_lossy().to_string());
+        // Windows: npm global bin lives under %APPDATA%\npm
+        #[cfg(windows)]
+        {
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                parts.push(std::path::PathBuf::from(appdata).join("npm").to_string_lossy().to_string());
+            }
+            parts.push(home.join("AppData").join("Roaming").join("npm").to_string_lossy().to_string());
+        }
     }
     if let Ok(existing) = std::env::var("PATH") {
         parts.push(existing);
