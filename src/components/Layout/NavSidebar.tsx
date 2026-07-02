@@ -335,13 +335,24 @@ function WorkbenchPanel() {
   return (
     <>
       {/* Primary "新建对话" — bigger, centered.
-          The 4 follow-up navigation rows below are flat text labels
-          (left-aligned, no + / 新增 prefix) so the sidebar reads as a
-          calm left-justified menu instead of competing primary buttons. */}
+          Click creates a fresh local session (main agent, pinned, active)
+          and navigates to /chat. The user sees a new row appear in the
+          sidebar immediately. After the first real message is sent, the
+          gateway's sessions.list reply merges in the canonical record. */}
       <div className="px-4 mb-3 mt-1">
         <button
           type="button"
-          onClick={() => navigate('/chat')}
+          onClick={() => {
+            const newKey = `agent:main:s-${Date.now().toString(36).slice(-5)}`;
+            useChatStore.getState().addLocalSession({
+              key: newKey,
+              label: '新会话',
+              agentId: 'main',
+              createdAt: Date.now(),
+              pinned: true,
+            } as any);
+            navigate('/chat');
+          }}
           className="w-full h-11 bg-aegis-primary text-white rounded-xl font-semibold text-[14px] flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all shadow-sm shadow-aegis-primary/20"
         >
           <Plus size={16} />

@@ -228,10 +228,12 @@ export default function App() {
   // loadTokenUsage needed.
   const loadSessions = useCallback(async () => {
     // Block the first sessions.list read until the persisted-label cache
-    // has finished priming. After the first run, the cache is already
-    // populated so this returns immediately.
-    while (!labelsReady) {
-      await new Promise((r) => setTimeout(r, 16));
+    // has finished priming. We sleep at most one tick — if the prime
+    // hasn't started by the time this is called, the next setSessions
+    // merge (driven by any later gateway handshake) will pick up the
+    // cache. Looping forever here would deadlock the whole boot path.
+    if (!labelsReady) {
+      await new Promise((r) => setTimeout(r, 32));
     }
     try {
       const result = await gateway.getSessions();
