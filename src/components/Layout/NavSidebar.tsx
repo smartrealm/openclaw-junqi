@@ -322,81 +322,40 @@ function WorkbenchPanel() {
   const quickMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!quickMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (quickMenuRef.current && !quickMenuRef.current.contains(e.target as Node)) {
-        setQuickMenuOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setQuickMenuOpen(false);
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [quickMenuOpen]);
+    // (No more split-button / dropdown. Each quick-create item is now its
+    //  own dedicated row button so users can hit any one with a single click
+    //  without first opening a chevron.)
+  }, [/* no listeners needed without the dropdown */ 0]);
 
-  const createItems: Array<{ key: string; icon: React.ReactNode; label: string; to: string }> = [
-    { key: 'chat',   icon: <MessageSquare size={14} />, label: t('sidebar.newChat', '新建对话'),    to: '/chat' },
-    { key: 'agent',  icon: <Bot size={14} />,           label: t('sidebar.newAgent', '新建智能体'), to: '/agents?new=1' },
-    { key: 'model',  icon: <Cpu size={14} />,           label: t('sidebar.addModel', '添加模型'),   to: '/config?tab=providers' },
-    { key: 'channel', icon: <MessageSquare size={14} />, label: t('sidebar.addChannel', '添加通道'), to: '/config?tab=channels' },
-    { key: 'cron',   icon: <Clock size={14} />,         label: t('sidebar.newCron', '新建定时任务'), to: '/cron?new=1' },
+  const createItems: Array<{ key: string; icon: React.ReactNode; label: string; to: string; primary?: boolean }> = [
+    { key: 'chat',    icon: <Plus size={13} />,           label: t('sidebar.newChat', '新建对话'),     to: '/chat',          primary: true },
+    { key: 'agent',   icon: <Bot size={13} />,            label: t('sidebar.newAgent', '新建智能体'),   to: '/agents?new=1' },
+    { key: 'model',   icon: <Cpu size={13} />,            label: t('sidebar.addModel', '添加模型'),     to: '/config?tab=providers' },
+    { key: 'channel', icon: <MessageSquare size={13} />,   label: t('sidebar.addChannel', '添加通道'),   to: '/config?tab=channels' },
+    { key: 'cron',    icon: <Clock size={13} />,          label: t('sidebar.newCron', '新建定时任务'), to: '/cron?new=1' },
   ];
-  const goQuick = (to: string) => {
-    setQuickMenuOpen(false);
-    navigate(to);
-  };
 
   return (
     <>
-      <div className="px-3 mb-1">
-        <div ref={quickMenuRef} className="relative">
+      <div className="px-3 mb-2 flex flex-col gap-1">
+        {createItems.map((it) => (
           <button
+            key={it.key}
             type="button"
-            aria-haspopup="menu"
-            aria-expanded={quickMenuOpen}
-            onClick={() => setQuickMenuOpen((v) => !v)}
-            className="w-full h-9 bg-aegis-primary text-white rounded-lg font-semibold text-[13px] flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity"
+            onClick={() => navigate(it.to)}
+            className={clsx(
+              'flex items-center gap-2 h-8 px-3 rounded-md text-[12.5px] transition-all',
+              it.primary
+                ? 'bg-aegis-primary text-white font-semibold hover:opacity-90'
+                : 'bg-aegis-overlay/[0.04] border border-aegis-border/40 text-aegis-text-secondary hover:bg-aegis-hover/40 hover:text-aegis-text hover:border-aegis-border',
+            )}
           >
-            <Plus size={14} />
-            <span>{t('sidebar.newCreate', '新建')}</span>
-            <ChevronDown size={12} className={clsx('ml-0.5 transition-transform duration-150', quickMenuOpen && 'rotate-180')} />
+            <span className={clsx('shrink-0', it.primary ? '' : 'text-aegis-text-dim')}>
+              {it.icon}
+            </span>
+            <span className="flex-1 text-left truncate">{it.label}</span>
           </button>
-          {quickMenuOpen && (
-            <div
-              role="menu"
-              className="absolute top-[calc(100%+4px)] left-0 right-0 z-50 bg-aegis-card-solid border border-aegis-border rounded-lg shadow-lg py-1 animate-in fade-in slide-in-from-top-1 duration-150"
-            >
-              <div className="px-3 py-1.5 text-[9.5px] font-semibold uppercase tracking-wider text-aegis-text-dim flex items-center gap-1.5">
-                <Sparkles size={9} className="text-aegis-accent" />
-                {t('sidebar.quickCreate', '快速创建')}
-              </div>
-              {createItems.map((it, idx) => (
-                <>
-                  {idx === 1 && (
-                    <div key="sep" className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
-                  )}
-                  <button
-                    key={it.key}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => goQuick(it.to)}
-                    className="w-full px-3 py-2 flex items-center gap-2.5 text-[12.5px] text-aegis-text hover:bg-aegis-hover/40 hover:text-aegis-accent transition-colors text-left group"
-                  >
-                    <span className="text-aegis-accent/70 group-hover:text-aegis-accent transition-colors">
-                      {it.icon}
-                    </span>
-                    <span className="flex-1">{it.label}</span>
-                    <ChevronRight size={11} className="text-aegis-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </button>
-                </>
-              ))}
-            </div>
-          )}
-        </div>
+        ))}
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
         {groups.length === 0 && (

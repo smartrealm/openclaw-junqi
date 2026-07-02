@@ -245,10 +245,21 @@ pub fn run() {
             }
             // ── Window-level drag-drop bridge ────────────────────────────────
             // Routes OS-level drag-drop events from any webview window to the
-            // frontend as a single `aegis:file-dropped` event with the paths.
-            // The frontend pet window + quickchat logic decide what to do.
+            // frontend. Forward all 4 variants: Enter (files start hovering),
+            // Over (during drag — used by pet to magnetize to cursor),
+            // Leave (drag escaped without dropping), Drop (final deposit).
             let app_for_dd = app.handle().clone();
             if let Some(main_win) = app.get_webview_window("main") {
+                // Compute window-local logical position from global screen coords.
+                // Window's own (outer_position) tells us where it sits on the
+                // multi-monitor layout; subtract that to get window-local coords.
+                let win_pos = main_win.outer_position().ok();
+                let win_pos_x = win_pos.map(|p| p.x as f64).unwrap_or(0.0);
+                let win_pos_y = win_pos.map(|p| p.y as f64).unwrap_or(0.0);
+                let scale = main_win.scale_factor().unwrap_or(1.0);
+                let size = main_win.outer_size().ok();
+                let win_w = size.as_ref().map(|s| s.width as f64 / scale).unwrap_or(1280.0);
+                let win_h = size.as_ref().map(|s| s.height as f64 / scale).unwrap_or(800.0);
                 main_win.on_window_event(move |event| {
                     use tauri::WindowEvent;
                     if let WindowEvent::DragDrop(dd) = event {
@@ -260,10 +271,25 @@ pub fn run() {
                                     .collect();
                                 let _ = app_for_dd.emit("aegis:drag-active", &strs);
                             }
+                            tauri::DragDropEvent::Over { position, .. } => {
+                                // Global → logical → window-local
+                                let local_x = (position.x as f64 / scale) - win_pos_x;
+                                let local_y = (position.y as f64 / scale) - win_pos_y;
+                                let _ = app_for_dd.emit(
+                                    "aegis:drag-move",
+                                    serde_json::json!({
+                                        "x": local_x,
+                                        "y": local_y,
+                                        "gx": position.x as f64 / scale,
+                                        "gy": position.y as f64 / scale,
+                                        "win_w": win_w,
+                                        "win_h": win_h,
+                                    }),
+                                );
+                            }
                             tauri::DragDropEvent::Leave => {
                                 let _ = app_for_dd.emit("aegis:drag-inactive", ());
                             }
-                            tauri::DragDropEvent::Over { .. } => { /* preview only */ }
                             tauri::DragDropEvent::Drop { paths, .. } => {
                                 let strs: Vec<String> = paths
                                     .iter()

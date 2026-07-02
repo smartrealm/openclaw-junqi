@@ -58,6 +58,9 @@ export default function PetWindow() {
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
   const justDragged = useRef(false);
+  // True while a file drag is in flight over the main window — used so the
+  // magnetic-pull effect overrides the snap-back-to-edge animation.
+  const isBeingDraggedOverRef = useRef(false);
 
   // ── Theme sync from main window ──
   // The pet window is a separate Tauri window with its own document — it does
@@ -98,6 +101,23 @@ export default function PetWindow() {
     listen<{ x: number; y: number }>('pet-moved', (e) => setPosition(e.payload))
       .then((fn) => unlistens.push(fn))
       .catch(() => undefined);
+    // File is being dragged over the main window. Run a magnetic pull toward
+    // the cursor (in main-window-local coordinates) — this is what makes the
+    // pet feel "alive" during a drag. The ref holds the latest cursor + win
+    // bounds; a separate effect reads it once per animation frame to tween
+    // the pet toward the cursor.
+    const dragCursorRef: { current: null | { x: number; y: number; gx: number; gy: number; win_w: number; win_h: number } } = { current: null };
+    listen<{ x: number; y: number; gx: number; gy: number; win_w: number; win_h: number }>('aegis:drag-move', (e) => {
+      dragCursorRef.current = e.payload;
+      // Mark "drag in flight" so the snap-back on release knows to skip.
+      isBeingDraggedOverRef.current = true;
+    }).then((fn) => unlistens.push(fn)).catch(() => undefined);
+    listen('aegis:drag-inactive', () => {
+      dragCursorRef.current = null;
+      // Keep the "drag in flight" flag for one extra frame so the release
+      // animation doesn't immediately yank the pet back to its snap position.
+      window.setTimeout(() => { isBeingDraggedOverRef.current = false; }, 250);
+    }).then((fn) => unlistens.push(fn)).catch(() => undefined);
     // Custom asset changed in the main window (upload/clear) → reload from disk.
     listen('pet-asset-changed', () => {
       invoke<string | null>('load_pet_asset')
