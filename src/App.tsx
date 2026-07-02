@@ -124,22 +124,13 @@ export default function App() {
   useTheme();
 
   // Prime the session-label override cache from disk before the first
-  // Block boot on the label cache prime so the FIRST sessions.list merge
-  // (driven by loadSessions after the gateway handshake) already sees
-  // user renames. Previously fire-and-forget: a rename that was made on
-  // the previous run would briefly flash back to the server default
-  // before the cache loaded and overrode it.
-  const [labelsReady, setLabelsReady] = useState(false);
+  // Eagerly prime the persisted label cache so any subsequent
+  // setSessions merge can see user renames. The prime is fire-and-forget
+  // — the merge logic in chatStore safely falls through to the server
+  // label when the cache hasn't loaded yet, and any later setSessions
+  // call picks up the override once the prime resolves.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await primeSessionLabelCache();
-      } finally {
-        if (!cancelled) setLabelsReady(true);
-      }
-    })();
-    return () => { cancelled = true; };
+    void primeSessionLabelCache();
   }, []);
 
   // ── Global drag-drop bridge ────────────────────────────────────────────
@@ -227,14 +218,12 @@ export default function App() {
   // synchronously applies the active session's data to the TitleBar state — no separate
   // loadTokenUsage needed.
   const loadSessions = useCallback(async () => {
-    // Block the first sessions.list read until the persisted-label cache
-    // has finished priming. We sleep at most one tick — if the prime
-    // hasn't started by the time this is called, the next setSessions
-    // merge (driven by any later gateway handshake) will pick up the
-    // cache. Looping forever here would deadlock the whole boot path.
-    if (!labelsReady) {
-      await new Promise((r) => setTimeout(r, 32));
-    }
+    // No gate: we don't need labelsReady to be true here. setSessions's
+    // merge logic already consults getSessionLabelPref(key), which safely
+    // returns undefined if the cache hasn't been primed yet. The merge
+    // then falls through to the server's label. Once the prime promise
+    // resolves, a later setSessions call (e.g. on the next gateway
+    // handshake) will pick up the override.
     try {
       const result = await gateway.getSessions();
       const rawSessions = Array.isArray(result?.sessions) ? result.sessions : [];
