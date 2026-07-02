@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore, History, Power, PowerOff, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore, History, Power, PowerOff, ChevronDown, ChevronRight, Sparkles, MoreHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -67,6 +67,57 @@ function agentSubResources(t: ReturnType<typeof useTranslation>['t']): ReadonlyA
 // ═══════════════════════════════════════════════════════════
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
+
+/**
+ * AgentMoreMenu — per-agent quick-create menu (添加模型 / 添加通道 / 定时 / 配置).
+ * Portal-rendered at body level (or right under the sidebar) so it can
+ * escape the sidebar's overflow:auto. Anchored to the trigger button's
+ * screen rect via top/left props (state lives in the WorkbenchPanel).
+ */
+function AgentMoreMenu({ agentId, top, left, isMainAgent, onPick }: {
+  agentId: string;
+  top: number;
+  left: number;
+  isMainAgent: boolean;
+  onPick: (to: string | null) => void;
+}) {
+  const { t } = useTranslation();
+  const items: Array<{ key: string; icon: React.ReactNode; label: string; to: string; hint?: string }> = [
+    { key: 'agents', icon: <Bot size={13} />, label: t('sidebar.menu.manageAgents', '管理智能体'), to: `/agents${isMainAgent ? '' : `?agent=${encodeURIComponent(agentId)}`}` },
+    { key: 'model', icon: <Cpu size={13} />, label: t('sidebar.menu.addModel', '添加模型'), to: '/config?tab=providers' },
+    { key: 'channel', icon: <MessageSquare size={13} />, label: t('sidebar.menu.addChannel', '添加通道'), to: '/config?tab=channels' },
+    { key: 'cron', icon: <Clock size={13} />, label: t('sidebar.menu.newCron', '新建定时任务'), to: '/cron?new=1' },
+  ];
+  return createPortal(
+    <div
+      data-agent-menu
+      role="menu"
+      style={{ position: 'fixed', top, left, zIndex: 9999 }}
+      className="w-[200px] py-1 rounded-lg bg-aegis-card-solid border border-aegis-border shadow-lg animate-in fade-in slide-in-from-top-1 duration-150"
+    >
+      <div className="px-3 py-1.5 text-[9.5px] font-semibold uppercase tracking-wider text-aegis-text-dim flex items-center gap-1.5">
+        <Sparkles size={9} className="text-aegis-accent" />
+        {isMainAgent
+          ? t('sidebar.menu.appActions', '应用设置')
+          : t('sidebar.menu.agentActions', '智能体设置')}
+      </div>
+      {items.map((it) => (
+        <button
+          key={it.key}
+          type="button"
+          role="menuitem"
+          onClick={() => onPick(it.to)}
+          className="w-full px-3 py-2 flex items-center gap-2.5 text-[12.5px] text-aegis-text hover:bg-aegis-hover/40 hover:text-aegis-accent transition-colors text-left group"
+        >
+          <span className="text-aegis-accent/70 group-hover:text-aegis-accent transition-colors">{it.icon}</span>
+          <span className="flex-1">{it.label}</span>
+          <ChevronRight size={11} className="text-aegis-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
+        </button>
+      ))}
+    </div>,
+    document.body,
+  );
+}
 
 function SessionRowItem({ sessionKey, currentTitle, isActive, meta, currentPinned = false, currentArchived = false }: {
   sessionKey: string;
@@ -269,7 +320,32 @@ function WorkbenchPanel() {
   const [showArchived, setShowArchived] = useState(false);
   // Accordion: only one agent group open at a time. Default: 主智能体 (main).
   const [openGroupId, setOpenGroupId] = useState<string | null>('main');
+  // Per-group "more" menu — which agent's settings menu is currently open.
+  // (Keyed by agentId so opening agent B closes A.)
+  const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const moreBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const { pinned, active, recent, archived } = partitionSessions(sessions, typingBySession, showArchived);
+
+  // Close the more menu on outside click / Escape.
+  useEffect(() => {
+    if (!openMenuFor) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-agent-menu]')) return;
+      if (target.closest(`[data-agent-menu-btn="${openMenuFor}"]`)) return;
+      setOpenMenuFor(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenMenuFor(null);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [openMenuFor]);
 
   // Per-session first user message, keyed for O(1) lookups during render.
   // Without this we'd have to walk messagesPerSession on every session row.
@@ -348,33 +424,67 @@ function WorkbenchPanel() {
         )}
         {groups.map((g: AgentGroup) => {
           const isOpen = openGroupId === g.agentId;
+          const menuOpen = openMenuFor === g.agentId;
+          const showMoreBtn = g.agentId !== '__ungrouped__'; // synthetic bucket — no settings to show
           return (
             <div key={g.agentId} className="mb-1">
-              <button
-                type="button"
-                onClick={() => toggleGroup(g.agentId)}
-                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim hover:text-aegis-text-secondary transition-colors"
-              >
-                {isOpen
-                  ? <ChevronDown size={11} className="opacity-60" />
-                  : <ChevronRight size={11} className="opacity-60" />}
-                <Bot size={11} className="opacity-60" />
-                <span className="flex-1 text-left truncate">{g.label}</span>
-                <span className="text-[9.5px] text-aegis-text-dim/70 font-mono">{g.sessions.length}</span>
-              </button>
+              <div className="group/header w-full flex items-center gap-1.5 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(g.agentId)}
+                  className="flex-1 flex items-center gap-1.5 min-w-0 text-left"
+                >
+                  {isOpen
+                    ? <ChevronDown size={11} className="opacity-60" />
+                    : <ChevronRight size={11} className="opacity-60" />}
+                  <Bot size={11} className="opacity-60" />
+                  <span className="flex-1 truncate hover:text-aegis-text-secondary">{g.label}</span>
+                  <span className="text-[9.5px] text-aegis-text-dim/70 font-mono">{g.sessions.length}</span>
+                </button>
+                {/* ⚙ More menu — entry points to add models / channels /
+                    scheduled tasks for this agent (or app-level via main).
+                    Kept as an icon-only button to keep the row compact. */}
+                {showMoreBtn && (
+                  <button
+                    ref={(el) => { moreBtnRefs.current[g.agentId] = el; }}
+                    type="button"
+                    aria-label={t('sidebar.agentActions', '智能体操作')}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    data-agent-menu-btn={g.agentId}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (menuOpen) {
+                        setOpenMenuFor(null);
+                        return;
+                      }
+                      // Anchor the menu to the button's position so it
+                      // doesn't get clipped by overflow:auto on the parent.
+                      const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                      setMenuPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 168) });
+                      setOpenMenuFor(g.agentId);
+                    }}
+                    className={clsx(
+                      'shrink-0 w-5 h-5 rounded flex items-center justify-center transition-colors',
+                      menuOpen
+                        ? 'text-aegis-primary bg-aegis-primary/[0.12]'
+                        : 'opacity-0 group-hover/header:opacity-100 hover:!opacity-100 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/40',
+                    )}
+                  >
+                    <MoreHorizontal size={11} />
+                  </button>
+                )}
+              </div>
               {isOpen && (
                 <>
                   {/* Per-agent "+ 新建会话" — every agent can grow its
                       own conversation list without dipping into settings.
-                      Skipped on the synthetic "默认 / 其他" bucket since
+                      Skipped on the synthetic "__ungrouped__" bucket since
                       those have no real agent to scope to. */}
                   {g.agentId !== 'main' && g.agentId !== '__ungrouped__' && (
                     <button
                       type="button"
                       onClick={() => {
-                        // Create a fresh session scoped to this specific
-                        // agent. (Tauri/ChatPage reads the querystring on
-                        // mount to seed a new session instead of restoring.)
                         navigate(`/chat?agent=${encodeURIComponent(g.agentId)}&new=1`);
                       }}
                       className="w-full mx-3 my-1 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10.5px] text-aegis-text-dim hover:text-aegis-primary hover:bg-aegis-primary/[0.08] transition-colors border border-dashed border-aegis-border/40 hover:border-aegis-primary/40"
@@ -401,6 +511,22 @@ function WorkbenchPanel() {
           </button>
         )}
       </div>
+
+      {/* Per-agent quick-action menu — portals at body level so it can
+          escape the sidebar's overflow:auto. Anchored to the trigger
+          button's screen rect (computed at click time). */}
+      {openMenuFor && menuPos && (
+        <AgentMoreMenu
+          agentId={openMenuFor}
+          top={menuPos.top}
+          left={menuPos.left}
+          isMainAgent={openMenuFor === 'main'}
+          onPick={(to) => {
+            setOpenMenuFor(null);
+            if (to) navigate(to);
+          }}
+        />
+      )}
     </>
   );
 }
