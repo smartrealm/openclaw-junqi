@@ -29,10 +29,24 @@ export function OfflineOverlay() {
   };
 
   const retryGateway = async () => {
-    // Match StatusBar: reset the WS state machine so a successful restart
-    // actually triggers a fresh WebSocket connect, not just a status poll.
+    // Mirror StatusBar flow: disconnect WS first, then ensureRunning.
+    // If gateway is already up → only reconnect WebSocket.
+    // If it's down → ensureRunning starts/restarts it, then FSM reconnects.
+    // Do NOT unconditionally call gateway.retry() (full openclaw restart) here.
+    try { gateway.disconnect(); } catch {}
     try { gatewayManager.reset(); } catch {}
-    try { await window.aegis?.gateway?.retry?.(); } catch {}
+    try {
+      const r = await window.aegis?.gateway?.ensureRunning?.();
+      if (r?.healthy) {
+        gatewayManager.reconnect();
+      } else {
+        // Gateway not reachable — full restart as last resort
+        try { await window.aegis?.gateway?.retry?.(); } catch {}
+        gatewayManager.reconnect();
+      }
+    } catch {
+      gatewayManager.reconnect();
+    }
   };
 
   return (

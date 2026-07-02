@@ -589,15 +589,25 @@ export function AgentHubPage() {
 
   // Sidebar "在线智能体" click navigates to /agents?agent=<id>. Open that
   // agent's settings panel automatically, matching in-page card click behavior.
+  // The split-button quick-create menu navigates to /agents?new=1 to open
+  // the create-agent dialog directly.
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     const id = searchParams.get('agent');
-    if (!id) return;
-    const target = enrichedAgents.find((a) => a.id === id);
-    if (target) {
-      setSettingsAgent(target);
+    if (id) {
+      const target = enrichedAgents.find((a) => a.id === id);
+      if (target) {
+        setSettingsAgent(target);
+        const next = new URLSearchParams(searchParams);
+        next.delete('agent');
+        setSearchParams(next, { replace: true });
+      }
+      return;
+    }
+    if (searchParams.get('new') === '1') {
+      setShowAddForm(true);
       const next = new URLSearchParams(searchParams);
-      next.delete('agent');
+      next.delete('new');
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, enrichedAgents, setSearchParams]);

@@ -1,5 +1,5 @@
 // StatusBar — 底部状态栏（参照 Hermes AppStatusBar）
-import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause, Palette } from 'lucide-react';
+import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
@@ -35,6 +35,7 @@ export function StatusBar() {
   const pomoEnabled = usePetStore((st) => st.pomodoro.enabled);
   const pomoRunning = usePetStore((st) => st.pomodoro.running);
   const pomoPaused = usePetStore((st) => st.pomodoro.paused);
+  const pomoPhase = usePetStore((st) => st.pomodoro.phase);
   const setPomodoro = usePetStore((st) => st.setPomodoro);
   const gatewayUrl = useSettingsStore((st) => (st as any).gatewayUrl);
   const bootStages = useBootSequenceStore((st) => (st as any).stages);
@@ -135,15 +136,18 @@ export function StatusBar() {
       {uiScale && uiScale !== 100 && <span className="px-2 text-aegis-text-dim opacity-50 font-mono text-[10px]">{uiScale}%</span>}
 
       {/* ── Bottom-right cluster: theme cycle | pet toggle | pomodoro toggle ── */}
+      {/* Each button shows a single semantic icon + a short label so the
+       *  control is self-describing without relying on hover tooltips.
+       *  The pet/pomodoro buttons reflect state via color (primary when on,
+       *  warning when running, dim when off). */}
       <button
         onClick={handleThemeCycle}
-        title={themeLabel}
+        title={t('theme.cycle', 'Cycle theme') + `: ${themeLabel}`}
         aria-label={t('theme.cycle', 'Cycle theme')}
-        className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
+        className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
       >
-        <Palette size={11} />
         {isDarkish ? <Moon size={11} /> : <Sun size={11} />}
-        <span className="text-[10px]">{themeLabel}</span>
+        <span className="text-[10.5px]">{themeLabel}</span>
       </button>
 
       <button
@@ -151,13 +155,16 @@ export function StatusBar() {
         title={petEnabled ? t('statusBar.petOnTip', '点击关闭桌面宠物') : t('statusBar.petOffTip', '点击开启桌面宠物')}
         aria-label={t('statusBar.petToggle', 'Toggle pet')}
         className={clsx(
-          'flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 transition-colors',
+          'flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 transition-colors',
           petEnabled
             ? 'text-aegis-primary hover:bg-aegis-hover/30'
             : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
         )}
       >
         <PawPrint size={11} />
+        <span className="text-[10.5px]">
+          {petEnabled ? t('statusBar.petOn', '宠物') : t('statusBar.petOff', '隐藏')}
+        </span>
       </button>
 
       {pomoEnabled ? (
@@ -166,18 +173,28 @@ export function StatusBar() {
             onClick={() => togglePausePomodoro()}
             title={pomoPaused ? t('statusBar.pomoResume', '继续') : t('statusBar.pomoPause', '暂停')}
             aria-label={t('statusBar.pomoToggle', 'Toggle pomodoro')}
-            className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-warning hover:bg-aegis-hover/30 transition-colors"
+            className={clsx(
+              'flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 transition-colors',
+              pomoPaused
+                ? 'text-aegis-text-secondary hover:bg-aegis-hover/30'
+                : 'text-aegis-warning hover:bg-aegis-hover/30',
+            )}
           >
             {pomoPaused ? <Play size={11} /> : <Pause size={11} />}
+            <span className="text-[10.5px] font-mono tabular-nums">
+              {t('statusBar.pomo', '番茄')}
+              {pomoPhase === 'work' ? ' · 专注' : pomoPhase === 'break' ? ' · 休息' : ''}
+            </span>
           </button>
         ) : (
           <button
             onClick={() => startPomodoro()}
             title={t('statusBar.pomoStart', '开始番茄')}
             aria-label={t('statusBar.pomoStart', '开始番茄')}
-            className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
+            className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
           >
             <Timer size={11} />
+            <span className="text-[10.5px]">{t('statusBar.pomoStartShort', '番茄')}</span>
           </button>
         )
       ) : (
@@ -185,9 +202,10 @@ export function StatusBar() {
           onClick={() => setPomodoro({ enabled: true })}
           title={t('statusBar.togglePomodoro', '开启番茄钟')}
           aria-label={t('statusBar.togglePomodoro', '开启番茄钟')}
-          className="flex items-center gap-1 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
+          className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
         >
           <Timer size={11} />
+          <span className="text-[10.5px]">{t('statusBar.togglePomodoroShort', '番茄')}</span>
         </button>
       )}
 

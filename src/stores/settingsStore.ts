@@ -195,6 +195,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
       applyTheme(prefersDark ? 'aegis-dark' : 'aegis-light');
     }
+    // Broadcast to companion Tauri windows (e.g. the floating pet) so they
+    // re-apply the theme to their own document. The pet window listens for
+    // this event and calls applyTheme() in its own JS context.
+    window.dispatchEvent(new CustomEvent('aegis:theme-changed', { detail: { theme } }));
   },
   setUiScale: (scale) => {
     const v = clampScale(scale);

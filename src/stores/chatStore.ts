@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import type { RenderBlock } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
@@ -30,6 +31,64 @@ function readSessionTopicPrefs(): Record<string, string> {
   } catch {
     return {};
   }
+}
+
+// User-renamed session labels are persisted on the Rust side via
+// commands::session_labels (file: ~/.openclaw/session-labels.json).
+// We cache the result in-memory after the first load so per-render
+// merges don't hit the IPC layer. Writers live in
+// src/utils/sessionRename.ts → invoke('upsert_session_label').
+let labelPrefsCache: Record<string, string> | null = null;
+
+async function readSessionLabelPrefs(): Promise<Record<string, string>> {
+  // Try to refresh the cache from Tauri. If the IPC call fails (e.g.
+  // during very early boot before the bridge is ready) fall back to the
+  // previous cache value so the UI still renders. Treat an empty object
+  // as "no overrides" — that's a valid state, not an error.
+  try {
+    const value = await invoke<Record<string, any>>('load_session_labels');
+    if (value && typeof value === 'object') {
+      labelPrefsCache = Object.fromEntries(
+        Object.entries(value).filter((entry): entry is [string, string] => (
+          typeof entry[0] === 'string' && typeof entry[1] === 'string' && entry[1].trim().length > 0
+        )),
+      );
+    } else {
+      labelPrefsCache = {};
+    }
+  } catch {
+    // If we have a previous cache value, keep using it.
+    if (labelPrefsCache === null) labelPrefsCache = {};
+  }
+  return labelPrefsCache;
+}
+
+/** Synchronous accessor for use during setSessions merge. Returns the
+ *  cached value if the async load has already completed, otherwise
+ *  undefined (caller falls through to in-memory / server label). */
+function getSessionLabelPref(sessionKey: string): string | undefined {
+  if (labelPrefsCache === null) return undefined;
+  const label = labelPrefsCache[sessionKey];
+  return typeof label === 'string' && label.trim().length > 0 ? label : undefined;
+}
+
+/** After a rename, refresh the cache for the just-written key so the
+ *  next setSessions merge (e.g. triggered by the next sessions.list
+ *  poll) doesn't briefly fall back to the server label. */
+export function applyLocalSessionLabelCache(key: string, label: string): void {
+  if (labelPrefsCache === null) labelPrefsCache = {};
+  if (label && label.trim()) {
+    labelPrefsCache[key] = label.trim();
+  } else {
+    delete labelPrefsCache[key];
+  }
+}
+
+/** Eagerly load the label override file. Call once at startup so the
+ *  first setSessions merge after the gateway replies already has the
+ *  correct overrides (no flash of the server default). */
+export async function primeSessionLabelCache(): Promise<void> {
+  await readSessionLabelPrefs();
 }
 
 function getSessionTopicPref(sessionKey: string): string | undefined {
@@ -914,14 +973,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // (The server's `label` for new sessions is just the key-derived
       // string, so the FIRST poll after rename will bring back the
       // old default if we don't keep the previous value.)
+      //
+      // The localStorage override (`getSessionLabelPref`) takes
+      // priority over both the in-memory `previous` and the server's
+      // response — that way a rename survives an app restart even when
+      // the gateway has discarded the `label` field.
+      const persistedLabel = getSessionLabelPref(session.key);
       const merged: Session = {
         ...session,
-        // Preserve user-rename: if the user has a non-empty label that
-        // differs from the server-default, keep ours.
+        // Preserve user-rename: in-memory override → localStorage override
+        // → server-provided label, in that order.
         label:
           previous?.label && previous.label !== "" && previous.label !== session.label
             ? previous.label
-            : session.label,
+            : (persistedLabel ?? session.label),
         // Preserve pin/archive flags (purely local UI state).
         pinned: previous?.pinned ?? session.pinned,
         archived: previous?.archived ?? session.archived,

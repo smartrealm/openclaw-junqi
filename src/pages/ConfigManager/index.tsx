@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { FileJson, CheckCircle2, AlertCircle, Pencil, History, RefreshCw, Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound, Sparkles, type LucideIcon, Download, Upload, Check } from 'lucide-react';
@@ -27,6 +28,8 @@ import { SecretsTab } from './SecretsTab';
 import { FloatingSaveButton, ChangesPill } from './components';
 
 type Tab = 'providers' | 'agents' | 'channels' | 'tools' | 'advanced' | 'secrets';
+const VALID_TABS: ReadonlySet<Tab> = new Set(['providers', 'agents', 'channels', 'tools', 'advanced', 'secrets']);
+const isValidTab = (s: string): s is Tab => VALID_TABS.has(s as Tab);
 
 // ─────────────────────────────────────────────────────────────
 // smartMerge — applies only the user's changes (diff between
@@ -96,6 +99,39 @@ function smartMerge(disk: any, original: any, current: any): any {
 function hasAnyAuthProfile(config: GatewayRuntimeConfig, providerId: string): boolean {
   const profiles = config.auth?.profiles ?? {};
   return Object.keys(profiles).some((k) => k.split(':')[0] === providerId);
+}
+
+/// Compare two configs to detect whether the user changed *which* provider
+/// or its credentials (env vars, base URLs, models.providers). Used to
+/// decide whether the WebSocket needs a full reconnect after save — a
+/// sessions.patch alone is not enough when the active provider changes.
+function detectProviderChange(
+  prev: GatewayRuntimeConfig | null,
+  next: GatewayRuntimeConfig,
+): boolean {
+  if (!prev) return false;
+
+  // 1. env.vars — adding/removing/changing a key under a known envKey means
+  //    the new auth material is in play. Compare by the union of keys.
+  const prevEnv = (prev.env?.vars ?? {}) as Record<string, string>;
+  const nextEnv = (next.env?.vars ?? {}) as Record<string, string>;
+  const envKeys = new Set([...Object.keys(prevEnv), ...Object.keys(nextEnv)]);
+  for (const k of envKeys) {
+    if ((prevEnv[k] ?? '') !== (nextEnv[k] ?? '')) return true;
+  }
+
+  // 2. models.providers — switching active provider or its base URL counts.
+  const prevProviders = (prev.models?.providers ?? {}) as Record<string, any>;
+  const nextProviders = (next.models?.providers ?? {}) as Record<string, any>;
+  const providerIds = new Set([...Object.keys(prevProviders), ...Object.keys(nextProviders)]);
+  for (const id of providerIds) {
+    const a = prevProviders[id] ?? {};
+    const b = nextProviders[id] ?? {};
+    if ((a.baseUrl ?? '') !== (b.baseUrl ?? '')) return true;
+    if (JSON.stringify(a.models ?? {}) !== JSON.stringify(b.models ?? {})) return true;
+  }
+
+  return false;
 }
 
 function resolveConfiguredWebSearchProviders(config: GatewayRuntimeConfig): string[] {
@@ -170,6 +206,20 @@ function applyPreferredWebProviders(config: GatewayRuntimeConfig): GatewayRuntim
 export function ConfigManagerPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<Tab>('providers');
+
+  // Sidebar split-button quick-create sends users to /config?tab=<name>
+  // for the model/channel sub-categories. Consume the query so the tab
+  // does not reset on every render.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && isValidTab(tab)) {
+      setActiveTab(tab);
+      const next = new URLSearchParams(searchParams);
+      next.delete('tab');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // ── Config detection ──
   const [detecting, setDetecting]     = useState(true);
@@ -282,6 +332,12 @@ export function ConfigManagerPage() {
     const configToSave = targetConfig ?? config;
     if (!configToSave || !configPath) return false;
     setSaving(true);
+
+    // Detect whether the user changed Provider (env vars, base URLs, or
+    // models.providers). On a Provider switch the Gateway needs a fresh
+    // WebSocket so its handshake re-evaluates the new auth/credentials —
+    // a simple sessions.patch is not enough.
+    const providerChanged = detectProviderChange(originalConfig, configToSave);
     try {
       // 1. Re-read the latest version from disk to capture any external edits
       const { data: diskConfig } = await window.aegis.config.read(configPath);
@@ -350,14 +406,14 @@ export function ConfigManagerPage() {
           }
           setSaveSuccess(true);
           window.dispatchEvent(new CustomEvent('aegis:config-saved', {
-            detail: { primaryModel: savedPrimaryModel },
+            detail: { primaryModel: savedPrimaryModel, providerChanged },
           }));
           console.log('[Config] Apply method:', restartResult.method, restartResult.changedPaths);
         } else {
           // Save succeeded but restart failed — show warning with instructions
           setSaveSuccess(true);
           window.dispatchEvent(new CustomEvent('aegis:config-saved', {
-            detail: { primaryModel: savedPrimaryModel },
+            detail: { primaryModel: savedPrimaryModel, providerChanged },
           }));
           console.warn('[Config] Restart failed:', restartResult.error);
           setError(`Config saved, but gateway restart failed: ${restartResult.error || 'Unknown error'}`);

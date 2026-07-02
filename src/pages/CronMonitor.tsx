@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { Play, RotateCcw, Loader2, Check, X, Plus, Search , Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock} from 'lucide-react';
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway } from '@/services/gateway';
@@ -385,6 +386,23 @@ export function CronMonitorPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllLogs, setShowAllLogs] = useState(false);
+  // Split-button quick-create menu navigates to /cron?new=1 to open the
+  // form directly. After opening, the query is consumed so the dialog does
+  // not re-trigger on subsequent renders.
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createJob, setCreateJob] = useState({ name: '', cronExpr: '0 9 * * *', message: '' });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowCreateForm(true);
+      setCreateError(null);
+      const next = new URLSearchParams(searchParams);
+      next.delete('new');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Fix #1: Stable ref for jobs — avoids useCallback rebuilding every 30s
   const jobsRef = useRef<CronJob[]>([]);
@@ -1041,6 +1059,117 @@ export function CronMonitorPage() {
                 className="mt-4 w-full py-2 rounded-xl text-[11px] text-aegis-text-muted hover:text-aegis-text-secondary transition-colors">
                 {t('common.close', 'Close')}
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Create Task Dialog (split-button quick-create entry) ── */}
+      <AnimatePresence>
+        {showCreateForm && (
+          <motion.div
+            key="create-cron"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => !creating && setShowCreateForm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 8 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-md bg-aegis-card-solid border border-aegis-border rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-aegis-border flex items-center justify-between">
+                <h3 className="text-sm font-bold text-aegis-text">
+                  {t('cron.createNewJob', '新建定时任务')}
+                </h3>
+                <button onClick={() => setShowCreateForm(false)} disabled={creating}
+                  className="p-1 rounded text-aegis-text-dim hover:text-aegis-text disabled:opacity-50">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="p-5 flex flex-col gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">
+                    {t('cron.field.name', '任务名称')}
+                  </span>
+                  <input
+                    value={createJob.name}
+                    onChange={e => setCreateJob((s) => ({ ...s, name: e.target.value }))}
+                    placeholder={t('cron.placeholder.name', '例如：每日早报')}
+                    className="px-3 py-2 rounded-lg text-[12.5px] bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">
+                    {t('cron.field.expr', 'Cron 表达式')}
+                  </span>
+                  <input
+                    value={createJob.cronExpr}
+                    onChange={e => setCreateJob((s) => ({ ...s, cronExpr: e.target.value }))}
+                    placeholder="0 9 * * *"
+                    className="px-3 py-2 rounded-lg text-[12.5px] font-mono bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">
+                    {t('cron.field.message', '执行消息')}
+                  </span>
+                  <textarea
+                    value={createJob.message}
+                    onChange={e => setCreateJob((s) => ({ ...s, message: e.target.value }))}
+                    placeholder={t('cron.placeholder.message', '任务触发时发给 agent 的指令')}
+                    rows={3}
+                    className="px-3 py-2 rounded-lg text-[12.5px] bg-[rgb(var(--aegis-overlay)/0.04)] border border-aegis-border text-aegis-text placeholder:text-aegis-text-muted focus:border-aegis-accent/40 focus:outline-none resize-none"
+                  />
+                </label>
+                {createError && (
+                  <div className="text-[11px] text-aegis-danger bg-aegis-danger/10 border border-aegis-danger/20 rounded-lg px-3 py-2">
+                    {createError}
+                  </div>
+                )}
+              </div>
+              <div className="px-5 py-3 border-t border-aegis-border flex items-center justify-end gap-2 bg-[rgb(var(--aegis-overlay)/0.02)]">
+                <button onClick={() => setShowCreateForm(false)} disabled={creating}
+                  className="px-3 py-1.5 rounded-lg text-[11.5px] text-aegis-text-muted hover:text-aegis-text border border-aegis-border disabled:opacity-50">
+                  {t('common.cancel', '取消')}
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!createJob.name.trim() || !createJob.message.trim()) {
+                      setCreateError(t('cron.error.required', '名称和消息不能为空'));
+                      return;
+                    }
+                    setCreating(true);
+                    setCreateError(null);
+                    try {
+                      await gateway.call('cron.add', {
+                        job: {
+                          name: createJob.name.trim(),
+                          schedule: { kind: 'cron', expr: createJob.cronExpr.trim(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
+                          sessionTarget: 'isolated',
+                          payload: { kind: 'agentTurn', message: createJob.message.trim() },
+                          delivery: { mode: 'none' },
+                          enabled: true,
+                        },
+                      });
+                      await refreshGroup('cron');
+                      setShowCreateForm(false);
+                      setCreateJob({ name: '', cronExpr: '0 9 * * *', message: '' });
+                    } catch (err: any) {
+                      setCreateError(err?.message || String(err));
+                    } finally {
+                      setCreating(false);
+                    }
+                  }}
+                  disabled={creating}
+                  className="px-3 py-1.5 rounded-lg text-[11.5px] font-semibold bg-aegis-accent text-aegis-btn-primary-text hover:brightness-110 disabled:opacity-50"
+                >
+                  {creating ? <Loader2 size={11} className="inline animate-spin" /> : null}
+                  {t('common.create', '创建')}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

@@ -1188,29 +1188,49 @@ function ProfileRow({
   };
 
   const setModelPrimary = (modelId: string) => {
-    void onApplyAndSave((prev) => ({
-      ...prev,
-      agents: {
-        ...prev.agents,
-        defaults: {
-          ...prev.agents?.defaults,
-          model: { ...prev.agents?.defaults?.model, primary: modelId },
+    void onApplyAndSave((prev) => {
+      // The model must exist in agents.defaults.models for the gateway to
+      // recognize it — setting only `primary` causes the model to resolve
+      // to undefined and the gateway falls back to its built-in default.
+      // We seed a minimal entry if the user picks a model that hasn't been
+      // added to the configured models map yet (e.g. selecting from a
+      // provider template's popular-models list).
+      const existingModels = prev.agents?.defaults?.models ?? {};
+      const nextModels = modelId in existingModels
+        ? existingModels
+        : { ...existingModels, [modelId]: {} };
+      return {
+        ...prev,
+        agents: {
+          ...prev.agents,
+          defaults: {
+            ...prev.agents?.defaults,
+            models: nextModels,
+            model: { ...prev.agents?.defaults?.model, primary: modelId },
+          },
         },
-      },
-    }));
+      };
+    });
   };
 
   const setImageModelPrimary = (modelId: string) => {
-    void onApplyAndSave((prev) => ({
-      ...prev,
-      agents: {
-        ...prev.agents,
-        defaults: {
-          ...prev.agents?.defaults,
-          imageModel: { ...prev.agents?.defaults?.imageModel, primary: modelId },
+    void onApplyAndSave((prev) => {
+      const existingModels = prev.agents?.defaults?.models ?? {};
+      const nextModels = modelId in existingModels
+        ? existingModels
+        : { ...existingModels, [modelId]: {} };
+      return {
+        ...prev,
+        agents: {
+          ...prev.agents,
+          defaults: {
+            ...prev.agents?.defaults,
+            models: nextModels,
+            imageModel: { ...prev.agents?.defaults?.imageModel, primary: modelId },
+          },
         },
-      },
-    }));
+      };
+    });
   };
 
   const removeModel = (modelId: string) => {

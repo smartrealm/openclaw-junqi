@@ -3,7 +3,7 @@
 // + Ambient background glow (from conceptual design)
 // ═══════════════════════════════════════════════════════════
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { TopBar } from '@/components/Layout/TopBar';
@@ -11,6 +11,7 @@ import { NavSidebar } from '@/components/Layout/NavSidebar';
 import { TabBar } from '@/components/Layout/TabBar';
 import { StatusBar } from '@/components/Layout/StatusBar';
 import { CommandPalette } from '@/components/CommandPalette';
+import { PetBreakOverlay } from '@/pet/PetBreakOverlay';
 import { OfflineOverlay } from '@/components/OfflineOverlay';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -31,9 +32,17 @@ export function AppLayout() {
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
 
-  // Show offline overlay on pages that need Gateway, when not connected
+  // Show offline overlay on pages that need Gateway, when not connected.
+  // A 600ms grace period prevents the overlay from flashing on brief
+  // disconnect/reconnect cycles (e.g. when the user clicks "重连").
   const isOfflinePage = OFFLINE_PAGES.some(p => location.pathname === p || location.pathname.startsWith(p + '/'));
-  const showOffline = !connected && !isOfflinePage;
+  const wantsOffline = !connected && !isOfflinePage;
+  const [showOffline, setShowOffline] = useState(false);
+  useEffect(() => {
+    if (!wantsOffline) { setShowOffline(false); return; }
+    const t = setTimeout(() => setShowOffline(true), 600);
+    return () => clearTimeout(t);
+  }, [wantsOffline]);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -69,6 +78,8 @@ export function AppLayout() {
           <OfflineOverlay />
         </div>
       )}
+      {/* Pomodoro break overlay — enlarged pet + countdown, only during break phase */}
+      <PetBreakOverlay />
       {/* Bottom status bar — gateway / model / restart */}
       <StatusBar />
       {/* Command Palette overlay */}

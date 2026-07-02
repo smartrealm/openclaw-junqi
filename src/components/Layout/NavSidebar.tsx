@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore, History, Power, PowerOff } from 'lucide-react';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore, History, Power, PowerOff, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -15,7 +15,7 @@ import { gateway } from '@/services/gateway';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { resolveTab, type SidebarTab } from './tab-utils';
-import { sessionTitle, partitionSessions } from './sidebarUtils';
+import { sessionTitle, partitionSessions, groupSessionsByAgent, type AgentGroup } from './sidebarUtils';
 import { SidebarRow, SidebarSection } from './SidebarRow';
 import { applySessionRename } from '@/utils/sessionRename';
 
@@ -42,16 +42,11 @@ function settingsGroups(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
   return [
     { label: t('nav.general', '通用'), items: [
       { to: '/settings', icon: <Settings size={14} />, label: t('nav.generalSettings', '通用设置') },
-      { to: '/config',   icon: <Bot size={14} />,      label: t('nav.agentConfig', '智能体配置') },
     ]},
     { label: t('nav.diagMonitor', '诊断与监控'), items: [
       { to: '/logs',     icon: <FileText size={14} />,  label: t('nav.logs', '日志') },
       { to: '/perf',     icon: <Activity size={14} />,  label: t('nav.perf', '性能') },
       { to: '/analytics', icon: <BarChart3 size={14} />, label: t('nav.usage', '用量') },
-    ]},
-    { label: t('nav.management', '管理'), items: [
-      { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理') },
-      { to: '/skill-hub', icon: <Puzzle size={14} />,       label: t('nav.skillManager', '技能管理') },
     ]},
   ];
 }
@@ -63,6 +58,7 @@ function settingsGroups(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
  */
 function agentSubResources(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
   return [
+    { to: '/config',   icon: <Bot size={14} />,           label: t('nav.agentConfig', '智能体配置') },
     { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理') },
     { to: '/skill-hub', icon: <Puzzle size={14} />,       label: t('nav.skillManager', '技能管理') },
   ];
@@ -271,55 +267,152 @@ function WorkbenchPanel() {
   const typingBySession = useChatStore((st) => st.typingBySession) ?? {};
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
   const [showArchived, setShowArchived] = useState(false);
+  // Collapse state per agent group — remembered across renders. Default: all expanded.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const { pinned, active, recent, archived } = partitionSessions(sessions, typingBySession, showArchived);
 
-  const goSession = (key: string) => {
-    useChatStore.getState().setActiveSession(key);
-    navigate('/chat');
+  // Per-session first user message, keyed for O(1) lookups during render.
+  // Without this we'd have to walk messagesPerSession on every session row.
+  const messagesPerSession = useChatStore((st) => st.messagesPerSession) ?? {};
+  const firstUserByKey = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [k, msgs] of Object.entries(messagesPerSession)) {
+      const first = msgs.find((m: any) => m?.role === 'user' && typeof m.content === 'string' && m.content.trim());
+      if (first) out[k] = first.content;
+    }
+    return out;
+  }, [messagesPerSession]);
+
+  // All visible sessions, in partition order (pinned → active → recent).
+  // We feed the full list to groupSessionsByAgent — each group internally
+  // keeps the partition order so pinned sessions still surface first
+  // within their agent.
+  const visibleSessions = [...pinned, ...active, ...recent];
+  const groups = useMemo(() => groupSessionsByAgent(visibleSessions), [visibleSessions]);
+
+  const renderRow = (sx: typeof visibleSessions[number]) => (
+    <SessionRowItem key={sx.key} sessionKey={sx.key}
+      currentTitle={sessionTitle(sx, firstUserByKey[sx.key])} isActive={sx.key === activeKey}
+      currentPinned={!!sx.pinned} currentArchived={!!sx.archived}
+      meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
+  );
+
+  const toggleGroup = (agentId: string) => {
+    setCollapsed((prev) => ({ ...prev, [agentId]: !prev[agentId] }));
+  };
+
+  // Quick-create dropdown. The "split button" pattern: the left half
+  // creates a chat (the most common action), the right chevron opens a
+  // menu with the other quick-create targets. The menu mirrors the
+  // primary creation entry points across the app — agent / model /
+  // channel / cron — so the user doesn't have to navigate to a settings
+  // page just to spin up a new entity.
+  const [quickMenuOpen, setQuickMenuOpen] = useState(false);
+  const quickMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!quickMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (quickMenuRef.current && !quickMenuRef.current.contains(e.target as Node)) {
+        setQuickMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setQuickMenuOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [quickMenuOpen]);
+
+  const quickItems: Array<{ key: string; icon: React.ReactNode; label: string; to: string; hint?: string }> = [
+    { key: 'agent',  icon: <Bot size={14} />,           label: t('sidebar.newAgent', '新建智能体'),  to: '/agents?new=1' },
+    { key: 'model',  icon: <Cpu size={14} />,           label: t('sidebar.addModel', '添加模型'),   to: '/config?tab=providers' },
+    { key: 'channel', icon: <MessageSquare size={14} />, label: t('sidebar.addChannel', '添加通道'), to: '/config?tab=channels' },
+    { key: 'cron',   icon: <Clock size={14} />,         label: t('sidebar.newCron', '新建定时任务'), to: '/cron?new=1' },
+  ];
+  const goQuick = (to: string) => {
+    setQuickMenuOpen(false);
+    navigate(to);
   };
 
   return (
     <>
       <div className="px-3 mb-1">
-        <button type="button" onClick={() => navigate('/chat')}
-          className="w-full h-9 bg-aegis-primary text-white rounded font-semibold text-[13px] flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity">
-          <Plus size={14} />{t('sidebar.newChat', '新建对话')}
-        </button>
+        <div ref={quickMenuRef} className="relative flex items-stretch gap-1">
+          {/* Primary action — left side: new chat */}
+          <button
+            type="button"
+            onClick={() => navigate('/chat')}
+            className="flex-1 h-9 bg-aegis-primary text-white rounded-l-lg font-semibold text-[13px] flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity"
+          >
+            <Plus size={14} />{t('sidebar.newChat', '新建对话')}
+          </button>
+          {/* Quick-create menu trigger — right chevron */}
+          <button
+            type="button"
+            aria-label={t('sidebar.moreCreate', '更多创建')}
+            aria-haspopup="menu"
+            aria-expanded={quickMenuOpen}
+            onClick={() => setQuickMenuOpen((v) => !v)}
+            className="w-8 h-9 bg-aegis-primary text-white rounded-r-lg font-semibold flex items-center justify-center hover:opacity-90 transition-opacity border-l border-white/20"
+          >
+            <ChevronDown size={13} className={clsx('transition-transform', quickMenuOpen && 'rotate-180')} />
+          </button>
+          {quickMenuOpen && (
+            <div
+              role="menu"
+              className="absolute top-[calc(100%+4px)] left-0 right-0 z-50 bg-aegis-card-solid border border-aegis-border rounded-lg shadow-lg py-1 animate-in fade-in slide-in-from-top-1 duration-150"
+            >
+              <div className="px-3 py-1.5 text-[9.5px] font-semibold uppercase tracking-wider text-aegis-text-dim flex items-center gap-1.5">
+                <Sparkles size={9} className="text-aegis-accent" />
+                {t('sidebar.quickCreate', '快速创建')}
+              </div>
+              {quickItems.map((it) => (
+                <button
+                  key={it.key}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => goQuick(it.to)}
+                  className="w-full px-3 py-2 flex items-center gap-2.5 text-[12.5px] text-aegis-text hover:bg-aegis-hover/40 hover:text-aegis-accent transition-colors text-left group"
+                >
+                  <span className="text-aegis-accent/70 group-hover:text-aegis-accent transition-colors">
+                    {it.icon}
+                  </span>
+                  <span className="flex-1">{it.label}</span>
+                  <ChevronRight size={11} className="text-aegis-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
-        {pinned.length > 0 && (
-          <SidebarSection label={t('sidebar.pinned', '已置顶')}>
-            {pinned.map((sx) => (
-              <SessionRowItem key={sx.key} sessionKey={sx.key}
-                currentTitle={sessionTitle(sx)} isActive={sx.key === activeKey}
-                currentPinned={!!sx.pinned} currentArchived={!!sx.archived}
-                meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
-            ))}
-          </SidebarSection>
-        )}
-        {active.length > 0 && (
-          <SidebarSection label={t('sidebar.active', '进行中')}>
-            {active.map((sx) => (
-              <SessionRowItem key={sx.key} sessionKey={sx.key}
-                currentTitle={sessionTitle(sx)} isActive={sx.key === activeKey}
-                currentPinned={!!sx.pinned} currentArchived={!!sx.archived}
-                meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
-            ))}
-          </SidebarSection>
-        )}
-        {recent.length > 0 && (
-          <SidebarSection label={t('sidebar.recent', '最近对话')}>
-            {recent.slice(0, 20).map((sx) => (
-              <SessionRowItem key={sx.key} sessionKey={sx.key}
-                currentTitle={sessionTitle(sx)} isActive={sx.key === activeKey}
-                currentPinned={!!sx.pinned} currentArchived={!!sx.archived}
-                meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
-            ))}
-          </SidebarSection>
-        )}
-        {pinned.length === 0 && active.length === 0 && recent.length === 0 && (
+        {groups.length === 0 && (
           <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
+        {groups.map((g: AgentGroup) => {
+          const isCollapsed = collapsed[g.agentId] === true;
+          return (
+            <div key={g.agentId} className="mb-1">
+              <button
+                type="button"
+                onClick={() => toggleGroup(g.agentId)}
+                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim hover:text-aegis-text-secondary transition-colors"
+              >
+                {isCollapsed
+                  ? <ChevronRight size={11} className="opacity-60" />
+                  : <ChevronDown size={11} className="opacity-60" />}
+                <Bot size={11} className="opacity-60" />
+                <span className="flex-1 text-left truncate">{g.label}</span>
+                <span className="text-[9.5px] text-aegis-text-dim/70 font-mono">{g.sessions.length}</span>
+              </button>
+              {!isCollapsed && g.sessions.map(renderRow)}
+            </div>
+          );
+        })}
         {archived.length > 0 && (
           <button
             type="button"
@@ -383,7 +476,7 @@ function AgentsPanel() {
             ))}
           </SidebarSection>
         )}
-        <SidebarSection label={t('nav.agentSubResources', '智能体子资源')}>
+        <SidebarSection label={t('nav.agentSubResources', '管理')}>
           {agentSubResources(t).map((it) => (
             <SidebarRow key={it.to} icon={it.icon} title={it.label} onClick={() => navigate(it.to)} />
           ))}

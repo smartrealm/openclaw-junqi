@@ -24,6 +24,7 @@ pub mod screenshot;
 pub mod session_analytics;
 pub mod provider_oauth;
 pub mod secret_store;
+pub mod session_labels;
 pub mod setup;
 pub mod startup;
 pub mod skills;

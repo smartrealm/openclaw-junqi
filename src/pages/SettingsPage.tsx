@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -98,6 +98,24 @@ export function SettingsPageFull() {
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
   const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
+
+  // Doctor output modal — runs `openclaw doctor [--fix]` and shows the result.
+  const [doctorOutput, setDoctorOutput] = useState<string | null>(null);
+  const [doctorRunning, setDoctorRunning] = useState<null | 'check' | 'fix'>(null);
+
+  const runDoctor = async (mode: 'check' | 'fix') => {
+    if (doctorRunning) return;
+    setDoctorRunning(mode);
+    try {
+      const cmd = mode === 'fix' ? 'openclaw_doctor_repair' : 'run_doctor';
+      const out = await invoke<string>(cmd);
+      setDoctorOutput(out || '(no output)');
+    } catch (err: any) {
+      setDoctorOutput(`Error: ${err?.message || err || 'unknown'}`);
+    } finally {
+      setDoctorRunning(null);
+    }
+  };
 
   const handleCheckVersion = async () => {
     if (checkingVersion) return;
@@ -1020,6 +1038,24 @@ export function SettingsPageFull() {
             <Copy size={12} /> {t('settingsExtra.copySystemInfo')}
           </button>
 
+          <button
+            onClick={() => runDoctor('check')}
+            disabled={doctorRunning !== null}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors disabled:opacity-50"
+          >
+            {doctorRunning === 'check' ? <Loader2 size={12} className="animate-spin" /> : <Stethoscope size={12} />}
+            {t('settings.runDoctor', '运行诊断')}
+          </button>
+          <button
+            onClick={() => runDoctor('fix')}
+            disabled={doctorRunning !== null}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors disabled:opacity-50"
+            title={t('settings.runDoctorFixHint', '运行 openclaw doctor --fix 自动修复')}
+          >
+            {doctorRunning === 'fix' ? <Loader2 size={12} className="animate-spin" /> : <HeartPulse size={12} />}
+            {t('settings.runDoctorFix', '自动修复')}
+          </button>
+
           {window.aegis?.logs && (
             <>
               <button
@@ -1052,6 +1088,48 @@ export function SettingsPageFull() {
         )}
       </GlassCard>
         </>
+      )}
+
+      {/* Doctor output modal — shows stdout/stderr of `openclaw doctor [--fix]` */}
+      {doctorOutput !== null && (
+        <div
+          className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setDoctorOutput(null)}
+        >
+          <div
+            className="bg-aegis-card-solid border border-aegis-border rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col shadow-lg"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-aegis-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ScrollText size={14} className="text-aegis-primary" />
+                <h3 className="text-sm font-mono text-aegis-text">
+                  {t('settings.doctorOutput', '诊断输出')}
+                </h3>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    void navigator.clipboard.writeText(doctorOutput);
+                  }}
+                  className="p-1.5 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/40"
+                  title="Copy"
+                >
+                  <Copy size={13} />
+                </button>
+                <button
+                  onClick={() => setDoctorOutput(null)}
+                  className="p-1.5 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/40"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            <pre className="flex-1 overflow-auto p-4 font-mono text-[11.5px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words">
+              {doctorOutput}
+            </pre>
+          </div>
+        </div>
       )}
 
       </div>

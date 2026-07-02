@@ -91,6 +91,13 @@ impl ConfigMetadata {
     }
 }
 
+/// Read the gateway auth token from the config file.
+/// Returns `None` if the file is missing, malformed, or has no token.
+fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
+    let raw = std::fs::read_to_string(config_path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string())
+}
 
 /// Generate a random token for localhost gateway authentication.
 ///
@@ -355,6 +362,45 @@ fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
     let _ = app.emit("gateway-log", &line);
 }
 
+/// Stream process output line-by-line, emitting each line as `gateway-log`
+/// and pushing to the in-memory ring buffer.
+fn spawn_log_reader(
+    app: AppHandle,
+    reader: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    source: crate::state::gateway_process::LogSource,
+) {
+    use crate::state::gateway_process::{push_log, LogLevel};
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    tokio::spawn(async move {
+        let state = app.state::<crate::state::GatewayProcess>();
+        let mut lines = BufReader::new(reader).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app.emit("gateway-log", &line);
+            push_log(&state.logs, source, LogLevel::Info, line);
+        }
+    });
+}
+
+/// Like `spawn_log_reader` but also emits to `gateway-restart-progress`
+/// so the boot-recovery UI can track process output during restarts.
+fn spawn_restart_log_reader(
+    app: AppHandle,
+    reader: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    source: crate::state::gateway_process::LogSource,
+) {
+    use crate::state::gateway_process::{push_log, LogLevel};
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    tokio::spawn(async move {
+        let state = app.state::<crate::state::GatewayProcess>();
+        let mut lines = BufReader::new(reader).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app.emit("gateway-restart-progress", &line);
+            let _ = app.emit("gateway-log", &line);
+            push_log(&state.logs, source, LogLevel::Info, line);
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn restart_gateway(
     app: AppHandle,
@@ -418,18 +464,8 @@ pub async fn restart_gateway(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    fn spawn_progress_reader(app: AppHandle, reader: impl tokio::io::AsyncRead + Unpin + Send + 'static) {
-        use tokio::io::{AsyncBufReadExt, BufReader};
-        tokio::spawn(async move {
-            let mut lines = BufReader::new(reader).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                emit_restart_progress(&app, line);
-            }
-        });
-    }
-
-    if let Some(out) = stdout { spawn_progress_reader(app.clone(), out); }
-    if let Some(err) = stderr { spawn_progress_reader(app.clone(), err); }
+    if let Some(out) = stdout { spawn_restart_log_reader(app.clone(), out, crate::state::gateway_process::LogSource::ChildStdout); }
+    if let Some(err) = stderr { spawn_restart_log_reader(app.clone(), err, crate::state::gateway_process::LogSource::ChildStderr); }
 
     let status = tokio::time::timeout(std::time::Duration::from_secs(45), child.wait())
         .await
@@ -443,17 +479,14 @@ pub async fn restart_gateway(
 
     emit_restart_progress(&app, "Gateway service restart command completed; waiting for health check...");
 
+    emit_restart_progress(&app, "Waiting for Gateway to become reachable...");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
     while std::time::Instant::now() < deadline {
         if is_gateway_serving(port).await {
-            let token = std::fs::read_to_string(&config_path)
-                .ok()
-                .and_then(|r| serde_json::from_str::<serde_json::Value>(&r).ok())
-                .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()));
+            let token = read_gateway_token(&config_path);
             emit_restart_progress(&app, "Gateway health check passed.");
             return Ok(GatewayStatus { running: true, port, pid: None, token });
         }
-        emit_restart_progress(&app, "Waiting for Gateway to become reachable...");
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
@@ -498,12 +531,7 @@ pub async fn start_gateway(
         *state.port.lock().map_err(|e| e.to_string())? = port;
         // Gateway already running — read the token from config so the frontend
         // can connect without an extra round-trip.
-        let existing_token = {
-            let raw = std::fs::read_to_string(&config_path).ok();
-            raw.as_deref()
-                .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
-                .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
-        };
+        let existing_token = read_gateway_token(&config_path);
         return Ok(GatewayStatus { running: true, port, pid: None, token: existing_token });
     }
 
@@ -577,33 +605,26 @@ pub async fn start_gateway(
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start gateway: {}", e))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        // Diagnose common failure modes. Pre-fix: just returned the raw
+        // io::Error which was opaque to the user.
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "openclaw not found on PATH (current PATH={:?}). \
+                 If openclaw is installed under ~/.npm-global/bin, \
+                 run 'export PATH=$HOME/.npm-global/bin:$PATH' \
+                 or set OPENCLAW_BIN env var. Underlying error: {}",
+                std::env::var("PATH").unwrap_or_default(),
+                e,
+            )
+        } else {
+            format!("Failed to start gateway: {}", e)
+        }
+    })?;
 
     // Take stdout/stderr before moving child into state, and stream them as events
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-
-    fn spawn_log_reader(
-        app: AppHandle,
-        reader: impl tokio::io::AsyncRead + Unpin + Send + 'static,
-        source: crate::state::gateway_process::LogSource,
-    ) {
-        use crate::state::gateway_process::{push_log, LogLevel};
-        use tokio::io::{AsyncBufReadExt, BufReader};
-        tokio::spawn(async move {
-            // Look up the GatewayProcess state via AppHandle — this gives
-            // us a State<'_, T> handle inside the 'static task without
-            // requiring the command-level State borrow to escape.
-            let state = app.state::<crate::state::GatewayProcess>();
-            let mut lines = BufReader::new(reader).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let _ = app.emit("gateway-log", &line);
-                push_log(&state.logs, source, LogLevel::Info, line);
-            }
-        });
-    }
 
     if let Some(out) = stdout {
         spawn_log_reader(
@@ -656,12 +677,7 @@ pub async fn start_gateway(
 
     // Re-read the token that ensure_config_with_token just wrote/read
     // so we return it in a single IPC round-trip.
-    let final_token = {
-        let raw = std::fs::read_to_string(&config_path).ok();
-        raw.as_deref()
-            .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
-            .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
-    };
+    let final_token = read_gateway_token(&config_path);
     Ok(GatewayStatus {
         running: true,
         port,
@@ -681,7 +697,7 @@ pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, St
         child.kill().await.map_err(|e| format!("Failed to kill gateway: {}", e))?;
         Ok("Gateway stopped".into())
     } else {
-        Err("Gateway is not running".into())
+        Ok("Gateway not running — nothing to stop".into())
     }
 }
 
@@ -693,9 +709,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
     // status poller does NOT see a down→up flap and trigger a competing
     // start_gateway. The restart command owns the lifecycle right now.
     if *state.restarting.lock().map_err(|e| e.to_string())? {
-        let token = std::fs::read_to_string(&paths::config_path()).ok()
-            .and_then(|r| serde_json::from_str::<serde_json::Value>(&r).ok())
-            .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()));
+        let token = read_gateway_token(&paths::config_path());
         return Ok(GatewayStatus { running: true, port, pid: None, token });
     }
 
@@ -729,12 +743,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         if !is_gateway_serving(port).await {
             return Ok(GatewayStatus { running: false, port, pid: child_pid, token: None });
         }
-        let status_token = {
-            let raw = std::fs::read_to_string(&paths::config_path()).ok();
-            raw.as_deref()
-                .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
-                .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
-        };
+        let status_token = read_gateway_token(&paths::config_path());
         return Ok(GatewayStatus { running: true, port, pid: child_pid, token: status_token });
     }
 
@@ -747,12 +756,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         port
     };
     if is_gateway_serving(probe_port).await {
-        let probe_token = {
-            let raw = std::fs::read_to_string(&paths::config_path()).ok();
-            raw.as_deref()
-                .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
-                .and_then(|v| v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string()))
-        };
+        let probe_token = read_gateway_token(&paths::config_path());
         return Ok(GatewayStatus { running: true, port: probe_port, pid: None, token: probe_token });
     }
 
@@ -784,6 +788,7 @@ pub async fn run_doctor() -> Result<String, String> {
 
     let mut cmd = tokio::process::Command::new(&openclaw);
     cmd.arg("doctor")
+        .env("PATH", &augmented_path())
         .env("OPENCLAW_STATE_DIR", base_dir.to_str().unwrap())
         .env("OPENCLAW_CONFIG_PATH", config_path.to_str().unwrap());
 

@@ -10,6 +10,8 @@ import { PetBubble } from './PetBubble';
 import { DEFAULT_PET_STATE, type PetState } from './pet-states';
 import type { PetMenuItem } from './petActions';
 import { usePetStore } from '@/stores/petStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { applyTheme } from '@/theme/apply';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
@@ -56,6 +58,22 @@ export default function PetWindow() {
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
   const justDragged = useRef(false);
+
+  // ── Theme sync from main window ──
+  // The pet window is a separate Tauri window with its own document — it does
+  // not automatically re-render when the main window's `data-theme` attribute
+  // changes. We subscribe to settingsStore.theme (which the main window
+  // updates when the user picks a new theme) and re-apply applyTheme() so
+  // every `themeHex()` and `var(--aegis-*)` lookup reflects the new palette.
+  const theme = useSettingsStore((s) => s.theme);
+  useEffect(() => {
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+      applyTheme(prefersDark ? 'aegis-dark' : 'aegis-light');
+    } else {
+      applyTheme(theme);
+    }
+  }, [theme]);
 
   useEffect(() => {
     document.documentElement.style.background = 'transparent';
@@ -231,7 +249,7 @@ export default function PetWindow() {
         <PetCharacter emotion={state.emotion} progress={state.progress ?? 0} skin={state.skin ?? skin} customAsset={customAsset} dragging={dragging} celebrating={state.emotion === 'celebrate'} />
         {BadgeIcon && (
           <motion.span
-            style={{ position: 'absolute', top: -1, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
+            style={{ position: 'absolute', top: -22, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
             animate={{ y: [0, -2, 0] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           >

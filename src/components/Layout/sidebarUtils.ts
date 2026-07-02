@@ -76,7 +76,7 @@ export function partitionSessions(
   return { pinned, active, recent, archived };
 }
 
-export function sessionTitle(sx: Session): string {
+export function sessionTitle(sx: Session, firstUserMessage?: string): string {
   // 1. User-set label wins. Display the explicit user-chosen name even
   //    on the main session and even if it matches the legacy "Main Session"
   //    placeholder.
@@ -87,7 +87,20 @@ export function sessionTitle(sx: Session): string {
     // respect it. Only fall through to key-based labels if the label
     // is missing or empty.
   }
-  // 2. Topic > key-derived sub > agent name.
+  // 2. First user message — the most direct preview of what this session is
+  //    about. Capped at 30 chars with ellipsis to keep sidebar rows uniform.
+  //    We take only the first sentence/line so a long pasted prompt doesn't
+  //    blow out the row height.
+  if (firstUserMessage && firstUserMessage.trim().length > 0) {
+    const trimmed = firstUserMessage.replace(/\s+/g, ' ').trim();
+    if (trimmed) {
+      // Cut at the first natural break: period, newline, or hard char cap.
+      const breakIdx = trimmed.search(/[。.!?！？\n]/);
+      const firstChunk = breakIdx > 0 ? trimmed.slice(0, breakIdx) : trimmed;
+      return firstChunk.length > 30 ? `${firstChunk.slice(0, 29)}…` : firstChunk;
+    }
+  }
+  // 3. Topic > key-derived sub > agent name.
   if (typeof sx.topic === 'string' && sx.topic.trim()) return sx.topic;
   const parts = String(sx.key || '').split(':');
   const agentId = parts.length >= 2 ? parts[1] : '';
@@ -95,6 +108,50 @@ export function sessionTitle(sx: Session): string {
   if (sub) return sub.length > 30 ? `${sub.slice(0, 28)}…` : sub;
   if (agentId && agentId !== 'main') return agentId;
   return '新对话';
+}
+
+/** Group sessions by the agentId embedded in their key.
+ *  Key format: `agent:<agentId>:<...>` — e.g. `agent:main:main`,
+ *  `agent:researcher:run-1`, `agent:coder:sess-9`.
+ *  Sessions whose key doesn't match the `agent:<id>:...` shape fall into
+ *  the synthetic `'__ungrouped__'` bucket so they still render.
+ */
+export interface AgentGroup {
+  agentId: string;
+  label: string;
+  sessions: Session[];
+}
+
+export function groupSessionsByAgent(
+  sessions: Session[],
+): AgentGroup[] {
+  const buckets = new Map<string, Session[]>();
+  for (const sx of sessions) {
+    const parts = String(sx.key || '').split(':');
+    const agentId = parts[0] === 'agent' && parts[1] ? parts[1] : '__ungrouped__';
+    const bucket = buckets.get(agentId) ?? [];
+    bucket.push(sx);
+    buckets.set(agentId, bucket);
+  }
+  const groups: AgentGroup[] = [];
+  for (const [agentId, ss] of buckets) {
+    groups.push({
+      agentId,
+      label: agentId === '__ungrouped__'
+        ? '其他'
+        : agentId === 'main' ? '主智能体' : agentId,
+      sessions: ss,
+    });
+  }
+  // Stable order: main first, others alphabetical, ungrouped last.
+  groups.sort((a, b) => {
+    const rank = (g: AgentGroup) => g.agentId === 'main' ? 0
+      : g.agentId === '__ungrouped__' ? 2 : 1;
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    return a.label.localeCompare(b.label);
+  });
+  return groups;
 }
 
 export function modelShort(m: unknown): string {

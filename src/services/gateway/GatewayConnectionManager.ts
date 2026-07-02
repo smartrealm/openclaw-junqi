@@ -84,7 +84,38 @@ export class GatewayConnectionManager {
   /** Reset to DETECTING (e.g. after config change). */
   reset(): void {
     this.startAttempted = false;
+    this.retrying = false;
+    this.error = null;
     this.handleEvent({ type: 'RESET' });
+  }
+
+  /**
+   * Immediately probe gateway process status and drive the FSM from the result.
+   * Use after reset() to avoid waiting up to 2s for the periodic poller to fire.
+   */
+  probe(): void {
+    if (!window.aegis?.gateway) {
+      this.handleEvent({ type: 'STATUS_RECEIVED', running: true, error: null, retrying: false });
+      return;
+    }
+    void window.aegis.gateway.getStatus().then((status: any) => {
+      if (status.logs) this.logs = status.logs;
+      this.handleEvent({
+        type: 'STATUS_RECEIVED',
+        running: Boolean(status.running),
+        error: status.error ?? null,
+        retrying: false,
+      });
+    });
+  }
+
+  /** Reset FSM to DETECTING and immediately probe — active reconnect. */
+  reconnect(): void {
+    this.startAttempted = false;
+    this.retrying = false;
+    this.error = null;
+    this.handleEvent({ type: 'RESET' });
+    this.probe();
   }
 
   /** Cleanup — call on unmount. */

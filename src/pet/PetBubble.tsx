@@ -21,11 +21,12 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
   memory: '整理记忆',
 };
 
-/** Per-emotion accent color — reactive to isDark so color updates when the
- * pet window's theme flips (no stale module-level constant). Memoised so each
- * render pass doesn't re-allocate the record. */
+/** Per-emotion accent color — recomputed on every render so the themeHex()
+ *  calls always read the current `--aegis-*` CSS variables. themeHex
+ *  internally uses getComputedStyle so calling it during render is correct
+ *  and inexpensive (a few getPropertyValue reads per emotion). */
 function useEmotionColor(): Record<PetEmotion, string> {
-  return useMemo(() => ({
+  return {
     idle: 'rgb(var(--aegis-text-dim))',
     thinking: themeHex('accent'),
     typing: themeHex('primary'),
@@ -37,7 +38,7 @@ function useEmotionColor(): Record<PetEmotion, string> {
     sleepy: 'rgb(var(--aegis-text-dim))',
     sleep: 'rgb(var(--aegis-text-muted))',
     memory: themeHex('warning'),
-  }), []);
+  };
 }
 
 /** Active states get the rich multi-line bubble (label + action + elapsed). */

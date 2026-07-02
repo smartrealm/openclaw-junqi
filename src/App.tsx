@@ -43,7 +43,7 @@ const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.K
 const GitPage = lazy(() => import('@/pages/GitPage'));
 const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
 import { FeatureRoute } from '@/components/FeatureRoute';
-import { useChatStore } from '@/stores/chatStore';
+import { useChatStore, primeSessionLabelCache } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
@@ -58,6 +58,10 @@ import { usePetActions } from '@/pet/usePetActions';
 import { usePetShortcuts } from '@/pet/usePetShortcuts';
 
 const SESSION_MODEL_PREFS_KEY = 'aegis:session-model-prefs';
+// User-renamed session labels live in localStorage under
+// 'aegis:session-label-prefs'. The chatStore reads them at sessions.list
+// merge time so renames survive an app restart even when the openclaw
+// gateway has discarded the `label` field. Writer: src/utils/sessionRename.ts.
 
 function RouteLoadingFallback() {
   return (
@@ -114,6 +118,16 @@ export default function App() {
   // ── Theme: resolve setting → concrete theme, apply to <html> + native chrome,
   //         follow OS preference live when set to 'system'. All in one hook. ──
   useTheme();
+
+  // Prime the session-label override cache from disk before the first
+  // sessions.list merge. Without this, the very first paint after the
+  // gateway replies briefly shows the server-default label before the
+  // local override kicks in. Fire-and-forget — `loadAvailableModels` and
+  // the chat session list will still render correctly because the
+  // setSessions merge re-reads the cache on every call.
+  useEffect(() => {
+    void primeSessionLabelCache();
+  }, []);
   const {
     addMessage,
     updateStreamingMessage,
@@ -298,8 +312,14 @@ export default function App() {
 
   const triggerGatewayReconnect = useCallback((label = 'manual') => {
     addBootRecoveryLog(`Reconnect requested (${label})`);
+    // Allow the auto-recovery effect to re-arm if the user clicks "reconnect"
+    // while the overlay is still showing. Without this reset, bootRecoveryStartedRef
+    // stays true after the first recovery attempt and blocks all subsequent retries.
+    bootRecoveryStartedRef.current = false;
     try { gateway.disconnect(); } catch {}
-    try { gatewayManager.reset(); } catch {}
+    // Use reconnect() instead of reset() — triggers an immediate status probe
+    // so we don't wait up to 2s for the periodic poller to drive the FSM.
+    try { gatewayManager.reconnect(); } catch {}
   }, [addBootRecoveryLog]);
 
   const restartGatewayFromBoot = useCallback(async () => {
@@ -608,15 +628,31 @@ export default function App() {
     const handleModelChanged = () => void loadSessions();
     window.addEventListener('aegis:model-changed', handleModelChanged);
 
-    // Listen for config saved (e.g. from Config Manager) → refresh available models after a short delay so gateway can restart/reload
+    // Listen for config saved (e.g. from Config Manager) → refresh available
+    // models after a short delay so the gateway can restart/reload. When the
+    // user switched Provider (env vars / base URL / models.providers), the
+    // existing WebSocket is still using the old auth material — disconnect
+    // and let ensureRunning re-handshake so the new credentials take effect.
     const handleConfigSaved = (event: Event) => {
-      const primaryModel = (event as CustomEvent)?.detail?.primaryModel;
+      const detail = (event as CustomEvent)?.detail ?? {};
+      const primaryModel = detail.primaryModel;
+      const providerChanged = detail.providerChanged === true;
       if (typeof primaryModel === 'string' && primaryModel.trim()) {
         const st = useChatStore.getState();
         st.setManualModelOverride(primaryModel.trim());
         const key = st.activeSessionKey || 'agent:main:main';
         setSessionModelPref(key, primaryModel.trim());
         void gateway.setSessionModel(primaryModel.trim(), key).catch(() => {});
+      }
+      if (providerChanged) {
+        try { gateway.disconnect(); } catch {}
+        void window.aegis?.gateway?.ensureRunning?.()
+          .then((r: any) => {
+            if (r?.healthy) {
+              try { gatewayManager.reconnect(); } catch {}
+            }
+          })
+          .catch(() => { /* handled by status poller */ });
       }
       setTimeout(() => loadAvailableModels(), 1500);
     };
@@ -629,13 +665,20 @@ export default function App() {
     };
     window.addEventListener('aegis:session-reset', handleSessionReset);
 
-    // StatusBar "重连" button fires this event. We run the full restart
-    // pipeline here (same as the boot overlay's 'triggerGatewayReconnect')
-    // so the WS reconnect logic lives in ONE place.
+    // StatusBar "重连" button fires this event.
+    // Disconnect the WebSocket first so the FSM drives to DETECTING, then let
+    // ensureRunning confirm the process is healthy before reconnect() probes.
+    // Calling reset() here would be redundant — disconnect() already triggers
+    // notifyWsClose() → DETECTING synchronously via the onStatusChange chain.
     const handleManualReconnect = () => {
+      bootRecoveryStartedRef.current = false;
+      try { gateway.disconnect(); } catch {}
       void window.aegis?.gateway?.ensureRunning?.().then((r: any) => {
+        addBootRecoveryLog(r?.healthy
+          ? `Gateway healthy (${r.mode ?? 'native'}) — reconnecting`
+          : `ensure_gateway_running returned unhealthy — restarting`);
         if (r?.healthy) {
-          triggerGatewayReconnect('button');
+          try { gatewayManager.reconnect(); } catch {}
         } else {
           void restartGatewayFromBoot();
         }
@@ -696,8 +739,8 @@ export default function App() {
     setGatewayBootError(null);
     setGatewayBootLogs(undefined);
     setGatewayRetrying(false);
-    // Reconnect WebSocket now that the gateway process is up
-    gatewayManager.reset();
+    // Probe immediately instead of waiting for the periodic poller
+    gatewayManager.reconnect();
   }, []);
 
   const setupComplete = useAppStore((s) => s.setupComplete);

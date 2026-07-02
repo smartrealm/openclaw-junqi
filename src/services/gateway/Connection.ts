@@ -139,6 +139,13 @@ export class GatewayConnection {
   /** Called for every incoming non-response event from the WebSocket. */
   onEvent: (msg: any) => void = () => {};
 
+  constructor() {
+    // Register message handlers once — they never change and MessageRouter
+    // uses set() semantics, so calling this in connect() would be a no-op,
+    // but initializing here is the correct ownership model.
+    this.initMessageRouter();
+  }
+
   // ══════════════════════════════════════════════════════
   // Heartbeat Management
   // ══════════════════════════════════════════════════════
@@ -243,7 +250,6 @@ export class GatewayConnection {
       this.ws = null;
     }
 
-    this.initMessageRouter();
     this.connecting = true;
     this.lastError = null;
     this.contextSent = false; // Reset context injection for new connection
@@ -251,14 +257,23 @@ export class GatewayConnection {
 
     console.log('[GW] Connecting:', url);
 
-    this.ws = new WebSocket(url);
+    // Capture the WS instance locally so all handlers can guard against stale
+    // close/open events from a previous connection being replaced mid-flight.
+    // Without this guard, disconnect() + immediate connect() causes the old
+    // onclose to fire AFTER the new WS is created, setting this.ws = null and
+    // this.connecting = false on the new connection — silently killing the
+    // token-only handshake timer.
+    const ws = new WebSocket(url);
+    this.ws = ws;
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
+      if (this.ws !== ws) return; // stale — a newer connection replaced us
       console.log('[GW] Open — waiting for connect.challenge...');
       this.challengeNonce = null;
       // Wait up to 2s for challenge nonce (v2 auth).
       // If it doesn't arrive, proceed with token-only auth.
       this.connectTimer = setTimeout(() => {
+        if (this.ws !== ws) return; // stale
         if (this.connecting) {
           console.log('[GW] No challenge received — proceeding with token-only auth');
           this.sendHandshake();
@@ -266,7 +281,8 @@ export class GatewayConnection {
       }, 2000);
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (this.ws !== ws) return; // stale
       try {
         const msg = JSON.parse(event.data);
         this.handleMessage(msg);
@@ -275,7 +291,8 @@ export class GatewayConnection {
       }
     };
 
-    this.ws.onclose = (event) => {
+    ws.onclose = (event) => {
+      if (this.ws !== ws) return; // stale — ignore close from a superseded WS
       console.log('[GW] Closed:', event.code, event.reason);
       this.stopHeartbeat();
       stopPolling();
@@ -293,7 +310,6 @@ export class GatewayConnection {
       if (this.pairingRequired) {
         this.callbacks?.onScopeError?.(event.reason || 'pairing required');
         this.schedulePairingRetry();
-        this.emitStatus();
         return;
       }
 
@@ -301,7 +317,7 @@ export class GatewayConnection {
       this.emitStatus();
     };
 
-    this.ws.onerror = (event) => {
+    ws.onerror = (event) => {
       console.error('[GW] Error:', event);
       this.lastError = 'Connection error';
     };
@@ -310,6 +326,10 @@ export class GatewayConnection {
   disconnect() {
     this.stopHeartbeat();
     this.stopPairingRetry();
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
