@@ -46,7 +46,7 @@ const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.K
 const GitPage = lazy(() => import('@/pages/GitPage'));
 const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
 import { FeatureRoute } from '@/components/FeatureRoute';
-import { useChatStore, primeSessionLabelCache } from '@/stores/chatStore';
+import { useChatStore, primeSessionLabelCache, getSessionLabelPref } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -124,13 +124,22 @@ export default function App() {
   useTheme();
 
   // Prime the session-label override cache from disk before the first
-  // sessions.list merge. Without this, the very first paint after the
-  // gateway replies briefly shows the server-default label before the
-  // local override kicks in. Fire-and-forget — `loadAvailableModels` and
-  // the chat session list will still render correctly because the
-  // setSessions merge re-reads the cache on every call.
+  // Block boot on the label cache prime so the FIRST sessions.list merge
+  // (driven by loadSessions after the gateway handshake) already sees
+  // user renames. Previously fire-and-forget: a rename that was made on
+  // the previous run would briefly flash back to the server default
+  // before the cache loaded and overrode it.
+  const [labelsReady, setLabelsReady] = useState(false);
   useEffect(() => {
-    void primeSessionLabelCache();
+    let cancelled = false;
+    (async () => {
+      try {
+        await primeSessionLabelCache();
+      } finally {
+        if (!cancelled) setLabelsReady(true);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // ── Global drag-drop bridge ────────────────────────────────────────────
@@ -218,6 +227,12 @@ export default function App() {
   // synchronously applies the active session's data to the TitleBar state — no separate
   // loadTokenUsage needed.
   const loadSessions = useCallback(async () => {
+    // Block the first sessions.list read until the persisted-label cache
+    // has finished priming. After the first run, the cache is already
+    // populated so this returns immediately.
+    while (!labelsReady) {
+      await new Promise((r) => setTimeout(r, 16));
+    }
     try {
       const result = await gateway.getSessions();
       const rawSessions = Array.isArray(result?.sessions) ? result.sessions : [];
@@ -225,11 +240,22 @@ export default function App() {
       const defaults = result?.defaults
         ? { model: result.defaults.model ?? null, contextTokens: result.defaults.contextTokens ?? null }
         : undefined;
+      // Read the label cache synchronously — it's a module-level Map
+      // populated by primeSessionLabelCache() at boot. The first loadSessions
+      // call after mount waits for the prime to settle, so by the time we
+      // touch this helper the cache is ready. If the user renamed this
+      // session on a previous run, the override is here.
       const sessions = rawSessions.map((s: any) => {
         const key = s.key || s.sessionKey || 'unknown';
-        let label = s.label || s.name || key;
-        if (key === 'agent:main:main') label = t('dashboard.mainSession');
-        else if (key.startsWith('agent:main:')) label = key.split(':').pop() || key;
+        // Priority: persisted user rename → server-provided label →
+        // gateway-default fallback. The persisted label wins because the
+        // gateway often strips the `label` field on its own.
+        const persistedLabel = getSessionLabelPref(key);
+        let label = persistedLabel || s.label || s.name || key;
+        if (!persistedLabel) {
+          if (key === 'agent:main:main') label = t('dashboard.mainSession');
+          else if (key.startsWith('agent:main:')) label = key.split(':').pop() || key;
+        }
         const persistedModel = getSessionModelPref(key);
         const resolvedModel = s.model ?? persistedModel ?? null;
         if (typeof s.model === 'string' && s.model.trim().length > 0) {

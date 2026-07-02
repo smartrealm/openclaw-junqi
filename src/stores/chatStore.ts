@@ -65,8 +65,10 @@ async function readSessionLabelPrefs(): Promise<Record<string, string>> {
 
 /** Synchronous accessor for use during setSessions merge. Returns the
  *  cached value if the async load has already completed, otherwise
- *  undefined (caller falls through to in-memory / server label). */
-function getSessionLabelPref(sessionKey: string): string | undefined {
+ *  undefined (caller falls through to in-memory / server label).
+ *  Exported so App.tsx can consult the cache at boot before
+ *  loadSessions() merges the gateway's reply. */
+export function getSessionLabelPref(sessionKey: string): string | undefined {
   if (labelPrefsCache === null) return undefined;
   const label = labelPrefsCache[sessionKey];
   return typeof label === 'string' && label.trim().length > 0 ? label : undefined;

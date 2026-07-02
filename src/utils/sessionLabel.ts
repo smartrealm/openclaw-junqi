@@ -11,6 +11,21 @@ function normalizeText(value?: string): string {
   return String(value ?? '').trim();
 }
 
+/**
+ * Returns true when `session.label` looks like a gateway default (i.e. the
+ * openclaw side stamped it on a fresh session, the user never edited it).
+ * Used to short-circuit auto-derived labels so a real rename isn't
+ * shadowed by a stale placeholder.
+ */
+function isGatewayDefaultLabel(label: string, key: string): boolean {
+  if (!label || !key) return true;
+  if (label === key) return true;
+  if (/^desktop-\d+$/i.test(label)) return true;
+  // English / Chinese / Arabic gateway defaults
+  if (/^(main session|主智能体|new session|新会话|default session|untitled)$/i.test(label)) return true;
+  return false;
+}
+
 export function getSessionDisplayLabel(
   session: SessionLike | undefined,
   options?: { mainSessionLabel?: string; genericSessionLabel?: string },
@@ -20,14 +35,15 @@ export function getSessionDisplayLabel(
   const genericSessionLabel = options?.genericSessionLabel ?? 'Session';
 
   if (!key) return genericSessionLabel;
-  if (key === 'agent:main:main') return mainSessionLabel;
 
-  // Explicit user-set label (via right-click Rename or double-click) wins
-  // over auto-derived topic / lastMessage — otherwise the rename never
-  // shows because the first chat message immediately becomes a "topic".
+  // The main session is identified by key, not by label. We still allow
+  // user renames to surface here so "我的主会话" doesn't get clobbered
+  // by the gateway's hardcoded "Main Session" placeholder.
   const label = normalizeText(session?.label);
-  const isGenerated = label === key || /^desktop-\d+$/i.test(label);
-  if (label && !isGenerated) return label;
+  if (label && !isGatewayDefaultLabel(label, key)) return label;
+
+  // Auto-derived fallbacks only kick in when the user hasn't renamed.
+  if (key === 'agent:main:main') return mainSessionLabel;
 
   const topic = normalizeText(session?.topic);
   if (topic && !isWeakSessionTopic(topic)) return topic;
