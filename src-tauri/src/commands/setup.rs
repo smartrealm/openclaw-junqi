@@ -60,6 +60,10 @@ pub fn find_git_in_default_paths() -> Option<PathBuf> {
 pub struct SetupProgress {
     pub step: String,
     pub message: String,
+    /// Optional i18n key. When present, the frontend uses it to localize
+    /// the message; falls back to the raw `message` field otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub progress: Option<f64>,
     pub error: Option<String>,
 }
@@ -68,6 +72,19 @@ fn emit(app: &tauri::AppHandle, step: &str, message: &str, progress: f64) {
     let _ = app.emit("setup-progress", SetupProgress {
         step: step.into(),
         message: message.into(),
+        key: None,
+        progress: Some(progress.clamp(0.0, 1.0)),
+        error: None,
+    });
+}
+
+/// Emit a progress event tagged with an i18n key. Frontend renders the
+/// localized copy when the key resolves; otherwise falls back to `message`.
+fn emit_keyed(app: &tauri::AppHandle, step: &str, message: &str, key: &str, progress: f64) {
+    let _ = app.emit("setup-progress", SetupProgress {
+        step: step.into(),
+        message: message.into(),
+        key: Some(key.into()),
         progress: Some(progress.clamp(0.0, 1.0)),
         error: None,
     });
@@ -135,7 +152,7 @@ async fn download_with_fallback(
     prog_start: f64,
     prog_end: f64,
 ) -> Result<u64, String> {
-    let mut last_err = "未知错误".to_string();
+    let mut last_err = "unknown error".to_string();
     let total_sources = sources.len();
 
     for (idx, (url, label)) in sources.iter().enumerate() {
@@ -174,7 +191,7 @@ async fn download_with_fallback(
         };
 
         emit(app, step,
-            &format!("已连接 {}，文件大小 {}，开始下载...", label, size_str),
+            &format!("Connected to {}, size {}, downloading...", label, size_str),
             prog_start,
         );
 
@@ -211,7 +228,7 @@ async fn download_with_fallback(
                         if mb > last_reported_pct {
                             last_reported_pct = mb;
                             emit(app, step,
-                                &format!("下载中... 已获取 {:.1} MB via {}", downloaded as f64 / 1024.0 / 1024.0, label),
+                                &format!("Downloading... got {:.1} MB via {}", downloaded as f64 / 1024.0 / 1024.0, label),
                                 prog_start + 0.1,
                             );
                         }
@@ -228,7 +245,7 @@ async fn download_with_fallback(
 
         if !download_ok || data.is_empty() {
             if idx + 1 < total_sources {
-                emit(app, step, "下载失败，正在切换至备用源...", prog_start);
+                emit(app, step, "Download failed, switching to fallback source...", prog_start);
             }
             continue;
         }
@@ -236,7 +253,7 @@ async fn download_with_fallback(
         std::fs::write(dest, &data).map_err(|e| format!("写入文件失败: {}", e))?;
 
         emit(app, step,
-            &format!("下载完成（{:.1} MB），来源：{}", downloaded as f64 / 1024.0 / 1024.0, label),
+            &format!("Download complete ({:.1} MB), source: {}", downloaded as f64 / 1024.0 / 1024.0, label),
             prog_end,
         );
         return Ok(downloaded);
@@ -258,7 +275,7 @@ fn extract_zip(
     let file = std::fs::File::open(archive).map_err(|e| format!("打开压缩包失败: {}", e))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("读取 zip 失败: {}", e))?;
     let total = zip.len();
-    emit(app, step, &format!("解压中，共 {} 个文件...", total), prog_start);
+    emit(app, step, &format!("Extracting, {} files total...", total), prog_start);
 
     for i in 0..total {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
@@ -279,7 +296,7 @@ fn extract_zip(
         if i % 200 == 0 && total > 0 {
             let frac = i as f64 / total as f64;
             emit(app, step,
-                &format!("解压中 {}%（{}/{}）...", (frac * 100.0) as u32, i, total),
+                &format!("Extracting {}% ({}/{})...", (frac * 100.0) as u32, i, total),
                 prog_start + frac * (prog_end - prog_start),
             );
         }
@@ -295,7 +312,7 @@ fn extract_targz(
     prog_start: f64,
     prog_end: f64,
 ) -> Result<(), String> {
-    emit(app, step, "解压 tar.gz 文件中...", prog_start);
+    emit(app, step, "Extracting tar.gz archive...", prog_start);
     let file = std::fs::File::open(archive).map_err(|e| format!("打开压缩包失败: {}", e))?;
     let gz = flate2::read::GzDecoder::new(file);
     let mut archive = tar::Archive::new(gz);
@@ -320,10 +337,10 @@ fn extract_targz(
         if count % 200 == 0 {
             // tar.gz doesn't know total entry count upfront; show a count instead
             let prog = (prog_start + (prog_end - prog_start) * 0.5).min(prog_end - 0.05);
-            emit(app, step, &format!("解压中... 已处理 {} 个文件", count), prog);
+            emit(app, step, &format!("Extracting... processed {} files", count), prog);
         }
     }
-    emit(app, step, &format!("解压完成，共处理 {} 个文件", count), prog_end);
+    emit(app, step, &format!("Extraction complete, {} files processed", count), prog_end);
     Ok(())
 }
 
@@ -391,7 +408,7 @@ async fn npm_install_with_fallback(
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                last_err = format!("启动 npm 失败: {}", e);
+                last_err = format!("Failed to spawn npm: {}", e);
                 continue;
             }
         };
@@ -431,16 +448,16 @@ async fn npm_install_with_fallback(
         ).await {
             Ok(Ok(s)) => s,
             Ok(Err(e)) => {
-                last_err = format!("npm 进程异常: {}", e);
+                last_err = format!("npm process error: {}", e);
                 if reg_idx + 1 < total_regs {
-                    emit(app, step, &format!("{} 安装异常，切换备用源重试...", reg_label), prog_start);
+                    emit(app, step, &format!("{} install errored, retrying with fallback source...", reg_label), prog_start);
                 }
                 continue;
             }
             Err(_) => {
-                last_err = "npm install 超时（>6 分钟）".into();
+                last_err = "npm install timed out (>6 min)".into();
                 if reg_idx + 1 < total_regs {
-                    emit(app, step, &format!("{} 安装超时，切换备用源重试...", reg_label), prog_start);
+                    emit(app, step, &format!("{} install timed out, retrying with fallback source...", reg_label), prog_start);
                 }
                 continue;
             }
@@ -448,7 +465,7 @@ async fn npm_install_with_fallback(
 
         if status.success() {
             emit(app, step,
-                &format!("{} 安装完成（via {}）✓", pkg, reg_label),
+                &format!("{} installed (via {}) ✓", pkg, reg_label),
                 prog_end,
             );
             return Ok(());
@@ -457,13 +474,13 @@ async fn npm_install_with_fallback(
         last_err = format!("npm 退出码 {}", status.code().unwrap_or(-1));
         if reg_idx + 1 < total_regs {
             emit(app, step,
-                &format!("{} 安装失败（{}），切换至备用源重试...", reg_label, last_err),
+                &format!("{} install failed ({}), retrying with fallback source...", reg_label, last_err),
                 prog_start,
             );
         }
     }
 
-    Err(format!("所有 npm 源均安装失败。最后错误：{}", last_err))
+    Err(format!("All npm registries failed. Last error: {}", last_err))
 }
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
@@ -475,7 +492,7 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
     let node_bin = paths::local_node_path();
 
     // ① 检测现有版本
-    emit(&app, step, "正在检测已安装的 Node.js 版本...", 0.02);
+    emit_keyed(&app, step, "Checking installed Node.js version...", "setup.node.check", 0.02);
 
     if node_bin.exists() {
         let version_str = tokio::process::Command::new(&node_bin)
@@ -495,32 +512,38 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
 
         if !needs_upgrade {
             let ver = version_str.unwrap_or_default();
-            emit(&app, step, &format!("Node.js {} 已满足要求（≥ v24.14.0），跳过安装", ver), 1.0);
+            emit_keyed(&app, step,
+                &format!("Node.js {} meets requirement (>= v24.14.0), skipping", ver),
+                "setup.node.skip", 1.0,
+            );
             return Ok(format!("Node.js {} already installed", ver));
         }
 
-        let ver = version_str.unwrap_or_else(|| "旧版本".into());
-        emit(&app, step,
-            &format!("检测到 {}，低于最低要求 v24.14.0，正在清理旧版本...", ver),
-            0.04,
+        let ver = version_str.unwrap_or_else(|| "older version".into());
+        emit_keyed(&app, step,
+            &format!("Detected {} below v24.14.0, cleaning up...", ver),
+            "setup.node.upgrade", 0.04,
         );
         let _ = std::fs::remove_dir_all(&node_dir);
     }
 
-    // ② 下载（CN 源优先，官方兜底）
-    emit(&app, step,
-        &format!("准备下载 Node.js v{}，优先使用国内镜像源...", NODE_VERSION),
-        0.05,
+    // ② Download (CN mirror first, official fallback)
+    emit_keyed(&app, step,
+        &format!("Preparing to download Node.js v{}, prefer CN mirror...", NODE_VERSION),
+        "setup.node.prepareDownload", 0.05,
     );
     let temp_dir = paths::desktop_dir().join("tmp");
-    std::fs::create_dir_all(&temp_dir).map_err(|e| format!("创建临时目录失败: {}", e))?;
+    std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
     let archive_path = temp_dir.join(node_filename());
 
     download_with_fallback(&app, step, &node_sources(), &archive_path, 0.06, 0.60).await?;
 
-    // ③ 解压
-    std::fs::create_dir_all(&node_dir).map_err(|e| format!("创建 Node 目录失败: {}", e))?;
-    emit(&app, step, &format!("正在解压至 {}...", node_dir.display()), 0.62);
+    // ③ Extract
+    std::fs::create_dir_all(&node_dir).map_err(|e| format!("Failed to create node dir: {}", e))?;
+    emit_keyed(&app, step,
+        &format!("Extracting to {}...", node_dir.display()),
+        "setup.node.extract", 0.62,
+    );
 
     if cfg!(windows) {
         extract_zip(&app, step, &archive_path, &node_dir, 0.62, 0.90)?;
@@ -528,21 +551,24 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
         extract_targz(&app, step, &archive_path, &node_dir, 0.62, 0.90)?;
     }
 
-    // ④ 清理
-    emit(&app, step, "清理临时文件...", 0.92);
+    // ④ Cleanup
+    emit_keyed(&app, step, "Cleaning up temp files...", "setup.node.cleanup", 0.92);
     let _ = std::fs::remove_file(&archive_path);
     let _ = std::fs::remove_dir_all(&temp_dir);
 
-    // ⑤ 验证
-    emit(&app, step, "验证安装结果...", 0.96);
+    // ⑤ Verify
+    emit_keyed(&app, step, "Verifying installation...", "setup.node.verify", 0.96);
     let ver = tokio::process::Command::new(&node_bin)
         .arg("--version").output().await.ok()
         .and_then(|o| if o.status.success() {
             Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
         } else { None })
-        .unwrap_or_else(|| "未知版本".into());
+        .unwrap_or_else(|| "unknown version".into());
 
-    emit(&app, step, &format!("Node.js {} 安装成功 ✓", ver), 1.0);
+    emit_keyed(&app, step,
+        &format!("Node.js {} installed successfully ✓", ver),
+        "setup.node.done", 1.0,
+    );
     Ok(format!("Node.js {} installed successfully", ver))
 }
 
@@ -550,8 +576,8 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
 pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
     let step = "git";
 
-    // ① 检测
-    emit(&app, step, "正在检测 Git 安装状态...", 0.02);
+    // ① Detect
+    emit_keyed(&app, step, "Checking Git installation...", "setup.git.check", 0.02);
     let local_git = paths::local_git_path();
     let system_git = platform::bin_name("git");
 
@@ -559,7 +585,7 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
         || tokio::process::Command::new(&system_git).arg("--version").output().await
             .map(|o| o.status.success()).unwrap_or(false)
     {
-        emit(&app, step, "Git 已安装，跳过安装步骤", 1.0);
+        emit_keyed(&app, step, "Git already installed, skipping", "setup.git.skip", 1.0);
         return Ok("Git already installed".into());
     }
 
@@ -572,19 +598,16 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
         );
 
         let temp_dir = paths::desktop_dir().join("tmp");
-        std::fs::create_dir_all(&temp_dir).map_err(|e| format!("创建临时目录失败: {}", e))?;
+        std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
         let installer_path = temp_dir.join(git_win_filename());
 
         download_with_fallback(&app, step, &git_win_sources(), &installer_path, 0.05, 0.50).await?;
 
         // 启动安装向导
-        emit(&app, step,
-            "下载完成，正在启动 Git 安装向导，请按提示完成安装...",
-            0.52,
-        );
+        emit_keyed(&app, step, "Download complete, launching Git installer wizard...", "setup.git.launchWizard", 0.52,);
         let mut child = tokio::process::Command::new(&installer_path)
             .spawn()
-            .map_err(|e| format!("启动 Git 安装向导失败: {}", e))?;
+            .map_err(|e| format!("Failed to launch Git installer: {}", e))?;
 
         // 等待用户完成向导（最多 15 分钟）
         let mut elapsed_secs: u64 = 0;
@@ -597,15 +620,12 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
                     let mins = elapsed_secs / 60;
                     let secs = elapsed_secs % 60;
                     let pct = (0.52 + (elapsed_secs as f64 / 900.0) * 0.35).min(0.87);
-                    emit(&app, step,
-                        &format!("等待安装向导完成... 已等待 {:02}:{:02}", mins, secs),
-                        pct,
-                    );
+                    emit_keyed(&app, step, &format!("Waiting for installer wizard... elapsed {:02}:{:02}", mins, secs), "setup.git.waitingWizard", pct);
                     if elapsed_secs > 900 {
-                        return Err("等待 Git 安装向导超时（15 分钟），请重试".into());
+                        return Err("Timed out (15 min) waiting for Git installer, please retry".into());
                     }
                 }
-                Err(e) => return Err(format!("安装向导进程异常: {}", e)),
+                Err(e) => return Err(format!("Installer process error: {}", e)),
             }
         }
 
@@ -614,11 +634,11 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
         let _ = std::fs::remove_dir_all(&temp_dir);
 
         // 刷新 PATH 并验证
-        emit(&app, step, "安装向导已退出，正在刷新系统 PATH...", 0.90);
+        emit_keyed(&app, step, "Wizard finished, refreshing system PATH...", "setup.git.refreshPath", 0.90);
         #[cfg(windows)]
         refresh_path_from_registry();
 
-        emit(&app, step, "正在验证 Git 是否可用...", 0.94);
+        emit_keyed(&app, step, "Verifying git is usable...", "setup.git.verify", 0.94);
 
         #[allow(unused_mut)]
         let mut git_ok = tokio::process::Command::new("git.exe")
@@ -635,23 +655,19 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
         }
 
         if git_ok {
-            emit(&app, step, "Git 安装成功 ✓", 1.0);
+            emit_keyed(&app, step, "Git installed successfully ✓", "setup.git.done", 1.0);
             return Ok("Git installed successfully".into());
         }
 
-        Err("Git 安装向导已完成，但未能检测到 git 命令。\
-             请重启应用或手动将 Git 添加到 PATH。".into())
+        Err("Git installer wizard finished, but git was not detected. Please restart the app or manually add Git to PATH.".into())
 
     } else {
         // ── macOS：触发 Xcode Command Line Tools 安装对话框 ───────────────
 
-        emit(&app, step,
-            "macOS：正在触发 Xcode Command Line Tools 安装对话框，请按系统提示操作...",
-            0.05,
-        );
+        emit_keyed(&app, step, "macOS: launching the Command Line Tools install dialog...", "setup.git.prepareMacDialog", 0.05,);
         let _ = tokio::process::Command::new("xcode-select").arg("--install").output().await;
 
-        emit(&app, step, "已触发系统对话框，请在弹出的窗口中点击「安装」...", 0.10);
+        emit_keyed(&app, step, "System dialog is open - please click Install to proceed...", "setup.git.waitingMac", 0.10);
 
         // 轮询等待 git 可用（最多 10 分钟）
         let max_wait = std::time::Duration::from_secs(600);
@@ -662,7 +678,7 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
             if tokio::process::Command::new("git").arg("--version").output().await
                 .map(|o| o.status.success()).unwrap_or(false)
             {
-                emit(&app, step, "Git（Command Line Tools）安装成功 ✓", 1.0);
+                emit_keyed(&app, step, "Git (Command Line Tools) installed successfully ✓", "setup.git.done", 1.0);
                 return Ok("Git installed successfully".into());
             }
 
@@ -674,11 +690,7 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
 
             let secs = elapsed.as_secs();
             let pct = (0.10 + (secs as f64 / 600.0) * 0.85).min(0.95);
-            emit(&app, step,
-                &format!("等待 Command Line Tools 安装... 已等待 {:02}:{:02}（请在系统对话框中确认）",
-                    secs / 60, secs % 60),
-                pct,
-            );
+            emit_keyed(&app, step, &format!("Waiting for Command Line Tools install... elapsed {:02}:{:02} (please confirm in the system dialog)", secs / 60, secs % 60), "setup.git.macPolling", pct,);
         }
     }
 }
@@ -688,37 +700,34 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     let step = "openclaw";
 
     // ① 定位 Node.js 二进制
-    emit(&app, step, "正在定位 Node.js 可执行文件...", 0.03);
+    emit_keyed(&app, step, "Locating Node.js executable...", "setup.openclaw.locateNode", 0.03);
     let local_node = paths::local_node_path();
     let node_cmd = if local_node.exists() {
         let path = local_node.to_string_lossy().to_string();
-        emit(&app, step, &format!("使用本地 Node.js：{}", path), 0.05);
+        emit_keyed(&app, step, &format!("Using local Node.js: {}", path), "setup.openclaw.useLocalNode", 0.05);
         path
     } else {
-        emit(&app, step, "使用系统 Node.js", 0.05);
+        emit_keyed(&app, step, "Using system Node.js", "setup.openclaw.useSystemNode", 0.05);
         platform::bin_name("node")
     };
 
     // 检查 npm-cli.js
     let local_npm_cli = paths::local_npm_cli_path();
     let npm_cli = if local_npm_cli.exists() {
-        emit(&app, step, &format!("使用本地 npm：{}", local_npm_cli.display()), 0.07);
+        emit_keyed(&app, step, &format!("Using local npm: {}", local_npm_cli.display()), "setup.openclaw.useLocalNpm", 0.07);
         Some(local_npm_cli.to_string_lossy().to_string())
     } else {
-        emit(&app, step, "使用系统 npm", 0.07);
+        emit_keyed(&app, step, "Using system npm", "setup.openclaw.useSystemNpm", 0.07);
         None
     };
 
     // ② 准备安装目录
     let openclaw_prefix = paths::desktop_dir().join("openclaw");
-    emit(&app, step, &format!("准备安装目录 {}...", openclaw_prefix.display()), 0.08);
+    emit_keyed(&app, step, &format!("Preparing install directory {}...", openclaw_prefix.display()), "setup.openclaw.prepareDir", 0.08);
     std::fs::create_dir_all(&openclaw_prefix).ok();
 
     // ③ npm install（CN 源优先，官方兜底，全程输出实时日志）
-    emit(&app, step,
-        "优先使用 npmmirror.com（国内）安装 openclaw，失败自动切换 npmjs.org（官方）...",
-        0.10,
-    );
+    emit_keyed(&app, step, "Preferring npmmirror.com (CN) for openclaw install; falls back to npmjs.org (official)...", "setup.openclaw.npmInstall", 0.10,);
 
     npm_install_with_fallback(
         &app, step,
@@ -731,18 +740,18 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     ).await?;
 
     // ④ 验证
-    emit(&app, step, "正在验证 openclaw 安装...", 0.92);
+    emit_keyed(&app, step, "Verifying openclaw installation...", "setup.openclaw.verify", 0.92);
     let openclaw_bin = openclaw_prefix.join("bin").join(platform::bin_name("openclaw"));
     if !openclaw_bin.exists() {
         // npm --prefix installs to <prefix>/node_modules/.bin/
         let alt_bin = openclaw_prefix
             .join("node_modules").join(".bin").join(platform::bin_name("openclaw"));
         if !alt_bin.exists() {
-            return Err("openclaw 安装目录未找到可执行文件，请重试".into());
+            return Err("No executable found in openclaw install directory, please retry".into());
         }
     }
 
-    emit(&app, step, "openclaw 安装成功 ✓", 1.0);
+    emit_keyed(&app, step, "openclaw installed successfully ✓", "setup.openclaw.done", 1.0);
     Ok("OpenClaw installed successfully".into())
 }
 
@@ -756,15 +765,17 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
 pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     let step = "gateway";
 
-    // ⓘ 阶段一：检测本地运行时
-    emit(&app, step,
-        "正在准备 OpenClaw Gateway…",
+    // ⓘ Stage 1: detect local runtime
+    emit_keyed(&app, step,
+        "Preparing OpenClaw Gateway...",
+        "setup.gateway.preparing",
         0.05,
     );
     tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
-    emit(&app, step,
-        "检测本地运行时（Node.js / npm / openclaw 二进制）…",
+    emit_keyed(&app, step,
+        "Detecting local runtime (Node.js / npm / openclaw binary)...",
+        "setup.gateway.detectRuntime",
         0.12,
     );
 
@@ -772,15 +783,19 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     let oclaw_bin = paths::desktop_dir().join("openclaw").join("bin").join(platform::bin_name("openclaw"));
     let oclaw_ok = oclaw_bin.exists();
     let summary = format!(
-        "运行时检测完成：{}、{}",
-        if node_ok { "Node.js ✓" } else { "Node.js ✗" },
+        "Runtime check done: {} {}",
+        if node_ok { "Node.js ✓," } else { "Node.js ✗," },
         if oclaw_ok { "openclaw ✓" } else { "openclaw ✗" },
     );
-    emit(&app, step, &summary, 0.22);
+    emit_keyed(&app, step, &summary, "setup.gateway.runtimeSummary", 0.22);
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
-    // ⓘ 阶段二：探测配置端口
-    emit(&app, step, "读取 ~/.openclaw/openclaw.json 中的 gateway 端口…", 0.32);
+    // ⓘ Stage 2: config port probing
+    emit_keyed(&app, step,
+        "Reading gateway port from ~/.openclaw/openclaw.json...",
+        "setup.gateway.readPort",
+        0.32,
+    );
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     let port = std::fs::read_to_string(paths::config_path())
@@ -789,41 +804,51 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         .and_then(|cfg| cfg.get("gateway")?.get("port")?.as_u64())
         .map(|v| v as u16)
         .unwrap_or(18789);
-    emit(&app, step,
-        &format!("目标端口 = {}（来源：openclaw.json，默认 18789）", port),
+    emit_keyed(&app, step,
+        &format!("Target port = {} (source: openclaw.json, default 18789)", port),
+        "setup.gateway.portResolved",
         0.42,
     );
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
-    // ⓘ 阶段三：探测现有 Gateway 进程
-    emit(&app, step,
-        &format!("探测 127.0.0.1:{} 是否已有 Gateway 在监听...", port),
+    // ⓘ Stage 3: probe existing Gateway process
+    emit_keyed(&app, step,
+        &format!("Probing 127.0.0.1:{} for existing Gateway listener...", port),
+        "setup.gateway.probe",
         0.52,
     );
 
     let reachable = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok();
     if reachable {
-        emit(&app, step,
-            &format!("端口 {} 已被占用，假定 Gateway 正在运行，跳过启动", port),
+        emit_keyed(&app, step,
+            &format!("Port {} already in use - assuming Gateway is running, skipping start", port),
+            "setup.gateway.alreadyUp",
             0.92,
         );
     } else {
-        emit(&app, step,
-            "未检测到正在运行的 Gateway，将由前端启动器接管启动流程",
+        emit_keyed(&app, step,
+            "No Gateway detected - the frontend launcher will start it",
+            "setup.gateway.willStart",
             0.62,
         );
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
-        emit(&app, step, "同步运行时状态（AGENTS / SESSIONS / HEALTH）…", 0.78);
+        emit_keyed(&app, step,
+            "Syncing runtime state (AGENTS / SESSIONS / HEALTH)...",
+            "setup.gateway.syncState",
+            0.78,
+        );
     }
 
-    // ⓘ 阶段四：完成
-    emit(&app, step,
-        "检测、连接并同步运行时状态…",
+    // ⓘ Stage 4: settle
+    emit_keyed(&app, step,
+        "Detecting, connecting, and syncing runtime state...",
+        "setup.gateway.detectConnectSync",
         0.92,
     );
-    emit(&app, step,
-        "Gateway 准备就绪 ✓",
+    emit_keyed(&app, step,
+        "Gateway is ready ✓",
+        "setup.gateway.ready",
         1.0,
     );
 
