@@ -32,6 +32,9 @@ interface PetSettings {
   customAsset: string | null;
   pomodoro: PomodoroState;
   petVisible: boolean;
+  /** Bumped on every file-drop event so the pet window reruns the
+   *  swallow animation each time the user drops something new. */
+  swallowTick: number;
 
   setPetVisible: (v: boolean) => void;
   setEnabled: (v: boolean) => void;
@@ -40,6 +43,7 @@ interface PetSettings {
   setSkin: (v: PetSkin) => void;
   setCustomAsset: (v: string | null) => void;
   setPomodoro: (p: Partial<PomodoroState>) => void;
+  bumpSwallowTick: () => void;
 }
 
 export const usePetStore = create<PetSettings>()(
@@ -66,6 +70,7 @@ export const usePetStore = create<PetSettings>()(
         completedDate: '',
       },
       petVisible: true,
+      swallowTick: 0,
       setEnabled: (enabled) => set({ enabled }),
       setPosition: (position) => set({ position }),
       setClickThrough: (clickThrough) => set({ clickThrough }),
@@ -73,6 +78,7 @@ export const usePetStore = create<PetSettings>()(
       setCustomAsset: (customAsset) => set({ customAsset }),
       setPomodoro: (p) => set((s) => ({ pomodoro: { ...s.pomodoro, ...p } })),
       setPetVisible: (petVisible: boolean) => set({ petVisible }),
+      bumpSwallowTick: () => set((s) => ({ swallowTick: s.swallowTick + 1 })),
     }),
     {
       name: 'aegis-pet-settings',

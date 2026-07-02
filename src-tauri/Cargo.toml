@@ -12,7 +12,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 open = "5"
-tauri = { version = "2", features = ["tray-icon", "devtools", "macos-private-api"] }
+tauri = { version = "2", features = ["tray-icon", "devtools", "macos-private-api", "image-png", "image-ico"] }
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

@@ -42,4 +42,7 @@ export const EMOTION_CFG: Record<PetEmotion, EmotionCfg> = {
   sleepy: { mouth: 'M54,90 Q60,93 66,90', eyeOpen: 0.35, pupilDx: 0, bodyY: 2, bodyScale: 1, bodyRotate: 2, cheeks: false, effect: 'none', breath: 0.5 },
   sleep: { mouth: 'M54,90 L66,90', eyeOpen: 0.06, pupilDx: 0, bodyY: 3, bodyScale: 0.99, bodyRotate: 3, cheeks: false, effect: 'sleep', breath: 0.4 },
   memory: { mouth: 'M54,90 Q60,88 66,90', eyeOpen: 1, pupilDx: -1.2, bodyY: 0, bodyScale: 1, bodyRotate: 0, cheeks: false, effect: 'book', breath: 0.8 },
+  // Swallow — wide-open circle mouth (about to gulp), raised body (lunging forward).
+  // Frontend animation drives the 4-step transition: open mouth → chew (3 squashed mouth shapes) → settle to idle.
+  swallow: { mouth: 'M48,86 Q60,102 72,86 Q60,76 48,86', eyeOpen: 0.45, pupilDx: 0, bodyY: -4, bodyScale: 1.06, bodyRotate: 0, cheeks: true, effect: 'spark', breath: 1.8 },
 };

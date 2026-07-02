@@ -44,6 +44,7 @@ export function usePetStateEmitter() {
       activeStartedAt: number;
       prevPomoDoneTs: number;
       lastPomoDoneKind: CelebrateKind;
+      lastSwallowTs: number;
     } = {
       lastReplyTs: 0,
       lastTaskDoneTs: 0,
@@ -52,10 +53,12 @@ export function usePetStateEmitter() {
       activeStartedAt: 0,
       prevPomoDoneTs: 0,
       lastPomoDoneKind: 'pomodoroWork',
+      lastSwallowTs: 0,
     };
     let prevTyping = Object.values(useChatStore.getState().typingBySession).some(Boolean);
     let prevDone = useWorkshopStore.getState().tasks.filter((t) => t.status === 'done').length;
     let prevActive = false;
+    let prevSwallowTick = usePetStore.getState().swallowTick;
 
     const tick = () => {
       const now = Date.now();
@@ -117,6 +120,16 @@ export function usePetStateEmitter() {
       if (!typing && prevTyping) mem.lastReplyTs = now;
       if (isActive) mem.lastActivityTs = now;
 
+      // Edge: user dropped a file onto the pet/main → bump swallow timestamp.
+      // Driven by the petStore's swallowTick counter (set from App.tsx after
+      // open_quickchat_with_files resolves), so the swallow is observable
+      // synchronously with the QuickChat window appearing.
+      const swallowTick = usePetStore.getState().swallowTick;
+      if (swallowTick !== prevSwallowTick) {
+        mem.lastSwallowTs = now;
+        prevSwallowTick = swallowTick;
+      }
+
       const done = ws.tasks.filter((t) => t.status === 'done').length;
       if (done > prevDone) mem.lastTaskDoneTs = now;
 
@@ -158,6 +171,8 @@ export function usePetStateEmitter() {
         lastCompactionTs: mem.lastCompactionTs,
         pomodoroDoneTs: pomodoro.lastDoneTs,
         pomodoroDoneKind: mem.lastPomoDoneKind,
+        lastSwallowTs: mem.lastSwallowTs,
+        swallowTick: swallowTick,
         lastActivityTs: mem.lastActivityTs,
         now,
         progress: cs.tokenUsage?.percentage ?? 0,

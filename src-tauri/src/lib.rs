@@ -99,6 +99,10 @@ pub fn run() {
             commands::pet::open_pet_window,
             commands::pet::close_pet_window,
             commands::pet::toggle_pet_window,
+            // QuickChat — single-session window spawned from a dropped file
+            commands::quickchat::open_quickchat_with_files,
+            commands::quickchat::close_quickchat,
+            commands::quickchat::get_quickchat_visible,
             commands::pet::set_pet_click_through,
             commands::pet::set_pet_position,
             commands::pet::get_pet_position,
@@ -208,6 +212,21 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                // Force every window's icon to our bundled junqi icon at runtime.
+                // This is essential for `cargo run` / `tauri dev` because the
+                // binary has no .app bundle and the parent process (Xcode,
+                // Terminal, etc.) leaks its own much-larger icon into the Dock.
+                // Compiled into the binary so it works regardless of cwd.
+                const ICON_BYTES: &[u8] = include_bytes!("../icons/128x128.png");
+                let windows: Vec<_> = app.webview_windows().into_iter().collect();
+                for (_, win) in windows {
+                    // Decode once per window (~6KB input, ~1ms) — simpler than
+                    // sharing an Image<'static> across set_icon calls since
+                    // to_owned() consumes self each time.
+                    if let Ok(img) = tauri::image::Image::from_bytes(ICON_BYTES) {
+                        let _ = win.set_icon(img);
+                    }
+                }
             }
             // macOS: apply native vibrancy so the frosted/transparent CSS layers
             // (Context bar, input area, message regions) bleed the desktop material
@@ -223,6 +242,40 @@ pub fn run() {
                         None,
                     );
                 }
+            }
+            // ── Window-level drag-drop bridge ────────────────────────────────
+            // Routes OS-level drag-drop events from any webview window to the
+            // frontend as a single `aegis:file-dropped` event with the paths.
+            // The frontend pet window + quickchat logic decide what to do.
+            let app_for_dd = app.handle().clone();
+            if let Some(main_win) = app.get_webview_window("main") {
+                main_win.on_window_event(move |event| {
+                    use tauri::WindowEvent;
+                    if let WindowEvent::DragDrop(dd) = event {
+                        match dd {
+                            tauri::DragDropEvent::Enter { paths, .. } => {
+                                let strs: Vec<String> = paths
+                                    .iter()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .collect();
+                                let _ = app_for_dd.emit("aegis:drag-active", &strs);
+                            }
+                            tauri::DragDropEvent::Leave => {
+                                let _ = app_for_dd.emit("aegis:drag-inactive", ());
+                            }
+                            tauri::DragDropEvent::Over { .. } => { /* preview only */ }
+                            tauri::DragDropEvent::Drop { paths, .. } => {
+                                let strs: Vec<String> = paths
+                                    .iter()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .collect();
+                                let _ = app_for_dd.emit("aegis:file-dropped", strs);
+                                let _ = app_for_dd.emit("aegis:drag-inactive", ());
+                            }
+                            _ => {}
+                        }
+                    }
+                });
             }
             // First launch only: size the window to ~80% of the primary monitor and
             // center it. On later launches the window-state plugin restores the user's

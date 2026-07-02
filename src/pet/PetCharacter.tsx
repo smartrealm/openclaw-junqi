@@ -106,6 +106,40 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
           transition={{ duration: 0.7, ease: 'easeOut' }}
         />
       )}
+      {/* Swallow aura — 4 expanding rings + 6 sparkle dots to convey
+          "just ate something". Rendered only while the swallow emotion is
+          active (~1.8s) so it's a snappy visual cue, not a decoration. */}
+      {emotion === 'swallow' && (
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          <svg width="96" height="110" viewBox="0 0 120 140" style={{ overflow: 'visible' }}>
+            <motion.circle cx={60} cy={70} r={20}
+              fill="none" stroke="rgba(78,201,176,0.6)" strokeWidth={2}
+              initial={{ scale: 0.4, opacity: 0.9 }}
+              animate={{ scale: [0.4, 1.6, 2.4], opacity: [0.9, 0.4, 0] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut', delay: 0 }}
+            />
+            <motion.circle cx={60} cy={70} r={20}
+              fill="none" stroke="rgba(78,201,176,0.5)" strokeWidth={1.5}
+              initial={{ scale: 0.4, opacity: 0.8 }}
+              animate={{ scale: [0.4, 1.6, 2.4], opacity: [0.8, 0.3, 0] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut', delay: 0.35 }}
+            />
+            {[0, 1, 2, 3, 4, 5].map((i) => {
+              const angle = (i / 6) * Math.PI * 2;
+              const x = 60 + Math.cos(angle) * 32;
+              const y = 70 + Math.sin(angle) * 32;
+              return (
+                <motion.circle key={i} cx={x} cy={y} r={2.5}
+                  fill="rgba(255,255,255,0.9)"
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: [0, 1, 0], opacity: [0, 1, 0] }}
+                  transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15, ease: 'easeOut' }}
+                />
+              );
+            })}
+          </svg>
+        </div>
+      )}
       <svg width="96" height="110" viewBox="0 0 120 140" style={{ overflow: 'visible' }}>
         {/* ground shadow */}
         <motion.ellipse cx={60} cy={128} rx={30} ry={6} fill="#000" opacity={0.18} style={BOX}

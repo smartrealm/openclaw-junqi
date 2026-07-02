@@ -20,6 +20,7 @@ pub mod pairing;
 pub mod pet;
 pub mod project_config;
 pub mod pty_neu;
+pub mod quickchat;
 pub mod screenshot;
 pub mod session_analytics;
 pub mod provider_oauth;

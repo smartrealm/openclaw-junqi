@@ -19,6 +19,7 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
   sleepy: '犯困',
   sleep: '休息中',
   memory: '整理记忆',
+  swallow: '嚼嚼嚼…',
 };
 
 /** Per-emotion accent color — recomputed on every render so the themeHex()
@@ -38,6 +39,7 @@ function useEmotionColor(): Record<PetEmotion, string> {
     sleepy: 'rgb(var(--aegis-text-dim))',
     sleep: 'rgb(var(--aegis-text-muted))',
     memory: themeHex('warning'),
+    swallow: themeHex('primary'),
   };
 }
 
@@ -144,6 +146,13 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   if (dragging) {
     bubbleKey = 'dragging';
     body = <span style={{ fontWeight: 600 }}>{t('pet.hint.moving', '移动中…')}</span>;
+  } else if (e === 'swallow') {
+    bubbleKey = 'swallow';
+    body = (
+      <span style={{ fontWeight: 700, color: emotionColor[e], fontSize: 12.5 }}>
+        {t('pet.status.swallow', '嚼嚼嚼…')}
+      </span>
+    );
   } else if (e === 'error') {
     bubbleKey = 'error';
     body = <span style={{ fontWeight: 700, color: emotionColor[e] }}>{label}</span>;

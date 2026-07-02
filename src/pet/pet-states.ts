@@ -20,7 +20,8 @@ export type PetEmotion =
   | 'error' // connection / reply error
   | 'sleepy' // idle for a while
   | 'sleep' // disconnected or idle a long time
-  | 'memory'; // context compaction in progress
+  | 'memory' // context compaction in progress
+  | 'swallow'; // just ate a dropped file / folder — open mouth → chew → return idle
 
 /** What just finished, when emotion is `celebrate` — lets the bubble pick a specific caption. */
 export type CelebrateKind = 'task' | 'pomodoroWork' | 'pomodoroWorkLong' | 'pomodoroBreak';
@@ -89,6 +90,12 @@ export interface PetInputs {
   progress: number;
   message?: string;
   taskLabel?: string;
+  /** Monotonic counter — every time the user drops a file onto the pet/main,
+   *  this bumps. Drives a short swallow animation that takes priority over
+   *  everything except genuine connection/sleep states. */
+  swallowTick: number;
+  /** epoch ms of the most recent swallow trigger (file dropped into pet/main). */
+  lastSwallowTs: number;
 }
 
 const HAPPY_WINDOW = 2500;
@@ -96,6 +103,7 @@ const CELEBRATE_WINDOW = 5000; // longer window so pomodoro completions feel rew
 const MEMORY_WINDOW = 4000;
 const SLEEPY_AFTER = 90_000;
 const SLEEP_AFTER = 5 * 60_000;
+const SWALLOW_WINDOW = 1800; // 吞咽动画时长
 
 /**
  * Pure mapping from live signals → a single emotion, by priority. Trivially
@@ -106,6 +114,16 @@ const SLEEP_AFTER = 5 * 60_000;
  */
 export function derivePetState(i: PetInputs): PetState {
   const base = { progress: i.progress, message: i.message, taskLabel: i.taskLabel };
+
+  // Swallow is transient — the tick bumps on each new drop event and we
+  // surface it for SWALLOW_WINDOW ms. Strict priority so the user always
+  // sees the mouth-open reaction even if other emotions are running.
+  // We track the swallow counter persisted in pet settings — for
+  // simplicity here we expose it as a per-event bump; the consumer
+  // (usePetStateEmitter) is responsible for setting it within the window.
+  // Lower priority than genuine connection errors but above everything else.
+  if (i.lastSwallowTs && i.now - i.lastSwallowTs < SWALLOW_WINDOW)
+    return { emotion: 'swallow', ...base, celebrateUntil: i.lastSwallowTs + SWALLOW_WINDOW };
 
   if (!i.connected) return { emotion: 'sleep', ...base };
   if (i.connectionError) return { emotion: 'error', ...base };

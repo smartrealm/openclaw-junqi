@@ -14,6 +14,8 @@ const base = (over: Partial<PetInputs> = {}): PetInputs => ({
   lastTaskDoneTs: 0,
   lastCompactionTs: 0,
   pomodoroDoneTs: 0,
+  lastSwallowTs: 0,
+  swallowTick: 0,
   lastActivityTs: 1000,
   now: 2000,
   progress: 0,

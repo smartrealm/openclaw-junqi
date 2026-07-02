@@ -1,6 +1,8 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { HashRouter, Routes, Route } from 'react-router-dom';
+import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/components/Layout/AppLayout';
 import { GlobalAlertDialog } from '@/components/shared/AlertDialog';
@@ -16,6 +18,7 @@ import { useTheme } from '@/theme';
 // Lazy-loaded pages
 const DashboardPage = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.DashboardPage })));
 const ChatPage = lazy(() => import('@/pages/ChatPage').then(m => ({ default: m.ChatPage })));
+const QuickChatPage = lazy(() => import('@/pages/QuickChatPage').then(m => ({ default: m.QuickChatPage })));
 const WorkshopPage = lazy(() => import('@/pages/Workshop').then(m => ({ default: m.WorkshopPage })));
 const FullAnalyticsPage = lazy(() => import('@/pages/FullAnalytics').then(m => ({ default: m.FullAnalyticsPage })));
 const CronMonitorPage = lazy(() => import('@/pages/CronMonitor').then(m => ({ default: m.CronMonitorPage })));
@@ -44,6 +47,7 @@ const GitPage = lazy(() => import('@/pages/GitPage'));
 const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
 import { FeatureRoute } from '@/components/FeatureRoute';
 import { useChatStore, primeSessionLabelCache } from '@/stores/chatStore';
+import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
@@ -127,6 +131,49 @@ export default function App() {
   // setSessions merge re-reads the cache on every call.
   useEffect(() => {
     void primeSessionLabelCache();
+  }, []);
+
+  // ── Global drag-drop bridge ────────────────────────────────────────────
+  // Rust forwards OS drag-drop events from any webview as `aegis:file-dropped`.
+  // We spawn a compact QuickChatWindow seeded with those paths, then ping
+  // the pet so it plays the "swallow" emotion — closes the loop on the
+  // "drop file → pet eats it → standalone chat opens" interaction.
+  const [draggingOver, setDraggingOver] = useState(false);
+  const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
+  useEffect(() => {
+    const unlistenDrop: { current: null | (() => void) } = { current: null };
+    const unlistenEnter: { current: null | (() => void) } = { current: null };
+    const unlistenLeave: { current: null | (() => void) } = { current: null };
+    (async () => {
+      unlistenDrop.current = await listen<string[]>('aegis:file-dropped', async (e) => {
+        const paths = e.payload ?? [];
+        if (paths.length === 0) return;
+        try {
+          await invoke('open_quickchat_with_files', { paths });
+        } catch (err) {
+          console.warn('[drag-drop] failed to spawn QuickChat:', err);
+        }
+        // Tell the pet to do its swallow animation. UI-side broadcast.
+        window.dispatchEvent(new CustomEvent('aegis:pet-swallow', {
+          detail: { count: paths.length },
+        }));
+        usePetStore.getState().bumpSwallowTick();
+        setDraggingOver(false);
+      });
+      unlistenEnter.current = await listen<string[]>('aegis:drag-active', (e) => {
+        setDraggingOver(true);
+        setDraggedPaths(e.payload ?? []);
+      });
+      unlistenLeave.current = await listen('aegis:drag-inactive', () => {
+        setDraggingOver(false);
+        setDraggedPaths([]);
+      });
+    })();
+    return () => {
+      unlistenDrop.current?.();
+      unlistenEnter.current?.();
+      unlistenLeave.current?.();
+    };
   }, []);
   const {
     addMessage,
@@ -802,6 +849,40 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* File-drop overlay — soft tinted scrim + label + file preview chips.
+          Active whenever Rust reports `aegis:drag-active` (OS-level drag
+          entering the window). Pure visual cue; the actual spawn happens on
+          drop. pointer-events-none so the overlay never intercepts the drop. */}
+      {draggingOver && (
+        <div
+          className="fixed inset-0 z-[9998] pointer-events-none flex items-center justify-center"
+          style={{ animation: 'fadeIn 120ms ease-out' }}
+        >
+          <div className="absolute inset-3 rounded-2xl border-2 border-dashed border-aegis-primary/60
+                          bg-aegis-primary/[0.06] backdrop-blur-sm" />
+          <div className="relative flex flex-col items-center gap-2 px-6 py-4 rounded-xl bg-black/40 border border-aegis-primary/30">
+            <div className="text-aegis-primary text-[14px] font-semibold tracking-wide">
+              拖入到 JunQi Quick Chat
+            </div>
+            <div className="text-aegis-text-dim text-[11px]">
+              {draggedPaths.length} 项，松开会单独打开会话
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-w-[420px] mt-1 justify-center">
+              {draggedPaths.slice(0, 6).map((p, i) => (
+                <span key={i} className="px-2 py-0.5 rounded bg-white/10 border border-white/10 text-[10.5px] truncate max-w-[180px]">
+                  {p.split('/').pop() || p}
+                </span>
+              ))}
+              {draggedPaths.length > 6 && (
+                <span className="px-2 py-0.5 rounded bg-white/10 border border-white/10 text-[10.5px]">
+                  +{draggedPaths.length - 6}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
       {needsPairing && !gatewayBootError && (
         <PairingScreen
@@ -821,6 +902,11 @@ export default function App() {
               <Route element={<AppLayout />}>
                 <Route path="/" element={<FeatureRoute feature="dashboard"><DashboardPage /></FeatureRoute>} />
                 <Route path="/chat" element={<FeatureRoute feature="chat"><ChatPage /></FeatureRoute>} />
+                {/* /quickchat is the compact 1-session window spawned when the user
+                    drops a file onto the main window or pet. Independent route so
+                    it can be hosted in its own WebviewWindow with no NavSidebar,
+                    no workbench — just the focused chat surface. */}
+                <Route path="/quickchat" element={<QuickChatPage />} />
                 <Route path="/workshop" element={<FeatureRoute feature="workshop"><WorkshopPage /></FeatureRoute>} />
                 <Route path="/analytics" element={<FeatureRoute feature="analytics"><FullAnalyticsPage /></FeatureRoute>} />
                 <Route path="/cron" element={<FeatureRoute feature="cron"><CronMonitorPage /></FeatureRoute>} />
