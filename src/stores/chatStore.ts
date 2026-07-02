@@ -907,8 +907,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const hasCachedMessages = Object.prototype.hasOwnProperty.call(messagesPerSession, session.key);
       const cachedMessages = hasCachedMessages ? messagesPerSession[session.key] ?? [] : [];
       const hydratedTopic = previous?.topic ?? getSessionTopicPref(session.key);
+      // The server's session object is the source of truth for most
+      // fields, but we must NOT clobber user-driven state: a label the
+      // user just set, a pin flag, or an archive flag. We preserve any
+      // previous local override that differs from the server's default.
+      // (The server's `label` for new sessions is just the key-derived
+      // string, so the FIRST poll after rename will bring back the
+      // old default if we don't keep the previous value.)
       const merged: Session = {
         ...session,
+        // Preserve user-rename: if the user has a non-empty label that
+        // differs from the server-default, keep ours.
+        label:
+          previous?.label && previous.label !== "" && previous.label !== session.label
+            ? previous.label
+            : session.label,
+        // Preserve pin/archive flags (purely local UI state).
+        pinned: previous?.pinned ?? session.pinned,
+        archived: previous?.archived ?? session.archived,
         topic: hasCachedMessages
           ? resolveAndPersistSessionTopic(session.key, hydratedTopic, cachedMessages, session.lastMessage)
           : resolveAndPersistSessionTopic(session.key, hydratedTopic, [], session.lastMessage),
