@@ -2028,6 +2028,8 @@
   "sidebar.nav.models": "模型",
   "sidebar.nav.channels": "通道",
   "sidebar.nav.cron": "定时任务",
+  "sidebar.activeSessions": "活跃会话",
+  "sidebar.pinnedSessions": "置顶会话",
   "sidebar.newAgent": "新建智能体",
   "sidebar.addModel": "添加模型",
   "sidebar.addChannel": "添加通道",

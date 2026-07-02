@@ -1990,6 +1990,8 @@
   "sidebar.nav.models": "Models",
   "sidebar.nav.channels": "Channels",
   "sidebar.nav.cron": "Scheduled tasks",
+  "sidebar.activeSessions": "Active sessions",
+  "sidebar.pinnedSessions": "Pinned sessions",
   "sidebar.newAgent": "New agent",
   "sidebar.addModel": "Add model",
   "sidebar.addChannel": "Add channel",

@@ -1499,6 +1499,8 @@
   "sidebar.nav.models": "النماذج",
   "sidebar.nav.channels": "القنوات",
   "sidebar.nav.cron": "المهام المجدولة",
+  "sidebar.activeSessions": "جلسات نشطة",
+  "sidebar.pinnedSessions": "جلسات مثبتة",
   "sidebar.newAgent": "وكيل جديد",
   "sidebar.addModel": "إضافة نموذج",
   "sidebar.addChannel": "إضافة قناة",

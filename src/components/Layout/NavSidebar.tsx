@@ -282,11 +282,17 @@ function WorkbenchPanel() {
     return out;
   }, [messagesPerSession]);
 
-  // All visible sessions, in partition order (pinned → active → recent).
-  // We feed the full list to groupSessionsByAgent — each group internally
-  // keeps the partition order so pinned sessions still surface first
-  // within their agent.
-  const visibleSessions = [...pinned, ...active, ...recent];
+  // Pinned + active sessions are surfaced in their own dedicated sections
+  // at the top of the sidebar (so the user has quick access without
+  // expanding any agent). The per-agent groups below show the REMAINING
+  // sessions (recent, non-pinned) so the same session never appears
+  // twice. We dedupe by key against the pinned + active keysets.
+  const pinnedKeys = new Set(pinned.map((s) => s.key));
+  const activeKeys = new Set(active.map((s) => s.key));
+  const recentOnly = recent.filter(
+    (s) => !pinnedKeys.has(s.key) && !activeKeys.has(s.key),
+  );
+  const visibleSessions = [...pinned, ...active, ...recentOnly];
   const groups = useMemo(() => groupSessionsByAgent(visibleSessions), [visibleSessions]);
 
   // Accordion: when the active session changes, auto-expand its group and
@@ -343,15 +349,15 @@ function WorkbenchPanel() {
         </button>
       </div>
 
-      {/* Four flat navigation rows — no leading icon, no 新增/添加 prefix.
-          Just the noun, period, click target. This row is the *primary*
-          dashboard entry point for the corresponding settings page. */}
-      <div className="px-4 mb-4 flex flex-col gap-1.5">
+      {/* Four flat navigation rows with leading icon.
+          Left-aligned, no + / 新增 / 添加 prefix on the labels — just
+          the noun and the icon. Active route gets primary tint. */}
+      <div className="px-4 mb-4 flex flex-col gap-1">
         {[
-          { key: 'agents',  to: '/agents',                  label: t('sidebar.nav.agents',  '智能体') },
-          { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型') },
-          { key: 'channels', to: '/config?tab=channels',   label: t('sidebar.nav.channels', '通道') },
-          { key: 'cron',    to: '/cron?new=1',              label: t('sidebar.nav.cron',    '定时任务') },
+          { key: 'agents',  to: '/agents',                  label: t('sidebar.nav.agents',  '智能体'),   icon: <Bot size={14} /> },
+          { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型'),     icon: <Cpu size={14} /> },
+          { key: 'channels', to: '/config?tab=channels',   label: t('sidebar.nav.channels', '通道'),     icon: <MessageSquare size={14} /> },
+          { key: 'cron',    to: '/cron?new=1',              label: t('sidebar.nav.cron',    '定时任务'), icon: <Clock size={14} /> },
         ].map((it) => {
           const active = location.pathname === it.to.split('?')[0] && (
             (it.to.includes('tab=providers') && location.search.includes('tab=providers')) ||
@@ -365,13 +371,16 @@ function WorkbenchPanel() {
               type="button"
               onClick={() => navigate(it.to)}
               className={clsx(
-                'h-7 px-2 -mx-2 rounded text-[12.5px] text-left transition-colors',
+                'h-8 px-2 -mx-2 rounded-md text-[12.5px] text-left flex items-center gap-2.5 transition-colors',
                 active
                   ? 'text-aegis-primary bg-aegis-primary/[0.08] font-semibold'
                   : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-aegis-hover/30',
               )}
             >
-              {it.label}
+              <span className={clsx('shrink-0', active ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
+                {it.icon}
+              </span>
+              <span className="flex-1">{it.label}</span>
             </button>
           );
         })}
@@ -381,6 +390,32 @@ function WorkbenchPanel() {
         {groups.length === 0 && (
           <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
+
+        {/* ── Active + Pinned sections (always visible at top) ──
+            These are the canonical "what's running now / what I saved" lists.
+            Independent of the per-agent accordion below. */}
+        {active.length > 0 && (
+          <div className="mb-3">
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-aegis-text-dim/80 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-aegis-success animate-pulse" />
+              {t('sidebar.activeSessions', '活跃会话')}
+              <span className="text-aegis-text-dim/50 font-mono normal-case">{active.length}</span>
+            </div>
+            {active.map(renderRow)}
+          </div>
+        )}
+        {pinned.length > 0 && (
+          <div className="mb-3">
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-aegis-text-dim/80 flex items-center gap-1.5">
+              <Pin size={10} className="opacity-70" />
+              {t('sidebar.pinnedSessions', '置顶会话')}
+              <span className="text-aegis-text-dim/50 font-mono normal-case">{pinned.length}</span>
+            </div>
+            {pinned.map(renderRow)}
+          </div>
+        )}
+
+        {/* ── Per-agent groups (折叠式) ── */}
         {groups.map((g: AgentGroup) => {
           const isOpen = openGroupId === g.agentId;
           return (
