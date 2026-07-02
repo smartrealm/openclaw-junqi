@@ -327,35 +327,20 @@ function WorkbenchPanel() {
     //  without first opening a chevron.)
   }, [/* no listeners needed without the dropdown */ 0]);
 
-  const createItems: Array<{ key: string; icon: React.ReactNode; label: string; to: string; primary?: boolean }> = [
-    { key: 'chat',    icon: <Plus size={13} />,           label: t('sidebar.newChat', '新建对话'),     to: '/chat',          primary: true },
-    { key: 'agent',   icon: <Bot size={13} />,            label: t('sidebar.newAgent', '新建智能体'),   to: '/agents?new=1' },
-    { key: 'model',   icon: <Cpu size={13} />,            label: t('sidebar.addModel', '添加模型'),     to: '/config?tab=providers' },
-    { key: 'channel', icon: <MessageSquare size={13} />,   label: t('sidebar.addChannel', '添加通道'),   to: '/config?tab=channels' },
-    { key: 'cron',    icon: <Clock size={13} />,          label: t('sidebar.newCron', '新建定时任务'), to: '/cron?new=1' },
-  ];
-
   return (
     <>
-      <div className="px-3 mb-2 flex flex-col gap-1">
-        {createItems.map((it) => (
-          <button
-            key={it.key}
-            type="button"
-            onClick={() => navigate(it.to)}
-            className={clsx(
-              'flex items-center gap-2 h-8 px-3 rounded-md text-[12.5px] transition-all',
-              it.primary
-                ? 'bg-aegis-primary text-white font-semibold hover:opacity-90'
-                : 'bg-aegis-overlay/[0.04] border border-aegis-border/40 text-aegis-text-secondary hover:bg-aegis-hover/40 hover:text-aegis-text hover:border-aegis-border',
-            )}
-          >
-            <span className={clsx('shrink-0', it.primary ? '' : 'text-aegis-text-dim')}>
-              {it.icon}
-            </span>
-            <span className="flex-1 text-left truncate">{it.label}</span>
-          </button>
-        ))}
+      {/* Single primary "新建对话" button — bigger, centered.
+          Agent / model / channel / cron creation lives behind the Agents
+          panel quick-create rows in the gear icon menu. */}
+      <div className="px-4 mb-3 mt-1">
+        <button
+          type="button"
+          onClick={() => navigate('/chat')}
+          className="w-full h-11 bg-aegis-primary text-white rounded-xl font-semibold text-[14px] flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all shadow-sm shadow-aegis-primary/20"
+        >
+          <Plus size={16} />
+          <span>{t('sidebar.newChat', '新建对话')}</span>
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
         {groups.length === 0 && (
@@ -377,7 +362,30 @@ function WorkbenchPanel() {
                 <span className="flex-1 text-left truncate">{g.label}</span>
                 <span className="text-[9.5px] text-aegis-text-dim/70 font-mono">{g.sessions.length}</span>
               </button>
-              {isOpen && g.sessions.map(renderRow)}
+              {isOpen && (
+                <>
+                  {/* Per-agent "+ 新建会话" — every agent can grow its
+                      own conversation list without dipping into settings.
+                      Skipped on the synthetic "默认 / 其他" bucket since
+                      those have no real agent to scope to. */}
+                  {g.agentId !== 'main' && g.agentId !== '__ungrouped__' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Create a fresh session scoped to this specific
+                        // agent. (Tauri/ChatPage reads the querystring on
+                        // mount to seed a new session instead of restoring.)
+                        navigate(`/chat?agent=${encodeURIComponent(g.agentId)}&new=1`);
+                      }}
+                      className="w-full mx-3 my-1 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10.5px] text-aegis-text-dim hover:text-aegis-primary hover:bg-aegis-primary/[0.08] transition-colors border border-dashed border-aegis-border/40 hover:border-aegis-primary/40"
+                    >
+                      <Plus size={10} />
+                      {t('sidebar.newSession', '新建会话')}
+                    </button>
+                  )}
+                  {g.sessions.map(renderRow)}
+                </>
+              )}
             </div>
           );
         })}

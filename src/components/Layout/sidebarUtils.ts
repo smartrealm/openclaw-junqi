@@ -77,15 +77,14 @@ export function partitionSessions(
 }
 
 export function sessionTitle(sx: Session, firstUserMessage?: string): string {
-  // 1. User-set label wins. Display the explicit user-chosen name even
-  //    on the main session and even if it matches the legacy "Main Session"
-  //    placeholder.
+  // 1. User-set label wins ONLY for explicit renames — we treat the
+  //    gateway-default placeholder ("Main Session", "新会话", "Default
+  //    Session", etc.) as if the user never set a title, so the first
+  //    real user message becomes the natural label once sent.
   if (sx.label && sx.label.trim().length > 0) {
-    if (sx.label !== 'Main Session') return sx.label;
-    // Even when the label literally equals "Main Session", if the user
-    // typed it themselves (the openclaw-side default for new sessions),
-    // respect it. Only fall through to key-based labels if the label
-    // is missing or empty.
+    const trimmed = sx.label.trim();
+    const isGatewayPlaceholder = /^(main session|新会话|default session|untitled)$/i.test(trimmed);
+    if (!isGatewayPlaceholder) return trimmed;
   }
   // 2. First user message — the most direct preview of what this session is
   //    about. Capped at 30 chars with ellipsis to keep sidebar rows uniform.

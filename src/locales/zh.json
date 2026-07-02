@@ -2023,6 +2023,7 @@
   "sidebar.showArchived": "显示已归档 ({{count}})",
   "sidebar.hideArchived": "隐藏已归档 ({{count}})",
   "sidebar.newChat": "新建对话",
+  "sidebar.newSession": "+ 新建会话",
   "sidebar.newAgent": "新建智能体",
   "sidebar.addModel": "添加模型",
   "sidebar.addChannel": "添加通道",

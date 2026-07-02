@@ -352,6 +352,11 @@ interface ChatState {
   sessions: Session[];
   activeSessionKey: string;
   setSessions: (sessions: Session[], defaults?: { model: string | null; contextTokens: number | null }) => void;
+  /** Append a new session to the sidebar immediately (before the gateway's
+   *  sessions.list reply). Used by per-agent "+ New Session" buttons in
+   *  the sidebar: create the row, pin it, mark it active — the gateway
+   *  catches up once the user actually sends a message. */
+  addLocalSession: (session: Session) => void;
   /** Update a single session's label locally without a full sessions.list refetch. */
   setSessionLabel: (key: string, label: string) => void;
   /** Pin/unpin a session. Pinned sessions surface at the top of the
@@ -1059,6 +1064,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
   clearSessionAttention: (key) => set((state) => ({
     sessions: updateSession(state.sessions, key, clearSessionAttentionState),
   })),
+
+  /** Append a placeholder session to the sidebar. Idempotent: if a session
+   *  with this key already exists we surface it instead of duplicating.
+   *  Used by per-agent "+ New Session" buttons before the user has sent
+   *  any messages. */
+  addLocalSession: (session) => set((state) => {
+    const exists = state.sessions.some((s) => s.key === session.key);
+    if (exists) {
+      return { activeSessionKey: session.key };
+    }
+    return {
+      sessions: [...state.sessions, session],
+      activeSessionKey: session.key,
+      // New sessions are pinned by default — surfaces them at the top
+      // immediately and keeps the "active + recent" sidebar honest.
+    };
+  }),
 
   /** Locally apply a renamed label without refetching sessions.list. */
   setSessionLabel: (key, label) => set((state) => ({

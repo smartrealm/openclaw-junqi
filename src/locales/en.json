@@ -1985,6 +1985,7 @@
   "sidebar.showArchived": "Show archived ({{count}})",
   "sidebar.hideArchived": "Hide archived ({{count}})",
   "sidebar.newChat": "New chat",
+  "sidebar.newSession": "+ New session",
   "sidebar.newAgent": "New agent",
   "sidebar.addModel": "Add model",
   "sidebar.addChannel": "Add channel",

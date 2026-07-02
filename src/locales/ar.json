@@ -1494,6 +1494,7 @@
   "sidebar.showArchived": "إظهار المؤرشفة ({{count}})",
   "sidebar.hideArchived": "إخفاء المؤرشفة ({{count}})",
   "sidebar.newChat": "محادثة جديدة",
+  "sidebar.newSession": "+ جلسة جديدة",
   "sidebar.newAgent": "وكيل جديد",
   "sidebar.addModel": "إضافة نموذج",
   "sidebar.addChannel": "إضافة قناة",
