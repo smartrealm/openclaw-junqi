@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useEffect, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/app-store";
@@ -117,13 +118,16 @@ export function useSetupFlow(
   // ── setup-progress event listener (granular per-step progress from Rust) ──
   const stepsRef = useRef(steps);
   stepsRef.current = steps;
+  const { t } = useTranslation();
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    listen<{ step: string; message: string; progress: number | null; error: string | null }>(
+    listen<{ step: string; message: string; progress: number | null; error: string | null; key?: string }>(
       "setup-progress",
       (event) => {
-        const { step, message, progress: p, error } = event.payload;
-        setStatusMessage(message);
+        const { step, message, progress: p, error, key } = event.payload as any;
+        // Prefer i18n-resolved text; fall back to the raw Rust message.
+        const display = key && t(key as string) !== key ? (t(key as string) as string) : message;
+        setStatusMessage(display);
         if (p != null) setProgress(Math.round(p * 100));
         // Map Rust step names to our step IDs
         const stepMap: Record<string, string> = {
@@ -134,7 +138,7 @@ export function useSetupFlow(
         if (sid) {
           const newSteps = stepsRef.current.map((s) =>
             s.id === sid
-              ? { ...s, status: (error ? "error" : "running") as StepStatus, detail: message }
+              ? { ...s, status: (error ? "error" : "running") as StepStatus, detail: display }
               : s
           );
           setSteps(newSteps);
@@ -142,7 +146,7 @@ export function useSetupFlow(
       }
     ).then((fn) => { unlisten = fn; }).catch(() => {});
     return () => { unlisten?.(); };
-  }, []);
+  }, [t]);
 
   // ── Helpers ──
   function patchStep(id: string, status: StepStatus, detail?: string) {

@@ -316,21 +316,20 @@ export default function App() {
    * just synthesized in-process so non-install flows (manual reconnect,
    * boot recovery) still show granular progress text inline.
    */
-  const emitGatewayProgress = useCallback((message: string, progress: number) => {
+  const emitGatewayProgress = useCallback((message: string, progress: number, key?: string) => {
     window.dispatchEvent(new CustomEvent('aegis:gateway-progress', {
-      detail: { step: 'gateway', message, progress },
+      detail: { step: 'gateway', message, progress, key },
     }));
   }, []);
 
   const triggerGatewayReconnect = useCallback((label = 'manual') => {
     addBootRecoveryLog(`Reconnect requested (${label})`);
-    emitGatewayProgress('正在重新连接 OpenClaw Gateway…', 0.30);
+    emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.30, 'gateway.progress.reconnect');
     // Allow the auto-recovery effect to re-arm if the user clicks "reconnect"
-    // while the overlay is still showing. Without this reset, bootRecoveryStartedRef
     // stays true after the first recovery attempt and blocks all subsequent retries.
     bootRecoveryStartedRef.current = false;
     try { gateway.disconnect(); } catch {}
-    emitGatewayProgress('检测、连接并同步运行时状态…', 0.65);
+    emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.65, 'gateway.progress.detectConnectSync');
     // Use reconnect() instead of reset() — triggers an immediate status probe
     // so we don't wait up to 2s for the periodic poller to drive the FSM.
     try { gatewayManager.reconnect(); } catch {}
@@ -341,15 +340,15 @@ export default function App() {
     setBootRecoveryRestarting(true);
     setBootRecoveryReady(true);
     addBootRecoveryLog('Restarting Gateway service…');
-    emitGatewayProgress('正在重启 OpenClaw Gateway…', 0.15);
+    emitGatewayProgress('Restarting OpenClaw Gateway…', 0.15, 'gateway.progress.restart');
     try {
       const result = await window.aegis.gateway.retry();
       addBootRecoveryLog(result?.success === false ? `Gateway restart failed: ${result.error || 'unknown error'}` : 'Gateway restart command completed');
-      emitGatewayProgress('Gateway 服务重启完成，正在重新连接…', 0.60);
+      emitGatewayProgress('Gateway service restarted, reconnecting…', 0.60, 'gateway.progress.restartDone');
       triggerGatewayReconnect('after-restart');
     } catch (err) {
       addBootRecoveryLog(`Gateway restart exception: ${String(err)}`);
-      emitGatewayProgress(`重启失败：${String(err)}`, 1.0);
+      emitGatewayProgress(`Restart failed: ${String(err)}`, 1.0, 'gateway.progress.restartFailed');
     } finally {
       setBootRecoveryRestarting(false);
     }
@@ -689,17 +688,18 @@ export default function App() {
     // notifyWsClose() → DETECTING synchronously via the onStatusChange chain.
     const handleManualReconnect = () => {
       bootRecoveryStartedRef.current = false;
-      emitGatewayProgress('正在重启 OpenClaw Gateway…', 0.10);
+      emitGatewayProgress('Restarting OpenClaw Gateway…', 0.10, 'gateway.progress.restart');
       try { gateway.disconnect(); } catch {}
-      emitGatewayProgress('检测、连接并同步运行时状态…', 0.45);
+      emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
       void window.aegis?.gateway?.ensureRunning?.().then((r: any) => {
         addBootRecoveryLog(r?.healthy
           ? `Gateway healthy (${r.mode ?? 'native'}) — reconnecting`
           : `ensure_gateway_running returned unhealthy — restarting`);
         emitGatewayProgress(r?.healthy
-          ? `Gateway 健康（${r.mode ?? 'native'}），正在重新连接…`
-          : `ensure_gateway_running 状态异常，正在执行重启…`,
+          ? `Gateway healthy (${r.mode ?? 'native'}), reconnecting…`
+          : `ensure_gateway_running status abnormal, restarting…`,
           0.75,
+          r?.healthy ? 'gateway.progress.gatewayHealthy' : 'gateway.progress.ensureUnhealthy',
         );
         if (r?.healthy) {
           try { gatewayManager.reconnect(); } catch {}
@@ -707,7 +707,7 @@ export default function App() {
           void restartGatewayFromBoot();
         }
       }).catch(() => {
-        emitGatewayProgress('ensure_gateway_running 调用失败，正在执行重启…', 0.40);
+        emitGatewayProgress('ensure_gateway_running call failed, restarting…', 0.40, 'gateway.progress.ensureFailed');
         void restartGatewayFromBoot();
       });
     };
