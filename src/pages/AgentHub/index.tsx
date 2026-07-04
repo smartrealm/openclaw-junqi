@@ -860,12 +860,16 @@ export function AgentHubPage() {
                 )}
               </div>
 
-              {/* Section 2: Registered Agents */}
-              {registeredAgents.length > 0 && (
+              {/* Section 2: Registered Agents.
+                  Also render when the add-form is open (showAddForm) so the
+                  "新建智能体" / ?new=1 entry still works with ZERO agents yet —
+                  otherwise the form (nested here) would have no container and
+                  the click would appear to do nothing. */}
+              {(registeredAgents.length > 0 || showAddForm) && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold">
-                      {t('agents.registeredAgents', 'Registered Agents')}<span className="text-aegis-text-dim ms-2">— {registeredAgents.length}</span>
+                      {t('agents.registeredAgents', 'Registered Agents')}{registeredAgents.length > 0 && <span className="text-aegis-text-dim ms-2">— {registeredAgents.length}</span>}
                     </div>
                     <button onClick={() => setShowAddForm(!showAddForm)}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-aegis-primary/10 border border-aegis-primary/25 text-aegis-primary text-[10px] font-semibold hover:bg-aegis-primary/20 transition-colors">

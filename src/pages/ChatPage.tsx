@@ -2,12 +2,13 @@
 // ChatPage — Multi-session chat with tab bar
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect } from 'react';
-import { Paperclip, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Paperclip, X, PanelRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ChatTabs } from '@/components/Chat/ChatTabs';
 import { ChatView } from '@/components/Chat/ChatView';
 import { SessionContextBar } from '@/components/Chat/SessionContextBar';
+import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
 
 /** Stable empty reference for `draftAttachments[k] ?? ...`. Inline `?? []`
  *  would allocate a fresh array each render and trip React #185 when the
@@ -92,12 +93,38 @@ export function ChatPage() {
     return () => window.removeEventListener('aegis:files-dropped', onDropped);
   }, []);
 
+  // Agent workspace side panel — collapsible file tree + editor. Persisted so
+  // the user's choice survives navigation / restart.
+  const [showWorkspace, setShowWorkspace] = useState(() => {
+    try { return localStorage.getItem('aegis:chat-workspace') === '1'; } catch { return false; }
+  });
+  const toggleWorkspace = (v: boolean) => {
+    setShowWorkspace(v);
+    try { localStorage.setItem('aegis:chat-workspace', v ? '1' : '0'); } catch { /* ignore */ }
+  };
+
   return (
-    <div className="flex flex-col h-full">
-      <SessionContextBar />
-      <ChatTabs />
-      <AttachmentBar />
-      <ChatView />
+    <div className="flex h-full min-w-0">
+      <div className="flex flex-col h-full flex-1 min-w-0">
+        <SessionContextBar />
+        <ChatTabs />
+        <AttachmentBar />
+        <ChatView />
+      </div>
+      {showWorkspace ? (
+        <div className="h-full shrink-0 w-[340px] max-w-[45%]">
+          <WorkspacePanel onClose={() => toggleWorkspace(false)} />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => toggleWorkspace(true)}
+          title="打开智能体工作区"
+          className="shrink-0 w-7 h-full flex items-center justify-center border-s border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim hover:text-aegis-primary hover:bg-[rgb(var(--aegis-overlay)/0.05)] transition-colors"
+        >
+          <PanelRight size={15} />
+        </button>
+      )}
     </div>
   );
 }
