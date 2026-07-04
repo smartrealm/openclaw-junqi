@@ -176,14 +176,24 @@ pub async fn get_pet_position(app: AppHandle) -> Result<serde_json::Value, Strin
 /// can follow the payload anywhere on screen (incl. outside every app window).
 #[tauri::command]
 pub async fn get_cursor_position(app: AppHandle) -> Result<serde_json::Value, String> {
-    // Any live window can report the global cursor; prefer the pet's own so the
-    // scale factor matches the monitor it (and usually the cursor) sits on.
+    // Any live window can report the global cursor position (it's desktop-
+    // global, window-independent).
     let win = app
         .get_webview_window(PET_LABEL)
         .or_else(|| app.get_webview_window("main"))
         .ok_or("no window available")?;
-    let scale = win.scale_factor().unwrap_or(1.0);
     let pos = win.cursor_position().map_err(|e| e.to_string())?;
+    // Convert the global PHYSICAL cursor to logical using the scale of the
+    // monitor the CURSOR is on — NOT the pet's. On a single display these are
+    // identical (zero change); on a multi-monitor setup with mixed DPI, using
+    // the pet's scale would skew the coords and the chase would drift. Fall
+    // back to the pet window's own scale if the point isn't on any monitor.
+    let scale = win
+        .monitor_from_point(pos.x, pos.y)
+        .ok()
+        .flatten()
+        .map(|m| m.scale_factor())
+        .unwrap_or_else(|| win.scale_factor().unwrap_or(1.0));
     Ok(serde_json::json!({ "x": pos.x / scale, "y": pos.y / scale }))
 }
 
