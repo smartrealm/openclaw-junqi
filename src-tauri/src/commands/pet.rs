@@ -168,6 +168,25 @@ pub async fn get_pet_position(app: AppHandle) -> Result<serde_json::Value, Strin
     Err("pet window not found".into())
 }
 
+/// The OS cursor's GLOBAL position in logical coords {x,y}.
+///
+/// The window-level `DragDropEvent::Over` only fires while the cursor is inside
+/// the main window, so it can't drive a whole-screen chase. During a drag the
+/// pet polls this instead: `cursor_position()` is desktop-global, so the pet
+/// can follow the payload anywhere on screen (incl. outside every app window).
+#[tauri::command]
+pub async fn get_cursor_position(app: AppHandle) -> Result<serde_json::Value, String> {
+    // Any live window can report the global cursor; prefer the pet's own so the
+    // scale factor matches the monitor it (and usually the cursor) sits on.
+    let win = app
+        .get_webview_window(PET_LABEL)
+        .or_else(|| app.get_webview_window("main"))
+        .ok_or("no window available")?;
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let pos = win.cursor_position().map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "x": pos.x / scale, "y": pos.y / scale }))
+}
+
 /// Logical bounds {monX, monY, monW, monH} of the monitor the pet currently
 /// sits on — used by the frontend to magnetic-snap the pet to the nearest edge
 /// after a drag.

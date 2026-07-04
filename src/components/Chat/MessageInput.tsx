@@ -27,6 +27,10 @@ import { formatBytes } from '@/utils/format';
 // literal from a zustand selector breaks useSyncExternalStore's referential
 // equality check and triggers an infinite re-render loop.
 const EMPTY_QUEUE: Array<{ id: string; text: string; timestamp: string }> = [];
+// Stable empty reference for `draftAttachments[k] ?? ...` selectors. Using a
+// fresh `[]` inline allocates a new array per render and trips React #185
+// when the consumer wires the result into a useEffect dep.
+const EMPTY_PATHS: string[] = [];
 
 interface PendingFile {
   name: string;
@@ -100,6 +104,48 @@ export function MessageInput() {
   const [workspaceFiles, setWorkspaceFiles] = useState<Array<{ name: string; path: string }>>([]);
   const [workspaceFilesLoaded, setWorkspaceFilesLoaded] = useState(false);
   const [atPicker, setAtPicker] = useState<{ open: boolean; query: string; idx: number }>({ open: false, query: '', idx: 0 });
+
+  // Drain draft attachments (populated by App.tsx drag-drop into a fresh
+  // session) into the local `files` list.
+  //
+  // CRITICAL: NEVER write `?? []` directly in the selector — that
+  // allocates a fresh array on every render. React compares effect deps
+  // with Object.is, so a new `[]` reference on every render triggers the
+  // effect to re-fire; the effect then calls setDraftAttachments which
+  // re-renders the component → loop. That was React error #185 on the
+  // "New Session" path. The fix is a stable EMPTY constant.
+  const draftAttach = useChatStore((s) => s.draftAttachments[activeSessionKey] ?? EMPTY_PATHS);
+  useEffect(() => {
+    if (draftAttach.length === 0) return;
+    // Snapshot the paths BEFORE we clear so the dependency closure is
+    // stable for this run even if the store changes mid-effect.
+    const paths = [...draftAttach];
+    const ext = (p: string) => {
+      const m = /\.([^.\\/]+)$/.exec(p);
+      return m ? m[1].toLowerCase() : '';
+    };
+    const isImage = (e: string) => /^(png|jpe?g|gif|webp|bmp|svg)$/i.test(e);
+    const additions: PendingFile[] = paths.map((p) => {
+      const e = ext(p);
+      return {
+        name: p.split(/[\\/]/).pop() || p,
+        base64: '',
+        mimeType: isImage(e) ? `image/${e === 'svg' ? 'svg+xml' : e}` : 'application/octet-stream',
+        isImage: isImage(e),
+        size: 0,
+        path: p,
+      };
+    });
+    setFiles((cur) => {
+      const seen = new Set(cur.map((f) => f.path || f.name));
+      const next = [...cur];
+      for (const a of additions) if (!seen.has(a.path || a.name)) next.push(a);
+      return next;
+    });
+    // Clear the draft via getState() (no subscription, no re-render storm).
+    useChatStore.getState().setDraftAttachments(useChatStore.getState().activeSessionKey, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftAttach]);
   useEffect(() => {
     if (!connected) return;
     gateway.getSkills().then((r: any) => {

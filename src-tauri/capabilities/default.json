@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
-  "description": "Capability for the main window",
-  "windows": ["main", "pet"],
+  "description": "Capability for all JunQi windows (main, pet, quickchat, control UI)",
+  "windows": ["main", "pet", "quickchat", "control-ui"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",
@@ -18,6 +18,9 @@
     "core:window:allow-is-maximized",
     "core:webview:allow-set-webview-zoom",
     "core:webview:allow-create-webview-window",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+    "core:event:allow-unlisten",
     "shell:allow-spawn",
     "shell:allow-kill",
     "shell:allow-stdin-write",

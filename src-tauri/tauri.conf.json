@@ -26,7 +26,8 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "resizable": true,
-        "center": true
+        "center": true,
+        "dragDropEnabled": true
       }
     ],
     "withGlobalTauri": false

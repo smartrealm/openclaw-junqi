@@ -42,7 +42,17 @@ export const EMOTION_CFG: Record<PetEmotion, EmotionCfg> = {
   sleepy: { mouth: 'M54,90 Q60,93 66,90', eyeOpen: 0.35, pupilDx: 0, bodyY: 2, bodyScale: 1, bodyRotate: 2, cheeks: false, effect: 'none', breath: 0.5 },
   sleep: { mouth: 'M54,90 L66,90', eyeOpen: 0.06, pupilDx: 0, bodyY: 3, bodyScale: 0.99, bodyRotate: 3, cheeks: false, effect: 'sleep', breath: 0.4 },
   memory: { mouth: 'M54,90 Q60,88 66,90', eyeOpen: 1, pupilDx: -1.2, bodyY: 0, bodyScale: 1, bodyRotate: 0, cheeks: false, effect: 'book', breath: 0.8 },
+  // Drag — alert posture: eyes wide, gaze tracking the cursor (set by PetCharacter
+  // via dragDx override), mouth a small "oh" of anticipation, body leaning slightly
+  // forward and bobbing fast as if "sniffing" the incoming payload.
+  drag: { mouth: 'M52,90 Q60,96 68,90', eyeOpen: 1, pupilDx: 0, bodyY: -1, bodyScale: 1.02, bodyRotate: 0, cheeks: false, effect: 'think', breath: 1.6 },
+  // Overdrag — file is hovering DIRECTLY over the pet: mouth opens wider (about
+  // to gulp), eyes lock on, cheeks blush from excitement.
+  overdrag: { mouth: 'M50,90 Q60,100 70,90', eyeOpen: 1, pupilDx: 0, bodyY: -3, bodyScale: 1.04, bodyRotate: 0, cheeks: true, effect: 'spark', breath: 1.9 },
   // Swallow — wide-open circle mouth (about to gulp), raised body (lunging forward).
   // Frontend animation drives the 4-step transition: open mouth → chew (3 squashed mouth shapes) → settle to idle.
   swallow: { mouth: 'M48,86 Q60,102 72,86 Q60,76 48,86', eyeOpen: 0.45, pupilDx: 0, bodyY: -4, bodyScale: 1.06, bodyRotate: 0, cheeks: true, effect: 'spark', breath: 1.8 },
+  // RapidSwallow — back-to-back drop, still chewing. Closed eyes (squinty),
+  // puffed cheeks, mouth stuck mid-chew on the 3rd squashed shape.
+  rapidSwallow: { mouth: 'M48,90 Q60,82 72,90 Q60,96 48,90', eyeOpen: 0.25, pupilDx: 0, bodyY: -3, bodyScale: 1.07, bodyRotate: 0, cheeks: true, effect: 'hearts', breath: 2.1 },
 };

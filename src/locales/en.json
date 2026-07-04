@@ -1874,7 +1874,9 @@
       "show": "Show",
       "hidePet": "Hide pet",
       "hidePetHint": "Click to hide (or tray icon / ⌘⇧H)",
-      "hide": "Hide"
+      "hide": "Hide",
+      "sound": "Sound effects",
+      "soundHint": "Play soft cues while dragging files"
     },
     "status": {
       "idle": "Idle",
@@ -1886,7 +1888,11 @@
       "error": "Error",
       "sleepy": "Sleepy",
       "sleep": "Resting",
-      "memory": "Organizing memory"
+      "memory": "Organizing memory",
+      "drag": "Ready to receive…",
+      "overdrag": "Drop it, I'm ready!",
+      "swallow": "Om nom nom…",
+      "rapidSwallow": "Still chewing!"
     },
     "hint": {
       "idle": "Double-click to open · drag to move",
@@ -1894,7 +1900,12 @@
       "tip1": "Double-click → open main window",
       "tip2": "Press & drag → move",
       "tip3": "Tray icon → show/hide",
-      "tip4": "Right-click → menu / Pomodoro"
+      "tip4": "Right-click → menu / Pomodoro",
+      "drag": "Ready to receive…",
+      "overdrag": "Drop it, I'm ready!",
+      "overdrag.image": "Ooh, pictures!",
+      "overdrag.archive": "Gimme the bundle!",
+      "overdrag.folder": "A whole folder?"
     },
     "pomodoro": {
       "title": "Pomodoro",
@@ -1985,7 +1996,7 @@
   "sidebar.showArchived": "Show archived ({{count}})",
   "sidebar.hideArchived": "Hide archived ({{count}})",
   "sidebar.newChat": "New chat",
-  "sidebar.newSession": "+ New session",
+  "sidebar.newSession": "New session",
   "sidebar.nav.agents": "Agents",
   "sidebar.nav.models": "Models",
   "sidebar.nav.channels": "Channels",

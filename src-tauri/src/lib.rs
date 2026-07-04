@@ -106,6 +106,7 @@ pub fn run() {
             commands::pet::set_pet_click_through,
             commands::pet::set_pet_position,
             commands::pet::get_pet_position,
+            commands::pet::get_cursor_position,
             commands::pet::get_pet_bounds,
             commands::pet::get_pet_visible,
             commands::pet::pet_focus_main,
@@ -263,29 +264,51 @@ pub fn run() {
                 main_win.on_window_event(move |event| {
                     use tauri::WindowEvent;
                     if let WindowEvent::DragDrop(dd) = event {
+                        eprintln!("[dragdrop] event: {:?}", dd);
                         match dd {
                             tauri::DragDropEvent::Enter { paths, .. } => {
                                 let strs: Vec<String> = paths
                                     .iter()
                                     .map(|p| p.to_string_lossy().to_string())
                                     .collect();
+                                eprintln!("[dragdrop] Enter paths={:?}", strs);
                                 let _ = app_for_dd.emit("aegis:drag-active", &strs);
                             }
                             tauri::DragDropEvent::Over { position, .. } => {
                                 // Global → logical → window-local
-                                let local_x = (position.x as f64 / scale) - win_pos_x;
-                                let local_y = (position.y as f64 / scale) - win_pos_y;
+                                let gx = position.x as f64 / scale;
+                                let gy = position.y as f64 / scale;
+                                let local_x = gx - win_pos_x;
+                                let local_y = gy - win_pos_y;
                                 let _ = app_for_dd.emit(
                                     "aegis:drag-move",
                                     serde_json::json!({
                                         "x": local_x,
                                         "y": local_y,
-                                        "gx": position.x as f64 / scale,
-                                        "gy": position.y as f64 / scale,
+                                        "gx": gx,
+                                        "gy": gy,
                                         "win_w": win_w,
                                         "win_h": win_h,
                                     }),
                                 );
+                                // Is the cursor hovering directly over the floating pet
+                                // window? The pet chases the cursor during a drag, so this
+                                // is usually true once it catches up — flip it into the
+                                // `overdrag` "drop it right here!" pose. Emit the boolean
+                                // every Over so leaving the pet falls back to `drag`.
+                                let over_pet = app_for_dd
+                                    .get_webview_window("pet")
+                                    .and_then(|pet| {
+                                        let p = pet.outer_position().ok()?;
+                                        let s = pet.outer_size().ok()?;
+                                        let px = p.x as f64 / scale;
+                                        let py = p.y as f64 / scale;
+                                        let pw = s.width as f64 / scale;
+                                        let ph = s.height as f64 / scale;
+                                        Some(gx >= px && gx <= px + pw && gy >= py && gy <= py + ph)
+                                    })
+                                    .unwrap_or(false);
+                                let _ = app_for_dd.emit("aegis:drag-over-main", over_pet);
                             }
                             tauri::DragDropEvent::Leave => {
                                 let _ = app_for_dd.emit("aegis:drag-inactive", ());

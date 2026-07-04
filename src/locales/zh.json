@@ -1862,7 +1862,9 @@
       "show": "显示",
       "hidePet": "隐藏萌宠",
       "hidePetHint": "点击隐藏(也可托盘图标 / ⌘⇧H)",
-      "hide": "隐藏"
+      "hide": "隐藏",
+      "sound": "提示音",
+      "soundHint": "拖动文件时播放轻柔提示音"
     },
     "status": {
       "idle": "空闲中",
@@ -1874,7 +1876,11 @@
       "error": "出错了",
       "sleepy": "犯困",
       "sleep": "休息中",
-      "memory": "整理记忆"
+      "memory": "整理记忆",
+      "drag": "准备好接收…",
+      "overdrag": "放下就开吃!",
+      "swallow": "嚼嚼嚼…",
+      "rapidSwallow": "还没吃完呢!"
     },
     "hint": {
       "idle": "双击打开 · 按住拖动",
@@ -1882,7 +1888,12 @@
       "tip1": "双击 → 打开主窗口",
       "tip2": "按住拖动 → 移动位置",
       "tip3": "托盘图标 → 显示/隐藏",
-      "tip4": "右键 → 菜单 / 番茄控制"
+      "tip4": "右键 → 菜单 / 番茄控制",
+      "drag": "准备好接收…",
+      "overdrag": "放下就开吃!",
+      "overdrag.image": "看到图片啦!",
+      "overdrag.archive": "来,打包都给你!",
+      "overdrag.folder": "整个文件夹?"
     },
     "pomodoro": {
       "title": "番茄钟",
@@ -2023,7 +2034,7 @@
   "sidebar.showArchived": "显示已归档 ({{count}})",
   "sidebar.hideArchived": "隐藏已归档 ({{count}})",
   "sidebar.newChat": "新建对话",
-  "sidebar.newSession": "+ 新建会话",
+  "sidebar.newSession": "新建会话",
   "sidebar.nav.agents": "智能体",
   "sidebar.nav.models": "模型",
   "sidebar.nav.channels": "通道",

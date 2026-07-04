@@ -1,9 +1,11 @@
 import { useEffect, useState, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Image, FileArchive, FileCode2, FileText, FolderOpen, type LucideIcon } from 'lucide-react';
 import { themeHex } from '@/utils/theme-colors';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { PetEmotion, PetState } from './pet-states';
+import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
@@ -19,7 +21,10 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
   sleepy: '犯困',
   sleep: '休息中',
   memory: '整理记忆',
+  drag: '准备好接收…',
+  overdrag: '放下就开吃!',
   swallow: '嚼嚼嚼…',
+  rapidSwallow: '还没吃完呢!',
 };
 
 /** Per-emotion accent color — recomputed on every render so the themeHex()
@@ -39,7 +44,37 @@ function useEmotionColor(): Record<PetEmotion, string> {
     sleepy: 'rgb(var(--aegis-text-dim))',
     sleep: 'rgb(var(--aegis-text-muted))',
     memory: themeHex('warning'),
+    drag: themeHex('accent'),
+    overdrag: themeHex('primary'),
     swallow: themeHex('primary'),
+    rapidSwallow: themeHex('warning'),
+  };
+}
+
+/** Map a drag payload kind to the icon + colour used in the drag bubble.
+ *  Falls back to a generic file icon when classification is ambiguous. */
+function useDragKindMeta() {
+  return {
+    icon: (k: DragKind): LucideIcon => {
+      switch (k) {
+        case 'image': return Image;
+        case 'archive': return FileArchive;
+        case 'code': return FileCode2;
+        case 'text': return FileText;
+        case 'folder': return FolderOpen;
+        default: return FileText;
+      }
+    },
+    color: (k: DragKind): string => {
+      switch (k) {
+        case 'image': return themeHex('accent');
+        case 'archive': return themeHex('warning');
+        case 'code': return themeHex('primary');
+        case 'text': return 'rgb(var(--aegis-text-dim))';
+        case 'folder': return themeHex('success');
+        default: return 'rgb(var(--aegis-text-dim))';
+      }
+    },
   };
 }
 
@@ -100,6 +135,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const { t } = useTranslation();
   const isDark = useResolvedDark();
   const emotionColor = useEmotionColor();
+  const dragMeta = useDragKindMeta();
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
 
@@ -146,11 +182,66 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   if (dragging) {
     bubbleKey = 'dragging';
     body = <span style={{ fontWeight: 600 }}>{t('pet.hint.moving', '移动中…')}</span>;
+  } else if (e === 'rapidSwallow') {
+    bubbleKey = 'rapid-swallow';
+    body = (
+      <span style={{ fontWeight: 700, color: emotionColor[e], fontSize: 12.5 }}>
+        {t('pet.status.rapidSwallow', STATUS_LABEL.rapidSwallow)}
+      </span>
+    );
   } else if (e === 'swallow') {
     bubbleKey = 'swallow';
     body = (
       <span style={{ fontWeight: 700, color: emotionColor[e], fontSize: 12.5 }}>
         {t('pet.status.swallow', '嚼嚼嚼…')}
+      </span>
+    );
+  } else if (e === 'overdrag' || e === 'drag') {
+    // Drag-state bubble: shows file kind icon + count + the "expecting" caption.
+    // overdrag is the escalated variant (mouth wider, cheeks blush) — the icon
+    // and caption swap to convey "I'm right here, drop it!".
+    const d = state.drag;
+    const DragIcon = d ? dragMeta.icon(d.kind) : null;
+    const iconColor = d ? dragMeta.color(d.kind) : emotionColor[e];
+    const captionKey =
+      e === 'overdrag'
+        ? d?.kind === 'image'
+          ? 'pet.hint.overdrag.image'
+          : d?.kind === 'archive'
+          ? 'pet.hint.overdrag.archive'
+          : d?.kind === 'folder'
+          ? 'pet.hint.overdrag.folder'
+          : 'pet.hint.overdrag'
+        : 'pet.hint.drag';
+    const captionFallback =
+      e === 'overdrag'
+        ? d?.kind === 'image'
+          ? '看到图片啦!'
+          : d?.kind === 'archive'
+          ? '来,打包都给你!'
+          : d?.kind === 'folder'
+          ? '整个文件夹?'
+          : '放下就开吃!'
+        : '准备好接收…';
+    bubbleKey = `drag-${e}-${d?.kind ?? 'none'}-${d?.count ?? 0}`;
+    body = (
+      <span
+        style={{
+          fontWeight: 700,
+          color: iconColor,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          fontSize: 12.5,
+        }}
+      >
+        {DragIcon && <DragIcon size={13} strokeWidth={2.4} style={{ flexShrink: 0 }} />}
+        <span>{t(captionKey, captionFallback)}</span>
+        {d && d.count > 1 && (
+          <span style={{ fontSize: 10.5, opacity: 0.75, fontWeight: 500 }}>
+            × {d.count}
+          </span>
+        )}
       </span>
     );
   } else if (e === 'error') {

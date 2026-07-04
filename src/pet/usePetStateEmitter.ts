@@ -45,6 +45,8 @@ export function usePetStateEmitter() {
       prevPomoDoneTs: number;
       lastPomoDoneKind: CelebrateKind;
       lastSwallowTs: number;
+      lastDragEnterTs: number;
+      lastDragLeaveTs: number;
     } = {
       lastReplyTs: 0,
       lastTaskDoneTs: 0,
@@ -54,11 +56,14 @@ export function usePetStateEmitter() {
       prevPomoDoneTs: 0,
       lastPomoDoneKind: 'pomodoroWork',
       lastSwallowTs: 0,
+      lastDragEnterTs: 0,
+      lastDragLeaveTs: 0,
     };
     let prevTyping = Object.values(useChatStore.getState().typingBySession).some(Boolean);
     let prevDone = useWorkshopStore.getState().tasks.filter((t) => t.status === 'done').length;
     let prevActive = false;
     let prevSwallowTick = usePetStore.getState().swallowTick;
+    let prevDragActive = usePetStore.getState().dragActive;
 
     const tick = () => {
       const now = Date.now();
@@ -130,6 +135,16 @@ export function usePetStateEmitter() {
         prevSwallowTick = swallowTick;
       }
 
+      // Edge: drag-enter / drag-leave. We only care about the transitions
+      // (true→false / false→true); mid-drag updates flow through the store
+      // and are read on every tick.
+      const dragActive = usePetStore.getState().dragActive;
+      if (dragActive !== prevDragActive) {
+        if (dragActive) mem.lastDragEnterTs = now;
+        else mem.lastDragLeaveTs = now;
+        prevDragActive = dragActive;
+      }
+
       const done = ws.tasks.filter((t) => t.status === 'done').length;
       if (done > prevDone) mem.lastTaskDoneTs = now;
 
@@ -176,6 +191,12 @@ export function usePetStateEmitter() {
         lastActivityTs: mem.lastActivityTs,
         now,
         progress: cs.tokenUsage?.percentage ?? 0,
+        lastDragEnterTs: mem.lastDragEnterTs,
+        lastDragLeaveTs: mem.lastDragLeaveTs,
+        dragOver: usePetStore.getState().dragOver,
+        dragCount: usePetStore.getState().dragCount,
+        dragKind: usePetStore.getState().dragKind,
+        recentSwallowTss: usePetStore.getState().swallowHistory,
       });
       const emotion = derived.emotion;
 

@@ -425,6 +425,19 @@ interface ChatState {
   drainQueue: (sessionKey: string) => Promise<void>;
   clearQueue: (sessionKey: string) => void;
   queueSize: (sessionKey: string) => number;
+
+  // ── Drag-drop attachments ─────────────────────────────────
+  /** Files dropped onto the app that should attach to the next outgoing
+   *  message in `activeSessionKey`. Cleared by ChatPage / MessageInput
+   *  after they've been moved into the per-session `files` list. */
+  pendingFiles: string[];
+  setPendingFiles: (paths: string[]) => void;
+  consumePendingFiles: () => string[];
+  /** Per-session attachment draft — pure UI state, not persisted. */
+  draftAttachments: Record<string, string[]>;
+  setDraftAttachments: (key: string, paths: string[]) => void;
+  addDraftAttachment: (key: string, path: string) => void;
+  removeDraftAttachment: (key: string, path: string) => void;
   removeQueuedMessage: (sessionKey: string, id: string) => void;
   updateQueuedMessage: (sessionKey: string, id: string, newText: string) => void;
   isSending: boolean;
@@ -1098,6 +1111,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessionArchived: (key, archived) => set((state) => ({
     sessions: updateSession(state.sessions, key, (s) => ({ ...s, archived })),
   })),
+
+  // ── Pending file attachments (drag-drop → new session) ─────
+  // ChatPage drains this on mount; if a new drag-drop happens while
+  // ChatPage is already mounted, the latest paths replace the previous
+  // payload (we don't try to merge — drag-drop is a single user action).
+  pendingFiles: [] as string[],
+  setPendingFiles: (paths) => set({ pendingFiles: paths }),
+  consumePendingFiles: () => {
+    const out = get().pendingFiles;
+    set({ pendingFiles: [] });
+    return out;
+  },
+
+  /** Per-session attachment draft — files the user has attached to the
+   *  next outgoing message (via drag-drop, paste, or the attach button).
+   *  Cleared after the user sends. Pure UI state; not persisted. */
+  draftAttachments: {} as Record<string, string[]>,
+  setDraftAttachments: (key: string, paths: string[]) => set((s) => ({
+    draftAttachments: { ...s.draftAttachments, [key]: paths },
+  })),
+  addDraftAttachment: (key: string, path: string) => set((s) => ({
+    draftAttachments: {
+      ...s.draftAttachments,
+      [key]: [...(s.draftAttachments[key] ?? []), path],
+    },
+  })),
+  removeDraftAttachment: (key: string, path: string) => set((s) => {
+    const cur = s.draftAttachments[key] ?? [];
+    const next = cur.filter((p) => p !== path);
+    return {
+      draftAttachments: { ...s.draftAttachments, [key]: next },
+    };
+  }),
 
   // ── Tabs ──
   openTabs: (() => {

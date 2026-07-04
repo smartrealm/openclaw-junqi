@@ -14,6 +14,7 @@ import { ToastContainer } from '@/components/Toast/ToastContainer';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { BootTimelineOverlay } from '@/components/BootTimelineOverlay';
 import { useTheme } from '@/theme';
+import { playPetSfx } from '@/pet/petSounds';
 
 // Lazy-loaded pages
 const DashboardPage = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.DashboardPage })));
@@ -140,39 +141,95 @@ export default function App() {
   // "drop file → pet eats it → standalone chat opens" interaction.
   const [draggingOver, setDraggingOver] = useState(false);
   const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
+  // Hold the stop() handle for the sustained "drag hum" so we can cancel it
+  // when the user leaves the window or releases the payload.
+  const dragSfxStop = useRef<null | (() => void)>(null);
   useEffect(() => {
     const unlistenDrop: { current: null | (() => void) } = { current: null };
     const unlistenEnter: { current: null | (() => void) } = { current: null };
     const unlistenLeave: { current: null | (() => void) } = { current: null };
+    const unlistenOver: { current: null | (() => void) } = { current: null };
     (async () => {
       unlistenDrop.current = await listen<string[]>('aegis:file-dropped', async (e) => {
+        console.log('[aegis] file-dropped', e.payload);
         const paths = e.payload ?? [];
         if (paths.length === 0) return;
-        try {
-          await invoke('open_quickchat_with_files', { paths });
-        } catch (err) {
-          console.warn('[drag-drop] failed to spawn QuickChat:', err);
-        }
-        // Tell the pet to do its swallow animation. UI-side broadcast.
+        // Spawn a brand-new chat session scoped to the main agent, attach
+        // the dropped paths as the initial context, then navigate. The pet
+        // swallows the payload visually; ChatPage drains pendingFiles on
+        // mount and renders them as the first user-message attachment.
+        const cs = useChatStore.getState();
+        const newKey = `agent:main:s-${Date.now().toString(36).slice(-5)}`;
+        cs.addLocalSession({
+          key: newKey,
+          label: paths.length === 1
+            ? `📎 ${paths[0].split(/[\\/]/).pop()}`
+            : `📎 ${paths.length} 个文件`,
+          agentId: 'main',
+          createdAt: Date.now(),
+          pinned: true,
+        } as any);
+        cs.setActiveSession(newKey);
+        cs.setPendingFiles(paths);
+        // Notify ChatPage (if mounted) so the attachment bar updates immediately.
+        window.dispatchEvent(new CustomEvent('aegis:files-dropped', { detail: { paths, sessionKey: newKey } }));
+        // Navigate to the chat route — the new session becomes the active tab.
+        // Using replaceState keeps the browser back stack clean.
+        const url = new URL(window.location.href);
+        url.hash = `#/chat?session=${encodeURIComponent(newKey)}`;
+        window.history.replaceState({}, '', url.toString());
+        // Trigger a soft re-render of the router by dispatching popstate —
+        // HashRouter listens for this and re-evaluates the route.
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        // Cancel the drag pad (if still playing) before the drop click.
+        dragSfxStop.current?.();
+        dragSfxStop.current = null;
+        const soundOn = useSettingsStore.getState().soundEnabled;
+        playPetSfx('drop', soundOn);
+        playPetSfx('munch', soundOn);
+        // Pet reaction.
         window.dispatchEvent(new CustomEvent('aegis:pet-swallow', {
           detail: { count: paths.length },
         }));
         usePetStore.getState().bumpSwallowTick();
+        usePetStore.getState().setDragActive(false);
         setDraggingOver(false);
       });
       unlistenEnter.current = await listen<string[]>('aegis:drag-active', (e) => {
+        console.log('[aegis] drag-active', e.payload);
+        const paths = e.payload ?? [];
         setDraggingOver(true);
-        setDraggedPaths(e.payload ?? []);
+        setDraggedPaths(paths);
+        usePetStore.getState().setDragActive(true, paths);
+        // Start the sustained "hum" while the user is hovering with a payload.
+        // playPetSfx returns a stop() handle we keep so leave/inactive can
+        // tear it down cleanly.
+        dragSfxStop.current?.();
+        dragSfxStop.current = playPetSfx('drag', useSettingsStore.getState().soundEnabled) ?? null;
       });
       unlistenLeave.current = await listen('aegis:drag-inactive', () => {
+        console.log('[aegis] drag-inactive');
         setDraggingOver(false);
         setDraggedPaths([]);
+        usePetStore.getState().setDragActive(false);
+        usePetStore.getState().setDragOver(false);
+        dragSfxStop.current?.();
+        dragSfxStop.current = null;
+      });
+      // Cursor is hovering directly over the pet during the drag — flip it into
+      // "overdrag" (mouth opens, cheeks blush). Rust emits the boolean on every
+      // Over event, so moving off the pet falls back to plain `drag`.
+      unlistenOver.current = await listen<boolean>('aegis:drag-over-main', (e) => {
+        usePetStore.getState().setDragOver(e.payload ?? false);
       });
     })();
     return () => {
       unlistenDrop.current?.();
       unlistenEnter.current?.();
       unlistenLeave.current?.();
+      unlistenOver.current?.();
+      dragSfxStop.current?.();
+      dragSfxStop.current = null;
     };
   }, []);
   const {

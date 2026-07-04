@@ -20,7 +20,7 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const INK = '#1b1b2f';
 const BOX = { transformBox: 'fill-box' as const, transformOrigin: 'center' };
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', customAsset, dragging = false, celebrating = false }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', customAsset, dragging = false, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;
@@ -28,6 +28,13 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
   dragging?: boolean;
   /** True when the pet just completed a pomodoro or task — triggers a bounce + glow. */
   celebrating?: boolean;
+  /** Magnetic pull offset (px) during an OS drag — PetWindow feeds the
+   *  cursor position relative to the pet so it leans toward the payload. */
+  dragDx?: number;
+  dragDy?: number;
+  /** Tilt (deg) applied on top of the pose rotation — direction the cursor
+   *  is pulling the pet. Capped at ±10° to keep the character grounded. */
+  dragRotation?: number;
 }) {
   const cfg = EMOTION_CFG[emotion] ?? EMOTION_CFG.idle;
   const bodyColor = themeHex('primary');
@@ -47,6 +54,15 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
 
   // gaze drifts slightly with progress, so the pet "watches" the task fill up
   const gaze = Math.max(-2, Math.min(2, (progress - 50) / 25));
+  // Drag gaze — when the cursor is pulling the pet, the eyes follow it so
+  // the lock-on feels intentional rather than accidental. Capped so the
+  // pupil doesn't shoot past the iris edge.
+  const dragGaze = Math.max(-2.5, Math.min(2.5, dragDx / 8));
+  // Magnitude used for subtle scale-up while the pet is being pulled toward
+  // something. Keeps the "leaning in" feel without ballooning the character.
+  const pullMag = Math.min(1, Math.hypot(dragDx, dragDy) / 28);
+  // Cap rotation so the pet never tilts past 10° either way.
+  const cappedRot = Math.max(-10, Math.min(10, dragRotation));
 
   // Uploaded skin: the image is the "body", wrapped in the same emotion pose +
   // breathing, with the head effect overlaid — so a custom pet still reacts.
@@ -56,7 +72,14 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
         style={{ width: 96, height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', position: 'relative' }}
         animate={{ y: [0, -4, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: EASE }}>
         <motion.div style={BOX}
-          animate={{ y: cfg.bodyY, scale: cfg.bodyScale, rotate: cfg.bodyRotate }}
+          animate={{
+            // Stack the magnetic pull on top of the emotion pose so the pet
+            // can both "lean back" (cfg.bodyY) AND "tilt toward the cursor".
+            x: dragDx,
+            y: cfg.bodyY + dragDy * 0.6,
+            scale: cfg.bodyScale + pullMag * 0.04,
+            rotate: cfg.bodyRotate + cappedRot,
+          }}
           transition={{ type: 'spring', stiffness: 260, damping: 20 }}>
           <motion.div style={BOX}
             animate={{ scale: [1, 1.035, 1] }}
@@ -148,7 +171,14 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
 
         {/* pose (spring) */}
         <motion.g style={BOX}
-          animate={{ y: cfg.bodyY, scale: cfg.bodyScale, rotate: cfg.bodyRotate }}
+          animate={{
+            // Stack the magnetic pull on top of the emotion pose so the pet
+            // can both lean forward (cfg.bodyY) AND tilt toward the cursor.
+            x: dragDx,
+            y: cfg.bodyY + dragDy * 0.6,
+            scale: cfg.bodyScale + pullMag * 0.04,
+            rotate: cfg.bodyRotate + cappedRot,
+          }}
           transition={{ type: 'spring', stiffness: 260, damping: 20 }}>
           {/* breathing */}
           <motion.g style={BOX}
@@ -161,8 +191,8 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
                 <ellipse cx={82} cy={80} rx={6} ry={4} fill="#ff8fab" opacity={0.5} />
               </>
             )}
-            <Eye cx={47} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze} />
-            <Eye cx={73} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze} />
+            <Eye cx={47} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} />
+            <Eye cx={73} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} />
             <motion.path d={cfg.mouth} fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"
               animate={{ d: cfg.mouth }} transition={{ type: 'spring', stiffness: 300, damping: 26 }} />
           </motion.g>

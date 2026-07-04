@@ -182,7 +182,7 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta, currentPinne
             else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
           }}
           disabled={renamingInFlight}
-          className="flex-1 min-w-0 h-[24px] px-2 rounded bg-aegis-bg border border-aegis-primary/40 text-[12px] text-aegis-text outline-none focus:border-aegis-primary"
+          className="flex-1 min-w-0 h-[24px] px-2 rounded bg-aegis-bg border border-aegis-primary/40 text-[13px] text-aegis-text outline-none focus:border-aegis-primary"
         />
         <button
           onClick={(e) => { e.stopPropagation(); cancelRename(); }}
@@ -211,7 +211,7 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta, currentPinne
       {ctxMenu && createPortal(
         <div
           ref={ctxRef}
-          className="fixed z-[9999] min-w-[160px] py-1 rounded-lg border bg-aegis-menu-bg border-aegis-menu-border text-[12px]"
+          className="fixed z-[9999] min-w-[160px] py-1 rounded-lg border bg-aegis-menu-bg border-aegis-menu-border text-[13px]"
           style={{ left: ctxMenu.x, top: ctxMenu.y, boxShadow: 'var(--aegis-menu-shadow)' }}
         >
           <button
@@ -399,7 +399,7 @@ function WorkbenchPanel() {
 
       <div className="flex-1 overflow-y-auto min-h-0">
         {groups.length === 0 && (
-          <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
+          <div className="px-4 py-3 text-[12.5px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
 
         {/* ── Active + Pinned sections (always visible at top) ──
@@ -407,7 +407,7 @@ function WorkbenchPanel() {
             Independent of the per-agent accordion below. */}
         {active.length > 0 && (
           <div className="mb-3">
-            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-aegis-text-dim/80 flex items-center gap-1.5">
+            <div className="px-3 py-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-aegis-text-dim/80 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-success animate-pulse" />
               {t('sidebar.activeSessions', '活跃会话')}
               <span className="text-aegis-text-dim/50 font-mono normal-case">{active.length}</span>
@@ -417,7 +417,7 @@ function WorkbenchPanel() {
         )}
         {pinned.length > 0 && (
           <div className="mb-3">
-            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-aegis-text-dim/80 flex items-center gap-1.5">
+            <div className="px-3 py-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-aegis-text-dim/80 flex items-center gap-1.5">
               <Pin size={10} className="opacity-70" />
               {t('sidebar.pinnedSessions', '置顶会话')}
               <span className="text-aegis-text-dim/50 font-mono normal-case">{pinned.length}</span>
@@ -431,7 +431,7 @@ function WorkbenchPanel() {
           const isOpen = openGroupId === g.agentId;
           return (
             <div key={g.agentId} className="mb-1">
-              <div className="group/header w-full flex items-center gap-1.5 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-aegis-text-dim">
+              <div className="group/header w-full flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold uppercase tracking-wider text-aegis-text-dim">
                 <button
                   type="button"
                   onClick={() => toggleGroup(g.agentId)}
@@ -457,7 +457,7 @@ function WorkbenchPanel() {
                       onClick={() => {
                         navigate(`/chat?agent=${encodeURIComponent(g.agentId)}&new=1`);
                       }}
-                      className="w-full mx-3 my-1 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10.5px] text-aegis-text-dim hover:text-aegis-primary hover:bg-aegis-primary/[0.08] transition-colors border border-dashed border-aegis-border/40 hover:border-aegis-primary/40"
+                      className="w-full mx-3 my-1 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[12px] text-aegis-text-dim hover:text-aegis-primary hover:bg-aegis-primary/[0.08] transition-colors border border-dashed border-aegis-border/40 hover:border-aegis-primary/40"
                     >
                       <Plus size={10} />
                       {t('sidebar.newSession', '新建会话')}
@@ -473,7 +473,7 @@ function WorkbenchPanel() {
           <button
             type="button"
             onClick={() => setShowArchived((v) => !v)}
-            className="w-full px-4 py-2 text-[10px] text-aegis-text-dim hover:text-aegis-text-secondary transition-colors border-t border-aegis-border/15"
+            className="w-full px-4 py-2 text-[11.5px] text-aegis-text-dim hover:text-aegis-text-secondary transition-colors border-t border-aegis-border/15"
           >
             {showArchived
               ? t('sidebar.hideArchived', { count: archived.length, defaultValue: `Hide archived (${archived.length})` })
@@ -518,7 +518,7 @@ function AgentsPanel() {
     <>
       <div className="px-3 mb-1">
         <button type="button" onClick={() => navigate('/agents?new=1')}
-          className="w-full h-9 bg-aegis-primary text-white rounded font-semibold text-[13px] flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity">
+          className="w-full h-9 bg-aegis-primary text-white rounded font-semibold text-[14px] flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity">
           <Plus size={14} />{t('sidebar.newAgent', '新建智能体')}
         </button>
       </div>
@@ -546,7 +546,7 @@ function AgentsPanel() {
                   <Puzzle size={12} className={enabled ? 'text-aegis-primary opacity-80' : 'text-aegis-text-dim opacity-50'} />
                   <span
                     onClick={() => navigate('/skill-hub')}
-                    className={clsx('flex-1 text-[12px] truncate cursor-pointer', enabled ? 'text-aegis-text' : 'text-aegis-text-dim line-through')}>
+                    className={clsx('flex-1 text-[13px] truncate cursor-pointer', enabled ? 'text-aegis-text' : 'text-aegis-text-dim line-through')}>
                     {info.name}
                   </span>
                   <button
@@ -571,7 +571,7 @@ function AgentsPanel() {
           <SidebarRow icon={<Activity size={14} />} title={t('nav.agentRun', 'Agent 运行')} onClick={() => navigate('/agent-run')} />
           <SidebarRow icon={<Bot size={14} />} title={t('nav.liveAgents', '多智能体视图')} onClick={() => navigate('/agents/live')} />
         </SidebarSection>
-        {agents.length === 0 && <div className="px-4 py-3 text-[11px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}
+        {agents.length === 0 && <div className="px-4 py-3 text-[12.5px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}
       </div>
     </>
   );
@@ -585,7 +585,7 @@ function ToolsPanel() {
     <>
       <div className="px-3 mb-1">
         <button type="button" onClick={() => navigate('/terminal')}
-          className="w-full h-9 bg-aegis-overlay/[0.05] border border-aegis-border text-aegis-text rounded font-semibold text-[13px] flex items-center justify-center gap-1.5 hover:bg-aegis-hover/40 transition-colors">
+          className="w-full h-9 bg-aegis-overlay/[0.05] border border-aegis-border text-aegis-text rounded font-semibold text-[14px] flex items-center justify-center gap-1.5 hover:bg-aegis-hover/40 transition-colors">
           <Terminal size={14} />{t('sidebar.openTerminal', '快速打开终端')}
         </button>
       </div>
@@ -652,7 +652,7 @@ function MiniView({ tab }: { tab: SidebarTab }) {
         <TooltipTrigger asChild>
           <div className="w-10 h-7 mt-0.5 mb-1 flex items-center justify-center rounded-md
             bg-aegis-primary/15 border border-aegis-primary/25
-            text-aegis-primary text-[10px] font-bold uppercase tracking-wider select-none">
+            text-aegis-primary text-[11.5px] font-bold uppercase tracking-wider select-none">
             {t(`sidebar.tab.${tab}`, tab.slice(0, 1).toUpperCase())}
           </div>
         </TooltipTrigger>

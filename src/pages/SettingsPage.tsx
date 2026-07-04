@@ -58,7 +58,7 @@ export function SettingsPageFull() {
   } = useSettingsStore();
   const { connected, connecting } = useChatStore();
   const prefersDark = usePrefersDark();
-  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petNow, setPetNow] = useState(Date.now());
   useEffect(() => {
@@ -651,6 +651,29 @@ export function SettingsPageFull() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Sound effects toggle — drives the WebAudio cues played during
+            drag-drop. Persists via the pet store's partialize list so the
+            preference survives an app restart. */}
+        <div className="flex items-center justify-between mt-4">
+          <div>
+            <div className="text-[13px] text-aegis-text">{t('pet.settings.sound', '提示音')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.soundHint', '拖动文件时播放轻柔提示音')}</div>
+          </div>
+          <button
+            onClick={() => setPetSoundEnabled(!petSoundEnabled)}
+            aria-pressed={petSoundEnabled}
+            className={clsx(
+              'relative w-10 h-6 rounded-full transition-colors',
+              petSoundEnabled ? 'bg-aegis-primary' : 'bg-aegis-border/40',
+            )}
+          >
+            <span
+              className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
+              style={{ transform: petSoundEnabled ? 'translateX(16px)' : 'translateX(0)' }}
+            />
+          </button>
         </div>
 
         {/* Custom upload */}
