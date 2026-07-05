@@ -114,42 +114,37 @@ function Stepper({ active }: { active: number }) {
   const { t } = useTranslation();
   return (
     <div className="px-6 pt-6" dir="ltr">
-      <div
-        className="mx-auto flex w-fit max-w-full items-start justify-center gap-2 overflow-x-auto rounded-xl border px-3 py-3"
-        style={{
-          background: "#f8fafc",
-          borderColor: "#cbd5e1",
-          boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
-        }}
-      >
+      <div className="mx-auto flex w-fit max-w-full items-start justify-center gap-2 overflow-x-auto rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
         {SETUP_STEPS.map((id, i) => {
           const done = i < active;
           const current = i === active;
-          const circleStyle = done
-            ? { background: "#0f172a", borderColor: "#0f172a", color: "#ffffff" }
-            : current
-              ? { background: "#ffffff", borderColor: "#0f172a", color: "#0f172a" }
-              : { background: "#e2e8f0", borderColor: "#cbd5e1", color: "#475569" };
           return (
             <div key={id} className="flex items-start">
               <div className="flex min-w-[94px] flex-col items-center gap-2 text-center">
                 <div
-                  className="flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-black transition-colors"
-                  style={circleStyle}
+                  className={clsx(
+                    "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-black transition-colors",
+                    done && "border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary",
+                    current && "border-aegis-primary bg-aegis-bg text-aegis-primary shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.12)]",
+                    !done && !current && "border-aegis-border bg-aegis-surface text-aegis-text-dim",
+                  )}
                 >
                   {done ? <Check size={15} strokeWidth={3} /> : i + 1}
                 </div>
                 <div>
                   <div
-                    className="text-xs font-bold"
-                    style={{ color: current || done ? "#0f172a" : "#475569" }}
+                    className={clsx(
+                      "text-xs font-bold",
+                      current && "text-aegis-text",
+                      done && !current && "text-aegis-text-secondary",
+                      !done && !current && "text-aegis-text-dim",
+                    )}
                     dir="auto"
                   >
                     {t(`setup.steps.${id}.title`)}
                   </div>
                   <div
-                    className="mt-0.5 hidden text-[11px] font-medium sm:block"
-                    style={{ color: current ? "#334155" : "#64748b" }}
+                    className={clsx("mt-0.5 hidden text-[11px] font-medium sm:block", current ? "text-aegis-text-secondary" : "text-aegis-text-dim")}
                     dir="auto"
                   >
                     {t(`setup.steps.${id}.description`)}
@@ -158,8 +153,7 @@ function Stepper({ active }: { active: number }) {
               </div>
               {i < SETUP_STEPS.length - 1 && (
                 <div
-                  className="mt-4 h-[2px] w-10 rounded-full transition-colors"
-                  style={{ background: i < active ? "#0f172a" : "#cbd5e1" }}
+                  className={clsx("mt-4 h-[2px] w-10 rounded-full transition-colors", i < active ? "bg-aegis-primary/35" : "bg-aegis-border")}
                 />
               )}
             </div>
@@ -243,9 +237,13 @@ function SetupShell({
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-aegis-bg text-aegis-text" dir="ltr">
+      <div
+        data-tauri-drag-region
+        className="h-[32px] shrink-0 chrome-bg border-b border-aegis-border/30"
+      />
       <Stepper active={active} />
-      <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-6 py-8">
-        <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
+      <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-6 py-8">
+        <section className={clsx("my-auto w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
           <div className="mb-6 text-center">
             <h1 className="text-[30px] font-semibold tracking-normal text-aegis-text" dir="auto">{title}</h1>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
@@ -266,47 +264,49 @@ function SetupShell({
               </div>
             )}
           </div>
-          {showActions && (
-            <div className="mt-4 flex items-center justify-end gap-3">
-              {previousAction && (
-                <button
-                  type="button"
-                  onClick={previousAction.onClick}
-                  disabled={previousAction.disabled}
-                  className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 px-4 py-2.5 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45"
-                  style={{
-                    background: "#ffffff",
-                    borderColor: "#94a3b8",
-                    color: "#0f172a",
-                    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.12)",
-                  }}
-                >
-                  <ChevronLeft size={15} />
-                  {previousAction.label ?? t("setup.previousStep")}
-                </button>
-              )}
-              {nextAction ? (
-                <button
-                  type="button"
-                  onClick={nextAction.onClick}
-                  disabled={nextAction.disabled || nextAction.loading}
-                  className="inline-flex min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 px-4 py-2.5 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-55"
-                  style={{
-                    background: "#0f172a",
-                    borderColor: "#0f172a",
-                    color: "#ffffff",
-                    boxShadow: "0 8px 18px rgba(15, 23, 42, 0.28)",
-                  }}
-                >
-                  {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
-                  {nextAction.label}
-                  {!nextAction.loading && nextAction.icon !== "none" && <ChevronRight size={15} />}
-                </button>
-              ) : null}
-            </div>
-          )}
         </section>
       </main>
+      {showActions && (
+        <footer className="shrink-0 border-t border-aegis-border/60 bg-aegis-bg/95 px-6 py-3 backdrop-blur">
+          <div className={clsx("mx-auto flex w-full items-center justify-end gap-3", wide ? "max-w-5xl" : "max-w-3xl")}>
+            {previousAction && (
+              <button
+                type="button"
+                onClick={previousAction.onClick}
+                disabled={previousAction.disabled}
+                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 px-4 py-2.5 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45"
+                style={{
+                  background: "#ffffff",
+                  borderColor: "#94a3b8",
+                  color: "#0f172a",
+                  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.12)",
+                }}
+              >
+                <ChevronLeft size={15} />
+                {previousAction.label ?? t("setup.previousStep")}
+              </button>
+            )}
+            {nextAction ? (
+              <button
+                type="button"
+                onClick={nextAction.onClick}
+                disabled={nextAction.disabled || nextAction.loading}
+                className="inline-flex min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 px-4 py-2.5 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-55"
+                style={{
+                  background: "#0f172a",
+                  borderColor: "#0f172a",
+                  color: "#ffffff",
+                  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.28)",
+                }}
+              >
+                {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
+                {nextAction.label}
+                {!nextAction.loading && nextAction.icon !== "none" && <ChevronRight size={15} />}
+              </button>
+            ) : null}
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
@@ -692,7 +692,7 @@ function InstallationTimeline({ steps }: { steps: StepState[] }) {
               <div className={clsx("text-sm font-semibold", s.status === "running" ? "text-aegis-primary" : "text-aegis-text")} dir="auto">
                 {STEP_META[s.id] ? t(STEP_META[s.id].titleKey, STEP_META[s.id].titleFallback) : s.label}
               </div>
-              {STEP_META[s.id] && (
+              {STEP_META[s.id] && s.status === "running" && (
                 <div className="mt-1 text-xs leading-5 text-aegis-text-dim" dir="auto">
                   {t(STEP_META[s.id].descriptionKey, STEP_META[s.id].descriptionFallback)}
                 </div>
@@ -728,7 +728,7 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
   const completed = flow.steps.filter((s) => s.status === "done").length;
   const total = flow.steps.length || 1;
   const percent = Math.max(0, Math.min(100, Math.round(flow.progress)));
-  const recentLogs = logs.slice(-4);
+  const recentLogs = logs.slice(-3);
   const isReady = setupStep === "ready";
   const isError = setupStep === "error";
   const currentMeta = current ? STEP_META[current.id] : null;
@@ -738,9 +738,9 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
   const currentDescription = currentMeta ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback) : t("setup.subtitle");
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className={clsx(
-        "grid gap-4 rounded-xl border p-5 md:grid-cols-[1fr_190px]",
+        "grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_168px]",
         isError ? "border-red-500/35 bg-red-500/5" : isReady ? "border-aegis-success/35 bg-aegis-success/5" : "border-aegis-primary/30 bg-aegis-primary/5",
       )}>
         <div className="min-w-0">
@@ -748,7 +748,7 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
             {isReady ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
             {isReady ? t("setup.ready", "就绪") : isError ? t("setup.error", "安装遇到问题") : t("setup.installPanel.current", "当前执行")}
           </div>
-          <div className="text-xl font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
+          <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
           <p className="mt-1 max-w-[62ch] text-sm leading-6 text-aegis-text-muted">{currentDescription}</p>
           {flow.statusMessage && (
             <div className="mt-3 rounded-md border border-aegis-border bg-aegis-bg/55 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-secondary">
@@ -758,7 +758,7 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
         </div>
         <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">
           <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
-          <div className="mt-1 text-3xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-aegis-surface">
             <div className="h-full rounded-full bg-aegis-primary transition-all duration-500" style={{ width: `${percent}%` }} />
           </div>
@@ -766,7 +766,7 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
         <InstallationTimeline steps={flow.steps} />
         <aside className="rounded-xl border border-aegis-border bg-aegis-elevated p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-aegis-text">
@@ -788,7 +788,9 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
           <div className="mt-4 border-t border-aegis-border pt-3 text-[11px] leading-5 text-aegis-text-dim">
             {isError
               ? t("setup.installPanel.errorHint", "请复制错误信息或返回上一步重新选择安装方式。")
-              : t("setup.installPanel.keepOpen", "安装过程中请保持窗口打开。Gateway 就绪后会自动进入工作台。")}
+              : isReady
+                ? t("setup.installPanel.readyHint", "Gateway 已就绪。点击进入工作台继续。")
+                : t("setup.installPanel.keepOpen", "安装过程中请保持窗口打开。完成后点击进入工作台。")}
           </div>
         </aside>
       </div>
@@ -805,11 +807,17 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
     <SetupShell
       active={active}
       title={setupStep === "ready" ? t("setup.ready") : t("setup.settingUp")}
-      subtitle={t("setup.subtitle")}
+      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : t("setup.subtitle")}
       logs={logs}
       wide
       previousAction={setupStep === "ready" ? undefined : { onClick: () => flow.goBack() }}
-      nextAction={setupStep === "error" ? { label: t("setup.retry"), onClick: () => { void flow.retrySetup(); }, icon: "none" } : undefined}
+      nextAction={
+        setupStep === "ready"
+          ? { label: t("setup.enterWorkspace"), onClick: () => flow.enterWorkspace() }
+          : setupStep === "error"
+            ? { label: t("setup.retry"), onClick: () => { void flow.retrySetup(); }, icon: "none" }
+            : undefined
+      }
     >
       <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
       {setupStep === "error" && setupError && (
@@ -826,6 +834,54 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           </div>
         </div>
       )}
+    </SetupShell>
+  );
+}
+
+function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
+  const { t } = useTranslation();
+  const doneCount = flow.steps.filter((s) => s.status === "done").length;
+  const total = flow.steps.length || doneCount || 1;
+
+  return (
+    <SetupShell
+      active={3}
+      title={t("setup.ready")}
+      subtitle={t("setup.readySubtitle")}
+      logs={logs}
+      nextAction={{ label: t("setup.enterWorkspace"), onClick: () => flow.enterWorkspace() }}
+    >
+      <div className="flex flex-col items-center gap-6 py-5 text-center">
+        <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-aegis-success/10 text-aegis-success ring-4 ring-aegis-success/10">
+          <CheckCircle2 size={40} strokeWidth={2} />
+        </div>
+        {flow.steps.length > 0 && (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {flow.steps.map((s) => {
+              const meta = STEP_META[s.id];
+              const label = meta ? t(meta.titleKey, meta.titleFallback) : s.label;
+              const done = s.status === "done";
+              return (
+                <span
+                  key={s.id}
+                  className={clsx(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium",
+                    done
+                      ? "border-aegis-success/30 bg-aegis-success/10 text-aegis-success"
+                      : "border-aegis-border text-aegis-text-dim",
+                  )}
+                >
+                  {done ? <Check size={13} strokeWidth={3} /> : <Circle size={12} />}
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="text-xs text-aegis-text-dim">
+          {doneCount}/{total} {t("setup.installPanel.stepsDone", "个步骤完成")}
+        </div>
+      </div>
     </SetupShell>
   );
 }
@@ -895,11 +951,11 @@ export function SetupPage() {
     case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
     case "gateway-stopped": return <GatewayStoppedScreen flow={flow} logs={sharedLogs} />;
     case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
+    case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;
     case "checking":
     case "install-git":
     case "install-node":
     case "install-openclaw":
-    case "ready":
     case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
     case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
     default: return <DetectingScreen flow={flow} logs={sharedLogs} />;
