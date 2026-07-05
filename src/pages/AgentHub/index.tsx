@@ -3,12 +3,12 @@
 // Dynamic from Gateway API with animated SVG connections
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2 } from 'lucide-react';
+import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
@@ -19,6 +19,7 @@ import { StatusDot } from '@/components/shared/StatusDot';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
+import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
 import clsx from 'clsx';
 import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
@@ -44,6 +45,7 @@ interface AgentInfo {
   name?: string;
   configured: boolean;
   model?: string;
+  inheritedModel?: boolean;
   workspace?: string;
   [k: string]: unknown;
 }
@@ -109,6 +111,7 @@ function getTreeNodeConfig(id: string): { icon: React.ReactNode; color: string }
 /** Theme-aware primary color — call inside render, not at module scope */
 const mainColor = () => themeHex('primary');
 const formatTokens = (n: number) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+const AGENT_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 const timeAgo = (ts?: number) => {
   if (!ts) return '—';
@@ -131,6 +134,41 @@ function fmtModel(m: any): string {
   if (typeof m === 'string') return m;
   if (m?.primary) return m.primary;
   return String(m);
+}
+
+function normalizeAgentId(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+interface NewAgentDraft {
+  id: string;
+  name: string;
+  model: string;
+  workspace: string;
+  inheritWorkspace: boolean;
+}
+
+const emptyNewAgent: NewAgentDraft = { id: '', name: '', model: '', workspace: '', inheritWorkspace: false };
+
+function extractPrimaryModel(raw: unknown): string {
+  if (typeof raw === 'string') return raw;
+  if (raw && typeof raw === 'object' && 'primary' in raw) {
+    return String((raw as Record<string, unknown>).primary ?? '');
+  }
+  return '';
+}
+
+function buildAgentCreatePayload(input: NewAgentDraft, defaultWorkspace = '') {
+  const payload: { id: string; name?: string; model?: string; workspace?: string } = {
+    id: normalizeAgentId(input.id),
+  };
+  const name = input.name.trim();
+  const model = input.model.trim();
+  const workspace = input.workspace.trim() || (input.inheritWorkspace ? defaultWorkspace.trim() : '');
+  if (name) payload.name = name;
+  if (model) payload.model = model;
+  if (workspace) payload.workspace = workspace;
+  return payload;
 }
 
 function parseSessions(raw: any[]): SessionInfo[] {
@@ -541,11 +579,13 @@ function ActivityFeed({ sessions, agents }: { sessions: SessionInfo[]; agents: A
 
 export function AgentHubPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { connected } = useChatStore();
   const rawSessions = useGatewayDataStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
   const loading = useGatewayDataStore((s) => s.loading.sessions || s.loading.agents);
+  const dataError = useGatewayDataStore((s) => s.errors.agents || s.errors.sessions);
 
   const sessions = useMemo(() => parseSessions(rawSessions as any[]), [rawSessions]);
 
@@ -554,38 +594,83 @@ export function AgentHubPage() {
   const [workerLogs, setWorkerLogs] = useState<Record<string, any[]>>({});
   const [loadingLog, setLoadingLog] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [deletingAgentId, setDeletingAgentId] = useState<string | null>(null);
-  const [newAgent, setNewAgent] = useState({ id: '', name: '', model: '', workspace: '' });
+  const [newAgent, setNewAgent] = useState<NewAgentDraft>(emptyNewAgent);
+  const [creatingAgent, setCreatingAgent] = useState(false);
+  const [agentFormError, setAgentFormError] = useState<string | null>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentInfo | null>(null);
 
   // ── Stable model map from config.get (agents.list never returns models) ──
   // Stored in local state so polling refreshes of agents.list can't overwrite it.
   const [agentModels, setAgentModels] = useState<Record<string, string>>({});
+  const [agentExplicitModels, setAgentExplicitModels] = useState<Record<string, boolean>>({});
+  const [agentChannels, setAgentChannels] = useState<Record<string, string[]>>({});
+  const [defaultAgentModel, setDefaultAgentModel] = useState('');
+  const [defaultAgentWorkspace, setDefaultAgentWorkspace] = useState('');
 
-  useEffect(() => {
-    if (!connected) return;
+  const loadAgentConfigMeta = useCallback(() => {
+    if (!connected) return Promise.resolve();
     gateway.call('config.get', {}).then((snap: any) => {
       const cfgList: any[] = snap?.config?.agents?.list ?? [];
       const models: Record<string, string> = {};
+      const explicit: Record<string, boolean> = {};
+      const channelMap: Record<string, string[]> = {};
+      const defaults = snap?.config?.agents?.defaults ?? {};
+      const defaultModel = extractPrimaryModel(defaults.model);
       for (const cfg of cfgList) {
         if (!cfg?.id) continue;
-        const raw = cfg.model;
-        const m = typeof raw === 'string'
-          ? raw
-          : (raw && typeof raw === 'object' && 'primary' in raw)
-            ? String(raw.primary ?? '')
-            : '';
-        if (m) models[cfg.id] = m;
+        const m = extractPrimaryModel(cfg.model);
+        if (m) {
+          models[cfg.id] = m;
+          explicit[cfg.id] = true;
+        }
+      }
+      const channels = snap?.config?.channels ?? {};
+      for (const [channelId, channelConfig] of Object.entries(channels as Record<string, any>)) {
+        if (channelId === 'modelByChannel' || !channelConfig || typeof channelConfig !== 'object') continue;
+        if (typeof channelConfig.agentId === 'string' && channelConfig.agentId) {
+          channelMap[channelConfig.agentId] = [...(channelMap[channelConfig.agentId] ?? []), channelId];
+        }
+        const accounts = channelConfig.accounts;
+        if (accounts && typeof accounts === 'object' && !Array.isArray(accounts)) {
+          for (const [accountId, account] of Object.entries(accounts as Record<string, any>)) {
+            if (typeof account?.agentId !== 'string' || !account.agentId) continue;
+            channelMap[account.agentId] = [...(channelMap[account.agentId] ?? []), `${channelId}:${accountId}`];
+          }
+        }
       }
       setAgentModels(models);
+      setAgentExplicitModels(explicit);
+      setAgentChannels(channelMap);
+      setDefaultAgentModel(defaultModel);
+      setDefaultAgentWorkspace(typeof defaults.workspace === 'string' ? defaults.workspace : '');
     }).catch(() => { /* silent — cards just show '—' */ });
   }, [connected]);
 
+  useEffect(() => {
+    void loadAgentConfigMeta();
+  }, [loadAgentConfigMeta]);
+
+  useEffect(() => {
+    const onConfigSaved = () => { void loadAgentConfigMeta(); };
+    window.addEventListener('aegis:config-saved', onConfigSaved);
+    return () => window.removeEventListener('aegis:config-saved', onConfigSaved);
+  }, [loadAgentConfigMeta]);
+
   // Enrich agents with model data from config (merge at render time, not in store)
   const enrichedAgents = useMemo(() =>
-    agents.map(a => agentModels[a.id] ? { ...a, model: agentModels[a.id] } : a),
-    [agents, agentModels]
+    agents.map(a => {
+      if (agentModels[a.id]) return { ...a, model: agentModels[a.id], inheritedModel: false };
+      if (defaultAgentModel) return { ...a, model: defaultAgentModel, inheritedModel: !agentExplicitModels[a.id] };
+      return a;
+    }),
+    [agents, agentModels, agentExplicitModels, defaultAgentModel]
   );
+  const normalizedNewAgentId = normalizeAgentId(newAgent.id);
+  const newAgentIdExists = !!normalizedNewAgentId && (normalizedNewAgentId === 'main' || agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId));
+  const newAgentIdInvalid = !!normalizedNewAgentId && !AGENT_ID_RE.test(normalizedNewAgentId);
+  const canCreateAgent = connected && !!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists && !creatingAgent;
 
   // Sidebar "在线智能体" click navigates to /agents?agent=<id>. Open that
   // agent's settings panel automatically, matching in-page card click behavior.
@@ -597,6 +682,7 @@ export function AgentHubPage() {
     if (id) {
       const target = enrichedAgents.find((a) => a.id === id);
       if (target) {
+        setSelectedAgentId(target.id);
         setSettingsAgent(target);
         const next = new URLSearchParams(searchParams);
         next.delete('agent');
@@ -613,18 +699,63 @@ export function AgentHubPage() {
   }, [searchParams, enrichedAgents, setSearchParams]);
 
   const handleCreateAgent = async () => {
-    if (!newAgent.id.trim()) return;
+    if (creatingAgent) return;
+    const payload = buildAgentCreatePayload(newAgent, defaultAgentWorkspace);
+    if (!payload.id) return;
+    if (!AGENT_ID_RE.test(payload.id)) {
+      setAgentFormError(t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'));
+      return;
+    }
+    const duplicate = agents.some((agent) => agent.id.toLowerCase() === payload.id) || payload.id === 'main';
+    if (duplicate) {
+      setAgentFormError(t('agentHub.addForm.duplicateId', 'This agent ID already exists.'));
+      return;
+    }
+    if (!connected) {
+      setAgentFormError(t('agentHub.addForm.notConnected', 'Gateway is not connected.'));
+      return;
+    }
+    setCreatingAgent(true);
+    setAgentFormError(null);
     try {
-      await gateway.createAgent(newAgent);
-      setShowAddForm(false); setNewAgent({ id: '', name: '', model: '', workspace: '' });
+      await gateway.createAgent(payload);
+      if (payload.model) {
+        setAgentModels((prev) => ({ ...prev, [payload.id]: payload.model! }));
+        setAgentExplicitModels((prev) => ({ ...prev, [payload.id]: true }));
+      }
+      setShowAddForm(false);
+      setSelectedAgentId(payload.id);
+      setNewAgent(emptyNewAgent);
       await refreshGroup('agents');
-    } catch (err: any) { showAlert(i18n.t('common.error') as string, err?.message || String(err), 'error'); }
+    } catch (err: any) {
+      showAlert(i18n.t('common.error') as string, err?.message || String(err), 'error');
+    } finally {
+      setCreatingAgent(false);
+    }
   };
 
   const handleDeleteAgent = async (agentId: string) => {
     if (deletingAgentId === agentId) {
-      try { await gateway.deleteAgent(agentId); setDeletingAgentId(null);
+      try {
+        await gateway.deleteAgent(agentId);
+        const removedBindings = await cleanupDeletedAgentChannelBindings(agentId);
+        setDeletingAgentId(null);
+        if (selectedAgentId === agentId) setSelectedAgentId(null);
+        setSettingsAgent((prev) => prev?.id === agentId ? null : prev);
+        setAgentChannels((prev) => {
+          if (!prev[agentId]) return prev;
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
         await refreshGroup('agents');
+        if (removedBindings > 0) {
+          showAlert(
+            t('agentHub.deleteCleanupTitle', 'Agent deleted'),
+            t('agentHub.deleteCleanupMessage', { count: removedBindings, defaultValue: `Removed ${removedBindings} channel binding(s).` }),
+            'success'
+          );
+        }
       } catch (err: any) { showAlert(i18n.t('common.error') as string, err?.message || String(err), 'error'); setDeletingAgentId(null); }
     } else {
       setDeletingAgentId(agentId);
@@ -636,6 +767,7 @@ export function AgentHubPage() {
   const mainSession = sessions.find(s => s.agentId === 'main' && s.type === 'main');
   const workers = sessions.filter(s => s !== mainSession && (s.type === 'cron' || s.type === 'subagent'));
   const registeredAgents = enrichedAgents.filter(a => a.id !== 'main');
+  const selectedAgent = registeredAgents.find(a => a.id === selectedAgentId) ?? null;
   const getAgentSessions = (agentId: string) => sessions.filter(s => s.agentId === agentId && s.type !== 'main');
 
   // Check if an agent has a running sub-agent (from real-time tool stream tracking)
@@ -776,10 +908,20 @@ export function AgentHubPage() {
             ))}
           </div>
           <button onClick={() => refreshAll()} className="p-2 rounded-xl hover:bg-[rgb(var(--aegis-overlay)/0.05)] text-aegis-text-dim transition-colors">
-            <RotateCcw size={16} />
+            <RotateCcw size={16} className={loading ? 'animate-spin' : undefined} />
           </button>
         </div>
       </div>
+
+      {dataError && (
+        <div className="flex items-start gap-2 rounded-xl border border-aegis-danger/20 bg-aegis-danger/10 px-4 py-3 text-[12px] text-aegis-danger">
+          <AlertCircle size={15} className="mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <div className="font-bold">{t('agentHub.loadFailed', 'Failed to load agent data')}</div>
+            <div className="mt-0.5 font-mono text-[10px] break-all opacity-80">{dataError}</div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20"><Loader2 size={24} className="animate-spin text-aegis-primary" /></div>
@@ -887,17 +1029,51 @@ export function AgentHubPage() {
                               {t('agentHub.addNewAgent', 'Add New Agent')}
                             </div>
                             <div className="grid grid-cols-2 gap-3">
-                              <input placeholder={t('agentHub.addForm.agentIdPlaceholder', 'Agent ID *')} value={newAgent.id} onChange={e => setNewAgent(p => ({ ...p, id: e.target.value }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none" />
-                              <input placeholder={t('agentHub.addForm.namePlaceholder', 'Name')} value={newAgent.name} onChange={e => setNewAgent(p => ({ ...p, name: e.target.value }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none" />
-                              <input placeholder={t('agentHub.addForm.modelPlaceholder', 'Model')} value={newAgent.model} onChange={e => setNewAgent(p => ({ ...p, model: e.target.value }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none" />
-                              <input placeholder={t('agentHub.addForm.workspacePlaceholder', 'Workspace')} value={newAgent.workspace} onChange={e => setNewAgent(p => ({ ...p, workspace: e.target.value }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none" />
+                              <input disabled={creatingAgent} placeholder={t('agentHub.addForm.agentIdPlaceholder', 'Agent ID *')} value={newAgent.id} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, id: e.target.value })); }} onBlur={() => setNewAgent(p => ({ ...p, id: normalizeAgentId(p.id) }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                              <input disabled={creatingAgent} placeholder={t('agentHub.addForm.namePlaceholder', 'Name')} value={newAgent.name} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, name: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                              <input disabled={creatingAgent} placeholder={t('agentHub.addForm.modelPlaceholder', 'Model')} value={newAgent.model} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, model: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                              <input disabled={creatingAgent || newAgent.inheritWorkspace} placeholder={t('agentHub.addForm.workspacePlaceholder', 'Workspace')} value={newAgent.workspace} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, workspace: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
                             </div>
+                            <label className="flex items-start gap-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2 text-[11px] text-aegis-text-muted">
+                              <input
+                                type="checkbox"
+                                disabled={creatingAgent || !defaultAgentWorkspace}
+                                checked={newAgent.inheritWorkspace}
+                                onChange={(e) => {
+                                  setAgentFormError(null);
+                                  setNewAgent(p => ({ ...p, inheritWorkspace: e.target.checked, workspace: e.target.checked ? '' : p.workspace }));
+                                }}
+                                className="mt-0.5 accent-aegis-primary"
+                              />
+                              <span className="leading-relaxed">
+                                {t('agentHub.addForm.inheritWorkspace', 'Inherit default workspace')}
+                                {defaultAgentWorkspace && (
+                                  <span className="block font-mono text-[9px] text-aegis-text-dim truncate">
+                                    {defaultAgentWorkspace}
+                                  </span>
+                                )}
+                              </span>
+                            </label>
+                            {(agentFormError || newAgentIdInvalid || newAgentIdExists || !connected) && (
+                              <div className="flex items-start gap-2 rounded-lg border border-aegis-danger/20 bg-aegis-danger/10 px-3 py-2 text-[11px] leading-relaxed text-aegis-danger">
+                                <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                                <span>
+                                  {agentFormError
+                                    || (!connected
+                                      ? t('agentHub.addForm.notConnected', 'Gateway is not connected.')
+                                      : newAgentIdExists
+                                        ? t('agentHub.addForm.duplicateId', 'This agent ID already exists.')
+                                        : t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'))}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex gap-2 justify-end">
-                              <button onClick={() => { setShowAddForm(false); setNewAgent({ id: '', name: '', model: '', workspace: '' }); }} className="px-4 py-2 rounded-lg bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted text-sm">
+                              <button disabled={creatingAgent} onClick={() => { setShowAddForm(false); setAgentFormError(null); setNewAgent(emptyNewAgent); }} className="px-4 py-2 rounded-lg bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted text-sm disabled:opacity-50">
                                 {t('common.cancel', 'Cancel')}
                               </button>
-                              <button onClick={handleCreateAgent} disabled={!newAgent.id.trim()} className="px-4 py-2 rounded-lg bg-aegis-primary/20 border border-aegis-primary/30 text-aegis-primary text-sm font-semibold disabled:opacity-30">
-                                {t('common.create', 'Create')}
+                              <button onClick={handleCreateAgent} disabled={!canCreateAgent} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary/20 border border-aegis-primary/30 text-aegis-primary text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed">
+                                {creatingAgent && <Loader2 size={14} className="animate-spin" />}
+                                {creatingAgent ? t('agentHub.addForm.creating', 'Creating...') : t('common.create', 'Create')}
                               </button>
                             </div>
                           </div>
@@ -905,6 +1081,100 @@ export function AgentHubPage() {
                       </motion.div>
                     )}
                   </AnimatePresence>
+
+                  {selectedAgent && (() => {
+                    const previewDisplay = getAgentDisplay(selectedAgent);
+                    const previewSessions = getAgentSessions(selectedAgent.id);
+                    const previewActive = previewSessions.filter(s => s.running).length;
+                    const previewTokens = previewSessions.reduce((sum, s) => sum + s.totalTokens, 0);
+                    const previewLast = previewSessions.length > 0 ? Math.max(...previewSessions.map(s => s.updatedAt)) : 0;
+                    const previewModel = fmtModel(selectedAgent.model);
+                    const previewChannels = agentChannels[selectedAgent.id] ?? [];
+                    return (
+                      <GlassCard className="mb-3">
+                        <div className="flex items-start gap-4">
+                          <div
+                            className="w-[52px] h-[52px] rounded-xl flex items-center justify-center shrink-0 border"
+                            style={{
+                              background: `linear-gradient(135deg, ${previewDisplay.color}22, ${previewDisplay.color}08)`,
+                              borderColor: `${previewDisplay.color}32`,
+                              color: previewDisplay.color,
+                            }}
+                          >
+                            {previewDisplay.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-[15px] font-extrabold text-aegis-text truncate">
+                                  {selectedAgent.name || selectedAgent.id}
+                                </div>
+                                <div className="text-[10px] text-aegis-text-dim font-mono mt-0.5 truncate">
+                                  {selectedAgent.id}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setSettingsAgent(selectedAgent)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-aegis-primary/12 border border-aegis-primary/25 text-aegis-primary text-[11px] font-bold hover:bg-aegis-primary/18 transition-colors"
+                              >
+                                <Settings2 size={13} />
+                                {t('common.edit', 'Edit')}
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+                              <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2">
+                                <div className="text-[8px] uppercase tracking-wider text-aegis-text-dim">{t('agentSettings.model', 'Model')}</div>
+                                <div className="mt-1 flex items-center gap-1.5 min-w-0">
+                                  <span className="text-[11px] font-semibold text-aegis-text truncate">{previewModel ? previewModel.split('/').pop() : previewDisplay.description}</span>
+                                  {selectedAgent.inheritedModel && (
+                                    <span className="shrink-0 rounded px-1 py-0.5 text-[8px] font-bold bg-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-dim">
+                                      {t('agentHub.inherited', 'Inherited')}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2">
+                                <div className="text-[8px] uppercase tracking-wider text-aegis-text-dim">{t('agentSettings.activeSessions', 'Active')}</div>
+                                <div className="mt-1 text-[11px] font-semibold text-aegis-text">{previewActive} / {previewSessions.length}</div>
+                              </div>
+                              <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2">
+                                <div className="text-[8px] uppercase tracking-wider text-aegis-text-dim">{t('agentSettings.totalTokens', 'Tokens')}</div>
+                                <div className="mt-1 text-[11px] font-semibold text-aegis-text">{formatTokens(previewTokens)}</div>
+                              </div>
+                              <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2">
+                                <div className="text-[8px] uppercase tracking-wider text-aegis-text-dim">{t('agentSettings.lastActivity', 'Last Activity')}</div>
+                                <div className="mt-1 text-[11px] font-semibold text-aegis-text truncate">{previewLast ? timeAgo(previewLast) : t('agentHub.idle', 'Idle')}</div>
+                              </div>
+                            </div>
+                            {selectedAgent.workspace && (
+                              <div className="mt-2 text-[10px] text-aegis-text-dim font-mono truncate">
+                                {selectedAgent.workspace}
+                              </div>
+                            )}
+                            <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                                  <MessageSquare size={11} />
+                                  {t('channelsCenter.title', 'Channel Center')}
+                                </div>
+                                <div className="mt-1 text-[11px] text-aegis-text-dim truncate">
+                                  {previewChannels.length > 0
+                                    ? previewChannels.join(', ')
+                                    : t('channelsCenter.noBinding', 'No bound agent')}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => navigate('/channels')}
+                                className="shrink-0 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-bold text-aegis-primary"
+                              >
+                                {t('common.edit', 'Edit')}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </GlassCard>
+                    );
+                  })()}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {registeredAgents.map((agent, i) => {
@@ -919,10 +1189,10 @@ export function AgentHubPage() {
 
                       return (
                         <div key={agent.id}>
-                          <GlassCard delay={i * 0.05} hover >
+                          <GlassCard delay={i * 0.05} hover onClick={() => setSelectedAgentId(agent.id)} className="cursor-pointer">
                             <div className="flex items-start gap-4">
                               <div className="w-[48px] h-[48px] rounded-xl flex items-center justify-center shrink-0 border relative"
-                                style={{ background: `linear-gradient(135deg, ${display.color}20, ${display.color}05)`, borderColor: isRunning ? `${display.color}40` : `${display.color}25`, color: display.color }}>
+                                style={{ background: `linear-gradient(135deg, ${display.color}20, ${display.color}05)`, borderColor: selectedAgentId === agent.id ? themeHex('primary') : isRunning ? `${display.color}40` : `${display.color}25`, color: display.color }}>
                                 {display.icon}
                                 {isRunning && <div className="absolute -bottom-[2px] -right-[2px]"><StatusDot status="active" size={10} glow beacon /></div>}
                               </div>
@@ -930,6 +1200,7 @@ export function AgentHubPage() {
                                 <div className="text-[14px] font-bold text-aegis-text">{agent.name || agent.id}</div>
                                 <div className="text-[10px] text-aegis-text-dim font-mono mt-0.5">
                                   {fmtModel(agent.model).split('/').pop() || display.description}
+                                  {agent.inheritedModel && <span className="ms-1 text-[9px] font-sans text-aegis-text-dim">({t('agentHub.inherited', 'Inherited')})</span>}
                                 </div>
                                 <div className="flex items-center gap-3 mt-2 text-[10px] text-aegis-text-muted">
                                   {isRunning ? (
@@ -1009,7 +1280,16 @@ export function AgentHubPage() {
             : []
         }
         onClose={() => setSettingsAgent(null)}
-        onSaved={() => refreshGroup('agents')}
+        onSaved={(patch) => {
+          if (settingsAgent && patch) {
+            setSettingsAgent((prev) => prev ? { ...prev, ...patch } : prev);
+            if (patch.model) {
+              setAgentModels((prev) => ({ ...prev, [settingsAgent.id]: String(patch.model) }));
+              setAgentExplicitModels((prev) => ({ ...prev, [settingsAgent.id]: true }));
+            }
+          }
+          refreshGroup('agents');
+        }}
       />
     </PageTransition>
   );

@@ -1,7 +1,7 @@
 /**
- * ProviderAuthMode — ported from ClawX electron/shared/providers/types.ts
+ * ProviderAuthMode — owned by JunQi electron/shared/providers/types.ts
  *
- * ClawX supports 4 auth modes per provider. We port the type + the
+ * JunQi supports 4 auth modes per provider. We port the type + the
  * per-mode metadata (API key env var, OAuth target key, etc.) so the
  * frontend can drive the right UI per mode. The actual Tauri-side
  * browser-OAuth / device-code flows (PKCE, local HTTP server) live in
@@ -42,7 +42,7 @@ export const AUTH_MODE_INFO: Record<ProviderAuthMode, AuthModeInfo> = {
 };
 
 /**
- * Provider types whose default auth mode is NOT 'api_key'. ClawX calls
+ * Provider types whose default auth mode is NOT 'api_key'. JunQi calls
  * these 'OAUTH_PROVIDER_TYPES' (utils/provider-keys.ts:9) — currently
  * just the MiniMax Portal variants. The frontend uses this to choose
  * the default auth mode in the UI when the user picks a provider.
@@ -51,8 +51,7 @@ export const OAUTH_PROVIDER_TYPES = new Set<string>(['minimax-portal', 'minimax-
 
 /**
  * Map a provider type to its default auth mode.
- * Ported from ClawX utils/provider-keys.ts:82-99 + provider-store.ts:6-17.
- */
+ *  */
 export function defaultAuthModeFor(providerType: string): ProviderAuthMode {
   if (OAUTH_PROVIDER_TYPES.has(providerType)) return 'oauth_browser';
   if (providerType === 'ollama') return 'local';
@@ -60,7 +59,7 @@ export function defaultAuthModeFor(providerType: string): ProviderAuthMode {
 }
 
 /**
- * Per-provider list of supported auth modes. ClawX encodes this on each
+ * Per-provider list of supported auth modes. JunQi encodes this on each
  * ProviderDefinition (registry.ts). We mirror the same shape so the
  * frontend can render the right radio group.
  *

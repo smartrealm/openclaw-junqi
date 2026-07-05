@@ -1,13 +1,13 @@
 //! Boot-time gateway orchestrator (SPEC §4.2, M7).
 //!
-//! Try managed child → check healthz → if failed, try docker container →
+//! Try managed child → check local gateway port → if failed, try docker container →
 //! if no docker, try native spawn as last resort. Debounced so the UI
 //! cannot trigger more than one fallback attempt per minute.
 //!
 //! This is the single entry point the frontend calls when it wants to
 //! "guarantee the gateway is running". It is intentionally NOT a hot-path
 //! function — callers should invoke it on boot, on user-triggered
-//! reconnect, or after observing N consecutive healthz failures.
+//! reconnect, or after observing N consecutive gateway reachability failures.
 
 use crate::commands::docker::{
     check_docker, docker_gateway_status, start_docker_gateway,
@@ -50,20 +50,9 @@ pub struct EnsureResult {
 static LAST_ENSURE: Mutex<Option<Instant>> = Mutex::new(None);
 const DEBOUNCE_WINDOW: Duration = Duration::from_secs(60);
 
-/// Try the HTTP /healthz probe to confirm a gateway on `port` is actually
-/// serving (not just listening). Returns true on 200 within 1s.
-async fn probe_healthz(port: u16) -> bool {
-    let url = format!("http://127.0.0.1:{}/healthz", port);
-    match tokio::time::timeout(
-        Duration::from_secs(1),
-        reqwest::Client::new()
-            .get(&url)
-            .timeout(Duration::from_millis(800))
-            .send(),
-    ).await {
-        Ok(Ok(resp)) => resp.status().is_success(),
-        _ => false,
-    }
+/// Confirm a gateway endpoint on `port` is reachable.
+async fn probe_gateway_port(port: u16) -> bool {
+    crate::commands::gateway::is_gateway_serving(port).await
 }
 
 /// Read the gateway auth token from the configured config file.
@@ -78,12 +67,45 @@ fn read_gateway_token() -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// Read the auth token used by the managed Docker gateway config.
+fn read_docker_gateway_token() -> Option<String> {
+    use crate::paths;
+    let path = paths::desktop_dir().join("docker").join("openclaw.json");
+    let raw = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    v.get("gateway")?
+        .get("auth")?
+        .get("token")?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
+/// Read the configured gateway port from openclaw.json.
+/// Defaults to 18789, matching OpenClaw's local gateway default.
+fn read_gateway_port() -> u16 {
+    use crate::paths;
+    let raw = match std::fs::read_to_string(&paths::config_path()) {
+        Ok(raw) => raw,
+        Err(_) => return 18789,
+    };
+    let v: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return 18789,
+    };
+    v.get("gateway")
+        .and_then(|g| g.get("port"))
+        .and_then(|p| p.as_u64())
+        .filter(|p| *p > 0 && *p < 65536)
+        .map(|p| p as u16)
+        .unwrap_or(18789)
+}
+
 /// Boot-time / on-demand orchestrator.
 ///
 /// Algorithm (SPEC §4.2):
-///   1. If managed child is alive AND healthz(port) returns 200 → Native/healthy.
+///   1. If the configured local gateway port is reachable → Native/healthy.
 ///   2. Else, check Docker: if container "maxauto-openclaw" exists, try to
-///      start it and probe healthz for up to 30s.
+///      start it and probe the gateway port for up to 30s.
 ///   3. Else, if Docker daemon is running AND the openclaw image is
 ///      available, spawn a container (delegates to `start_docker_gateway`).
 ///   4. Else, return Unavailable with a descriptive error.
@@ -98,38 +120,42 @@ pub async fn ensure_gateway_running(
     // Debounce: skip the heavy lifting if a recent attempt succeeded or
     // marked the system unavailable. The UI polls status every few seconds
     // and would otherwise spam this command.
-    {
+    let debounced = {
         let last = LAST_ENSURE.lock().map_err(|e| e.to_string())?;
-        if let Some(t) = *last {
-            if t.elapsed() < DEBOUNCE_WINDOW {
-                // Return a quick "still trying" without re-running the
-                // escalation chain. Caller can read `healthy: false` and
-                // decide what to do (typically: wait, don't trigger fallback).
-                let port = *state.port.lock().map_err(|e| e.to_string())?;
-                return Ok(EnsureResult {
-                    mode: GatewayMode::Unavailable,
-                    healthy: false,
-                    port,
-                    token: None,
-                    attempted_fallback: false,
-                    error: Some("debounced: recent ensure attempt in progress".to_string()),
-                });
-            }
+        last.map(|t| t.elapsed() < DEBOUNCE_WINDOW).unwrap_or(false)
+    };
+    if debounced {
+        // Return a quick "still trying" without re-running the escalation
+        // chain. Still do a cheap local health probe first.
+        let configured_port = read_gateway_port();
+        let state_port = *state.port.lock().map_err(|e| e.to_string())?;
+        let port = if configured_port > 0 { configured_port } else { state_port };
+        if probe_gateway_port(port).await {
+            let token = read_gateway_token();
+            return Ok(EnsureResult {
+                mode: GatewayMode::Native,
+                healthy: true,
+                port,
+                token,
+                attempted_fallback: false,
+                error: None,
+            });
         }
+        return Ok(EnsureResult {
+            mode: GatewayMode::Unavailable,
+            healthy: false,
+            port,
+            token: None,
+            attempted_fallback: false,
+            error: Some("debounced: recent ensure attempt in progress".to_string()),
+        });
     }
 
-    let port = *state.port.lock().map_err(|e| e.to_string())?;
+    let port = read_gateway_port();
+    *state.port.lock().map_err(|e| e.to_string())? = port;
 
-    // 1. Is our managed child alive AND healthy?
-    let managed_alive = {
-        let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
-        if let Some(ref mut child) = *child_lock {
-            matches!(child.try_wait(), Ok(None))
-        } else {
-            false
-        }
-    };
-    if managed_alive && probe_healthz(port).await {
+    // 1. Is JunQi's configured native/local gateway already healthy?
+    if probe_gateway_port(port).await {
         let token = read_gateway_token();
         *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
         push_log(&state.logs, LogSource::Lifecycle, LogLevel::Info,
@@ -144,7 +170,21 @@ pub async fn ensure_gateway_running(
         });
     }
 
-    // 2/3. Docker fallback.
+    // 2. Is our managed child alive but not healthy yet?
+    let managed_alive = {
+        let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
+        if let Some(ref mut child) = *child_lock {
+            matches!(child.try_wait(), Ok(None))
+        } else {
+            false
+        }
+    };
+    if managed_alive {
+        push_log(&state.logs, LogSource::Lifecycle, LogLevel::Warn,
+                 format!("ensure_gateway_running: managed native child alive but gateway port was not reachable on {}", port));
+    }
+
+    // 3/4. Docker fallback.
     push_log(&state.logs, LogSource::Lifecycle, LogLevel::Warn,
              "ensure_gateway_running: native unhealthy, attempting Docker fallback");
     match check_docker().await {
@@ -153,27 +193,33 @@ pub async fn ensure_gateway_running(
             let present = docker_gateway_status(Some(port)).await
                 .map(|s| s.running)
                 .unwrap_or(false);
+            let mut docker_token = read_docker_gateway_token();
             if !present {
                 // Try to start the container from the official image.
-                if let Err(e) = start_docker_gateway(app.clone(), Some(port), None).await {
-                    let err = format!("docker fallback failed: {}", e);
-                    push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
-                    *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
-                    return Ok(EnsureResult {
-                        mode: GatewayMode::Unavailable,
-                        healthy: false,
-                        port,
-                        token: None,
-                        attempted_fallback: true,
-                        error: Some(err),
-                    });
+                match start_docker_gateway(app.clone(), Some(port), None).await {
+                    Ok(status) => {
+                        docker_token = status.token.or_else(read_docker_gateway_token);
+                    }
+                    Err(e) => {
+                        let err = format!("docker fallback failed: {}", e);
+                        push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
+                        *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
+                        return Ok(EnsureResult {
+                            mode: GatewayMode::Unavailable,
+                            healthy: false,
+                            port,
+                            token: None,
+                            attempted_fallback: true,
+                            error: Some(err),
+                        });
+                    }
                 }
             }
             // Wait for the gateway inside the container to come up.
             for _ in 0..30 {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                if probe_healthz(port).await {
-                    let token = read_gateway_token();
+                if probe_gateway_port(port).await {
+                    let token = docker_token.or_else(read_docker_gateway_token);
                     *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
                     push_log(&state.logs, LogSource::Lifecycle, LogLevel::Info,
                              "ensure_gateway_running: docker fallback succeeded");
@@ -187,7 +233,7 @@ pub async fn ensure_gateway_running(
                     });
                 }
             }
-            let err = "Docker container up but gateway healthz never returned 200 within 30s".to_string();
+            let err = "Docker container up but gateway port never became reachable within 30s".to_string();
             push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
             *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
             return Ok(EnsureResult {

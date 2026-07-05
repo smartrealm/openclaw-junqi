@@ -8,7 +8,7 @@ target/
 # Ad-hoc screenshots dropped at the repo root for inspection.
 # All real app icons live under src-tauri/icons/ (matched explicitly
 # by tauri.conf.json), so a root-level *.png is always scratch.
-*.png
+/*.png
 # Sibling project checked out next to this one for cross-reference.
 # Add it back if you ever start a monorepo merge.
 hexclaw-desktop/

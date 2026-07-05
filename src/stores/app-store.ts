@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
-type SetupStep =
+export type SetupStep =
+  | "welcome"
   | "detecting"
   | "gateway-stopped"
   | "choosing-mode"
@@ -18,25 +19,30 @@ interface AppState {
   setupComplete: boolean | null; // null = detecting
   setupStep: SetupStep;
   setupError: string | null;
+  setupStatusMessage: string;
+  setupProgress: number;
   installMode: InstallMode;
   gatewayRunning: boolean;
 
   setSetupComplete: (v: boolean | null) => void;
   setSetupStep: (step: SetupStep) => void;
   setSetupError: (err: string | null) => void;
+  setSetupStatus: (message: string, progress?: number) => void;
   setInstallMode: (mode: InstallMode) => void;
   setGatewayRunning: (v: boolean) => void;
 }
 
 const savedMode = (localStorage.getItem("junqi-install-mode") as InstallMode) || "native";
+const setupPreviouslyDone = localStorage.getItem("junqi-setup-done") === "1";
 
 export const useAppStore = create<AppState>((set) => ({
-  // Always start with null (detecting) so the setup wizard runs a quick
-  // check on every launch. useSetupFlow will call setSetupComplete(true)
-  // immediately if openclaw is installed and the gateway responds.
+  // First install starts with brand/language/theme selection. Once OpenClaw is
+  // known to be installed, future launches go straight to the Gateway probe.
   setupComplete: null,
-  setupStep: "detecting" as SetupStep,
+  setupStep: (setupPreviouslyDone ? "detecting" : "welcome") as SetupStep,
   setupError: null,
+  setupStatusMessage: "",
+  setupProgress: 0,
   installMode: savedMode,
   gatewayRunning: false,
 
@@ -50,6 +56,10 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setSetupStep: (step) => set({ setupStep: step }),
   setSetupError: (err) => set({ setupError: err }),
+  setSetupStatus: (message, progress) => set((s) => ({
+    setupStatusMessage: message,
+    setupProgress: progress ?? s.setupProgress,
+  })),
   setInstallMode: (mode) => {
     localStorage.setItem("junqi-install-mode", mode);
     set({ installMode: mode });

@@ -3,6 +3,7 @@ use crate::paths;
 use crate::state::GatewayProcess;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::net::TcpStream;
 
 #[derive(Debug, Serialize)]
 pub struct GatewayStatus {
@@ -17,49 +18,12 @@ pub struct GatewayStatus {
 /// Build a PATH that includes bundled Node.js, our openclaw prefix,
 /// and common native install locations — same approach as openclaw-desktop.
 fn augmented_path() -> String {
-    let mut parts: Vec<String> = Vec::new();
-    // Bundled Node.js
-    parts.push(paths::node_bin_dir().to_string_lossy().to_string());
-    // Our openclaw --prefix install
-    parts.push(paths::desktop_dir().join("openclaw").join("bin").to_string_lossy().to_string());
-    if let Some(home) = dirs::home_dir() {
-        // Native npm installs (Unix)
-        parts.push(home.join(".npm-global").join("bin").to_string_lossy().to_string());
-        parts.push(home.join(".local").join("bin").to_string_lossy().to_string());
-        // asdf / mise version managers (shim node, npm, etc.)
-        parts.push(home.join(".asdf").join("shims").to_string_lossy().to_string());
-        // Windows: npm global bin lives under %APPDATA%\npm
-        #[cfg(windows)]
-        {
-            if let Ok(appdata) = std::env::var("APPDATA") {
-                parts.push(std::path::PathBuf::from(appdata).join("npm").to_string_lossy().to_string());
-            }
-            parts.push(home.join("AppData").join("Roaming").join("npm").to_string_lossy().to_string());
-        }
-    }
-    if let Ok(existing) = std::env::var("PATH") {
-        parts.push(existing);
-    }
-    parts.join(if cfg!(windows) { ";" } else { ":" })
+    crate::commands::system::openclaw_search_path()
 }
 
 /// Resolve `openclaw` on the augmented PATH — same as desktop's resolveOpenclawBinary.
 pub fn resolve_openclaw_binary() -> Option<std::path::PathBuf> {
-    let path = augmented_path();
-    let (cmd, arg) = if cfg!(windows) { ("where", "openclaw.cmd") } else { ("which", "openclaw") };
-    std::process::Command::new(cmd)
-        .arg(arg)
-        .env("PATH", &path)
-        .output()
-        .ok()
-        .and_then(|out| {
-            if out.status.success() {
-                let first = String::from_utf8_lossy(&out.stdout)
-                    .lines().next()?.trim().to_string();
-                if !first.is_empty() { return Some(std::path::PathBuf::from(first)); }
-            }
-            None
-        })
+    crate::commands::system::resolve_openclaw_binary()
 }
 
 /// Lightweight snapshot of the fields we need from openclaw.json at gateway startup.
@@ -355,14 +319,22 @@ pub async fn get_gateway_token() -> Result<String, String> {
         .ok_or_else(|| "No gateway token found in config".into())
 }
 
-/// Returns true if an OpenClaw gateway is already responding on the given port.
-/// Used to detect the user's local gateway so we connect to it instead of
-/// starting (or killing) a competing process.
+/// Returns true if a local listener accepts TCP connections on the gateway port.
+///
+/// This must stay quiet. A previous implementation used a WebSocket upgrade as
+/// a health probe, but Gateway logs every incomplete WS handshake as
+/// "closed before connect". Startup calls this from several paths, so the
+/// upgrade probe could flood Gateway logs even though the app was only checking
+/// liveness. The real protocol handshake is owned by the frontend connection.
 pub async fn is_gateway_serving(port: u16) -> bool {
-    let url = format!("http://127.0.0.1:{}/healthz", port);
-    matches!(reqwest::get(&url).await, Ok(resp) if resp.status().is_success())
+    tokio::time::timeout(
+        std::time::Duration::from_millis(700),
+        TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await
+    .map(|result| result.is_ok())
+    .unwrap_or(false)
 }
-
 
 fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
     let line = line.as_ref().to_string();
@@ -532,9 +504,8 @@ pub async fn start_gateway(
         return Ok(GatewayStatus { running: true, port, pid: None, token: None });
     }
 
-    // "Rely on local openclaw": if a gateway is already listening on this port
-    // (the user's own `openclaw gateway`, hermes, etc.), connect to it — never
-    // kill or restart an external process. Only start our own when nothing is up.
+    // If a gateway is already serving on JunQi's configured port, connect to it.
+    // Do not probe unrelated desktop ports; those may belong to another app.
     if is_gateway_serving(port).await {
         *state.port.lock().map_err(|e| e.to_string())? = port;
         // Gateway already running — read the token from config so the frontend
@@ -545,7 +516,6 @@ pub async fn start_gateway(
 
     // Nothing is serving — (re)start our own managed child. We only ever kill
     // our OWN previously-spawned child here, never a foreign process.
-    // Ported from ClawX: transition lifecycle → Starting before spawn.
     crate::commands::gateway_supervisor::transition_lifecycle(
         &state,
         crate::state::gateway_process::GatewayLifecycle::Starting,
@@ -557,8 +527,7 @@ pub async fn start_gateway(
     };
     if let Some(mut old) = old_child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old).await;
-        // Ported from ClawX: wait for port to free after killing old child
-        // (handles TCP TIME_WAIT on Windows, launchd respawn on macOS).
+        // Handles TCP TIME_WAIT on Windows and delayed process teardown.
         let _ = crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await;
     }
 
@@ -676,7 +645,6 @@ pub async fn start_gateway(
         *child_lock = Some(child);
     }
     *state.port.lock().map_err(|e| e.to_string())? = port;
-    // Ported from ClawX: transition lifecycle → Running once child is spawned.
     crate::commands::gateway_supervisor::transition_lifecycle(
         &state,
         crate::state::gateway_process::GatewayLifecycle::Running,
@@ -711,19 +679,22 @@ pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, St
 
 #[tauri::command]
 pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayStatus, String> {
-    let port = *state.port.lock().map_err(|e| e.to_string())?;
+    let config_path = paths::config_path();
+    let configured_port = ConfigMetadata::load(&config_path).port;
+    let state_port = *state.port.lock().map_err(|e| e.to_string())?;
+    let port = if configured_port > 0 { configured_port } else { state_port };
 
     // If a real restart is in progress, report running=true so the frontend
     // status poller does NOT see a down→up flap and trigger a competing
     // start_gateway. The restart command owns the lifecycle right now.
     if *state.restarting.lock().map_err(|e| e.to_string())? {
-        let token = read_gateway_token(&paths::config_path());
+        let token = read_gateway_token(&config_path);
         return Ok(GatewayStatus { running: true, port, pid: None, token });
     }
 
     // 1. Our own managed child takes priority. Compute the "still alive" flag
     //    and PID first (synchronously), then drop the lock, then await the
-    //    healthz probe — std Mutex guards are not Send across await.
+    //    gateway probe — std Mutex guards are not Send across await.
     let (child_alive, child_pid) = {
         let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
         if let Some(ref mut child) = *child_lock {
@@ -745,27 +716,21 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         }
     };
     if child_alive {
-        // Probe the actual HTTP /healthz endpoint so `running` reflects
-        // "ready to serve" not just "process is alive". Returning false here
+        // Probe the local gateway port so `running` reflects "ready to serve",
+        // not just "process is alive". Returning false here
         // causes the UI to keep waiting — BootTimelineOverlay will retry.
-        if !is_gateway_serving(port).await {
-            return Ok(GatewayStatus { running: false, port, pid: child_pid, token: None });
+        if is_gateway_serving(port).await {
+            let status_token = read_gateway_token(&config_path);
+            return Ok(GatewayStatus { running: true, port, pid: child_pid, token: status_token });
         }
-        let status_token = read_gateway_token(&paths::config_path());
-        return Ok(GatewayStatus { running: true, port, pid: child_pid, token: status_token });
+        return Ok(GatewayStatus { running: false, port, pid: child_pid, token: None });
     }
 
-    // 2. No managed child: probe on the last-known port (set by start_gateway).
-    //    Avoid a file read on this hot polling path. Only fall back to parsing
-    //    the config when port is still 0 (never started by us in this session).
-    let probe_port = if port == 0 {
-        ConfigMetadata::load(&paths::config_path()).port
-    } else {
-        port
-    };
-    if is_gateway_serving(probe_port).await {
-        let probe_token = read_gateway_token(&paths::config_path());
-        return Ok(GatewayStatus { running: true, port: probe_port, pid: None, token: probe_token });
+    // 2. No managed child: probe JunQi's configured OpenClaw port only.
+    if is_gateway_serving(port).await {
+        *state.port.lock().map_err(|e| e.to_string())? = port;
+        let probe_token = read_gateway_token(&config_path);
+        return Ok(GatewayStatus { running: true, port, pid: None, token: probe_token });
     }
 
     Ok(GatewayStatus { running: false, port, pid: None, token: None })

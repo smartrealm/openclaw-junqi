@@ -74,15 +74,6 @@ pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
         }
     }
 
-    if found_path.is_none() {
-        for probe_port in &[18789u16, 51789u16] {
-            let url = format!("http://127.0.0.1:{}", probe_port);
-            if let Ok(resp) = reqwest::get(&url).await {
-                if resp.status().is_success() { port = *probe_port; break; }
-            }
-        }
-    }
-
     Ok(GatewayConfigInfo {
         token,
         port,

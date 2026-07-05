@@ -1,8 +1,8 @@
 /**
  * ProviderAccount — per-vendor multi-account support, ported from
- * ClawX electron/shared/providers/types.ts:172-193.
+ * JunQi electron/shared/providers/types.ts:172-193.
  *
- * ClawX distinguishes ProviderConfig (the vendored config, written to
+ * JunQi distinguishes ProviderConfig (the vendored config, written to
  * `~/.openclaw/openclaw.json → models.providers.*`) from
  * ProviderAccount (a runtime per-account object with auth credentials,
  * stored in the app's secure store). We use a single unified shape
@@ -57,8 +57,7 @@ export interface ProviderAccount {
 
 /**
  * ProviderSecret — a credential attached to ONE ProviderAccount.
- * Ported from ClawX electron/shared/providers/types.ts:195-215.
- *
+ *  *
  * Each variant is a tagged union: the `type` discriminator tells the
  * secret store where to put it (keychain? secure storage? in-memory
  * cache?).

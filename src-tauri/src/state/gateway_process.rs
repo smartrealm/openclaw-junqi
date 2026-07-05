@@ -9,7 +9,7 @@ use crate::state::restart_governor::RestartGovernor;
 /// large enough to cover a typical restart cycle's diagnostics.
 pub const LOG_BUFFER_CAP: usize = 200;
 
-/// Ported from ClawX process-policy.ts: canonical lifecycle state machine.
+/// Canonical gateway lifecycle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GatewayLifecycle {
@@ -65,9 +65,9 @@ pub struct GatewayProcess {
     /// Circular buffer of recent log entries (SPEC §2.4, M6).
     /// Push path evicts the oldest entry once length exceeds LOG_BUFFER_CAP.
     pub logs: Mutex<VecDeque<LogEntry>>,
-    /// Ported from ClawX: rate-limit restarts to once per 2.5s.
+    /// Rate-limit restarts to once per cooldown window.
     pub restart_governor: Mutex<RestartGovernor>,
-    /// Ported from ClawX: canonical lifecycle state machine.
+    /// Canonical lifecycle state machine.
     pub lifecycle: Mutex<GatewayLifecycle>,
 }
 
@@ -75,7 +75,7 @@ impl GatewayProcess {
     pub fn new() -> Self {
         Self {
             child: Mutex::new(None),
-            port: Mutex::new(51789),
+            port: Mutex::new(18789),
             restarting: Mutex::new(false),
             logs: Mutex::new(VecDeque::with_capacity(LOG_BUFFER_CAP)),
             restart_governor: Mutex::new(RestartGovernor::new(None)),
@@ -84,7 +84,6 @@ impl GatewayProcess {
     }
 }
 
-/// Ported from ClawX process-policy.ts: shouldDeferRestart.
 /// Restart requests should not interrupt an in-flight startup or reconnect
 /// flow — doing so can kill a just-spawned process and leave the manager
 /// stuck in a phantom "running" state with no real process behind it.

@@ -22,7 +22,7 @@ export interface WizardConfig {
 // ── Auth ──
 //
 // ProviderAuthMode lives in src/types/providerAuthMode.ts (ported from
-// ClawX). We re-export it here so the rest of ConfigManager can keep
+// JunQi). We re-export it here so the rest of ConfigManager can keep
 // importing auth types from one place. Old 'token' | 'oauth' aliases
 // are kept as a backward-compat string union — gateway legacy configs
 // still carry them; the normalization layer maps them to the new

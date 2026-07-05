@@ -20,7 +20,7 @@ export interface ProviderTemplate {
   baseUrl?: string;
   /**
    * API protocol — values must be in OPENCLAW_API_PROTOCOLS
-   * (see src/types/openclawApiProtocol.ts, ported from ClawX).
+   * (see src/types/openclawApiProtocol.ts, owned by JunQi).
    * The legacy string 'anthropic' is kept as an alias to
    * 'anthropic-messages' for old saved configs; normalizeApi()
    * handles the mapping at write time.

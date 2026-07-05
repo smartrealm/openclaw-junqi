@@ -4,6 +4,7 @@ import { usePetStore } from '@/stores/petStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
+import { useAppStore } from '@/stores/app-store';
 import { derivePetState, type CelebrateKind, type PetState } from './pet-states';
 import i18n from '@/i18n';
 
@@ -13,6 +14,83 @@ const TICK_MS = 250;
 // this (and the Rust-side PET_CREATE_GUARD), open_pet_window fires twice and
 // can spawn two pet windows.
 let petWindowOpened = false;
+
+function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): string {
+  const raw = app.setupStatusMessage;
+  switch (app.setupStep) {
+    case 'welcome':
+      return i18n.t('setup.petWelcome', { defaultValue: 'Choose language and theme' });
+    case 'detecting':
+      return i18n.t('setup.detecting', { defaultValue: 'Detecting OpenClaw installation...' });
+    case 'choosing-mode':
+      return i18n.t('setup.chooseMode', { defaultValue: 'Choose how you want to set up the OpenClaw Gateway.' });
+    case 'gateway-stopped':
+      return i18n.t('setup.gatewayNotRunning', { defaultValue: 'Gateway is not running. Click below to start it.' });
+    case 'git-missing':
+      return i18n.t('setup.gitRequired', { defaultValue: 'Git Required' });
+    case 'ready':
+      return i18n.t('setup.ready', { defaultValue: 'Ready!' });
+    case 'error':
+      return app.setupError || i18n.t('pet.status.error', { defaultValue: 'Error' });
+    default:
+      break;
+  }
+
+  const common: Record<string, string> = {
+    'Detecting OpenClaw installation...': 'setup.detecting',
+    'Starting Gateway...': 'setup.startingGateway',
+    'Gateway started': 'setup.gatewayStarted',
+    'Checking Git...': 'setup.checkingGit',
+    'Installing Git...': 'setup.installingGit',
+    'Checking Node.js...': 'setup.checkingNode',
+    'Installing Node.js...': 'setup.installingNode',
+    'Checking OpenClaw...': 'setup.checkingOpenclaw',
+    'Installing OpenClaw...': 'setup.installingOpenclaw',
+    'Preparing Gateway...': 'setup.preparingGateway',
+    'Waiting for Gateway...': 'setup.waitingGateway',
+    'Pulling OpenClaw image...': 'setup.pullingImage',
+    'Starting container...': 'setup.startingContainer',
+    'Ready!': 'setup.ready',
+    'Gateway is not running': 'setup.gatewayNotRunning',
+  };
+  if (raw && common[raw]) return i18n.t(common[raw], { defaultValue: raw });
+  if (raw) return raw;
+
+  return i18n.t('setup.settingUp', { defaultValue: 'Setting up JunQi Desktop' });
+}
+
+function setupStepTitleKey(step: ReturnType<typeof useAppStore.getState>['setupStep']): string {
+  switch (step) {
+    case 'welcome':
+      return 'setup.steps.identity.title';
+    case 'detecting':
+    case 'gateway-stopped':
+    case 'choosing-mode':
+      return 'setup.steps.runtime.title';
+    case 'ready':
+      return 'setup.steps.ready.title';
+    case 'checking':
+    case 'install-git':
+    case 'git-missing':
+    case 'install-node':
+    case 'install-openclaw':
+    case 'error':
+    default:
+      return 'setup.steps.install.title';
+  }
+}
+
+function setupStepTitle(app: ReturnType<typeof useAppStore.getState>): string {
+  return i18n.t(setupStepTitleKey(app.setupStep), {
+    defaultValue: i18n.t('setup.settingUp', { defaultValue: 'Setting up JunQi Desktop' }),
+  });
+}
+
+function setupEmotion(app: ReturnType<typeof useAppStore.getState>): PetState['emotion'] {
+  if (app.setupStep === 'error') return 'error';
+  if (app.setupStep === 'ready') return 'happy';
+  return 'working';
+}
 
 /**
  * Runs in the MAIN window (single source of truth). Opens the pet window when
@@ -70,6 +148,20 @@ export function usePetStateEmitter() {
       const cs = useChatStore.getState();
       const gw = useGatewayDataStore.getState();
       const ws = useWorkshopStore.getState();
+      const app = useAppStore.getState();
+      if (app.setupComplete !== true) {
+        if (!mem.activeStartedAt) mem.activeStartedAt = now;
+        emitPetState({
+          emotion: setupEmotion(app),
+          progress: app.setupProgress,
+          message: localizedSetupMessage(app),
+          taskLabel: setupStepTitle(app),
+          elapsedMs: mem.activeStartedAt ? now - mem.activeStartedAt : undefined,
+          skin: usePetStore.getState().skin,
+          setup: true,
+        });
+        return;
+      }
 
       const typing = Object.values(cs.typingBySession).some(Boolean);
       const thinking = Object.values(cs.thinkingBySession).some((e) => (e?.text?.length ?? 0) > 0);

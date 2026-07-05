@@ -367,12 +367,12 @@ function WorkbenchPanel() {
         {[
           { key: 'agents',  to: '/agents',                  label: t('sidebar.nav.agents',  '智能体'),   icon: <Bot size={14} /> },
           { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型'),     icon: <Cpu size={14} /> },
-          { key: 'channels', to: '/config?tab=channels',   label: t('sidebar.nav.channels', '通道'),     icon: <MessageSquare size={14} /> },
+          { key: 'channels', to: '/channels',              label: t('sidebar.nav.channels', '通道'),     icon: <MessageSquare size={14} /> },
           { key: 'cron',    to: '/cron?new=1',              label: t('sidebar.nav.cron',    '定时任务'), icon: <Clock size={14} /> },
         ].map((it) => {
           const active = location.pathname === it.to.split('?')[0] && (
             (it.to.includes('tab=providers') && location.search.includes('tab=providers')) ||
-            (it.to.includes('tab=channels')  && location.search.includes('tab=channels')) ||
+            (it.to === '/channels' && location.pathname.startsWith('/channels')) ||
             (it.to === '/agents' && location.pathname.startsWith('/agents')) ||
             (it.to === '/cron?new=1' && location.pathname.startsWith('/cron'))
           );

@@ -1,11 +1,10 @@
 /**
  * OpenClaw gateway `models.providers.*.api` protocol whitelist.
  *
- * Ported from ClawX electron/shared/providers/types.ts:48-58.
- *
+ *  *
  * Writing any other value into `~/.openclaw/openclaw.json` triggers
  * `Invalid config` rejection on the next gateway reload/restart and
- * tears down all channels. The ClawX implementation is the
+ * tears down all channels. The JunQi implementation is the
  * authoritative source for which values OpenClaw accepts.
  *
  * Use `assertValidApiProtocol` at every write site so we fail fast
@@ -26,12 +25,11 @@ export const OPENCLAW_API_PROTOCOLS = [
 export type OpenClawApiProtocol = (typeof OPENCLAW_API_PROTOCOLS)[number];
 
 /**
- * Legacy api values that ClawX previously wrote but openclaw no longer
+ * Legacy api values that JunQi previously wrote but openclaw no longer
  * accepts. We auto-migrate on read so users with old config don't see
  * their providers break after an upgrade.
  *
- * Ported from ClawX electron/shared/providers/types.ts:62-65.
- */
+ *  */
 export const LEGACY_OPENCLAW_API_PROTOCOL_MIGRATIONS = {
   'openai-codex-responses': 'openai-chatgpt-responses',
 } as const satisfies Record<string, OpenClawApiProtocol>;

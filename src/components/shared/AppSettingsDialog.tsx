@@ -27,8 +27,7 @@ import { notifications } from '@/services/notifications';
 import { SKIN_REGISTRY, type PetSkin } from '@/pet/skins';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { changeLanguage } from '@/i18n';
-import { applyTheme } from '@/theme/apply';
-import type { ThemeSetting, AegisTheme } from '@/theme';
+import type { AegisTheme } from '@/theme';
 import { StatusDot } from '@/components/shared/StatusDot';
 import clsx from 'clsx';
 
@@ -165,13 +164,13 @@ function ThemePanel() {
       <p className="text-[12px] text-aegis-text-dim mb-5">{t('appSettings.themeDesc', 'Choose how JunQi looks.')}</p>
       <label className="flex items-center gap-3 mb-5 p-3 rounded-xl cursor-pointer transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.03)]"
         style={{ background: followSystem ? 'rgb(var(--aegis-primary) / 0.06)' : 'transparent', border: followSystem ? '1px solid rgb(var(--aegis-primary) / 0.2)' : '1px solid transparent' }}>
-        <input type="checkbox" checked={followSystem} onChange={() => { const next = followSystem ? 'aegis-dark' : 'system'; if (next !== 'system') applyTheme(next as AegisTheme); setTheme(next); }} className="w-4 h-4 rounded accent-aegis-primary" />
+        <input type="checkbox" checked={followSystem} onChange={() => setTheme(followSystem ? 'aegis-dark' : 'system')} className="w-4 h-4 rounded accent-aegis-primary" />
         <div><div className="text-[12px] font-semibold text-aegis-text">{t('theme.followSystem', 'Follow System')}</div><div className="text-[11px] text-aegis-text-dim">{t('theme.followSystemDesc', 'Match your OS light/dark preference.')}</div></div>
       </label>
       <div className="grid grid-cols-2 gap-3">
         {THEME_PRESETS.map((key) => {
           const active = theme === key;
-          return <button key={key} type="button" onClick={() => { applyTheme(key); setTheme(key); }}
+          return <button key={key} type="button" onClick={() => setTheme(key)}
             className="flex flex-col gap-2 p-3 rounded-xl text-start transition-all relative overflow-hidden"
             style={{ border: active ? '2px solid rgb(var(--aegis-primary))' : '1px solid rgb(var(--aegis-border))', background: 'rgb(var(--aegis-surface))', boxShadow: active ? '0 0 0 1px rgb(var(--aegis-primary) / 0.3)' : 'none' }}>
             <div className="w-full h-10 rounded-md" style={{ background: key === 'aegis-dark' ? 'linear-gradient(135deg, #0c1015, #1a2332)' : key === 'aegis-midnight' ? 'linear-gradient(135deg, #050510, #0d1b2a)' : key === 'aegis-light' ? 'linear-gradient(135deg, #f8fafc, #e2e8f0)' : 'linear-gradient(135deg, #f5f0e8, #e8dcc8)' }} />

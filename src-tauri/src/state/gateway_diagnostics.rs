@@ -1,11 +1,10 @@
-//! Gateway startup failure diagnostics — ported from ClawX startup-recovery.ts.
+//! Gateway startup failure diagnostics.
 //!
-//! When the child process exits before the first healthz probe, we classify
+//! When the child process exits before the first gateway readiness probe, we classify
 //! its stderr lines to distinguish between "fix your config" (actionable) and
 //! "transient error, retry with backoff" (not the user's fault).
 //!
-//! Ported from: ClawX electron/gateway/startup-recovery.ts (153 lines, TS)
-
+//! 
 const INVALID_CONFIG_PATTERNS: &[&str] = &[
     "invalid config",
     "config invalid",

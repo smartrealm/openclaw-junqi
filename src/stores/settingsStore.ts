@@ -7,6 +7,7 @@ import {
   type ThemeSetting,
 } from '@/theme';
 import { applyTheme } from '@/theme/apply';
+import { detectOSPreference, resolveTheme } from '@/theme/resolver';
 import { resolveTab, type SidebarTab } from '@/components/Layout/tab-utils';
 
 // ═══════════════════════════════════════════════════════════
@@ -187,18 +188,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     localStorage.setItem(THEME_STORAGE_KEY, theme);
     set({ theme });
     window.aegis?.settings?.save?.('theme', theme).catch?.(() => {});
-    // Apply CSS immediately — theme-switching class prevents flash
-    if (theme !== 'system') {
-      applyTheme(theme);
-    } else {
-      // resolve system → dark/light based on OS preference
-      const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-      applyTheme(prefersDark ? 'aegis-dark' : 'aegis-light');
-    }
-    // Broadcast to companion Tauri windows (e.g. the floating pet) so they
-    // re-apply the theme to their own document. The pet window listens for
-    // this event and calls applyTheme() in its own JS context.
-    window.dispatchEvent(new CustomEvent('aegis:theme-changed', { detail: { theme } }));
+    const resolvedTheme = resolveTheme(theme, detectOSPreference());
+    applyTheme(resolvedTheme);
+    // Notify same-document listeners; companion windows also observe the
+    // persisted theme through localStorage.
+    window.dispatchEvent(new CustomEvent('aegis:theme-changed', { detail: { theme, resolvedTheme } }));
   },
   setUiScale: (scale) => {
     const v = clampScale(scale);

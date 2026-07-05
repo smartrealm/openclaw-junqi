@@ -1,7 +1,6 @@
 //! Provider OAuth browser flow — PKCE + localhost callback + token exchange.
 //!
-//! Ported from ClawX electron/utils/browser-oauth.ts + openai-codex-oauth.ts.
-//! Stores the resulting tokens via secret_store so they survive app restarts.
+//! //! Stores the resulting tokens via secret_store so they survive app restarts.
 //!
 //! Flow:
 //!   1. Frontend calls start_provider_oauth(provider_id, account_id, label)

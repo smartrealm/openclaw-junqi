@@ -2,7 +2,7 @@
 //!
 //! Stores API keys and OAuth tokens outside `openclaw.json` so the
 //! config file never contains credentials in plaintext. Matches
-//! ClawX's `electron/services/secrets/` pattern.
+//! JunQi's `electron/services/secrets/` pattern.
 //!
 //! On macOS: uses the built-in Keychain via `security` CLI.
 //! On Linux/Windows: falls back to JSON file with 600 permissions.

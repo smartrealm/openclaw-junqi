@@ -59,7 +59,7 @@ describe('OAUTH_PROVIDER_TYPES', () => {
     assert.ok(OAUTH_PROVIDER_TYPES.has('minimax-portal-cn'));
   });
   test('does NOT include OpenAI (OpenAI uses oauth_browser but is registered separately)', () => {
-    // The ClawX registry marks OpenAI as oauth_browser-eligible in
+    // The JunQi registry marks OpenAI as oauth_browser-eligible in
     // its `supportedAuthModes: ['api_key', 'oauth_browser']`, not via
     // OAUTH_PROVIDER_TYPES. OAUTH_PROVIDER_TYPES is a separate list
     // for "this vendor's entire auth is OAuth-only".

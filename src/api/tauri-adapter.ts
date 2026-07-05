@@ -203,6 +203,9 @@ async function restartLocalGateway(): Promise<{ success: boolean; method?: strin
         if (result?.token) {
           _cachedGatewayToken = result.token;
         }
+        if (typeof result?.port === "number" && result.port > 0 && result.port < 65536) {
+          _cachedGatewayPort = result.port;
+        }
         return { success: true };
       } catch (e: any) {
         return { success: false, error: String(e) };

@@ -96,6 +96,14 @@ function fmtClock(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function formatStatusDetail(value: string): string {
+  return value
+    .replace(/([。！？!?；;])\s*/g, '$1\n')
+    .replace(/([，,])\s*/g, '$1\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /** Resolve the user-selected theme to a concrete "is the UI dark?" boolean
  * (handles the 'system' value by following the OS preference). */
 function useResolvedDark(): boolean {
@@ -112,17 +120,15 @@ function useResolvedDark(): boolean {
     return () => mq.removeEventListener('change', onChange);
   }, []);
   if (theme === 'aegis-dark') return true;
+  if (theme === 'aegis-midnight') return true;
   if (theme === 'aegis-light') return false;
+  if (theme === 'aegis-eyecare') return false;
   return systemDark;
 }
 
 /**
- * Compact status bubble above the character. No background, no border, no
- * outline / text-shadow — just the inverse-of-theme text color, which keeps
- * the bubble feeling like a native floating label rather than a panel glued
- * on top of the pet. The text inherits color from the theme only; on busy
- * desktop backgrounds it may blend in a little, which is the intended trade
- * for the lightweight look.
+ * Compact status bubble above the character. It stays as pure text so the pet
+ * does not look boxed in.
  *
  * Display priority (high → low):
  * dragging > error > active(chat) > celebrate/happy > pomodoro countdown >
@@ -164,16 +170,22 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     return () => clearInterval(id);
   }, [carouselActive, tips.length]);
 
-  // Base bubble style: pure text, no background / border / shadow / outline.
-  // Color flips with the theme so it reads on either desktop wallpaper.
+  // Base bubble style: pure text. Keep it visually light around the pet.
   const bubbleStyle: CSSProperties = {
     maxWidth: 240,
     textAlign: 'center',
-    color: 'rgb(var(--aegis-text))',
+    color: isDark ? '#ffffff' : '#0f172a',
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
-    fontSize: 12,
-    fontWeight: 500,
-    lineHeight: 1.4,
+    fontSize: 12.5,
+    fontWeight: 700,
+    lineHeight: 1.5,
+    overflowWrap: 'anywhere',
+    wordBreak: 'normal',
+    whiteSpace: 'normal',
+    textShadow: 'none',
+    WebkitTextStroke: '0 transparent',
+    filter: 'none',
+    opacity: 1,
   };
 
   let body: ReactNode = null;
@@ -185,14 +197,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   } else if (e === 'rapidSwallow') {
     bubbleKey = 'rapid-swallow';
     body = (
-      <span style={{ fontWeight: 700, color: emotionColor[e], fontSize: 12.5 }}>
+      <span style={{ fontWeight: 700, color: 'inherit', fontSize: 12.5 }}>
         {t('pet.status.rapidSwallow', STATUS_LABEL.rapidSwallow)}
       </span>
     );
   } else if (e === 'swallow') {
     bubbleKey = 'swallow';
     body = (
-      <span style={{ fontWeight: 700, color: emotionColor[e], fontSize: 12.5 }}>
+      <span style={{ fontWeight: 700, color: 'inherit', fontSize: 12.5 }}>
         {t('pet.status.swallow', '嚼嚼嚼…')}
       </span>
     );
@@ -228,14 +240,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       <span
         style={{
           fontWeight: 700,
-          color: iconColor,
+          color: 'inherit',
           display: 'inline-flex',
           alignItems: 'center',
           gap: 5,
           fontSize: 12.5,
         }}
       >
-        {DragIcon && <DragIcon size={13} strokeWidth={2.4} style={{ flexShrink: 0 }} />}
+        {DragIcon && <DragIcon size={13} strokeWidth={2.4} style={{ flexShrink: 0, color: iconColor }} />}
         <span>{t(captionKey, captionFallback)}</span>
         {d && d.count > 1 && (
           <span style={{ fontSize: 10.5, opacity: 0.75, fontWeight: 500 }}>
@@ -244,22 +256,77 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
         )}
       </span>
     );
+  } else if (state.setup) {
+    bubbleKey = `setup-${e}`;
+    const detail = state.message || label;
+    const progress = typeof state.progress === 'number' && state.progress > 0 && state.progress < 100
+      ? `${Math.round(state.progress)}%`
+      : null;
+    body = (
+      <>
+        <span
+          style={{
+            display: 'inline-block',
+            fontWeight: 750,
+            color: e === 'error' ? '#dc2626' : (isDark ? '#ffffff' : '#0f172a'),
+            maxWidth: 232,
+            textShadow: 'none',
+            WebkitTextStroke: '0 transparent',
+          }}
+        >
+          {state.taskLabel || t('setup.settingUp', '正在配置 JunQi Desktop')}
+          {progress && <span style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 700 }}>{progress}</span>}
+        </span>
+        {detail && (
+          <div
+            style={{
+              fontSize: 11,
+              maxWidth: 230,
+              marginTop: 3,
+              fontWeight: 550,
+              lineHeight: 1.46,
+              whiteSpace: 'pre-line',
+              overflowWrap: 'anywhere',
+              wordBreak: 'normal',
+              color: isDark ? '#f8fafc' : '#1e293b',
+              textShadow: 'none',
+              WebkitTextStroke: '0 transparent',
+            }}
+          >
+            {formatStatusDetail(detail)}
+          </div>
+        )}
+      </>
+    );
   } else if (e === 'error') {
     bubbleKey = 'error';
-    body = <span style={{ fontWeight: 700, color: emotionColor[e] }}>{label}</span>;
+    body = <span style={{ fontWeight: 700, color: '#dc2626' }}>{label}</span>;
   } else if (ACTIVE.has(e)) {
     bubbleKey = `active-${e}`;
     const detail = state.message || state.taskLabel;
     const elapsed = state.elapsedMs ? fmtDuration(state.elapsedMs) : null;
     body = (
       <>
-        <span style={{ fontWeight: 600, color: emotionColor[e] }}>
+        <span style={{ fontWeight: 700, color: 'inherit' }}>
           {label}
           {elapsed && <span style={{ fontSize: 10.5, opacity: 0.65, fontWeight: 400 }}> · {elapsed}</span>}
         </span>
         {detail && (
-          <div style={{ fontSize: 10.5, opacity: 0.75, maxWidth: 220, marginTop: 1, wordBreak: 'break-word' }}>
-            {detail}
+          <div
+            style={{
+              fontSize: 10.5,
+              maxWidth: 220,
+              marginTop: 1,
+              fontWeight: 520,
+              lineHeight: 1.42,
+              whiteSpace: 'pre-line',
+              overflowWrap: 'anywhere',
+              wordBreak: 'normal',
+              color: 'inherit',
+              opacity: 0.92,
+            }}
+          >
+            {formatStatusDetail(detail)}
           </div>
         )}
       </>
@@ -272,7 +339,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     const caption = pomoKind ? t(CELEBRATE_CAPTION[pomoKind].key, CELEBRATE_CAPTION[pomoKind].fallback) : label;
     const CelebrateIcon = pomoKind ? celebrateIcon(pomoKind) : null;
     body = (
-      <span style={{ fontWeight: 600, color: emotionColor[e], display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontWeight: 700, color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         {CelebrateIcon && <CelebrateIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />}
         {caption}
       </span>
@@ -289,14 +356,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       : t(p.phase === 'work' ? 'pet.pomodoro.focusing' : 'pet.pomodoro.resting', p.phase === 'work' ? '专注中' : '休息中');
     const PomoIcon = pomodoroIcon(p);
     body = (
-      <span style={{ fontWeight: 600, color: pomodoroColor(p, isDark), display: 'inline-flex', alignItems: 'center', gap: 4, transition: 'color 0.25s ease' }}>
-        <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />
+      <span style={{ fontWeight: 700, color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0, color: pomodoroColor(p, isDark) }} />
         {p.paused ? phaseLabel : `${phaseLabel} ${fmtClock(p.remainingMs)}`}
       </span>
     );
   } else if (e === 'sleep' || e === 'sleepy') {
     bubbleKey = e;
-    body = <span style={{ fontWeight: 600, opacity: 0.85, color: emotionColor[e] }}>{label}</span>;
+    body = <span style={{ fontWeight: 700, opacity: 1, color: 'inherit' }}>{label}</span>;
   } else if (hovered) {
     bubbleKey = 'tips';
     body = (
@@ -327,10 +394,10 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       {body && (
         <motion.div
           key={bubbleKey}
-          initial={{ opacity: 0, y: 6, scale: 0.92 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.92 }}
-          transition={{ duration: 0.18 }}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
           style={bubbleStyle}
         >
           {body}

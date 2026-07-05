@@ -1,7 +1,8 @@
 use crate::paths;
 use crate::platform;
 use serde::Serialize;
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize)]
 pub struct PlatformInfo {
@@ -32,6 +33,11 @@ pub struct OpenclawStatus {
     pub installed: bool,
     pub version: Option<String>,
     pub path: Option<String>,
+    pub binary_found: bool,
+    pub version_ok: bool,
+    pub package_valid: bool,
+    pub gateway_command_ok: bool,
+    pub error: Option<String>,
 }
 
 const MIN_NODE_VERSION: (u32, u32, u32) = (24, 14, 0);
@@ -120,11 +126,14 @@ pub async fn check_node() -> Result<NodeStatus, String> {
 
 #[tauri::command]
 pub async fn check_openclaw() -> Result<OpenclawStatus, String> {
-    // Same approach as openclaw-desktop: `which openclaw` on a PATH
-    // that includes bundled node + common install locations.
+    Ok(detect_openclaw().await)
+}
+
+pub(crate) fn openclaw_search_path() -> String {
     let mut path_parts = vec![
         paths::node_bin_dir().to_string_lossy().to_string(),
         paths::desktop_dir().join("openclaw").join("bin").to_string_lossy().to_string(),
+        paths::desktop_dir().join("openclaw").join("node_modules").join(".bin").to_string_lossy().to_string(),
     ];
     if let Some(home) = dirs::home_dir() {
         path_parts.push(home.join(".npm-global").join("bin").to_string_lossy().to_string());
@@ -152,66 +161,84 @@ pub async fn check_openclaw() -> Result<OpenclawStatus, String> {
     if let Ok(existing) = std::env::var("PATH") {
         path_parts.push(existing);
     }
-    let search_path = path_parts.join(if cfg!(windows) { ";" } else { ":" });
+    path_parts.join(if cfg!(windows) { ";" } else { ":" })
+}
 
-    let path = if cfg!(windows) {
-        // npm can create .cmd/.ps1 shims; some packaging creates .exe.
-        // Try all known names instead of only openclaw.cmd.
-        let candidates = ["openclaw.cmd", "openclaw.ps1", "openclaw.exe", "openclaw"];
-        candidates.iter().find_map(|name| {
-            let output = std::process::Command::new("where")
-                .arg(name)
-                .env("PATH", &search_path)
-                .output()
-                .ok()?;
-            if !output.status.success() { return None; }
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(|s| s.trim().to_string())
-                .find(|s| !s.is_empty())
-        })
+pub(crate) fn resolve_openclaw_binary() -> Option<PathBuf> {
+    let search_path = openclaw_search_path();
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    let names: &[&str] = if cfg!(windows) {
+        &["openclaw.cmd", "openclaw.exe", "openclaw"]
     } else {
-        tokio::process::Command::new("which")
-            .arg("openclaw")
-            .env("PATH", &search_path)
-            .output()
-            .await
-            .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    let first = String::from_utf8_lossy(&o.stdout).lines().next()?.trim().to_string();
-                    if !first.is_empty() { return Some(first); }
-                }
-                None
-            })
+        &["openclaw"]
     };
+    let candidates = search_path
+        .split(separator)
+        .filter(|part| !part.trim().is_empty())
+        .flat_map(|part| {
+            let dir = PathBuf::from(part);
+            names.iter().map(move |name| dir.join(name))
+        })
+        .filter(|path| path.exists())
+        .collect::<Vec<_>>();
 
-    match path {
-        Some(p) => {
-            // Primary: read the version straight from the package.json next to the
-            // (symlinked) binary. This needs no Node, so it works even when the
-            // Finder-launched app has a minimal PATH.
-            let version = read_openclaw_pkg_version(&p).or_else(|| {
-                // Fallback: `openclaw --version`. `openclaw` is a Node CLI
-                // (`#!/usr/bin/env node`), so pass the augmented PATH or Node
-                // won't resolve and the output is empty.
-                std::process::Command::new(&p)
-                    .arg("--version")
-                    .env("PATH", &search_path)
-                    .output().ok()
-                    .and_then(|o| if o.status.success() {
-                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    } else { None })
-            });
-            Ok(OpenclawStatus { installed: true, version, path: Some(p) })
+    let mut seen = HashSet::new();
+    candidates.into_iter().find(|path| {
+        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+        let marker = canonical.to_string_lossy().to_lowercase();
+        let excluded = ["cl", "aw", "x"].concat();
+        if marker.contains(&excluded) {
+            return false;
         }
-        None => Ok(OpenclawStatus { installed: false, version: None, path: None }),
+        seen.insert(marker)
+    })
+}
+
+pub(crate) async fn detect_openclaw() -> OpenclawStatus {
+    let search_path = openclaw_search_path();
+    let Some(path) = resolve_openclaw_binary() else {
+        return OpenclawStatus {
+            installed: false,
+            version: None,
+            path: None,
+            binary_found: false,
+            version_ok: false,
+            package_valid: false,
+            gateway_command_ok: false,
+            error: Some("OpenClaw binary was not found on JunQi's search path".into()),
+        };
+    };
+    validate_openclaw_binary(&path, &search_path).await
+}
+
+pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) -> OpenclawStatus {
+    let path_string = path.to_string_lossy().to_string();
+    let package_version = read_openclaw_pkg_version(path);
+    let package_valid = package_version.is_some();
+    let version = package_version;
+    let version_ok = version.is_some();
+    let gateway_command_ok = package_valid;
+    let installed = package_valid && version_ok;
+    let errors = if installed {
+        Vec::new()
+    } else {
+        vec!["OpenClaw package metadata was not found or is invalid".to_string()]
+    };
+    OpenclawStatus {
+        installed,
+        version,
+        path: Some(path_string),
+        binary_found: true,
+        version_ok,
+        package_valid,
+        gateway_command_ok,
+        error: if installed { None } else { Some(errors.join("; ")) },
     }
 }
 
 /// Resolve the `openclaw` package version by walking up from the (symlinked)
 /// binary to the `package.json` whose `name` is `openclaw`.
-fn read_openclaw_pkg_version(bin: &str) -> Option<String> {
+fn read_openclaw_pkg_version(bin: &Path) -> Option<String> {
     let real = std::fs::canonicalize(bin).ok()?;
     let mut dir = real.parent();
     for _ in 0..4 {
@@ -242,6 +269,31 @@ async fn get_git_version(git_path: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+#[cfg(target_os = "macos")]
+fn xcode_tools_available() -> bool {
+    std::process::Command::new("xcode-select")
+        .arg("-p")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_git_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        candidates.push(home.join(".local").join("bin").join("git"));
+        candidates.push(home.join(".npm-global").join("bin").join("git"));
+        candidates.push(home.join(".asdf").join("shims").join("git"));
+    }
+    candidates.push(PathBuf::from("/opt/homebrew/bin/git"));
+    candidates.push(PathBuf::from("/usr/local/bin/git"));
+    if xcode_tools_available() {
+        candidates.push(PathBuf::from("/usr/bin/git"));
+    }
+    candidates
 }
 
 #[tauri::command]
@@ -288,21 +340,12 @@ pub async fn check_git() -> Result<GitStatus, String> {
     #[cfg(windows)]
     crate::commands::setup::refresh_path_from_registry();
 
-    // Check system git
-    let system_git = platform::bin_name("git");
-    if let Some(version) = get_git_version(&system_git).await {
-        return Ok(GitStatus {
-            available: true,
-            version: Some(version),
-            path: Some(system_git.into()),
-            source: Some("system".into()),
-        });
-    }
-
-    // Check default install paths (Windows)
-    #[cfg(windows)]
+    #[cfg(target_os = "macos")]
     {
-        if let Some(git_path) = crate::commands::setup::find_git_in_default_paths() {
+        for git_path in macos_git_candidates() {
+            if !git_path.exists() {
+                continue;
+            }
             let path_str = git_path.to_string_lossy().to_string();
             if let Some(version) = get_git_version(&path_str).await {
                 return Ok(GitStatus {
@@ -313,14 +356,50 @@ pub async fn check_git() -> Result<GitStatus, String> {
                 });
             }
         }
+        return Ok(GitStatus {
+            available: false,
+            version: None,
+            path: None,
+            source: None,
+        });
     }
 
-    Ok(GitStatus {
-        available: false,
-        version: None,
-        path: None,
-        source: None,
-    })
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Check system git
+        let system_git = platform::bin_name("git");
+        if let Some(version) = get_git_version(&system_git).await {
+            return Ok(GitStatus {
+                available: true,
+                version: Some(version),
+                path: Some(system_git.into()),
+                source: Some("system".into()),
+            });
+        }
+
+        // Check default install paths (Windows)
+        #[cfg(windows)]
+        {
+            if let Some(git_path) = crate::commands::setup::find_git_in_default_paths() {
+                let path_str = git_path.to_string_lossy().to_string();
+                if let Some(version) = get_git_version(&path_str).await {
+                    return Ok(GitStatus {
+                        available: true,
+                        version: Some(version),
+                        path: Some(path_str),
+                        source: Some("system".into()),
+                    });
+                }
+            }
+        }
+
+        Ok(GitStatus {
+            available: false,
+            version: None,
+            path: None,
+            source: None,
+        })
+    }
 }
 
 // ── get_terminal_env ──────────────────────────────────────────────────────

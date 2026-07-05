@@ -57,6 +57,8 @@ export interface PetState {
   pomodoro?: PetPomodoroState;
   /** Present only when emotion === 'celebrate'. */
   celebrateKind?: CelebrateKind;
+  /** True while the first-run OpenClaw setup wizard owns the app state. */
+  setup?: boolean;
   stats?: { doneToday: number; tokens: number };
   /** Drag in flight — fills in the bubble with file count / type expectations. */
   drag?: {

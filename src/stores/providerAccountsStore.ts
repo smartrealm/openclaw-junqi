@@ -1,6 +1,6 @@
 /**
  * providerAccountsStore — zustand store for per-vendor multi-account
- * support, ported from ClawX electron/services/providers/provider-store.ts.
+ * support, owned by JunQi electron/services/providers/provider-store.ts.
  *
  * Storage shape (in-memory only for now; persistence is a Tauri-side
  * concern we'll wire to ~/.openclaw/provider-accounts.json):
@@ -20,7 +20,7 @@
  * The store is currently in-memory only; persistence is out of scope
  * for this commit. When wired up, it should round-trip through
  * keychain on macOS / credential manager on Windows / libsecret on
- * Linux (matches the `secure-storage` pattern in ClawX).
+ * Linux (matches the `secure-storage` pattern in JunQi).
  */
 import { create } from 'zustand';
 import {

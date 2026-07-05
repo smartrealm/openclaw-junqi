@@ -662,36 +662,14 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
         Err("Git installer wizard finished, but git was not detected. Please restart the app or manually add Git to PATH.".into())
 
     } else {
-        // ── macOS：触发 Xcode Command Line Tools 安装对话框 ───────────────
-
-        emit_keyed(&app, step, "macOS: launching the Command Line Tools install dialog...", "setup.git.prepareMacDialog", 0.05,);
-        let _ = tokio::process::Command::new("xcode-select").arg("--install").output().await;
-
-        emit_keyed(&app, step, "System dialog is open - please click Install to proceed...", "setup.git.waitingMac", 0.10);
-
-        // 轮询等待 git 可用（最多 10 分钟）
-        let max_wait = std::time::Duration::from_secs(600);
-        let start = std::time::Instant::now();
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-            if tokio::process::Command::new("git").arg("--version").output().await
-                .map(|o| o.status.success()).unwrap_or(false)
-            {
-                emit_keyed(&app, step, "Git (Command Line Tools) installed successfully ✓", "setup.git.done", 1.0);
-                return Ok("Git installed successfully".into());
-            }
-
-            let elapsed = start.elapsed();
-            if elapsed > max_wait {
-                return Err("等待 Command Line Tools 安装超时（10 分钟）。\
-                            请手动安装后重试。".into());
-            }
-
-            let secs = elapsed.as_secs();
-            let pct = (0.10 + (secs as f64 / 600.0) * 0.85).min(0.95);
-            emit_keyed(&app, step, &format!("Waiting for Command Line Tools install... elapsed {:02}:{:02} (please confirm in the system dialog)", secs / 60, secs % 60), "setup.git.macPolling", pct,);
-        }
+        emit_keyed(
+            &app,
+            step,
+            "Git is not available. Please install Apple Command Line Tools manually, then retry.",
+            "setup.git.manualRequired",
+            1.0,
+        );
+        Err("Git is required. Install Apple Command Line Tools manually, then retry JunQi.".into())
     }
 }
 
@@ -741,7 +719,7 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
 
     // ④ 验证
     emit_keyed(&app, step, "Verifying openclaw installation...", "setup.openclaw.verify", 0.92);
-    let openclaw_bin = openclaw_prefix.join("bin").join(platform::bin_name("openclaw"));
+    let mut openclaw_bin = openclaw_prefix.join("bin").join(platform::bin_name("openclaw"));
     if !openclaw_bin.exists() {
         // npm --prefix installs to <prefix>/node_modules/.bin/
         let alt_bin = openclaw_prefix
@@ -749,6 +727,16 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         if !alt_bin.exists() {
             return Err("No executable found in openclaw install directory, please retry".into());
         }
+        openclaw_bin = alt_bin;
+    }
+
+    let search_path = crate::commands::system::openclaw_search_path();
+    let verified = crate::commands::system::validate_openclaw_binary(&openclaw_bin, &search_path).await;
+    if !verified.installed {
+        return Err(format!(
+            "OpenClaw was installed but failed validation: {}",
+            verified.error.unwrap_or_else(|| "unknown validation error".into())
+        ));
     }
 
     emit_keyed(&app, step, "openclaw installed successfully ✓", "setup.openclaw.done", 1.0);
@@ -780,14 +768,20 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     );
 
     let node_ok = paths::local_node_path().exists();
-    let oclaw_bin = paths::desktop_dir().join("openclaw").join("bin").join(platform::bin_name("openclaw"));
-    let oclaw_ok = oclaw_bin.exists();
+    let openclaw_status = crate::commands::system::detect_openclaw().await;
+    let oclaw_ok = openclaw_status.installed;
     let summary = format!(
         "Runtime check done: {} {}",
         if node_ok { "Node.js ✓," } else { "Node.js ✗," },
         if oclaw_ok { "openclaw ✓" } else { "openclaw ✗" },
     );
     emit_keyed(&app, step, &summary, "setup.gateway.runtimeSummary", 0.22);
+    if !oclaw_ok {
+        return Err(format!(
+            "OpenClaw is not ready for Gateway startup: {}",
+            openclaw_status.error.unwrap_or_else(|| "validation failed".into())
+        ));
+    }
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     // ⓘ Stage 2: config port probing
@@ -818,12 +812,17 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         0.52,
     );
 
-    let reachable = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok();
+    let reachable = crate::commands::gateway::is_gateway_serving(port).await;
     if reachable {
         emit_keyed(&app, step,
             &format!("Port {} already in use - assuming Gateway is running, skipping start", port),
             "setup.gateway.alreadyUp",
             0.92,
+        );
+        emit_keyed(&app, step,
+            "Gateway is ready ✓",
+            "setup.gateway.ready",
+            1.0,
         );
     } else {
         emit_keyed(&app, step,
@@ -838,19 +837,12 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
             "setup.gateway.syncState",
             0.78,
         );
+        emit_keyed(&app, step,
+            "Gateway prepared; starting service next...",
+            "setup.gateway.preparedToStart",
+            1.0,
+        );
     }
-
-    // ⓘ Stage 4: settle
-    emit_keyed(&app, step,
-        "Detecting, connecting, and syncing runtime state...",
-        "setup.gateway.detectConnectSync",
-        0.92,
-    );
-    emit_keyed(&app, step,
-        "Gateway is ready ✓",
-        "setup.gateway.ready",
-        1.0,
-    );
 
     Ok(format!("Gateway prepared on port {}", port))
 }

@@ -1,5 +1,5 @@
 /**
- * Unit tests for openclawApiProtocol — ported wholesale from ClawX.
+ * Unit tests for openclawApiProtocol — ported wholesale from JunQi.
  * Covers the contract: any value written into
  * `~/.openclaw/openclaw.json → models.providers.*.api` must be one of
  * the 9 whitelisted values, OR auto-migrate from a legacy name.

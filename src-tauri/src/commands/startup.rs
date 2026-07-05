@@ -1,4 +1,4 @@
-//! Gateway startup sequence orchestrator — ported from ClawX
+//! Gateway startup sequence orchestrator
 //! electron/gateway/startup-orchestrator.ts (140 lines).
 //!
 //! Coordinates the existing modules into a single startup pipeline:

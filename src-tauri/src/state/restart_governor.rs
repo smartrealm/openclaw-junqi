@@ -1,12 +1,12 @@
-//! Gateway restart rate-limiter — ported from ClawX restart-governor.ts.
+//! Gateway restart rate-limiter.
 //!
 //! Prevents rapid-fire restarts by enforcing a simple cooldown between
 //! consecutive restarts. Kept simple intentionally — no circuit breakers,
 //! no sliding-window budgets, no exponential back-off. Before porting,
-//! ClawX had 10-min circuit-breaker lockouts that silently dropped
+//! JunQi had 10-min circuit-breaker lockouts that silently dropped
 //! legitimate config changes. The simplicity here is a *lesson learned*.
 //!
-//! See: ClawX electron/gateway/restart-governor.ts (94 lines, TS)
+//! See: JunQi electron/gateway/restart-governor.ts (94 lines, TS)
 
 use std::time::Instant;
 

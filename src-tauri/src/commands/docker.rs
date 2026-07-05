@@ -2,6 +2,7 @@ use crate::commands::gateway::{ensure_config_with_token, GatewayStatus};
 use crate::paths;
 use crate::platform;
 use serde::Serialize;
+use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 
 const OPENCLAW_IMAGE: &str = "ghcr.io/openclaw/openclaw";
@@ -13,11 +14,75 @@ pub struct DockerStatus {
     pub daemon_running: bool,
 }
 
+async fn resolve_docker_bin() -> Result<String, String> {
+    let configured = platform::bin_name("docker");
+    if tokio::process::Command::new(&configured)
+        .arg("--version")
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return Ok(configured);
+    }
+
+    let mut candidates: Vec<PathBuf> = vec![
+        "/usr/local/bin/docker".into(),
+        "/opt/homebrew/bin/docker".into(),
+        "/usr/bin/docker".into(),
+        "/bin/docker".into(),
+    ];
+
+    if let Some(home) = dirs::home_dir() {
+        candidates.push(home.join(".docker").join("bin").join("docker"));
+    }
+
+    for candidate in candidates {
+        if candidate.exists()
+            && tokio::process::Command::new(&candidate)
+                .arg("--version")
+                .output()
+                .await
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        {
+            return Ok(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    if !cfg!(windows) {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        if let Ok(output) = tokio::process::Command::new(shell)
+            .args(["-lc", "command -v docker"])
+            .output()
+            .await
+        {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Ok(path);
+                }
+            }
+        }
+    }
+
+    Err("Docker CLI not found".to_string())
+}
+
 /// Check if Docker CLI is installed and the daemon is running.
 #[tauri::command]
 pub async fn check_docker() -> Result<DockerStatus, String> {
     // Check if docker CLI exists
-    let docker_bin = platform::bin_name("docker");
+    let docker_bin = match resolve_docker_bin().await {
+        Ok(bin) => bin,
+        Err(_) => {
+            return Ok(DockerStatus {
+                available: false,
+                version: None,
+                daemon_running: false,
+            });
+        }
+    };
     let version_output = tokio::process::Command::new(&docker_bin)
         .args(["version", "--format", "{{.Server.Version}}"])
         .output()
@@ -76,7 +141,7 @@ pub async fn pull_openclaw_image(app: AppHandle, tag: Option<String>) -> Result<
 
     let _ = app.emit("setup-progress", format!("Pulling {}...", image));
 
-    let docker_bin = platform::bin_name("docker");
+    let docker_bin = resolve_docker_bin().await?;
     let output = tokio::process::Command::new(&docker_bin)
         .args(["pull", &image])
         .output()
@@ -99,7 +164,7 @@ pub async fn start_docker_gateway(
     port: Option<u16>,
     tag: Option<String>,
 ) -> Result<GatewayStatus, String> {
-    let port = port.unwrap_or(51789);
+    let port = port.unwrap_or(18789);
     let tag = tag.unwrap_or_else(|| "latest".to_string());
     let image = format!("{}:{}", OPENCLAW_IMAGE, tag);
     let base_dir = paths::desktop_dir();
@@ -125,7 +190,7 @@ pub async fn start_docker_gateway(
         .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
 
     // Remove existing container if it exists (ignore errors)
-    let docker_bin = platform::bin_name("docker");
+    let docker_bin = resolve_docker_bin().await?;
     let _ = tokio::process::Command::new(&docker_bin)
         .args(["rm", "-f", "maxauto-openclaw"])
         .output()
@@ -175,8 +240,8 @@ pub async fn start_docker_gateway(
     }
 
     // Wait for the gateway to be ready (TCP connect check, up to 30s)
-    // The gateway is a WebSocket server — there's no HTTP /healthz endpoint,
-    // so we check readiness by attempting a TCP connection to the mapped port.
+    // Use the same readiness contract as native mode: the mapped local port
+    // must accept a TCP connection.
     let _ = app.emit("setup-progress", "Waiting for gateway to be ready...");
     let addr = format!("127.0.0.1:{}", port);
     let mut healthy = false;
@@ -234,7 +299,7 @@ pub async fn start_docker_gateway(
         running: true,
         port,
         pid: None, // Docker manages the PID
-        token: None,
+        token: Some(token),
     })
 }
 
@@ -247,54 +312,57 @@ fn spawn_docker_log_tailer(app: AppHandle) {
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::process::Command;
 
-    let docker_bin = platform::bin_name("docker");
-    let mut cmd = Command::new(&docker_bin);
-    cmd.args(["logs", "-f", "--tail", "50", "maxauto-openclaw"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
+    tokio::spawn(async move {
+        let docker_bin = match resolve_docker_bin().await {
+            Ok(bin) => bin,
+            Err(e) => {
+                eprintln!("docker log tailer resolve failed: {}", e);
+                return;
+            }
+        };
+        let mut cmd = Command::new(&docker_bin);
+        cmd.args(["logs", "-f", "--tail", "50", "maxauto-openclaw"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
 
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("docker log tailer spawn failed: {}", e);
-            return;
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("docker log tailer spawn failed: {}", e);
+                return;
+            }
+        };
+
+        let app_out = app.clone();
+        if let Some(stdout) = child.stdout.take() {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let _ = app_out.emit("gateway-log", &line);
+                    let state = app_out.state::<crate::state::GatewayProcess>();
+                    push_log(&state.logs, LogSource::DockerStdout, LogLevel::Info, line);
+                }
+            });
         }
-    };
-
-    // Clone the AppHandle so we can move it into each spawned task. Tauri
-    // AppHandle is cheap to clone (Arc-wrapped internally).
-    let app_out = app.clone();
-    if let Some(stdout) = child.stdout.take() {
-        tokio::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let _ = app_out.emit("gateway-log", &line);
-                let state = app_out.state::<crate::state::GatewayProcess>();
-                push_log(&state.logs, LogSource::DockerStdout, LogLevel::Info, line);
-            }
-        });
-    }
-    let app_err = app.clone();
-    if let Some(stderr) = child.stderr.take() {
-        tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let _ = app_err.emit("gateway-log", &line);
-                let state = app_err.state::<crate::state::GatewayProcess>();
-                push_log(&state.logs, LogSource::DockerStderr, LogLevel::Warn, line);
-            }
-        });
-    }
-    // The child is intentionally dropped here — the readers above hold stdout
-    // and stderr, so the process keeps running until the container exits or
-    // we kill it via stop_docker_gateway.
+        let app_err = app.clone();
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let _ = app_err.emit("gateway-log", &line);
+                    let state = app_err.state::<crate::state::GatewayProcess>();
+                    push_log(&state.logs, LogSource::DockerStderr, LogLevel::Warn, line);
+                }
+            });
+        }
+    });
 }
 
 /// Stop the OpenClaw Docker container (without removing it).
 #[tauri::command]
 pub async fn stop_docker_gateway() -> Result<String, String> {
-    let docker_bin = platform::bin_name("docker");
+    let docker_bin = resolve_docker_bin().await?;
 
     let output = tokio::process::Command::new(&docker_bin)
         .args(["stop", "maxauto-openclaw"])
@@ -316,8 +384,18 @@ pub async fn stop_docker_gateway() -> Result<String, String> {
 /// Check if the Docker container is running.
 #[tauri::command]
 pub async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, String> {
-    let port = port.unwrap_or(51789);
-    let docker_bin = platform::bin_name("docker");
+    let port = port.unwrap_or(18789);
+    let docker_bin = match resolve_docker_bin().await {
+        Ok(bin) => bin,
+        Err(_) => {
+            return Ok(GatewayStatus {
+                running: false,
+                port,
+                pid: None,
+                token: None,
+            });
+        }
+    };
 
     let output = tokio::process::Command::new(&docker_bin)
         .args([

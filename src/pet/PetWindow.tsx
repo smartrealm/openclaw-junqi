@@ -12,6 +12,8 @@ import type { PetMenuItem } from './petActions';
 import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { applyTheme } from '@/theme/apply';
+import { detectOSPreference, resolveTheme } from '@/theme/resolver';
+import { isThemeSetting, STORAGE_KEY as THEME_STORAGE_KEY, type ThemeSetting } from '@/theme';
 import { playPetSfx } from './petSounds';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
@@ -68,11 +70,9 @@ export default function PetWindow() {
   const dragCursorRef = useRef<null | { x: number; y: number; gx: number; gy: number; win_w: number; win_h: number }>(null);
 
   // ── Theme sync from main window ──
-  // The pet window is a separate Tauri window with its own document — it does
-  // not automatically re-render when the main window's `data-theme` attribute
-  // changes. We subscribe to settingsStore.theme (which the main window
-  // updates when the user picks a new theme) and re-apply applyTheme() so
-  // every `themeHex()` and `var(--aegis-*)` lookup reflects the new palette.
+  // The pet window is a separate Tauri window with its own document. Resolve
+  // the persisted ThemeSetting here, including "system", so `themeHex()` and
+  // `var(--aegis-*)` reflect the active palette in this webview too.
   const theme = useSettingsStore((s) => s.theme);
   // Pull the latest drag state out of the store so we can re-derive the
   // magnetic-pull offsets whenever the cursor moves over the main window.
@@ -81,12 +81,26 @@ export default function PetWindow() {
   const dragActive = usePetStore((s) => s.dragActive);
   const dragOver = usePetStore((s) => s.dragOver);
   useEffect(() => {
-    if (theme === 'system') {
-      const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-      applyTheme(prefersDark ? 'aegis-dark' : 'aegis-light');
-    } else {
-      applyTheme(theme);
-    }
+    const applyResolved = (setting: ThemeSetting) => {
+      applyTheme(resolveTheme(setting, detectOSPreference()));
+    };
+    applyResolved(theme);
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== THEME_STORAGE_KEY || !isThemeSetting(event.newValue)) return;
+      applyResolved(event.newValue);
+    };
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const onSystemTheme = () => {
+      const latest = localStorage.getItem(THEME_STORAGE_KEY);
+      if (isThemeSetting(latest) && latest === 'system') applyResolved(latest);
+    };
+    window.addEventListener('storage', onStorage);
+    media?.addEventListener('change', onSystemTheme);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      media?.removeEventListener('change', onSystemTheme);
+    };
   }, [theme]);
 
   useEffect(() => {
@@ -494,7 +508,7 @@ export default function PetWindow() {
         />
         {BadgeIcon && (
           <motion.span
-            style={{ position: 'absolute', top: -22, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
+            style={{ position: 'absolute', top: -22, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'none' }}
             animate={{ y: [0, -2, 0] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           >

@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import type { SidebarTab } from './tab-utils';
 import { LayoutDashboard, Bot, Wrench, Settings } from 'lucide-react';
 import clsx from 'clsx';
+import junqiLogo from '@/assets/brand/junqi-logo-full-16x.png';
 
 const TABS = [
   { id: 'workbench', labelKey: 'nav.dashboard', labelFallback: '仪表盘', path: '/', Icon: LayoutDashboard },
@@ -22,7 +23,15 @@ export function TabBar() {
   const setActiveTab = useSettingsStore((s) => s.setActiveSidebarTab);
 
   return (
-    <div className="flex items-center gap-0.5 h-[32px] shrink-0 chrome-bg border-b border-aegis-border pr-2" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
+    <div className="flex items-center gap-0.5 h-[32px] shrink-0 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
+      <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,220px)] flex items-center px-4 pointer-events-none">
+        <img
+          src={junqiLogo}
+          alt="JunQi"
+          className="h-[24px] max-w-[176px] object-contain object-left opacity-95"
+          draggable={false}
+        />
+      </div>
       {TABS.map((tab) => {
         const active = activeTab === (tab.id as SidebarTab);
         return (

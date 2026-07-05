@@ -1,4 +1,4 @@
-//! Gateway process supervisor — ported from ClawX supervisor.ts (357 lines).
+//! Gateway process supervisor.
 //!
 //! Manages the child process lifecycle beyond simple spawn/kill:
 //!   - wait_for_port_free: poll until TCP TIME_WAIT clears
@@ -6,8 +6,7 @@
 //!   - openclaw_doctor_repair: run `doctor --fix` on bad config
 //!   - terminate_owned_gateway: graceful kill with hard timeout
 //!
-//! Ported from: ClawX electron/gateway/supervisor.ts
-//!   terminateOwnedGatewayProcess   (line 24)
+//! //!   terminateOwnedGatewayProcess   (line 24)
 //!   waitForPortFree                (line 128)
 //!   findExistingGatewayProcess     (line 238)
 //!   runOpenClawDoctorRepair        (line 265)
@@ -70,7 +69,7 @@ pub async fn find_and_kill_orphans(port: u16) -> bool {
     // Something is listening. Try to identify and kill it.
     eprintln!("[gateway_supervisor] port {} is occupied, checking for orphan", port);
     // Best-effort: we don't know the PID without lsof/netstat, so skip the
-    // PID-based approach from ClawX. Instead, we trust wait_for_port_free
+    // PID-based approach from JunQi. Instead, we trust wait_for_port_free
     // to handle the TIME_WAIT window after a quick SIGKILL attempt via the
     // OS. On macOS, we handle the launchctl unload separately.
     false
@@ -145,7 +144,7 @@ pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, Gate
         });
     }
 
-    // Wait up to 120s (matches ClawX's 120000ms timeout).
+    // Wait up to 120s (matches JunQi's 120000ms timeout).
     match timeout(Duration::from_secs(120), child.wait()).await {
         Ok(Ok(status)) => {
             let ok = status.success();

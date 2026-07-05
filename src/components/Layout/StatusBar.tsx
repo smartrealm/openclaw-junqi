@@ -8,7 +8,6 @@ import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSeque
 import { usePetStore } from '@/stores/petStore';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
-import { applyTheme } from '@/theme/apply';
 import { useSetupProgress } from '@/hooks/useSetupProgress';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
@@ -96,7 +95,6 @@ export function StatusBar() {
 
   const handleThemeCycle = () => {
     const next = nextTheme(resolvedTheme);
-    applyTheme(next);
     setTheme(next);
   };
 
