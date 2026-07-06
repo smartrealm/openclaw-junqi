@@ -77,10 +77,8 @@ function installStorageMock() {
 async function loadDeps() {
   installStorageMock();
   installDomMock();
-  const [{ ChatHandler }, { useChatStore }] = await Promise.all([
-    import('@/services/gateway/ChatHandler'),
-    import('@/stores/chatStore'),
-  ]);
+  const { useChatStore } = await import('@/stores/chatStore');
+  const { ChatHandler } = await import('@/services/gateway/ChatHandler');
   (globalThis as any).__chatDeps = { useChatStore };
   return { ChatHandler };
 }
@@ -135,7 +133,7 @@ test('chat.final falls back to longer streamed content', async () => {
   assert.equal(streamEnds[0].meta?.runId, runId);
 });
 
-test('agent lifecycle end finalizes assistant stream when chat.final is missing', async () => {
+test('agent lifecycle end seals the local assistant segment when chat.final is missing', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();
   resetChatStore();
@@ -177,11 +175,13 @@ test('agent lifecycle end finalizes assistant stream when chat.final is missing'
 
   await new Promise((resolve) => setTimeout(resolve, 260));
 
-  assert.equal(streamEnds.length, 1);
-  assert.equal(streamEnds[0].sessionKey, sessionKey);
-  assert.ok(streamEnds[0].messageId.length > 0);
-  assert.equal(streamEnds[0].content, 'Lifecycle fallback response body.');
-  assert.equal(streamEnds[0].meta?.runId, runId);
+  assert.equal(streamEnds.length, 0, 'lifecycle fallback must not trigger final stream end');
+  const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
+  const storedMessages = useChatStore.getState().messagesPerSession[sessionKey] ?? [];
+  assert.equal(storedMessages.length, 1);
+  assert.equal(storedMessages[0].content, 'Lifecycle fallback response body.');
+  assert.equal(storedMessages[0].runId, runId);
+  assert.equal(storedMessages[0].responseState, 'final');
 });
 
 test('chat.final maps managedFiles capture refs using path field', async () => {
