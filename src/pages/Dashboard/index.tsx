@@ -23,6 +23,7 @@ import { DashboardIcon } from '@/components/shared/DashboardIcon';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll } from '@/stores/gatewayDataStore';
+import { sessionActivityTime, sortSessionsByActivity } from '@/components/Layout/sidebarUtils';
 import clsx from 'clsx';
 import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
@@ -222,22 +223,33 @@ export function DashboardPage() {
   const ctxUsed      = mainSession?.totalTokens   || 0;
   const ctxMax       = mainSession?.contextTokens || 200_000;
 
-  // Active sessions + sub sessions
+  // Active sessions
   const activeSessions = useMemo(
     () => sessions.filter((s: any) => (s.totalTokens || 0) > 0),
     [sessions]
-  );
-  const subSessions = useMemo(
-    () => activeSessions
-      .filter((s: any) => s.key !== 'agent:main:main')
-      .sort((a: any, b: any) => (b.totalTokens || 0) - (a.totalTokens || 0))
-      .slice(0, 4),
-    [activeSessions]
   );
   const chatSessionByKey = useMemo(
     () => new Map(chatSessions.map((session) => [session.key, session])),
     [chatSessions],
   );
+  const recentSessions = useMemo(() => {
+    const byKey = new Map<string, any>();
+    for (const s of sessions) {
+      if (!s?.key || String(s.key).includes(':subagent:')) continue;
+      byKey.set(s.key, s);
+    }
+    for (const s of chatSessions) {
+      if (!s?.key || String(s.key).includes(':subagent:')) continue;
+      byKey.set(s.key, { ...(byKey.get(s.key) ?? {}), ...s });
+    }
+    return sortSessionsByActivity(Array.from(byKey.values()).filter((s: any) => {
+      if (s.archived) return false;
+      if (s.running || s.hasPendingCompletion || s.lastMessage || s.lastTimestamp || s.lastActive) return true;
+      if ((s.totalTokens || 0) > 0) return true;
+      if (s.key === 'agent:main:main') return true;
+      return Boolean(s.label && s.label !== 'Main Session');
+    })).slice(0, 5);
+  }, [sessions, chatSessions]);
 
   // Chart data: last 14 days (oldest first)
   const chartData = useMemo(() => {
@@ -735,42 +747,36 @@ export function DashboardPage() {
           </div>
 
           <div className="space-y-1">
-            {mainSession && (
-              <SessionItem
-                isMain
-                name={t('dashboard.mainSession')}
-                model={shortModel}
-                detail={t('dashboard.compactCount', { n: mainSession.compactions || 0 })}
-                tokens={fmtTokens(mainSession.totalTokens || 0)}
-                avatarBg={themeAlpha('primary', 0.12)}
-                avatarColor={themeHex('primary')}
-                icon={Shield}
-                onClick={() => { useChatStore.getState().openTab(mainSession.key); navigate('/chat'); }}
-              />
-            )}
-            {subSessions.map((s: any) => {
+            {recentSessions.map((s: any) => {
               const key   = s.key || 'unknown';
               const merged = { ...s, ...(chatSessionByKey.get(key) ?? {}) };
+              const isMain = key === 'agent:main:main';
               const label = getSessionDisplayLabel(merged, {
                 mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
                 genericSessionLabel: t('dashboard.session', 'Session'),
               });
               const sModel = hasProviders ? ((s.model || '').split('/').pop() || '—') : '—';
+              const lastActiveIso = sessionActivityTime(merged)
+                ? new Date(sessionActivityTime(merged)).toISOString()
+                : undefined;
               return (
                 <SessionItem
                   key={key}
+                  isMain={isMain}
                   name={label}
                   model={sModel}
-                  detail={timeAgo(s.lastActive)}
+                  detail={isMain ? t('dashboard.compactCount', { n: s.compactions || s.compactionCount || 0 }) : timeAgo(lastActiveIso)}
                   tokens={fmtTokens(s.totalTokens || 0)}
-                  avatarBg={themeAlpha('accent', 0.1)}
-                  avatarColor={themeHex('accent')}
-                  icon={Bot}
+                  avatarBg={isMain ? themeAlpha('primary', 0.12) : themeAlpha('accent', 0.1)}
+                  avatarColor={isMain ? themeHex('primary') : themeHex('accent')}
+                  icon={isMain ? Shield : Bot}
+                  pinned={Boolean(merged.pinned)}
+                  onPinToggle={() => useChatStore.getState().togglePinSession(key)}
                   onClick={() => { useChatStore.getState().openTab(key); navigate('/chat'); }}
                 />
               );
             })}
-            {activeSessions.length === 0 && (
+            {recentSessions.length === 0 && (
               <div className="py-3 text-center text-[11px] text-aegis-text-dim">
                 {connected ? t('dashboard.noActiveSessions') : t('dashboard.notConnected')}
               </div>

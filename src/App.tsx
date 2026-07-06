@@ -168,7 +168,6 @@ export default function App() {
             : `📎 ${paths.length} 个文件`,
           agentId: 'main',
           createdAt: Date.now(),
-          pinned: true,
         } as any);
         cs.setActiveSession(newKey);
         cs.setPendingFiles(paths);

@@ -301,7 +301,7 @@ function WorkbenchPanel() {
     (s) => !pinnedKeys.has(s.key) && !activeKeys.has(s.key),
   );
   const visibleSessions = [...pinned, ...active, ...recentOnly];
-  const groups = useMemo(() => groupSessionsByAgent(visibleSessions), [visibleSessions]);
+  const groups = useMemo(() => groupSessionsByAgent(recentOnly), [recentOnly]);
 
   // Accordion: when the active session changes, auto-expand its group and
   // collapse all others so the user always sees their active context.
@@ -357,7 +357,6 @@ function WorkbenchPanel() {
               label: '新会话',
               agentId: 'main',
               createdAt: Date.now(),
-              pinned: true,
             } as any);
             navigate('/chat');
           }}
@@ -406,7 +405,7 @@ function WorkbenchPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
-        {groups.length === 0 && (
+        {visibleSessions.length === 0 && (
           <div className="px-4 py-3 text-[12.5px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
 

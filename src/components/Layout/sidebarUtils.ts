@@ -18,6 +18,26 @@ export function isSessionActive(sx: Session): boolean {
   return false;
 }
 
+export function sessionActivityTime(sx: Session): number {
+  const raw = sx.lastActive ?? sx.lastTimestamp ?? sx.updatedAt ?? sx.createdAt;
+  if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+export function sortSessionsByActivity<T extends Session>(sessions: T[]): T[] {
+  return [...sessions].sort((a, b) => {
+    const runningDelta = Number(isSessionActive(b)) - Number(isSessionActive(a));
+    if (runningDelta !== 0) return runningDelta;
+    const timeDelta = sessionActivityTime(b) - sessionActivityTime(a);
+    if (timeDelta !== 0) return timeDelta;
+    return String(a.key).localeCompare(String(b.key));
+  });
+}
+
 /**
  * 4-bucket session partition for the sidebar.
  *   pinned:  user-pinned sessions, sorted to the very top, regardless of
@@ -61,17 +81,17 @@ export function partitionSessions(
 
   // Pinned bucket surfaces regardless of activity, so a pinned-but-idle
   // session still sits at the top.
-  const pinned = working.filter((sx) => sx.pinned === true);
+  const pinned = sortSessionsByActivity(working.filter((sx) => sx.pinned === true));
   const pinnedKeys = new Set(pinned.map((sx) => sx.key));
 
-  const active = working.filter(
+  const active = sortSessionsByActivity(working.filter(
     (sx) => !pinnedKeys.has(sx.key) && (isSessionActive(sx) || typingBySession[sx.key]),
-  );
+  ));
   const activeKeys = new Set(active.map((sx) => sx.key));
 
-  const recent = working.filter(
+  const recent = sortSessionsByActivity(working.filter(
     (sx) => !pinnedKeys.has(sx.key) && !activeKeys.has(sx.key),
-  );
+  ));
 
   return { pinned, active, recent, archived };
 }

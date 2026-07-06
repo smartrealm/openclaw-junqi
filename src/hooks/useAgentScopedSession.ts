@@ -1,8 +1,8 @@
 /**
  * useAgentScopedSession — read `?agent=<id>&new=1` from the route, materialize
  * a fresh session key for that agent, register it as a local placeholder,
- * and pin/mark it active. Fires only once per `?new=1` navigation so
- * subsequent renders leave the user alone.
+ * and mark it active. Fires only once per `?new=1` navigation so subsequent
+ * renders leave the user alone.
  *
  * The session is a placeholder until the user sends a real message — at
  * which point the gateway's sessions.list reply swaps it out with the
@@ -34,7 +34,6 @@ export function useAgentScopedSession(): void {
       label: '新会话',
       agentId,
       createdAt: Date.now(),
-      pinned: true,
     } as any;
 
     useChatStore.getState().addLocalSession(placeholder);

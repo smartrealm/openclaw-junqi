@@ -277,9 +277,13 @@ export interface ChatMessage {
 export interface Session {
   key: string;
   label: string;
+  agentId?: string;
+  createdAt?: number | string;
   topic?: string;
   lastMessage?: string;
   lastTimestamp?: string;
+  lastActive?: string;
+  updatedAt?: string;
   unread?: number;
   hasPendingCompletion?: boolean;
   kind?: string;
@@ -356,8 +360,8 @@ interface ChatState {
   setSessions: (sessions: Session[], defaults?: { model: string | null; contextTokens: number | null }) => void;
   /** Append a new session to the sidebar immediately (before the gateway's
    *  sessions.list reply). Used by per-agent "+ New Session" buttons in
-   *  the sidebar: create the row, pin it, mark it active — the gateway
-   *  catches up once the user actually sends a message. */
+   *  the sidebar: create the row and mark it active — the gateway catches
+   *  up once the user actually sends a message. */
   addLocalSession: (session: Session) => void;
   /** Update a single session's label locally without a full sessions.list refetch. */
   setSessionLabel: (key: string, label: string) => void;
@@ -981,6 +985,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } = get();
     const defs = defaults ?? prev;
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
+    const incomingKeys = new Set(sessions.map((session) => session.key));
     const mergedSessions = sessions.map((session) => {
       const previous = previousByKey.get(session.key);
       const hasCachedMessages = Object.prototype.hasOwnProperty.call(messagesPerSession, session.key);
@@ -1018,10 +1023,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       return session.key === activeSessionKey ? clearSessionAttentionState(merged) : merged;
     });
-    const active = mergedSessions.find((s) => s.key === activeSessionKey);
+    const localOnlySessions = previousSessions.filter((session) => {
+      if (incomingKeys.has(session.key)) return false;
+      if (session.archived) return false;
+      const createdAt = session.createdAt;
+      const isLocalPlaceholder = typeof createdAt === 'number' || (typeof createdAt === 'string' && createdAt.trim().length > 0);
+      return isLocalPlaceholder;
+    });
+    const nextSessions = [...mergedSessions, ...localOnlySessions];
+    const active = nextSessions.find((s) => s.key === activeSessionKey);
     const titleBar = titleBarStateFromSession(active, defs);
     set({
-      sessions: mergedSessions,
+      sessions: nextSessions,
       ...(defaults ? { sessionDefaults: defs } : {}),
       currentThinking: titleBar.currentThinking,
       tokenUsage: titleBar.tokenUsage,
@@ -1092,8 +1105,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return {
       sessions: [...state.sessions, session],
       activeSessionKey: session.key,
-      // New sessions are pinned by default — surfaces them at the top
-      // immediately and keeps the "active + recent" sidebar honest.
     };
   }),
 
