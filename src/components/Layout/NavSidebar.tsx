@@ -3,8 +3,7 @@
 
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { createPortal } from 'react-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, RefreshCw, X, Pin, PinOff, Archive, ArchiveRestore, History, Power, PowerOff, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Calendar, BarChart3, Puzzle, Activity, Wrench, Database, Cpu, FileText, Volume2, ListChecks, Pencil, Trash2, X, History, Power, PowerOff, ChevronDown, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -15,7 +14,12 @@ import { gateway } from '@/services/gateway';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { resolveTab, type SidebarTab } from './tab-utils';
-import { sessionTitle, partitionSessions, groupSessionsByAgent, type AgentGroup } from './sidebarUtils';
+import {
+  bucketSessionsByActivity,
+  isEmptyTransientSession,
+  sessionTitle,
+  type SessionBucketKey,
+} from './sidebarUtils';
 import { SidebarRow, SidebarSection } from './SidebarRow';
 import { applySessionRename } from '@/utils/sessionRename';
 
@@ -72,33 +76,63 @@ function parseSkillStatus(result: any): Array<[string, { name: string; enabled: 
   return entries;
 }
 
+function sessionAgentLabel(sessionKey: string): string {
+  const parts = String(sessionKey || '').split(':');
+  if (parts[0] !== 'agent') return 'main';
+  return parts[1] || 'main';
+}
+
+function sessionChannelLabel(channel?: string | null): string | null {
+  if (!channel) return null;
+  const normalized = channel.trim().toLowerCase();
+  if (!normalized || normalized === 'web' || normalized === 'webchat' || normalized === 'desktop') return null;
+  const labels: Record<string, string> = {
+    feishu: '飞书',
+    lark: '飞书',
+    dingtalk: '钉钉',
+    dingding: '钉钉',
+    wechat: '微信',
+    wecom: '企微',
+    slack: 'Slack',
+  };
+  return labels[normalized] ?? channel;
+}
+
+function cleanupEmptyActiveSession(nextSessionKey?: string): boolean {
+  const state = useChatStore.getState();
+  const key = state.activeSessionKey;
+  if (!key || key === nextSessionKey) return false;
+  const session = state.sessions.find((s) => s.key === key);
+  const messages = state.messagesPerSession[key] ?? (key === state.activeSessionKey ? state.messages : []);
+  if (!isEmptyTransientSession(session, messages)) return false;
+  state.removeSession(key);
+  return true;
+}
+
 // ═══════════════════════════════════════════════════════════
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
-function SessionRowItem({ sessionKey, currentTitle, isActive, meta, currentPinned = false, currentArchived = false }: {
+function SessionRowItem({ sessionKey, currentTitle, isActive, channel }: {
   sessionKey: string;
   currentTitle: string;
   isActive: boolean;
-  meta?: string;
-  currentPinned?: boolean;
-  currentArchived?: boolean;
+  channel?: string | null;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(currentTitle);
   const [renamingInFlight, setRenamingInFlight] = useState(false);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const ctxRef = useRef<HTMLDivElement>(null);
+  const channelLabel = sessionChannelLabel(channel);
 
   const goSession = () => {
+    cleanupEmptyActiveSession(sessionKey);
     useChatStore.getState().setActiveSession(sessionKey);
     navigate('/chat');
   };
 
   const startRename = useCallback(() => {
-    setCtxMenu(null);
     setRenameValue(currentTitle);
     setRenaming(true);
     // Focus after the row re-renders with the input.
@@ -130,7 +164,6 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta, currentPinne
   }, [renameValue, currentTitle, renamingInFlight, cancelRename, sessionKey]);
 
   const handleDelete = useCallback(() => {
-    setCtxMenu(null);
     showConfirm(
       t('chat.deleteSession', '删除会话'),
       t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
@@ -140,41 +173,6 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta, currentPinne
       }
     );
   }, [sessionKey, t]);
-
-  const handleReset = useCallback(() => {
-    setCtxMenu(null);
-    showConfirm(
-      t('chat.resetSession', '重置会话'),
-      t('chat.resetSessionConfirm', '确定清除此会话的对话历史？会话本身会保留。'),
-      async () => {
-        const { clearSessionMessages, clearSessionTokens } = useChatStore.getState();
-        try { await gateway.resetSession(sessionKey); } catch {}
-        clearSessionMessages(sessionKey);
-        clearSessionTokens(sessionKey);
-        window.dispatchEvent(new CustomEvent('aegis:session-reset'));
-      }
-    );
-  }, [sessionKey, t]);
-
-  const togglePin = useCallback(() => {
-    setCtxMenu(null);
-    useChatStore.getState().togglePinSession(sessionKey);
-  }, [sessionKey]);
-
-  const toggleArchive = useCallback(() => {
-    setCtxMenu(null);
-    useChatStore.getState().setSessionArchived(sessionKey, !currentArchived);
-  }, [sessionKey, currentArchived]);
-
-  // Close context menu on outside click.
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onDown = (e: MouseEvent) => {
-      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [ctxMenu]);
 
   if (renaming) {
     return (
@@ -204,66 +202,50 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, meta, currentPinne
   }
 
   return (
-    <>
-      <div
-        onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
-        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
+    <div
+      className="group/session relative mx-2"
+      onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
+    >
+      <button
+        type="button"
+        onClick={goSession}
+        className={clsx(
+          'flex w-full items-center gap-2 rounded-lg border-l-2 px-2.5 py-2 text-left transition-colors',
+          'hover:bg-aegis-hover/30',
+          isActive
+            ? 'border-l-aegis-primary bg-aegis-primary/[0.14] text-aegis-text'
+            : 'border-l-transparent text-aegis-text-secondary',
+        )}
       >
-        <SidebarRow
-          title={currentTitle}
-          active={isActive}
-          meta={meta}
-          onClick={goSession}
-        />
-      </div>
-      {ctxMenu && createPortal(
-        <div
-          ref={ctxRef}
-          className="fixed z-[9999] min-w-[160px] py-1 rounded-lg border bg-aegis-menu-bg border-aegis-menu-border text-[13px]"
-          style={{ left: ctxMenu.x, top: ctxMenu.y, boxShadow: 'var(--aegis-menu-shadow)' }}
+        <span className="shrink-0 rounded-full bg-aegis-surface px-2 py-0.5 text-[10.5px] font-semibold text-aegis-text-dim">
+          {sessionAgentLabel(sessionKey)}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{currentTitle}</span>
+        {channelLabel && (
+          <span className="max-w-[52px] shrink-0 truncate rounded bg-aegis-primary/[0.10] px-1.5 py-0.5 text-[10.5px] font-medium text-aegis-primary">
+            {channelLabel}
+          </span>
+        )}
+      </button>
+      <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/session:opacity-100">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); startRename(); }}
+          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-surface hover:text-aegis-text"
+          title={t('chat.renameSession', 'Rename session')}
         >
-          <button
-            onClick={startRename}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-          >
-            <Pencil size={13} className="opacity-60" />
-            {t('chat.renameSession', 'Rename session')}
-          </button>
-          <button
-            onClick={togglePin}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-          >
-            {currentPinned
-              ? <><PinOff size={13} className="opacity-60" />{t('chat.unpinSession', 'Unpin')}</>
-              : <><Pin size={13} className="opacity-60" />{t('chat.pinSession', 'Pin to top')}</>}
-          </button>
-          <button
-            onClick={toggleArchive}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-          >
-            {currentArchived
-              ? <><ArchiveRestore size={13} className="opacity-60" />{t('chat.unarchiveSession', 'Unarchive')}</>
-              : <><Archive size={13} className="opacity-60" />{t('chat.archiveSession', 'Archive')}</>}
-          </button>
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
-          >
-            <RefreshCw size={13} className="opacity-60" />
-            {t('chat.resetSession', 'Reset session')}
-          </button>
-          <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
-          <button
-            onClick={handleDelete}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
-          >
-            <Trash2 size={13} />
-            {t('chat.deleteSession', 'Delete session')}
-          </button>
-        </div>,
-        document.body,
-      )}
-    </>
+          <Pencil size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400"
+          title={t('chat.deleteSession', 'Delete session')}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -271,12 +253,14 @@ function WorkbenchPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const sessions = useChatStore((st) => st.sessions) ?? [];
-  const typingBySession = useChatStore((st) => st.typingBySession) ?? {};
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
-  const [showArchived, setShowArchived] = useState(false);
-  // Accordion: only one agent group open at a time. Default: 主智能体 (main).
-  const [openGroupId, setOpenGroupId] = useState<string | null>('main');
-  const { pinned, active, recent, archived } = partitionSessions(sessions, typingBySession, showArchived);
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [expandedBuckets, setExpandedBuckets] = useState<Record<SessionBucketKey, boolean>>({
+    today: true,
+    withinWeek: true,
+    withinMonth: false,
+    older: false,
+  });
 
   // Per-session first user message, keyed for O(1) lookups during render.
   // Without this we'd have to walk messagesPerSession on every session row.
@@ -290,39 +274,31 @@ function WorkbenchPanel() {
     return out;
   }, [messagesPerSession]);
 
-  // Pinned + active sessions are surfaced in their own dedicated sections
-  // at the top of the sidebar (so the user has quick access without
-  // expanding any agent). The per-agent groups below show the REMAINING
-  // sessions (recent, non-pinned) so the same session never appears
-  // twice. We dedupe by key against the pinned + active keysets.
-  const pinnedKeys = new Set(pinned.map((s) => s.key));
-  const activeKeys = new Set(active.map((s) => s.key));
-  const recentOnly = recent.filter(
-    (s) => !pinnedKeys.has(s.key) && !activeKeys.has(s.key),
+  const visibleSessions = useMemo(
+    () => sessions.filter((sx) => !sx.key?.includes(':subagent:') && !sx.archived),
+    [sessions],
   );
-  const visibleSessions = [...pinned, ...active, ...recentOnly];
-  const groups = useMemo(() => groupSessionsByAgent(recentOnly), [recentOnly]);
+  const buckets = useMemo(() => bucketSessionsByActivity(visibleSessions, nowMs), [visibleSessions, nowMs]);
 
-  // Accordion: when the active session changes, auto-expand its group and
-  // collapse all others so the user always sees their active context.
   useEffect(() => {
-    if (!activeKey) return;
-    const group = groups.find((g) => g.sessions.some((s) => s.key === activeKey));
-    if (group && group.agentId !== openGroupId) {
-      setOpenGroupId(group.agentId);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey]);
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const activeBucket = buckets.find((bucket) => bucket.sessions.some((session) => session.key === activeKey));
+    if (!activeBucket) return;
+    setExpandedBuckets((current) => current[activeBucket.key] ? current : { ...current, [activeBucket.key]: true });
+  }, [activeKey, buckets]);
 
   const renderRow = (sx: typeof visibleSessions[number]) => (
     <SessionRowItem key={sx.key} sessionKey={sx.key}
       currentTitle={sessionTitle(sx, firstUserByKey[sx.key])} isActive={sx.key === activeKey}
-      currentPinned={!!sx.pinned} currentArchived={!!sx.archived}
-      meta={typeof sx.model === 'string' ? sx.model.split('/').pop() : undefined} />
+      channel={(sx as any).channel ?? (sx as any).lastChannel ?? null} />
   );
 
-  const toggleGroup = (agentId: string) => {
-    setOpenGroupId((prev) => (prev === agentId ? null : agentId));
+  const toggleBucket = (key: SessionBucketKey) => {
+    setExpandedBuckets((current) => ({ ...current, [key]: !current[key] }));
   };
 
   // Quick-create dropdown. The "split button" pattern: the left half
@@ -351,6 +327,17 @@ function WorkbenchPanel() {
         <button
           type="button"
           onClick={() => {
+            const state = useChatStore.getState();
+            const current = state.sessions.find((s) => s.key === state.activeSessionKey);
+            const currentMessages = state.messagesPerSession[state.activeSessionKey] ?? state.messages;
+            if (isEmptyTransientSession(current, currentMessages)) {
+              navigate('/chat');
+              return;
+            }
+            if (currentMessages.length === 0 && !current?.lastMessage && (current?.totalTokens ?? 0) <= 0) {
+              navigate('/chat');
+              return;
+            }
             const newKey = `agent:main:s-${Date.now().toString(36).slice(-5)}`;
             useChatStore.getState().addLocalSession({
               key: newKey,
@@ -409,84 +396,26 @@ function WorkbenchPanel() {
           <div className="px-4 py-3 text-[13px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
 
-        {/* ── Active + Pinned sections (always visible at top) ──
-            These are the canonical "what's running now / what I saved" lists.
-            Independent of the per-agent accordion below. */}
-        {active.length > 0 && (
-          <div className="mb-3">
-            <div className="px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim/80 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-aegis-success animate-pulse" />
-              {t('sidebar.activeSessions', '活跃会话')}
-              <span className="text-aegis-text-dim/50 font-mono normal-case">{active.length}</span>
-            </div>
-            {active.map(renderRow)}
-          </div>
-        )}
-        {pinned.length > 0 && (
-          <div className="mb-3">
-            <div className="px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim/80 flex items-center gap-1.5">
-              <Pin size={10} className="opacity-70" />
-              {t('sidebar.pinnedSessions', '置顶会话')}
-              <span className="text-aegis-text-dim/50 font-mono normal-case">{pinned.length}</span>
-            </div>
-            {pinned.map(renderRow)}
-          </div>
-        )}
-
-        {/* ── Per-agent groups (折叠式) ── */}
-        {groups.map((g: AgentGroup) => {
-          const isOpen = openGroupId === g.agentId;
+        {buckets.map((bucket) => {
+          if (bucket.sessions.length === 0) return null;
+          const isOpen = expandedBuckets[bucket.key] ?? false;
           return (
-            <div key={g.agentId} className="mb-1">
-              <div className="group/header w-full flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(g.agentId)}
-                  className="flex-1 flex items-center gap-1.5 min-w-0 text-left"
-                >
-                  {isOpen
-                    ? <ChevronDown size={11} className="opacity-60" />
-                    : <ChevronRight size={11} className="opacity-60" />}
-                  <Bot size={11} className="opacity-60" />
-                  <span className="flex-1 truncate hover:text-aegis-text-secondary">{g.label}</span>
-                  <span className="text-[10.5px] text-aegis-text-dim/70 font-mono">{g.sessions.length}</span>
-                </button>
-              </div>
-              {isOpen && (
-                <>
-                  {/* Per-agent "+ 新建会话" — every agent can grow its
-                      own conversation list without dipping into settings.
-                      Skipped on the synthetic "__ungrouped__" bucket since
-                      those have no real agent to scope to. */}
-                  {g.agentId !== 'main' && g.agentId !== '__ungrouped__' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigate(`/chat?agent=${encodeURIComponent(g.agentId)}&new=1`);
-                      }}
-                      className="w-full mx-3 my-1 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[12.5px] text-aegis-text-dim hover:text-aegis-primary hover:bg-aegis-primary/[0.08] transition-colors border border-dashed border-aegis-border/40 hover:border-aegis-primary/40"
-                    >
-                      <Plus size={10} />
-                      {t('sidebar.newSession', '新建会话')}
-                    </button>
-                  )}
-                  {g.sessions.map(renderRow)}
-                </>
-              )}
+            <div key={bucket.key} className="mb-1">
+              <button
+                type="button"
+                onClick={() => toggleBucket(bucket.key)}
+                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim transition-colors hover:text-aegis-text-secondary"
+              >
+                {isOpen
+                  ? <ChevronDown size={11} className="opacity-60" />
+                  : <ChevronRight size={11} className="opacity-60" />}
+                <span className="flex-1 truncate">{t(bucket.labelKey, bucket.fallback)}</span>
+                <span className="text-[10.5px] font-mono text-aegis-text-dim/70">{bucket.sessions.length}</span>
+              </button>
+              {isOpen && bucket.sessions.map(renderRow)}
             </div>
           );
         })}
-        {archived.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowArchived((v) => !v)}
-            className="w-full px-4 py-2 text-[12px] text-aegis-text-dim hover:text-aegis-text-secondary transition-colors border-t border-aegis-border/15"
-          >
-            {showArchived
-              ? t('sidebar.hideArchived', { count: archived.length, defaultValue: `Hide archived (${archived.length})` })
-              : t('sidebar.showArchived', { count: archived.length, defaultValue: `Show archived (${archived.length})` })}
-          </button>
-        )}
       </div>
     </>
   );

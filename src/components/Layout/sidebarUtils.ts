@@ -2,15 +2,6 @@
 // 不在组件内联逻辑 — 全部抽到此处，方便单元测试
 
 import type { Session } from '@/stores/chatStore';
-import { useChatStore } from '@/stores/chatStore';
-import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import { useNavigate } from 'react-router-dom';
-
-export interface PanelActions {
-  navigate: (to: string) => void;
-  goSession: (key: string) => void;
-  navigateActiveSession: (key: string) => void;
-}
 
 export function isSessionActive(sx: Session): boolean {
   if (sx.running === true) return true;
@@ -38,62 +29,54 @@ export function sortSessionsByActivity<T extends Session>(sessions: T[]): T[] {
   });
 }
 
-/**
- * 4-bucket session partition for the sidebar.
- *   pinned:  user-pinned sessions, sorted to the very top, regardless of
- *            activity (most recently pinned first by array order — caller
- *            passes sessions in stable order, pinned are surfaced first
- *            so the user sees the pinstick take effect immediately).
- *   active:  currently running or streaming.
- *   recent:  the rest, excluding archived.
- *   archived: hidden by default; exposed via the "Show archived (N)" toggle.
- *
- * Archived sessions are filtered OUT of the default sidebar view so they
- * don't clutter the working set. The toggle at the bottom of the
- * sidebar opts in to showing them.
- */
-export interface PartitionResult {
-  pinned: Session[];
-  active: Session[];
-  recent: Session[];
-  archived: Session[];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type SessionBucketKey = 'today' | 'withinWeek' | 'withinMonth' | 'older';
+
+export interface SessionBucket {
+  key: SessionBucketKey;
+  labelKey: string;
+  fallback: string;
+  sessions: Session[];
 }
 
-export function partitionSessions(
-  sessions: Session[],
-  typingBySession: Record<string, boolean>,
-  showArchived: boolean = false,
-): PartitionResult {
-  // Filter sub-agents + empty sessions out of the working set.
-  // Archived sessions ARE preserved in the result (in `archived`), they
-  // just don't appear in active/recent/pinned unless showArchived.
-  const visible = sessions.filter((sx) => {
-    if (sx.key?.includes(':subagent:')) return false;
-    const hasContent = Boolean(sx.lastMessage) || (sx.totalTokens ?? 0) > 0 || sx.label !== 'Main Session';
-    if (!hasContent && !isSessionActive(sx) && !typingBySession[sx.key]) return false;
-    return true;
-  });
+export function getSessionBucketKey(activityMs: number, nowMs: number = Date.now()): SessionBucketKey {
+  if (!activityMs || activityMs <= 0) return 'older';
+  const now = new Date(nowMs);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (activityMs >= startOfToday) return 'today';
+  if (activityMs >= startOfToday - 7 * DAY_MS) return 'withinWeek';
+  if (activityMs >= startOfToday - 30 * DAY_MS) return 'withinMonth';
+  return 'older';
+}
 
-  const archived = visible.filter((sx) => sx.archived === true);
+export function bucketSessionsByActivity(sessions: Session[], nowMs: number = Date.now()): SessionBucket[] {
+  const buckets: SessionBucket[] = [
+    { key: 'today', labelKey: 'sidebar.history.today', fallback: '今天', sessions: [] },
+    { key: 'withinWeek', labelKey: 'sidebar.history.withinWeek', fallback: '最近 7 天', sessions: [] },
+    { key: 'withinMonth', labelKey: 'sidebar.history.withinMonth', fallback: '最近 30 天', sessions: [] },
+    { key: 'older', labelKey: 'sidebar.history.older', fallback: '更早', sessions: [] },
+  ];
+  const byKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+  for (const session of sortSessionsByActivity(sessions)) {
+    byKey.get(getSessionBucketKey(sessionActivityTime(session), nowMs))?.sessions.push(session);
+  }
+  return buckets;
+}
 
-  // Working set = visible minus archived (unless toggle is on).
-  const working = showArchived ? visible : visible.filter((sx) => !sx.archived);
-
-  // Pinned bucket surfaces regardless of activity, so a pinned-but-idle
-  // session still sits at the top.
-  const pinned = sortSessionsByActivity(working.filter((sx) => sx.pinned === true));
-  const pinnedKeys = new Set(pinned.map((sx) => sx.key));
-
-  const active = sortSessionsByActivity(working.filter(
-    (sx) => !pinnedKeys.has(sx.key) && (isSessionActive(sx) || typingBySession[sx.key]),
-  ));
-  const activeKeys = new Set(active.map((sx) => sx.key));
-
-  const recent = sortSessionsByActivity(working.filter(
-    (sx) => !pinnedKeys.has(sx.key) && !activeKeys.has(sx.key),
-  ));
-
-  return { pinned, active, recent, archived };
+export function isEmptyTransientSession(
+  session: Session | undefined,
+  messages: unknown[] | undefined,
+): boolean {
+  if (!session) return false;
+  if (session.key === 'agent:main:main') return false;
+  if (!session.createdAt) return false;
+  if (session.pinned || session.archived) return false;
+  if (isSessionActive(session)) return false;
+  if (messages && messages.length > 0) return false;
+  if (session.lastMessage || session.lastTimestamp || session.lastActive || session.updatedAt) return false;
+  if ((session.totalTokens ?? 0) > 0) return false;
+  return /^(新会话|new session|untitled)$/i.test((session.label || '').trim());
 }
 
 export function sessionTitle(sx: Session, firstUserMessage?: string): string {
@@ -128,55 +111,3 @@ export function sessionTitle(sx: Session, firstUserMessage?: string): string {
   if (agentId && agentId !== 'main') return agentId;
   return '新对话';
 }
-
-/** Group sessions by the agentId embedded in their key.
- *  Key format: `agent:<agentId>:<...>` — e.g. `agent:main:main`,
- *  `agent:researcher:run-1`, `agent:coder:sess-9`.
- *  Sessions whose key doesn't match the `agent:<id>:...` shape fall into
- *  the synthetic `'__ungrouped__'` bucket so they still render.
- */
-export interface AgentGroup {
-  agentId: string;
-  label: string;
-  sessions: Session[];
-}
-
-export function groupSessionsByAgent(
-  sessions: Session[],
-): AgentGroup[] {
-  const buckets = new Map<string, Session[]>();
-  for (const sx of sessions) {
-    const parts = String(sx.key || '').split(':');
-    const agentId = parts[0] === 'agent' && parts[1] ? parts[1] : '__ungrouped__';
-    const bucket = buckets.get(agentId) ?? [];
-    bucket.push(sx);
-    buckets.set(agentId, bucket);
-  }
-  const groups: AgentGroup[] = [];
-  for (const [agentId, ss] of buckets) {
-    groups.push({
-      agentId,
-      label: agentId === '__ungrouped__'
-        ? '其他'
-        : agentId === 'main' ? '主智能体' : agentId,
-      sessions: ss,
-    });
-  }
-  // Stable order: main first, others alphabetical, ungrouped last.
-  groups.sort((a, b) => {
-    const rank = (g: AgentGroup) => g.agentId === 'main' ? 0
-      : g.agentId === '__ungrouped__' ? 2 : 1;
-    const ra = rank(a), rb = rank(b);
-    if (ra !== rb) return ra - rb;
-    return a.label.localeCompare(b.label);
-  });
-  return groups;
-}
-
-export function modelShort(m: unknown): string {
-  if (typeof m !== 'string' || !m) return '';
-  return m.split('/').pop() ?? '';
-}
-
-// Re-export the navigate-hook signature for typed PanelActions consumers
-export type NavigateFn = ReturnType<typeof useNavigate>;

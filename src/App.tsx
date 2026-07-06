@@ -316,6 +316,8 @@ export default function App() {
           lastMessage: s.lastMessage?.content?.substring?.(0, 60),
           lastTimestamp: s.lastMessage?.timestamp || s.updatedAt,
           kind: s.kind,
+          channel: typeof s.channel === 'string' ? s.channel : (typeof s.lastChannel === 'string' ? s.lastChannel : null),
+          lastChannel: typeof s.lastChannel === 'string' ? s.lastChannel : null,
           // Per-session metadata for TitleBar
           model: resolvedModel,
           thinkingLevel: s.thinkingLevel ?? null,

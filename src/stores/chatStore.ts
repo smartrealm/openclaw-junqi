@@ -287,6 +287,8 @@ export interface Session {
   unread?: number;
   hasPendingCompletion?: boolean;
   kind?: string;
+  channel?: string | null;
+  lastChannel?: string | null;
   // Per-session model/thinking/token data cached from sessions.list
   model?: string | null;
   thinkingLevel?: string | null;
