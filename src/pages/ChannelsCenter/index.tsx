@@ -347,6 +347,13 @@ function getCredentialFields(tmpl?: ChannelTemplate) {
       { key: 'appSecret', label: 'App Secret', secret: true },
     );
   }
+  if (tmpl.id === 'dingtalk') {
+    fields.push(
+      { key: 'appKey', label: 'App Key' },
+      { key: 'appSecret', label: 'App Secret', secret: true },
+      { key: 'robotCode', label: 'Robot Code' },
+    );
+  }
   if (tmpl.tokenField) {
     fields.push({
       key: tmpl.tokenField,

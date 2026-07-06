@@ -1172,6 +1172,12 @@
     "takeOverChannel": "Take over",
     "boundToAgent": "Bound to",
     "channelSaveFailed": "Failed to save channel binding",
+    "quickBindIm": "Bind IM channel",
+    "quickBindImHint": "Create a Feishu or DingTalk account for this agent, then fill credentials in Channel Center.",
+    "createImAccount": "Create {{channel}}",
+    "imAccountAlreadyBound": "{{channel}} bound",
+    "imAccountCreatedTitle": "IM account created",
+    "imAccountCreatedMessage": "The account is bound to this agent. Add credentials in Channel Center to activate it.",
     "saving": "Saving...",
     "saved": "Saved!",
     "saveFailed": "Failed to save"
@@ -1474,9 +1480,13 @@
     "nativeStreaming": "Native Streaming",
     "appId": "App ID",
     "appSecret": "App Secret",
+    "appKey": "App Key",
+    "robotCode": "Robot Code",
     "feishuDomain": "Domain (feishu / lark)",
     "typingIndicator": "Typing Indicator",
     "resolveSenderNames": "Resolve Sender Names",
+    "callbackUrl": "HTTPS callback URL",
+    "dingtalkStreamMode": "DingTalk Stream mode",
     "channel": {
       "telegram": "Telegram",
       "discord": "Discord",
@@ -1486,7 +1496,8 @@
       "mattermost": "Mattermost",
       "signal": "Signal",
       "imessage": "iMessage",
-      "feishu": "Feishu"
+      "feishu": "Feishu",
+      "dingtalk": "DingTalk"
     },
     "gatewaySettings": "Gateway Settings",
     "connectionSettings": "Connection",

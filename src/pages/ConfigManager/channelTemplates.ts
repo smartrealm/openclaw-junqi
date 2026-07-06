@@ -74,7 +74,44 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     docsUrl: 'https://docs.openclaw.ai/channels/feishu',
   },
 
-  // ── 2. Telegram ──
+  // ── 2. DingTalk ──
+  {
+    id: 'dingtalk',
+    nameKey: 'config.channel.dingtalk',
+    icon: '',
+    colorClass: 'from-sky-600 to-blue-700',
+    // appKey + appSecret + robotCode are handled as channel-specific fields.
+    tokenField: '',
+    tokenEnvKey: '',
+    supportsStreaming: true,
+    streamingModes: ['stream', 'http', 'off'],
+    defaultStreaming: 'stream',
+    supportsDmPolicy: true,
+    dmPolicyOptions: ['pairing', 'allowlist', 'open', 'disabled'],
+    defaultDmPolicy: 'pairing',
+    supportsGroupPolicy: true,
+    groupPolicyOptions: ['open', 'allowlist', 'disabled'],
+    defaultGroupPolicy: 'open',
+    supportsMultiAccount: true,
+    defaultMediaMaxMb: 20,
+    extraFields: [
+      {
+        key: 'callbackUrl',
+        type: 'string',
+        labelKey: 'config.callbackUrl',
+        defaultValue: '',
+      },
+      {
+        key: 'useStream',
+        type: 'boolean',
+        labelKey: 'config.dingtalkStreamMode',
+        defaultValue: true,
+      },
+    ],
+    docsUrl: 'https://open.dingtalk.com/document/orgapp/the-creation-and-installation-of-enterprise-internal-robots',
+  },
+
+  // ── 3. Telegram ──
   {
     id: 'telegram',
     nameKey: 'config.channel.telegram',
@@ -96,7 +133,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     docsUrl: 'https://core.telegram.org/bots/api',
   },
 
-  // ── 3. Discord ──
+  // ── 4. Discord ──
   {
     id: 'discord',
     nameKey: 'config.channel.discord',
@@ -124,7 +161,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     docsUrl: 'https://discord.com/developers/docs/intro',
   },
 
-  // ── 4. WhatsApp ──
+  // ── 5. WhatsApp ──
   {
     id: 'whatsapp',
     nameKey: 'config.channel.whatsapp',
@@ -144,7 +181,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     docsUrl: 'https://developers.facebook.com/docs/whatsapp',
   },
 
-  // ── 5. Slack ──
+  // ── 6. Slack ──
   {
     id: 'slack',
     nameKey: 'config.channel.slack',
@@ -184,7 +221,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     docsUrl: 'https://api.slack.com/',
   },
 
-  // ── 6. Google Chat ──
+  // ── 7. Google Chat ──
   {
     id: 'googlechat',
     nameKey: 'config.channel.googlechat',
@@ -206,7 +243,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     docsUrl: 'https://developers.google.com/chat',
   },
 
-  // ── 7. Mattermost ──
+  // ── 8. Mattermost ──
   {
     id: 'mattermost',
     nameKey: 'config.channel.mattermost',
@@ -225,7 +262,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     docsUrl: 'https://developers.mattermost.com/',
   },
 
-  // ── 8. Signal ──
+  // ── 9. Signal ──
   {
     id: 'signal',
     nameKey: 'config.channel.signal',
@@ -245,7 +282,7 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
     docsUrl: 'https://signal.org/',
   },
 
-  // ── 9. iMessage ──
+  // ── 10. iMessage ──
   {
     id: 'imessage',
     nameKey: 'config.channel.imessage',

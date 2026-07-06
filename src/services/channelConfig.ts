@@ -102,6 +102,9 @@ export function getRequiredCredentialFields(channelId: string): string[] {
   if (tmpl.id === 'feishu') {
     fields.push('appId', 'appSecret');
   }
+  if (tmpl.id === 'dingtalk') {
+    fields.push('appKey', 'appSecret', 'robotCode');
+  }
   if (tmpl.tokenField) {
     fields.push(tmpl.tokenField);
   }

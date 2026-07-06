@@ -2,7 +2,9 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addChannelAccount,
+  assessChannelAccountReadiness,
   buildChannelGroups,
+  getRequiredCredentialFields,
   persistChannelsOnlyWithRepository,
   removeAgentChannelBindings,
   type ChannelConfigRepository,
@@ -80,6 +82,34 @@ describe('channelConfig', () => {
     });
     assert.deepEqual(original.channels?.discord?.accounts, {
       default: { token: 'old', agentId: 'main' },
+    });
+  });
+
+  test('dingtalk accounts require app credentials before they are ready', () => {
+    assert.deepEqual(getRequiredCredentialFields('dingtalk'), ['appKey', 'appSecret', 'robotCode']);
+
+    const [account] = buildChannelGroups(cfg({
+      channels: {
+        dingtalk: {
+          enabled: true,
+          accounts: {
+            ops: {
+              name: 'Ops DingTalk',
+              enabled: true,
+              agentId: 'ops-agent',
+              appKey: 'key',
+              robotCode: 'robot',
+            },
+          },
+        },
+      },
+    })).flatMap((group) => group.accounts);
+
+    assert.ok(account);
+    assert.deepEqual(assessChannelAccountReadiness('dingtalk', account), {
+      state: 'missing_credentials',
+      missingFields: ['appSecret'],
+      messages: ['missing_credentials'],
     });
   });
 

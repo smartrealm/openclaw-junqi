@@ -11,6 +11,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -25,6 +26,8 @@ import { themeHex, themeAlpha } from '@/utils/theme-colors';
 import type { GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
 import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
 import {
+  addChannel,
+  addChannelAccount,
   buildChannelGroups,
   persistChannelsOnly,
   updateChannelBinding,
@@ -190,6 +193,43 @@ function channelBindingKey(groupId: string, account: Pick<ChannelAccountBinding,
   return `${groupId}:${account.id}`;
 }
 
+function nextAgentChannelAccountId(channelId: string, agentId: string, groups: ChannelGroupForPanel[]) {
+  const safeAgentId = agentId.replace(/[^a-zA-Z0-9_-]/g, '-').replace(/^-+/, '') || 'agent';
+  const used = new Set(groups.find((group) => group.id === channelId)?.accounts.map((account) => account.id) ?? []);
+  let id = `${safeAgentId}-${channelId}`;
+  let index = 2;
+  while (used.has(id)) {
+    id = `${safeAgentId}-${channelId}-${index}`;
+    index += 1;
+  }
+  return id;
+}
+
+function defaultAgentImAccountConfig(channelId: string, agent: AgentForPanel): Record<string, unknown> {
+  const label = agent.name || agent.id;
+  const base: Record<string, unknown> = {
+    enabled: true,
+    agentId: agent.id,
+    name: `${label} ${channelId}`,
+  };
+  if (channelId === 'dingtalk') {
+    return {
+      ...base,
+      useStream: true,
+      callbackUrl: '',
+    };
+  }
+  if (channelId === 'feishu') {
+    return {
+      ...base,
+      domain: 'feishu',
+      typingIndicator: true,
+      resolveSenderNames: true,
+    };
+  }
+  return base;
+}
+
 // ═══════════════════════════════════════════════════════════
 // Main Panel Component
 // ═══════════════════════════════════════════════════════════
@@ -202,6 +242,7 @@ export function AgentSettingsPanel({
   onSaved,
 }: AgentSettingsPanelProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   // ── Remote data ──
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -220,6 +261,7 @@ export function AgentSettingsPanel({
   const [channelConfig, setChannelConfig] = useState<GatewayRuntimeConfig | null>(null);
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [savingChannelKey, setSavingChannelKey] = useState<string | null>(null);
+  const [creatingImChannel, setCreatingImChannel] = useState<string | null>(null);
   const [channelError, setChannelError] = useState<string | null>(null);
 
   // ── Dropdown ──
@@ -564,6 +606,48 @@ export function AgentSettingsPanel({
       setSavingChannelKey(null);
     }
   }, [agent, channelConfig, channelConfigPath, onSaved, t]);
+
+  const handleCreateAgentImAccount = useCallback(async (channelId: 'feishu' | 'dingtalk') => {
+    if (!agent || !channelConfig || !channelConfigPath || creatingImChannel) return;
+    setCreatingImChannel(channelId);
+    setChannelError(null);
+    try {
+      const withChannel = channelConfig.channels?.[channelId]
+        ? channelConfig
+        : addChannel(channelConfig, channelId);
+      const accountId = nextAgentChannelAccountId(channelId, agent.id, channelGroups);
+      const next = addChannelAccount(
+        withChannel,
+        channelId,
+        accountId,
+        defaultAgentImAccountConfig(channelId, agent),
+      );
+      const merged = await persistChannelsOnly(channelConfigPath, next);
+      setChannelConfig(merged);
+      const restart = await window.aegis.config.restart().catch((err: unknown) => ({
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+      if (!restart?.success) {
+        setChannelError(String(restart?.error ?? t('channelsCenter.savedWithRestartWarning', 'Saved, but Gateway restart failed')));
+      }
+      window.dispatchEvent(new CustomEvent('aegis:config-saved', { detail: { channelsChanged: true, agentId: agent.id } }));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+      onSaved();
+      showAlert(
+        t('agentSettings.imAccountCreatedTitle', 'IM account created'),
+        t('agentSettings.imAccountCreatedMessage', 'The account is bound to this agent. Add credentials in Channel Center to activate it.'),
+        'success'
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setChannelError(msg);
+      showAlert(t('agentSettings.channelSaveFailed', 'Failed to save channel binding'), msg, 'error');
+    } finally {
+      setCreatingImChannel(null);
+    }
+  }, [agent, channelConfig, channelConfigPath, channelGroups, creatingImChannel, onSaved, t]);
 
   if (!agent) return null;
 
@@ -997,6 +1081,65 @@ export function AgentSettingsPanel({
                       {!loadingChannels && !channelError && channelGroups.length === 0 && (
                         <div className="px-3.5 py-3 text-[10px] text-aegis-text-dim leading-relaxed">
                           {t('agentSettings.noChannelsConfigured', 'No channels configured yet. Add channels in Channel Center first.')}
+                        </div>
+                      )}
+
+                      {!loadingChannels && !channelError && (
+                        <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)] px-3.5 py-3">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-extrabold uppercase tracking-wider text-aegis-text-muted">
+                                {t('agentSettings.quickBindIm', 'Bind IM channel')}
+                              </div>
+                              <div className="mt-0.5 text-[9px] text-aegis-text-dim">
+                                {t('agentSettings.quickBindImHint', 'Create a Feishu or DingTalk account for this agent, then fill credentials in Channel Center.')}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigate(`/channels?agent=${encodeURIComponent(agent.id)}`);
+                                onClose();
+                              }}
+                              className="shrink-0 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] px-2.5 py-1.5 text-[9px] font-bold text-aegis-text-dim hover:border-aegis-primary/25 hover:text-aegis-primary"
+                            >
+                              {t('channelsCenter.title', 'Channel Center')}
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {(['feishu', 'dingtalk'] as const).map((channelId) => {
+                              const busy = creatingImChannel === channelId;
+                              const alreadyBound = channelGroups.some(
+                                (group) => group.id === channelId && group.accounts.some((account) => account.agentId === agent.id)
+                              );
+                              return (
+                                <button
+                                  key={channelId}
+                                  type="button"
+                                  disabled={Boolean(creatingImChannel) || Boolean(savingChannelKey) || alreadyBound}
+                                  onClick={() => void handleCreateAgentImAccount(channelId)}
+                                  className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 px-2.5 py-2 text-[10px] font-extrabold text-aegis-primary transition-colors hover:bg-aegis-primary/15 disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                  {busy
+                                    ? <Loader2 size={11} className="animate-spin" />
+                                    : alreadyBound
+                                      ? <Check size={11} />
+                                      : <MessageSquare size={11} />}
+                                  <span className="truncate">
+                                    {alreadyBound
+                                      ? t('agentSettings.imAccountAlreadyBound', {
+                                          channel: channelName(t, channelId),
+                                          defaultValue: `${channelName(t, channelId)} bound`,
+                                        })
+                                      : t('agentSettings.createImAccount', {
+                                          channel: channelName(t, channelId),
+                                          defaultValue: `Create ${channelName(t, channelId)}`,
+                                        })}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
 
