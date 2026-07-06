@@ -17,8 +17,6 @@ import { MessageInput } from './MessageInput';
 import { TypingIndicator } from './TypingIndicator';
 import { InlineButtonBar } from './InlineButtonBar';
 import { QuickReplyBar } from './QuickReplyBar';
-import { PreviewPanel } from './PreviewPanel';
-import { usePreviewStore } from '@/stores/previewStore';
 import type { RenderBlock } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import clsx from 'clsx';
@@ -795,8 +793,6 @@ export function ChatView() {
       (hasSeenConnectionAttempt && Boolean(connectionError))
     );
 
-  const previewOpen = usePreviewStore((s) => s.isOpen);
-
   return (
     <div className="flex flex-1 min-h-0 bg-aegis-bg">
       {/* ── Left: chat ── */}
@@ -954,8 +950,6 @@ export function ChatView() {
 
       <MessageInput />
     </div>
-    {/* ── Right: preview panel (kooky-style) ── */}
-    {previewOpen && <PreviewPanel />}
   </div>
   );
 }

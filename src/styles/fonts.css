@@ -21,9 +21,7 @@
 
 /* ──────────────────────────────────────────────────────────
    Inter — universal Latin / UI fallback (variable font).
-   Loaded from Google Fonts via link preconnect in index.html;
-   the @font-face here is a CSS-side declaration so the stack
-   works even without the preconnect hint.
+   Local-only: packaged builds should not reference a missing /fonts asset.
    ────────────────────────────────────────────────────────── */
 @font-face {
   font-family: 'Inter';
@@ -31,11 +29,7 @@
   font-weight: 100 900;
   font-display: swap;
   src: local('Inter'),
-       local('Inter Variable'),
-       /* Vite will bundle this if the file exists in src/assets/fonts/;
-          otherwise the browser skips to the next source. */
-       url('/fonts/Inter.var.woff2') format('woff2 supports variations'),
-       url('/fonts/Inter.var.woff2') format('woff2');
+       local('Inter Variable');
 }
 
 /* ──────────────────────────────────────────────────────────

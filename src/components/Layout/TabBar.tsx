@@ -23,14 +23,14 @@ export function TabBar() {
   const setActiveTab = useSettingsStore((s) => s.setActiveSidebarTab);
 
   return (
-    <div className="flex h-[40px] shrink-0 items-center gap-0.5 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
+    <div className="flex h-[44px] shrink-0 items-center gap-0.5 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
       <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,220px)] flex items-center px-3 pointer-events-none">
-        <div className="h-[34px] w-[190px] overflow-hidden">
+        <div className="h-[38px] w-[204px] overflow-hidden">
           <img
             src={junqiLogo}
             alt="JunQi"
-            className="h-[54px] max-w-none object-contain object-left"
-            style={{ transform: 'translate(-17px, -7px)' }}
+            className="h-[62px] max-w-none object-contain object-left"
+            style={{ transform: 'translate(-19.5px, -8.25px)' }}
             draggable={false}
           />
         </div>
@@ -44,7 +44,7 @@ export function TabBar() {
             type="button"
             onClick={() => { setActiveTab(tab.id as SidebarTab); navigate(tab.path); }}
             className={clsx(
-              'h-[30px] px-2.5 rounded text-[11.5px] font-medium transition-colors flex items-center gap-1.5',
+              'h-[32px] px-2.5 rounded text-[11.5px] font-medium transition-colors flex items-center gap-1.5',
               active
                 ? 'bg-aegis-primary/10 text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.18)]'
                 : 'text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40',

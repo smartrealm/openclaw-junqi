@@ -51,17 +51,25 @@ function settingsGroups(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
   ];
 }
 
-/**
- * Sub-resources of an Agent — sessions, skills, etc. These are scoped
- * to a specific agent so they live under the Agents panel rather than
- * the top-level Settings panel.
- */
-function agentSubResources(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
+function agentToolLinks(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
   return [
     { to: '/config',   icon: <Bot size={14} />,           label: t('nav.agentConfig', '智能体配置') },
     { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理') },
-    { to: '/skill-hub', icon: <Puzzle size={14} />,       label: t('nav.skillManager', '技能管理') },
+    { to: '/memory',   icon: <Brain size={14} />,         label: t('nav.memory', '记忆管理') },
+    { to: '/agent-run', icon: <Activity size={14} />,     label: t('nav.agentRun', 'Agent 运行') },
+    { to: '/agents/live', icon: <Bot size={14} />,        label: t('nav.liveAgents', '多智能体视图') },
   ];
+}
+
+function parseSkillStatus(result: any): Array<[string, { name: string; enabled: boolean }]> {
+  const list: any[] = result?.skills || result?.entries || [];
+  const entries: Array<[string, { name: string; enabled: boolean }]> = [];
+  for (const item of list) {
+    const slug = item?.skillKey || item?.slug || item?.name || '';
+    if (!slug) continue;
+    entries.push([slug, { name: item?.name || slug, enabled: item?.enabled !== false }]);
+  }
+  return entries;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -493,6 +501,9 @@ function AgentsPanel() {
   const skillList = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
   const setSkillEnabled = useSkillsStore((s) => s.setEnabled);
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [agentSkillEntries, setAgentSkillEntries] = useState<Record<string, Array<[string, { name: string; enabled: boolean }]>>>({});
+  const [loadingAgentSkills, setLoadingAgentSkills] = useState<string | null>(null);
 
   // Load skills once when the Agents panel mounts. Refresh is cheap (one
   // gateway RPC) so we don't cache across panels — the value here is
@@ -513,6 +524,45 @@ function AgentsPanel() {
   }, [sessions]);
 
   const skillEntries = Object.entries(skillList);
+  const enabledSkillEntries = skillEntries.filter(([, info]) => info.enabled !== false);
+  useEffect(() => {
+    if (!expandedAgentId || agentSkillEntries[expandedAgentId]) return;
+    let cancelled = false;
+    setLoadingAgentSkills(expandedAgentId);
+    gateway.getSkills(expandedAgentId)
+      .then((result) => {
+        if (cancelled) return;
+        const parsed = parseSkillStatus(result).filter(([, info]) => info.enabled !== false);
+        setAgentSkillEntries((prev) => ({ ...prev, [expandedAgentId]: parsed }));
+      })
+      .catch(() => {
+        if (!cancelled) setAgentSkillEntries((prev) => ({ ...prev, [expandedAgentId]: [] }));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAgentSkills((prev) => prev === expandedAgentId ? null : prev);
+      });
+    return () => { cancelled = true; };
+  }, [expandedAgentId, agentSkillEntries]);
+
+  const sortedAgents = useMemo(() => {
+    const rows = [...agents];
+    if (!rows.some((a: any) => a.id === 'main')) {
+      const mainSession = sessions.find((sx: any) => typeof sx?.key === 'string' && sx.key.startsWith('agent:main:'));
+      rows.unshift({
+        id: 'main',
+        name: t('agents.mainAgent', 'Main Agent'),
+        model: mainSession?.model,
+      });
+    }
+    return rows.sort((a: any, b: any) => {
+      const aRunning = runningIds.has(a.id) ? 1 : 0;
+      const bRunning = runningIds.has(b.id) ? 1 : 0;
+      if (aRunning !== bRunning) return bRunning - aRunning;
+      if (a.id === 'main') return -1;
+      if (b.id === 'main') return 1;
+      return String(a.name || a.id).localeCompare(String(b.name || b.id));
+    });
+  }, [agents, runningIds, sessions, t]);
 
   return (
     <>
@@ -523,22 +573,75 @@ function AgentsPanel() {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
-        {agents.length > 0 && (
+        {sortedAgents.length > 0 && (
           <SidebarSection label={t('sidebar.active', '在线智能体')}>
-            {agents.map((a: any) => (
-              <SidebarRow key={a.id} live={runningIds.has(a.id)} title={a.name || a.id}
-                meta={typeof a.model === 'string' ? a.model.split('/').pop() : undefined}
-                onClick={() => navigate(`/agents?agent=${encodeURIComponent(a.id)}`)} />
-            ))}
+            {sortedAgents.map((a: any) => {
+              const isExpanded = expandedAgentId === a.id;
+              const isLive = runningIds.has(a.id);
+              const scopedSkills = agentSkillEntries[a.id];
+              const visibleSkills = scopedSkills && scopedSkills.length > 0 ? scopedSkills : enabledSkillEntries;
+              const isLoadingSkills = loadingAgentSkills === a.id;
+              return (
+                <div key={a.id} className="mb-1">
+                  <div className="flex items-center gap-1 px-3 py-1.5 hover:bg-aegis-hover/30 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedAgentId((prev) => prev === a.id ? null : a.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      {isExpanded ? <ChevronDown size={12} className="text-aegis-text-dim" /> : <ChevronRight size={12} className="text-aegis-text-dim" />}
+                      <span className={clsx("h-1.5 w-1.5 rounded-full shrink-0", isLive ? "bg-aegis-success animate-pulse" : "bg-aegis-text-dim/45")} />
+                      <span className="flex-1 min-w-0">
+                        <span className="block truncate text-[13px] text-aegis-text-secondary">{a.name || a.id}</span>
+                        <span className="block truncate text-[10px] text-aegis-text-dim">{typeof a.model === 'string' ? a.model.split('/').pop() : a.id}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/agents?agent=${encodeURIComponent(a.id)}`)}
+                      className="shrink-0 rounded p-1 text-aegis-text-dim hover:bg-aegis-primary/10 hover:text-aegis-primary"
+                      title={t('common.edit', 'Edit')}
+                    >
+                      <Pencil size={11} />
+                    </button>
+                  </div>
+                  {isExpanded && (
+                    <div className="ms-7 me-3 mb-1 rounded-lg border border-aegis-border/40 bg-aegis-surface/35 py-1">
+                      {isLoadingSkills && (
+                        <div className="px-3 py-2 text-[11px] text-aegis-text-dim">
+                          {t('common.loading', 'Loading...')}
+                        </div>
+                      )}
+                      {!isLoadingSkills && visibleSkills.length > 0 ? visibleSkills.map(([slug, info]) => (
+                        <button
+                          key={`${a.id}:${slug}`}
+                          type="button"
+                          onClick={() => navigate('/skill-hub')}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] text-aegis-text-secondary hover:text-aegis-primary hover:bg-aegis-primary/10"
+                        >
+                          <Puzzle size={11} className="shrink-0 text-aegis-primary/80" />
+                          <span className="truncate">{info.name}</span>
+                        </button>
+                      )) : !isLoadingSkills ? (
+                        <div className="px-3 py-2 text-[11px] text-aegis-text-dim">
+                          {t('sidebar.noAgentSkills', '暂无可用技能')}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </SidebarSection>
         )}
-        <SidebarSection label={t('nav.agentSubResources', '管理')}>
-          {agentSubResources(t).map((it) => (
+        <SidebarSection label={t('nav.agentTools', '智能体工具')}>
+          {agentToolLinks(t).map((it) => (
             <SidebarRow key={it.to} icon={it.icon} title={it.label} onClick={() => navigate(it.to)} />
           ))}
         </SidebarSection>
         {skillEntries.length > 0 && (
           <SidebarSection label={t('nav.agentSkills', '智能体技能')}>
+            <SidebarRow icon={<Puzzle size={14} />} title={t('nav.skillManager', '技能管理')} onClick={() => navigate('/skill-hub')} />
             {skillEntries.map(([slug, info]) => {
               const enabled = info.enabled !== false;
               return (
@@ -566,12 +669,7 @@ function AgentsPanel() {
             })}
           </SidebarSection>
         )}
-        <SidebarSection label={t('nav.agentTools', '智能体工具')}>
-          <SidebarRow icon={<Brain size={14} />} title={t('nav.memory', '记忆管理')} onClick={() => navigate('/memory')} />
-          <SidebarRow icon={<Activity size={14} />} title={t('nav.agentRun', 'Agent 运行')} onClick={() => navigate('/agent-run')} />
-          <SidebarRow icon={<Bot size={14} />} title={t('nav.liveAgents', '多智能体视图')} onClick={() => navigate('/agents/live')} />
-        </SidebarSection>
-        {agents.length === 0 && <div className="px-4 py-3 text-[12.5px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}
+        {sortedAgents.length === 0 && <div className="px-4 py-3 text-[12.5px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}
       </div>
     </>
   );

@@ -42,6 +42,15 @@ export default defineConfig({
         manualChunks(id) {
           // Vendor splits for heavy libs.
           if (id.includes("node_modules")) {
+            if (id.includes("pdfjs-dist")) return "pdfjs";
+            if (id.includes("@xterm")) return "xterm";
+            if (id.includes("@uiw/react-codemirror") || id.includes("@uiw/codemirror")) return "codemirror-ui";
+            if (id.includes("@codemirror/lang-") || id.includes("@codemirror/legacy-modes")) return "codemirror-langs";
+            if (id.includes("@codemirror")) return "codemirror-core";
+            if (id.includes("recharts") || id.includes("d3-")) return "charts";
+            if (id.includes("framer-motion")) return "motion";
+            if (id.includes("@phosphor-icons") || id.includes("lucide-react")) return "icons";
+            if (id.includes("@dnd-kit")) return "dnd";
             if (id.includes("react-syntax-highlighter")) return "syntax-highlighter";
             if (id.includes("react-markdown") || id.includes("remark-gfm")) return "markdown";
           }

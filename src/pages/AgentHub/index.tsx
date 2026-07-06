@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare } from 'lucide-react';
+import { Loader2, RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
@@ -18,6 +18,7 @@ import { ProgressRing } from '@/components/shared/ProgressRing';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayDataStore';
+import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway } from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
 import clsx from 'clsx';
@@ -586,6 +587,8 @@ export function AgentHubPage() {
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
   const loading = useGatewayDataStore((s) => s.loading.sessions || s.loading.agents);
   const dataError = useGatewayDataStore((s) => s.errors.agents || s.errors.sessions);
+  const skillList = useSkillsStore((s) => s.skills);
+  const refreshSkills = useSkillsStore((s) => s.refresh);
 
   const sessions = useMemo(() => parseSessions(rawSessions as any[]), [rawSessions]);
 
@@ -594,12 +597,15 @@ export function AgentHubPage() {
   const [workerLogs, setWorkerLogs] = useState<Record<string, any[]>>({});
   const [loadingLog, setLoadingLog] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [newAgentStep, setNewAgentStep] = useState(0);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [deletingAgentId, setDeletingAgentId] = useState<string | null>(null);
   const [newAgent, setNewAgent] = useState<NewAgentDraft>(emptyNewAgent);
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentFormError, setAgentFormError] = useState<string | null>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentInfo | null>(null);
+  const [settingsOpenWorkspaceFiles, setSettingsOpenWorkspaceFiles] = useState(false);
+  const [newAgentSkillKeys, setNewAgentSkillKeys] = useState<string[]>([]);
 
   // ── Stable model map from config.get (agents.list never returns models) ──
   // Stored in local state so polling refreshes of agents.list can't overwrite it.
@@ -653,6 +659,10 @@ export function AgentHubPage() {
   }, [loadAgentConfigMeta]);
 
   useEffect(() => {
+    void refreshSkills();
+  }, [refreshSkills]);
+
+  useEffect(() => {
     const onConfigSaved = () => { void loadAgentConfigMeta(); };
     window.addEventListener('aegis:config-saved', onConfigSaved);
     return () => window.removeEventListener('aegis:config-saved', onConfigSaved);
@@ -683,6 +693,7 @@ export function AgentHubPage() {
       const target = enrichedAgents.find((a) => a.id === id);
       if (target) {
         setSelectedAgentId(target.id);
+        setSettingsOpenWorkspaceFiles(false);
         setSettingsAgent(target);
         const next = new URLSearchParams(searchParams);
         next.delete('agent');
@@ -692,6 +703,7 @@ export function AgentHubPage() {
     }
     if (searchParams.get('new') === '1') {
       setShowAddForm(true);
+      setNewAgentStep(0);
       const next = new URLSearchParams(searchParams);
       next.delete('new');
       setSearchParams(next, { replace: true });
@@ -726,7 +738,17 @@ export function AgentHubPage() {
       setShowAddForm(false);
       setSelectedAgentId(payload.id);
       setNewAgent(emptyNewAgent);
+      setNewAgentStep(0);
+      setNewAgentSkillKeys([]);
       await refreshGroup('agents');
+      setSettingsOpenWorkspaceFiles(false);
+      setSettingsAgent({
+        id: payload.id,
+        name: payload.name,
+        model: payload.model,
+        workspace: payload.workspace,
+        configured: true,
+      });
     } catch (err: any) {
       showAlert(i18n.t('common.error') as string, err?.message || String(err), 'error');
     } finally {
@@ -742,6 +764,7 @@ export function AgentHubPage() {
         setDeletingAgentId(null);
         if (selectedAgentId === agentId) setSelectedAgentId(null);
         setSettingsAgent((prev) => prev?.id === agentId ? null : prev);
+        setSettingsOpenWorkspaceFiles(false);
         setAgentChannels((prev) => {
           if (!prev[agentId]) return prev;
           const next = { ...prev };
@@ -769,6 +792,21 @@ export function AgentHubPage() {
   const registeredAgents = enrichedAgents.filter(a => a.id !== 'main');
   const selectedAgent = registeredAgents.find(a => a.id === selectedAgentId) ?? null;
   const getAgentSessions = (agentId: string) => sessions.filter(s => s.agentId === agentId && s.type !== 'main');
+  const enabledSkills = useMemo(
+    () => Object.entries(skillList).filter(([, info]) => info.enabled !== false),
+    [skillList]
+  );
+  const selectedNewAgentSkills = useMemo(
+    () => enabledSkills.filter(([slug]) => newAgentSkillKeys.includes(slug)),
+    [enabledSkills, newAgentSkillKeys]
+  );
+  const resetNewAgentWizard = useCallback(() => {
+    setShowAddForm(false);
+    setAgentFormError(null);
+    setNewAgent(emptyNewAgent);
+    setNewAgentStep(0);
+    setNewAgentSkillKeys([]);
+  }, []);
 
   // Check if an agent has a running sub-agent (from real-time tool stream tracking)
   const isAgentSpawned = (agentId: string) => runningSubAgents.some(sa => sa.agentId === agentId);
@@ -931,7 +969,7 @@ export function AgentHubPage() {
           {/* TREE VIEW                                     */}
           {/* ══════════════════════════════════════════════ */}
           {viewMode === 'tree' && (
-            <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} onAgentClick={(a) => setSettingsAgent(a)} />
+            <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} onAgentClick={(a) => { setSettingsOpenWorkspaceFiles(false); setSettingsAgent(a); }} />
           )}
 
           {/* ══════════════════════════════════════════════ */}
@@ -1002,18 +1040,22 @@ export function AgentHubPage() {
                 )}
               </div>
 
-              {/* Section 2: Registered Agents.
-                  Also render when the add-form is open (showAddForm) so the
-                  "新建智能体" / ?new=1 entry still works with ZERO agents yet —
-                  otherwise the form (nested here) would have no container and
-                  the click would appear to do nothing. */}
-              {(registeredAgents.length > 0 || showAddForm) && (
-                <div>
+              {/* Section 2: Registered Agents */}
+              <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold">
                       {t('agents.registeredAgents', 'Registered Agents')}{registeredAgents.length > 0 && <span className="text-aegis-text-dim ms-2">— {registeredAgents.length}</span>}
                     </div>
-                    <button onClick={() => setShowAddForm(!showAddForm)}
+                    <button onClick={() => {
+                      setShowAddForm((v) => {
+                        const next = !v;
+                        if (next) {
+                          setNewAgentStep(0);
+                          setAgentFormError(null);
+                        }
+                        return next;
+                      });
+                    }}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-aegis-primary/10 border border-aegis-primary/25 text-aegis-primary text-[10px] font-semibold hover:bg-aegis-primary/20 transition-colors">
                       <Plus size={12} /> {t('common.add', 'Add')}
                     </button>
@@ -1024,36 +1066,164 @@ export function AgentHubPage() {
                     {showAddForm && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
                         <GlassCard>
-                          <div className="space-y-3">
-                            <div className="text-[12px] font-semibold text-aegis-text">
-                              {t('agentHub.addNewAgent', 'Add New Agent')}
+                          {(() => {
+                            const steps = [
+                              t('agentHub.wizard.identity', 'Identity'),
+                              t('agentHub.wizard.model', 'Model'),
+                              t('agentHub.wizard.workspace', 'Workspace'),
+                              t('agentHub.wizard.skills', 'Skills'),
+                              t('agentHub.wizard.review', 'Review'),
+                            ];
+                            const canGoNext = newAgentStep === 0
+                              ? canCreateAgent || (!!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists)
+                              : true;
+                            return (
+                          <div className="space-y-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-[12px] font-semibold text-aegis-text">
+                                  {t('agentHub.addNewAgent', 'Add New Agent')}
+                                </div>
+                                <div className="mt-1 text-[11px] text-aegis-text-dim">
+                                  {t('agentHub.wizard.subtitle', 'Create the agent, then continue with workspace, skills, and channel setup.')}
+                                </div>
+                              </div>
+                              <div className="rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 px-2 py-1 text-[10px] font-bold text-aegis-primary">
+                                {newAgentStep + 1} / {steps.length}
+                              </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <input disabled={creatingAgent} placeholder={t('agentHub.addForm.agentIdPlaceholder', 'Agent ID *')} value={newAgent.id} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, id: e.target.value })); }} onBlur={() => setNewAgent(p => ({ ...p, id: normalizeAgentId(p.id) }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
-                              <input disabled={creatingAgent} placeholder={t('agentHub.addForm.namePlaceholder', 'Name')} value={newAgent.name} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, name: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
-                              <input disabled={creatingAgent} placeholder={t('agentHub.addForm.modelPlaceholder', 'Model')} value={newAgent.model} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, model: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
-                              <input disabled={creatingAgent || newAgent.inheritWorkspace} placeholder={t('agentHub.addForm.workspacePlaceholder', 'Workspace')} value={newAgent.workspace} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, workspace: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+
+                            <div className="grid grid-cols-5 gap-1.5">
+                              {steps.map((label, idx) => (
+                                <button
+                                  key={label}
+                                  type="button"
+                                  disabled={idx > newAgentStep + 1 || creatingAgent}
+                                  onClick={() => setNewAgentStep(idx)}
+                                  className={clsx(
+                                    'min-h-[46px] rounded-lg border px-2 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45',
+                                    idx === newAgentStep
+                                      ? 'border-aegis-primary/45 bg-aegis-primary/12 text-aegis-primary'
+                                      : idx < newAgentStep
+                                        ? 'border-aegis-success/25 bg-aegis-success/8 text-aegis-text'
+                                        : 'border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] text-aegis-text-dim'
+                                  )}
+                                >
+                                  <div className="text-[9px] font-black">{idx + 1}</div>
+                                  <div className="mt-0.5 truncate text-[10px] font-bold">{label}</div>
+                                </button>
+                              ))}
                             </div>
-                            <label className="flex items-start gap-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2 text-[11px] text-aegis-text-muted">
-                              <input
-                                type="checkbox"
-                                disabled={creatingAgent || !defaultAgentWorkspace}
-                                checked={newAgent.inheritWorkspace}
-                                onChange={(e) => {
-                                  setAgentFormError(null);
-                                  setNewAgent(p => ({ ...p, inheritWorkspace: e.target.checked, workspace: e.target.checked ? '' : p.workspace }));
-                                }}
-                                className="mt-0.5 accent-aegis-primary"
-                              />
-                              <span className="leading-relaxed">
-                                {t('agentHub.addForm.inheritWorkspace', 'Inherit default workspace')}
-                                {defaultAgentWorkspace && (
-                                  <span className="block font-mono text-[9px] text-aegis-text-dim truncate">
-                                    {defaultAgentWorkspace}
+
+                            {newAgentStep === 0 && (
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <div className="mb-1 text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.agentIdPlaceholder', 'Agent ID *')}</div>
+                                  <input disabled={creatingAgent} placeholder="research-assistant" value={newAgent.id} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, id: e.target.value })); }} onBlur={() => setNewAgent(p => ({ ...p, id: normalizeAgentId(p.id) }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                                </div>
+                                <div>
+                                  <div className="mb-1 text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.namePlaceholder', 'Name')}</div>
+                                  <input disabled={creatingAgent} placeholder={t('agentHub.wizard.nameExample', 'Research Assistant')} value={newAgent.name} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, name: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                                </div>
+                              </div>
+                            )}
+
+                            {newAgentStep === 1 && (
+                              <div className="space-y-2">
+                                <div className="text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.modelPlaceholder', 'Model')}</div>
+                                <input disabled={creatingAgent} placeholder={defaultAgentModel || 'provider/model'} value={newAgent.model} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, model: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                                <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2 text-[11px] text-aegis-text-dim">
+                                  {newAgent.model.trim()
+                                    ? t('agentHub.wizard.modelExplicit', 'This agent will use the selected model.')
+                                    : t('agentHub.wizard.modelInherited', 'Leave empty to inherit the default agent model.')}
+                                  {defaultAgentModel && <span className="ms-1 font-mono">{defaultAgentModel}</span>}
+                                </div>
+                              </div>
+                            )}
+
+                            {newAgentStep === 2 && (
+                              <div className="space-y-2">
+                                <div className="text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.workspacePlaceholder', 'Workspace')}</div>
+                                <input disabled={creatingAgent || newAgent.inheritWorkspace} placeholder={defaultAgentWorkspace || '/path/to/workspace'} value={newAgent.workspace} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, workspace: e.target.value })); }} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                                <label className="flex items-start gap-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2 text-[11px] text-aegis-text-muted">
+                                  <input
+                                    type="checkbox"
+                                    disabled={creatingAgent || !defaultAgentWorkspace}
+                                    checked={newAgent.inheritWorkspace}
+                                    onChange={(e) => {
+                                      setAgentFormError(null);
+                                      setNewAgent(p => ({ ...p, inheritWorkspace: e.target.checked, workspace: e.target.checked ? '' : p.workspace }));
+                                    }}
+                                    className="mt-0.5 accent-aegis-primary"
+                                  />
+                                  <span className="leading-relaxed">
+                                    {t('agentHub.addForm.inheritWorkspace', 'Inherit default workspace')}
+                                    {defaultAgentWorkspace && (
+                                      <span className="block font-mono text-[9px] text-aegis-text-dim truncate">
+                                        {defaultAgentWorkspace}
+                                      </span>
+                                    )}
                                   </span>
+                                </label>
+                              </div>
+                            )}
+
+                            {newAgentStep === 3 && (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="text-[10px] font-bold text-aegis-text-muted">{t('nav.agentSkills', 'Agent Skills')}</div>
+                                  <button type="button" onClick={() => navigate('/skill-hub')} className="text-[10px] font-bold text-aegis-primary hover:underline">
+                                    {t('common.manage', 'Manage')}
+                                  </button>
+                                </div>
+                                {enabledSkills.length > 0 ? (
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {enabledSkills.slice(0, 8).map(([slug, info]) => {
+                                      const checked = newAgentSkillKeys.includes(slug);
+                                      return (
+                                        <button
+                                          key={`new-agent-skill:${slug}`}
+                                          type="button"
+                                          onClick={() => setNewAgentSkillKeys((prev) => checked ? prev.filter((x) => x !== slug) : [...prev, slug])}
+                                          className={clsx(
+                                            'min-w-0 rounded-lg border px-3 py-2 text-left transition-colors',
+                                            checked
+                                              ? 'border-aegis-primary/35 bg-aegis-primary/12 text-aegis-primary'
+                                              : 'border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] text-aegis-text-secondary hover:border-aegis-primary/25'
+                                          )}
+                                        >
+                                          <div className="truncate text-[11px] font-bold">{info.name}</div>
+                                          <div className="mt-0.5 truncate text-[9px] text-aegis-text-dim">{slug}</div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-3 text-[11px] text-aegis-text-dim">
+                                    {t('sidebar.noAgentSkills', 'No available skills')}
+                                  </div>
                                 )}
-                              </span>
-                            </label>
+                              </div>
+                            )}
+
+                            {newAgentStep === 4 && (
+                              <div className="grid grid-cols-2 gap-2">
+                                {[
+                                  [t('agentHub.addForm.agentIdPlaceholder', 'Agent ID *'), normalizedNewAgentId || '—'],
+                                  [t('agentHub.addForm.namePlaceholder', 'Name'), newAgent.name.trim() || normalizedNewAgentId || '—'],
+                                  [t('agentSettings.model', 'Model'), newAgent.model.trim() || defaultAgentModel || t('agentHub.inherited', 'Inherited')],
+                                  [t('agentSettings.workspace', 'Workspace'), newAgent.workspace.trim() || (newAgent.inheritWorkspace ? defaultAgentWorkspace : '') || t('agentHub.inherited', 'Inherited')],
+                                  [t('nav.agentSkills', 'Agent Skills'), selectedNewAgentSkills.length > 0 ? selectedNewAgentSkills.map(([, info]) => info.name).join(', ') : t('sidebar.noAgentSkills', 'No available skills')],
+                                  [t('agentSettings.channels', 'Channels'), t('agentHub.wizard.configureAfterCreate', 'Configure after creation')],
+                                ].map(([label, value]) => (
+                                  <div key={label} className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2">
+                                    <div className="text-[9px] font-bold uppercase tracking-wider text-aegis-text-dim">{label}</div>
+                                    <div className="mt-1 truncate text-[11px] font-semibold text-aegis-text" title={String(value)}>{value}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
                             {(agentFormError || newAgentIdInvalid || newAgentIdExists || !connected) && (
                               <div className="flex items-start gap-2 rounded-lg border border-aegis-danger/20 bg-aegis-danger/10 px-3 py-2 text-[11px] leading-relaxed text-aegis-danger">
                                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
@@ -1067,16 +1237,39 @@ export function AgentHubPage() {
                                 </span>
                               </div>
                             )}
-                            <div className="flex gap-2 justify-end">
-                              <button disabled={creatingAgent} onClick={() => { setShowAddForm(false); setAgentFormError(null); setNewAgent(emptyNewAgent); }} className="px-4 py-2 rounded-lg bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted text-sm disabled:opacity-50">
+                            <div className="flex items-center justify-between gap-2">
+                              <button disabled={creatingAgent} onClick={resetNewAgentWizard} className="px-4 py-2 rounded-lg bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted text-sm disabled:opacity-50">
                                 {t('common.cancel', 'Cancel')}
                               </button>
-                              <button onClick={handleCreateAgent} disabled={!canCreateAgent} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary/20 border border-aegis-primary/30 text-aegis-primary text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed">
-                                {creatingAgent && <Loader2 size={14} className="animate-spin" />}
-                                {creatingAgent ? t('agentHub.addForm.creating', 'Creating...') : t('common.create', 'Create')}
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={creatingAgent || newAgentStep === 0}
+                                  onClick={() => setNewAgentStep((s) => Math.max(0, s - 1))}
+                                  className="px-4 py-2 rounded-lg bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted text-sm disabled:opacity-40"
+                                >
+                                  {t('common.back', 'Back')}
+                                </button>
+                                {newAgentStep < steps.length - 1 ? (
+                                  <button
+                                    type="button"
+                                    disabled={!canGoNext || creatingAgent}
+                                    onClick={() => setNewAgentStep((s) => Math.min(steps.length - 1, s + 1))}
+                                    className="px-4 py-2 rounded-lg bg-aegis-primary/15 border border-aegis-primary/25 text-aegis-primary text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
+                                  >
+                                    {t('common.next', 'Next')}
+                                  </button>
+                                ) : (
+                                  <button onClick={handleCreateAgent} disabled={!canCreateAgent} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary/20 border border-aegis-primary/30 text-aegis-primary text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed">
+                                    {creatingAgent && <Loader2 size={14} className="animate-spin" />}
+                                    {creatingAgent ? t('agentHub.addForm.creating', 'Creating...') : t('common.create', 'Create')}
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
+                            );
+                          })()}
                         </GlassCard>
                       </motion.div>
                     )}
@@ -1090,6 +1283,7 @@ export function AgentHubPage() {
                     const previewLast = previewSessions.length > 0 ? Math.max(...previewSessions.map(s => s.updatedAt)) : 0;
                     const previewModel = fmtModel(selectedAgent.model);
                     const previewChannels = agentChannels[selectedAgent.id] ?? [];
+                    const previewSkills = enabledSkills.slice(0, 6);
                     return (
                       <GlassCard className="mb-3">
                         <div className="flex items-start gap-4">
@@ -1113,13 +1307,22 @@ export function AgentHubPage() {
                                   {selectedAgent.id}
                                 </div>
                               </div>
-                              <button
-                                onClick={() => setSettingsAgent(selectedAgent)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-aegis-primary/12 border border-aegis-primary/25 text-aegis-primary text-[11px] font-bold hover:bg-aegis-primary/18 transition-colors"
-                              >
-                                <Settings2 size={13} />
-                                {t('common.edit', 'Edit')}
-                              </button>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                  onClick={() => navigate(`/chat?agent=${encodeURIComponent(selectedAgent.id)}&new=1`)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-aegis-primary/15 border border-aegis-primary/30 text-aegis-primary text-[11px] font-bold hover:bg-aegis-primary/22 transition-colors"
+                                >
+                                  <MessageSquare size={13} />
+                                  {t('skills.startChat', 'Start chat')}
+                                </button>
+                                <button
+                                  onClick={() => { setSettingsOpenWorkspaceFiles(false); setSettingsAgent(selectedAgent); }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted text-[11px] font-bold hover:border-aegis-primary/25 hover:text-aegis-primary transition-colors"
+                                >
+                                  <Settings2 size={13} />
+                                  {t('common.edit', 'Edit')}
+                                </button>
+                              </div>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
                               <div className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-3 py-2">
@@ -1147,10 +1350,60 @@ export function AgentHubPage() {
                               </div>
                             </div>
                             {selectedAgent.workspace && (
-                              <div className="mt-2 text-[10px] text-aegis-text-dim font-mono truncate">
-                                {selectedAgent.workspace}
+                              <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                                    <FolderOpen size={11} />
+                                    {t('agentSettings.workspace', 'Workspace')}
+                                  </div>
+                                  <div className="mt-1 text-[10px] text-aegis-text-dim font-mono truncate">
+                                    {selectedAgent.workspace}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => { setSettingsOpenWorkspaceFiles(true); setSettingsAgent(selectedAgent); }}
+                                  className="shrink-0 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-bold text-aegis-primary"
+                                >
+                                  {t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
+                                </button>
                               </div>
                             )}
+                            <div className="mt-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                                  <Puzzle size={11} />
+                                  {t('nav.agentSkills', 'Agent Skills')}
+                                </div>
+                                <button
+                                  onClick={() => navigate('/skill-hub')}
+                                  className="shrink-0 px-2.5 py-1 rounded-md border border-aegis-primary/25 bg-aegis-primary/10 text-[10px] font-bold text-aegis-primary"
+                                >
+                                  {t('common.manage', 'Manage')}
+                                </button>
+                              </div>
+                              {previewSkills.length > 0 ? (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {previewSkills.map(([slug, info]) => (
+                                    <span
+                                      key={`${selectedAgent.id}:preview:${slug}`}
+                                      className="max-w-[180px] truncate rounded-md border border-aegis-primary/15 bg-aegis-primary/8 px-2 py-1 text-[10px] font-medium text-aegis-text-secondary"
+                                      title={info.name}
+                                    >
+                                      {info.name}
+                                    </span>
+                                  ))}
+                                  {enabledSkills.length > previewSkills.length && (
+                                    <span className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] px-2 py-1 text-[10px] text-aegis-text-dim">
+                                      +{enabledSkills.length - previewSkills.length}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="mt-2 text-[11px] text-aegis-text-dim">
+                                  {t('sidebar.noAgentSkills', 'No available skills')}
+                                </div>
+                              )}
+                            </div>
                             <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
@@ -1175,6 +1428,22 @@ export function AgentHubPage() {
                       </GlassCard>
                     );
                   })()}
+
+                  {registeredAgents.length === 0 && !showAddForm && (
+                    <GlassCard>
+                      <div className="flex items-center justify-center py-8 text-center">
+                        <div>
+                          <Bot size={28} className="mx-auto mb-2 text-aegis-text-dim opacity-45" />
+                          <p className="text-[13px] font-semibold text-aegis-text-muted">
+                            {t('agentHub.noRegisteredAgents', 'No registered agents yet')}
+                          </p>
+                          <p className="mt-1 text-[11px] text-aegis-text-dim">
+                            {t('agentHub.noRegisteredAgentsHint', 'Create an agent, then configure its model, workspace, skills, and channels.')}
+                          </p>
+                        </div>
+                      </div>
+                    </GlassCard>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {registeredAgents.map((agent, i) => {
@@ -1230,7 +1499,11 @@ export function AgentHubPage() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
-                                <button onClick={(e) => { e.stopPropagation(); setSettingsAgent(agent); }}
+                                <button onClick={(e) => { e.stopPropagation(); navigate(`/chat?agent=${encodeURIComponent(agent.id)}&new=1`); }}
+                                  title={t('skills.startChat', 'Start chat')}
+                                  className="p-1.5 rounded-lg bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary hover:bg-aegis-primary/16 transition-colors"><MessageSquare size={13} /></button>
+                                <button onClick={(e) => { e.stopPropagation(); setSettingsOpenWorkspaceFiles(false); setSettingsAgent(agent); }}
+                                  title={t('common.edit', 'Edit')}
                                   className="p-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-primary hover:border-aegis-primary/30 transition-colors"><Settings2 size={13} /></button>
                                 <button onClick={(e) => { e.stopPropagation(); handleDeleteAgent(agent.id); }}
                                   className={clsx('p-1.5 rounded-lg transition-colors', deletingAgentId === agent.id ? 'text-red-400 bg-red-500/10 border border-red-400/30' : 'text-aegis-text-muted hover:text-red-400 bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)]')}>
@@ -1245,8 +1518,7 @@ export function AgentHubPage() {
                       );
                     })}
                   </div>
-                </div>
-              )}
+              </div>
 
               {/* Section 3: Workers */}
               <div>
@@ -1274,12 +1546,13 @@ export function AgentHubPage() {
       {/* ══ Agent Settings Panel ══ */}
       <AgentSettingsPanel
         agent={settingsAgent}
+        initialShowWorkspaceFiles={settingsOpenWorkspaceFiles}
         agentSessions={
           settingsAgent
             ? sessions.filter(s => s.agentId === settingsAgent.id && s.type !== 'main')
             : []
         }
-        onClose={() => setSettingsAgent(null)}
+        onClose={() => { setSettingsAgent(null); setSettingsOpenWorkspaceFiles(false); }}
         onSaved={(patch) => {
           if (settingsAgent && patch) {
             setSettingsAgent((prev) => prev ? { ...prev, ...patch } : prev);

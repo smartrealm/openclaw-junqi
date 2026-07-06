@@ -18,7 +18,6 @@ import { ChatVideo } from './ChatVideo';
 import { AudioPlayer } from './AudioPlayer';
 import { SystemNoteBubble } from './SystemNoteBubble';
 import type { MessageBlock, Artifact, MetaItem } from '@/types/RenderBlock';
-import { usePreviewStore } from '@/stores/previewStore';
 import { Icon } from '@/components/shared/icons';
 import clsx from 'clsx';
 
@@ -76,12 +75,6 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 
   const supportsPreview = artifact.type === 'html' || artifact.type === 'react' || artifact.type === 'svg';
 
-  const openInPreview = usePreviewStore((s) => s.open);
-  const previewType = artifact.type === 'html' ? 'html'
-    : artifact.type === 'svg' ? 'svg'
-    : artifact.type === 'markdown' || artifact.type === 'md' ? 'markdown'
-    : 'code';
-
   return (
     <div className="my-3 rounded-xl border border-aegis-primary/20 bg-aegis-primary/[0.04] overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-aegis-primary/10">
@@ -107,15 +100,6 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
               </button>
             </div>
           )}
-          <button onClick={() => openInPreview(artifact.content, artifact.type as 'html' | 'svg' | 'markdown', artifact.title || 'Artifact')} disabled={opening}
-            title={t('resultCards.preview', 'Preview in side panel')}
-            className={clsx(
-              'flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all',
-              'text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-overlay/5',
-              opening && 'opacity-60',
-            )}>
-            <Eye size={12} />
-          </button>
           <button onClick={handleOpen} disabled={opening}
             title={t('resultCards.openExternal', 'Open in external window')}
             className={clsx(

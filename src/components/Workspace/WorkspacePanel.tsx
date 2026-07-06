@@ -1,11 +1,11 @@
 /**
- * Agent workspace panel — a side panel for ChatPage. Resolves the active
- * agent's workspace directory, shows a lazy file tree, and opens files into a
- * CodeMirror editor (syntax-highlighted by extension) or an image preview.
+ * Agent workspace panel. Resolves an agent's workspace directory, shows a lazy
+ * file tree, and opens files into a CodeMirror editor or an image preview.
  * Edits save back via write_file_content (Ctrl/Cmd+S or the Save button).
  */
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
+import { useTranslation } from 'react-i18next';
 import { githubLight, githubDark } from '@uiw/codemirror-theme-github';
 import type { Extension } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
@@ -59,7 +59,14 @@ interface OpenFile {
   error: string | null;
 }
 
-export function WorkspacePanel({ onClose }: { onClose?: () => void }) {
+interface WorkspacePanelProps {
+  onClose?: () => void;
+  agentId?: string;
+  rootOverride?: string;
+}
+
+export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: WorkspacePanelProps) {
+  const { t } = useTranslation();
   const activeKey = useChatStore((s) => s.activeSessionKey);
   const agents = useGatewayDataStore((s) => s.agents);
   const theme = useSettingsStore((s) => s.theme);
@@ -71,21 +78,27 @@ export function WorkspacePanel({ onClose }: { onClose?: () => void }) {
   const [open, setOpen] = useState<OpenFile | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [treeKey, setTreeKey] = useState(0); // bump to force tree reload
 
-  // Resolve the active agent's workspace dir (fall back to the runtime default).
-  const agentId = useMemo(() => activeKey?.split(':')[1] || 'main', [activeKey]);
+  // Resolve the target agent's workspace dir (fall back to the runtime default).
+  const agentId = useMemo(() => agentIdProp || activeKey?.split(':')[1] || 'main', [agentIdProp, activeKey]);
   useEffect(() => {
     let alive = true;
     setOpen(null);
+    setSaveError(null);
     (async () => {
+      if (rootOverride) {
+        if (alive) { setRoot(rootOverride); setRootErr(false); }
+        return;
+      }
       const agent = agents.find((a) => a.id === agentId);
       if (agent?.workspace) { if (alive) { setRoot(agent.workspace); setRootErr(false); } return; }
       try { const wp = await getWorkspacePath(); if (alive) { setRoot(wp); setRootErr(false); } }
       catch { if (alive) { setRoot(null); setRootErr(true); } }
     })();
     return () => { alive = false; };
-  }, [agentId, agents]);
+  }, [agentId, agents, rootOverride]);
 
   // Keep the latest open file in a ref so openFile can guard unsaved edits
   // without depending on `open` (which would rebuild the callback each edit).
@@ -94,10 +107,11 @@ export function WorkspacePanel({ onClose }: { onClose?: () => void }) {
 
   const openFile = useCallback(async (entry: FsEntry) => {
     if (!root) return;
+    setSaveError(null);
     // Guard unsaved edits before switching files.
     const cur = openRef.current;
     if (cur && cur.image === null && cur.error === null && cur.content !== cur.saved) {
-      if (!window.confirm(`「${cur.entry.name}」有未保存的修改，放弃更改并打开新文件？`)) return;
+      if (!window.confirm(t('workspace.discardUnsavedConfirm', 'Discard unsaved changes in "{{name}}" and open another file?', { name: cur.entry.name }))) return;
     }
     setLoadingFile(true);
     try {
@@ -109,21 +123,24 @@ export function WorkspacePanel({ onClose }: { onClose?: () => void }) {
         setOpen({ entry, content: text, saved: text, image: null, error: null });
       }
     } catch (e: any) {
-      setOpen({ entry, content: '', saved: '', image: null, error: e?.message || '无法预览此文件' });
+      setOpen({ entry, content: '', saved: '', image: null, error: e?.message || t('workspace.previewFailed', 'Unable to preview this file') });
     } finally {
       setLoadingFile(false);
     }
-  }, [root]);
+  }, [root, t]);
 
   const dirty = !!open && open.image === null && open.error === null && open.content !== open.saved;
 
   const save = useCallback(async () => {
     if (!open || !root || !dirty || saving) return;
     setSaving(true);
+    setSaveError(null);
     try {
       await writeFileText(open.entry.path, open.content, root);
       setOpen((o) => (o ? { ...o, saved: o.content } : o));
-    } catch { /* keep dirty; user can retry */ }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    }
     finally { setSaving(false); }
   }, [open, root, dirty, saving]);
 
@@ -145,7 +162,7 @@ export function WorkspacePanel({ onClose }: { onClose?: () => void }) {
       <div className="flex items-center gap-1.5 h-9 px-2 border-b border-[rgb(var(--aegis-overlay)/0.08)] shrink-0">
         {open ? (
           <>
-            <button onClick={() => setOpen(null)} title="返回文件树"
+            <button onClick={() => setOpen(null)} title={t('workspace.backToTree', 'Back to file tree')}
               className="p-1 rounded hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text">
               <ChevronLeft size={15} />
             </button>
@@ -153,7 +170,7 @@ export function WorkspacePanel({ onClose }: { onClose?: () => void }) {
               {open.entry.name}{dirty ? ' •' : ''}
             </span>
             {open.image === null && open.error === null && (
-              <button onClick={save} disabled={!dirty || saving} title="保存 (⌘S)"
+              <button onClick={save} disabled={!dirty || saving} title={t('workspace.saveShortcut', 'Save (⌘S)')}
                 className="p-1 rounded text-aegis-primary disabled:opacity-30 hover:bg-aegis-primary/10">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               </button>
@@ -162,14 +179,14 @@ export function WorkspacePanel({ onClose }: { onClose?: () => void }) {
         ) : (
           <>
             <span className="text-[11px] font-semibold uppercase tracking-wider text-aegis-text-muted truncate flex-1" title={root || ''}>
-              {wsName || '工作区'}
+              {wsName || t('workspace.title', 'Workspace')}
             </span>
-            <button onClick={() => setTreeKey((k) => k + 1)} title="刷新"
+            <button onClick={() => setTreeKey((k) => k + 1)} title={t('common.refresh', 'Refresh')}
               className="p-1 rounded hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text">
               <RefreshCw size={13} />
             </button>
             {onClose && (
-              <button onClick={onClose} title="收起工作区"
+              <button onClick={onClose} title={t('workspace.collapse', 'Collapse workspace')}
                 className="p-1 rounded hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text">
                 <ChevronLeft size={15} className="rotate-180" />
               </button>
@@ -194,17 +211,24 @@ export function WorkspacePanel({ onClose }: { onClose?: () => void }) {
               <span className="text-[10px] text-aegis-text-dim">{open.image.mime_type} · {(open.image.byte_length / 1024).toFixed(1)} KB</span>
             </div>
           ) : (
-            <CodeMirror
-              value={open.content}
-              theme={isDark ? githubDark : githubLight}
-              extensions={langFor(open.entry.extension)}
-              onChange={(v) => setOpen((o) => (o ? { ...o, content: v } : o))}
-              basicSetup={{ lineNumbers: true, highlightActiveLine: true, foldGutter: true }}
-              style={{ fontSize: 12.5 }}
-            />
+            <div className="min-h-full">
+              {saveError && (
+                <div className="m-2 rounded-lg border border-aegis-danger/25 bg-aegis-danger/10 px-3 py-2 text-[11px] text-aegis-danger">
+                  {t('workspace.saveFailed', 'Save failed')}: {saveError}
+                </div>
+              )}
+              <CodeMirror
+                value={open.content}
+                theme={isDark ? githubDark : githubLight}
+                extensions={langFor(open.entry.extension)}
+                onChange={(v) => { setSaveError(null); setOpen((o) => (o ? { ...o, content: v } : o)); }}
+                basicSetup={{ lineNumbers: true, highlightActiveLine: true, foldGutter: true }}
+                style={{ fontSize: 12.5 }}
+              />
+            </div>
           )
         ) : rootErr || !root ? (
-          <div className="p-4 text-center text-[11px] text-aegis-text-dim">无法定位当前智能体的工作区目录</div>
+          <div className="p-4 text-center text-[11px] text-aegis-text-dim">{t('workspace.locateFailed', "Unable to locate this agent's workspace directory")}</div>
         ) : (
           <WorkspaceFileTree key={`${root}:${treeKey}`} root={root} activePath={null} onOpenFile={openFile} />
         )}

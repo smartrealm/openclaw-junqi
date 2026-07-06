@@ -31,6 +31,7 @@ import {
   type ChannelAccountBinding,
   type ChannelGroupView,
 } from '@/services/channelConfig';
+import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
 import clsx from 'clsx';
 
 // ═══════════════════════════════════════════════════════════
@@ -64,6 +65,7 @@ interface ModelOption {
 interface AgentSettingsPanelProps {
   agent: AgentForPanel | null;
   agentSessions: SessionForPanel[];
+  initialShowWorkspaceFiles?: boolean;
   onClose: () => void;
   onSaved: (patch?: Partial<AgentForPanel>) => void;
 }
@@ -195,6 +197,7 @@ function channelBindingKey(groupId: string, account: Pick<ChannelAccountBinding,
 export function AgentSettingsPanel({
   agent,
   agentSessions,
+  initialShowWorkspaceFiles = false,
   onClose,
   onSaved,
 }: AgentSettingsPanelProps) {
@@ -230,6 +233,7 @@ export function AgentSettingsPanel({
   const [workspace, setWorkspace] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [modelInherited, setModelInherited] = useState(false);
+  const [showWorkspaceFiles, setShowWorkspaceFiles] = useState(false);
 
   // ── Original values (from config.get) — used for hasChanges ──
   const [origName, setOrigName] = useState('');
@@ -291,6 +295,7 @@ export function AgentSettingsPanel({
     setLoadingConfig(true);
     setConfigError(null);
     setModelDropdownOpen(false);
+    setShowWorkspaceFiles(initialShowWorkspaceFiles);
     setSaved(false);
 
     gateway.call('config.get', {})
@@ -740,9 +745,34 @@ export function AgentSettingsPanel({
                           placeholder={t('agentSettings.workspacePlaceholder', 'Use default workspace')}
                           className="w-full rounded-xl px-3.5 py-2.5 text-[11px] font-mono bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text placeholder:text-aegis-text-dim focus:outline-none focus:border-aegis-primary/40"
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowWorkspaceFiles((v) => !v)}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-aegis-border px-2.5 py-1.5 text-[10px] font-bold text-aegis-text-muted hover:border-aegis-primary/35 hover:bg-aegis-primary/10 hover:text-aegis-primary transition-colors"
+                        >
+                          <FolderOpen size={12} />
+                          {showWorkspaceFiles
+                            ? t('agentSettings.hideWorkspaceFiles', 'Hide workspace files')
+                            : t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
+                        </button>
                       </div>
                     </div>
                   </div>
+
+                  {showWorkspaceFiles && (
+                    <div>
+                      <label className="flex items-center gap-1.5 text-[9px] text-aegis-text-muted uppercase tracking-widest font-bold mb-2">
+                        <FolderOpen size={10} />
+                        {t('agentSettings.workspaceFiles', 'Workspace Files')}
+                      </label>
+                      <div className="h-[420px] overflow-hidden rounded-xl border border-aegis-border bg-aegis-bg">
+                        <WorkspacePanel
+                          agentId={agent.id}
+                          rootOverride={trimmedWorkspace || undefined}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* ── Section: Model Selector ── */}
                   <div>
