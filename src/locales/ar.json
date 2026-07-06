@@ -1760,6 +1760,8 @@
   "agentHub.wizard.modelExplicit": "سيستخدم هذا الوكيل النموذج المحدد.",
   "agentHub.wizard.modelInherited": "اتركه فارغاً ليرث نموذج الوكيل الافتراضي.",
   "agentHub.wizard.configureAfterCreate": "الإعداد بعد الإنشاء",
+  "channelsCenter.focusedAgent": "الوكيل المحدد",
+  "channelsCenter.clearAgentFocus": "مسح تركيز الوكيل",
   "skills.disable": "تعطيل",
   "skills.enable": "تمكين"
 }

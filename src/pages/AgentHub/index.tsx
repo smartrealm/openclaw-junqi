@@ -1417,7 +1417,7 @@ export function AgentHubPage() {
                                 </div>
                               </div>
                               <button
-                                onClick={() => navigate('/channels')}
+                                onClick={() => navigate(`/channels?agent=${encodeURIComponent(selectedAgent.id)}`)}
                                 className="shrink-0 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-bold text-aegis-primary"
                               >
                                 {t('common.edit', 'Edit')}

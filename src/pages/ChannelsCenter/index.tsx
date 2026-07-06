@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Bot, Check, ChevronDown, Copy, ListFilter, Loader2, MessageSquare, Pencil, Plus, Power, RefreshCw, Save, Settings2, ShieldCheck, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import clsx from 'clsx';
@@ -361,6 +361,8 @@ function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
 export function ChannelsCenterPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusedAgentId = searchParams.get('agent')?.trim() || '';
   const [configPath, setConfigPath] = useState('');
   const [config, setConfig] = useState<GatewayRuntimeConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -448,17 +450,29 @@ export function ChannelsCenterPage() {
   const accountCount = groups.reduce((sum, group) => sum + group.accounts.length, 0);
   const boundCount = groups.reduce((sum, group) => sum + group.accounts.filter(a => a.agentId).length, 0);
   const readinessSummary = useMemo(() => summarizeChannelReadiness(groups), [groups]);
+  const focusedAgent = useMemo(() => (
+    focusedAgentId ? agents.find((agent) => agent.id === focusedAgentId) : undefined
+  ), [agents, focusedAgentId]);
+
   const filteredGroups = useMemo(() => {
-    if (readinessFilter === 'all') return groups;
     return groups
       .map((group) => ({
         ...group,
-        accounts: group.accounts.filter((account) =>
-          assessChannelAccountReadiness(group.id, account).state === readinessFilter
-        ),
+        accounts: group.accounts.filter((account) => {
+          const matchesAgent = !focusedAgentId || account.agentId === focusedAgentId || !account.agentId;
+          const matchesReadiness = readinessFilter === 'all'
+            || assessChannelAccountReadiness(group.id, account).state === readinessFilter;
+          return matchesAgent && matchesReadiness;
+        }),
       }))
       .filter((group) => group.accounts.length > 0);
-  }, [groups, readinessFilter]);
+  }, [groups, focusedAgentId, readinessFilter]);
+
+  useEffect(() => {
+    if (!focusedAgentId || filteredGroups.length === 0) return;
+    setExpanded((current) => current ?? filteredGroups[0].id);
+  }, [focusedAgentId, filteredGroups]);
+
   const filteredAccountCount = filteredGroups.reduce((sum, group) => sum + group.accounts.length, 0);
   const addableTemplates = CHANNEL_TEMPLATES.filter(tmpl => !groups.some(group => group.id === tmpl.id));
   const gatewayHealthy = Boolean(gatewayStatus?.running && gatewayStatus?.ready);
@@ -750,13 +764,35 @@ export function ChannelsCenterPage() {
               </div>
 
               {groups.length > 0 && (
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
-                  <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-aegis-text-dim">
-                    <ListFilter size={13} />
-                    {t('channelsCenter.filterByStatus', 'Filter by status')}
-                    <span className="font-mono text-[10px] text-aegis-text-muted">
-                      {filteredAccountCount} / {accountCount}
-                    </span>
+                <div className="flex flex-col gap-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-aegis-text-dim">
+                      <ListFilter size={13} />
+                      {t('channelsCenter.filterByStatus', 'Filter by status')}
+                      <span className="font-mono text-[10px] text-aegis-text-muted">
+                        {filteredAccountCount} / {accountCount}
+                      </span>
+                    </div>
+                    {focusedAgentId && (
+                      <div className="flex items-center gap-2 rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 px-2.5 py-1.5">
+                        <Bot size={12} className="text-aegis-primary" />
+                        <span className="text-[11px] font-bold text-aegis-primary truncate max-w-[220px]">
+                          {t('channelsCenter.focusedAgent', 'Focused agent')}: {focusedAgent?.name || focusedAgentId}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = new URLSearchParams(searchParams);
+                            next.delete('agent');
+                            setSearchParams(next, { replace: true });
+                          }}
+                          className="rounded p-0.5 text-aegis-primary/70 hover:bg-aegis-primary/15 hover:text-aegis-primary"
+                          title={t('channelsCenter.clearAgentFocus', 'Clear agent focus')}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {([

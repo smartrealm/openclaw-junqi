@@ -2327,6 +2327,8 @@
   "agentHub.wizard.modelExplicit": "This agent will use the selected model.",
   "agentHub.wizard.modelInherited": "Leave empty to inherit the default agent model.",
   "agentHub.wizard.configureAfterCreate": "Configure after creation",
+  "channelsCenter.focusedAgent": "Focused agent",
+  "channelsCenter.clearAgentFocus": "Clear agent focus",
   "skills.disable": "Disable",
   "skills.enable": "Enable"
 }

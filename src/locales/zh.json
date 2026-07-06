@@ -2365,6 +2365,8 @@
   "agentHub.wizard.modelExplicit": "该智能体将使用当前填写的模型。",
   "agentHub.wizard.modelInherited": "留空则继承默认智能体模型。",
   "agentHub.wizard.configureAfterCreate": "创建后配置",
+  "channelsCenter.focusedAgent": "聚焦智能体",
+  "channelsCenter.clearAgentFocus": "清除智能体筛选",
   "skills.disable": "禁用",
   "skills.enable": "启用"
 }
