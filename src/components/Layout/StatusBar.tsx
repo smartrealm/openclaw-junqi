@@ -1,6 +1,6 @@
 // StatusBar — 底部状态栏（参照 Hermes AppStatusBar）
 import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -58,19 +58,12 @@ export function StatusBar() {
   // One hook consumes both producers (Rust setup-progress + App's
   // aegis:gateway-progress window events). We only care about step="gateway"
   // — install steps have their own progress surface in the Setup page.
-  const gatewayProgress = useSetupProgress('gateway');
-  const gatewayMsg = gatewayProgress?.message ?? null;
-  const gatewayProg = gatewayProgress?.progress ?? null;
-  // Auto-clear once WS reconnects so the bar doesn't linger with stale text.
-  useEffect(() => {
-    if (connected && gatewayProgress) {
-      // tiny delay so the user sees the final "100%" line flicker through
-      const t = setTimeout(() => { /* hook unmount happens here */ }, 800);
-      return () => clearTimeout(t);
-    }
-  }, [connected, gatewayProgress]);
-
   const [reconnecting, setReconnecting] = useState(false);
+  const gatewayProgress = useSetupProgress('gateway');
+  const showGatewayProgress = !!gatewayProgress && (!connected || reconnecting);
+  const gatewayMsg = showGatewayProgress ? gatewayProgress?.message ?? null : null;
+  const gatewayProg = showGatewayProgress ? gatewayProgress?.progress ?? null : null;
+
   const handleRestart = () => {
     if (reconnecting) return;
     setReconnecting(true);
@@ -79,7 +72,9 @@ export function StatusBar() {
     // 2. Dispatch a global event so App.tsx picks this up and runs the full
     //    restart pipeline. App.tsx also emits aegis:gateway-progress so the
     //    inline status message + spinner update via useSetupProgress.
-    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect'));
+    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
+      detail: { action: connected ? 'restart' : 'reconnect' },
+    }));
     // 3. Self-clear if no progress event arrives within 5s (safety net).
     setTimeout(() => setReconnecting(false), 5_000);
   };
@@ -88,6 +83,9 @@ export function StatusBar() {
   const reconnectPct = gatewayProg != null
     ? Math.round(Math.max(0, Math.min(1, gatewayProg)) * 100)
     : (reconnecting ? null : 0);
+  const gatewayActionLabel = connected
+    ? t('statusBar.restartGateway', '重启')
+    : t('statusBar.reconnect', '重连');
 
   const resolvedTheme: AegisTheme = theme.startsWith('aegis-') ? (theme as AegisTheme) : 'aegis-dark';
   const isDarkish = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
@@ -107,19 +105,19 @@ export function StatusBar() {
         <span className="text-aegis-text font-mono">:{port}</span>
       </span>
 
-      {/* 重连按钮（带进度 / 自旋 / 本地 loading 状态） */}
+      {/* 网关操作按钮（已连接=重启，未连接=重连；带进度 / 自旋 / 本地 loading 状态） */}
       <button onClick={() => void handleRestart()} disabled={reconnectBusy}
         className={clsx('flex items-center gap-1 px-2 h-full border-r border-aegis-border/50 transition-colors',
           reconnectBusy
             ? 'text-aegis-warning'
             : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
           reconnectBusy && 'animate-pulse')}
-        title={gatewayMsg || t('statusBar.reconnect', '重连')}>
+        title={gatewayMsg || gatewayActionLabel}>
         <RotateCcw size={10} className={reconnectBusy ? 'animate-spin' : ''} />
         <span>
           {gatewayMsg
             ? (reconnectPct != null ? `${reconnectPct}%` : '…')
-            : (isBooting ? `${bootPct}%` : t('statusBar.reconnect', '重连'))}
+            : (isBooting ? `${bootPct}%` : gatewayActionLabel)}
         </span>
       </button>
 

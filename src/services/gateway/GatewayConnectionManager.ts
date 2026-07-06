@@ -34,6 +34,9 @@ export class GatewayConnectionManager {
 
   /** Initialize: subscribe to gateway status events + probe. */
   init(): void {
+    this.statusUnsub?.();
+    this.statusUnsub = undefined;
+
     if (!window.aegis?.gateway) {
       this.handleEvent({ type: 'STATUS_RECEIVED', running: true, error: null, retrying: false });
       return;
@@ -121,6 +124,7 @@ export class GatewayConnectionManager {
   /** Cleanup — call on unmount. */
   destroy(): void {
     this.statusUnsub?.();
+    this.statusUnsub = undefined;
     this.listeners.clear();
     gateway.disconnect();
   }

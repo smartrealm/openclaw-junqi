@@ -2250,6 +2250,7 @@
   "statusBar.gateway": "Gateway",
   "statusBar.reconnect": "Reconnect",
   "statusBar.reconnecting": "Reconnecting",
+  "statusBar.restartGateway": "Restart",
   "statusBar.petOn": "Pet",
   "statusBar.petOff": "Hidden",
   "statusBar.petOnTip": "Click to hide desktop pet",

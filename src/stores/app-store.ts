@@ -36,10 +36,11 @@ const savedMode = (localStorage.getItem("junqi-install-mode") as InstallMode) ||
 const setupPreviouslyDone = localStorage.getItem("junqi-setup-done") === "1";
 
 export const useAppStore = create<AppState>((set) => ({
-  // First install starts with brand/language/theme selection. Once OpenClaw is
-  // known to be installed, future launches go straight to the Gateway probe.
-  setupComplete: null,
-  setupStep: (setupPreviouslyDone ? "detecting" : "welcome") as SetupStep,
+  // First install starts with brand/language/theme selection. Once the guided
+  // setup has completed, future launches enter the workspace directly; the
+  // workspace Gateway manager owns runtime health checks from that point on.
+  setupComplete: setupPreviouslyDone ? true : null,
+  setupStep: (setupPreviouslyDone ? "ready" : "welcome") as SetupStep,
   setupError: null,
   setupStatusMessage: "",
   setupProgress: 0,

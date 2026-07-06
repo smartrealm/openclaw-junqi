@@ -259,6 +259,7 @@ export default function App() {
   const [gatewayBootLogs, setGatewayBootLogs] = useState<{ stdout: string; stderr: string } | undefined>();
   const [gatewayRetrying, setGatewayRetrying] = useState(false);
   const connected = useChatStore((s) => s.connected);
+  const setupComplete = useAppStore((s) => s.setupComplete);
   const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
   const bootOverlayStartedAtRef = useRef(Date.now());
   const bootOverlayDismissedRef = useRef(false);
@@ -487,6 +488,7 @@ export default function App() {
   // gateway.retry command. `triggerGatewayReconnect` (WS-only) is reserved for
   // the user's manual reconnect button, not the auto-recovery loop.
   useEffect(() => {
+    if (setupComplete !== true) return;
     if (connected) {
       bootRecoveryTimersRef.current.forEach(clearTimeout);
       bootRecoveryTimersRef.current = [];
@@ -529,7 +531,7 @@ export default function App() {
       bootRecoveryTimersRef.current.forEach(clearTimeout);
       bootRecoveryTimersRef.current = [];
     };
-  }, [connected, bootOverlayVisible, addBootRecoveryLog, restartGatewayFromBoot]);
+  }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog, restartGatewayFromBoot, triggerGatewayReconnect]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
@@ -555,6 +557,8 @@ export default function App() {
 
   // ── Gateway Setup ──
   useEffect(() => {
+    if (setupComplete !== true) return;
+
     gateway.setCallbacks({
       onMessage: (msg) => {
         const rawSk = (msg as { sessionKey?: string }).sessionKey;
@@ -803,15 +807,20 @@ export default function App() {
     };
     window.addEventListener('aegis:session-reset', handleSessionReset);
 
-    // StatusBar "重连" button fires this event.
-    // Disconnect the WebSocket first so the FSM drives to DETECTING, then let
-    // ensureRunning confirm the process is healthy before reconnect() probes.
-    // Calling reset() here would be redundant — disconnect() already triggers
-    // notifyWsClose() → DETECTING synchronously via the onStatusChange chain.
-    const handleManualReconnect = () => {
+    // StatusBar Gateway action fires this event. Connected state requests a
+    // real Gateway restart; disconnected state only ensures the process is
+    // healthy before reconnecting the WebSocket.
+    const handleManualReconnect = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action === 'restart'
+        ? 'restart'
+        : 'reconnect';
       bootRecoveryStartedRef.current = false;
-      emitGatewayProgress('Restarting OpenClaw Gateway…', 0.10, 'gateway.progress.restart');
       try { gateway.disconnect(); } catch {}
+      if (action === 'restart') {
+        void restartGatewayFromBoot();
+        return;
+      }
+      emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.10, 'gateway.progress.reconnect');
       emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
       void window.aegis?.gateway?.ensureRunning?.().then((r: any) => {
         addBootRecoveryLog(r?.healthy
@@ -848,7 +857,7 @@ export default function App() {
       window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
       gateway.disconnect();
     };
-  }, [loadAvailableModels]);
+  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog]);
 
 
   // ── Pairing Handlers ──
@@ -889,8 +898,6 @@ export default function App() {
     // Probe immediately instead of waiting for the periodic poller
     gatewayManager.reconnect();
   }, []);
-
-  const setupComplete = useAppStore((s) => s.setupComplete);
 
   if (!setupComplete) return <SetupPage />;
 

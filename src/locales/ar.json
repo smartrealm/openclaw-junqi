@@ -1658,6 +1658,7 @@
   "statusBar.gateway": "البوابة",
   "statusBar.reconnect": "إعادة الاتصال",
   "statusBar.reconnecting": "إعادة الاتصال",
+  "statusBar.restartGateway": "إعادة التشغيل",
   "statusBar.petOn": "الرفيق",
   "statusBar.petOff": "مخفي",
   "statusBar.petOnTip": "انقر لإخفاء الرفيق",

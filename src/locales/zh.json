@@ -2294,6 +2294,7 @@
   "statusBar.gateway": "网关",
   "statusBar.reconnect": "重连",
   "statusBar.reconnecting": "重连中",
+  "statusBar.restartGateway": "重启",
   "statusBar.petOn": "宠物",
   "statusBar.petOff": "隐藏",
   "statusBar.petOnTip": "点击关闭桌面宠物",
