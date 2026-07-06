@@ -389,7 +389,7 @@ function WorkbenchPanel() {
               type="button"
               onClick={() => navigate(it.to)}
               className={clsx(
-                'h-8 px-2 -mx-2 rounded-md text-[12.5px] text-left flex items-center gap-2.5 transition-colors',
+                'h-8 px-2 -mx-2 rounded-md text-[13px] text-left flex items-center gap-2.5 transition-colors',
                 active
                   ? 'text-aegis-primary bg-aegis-primary/[0.08] font-semibold'
                   : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-aegis-hover/30',
@@ -406,7 +406,7 @@ function WorkbenchPanel() {
 
       <div className="flex-1 overflow-y-auto min-h-0">
         {visibleSessions.length === 0 && (
-          <div className="px-4 py-3 text-[12.5px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
+          <div className="px-4 py-3 text-[13px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
 
         {/* ── Active + Pinned sections (always visible at top) ──
@@ -414,7 +414,7 @@ function WorkbenchPanel() {
             Independent of the per-agent accordion below. */}
         {active.length > 0 && (
           <div className="mb-3">
-            <div className="px-3 py-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-aegis-text-dim/80 flex items-center gap-1.5">
+            <div className="px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim/80 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-success animate-pulse" />
               {t('sidebar.activeSessions', '活跃会话')}
               <span className="text-aegis-text-dim/50 font-mono normal-case">{active.length}</span>
@@ -424,7 +424,7 @@ function WorkbenchPanel() {
         )}
         {pinned.length > 0 && (
           <div className="mb-3">
-            <div className="px-3 py-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-aegis-text-dim/80 flex items-center gap-1.5">
+            <div className="px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim/80 flex items-center gap-1.5">
               <Pin size={10} className="opacity-70" />
               {t('sidebar.pinnedSessions', '置顶会话')}
               <span className="text-aegis-text-dim/50 font-mono normal-case">{pinned.length}</span>
@@ -438,7 +438,7 @@ function WorkbenchPanel() {
           const isOpen = openGroupId === g.agentId;
           return (
             <div key={g.agentId} className="mb-1">
-              <div className="group/header w-full flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold uppercase tracking-wider text-aegis-text-dim">
+              <div className="group/header w-full flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim">
                 <button
                   type="button"
                   onClick={() => toggleGroup(g.agentId)}
@@ -449,7 +449,7 @@ function WorkbenchPanel() {
                     : <ChevronRight size={11} className="opacity-60" />}
                   <Bot size={11} className="opacity-60" />
                   <span className="flex-1 truncate hover:text-aegis-text-secondary">{g.label}</span>
-                  <span className="text-[9.5px] text-aegis-text-dim/70 font-mono">{g.sessions.length}</span>
+                  <span className="text-[10.5px] text-aegis-text-dim/70 font-mono">{g.sessions.length}</span>
                 </button>
               </div>
               {isOpen && (
@@ -464,7 +464,7 @@ function WorkbenchPanel() {
                       onClick={() => {
                         navigate(`/chat?agent=${encodeURIComponent(g.agentId)}&new=1`);
                       }}
-                      className="w-full mx-3 my-1 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[12px] text-aegis-text-dim hover:text-aegis-primary hover:bg-aegis-primary/[0.08] transition-colors border border-dashed border-aegis-border/40 hover:border-aegis-primary/40"
+                      className="w-full mx-3 my-1 inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[12.5px] text-aegis-text-dim hover:text-aegis-primary hover:bg-aegis-primary/[0.08] transition-colors border border-dashed border-aegis-border/40 hover:border-aegis-primary/40"
                     >
                       <Plus size={10} />
                       {t('sidebar.newSession', '新建会话')}
@@ -480,7 +480,7 @@ function WorkbenchPanel() {
           <button
             type="button"
             onClick={() => setShowArchived((v) => !v)}
-            className="w-full px-4 py-2 text-[11.5px] text-aegis-text-dim hover:text-aegis-text-secondary transition-colors border-t border-aegis-border/15"
+            className="w-full px-4 py-2 text-[12px] text-aegis-text-dim hover:text-aegis-text-secondary transition-colors border-t border-aegis-border/15"
           >
             {showArchived
               ? t('sidebar.hideArchived', { count: archived.length, defaultValue: `Hide archived (${archived.length})` })
@@ -591,8 +591,8 @@ function AgentsPanel() {
                       {isExpanded ? <ChevronDown size={12} className="text-aegis-text-dim" /> : <ChevronRight size={12} className="text-aegis-text-dim" />}
                       <span className={clsx("h-1.5 w-1.5 rounded-full shrink-0", isLive ? "bg-aegis-success animate-pulse" : "bg-aegis-text-dim/45")} />
                       <span className="flex-1 min-w-0">
-                        <span className="block truncate text-[13px] text-aegis-text-secondary">{a.name || a.id}</span>
-                        <span className="block truncate text-[10px] text-aegis-text-dim">{typeof a.model === 'string' ? a.model.split('/').pop() : a.id}</span>
+                        <span className="block truncate text-[13px] leading-5 text-aegis-text-secondary">{a.name || a.id}</span>
+                        <span className="block truncate text-[11px] leading-4 text-aegis-text-dim">{typeof a.model === 'string' ? a.model.split('/').pop() : a.id}</span>
                       </span>
                     </button>
                     <button
@@ -607,7 +607,7 @@ function AgentsPanel() {
                   {isExpanded && (
                     <div className="ms-7 me-3 mb-1 rounded-lg border border-aegis-border/40 bg-aegis-surface/35 py-1">
                       {isLoadingSkills && (
-                        <div className="px-3 py-2 text-[11px] text-aegis-text-dim">
+                        <div className="px-3 py-2 text-[11.5px] text-aegis-text-dim">
                           {t('common.loading', 'Loading...')}
                         </div>
                       )}
@@ -616,13 +616,13 @@ function AgentsPanel() {
                           key={`${a.id}:${slug}`}
                           type="button"
                           onClick={() => navigate('/skill-hub')}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] text-aegis-text-secondary hover:text-aegis-primary hover:bg-aegis-primary/10"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-aegis-text-secondary hover:text-aegis-primary hover:bg-aegis-primary/10"
                         >
                           <Puzzle size={11} className="shrink-0 text-aegis-primary/80" />
                           <span className="truncate">{info.name}</span>
                         </button>
                       )) : !isLoadingSkills ? (
-                        <div className="px-3 py-2 text-[11px] text-aegis-text-dim">
+                        <div className="px-3 py-2 text-[11.5px] text-aegis-text-dim">
                           {t('sidebar.noAgentSkills', '暂无可用技能')}
                         </div>
                       ) : null}
@@ -648,7 +648,7 @@ function AgentsPanel() {
                   <Puzzle size={12} className={enabled ? 'text-aegis-primary opacity-80' : 'text-aegis-text-dim opacity-50'} />
                   <span
                     onClick={() => navigate('/skill-hub')}
-                    className={clsx('flex-1 text-[13px] truncate cursor-pointer', enabled ? 'text-aegis-text' : 'text-aegis-text-dim line-through')}>
+                    className={clsx('flex-1 text-[13px] leading-5 truncate cursor-pointer', enabled ? 'text-aegis-text' : 'text-aegis-text-dim line-through')}>
                     {info.name}
                   </span>
                   <button
@@ -668,7 +668,7 @@ function AgentsPanel() {
             })}
           </SidebarSection>
         )}
-        {sortedAgents.length === 0 && <div className="px-4 py-3 text-[12.5px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}
+        {sortedAgents.length === 0 && <div className="px-4 py-3 text-[13px] text-aegis-text-dim">{t('sidebar.noAgents', '暂无已配置的智能体')}</div>}
       </div>
     </>
   );

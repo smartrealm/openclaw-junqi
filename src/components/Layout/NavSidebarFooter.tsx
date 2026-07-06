@@ -35,7 +35,7 @@ export function NavSidebarFooter({ collapsed }: { collapsed?: boolean }) {
       <UsagePopover />
       <NavLink to="/settings"
         className={clsx(
-          'flex-1 flex items-center gap-2 px-2 py-1 rounded text-[11.5px] font-medium transition-colors',
+          'flex-1 flex items-center gap-2 px-2 py-1.5 rounded text-[13px] font-medium transition-colors',
           'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text',
         )}>
         <Settings size={12} className="text-aegis-text-muted" />

@@ -27,7 +27,7 @@ export function SidebarRow({ icon, title, meta, live, active, onClick }: Sidebar
       onClick={onClick}
       onKeyDown={handleKey}
       className={clsx(
-        'flex items-start gap-2.5 px-4 py-2 cursor-pointer transition-colors',
+        'flex items-start gap-2.5 px-4 py-2.5 cursor-pointer transition-colors',
         // Selection state: opaque accent-tinted background + left accent stripe.
         // Was bg-aegis-primary/15 — too subtle, read as "same as unselected".
         // Now uses a denser overlay + a 2px-wide accent stripe so the active
@@ -45,8 +45,8 @@ export function SidebarRow({ icon, title, meta, live, active, onClick }: Sidebar
         <span className="w-[5px] h-[5px] mt-[5px] shrink-0" />
       )}
       <div className="min-w-0 flex-1">
-        <div className={clsx('text-[12px] truncate', active ? 'text-aegis-text font-semibold' : 'text-aegis-text')}>{title}</div>
-        {meta && <div className="text-[10px] text-aegis-text-dim mt-0.5 truncate">{meta}</div>}
+        <div className={clsx('text-[13px] truncate leading-5', active ? 'text-aegis-text font-semibold' : 'text-aegis-text')}>{title}</div>
+        {meta && <div className="text-[11px] text-aegis-text-dim mt-0.5 truncate leading-4">{meta}</div>}
       </div>
     </div>
   );
@@ -60,7 +60,7 @@ interface SidebarSectionProps {
 export function SidebarSection({ label, children }: SidebarSectionProps) {
   return (
     <div className="py-1">
-      <div className="px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-aegis-text-dim">{label}</div>
+      <div className="px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-aegis-text-dim">{label}</div>
       {children}
     </div>
   );
