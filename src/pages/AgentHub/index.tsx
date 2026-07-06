@@ -21,6 +21,7 @@ import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayD
 import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway } from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
+import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
 import clsx from 'clsx';
 import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
@@ -157,6 +158,14 @@ function extractPrimaryModel(raw: unknown): string {
     return String((raw as Record<string, unknown>).primary ?? '');
   }
   return '';
+}
+
+function formatChannelBinding(t: ReturnType<typeof useTranslation>['t'], binding: string): string {
+  const [channelId, ...accountParts] = binding.split(':');
+  const accountId = accountParts.join(':');
+  const template = getChannelTemplate(channelId);
+  const channelLabel = t(template?.nameKey ?? `config.channel.${channelId}`, channelId);
+  return accountId ? `${channelLabel} / ${accountId}` : channelLabel;
 }
 
 function buildAgentCreatePayload(input: NewAgentDraft, defaultWorkspace = '') {
@@ -1283,6 +1292,7 @@ export function AgentHubPage() {
                     const previewLast = previewSessions.length > 0 ? Math.max(...previewSessions.map(s => s.updatedAt)) : 0;
                     const previewModel = fmtModel(selectedAgent.model);
                     const previewChannels = agentChannels[selectedAgent.id] ?? [];
+                    const previewChannelLabels = previewChannels.map((binding) => formatChannelBinding(t, binding));
                     const previewSkills = enabledSkills.slice(0, 6);
                     return (
                       <GlassCard className="mb-3">
@@ -1412,7 +1422,7 @@ export function AgentHubPage() {
                                 </div>
                                 <div className="mt-1 text-[11px] text-aegis-text-dim truncate">
                                   {previewChannels.length > 0
-                                    ? previewChannels.join(', ')
+                                    ? previewChannelLabels.join(', ')
                                     : t('channelsCenter.noBinding', 'No bound agent')}
                                 </div>
                               </div>
@@ -1457,6 +1467,7 @@ export function AgentHubPage() {
                       const isRunning = activeSessions.length > 0 || spawned;
                       const channelBindings = agentChannels[agent.id] ?? [];
                       const visibleChannelBindings = channelBindings.slice(0, 2);
+                      const visibleChannelLabels = visibleChannelBindings.map((binding) => formatChannelBinding(t, binding));
 
                       return (
                         <div key={agent.id}>
@@ -1493,13 +1504,13 @@ export function AgentHubPage() {
                                   <MessageSquare size={11} className="shrink-0 text-aegis-text-dim" />
                                   {visibleChannelBindings.length > 0 ? (
                                     <div className="flex min-w-0 flex-wrap items-center gap-1">
-                                      {visibleChannelBindings.map((binding) => (
+                                      {visibleChannelBindings.map((binding, index) => (
                                         <span
                                           key={`${agent.id}:channel:${binding}`}
                                           className="max-w-[118px] truncate rounded-md border border-aegis-primary/15 bg-aegis-primary/8 px-1.5 py-0.5 text-[9px] font-semibold text-aegis-text-secondary"
                                           title={binding}
                                         >
-                                          {binding}
+                                          {visibleChannelLabels[index]}
                                         </span>
                                       ))}
                                       {channelBindings.length > visibleChannelBindings.length && (
