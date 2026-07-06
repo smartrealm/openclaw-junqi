@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Bot, Check, ChevronDown, Copy, ListFilter, Loader2, MessageSquare, Pencil, Plus, Power, RefreshCw, Save, Settings2, ShieldCheck, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertCircle, Bot, Check, ChevronDown, Copy, ExternalLink, ListFilter, Loader2, MessageSquare, Pencil, Plus, Power, RefreshCw, Save, Settings2, ShieldCheck, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
@@ -137,6 +137,7 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
   };
 
   const credentialFields = getCredentialFields(tmpl);
+  const connectionModes = getImConnectionModes(t, state.group.id);
 
   return (
     <div className="fixed inset-0 z-[2147482000] bg-black/45 backdrop-blur-sm flex items-center justify-center p-4">
@@ -217,6 +218,47 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
               </select>
             </Field>
           </section>
+
+          {connectionModes.length > 0 && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <SectionTitle>{t('channelsCenter.integrationMode', 'Integration mode')}</SectionTitle>
+                {tmpl?.docsUrl && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(tmpl.docsUrl, '_blank', 'noopener,noreferrer')}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] px-2 py-1 text-[10px] font-bold text-aegis-text-dim hover:border-aegis-primary/25 hover:text-aegis-primary"
+                  >
+                    <ExternalLink size={11} />
+                    {t('channelsCenter.openDocs', 'Open docs')}
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {connectionModes.map((mode) => (
+                  <div
+                    key={mode.label}
+                    className={clsx(
+                      'rounded-lg border px-3 py-2',
+                      mode.enabled
+                        ? 'border-aegis-primary/20 bg-aegis-primary/10'
+                        : 'border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] opacity-75'
+                    )}
+                  >
+                    <div className={clsx(
+                      'text-[11px] font-extrabold',
+                      mode.enabled ? 'text-aegis-primary' : 'text-aegis-text-muted'
+                    )}>
+                      {mode.label}
+                    </div>
+                    <div className="mt-1 text-[10px] leading-relaxed text-aegis-text-dim">
+                      {mode.description}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {credentialFields.length > 0 && (
             <section className="space-y-3">
@@ -363,6 +405,43 @@ function getCredentialFields(tmpl?: ChannelTemplate) {
     });
   }
   return fields;
+}
+
+function getImConnectionModes(t: ReturnType<typeof useTranslation>['t'], channelId: string) {
+  if (channelId === 'feishu') {
+    return [
+      {
+        label: t('channelsCenter.modeHttpsCallback', 'HTTPS callback'),
+        description: t('channelsCenter.feishuHttpsHint', 'Use Feishu event subscription callback with app credentials.'),
+        enabled: true,
+      },
+      {
+        label: t('channelsCenter.modeQrAuth', 'QR authorization'),
+        description: t('channelsCenter.qrAuthGatewayRequired', 'Requires a real Gateway login-session API before it can be enabled.'),
+        enabled: false,
+      },
+    ];
+  }
+  if (channelId === 'dingtalk') {
+    return [
+      {
+        label: t('channelsCenter.modeStream', 'Stream'),
+        description: t('channelsCenter.dingtalkStreamHint', 'Use DingTalk Stream mode with appKey, appSecret, and robotCode.'),
+        enabled: true,
+      },
+      {
+        label: t('channelsCenter.modeHttpsCallback', 'HTTPS callback'),
+        description: t('channelsCenter.dingtalkHttpsHint', 'Use a public HTTPS callback URL when Stream is disabled.'),
+        enabled: true,
+      },
+      {
+        label: t('channelsCenter.modeQrAuth', 'QR authorization'),
+        description: t('channelsCenter.qrAuthGatewayRequired', 'Requires a real Gateway login-session API before it can be enabled.'),
+        enabled: false,
+      },
+    ];
+  }
+  return [];
 }
 
 function SectionTitle({ children }: { children: ReactNode }) {
