@@ -1455,6 +1455,8 @@ export function AgentHubPage() {
                       const spawned = isAgentSpawned(agent.id);
                       const spawnedLabel = getSpawnedLabel(agent.id);
                       const isRunning = activeSessions.length > 0 || spawned;
+                      const channelBindings = agentChannels[agent.id] ?? [];
+                      const visibleChannelBindings = channelBindings.slice(0, 2);
 
                       return (
                         <div key={agent.id}>
@@ -1487,6 +1489,31 @@ export function AgentHubPage() {
                                     📋 {spawnedLabel}
                                   </div>
                                 )}
+                                <div className="mt-2 flex items-center gap-1.5 min-w-0">
+                                  <MessageSquare size={11} className="shrink-0 text-aegis-text-dim" />
+                                  {visibleChannelBindings.length > 0 ? (
+                                    <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                      {visibleChannelBindings.map((binding) => (
+                                        <span
+                                          key={`${agent.id}:channel:${binding}`}
+                                          className="max-w-[118px] truncate rounded-md border border-aegis-primary/15 bg-aegis-primary/8 px-1.5 py-0.5 text-[9px] font-semibold text-aegis-text-secondary"
+                                          title={binding}
+                                        >
+                                          {binding}
+                                        </span>
+                                      ))}
+                                      {channelBindings.length > visibleChannelBindings.length && (
+                                        <span className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] px-1.5 py-0.5 text-[9px] text-aegis-text-dim">
+                                          +{channelBindings.length - visibleChannelBindings.length}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="truncate text-[9px] font-medium text-aegis-text-dim">
+                                      {t('channelsCenter.noBinding', 'No bound agent')}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <div className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border"
