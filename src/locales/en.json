@@ -1202,6 +1202,8 @@
     "editAccount": "Edit account",
     "accountId": "Account ID",
     "invalidAccountId": "Use 2-64 letters, numbers, hyphen, or underscore.",
+    "duplicateAccountTitle": "Duplicate account ID",
+    "duplicateAccountId": "This account ID already exists in the selected channel.",
     "accountName": "Display name",
     "accountNamePlaceholder": "Optional display name",
     "accountStatus": "Status",

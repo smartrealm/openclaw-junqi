@@ -879,6 +879,8 @@
     "editAccount": "تعديل الحساب",
     "accountId": "معرف الحساب",
     "invalidAccountId": "استخدم 2-64 حرفا أو رقما أو شرطة أو شرطة سفلية.",
+    "duplicateAccountTitle": "معرف حساب مكرر",
+    "duplicateAccountId": "معرف الحساب هذا موجود بالفعل في القناة المحددة.",
     "accountName": "اسم العرض",
     "accountNamePlaceholder": "اسم عرض اختياري",
     "accountStatus": "الحالة",

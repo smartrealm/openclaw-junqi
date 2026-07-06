@@ -127,8 +127,10 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
     mediaMaxMb: numberValue(config, 'mediaMaxMb', tmpl?.defaultMediaMaxMb ?? 10),
   }));
 
-  const accountIdValid = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$/.test(accountId.trim());
-  const canSave = accountIdValid && !saving;
+  const trimmedAccountId = accountId.trim();
+  const accountIdValid = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$/.test(trimmedAccountId);
+  const duplicateAccountId = state.mode === 'new' && state.group.accounts.some((account) => account.id === trimmedAccountId);
+  const canSave = accountIdValid && !duplicateAccountId && !saving;
 
   const setField = (key: string, value: unknown) => {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -162,11 +164,22 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
                 disabled={state.mode === 'edit'}
-                className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text font-mono focus:outline-none focus:border-aegis-primary/40 disabled:opacity-60"
+                aria-invalid={!accountIdValid || duplicateAccountId}
+                className={clsx(
+                  'w-full rounded-lg border bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text font-mono focus:outline-none disabled:opacity-60',
+                  (!accountIdValid || duplicateAccountId)
+                    ? 'border-aegis-danger/45 focus:border-aegis-danger/60'
+                    : 'border-[rgb(var(--aegis-overlay)/0.1)] focus:border-aegis-primary/40'
+                )}
               />
               {!accountIdValid && state.mode === 'new' && (
                 <div className="mt-1 text-[10px] text-aegis-danger">
                   {t('channelsCenter.invalidAccountId', 'Use 2-64 letters, numbers, hyphen, or underscore.')}
+                </div>
+              )}
+              {accountIdValid && duplicateAccountId && (
+                <div className="mt-1 text-[10px] text-aegis-danger">
+                  {t('channelsCenter.duplicateAccountId', 'This account ID already exists in the selected channel.')}
                 </div>
               )}
             </Field>
@@ -312,7 +325,7 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
             {t('common.cancel', 'Cancel')}
           </button>
           <button
-            onClick={() => onSave(accountId.trim(), cleanAccountConfig(values))}
+            onClick={() => onSave(trimmedAccountId, cleanAccountConfig(values))}
             disabled={!canSave}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary text-[rgb(var(--aegis-btn-primary-text))] text-[12px] font-extrabold disabled:opacity-50"
           >
@@ -569,6 +582,14 @@ export function ChannelsCenterPage() {
 
   const handleSaveAccount = async (accountId: string, accountConfig: Record<string, unknown>) => {
     if (!config || !editingAccount) return;
+    if (editingAccount.mode === 'new' && editingAccount.group.accounts.some((account) => account.id === accountId)) {
+      showAlert(
+        t('channelsCenter.duplicateAccountTitle', 'Duplicate account ID'),
+        t('channelsCenter.duplicateAccountId', 'This account ID already exists in the selected channel.'),
+        'error'
+      );
+      return;
+    }
     const next = editingAccount.mode === 'new'
       ? addChannelAccount(config, editingAccount.group.id, accountId, accountConfig)
       : upsertChannelAccount(
