@@ -1488,10 +1488,17 @@ export function AgentHubPage() {
                                   {isRunning ? (
                                     <span className="flex items-center gap-1 text-aegis-primary">
                                       <Loader2 size={9} className="animate-spin" />
-                                      {activeSessions.length > 0 ? `${activeSessions.length} running` : 'Working…'}
+                                      {activeSessions.length > 0
+                                        ? t('agentHub.card.runningSessions', { count: activeSessions.length, defaultValue: '{{count}} running' })
+                                        : t('agentHub.card.working', 'Working…')}
                                     </span>
                                   ) : <span className="text-aegis-text-dim">{t('agentHub.idle', 'Idle')}</span>}
-                                  {totalTokens > 0 && <><span className="text-aegis-text-dim">·</span><span>{formatTokens(totalTokens)} tokens</span></>}
+                                  {totalTokens > 0 && (
+                                    <>
+                                      <span className="text-aegis-text-dim">·</span>
+                                      <span>{t('agentHub.card.tokens', { value: formatTokens(totalTokens), defaultValue: '{{value}} tokens' })}</span>
+                                    </>
+                                  )}
                                   {lastActive > 0 && <><span className="text-aegis-text-dim">·</span><span>{timeAgo(lastActive)}</span></>}
                                 </div>
                                 {/* Task label when spawned */}
@@ -1533,7 +1540,11 @@ export function AgentHubPage() {
                                     color: isRunning ? themeHex('primary') : agent.configured ? display.color : 'rgb(var(--aegis-overlay) / 0.2)',
                                     borderColor: isRunning ? themeAlpha('primary', 0.25) : agent.configured ? `${display.color}20` : 'rgb(var(--aegis-overlay) / 0.06)',
                                   }}>
-                                  {isRunning ? 'ACTIVE' : agent.configured ? 'READY' : 'SETUP'}
+                                  {isRunning
+                                    ? t('agentHub.statusActive', 'Active')
+                                    : agent.configured
+                                      ? t('agentHub.statusReady', 'Ready')
+                                      : t('agentHub.statusSetup', 'Setup')}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">

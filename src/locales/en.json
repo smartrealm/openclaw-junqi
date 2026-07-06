@@ -499,6 +499,8 @@
     "depth2": "Depth 2 — Workers",
     "statusActive": "Active",
     "statusOnline": "Online",
+    "statusReady": "Ready",
+    "statusSetup": "Setup",
     "dataFlow": "data flow",
     "live": "LIVE",
     "idle": "Idle",
@@ -517,6 +519,11 @@
     "addNewAgent": "Add New Agent",
     "mainSession": "Main Session",
     "cronLabel": "Cron: {{id}}",
+    "card": {
+      "runningSessions": "{{count}} running",
+      "working": "Working…",
+      "tokens": "{{value}} tokens"
+    },
     "activity": {
       "spawned": "spawned {{label}}",
       "cronRunning": "cron running: {{label}}",

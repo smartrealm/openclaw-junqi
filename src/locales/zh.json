@@ -499,6 +499,8 @@
     "depth2": "深度 2 — 工作者",
     "statusActive": "活跃",
     "statusOnline": "在线",
+    "statusReady": "就绪",
+    "statusSetup": "待配置",
     "dataFlow": "数据流",
     "live": "实时",
     "idle": "空闲",
@@ -517,6 +519,11 @@
     "addNewAgent": "添加新智能体",
     "mainSession": "主会话",
     "cronLabel": "定时任务：{{id}}",
+    "card": {
+      "runningSessions": "{{count}} 个运行中",
+      "working": "工作中…",
+      "tokens": "{{value}} tokens"
+    },
     "activity": {
       "spawned": "已启动 {{label}}",
       "cronRunning": "定时任务运行中：{{label}}",
