@@ -436,12 +436,20 @@ export function useAnalyticsData(): AnalyticsData {
     () =>
       [...daily]
         .sort((a, b) => a.date.localeCompare(b.date))
-        .map((d) => ({
-          date:   d.date.slice(5), // MM-DD
-          cost:   d.totalCost,
-          input:  d.inputCost,
-          output: d.outputCost,
-        })),
+        .map((d) => {
+          const input = d.inputCost || 0;
+          const output = d.outputCost || 0;
+          const cache = (d.cacheReadCost || 0) + (d.cacheWriteCost || 0);
+          const total = d.totalCost || input + output + cache;
+          return {
+            date: d.date.slice(5), // MM-DD
+            cost: total,
+            input,
+            output,
+            cache,
+            other: Math.max(0, total - input - output - cache),
+          };
+        }),
     [daily]
   );
 

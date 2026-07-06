@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { GlassCard }  from '@/components/shared/GlassCard';
 import { ChartTooltip } from './ChartTooltip';
-import { themeHex } from '@/utils/theme-colors';
+import { dataColor, themeHex } from '@/utils/theme-colors';
 import { formatUsd, formatTokens } from '../helpers';
 
 interface ChartDataPoint {
@@ -18,6 +18,8 @@ interface ChartDataPoint {
   cost:   number;
   input:  number;
   output: number;
+  cache?: number;
+  other?: number;
 }
 
 interface DonutDataPoint {
@@ -68,6 +70,10 @@ export function ChartsSection({ chartData, donutData, totalCost }: ChartsSection
                       <stop offset="5%"  stopColor={themeHex('primary')} stopOpacity={0.2} />
                       <stop offset="95%" stopColor={themeHex('primary')} stopOpacity={0} />
                     </linearGradient>
+                    <linearGradient id="gradCache" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor={themeHex('success')} stopOpacity={0.18} />
+                      <stop offset="95%" stopColor={themeHex('success')} stopOpacity={0} />
+                    </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--aegis-overlay) / 0.03)" />
                   <XAxis
@@ -105,6 +111,27 @@ export function ChartsSection({ chartData, donutData, totalCost }: ChartsSection
                     dot={false}
                     stackId="1"
                   />
+                  <Area
+                    type="monotone"
+                    dataKey="cache"
+                    name={t('analytics.cacheCost', 'Cache Cost')}
+                    stroke={themeHex('success')}
+                    strokeWidth={1.5}
+                    fill="url(#gradCache)"
+                    dot={false}
+                    stackId="1"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="other"
+                    name={t('analytics.otherCost', 'Other Cost')}
+                    stroke={dataColor(9)}
+                    strokeWidth={1.5}
+                    fill={dataColor(9)}
+                    fillOpacity={0.1}
+                    dot={false}
+                    stackId="1"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -125,6 +152,12 @@ export function ChartsSection({ chartData, donutData, totalCost }: ChartsSection
               <div className="w-2 h-2 rounded-sm" style={{ background: 'rgb(var(--aegis-primary))' }} />
               {t('analytics.outputCost', 'Output Cost')}
             </div>
+            {chartData.some((d) => (d.cache || 0) > 0) && (
+              <div className="flex items-center gap-1.5 text-[10px] text-aegis-text-muted">
+                <div className="w-2 h-2 rounded-sm" style={{ background: 'rgb(var(--aegis-success))' }} />
+                {t('analytics.cacheCost', 'Cache Cost')}
+              </div>
+            )}
           </div>
         </GlassCard>
       </div>

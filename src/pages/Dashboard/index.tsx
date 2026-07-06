@@ -75,6 +75,9 @@ function CostTooltip({ active, payload, label }: any) {
   const tr = (k: string, d: string) => i18n.t(k, { defaultValue: d }) as string;
   const input  = payload.find((p: any) => p.dataKey === 'input')?.value  || 0;
   const output = payload.find((p: any) => p.dataKey === 'output')?.value || 0;
+  const cache = payload.find((p: any) => p.dataKey === 'cache')?.value || 0;
+  const other = payload.find((p: any) => p.dataKey === 'other')?.value || 0;
+  const total = payload[0]?.payload?.total ?? input + output + cache + other;
   return (
     <div className="bg-aegis-card border border-aegis-border rounded-xl p-2.5 text-[11px] shadow-lg">
       <div className="text-aegis-text-dim font-mono mb-1.5">{label}</div>
@@ -86,8 +89,20 @@ function CostTooltip({ active, payload, label }: any) {
         <span className="w-2 h-2 rounded-full bg-aegis-primary" />
         {tr('dashboard.output', 'Output')}: {fmtCost(output)}
       </div>
+      {cache > 0 && (
+        <div className="flex items-center gap-1.5 text-aegis-success">
+          <span className="w-2 h-2 rounded-full bg-aegis-success" />
+          {tr('dashboard.cacheCostLabel', 'Cache')}: {fmtCost(cache)}
+        </div>
+      )}
+      {other > 0 && (
+        <div className="flex items-center gap-1.5 text-aegis-text-muted">
+          <span className="w-2 h-2 rounded-full bg-aegis-text-muted" />
+          {tr('dashboard.otherCostLabel', 'Other')}: {fmtCost(other)}
+        </div>
+      )}
       <div className="text-aegis-text font-semibold mt-1.5 pt-1.5 border-t border-[rgb(var(--aegis-overlay)/0.06)]">
-        {tr('dashboard.total', 'Total')}: {fmtCost(input + output)}
+        {tr('dashboard.total', 'Total')}: {fmtCost(total)}
       </div>
     </div>
   );
@@ -229,11 +244,20 @@ export function DashboardPage() {
     const sorted = [...allDaily]
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-14);
-    return sorted.map((d: any) => ({
-      date:   d.date.slice(5),       // MM-DD
-      input:  d.inputCost  || 0,
-      output: d.outputCost || 0,
-    }));
+    return sorted.map((d: any) => {
+      const input = d.inputCost || 0;
+      const output = d.outputCost || 0;
+      const cache = (d.cacheReadCost || 0) + (d.cacheWriteCost || 0);
+      const total = d.totalCost || input + output + cache;
+      return {
+        date: d.date.slice(5), // MM-DD
+        input,
+        output,
+        cache,
+        other: Math.max(0, total - input - output - cache),
+        total,
+      };
+    });
   }, [allDaily]);
 
   const agentIdFromKey = useCallback((key?: string) => {
@@ -549,6 +573,9 @@ export function DashboardPage() {
             <div className="flex items-center gap-3 text-[10px] text-aegis-text-muted font-medium">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{t('dashboard.inputCostLabel')}</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{t('dashboard.outputCostLabel')}</span>
+              {chartData.some((d: any) => d.cache > 0) && (
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{t('dashboard.cacheCostLabel', 'Cache')}</span>
+              )}
             </div>
           </div>
           {chartData.length > 0 ? (
@@ -573,6 +600,10 @@ export function DashboardPage() {
                   stroke={themeHex('accent')} strokeWidth={1.5} fill="url(#gInput)" />
                 <Area type="monotone" dataKey="output" stackId="1"
                   stroke={themeHex('primary')} strokeWidth={1.5} fill="url(#gOutput)" />
+                <Area type="monotone" dataKey="cache" stackId="1"
+                  stroke={themeHex('success')} strokeWidth={1.5} fillOpacity={0.18} fill={themeHex('success')} />
+                <Area type="monotone" dataKey="other" stackId="1"
+                  stroke={dataColor(9)} strokeWidth={1.5} fillOpacity={0.12} fill={dataColor(9)} />
               </AreaChart>
             </ResponsiveContainer>
           ) : !connected ? (

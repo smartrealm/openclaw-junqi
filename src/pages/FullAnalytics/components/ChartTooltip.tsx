@@ -3,15 +3,18 @@
 // ═══════════════════════════════════════════════════════════
 
 import { formatTokens, formatUsd } from '../helpers';
+import i18n from '@/i18n';
 
 interface TooltipProps {
   active?: boolean;
-  payload?: Array<{ name: string; value: number; color: string }>;
+  payload?: Array<{ name: string; value: number; color: string; payload?: { cost?: number } }>;
   label?: string;
 }
 
 export const ChartTooltip = ({ active, payload, label }: TooltipProps) => {
   if (!active || !payload?.length) return null;
+  const rows = payload.filter((p) => Number(p.value) > 0);
+  const total = payload[0]?.payload?.cost;
 
   return (
     <div
@@ -23,7 +26,7 @@ export const ChartTooltip = ({ active, payload, label }: TooltipProps) => {
       }}
     >
       <div className="text-aegis-text-muted mb-1 font-mono">{label}</div>
-      {payload.map((p) => (
+      {rows.map((p) => (
         <div key={p.name} className="flex items-center gap-2 py-0.5">
           <span className="w-2 h-2 rounded-sm" style={{ background: p.color }} />
           <span className="text-aegis-text-muted">{p.name}:</span>
@@ -34,6 +37,12 @@ export const ChartTooltip = ({ active, payload, label }: TooltipProps) => {
           </span>
         </div>
       ))}
+      {typeof total === 'number' && (
+        <div className="mt-1.5 border-t border-[rgb(var(--aegis-overlay)/0.08)] pt-1.5 flex items-center justify-between gap-4">
+          <span className="text-aegis-text-muted">{i18n.t('analytics.total', 'Total')}:</span>
+          <span className="text-aegis-text font-mono font-bold">{formatUsd(total)}</span>
+        </div>
+      )}
     </div>
   );
 };
