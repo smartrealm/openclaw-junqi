@@ -1860,7 +1860,7 @@
     "title": "Welcome to JunQi Desktop",
     "companyLabel": "Company",
     "companyName": "Shaanxi Junqi Zhijing Technology Co., Ltd.",
-    "productIntro": "JunQi Desktop is a desktop workspace for OpenClaw Gateway, built for AI chat, task collaboration, and tool management.",
+    "productIntro": "An AI workspace for OpenClaw Gateway: chat, tasks, and tools.",
     "welcomeSubtitle": "Choose language and theme first. JunQi will then check your local environment.",
     "languageLabel": "Interface language",
     "languageHint": "Choose the language used by setup and the rest of the app.",
@@ -1902,7 +1902,8 @@
       "timeline": "Setup steps",
       "stepsDone": "steps complete",
       "activity": "Activity log",
-      "keepOpen": "Keep this window open during installation. JunQi will enter the workspace when Gateway is ready.",
+      "keepOpen": "Keep this window open during installation. Click Enter workspace when setup is complete.",
+      "readyHint": "Gateway is ready. Click Enter workspace to continue.",
       "errorHint": "Copy the error details or go back to choose another setup method."
     },
     "stepStatus": {
@@ -1942,6 +1943,8 @@
     "detecting": "Detecting OpenClaw installation...",
     "settingUp": "Setting up JunQi Desktop",
     "subtitle": "Installing required components. This may take a few minutes.",
+    "readySubtitle": "Installation and startup are complete. Enter the workspace to continue using JunQi Desktop.",
+    "enterWorkspace": "Enter workspace",
     "foundOclaw": "OpenClaw found. Checking Gateway status...",
     "modeNative": "Native Install",
     "modeNativeDesc": "Install Node.js, Git, and OpenClaw directly on your machine. Best for most users.",
@@ -2043,7 +2046,11 @@
       "stopPreview": "Stop preview",
       "showMain": "Show main window",
       "hide": "Hide pet",
-      "nextSkin": "Next skin"
+      "nextSkin": "Next skin",
+      "pomoStart": "Start Pomodoro",
+      "pomoPause": "Pause Pomodoro",
+      "pomoResume": "Resume Pomodoro",
+      "pomoStop": "Stop Pomodoro"
     },
     "settings": {
       "title": "Desktop Pet",

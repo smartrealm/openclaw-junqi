@@ -40,6 +40,7 @@ export interface SetupFlow {
   detectDocker: () => Promise<void>;
   goBack: () => void;
   retryGit: () => void;
+  enterWorkspace: () => void;
 }
 
 const INITIAL_NATIVE_STEPS: StepState[] = [
@@ -68,6 +69,10 @@ function cacheGatewayTarget(port?: number | null, token?: string | null): void {
   } catch {
     // Best effort: connection resolution can still fall back to config files.
   }
+}
+
+function markSetupReady(): void {
+  localStorage.setItem("junqi-setup-done", "1");
 }
 
 function setupProgressI18nParams(key: string, message: string): Record<string, string> {
@@ -284,10 +289,11 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return;
       setGatewayRunning(true);
       setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
-      report(t("setup.gatewayStarted"), 90);
+      report(t("setup.ready"), 100);
       await new Promise((r) => setTimeout(r, 600));
       if (!isRunActive(runId)) return;
-      setSetupComplete(true);
+      markSetupReady();
+      setSetupStep("ready");
     } catch (e: any) {
       if (!isRunActive(runId)) return;
       setSteps([{ id: "gateway", label: "Gateway", status: "error", detail: String(e?.message ?? e) }]);
@@ -295,7 +301,7 @@ export function useSetupFlow(
       report(e?.message || String(e));
       setSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, report, t, setSteps, waitForGatewayReady, setGatewayRunning, setSetupComplete, setSetupError]);
+  }, [beginRun, isRunActive, setSetupStep, report, t, setSteps, waitForGatewayReady, setGatewayRunning, setSetupError]);
 
   const runNativeSetup = useCallback(async () => {
     const runId = beginRun();
@@ -378,10 +384,8 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return;
 
       report(t("setup.ready"), 100);
+      markSetupReady();
       setSetupStep("ready");
-      await new Promise((r) => setTimeout(r, 600));
-      if (!isRunActive(runId)) return;
-      setSetupComplete(true);
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       const msg = err?.message || String(err);
@@ -390,7 +394,7 @@ export function useSetupFlow(
       setSetupStep("error");
     }
   }, [beginRun, isRunActive, setSetupStep, t, report, setNeedsGit, setSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupComplete, setSetupError]);
+      waitForGatewayReady, setGatewayRunning, setSetupError]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
@@ -419,10 +423,8 @@ export function useSetupFlow(
       patchStep("gateway", "done");
 
       report(t("setup.ready"), 100);
+      markSetupReady();
       setSetupStep("ready");
-      await new Promise((r) => setTimeout(r, 600));
-      if (!isRunActive(runId)) return;
-      setSetupComplete(true);
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       setSetupError(err?.message || String(err));
@@ -430,7 +432,7 @@ export function useSetupFlow(
       setSetupStep("error");
     }
   }, [beginRun, isRunActive, setSetupStep, t, report, setSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupComplete, setSetupError]);
+      waitForGatewayReady, setGatewayRunning, setSetupError]);
 
   const selectMode = useCallback((mode: "native" | "docker") => {
     setInstallMode(mode);
@@ -471,6 +473,11 @@ export function useSetupFlow(
     runNativeSetup();
   }, [setNeedsGit, setSetupError, setProgress, runNativeSetup]);
 
+  const enterWorkspace = useCallback(() => {
+    cancelActiveRun();
+    setSetupComplete(true);
+  }, [cancelActiveRun, setSetupComplete]);
+
   const detectDocker = useCallback(async () => {
     if (dockerDetectingRef.current) return;
     dockerDetectingRef.current = true;
@@ -493,5 +500,6 @@ export function useSetupFlow(
     detectDocker,
     goBack,
     retryGit,
+    enterWorkspace,
   };
 }

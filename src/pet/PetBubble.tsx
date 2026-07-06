@@ -126,6 +126,20 @@ function useResolvedDark(): boolean {
   return systemDark;
 }
 
+function petTextPalette(isDark: boolean): { primary: string; secondary: string; danger: string } {
+  return isDark
+    ? {
+        primary: '#f8fafc',
+        secondary: '#e5e7eb',
+        danger: '#fecaca',
+      }
+    : {
+        primary: '#111827',
+        secondary: '#1f2937',
+        danger: '#991b1b',
+      };
+}
+
 /**
  * Compact status bubble above the character. It stays as pure text so the pet
  * does not look boxed in.
@@ -144,6 +158,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const dragMeta = useDragKindMeta();
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
+  const textPalette = petTextPalette(isDark);
 
   // Operation-hint carousel, shown only while the cursor is over the pet
   // AND the pet is idle (i.e. the tip branch is the rendered body — busy
@@ -174,10 +189,10 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const bubbleStyle: CSSProperties = {
     maxWidth: 240,
     textAlign: 'center',
-    color: isDark ? '#ffffff' : '#0f172a',
+    color: textPalette.primary,
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
-    fontSize: 12.5,
-    fontWeight: 700,
+    fontSize: 13,
+    fontWeight: 760,
     lineHeight: 1.5,
     overflowWrap: 'anywhere',
     wordBreak: 'normal',
@@ -268,7 +283,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
           style={{
             display: 'inline-block',
             fontWeight: 750,
-            color: e === 'error' ? '#dc2626' : (isDark ? '#ffffff' : '#0f172a'),
+            color: e === 'error' ? textPalette.danger : textPalette.primary,
             maxWidth: 232,
             textShadow: 'none',
             WebkitTextStroke: '0 transparent',
@@ -280,15 +295,15 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
         {detail && (
           <div
             style={{
-              fontSize: 11,
+              fontSize: 11.5,
               maxWidth: 230,
               marginTop: 3,
-              fontWeight: 550,
+              fontWeight: 620,
               lineHeight: 1.46,
               whiteSpace: 'pre-line',
               overflowWrap: 'anywhere',
               wordBreak: 'normal',
-              color: isDark ? '#f8fafc' : '#1e293b',
+              color: textPalette.secondary,
               textShadow: 'none',
               WebkitTextStroke: '0 transparent',
             }}
@@ -300,7 +315,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     );
   } else if (e === 'error') {
     bubbleKey = 'error';
-    body = <span style={{ fontWeight: 700, color: '#dc2626' }}>{label}</span>;
+    body = <span style={{ fontWeight: 760, color: textPalette.danger }}>{label}</span>;
   } else if (ACTIVE.has(e)) {
     bubbleKey = `active-${e}`;
     const detail = state.message || state.taskLabel;

@@ -1848,7 +1848,7 @@
     "title": "欢迎使用 JunQi Desktop",
     "companyLabel": "出品公司",
     "companyName": "陕西浚启智境科技有限公司",
-    "productIntro": "JunQi Desktop 是连接 OpenClaw Gateway 的桌面工作台，用于 AI 对话、任务协作和工具管理。",
+    "productIntro": "连接 OpenClaw Gateway 的 AI 工作台：对话、协作、工具管理。",
     "welcomeSubtitle": "先选择语言和主题，随后自动完成本机环境检测。",
     "languageLabel": "界面语言",
     "languageHint": "选择启动向导和后续界面的显示语言",
@@ -1890,7 +1890,8 @@
       "timeline": "执行步骤",
       "stepsDone": "个步骤完成",
       "activity": "执行记录",
-      "keepOpen": "安装过程中请保持窗口打开。Gateway 就绪后会自动进入工作台。",
+      "keepOpen": "安装过程中请保持窗口打开。完成后点击进入工作台。",
+      "readyHint": "Gateway 已就绪。点击进入工作台继续。",
       "errorHint": "请复制错误信息或返回上一步重新选择安装方式。"
     },
     "stepStatus": {
@@ -1930,6 +1931,8 @@
     "detecting": "正在检测 OpenClaw 安装...",
     "settingUp": "正在配置 JunQi Desktop",
     "subtitle": "正在安装必需组件，可能需要几分钟。",
+    "readySubtitle": "安装与启动已完成。点击进入工作台继续使用 JunQi Desktop。",
+    "enterWorkspace": "进入工作台",
     "foundOclaw": "检测到 OpenClaw，正在检查 Gateway 状态...",
     "modeNative": "本地安装",
     "modeNativeDesc": "直接在您的电脑上安装 Node.js、Git 和 OpenClaw。适合大多数用户。",
@@ -2031,7 +2034,11 @@
       "stopPreview": "停止演示",
       "showMain": "显示主窗口",
       "hide": "隐藏萌宠",
-      "nextSkin": "下一皮肤"
+      "nextSkin": "下一皮肤",
+      "pomoStart": "开始番茄钟",
+      "pomoPause": "暂停番茄钟",
+      "pomoResume": "继续番茄钟",
+      "pomoStop": "停止番茄钟"
     },
     "settings": {
       "title": "桌面萌宠",

@@ -23,15 +23,19 @@ export function TabBar() {
   const setActiveTab = useSettingsStore((s) => s.setActiveSidebarTab);
 
   return (
-    <div className="flex items-center gap-0.5 h-[32px] shrink-0 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
-      <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,220px)] flex items-center px-4 pointer-events-none">
-        <img
-          src={junqiLogo}
-          alt="JunQi"
-          className="h-[24px] max-w-[176px] object-contain object-left opacity-95"
-          draggable={false}
-        />
+    <div className="flex h-[40px] shrink-0 items-center gap-0.5 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
+      <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,220px)] flex items-center px-3 pointer-events-none">
+        <div className="h-[34px] w-[190px] overflow-hidden">
+          <img
+            src={junqiLogo}
+            alt="JunQi"
+            className="h-[54px] max-w-none object-contain object-left"
+            style={{ transform: 'translate(-17px, -7px)' }}
+            draggable={false}
+          />
+        </div>
       </div>
+      <div className="flex min-w-0 items-center gap-0.5">
       {TABS.map((tab) => {
         const active = activeTab === (tab.id as SidebarTab);
         return (
@@ -40,7 +44,7 @@ export function TabBar() {
             type="button"
             onClick={() => { setActiveTab(tab.id as SidebarTab); navigate(tab.path); }}
             className={clsx(
-              'h-[26px] px-2.5 rounded text-[11.5px] font-medium transition-colors flex items-center gap-1.5',
+              'h-[30px] px-2.5 rounded text-[11.5px] font-medium transition-colors flex items-center gap-1.5',
               active
                 ? 'bg-aegis-primary/10 text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.18)]'
                 : 'text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40',
@@ -51,6 +55,7 @@ export function TabBar() {
           </button>
         );
       })}
+      </div>
     </div>
   );
 }

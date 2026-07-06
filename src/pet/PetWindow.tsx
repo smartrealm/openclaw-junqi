@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
@@ -80,7 +80,7 @@ export default function PetWindow() {
   // is required when the user toggles sound in settings.
   const dragActive = usePetStore((s) => s.dragActive);
   const dragOver = usePetStore((s) => s.dragOver);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const applyResolved = (setting: ThemeSetting) => {
       applyTheme(resolveTheme(setting, detectOSPreference()));
     };
@@ -435,21 +435,38 @@ export default function PetWindow() {
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     const p = state.pomodoro;
+    const menuLabel = (key: string, fallback: string) => {
+      const value = t(key, fallback);
+      return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+    };
+    const compactItems = (items: PetMenuItem[]): PetMenuItem[] => {
+      const filtered: PetMenuItem[] = [];
+      for (const item of items) {
+        if (item.kind !== 'sep' && !item.label.trim()) continue;
+        if (item.kind === 'sep' && (filtered.length === 0 || filtered[filtered.length - 1]?.kind === 'sep')) continue;
+        filtered.push(item);
+      }
+      while (filtered[filtered.length - 1]?.kind === 'sep') filtered.pop();
+      return filtered.length > 0 ? filtered : [{ kind: 'showMain', label: menuLabel('pet.menu.showMain', '显示主窗口') }];
+    };
     const items: PetMenuItem[] = [
-      { kind: 'showMain', label: t('pet.menu.showMain', '显示主窗口') },
-      { kind: 'nextSkin', label: t('pet.menu.nextSkin', '下一皮肤') },
-      { kind: 'hide', label: t('pet.menu.hide', '隐藏萌宠') },
+      { kind: 'showMain', label: menuLabel('pet.menu.showMain', '显示主窗口') },
+      { kind: 'nextSkin', label: menuLabel('pet.menu.nextSkin', '下一皮肤') },
+      { kind: 'hide', label: menuLabel('pet.menu.hide', '隐藏萌宠') },
     ];
     if (p?.enabled) {
       items.push({ kind: 'sep', label: '' });
       if (p.running) {
-        items.push({ kind: 'pomoPause', label: p.paused ? t('pet.pomodoro.resume', '继续') : t('pet.pomodoro.pause', '暂停') });
-        items.push({ kind: 'pomoStop', label: t('pet.pomodoro.stop', '停止') });
+        items.push({
+          kind: 'pomoPause',
+          label: p.paused ? menuLabel('pet.menu.pomoResume', '继续番茄钟') : menuLabel('pet.menu.pomoPause', '暂停番茄钟'),
+        });
+        items.push({ kind: 'pomoStop', label: menuLabel('pet.menu.pomoStop', '停止番茄钟') });
       } else {
-        items.push({ kind: 'pomoStart', label: t('pet.pomodoro.start', '开始') });
+        items.push({ kind: 'pomoStart', label: menuLabel('pet.menu.pomoStart', '开始番茄钟') });
       }
     }
-    invoke('pet_show_context_menu', { items }).catch(() => undefined);
+    invoke('pet_show_context_menu', { items: compactItems(items) }).catch(() => undefined);
   };
 
   // Pomodoro badge over the character's head — vector Lucide icon, not emoji.
