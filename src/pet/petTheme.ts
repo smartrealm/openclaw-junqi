@@ -17,18 +17,36 @@ export function resolvePetDarkMode(themeName: string | null, systemDark: boolean
   return systemDark;
 }
 
-export function resolvePetTextPalette(isDark: boolean): PetTextPalette {
-  return isDark
-    ? {
+export function normalizePetThemeName(themeName: string | null, systemDark: boolean): PetThemeName {
+  if (themeName === 'aegis-light' || themeName === 'aegis-dark' || themeName === 'aegis-midnight' || themeName === 'aegis-eyecare') {
+    return themeName;
+  }
+  return systemDark ? 'aegis-dark' : 'aegis-light';
+}
+
+export function resolvePetTextPalette(themeName: PetThemeName): PetTextPalette {
+  switch (themeName) {
+    case 'aegis-dark':
+    case 'aegis-midnight':
+      return {
         primary: '#f8fafc',
         secondary: '#dbe4f0',
         danger: '#fecaca',
-      }
-    : {
-        primary: '#111827',
-        secondary: '#1f2937',
-        danger: '#991b1b',
       };
+    case 'aegis-eyecare':
+      return {
+        primary: '#201307',
+        secondary: '#36220d',
+        danger: '#7f1d1d',
+      };
+    case 'aegis-light':
+    default:
+      return {
+        primary: '#020617',
+        secondary: '#0f172a',
+        danger: '#7f1d1d',
+      };
+  }
 }
 
 export function solidPetTextStyle(color: string): CSSProperties {

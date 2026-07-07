@@ -6,7 +6,7 @@ import { themeHex } from '@/utils/theme-colors';
 import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
-import { resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
+import { normalizePetThemeName, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
 const STATUS_LABEL: Record<PetEmotion, string> = {
@@ -117,16 +117,19 @@ function isSameStatusCopy(a?: string, b?: string): boolean {
 /** Resolve the pet webview's actual applied theme, not the main window store.
  * The pet is a separate webview, so its Zustand settings state can lag behind
  * the `data-theme` token that was already applied to this document. */
-function useResolvedDark(): boolean {
-  const readDark = () => {
-    if (typeof document === 'undefined') return true;
+function useResolvedPetTheme(): { themeName: PetThemeName; isDark: boolean } {
+  const readTheme = () => {
+    if (typeof document === 'undefined') return { themeName: 'aegis-dark' as PetThemeName, isDark: true };
     const theme = document.documentElement.getAttribute('data-theme');
     const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
-    return resolvePetDarkMode(theme, systemDark);
+    return {
+      themeName: normalizePetThemeName(theme, systemDark),
+      isDark: resolvePetDarkMode(theme, systemDark),
+    };
   };
-  const [dark, setDark] = useState<boolean>(readDark);
+  const [resolved, setResolved] = useState(readTheme);
   useEffect(() => {
-    const refresh = () => setDark(readDark());
+    const refresh = () => setResolved(readTheme());
     const observer = new MutationObserver(refresh);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -137,7 +140,7 @@ function useResolvedDark(): boolean {
       mq?.removeEventListener('change', refresh);
     };
   }, []);
-  return dark;
+  return resolved;
 }
 
 /**
@@ -153,12 +156,12 @@ function useResolvedDark(): boolean {
  */
 export function PetBubble({ state, dragging, hovered }: { state: PetState; dragging?: boolean; hovered?: boolean }) {
   const { t } = useTranslation();
-  const isDark = useResolvedDark();
+  const { themeName, isDark } = useResolvedPetTheme();
   const emotionColor = useEmotionColor();
   const dragMeta = useDragKindMeta();
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
-  const textPalette = resolvePetTextPalette(isDark);
+  const textPalette = resolvePetTextPalette(themeName);
 
   // Operation-hint carousel, shown only while the cursor is over the pet
   // AND the pet is idle (i.e. the tip branch is the rendered body — busy
