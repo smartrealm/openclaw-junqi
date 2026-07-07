@@ -49,13 +49,40 @@ export function resolvePetTextPalette(themeName: PetThemeName): PetTextPalette {
   }
 }
 
+const PET_TEXT_RENDERING_RESET: CSSProperties = {
+  WebkitTextStroke: '0 transparent',
+  WebkitTextStrokeWidth: 0,
+  WebkitTextStrokeColor: 'transparent',
+  WebkitBackgroundClip: 'border-box',
+  background: 'transparent',
+  backgroundColor: 'transparent',
+  backgroundImage: 'none',
+  boxShadow: 'none',
+  filter: 'none',
+  mixBlendMode: 'normal',
+  outline: 'none',
+  paintOrder: 'fill',
+  textDecoration: 'none',
+  textShadow: 'none',
+  WebkitFontSmoothing: 'antialiased',
+  MozOsxFontSmoothing: 'grayscale',
+};
+
 export function solidPetTextStyle(color: string): CSSProperties {
   return {
+    ...PET_TEXT_RENDERING_RESET,
     color,
     WebkitTextFillColor: color,
-    WebkitTextStrokeWidth: 0,
-    WebkitTextStrokeColor: 'transparent',
-    paintOrder: 'fill',
-    textShadow: 'none',
+    caretColor: color,
+  };
+}
+
+export function petBubbleTextContainerStyle(color: string): CSSProperties {
+  return {
+    ...solidPetTextStyle(color),
+    border: 0,
+    isolation: 'isolate',
+    opacity: 1,
+    pointerEvents: 'none',
   };
 }

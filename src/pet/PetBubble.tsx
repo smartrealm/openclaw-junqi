@@ -6,7 +6,7 @@ import { themeHex } from '@/utils/theme-colors';
 import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
-import { normalizePetThemeName, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
+import { normalizePetThemeName, petBubbleTextContainerStyle, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
 const STATUS_LABEL: Record<PetEmotion, string> = {
@@ -192,7 +192,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const bubbleStyle: CSSProperties = {
     maxWidth: 240,
     textAlign: 'center',
-    ...solidPetTextStyle(textPalette.primary),
+    ...petBubbleTextContainerStyle(textPalette.primary),
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 13,
     fontWeight: 760,
@@ -200,8 +200,6 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     overflowWrap: 'anywhere',
     wordBreak: 'normal',
     whiteSpace: 'normal',
-    filter: 'none',
-    opacity: 1,
   };
 
   let body: ReactNode = null;

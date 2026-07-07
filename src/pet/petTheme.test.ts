@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePetThemeName, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
+import { normalizePetThemeName, petBubbleTextContainerStyle, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
 
 test('pet dark mode follows explicit dark theme names', () => {
   assert.equal(resolvePetDarkMode('aegis-dark', false), true);
@@ -49,11 +49,52 @@ test('pet theme name normalization preserves concrete themes and resolves fallba
 
 test('pet text style disables webkit outline-only rendering', () => {
   assert.deepEqual(solidPetTextStyle('#fff'), {
-    color: '#fff',
-    WebkitTextFillColor: '#fff',
+    WebkitTextStroke: '0 transparent',
     WebkitTextStrokeWidth: 0,
     WebkitTextStrokeColor: 'transparent',
+    WebkitBackgroundClip: 'border-box',
+    background: 'transparent',
+    backgroundColor: 'transparent',
+    backgroundImage: 'none',
+    boxShadow: 'none',
+    filter: 'none',
+    mixBlendMode: 'normal',
+    outline: 'none',
     paintOrder: 'fill',
+    textDecoration: 'none',
     textShadow: 'none',
+    WebkitFontSmoothing: 'antialiased',
+    MozOsxFontSmoothing: 'grayscale',
+    color: '#fff',
+    WebkitTextFillColor: '#fff',
+    caretColor: '#fff',
+  });
+});
+
+test('pet bubble text container has no visual chrome', () => {
+  assert.deepEqual(petBubbleTextContainerStyle('#f8fafc'), {
+    WebkitTextStroke: '0 transparent',
+    WebkitTextStrokeWidth: 0,
+    WebkitTextStrokeColor: 'transparent',
+    WebkitBackgroundClip: 'border-box',
+    background: 'transparent',
+    backgroundColor: 'transparent',
+    backgroundImage: 'none',
+    boxShadow: 'none',
+    filter: 'none',
+    mixBlendMode: 'normal',
+    outline: 'none',
+    paintOrder: 'fill',
+    textDecoration: 'none',
+    textShadow: 'none',
+    WebkitFontSmoothing: 'antialiased',
+    MozOsxFontSmoothing: 'grayscale',
+    color: '#f8fafc',
+    WebkitTextFillColor: '#f8fafc',
+    caretColor: '#f8fafc',
+    border: 0,
+    isolation: 'isolate',
+    opacity: 1,
+    pointerEvents: 'none',
   });
 });
