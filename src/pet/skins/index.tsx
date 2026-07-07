@@ -15,11 +15,10 @@
  */
 import { motion } from 'framer-motion';
 import type { FC } from 'react';
-import { themeAlpha } from '@/utils/theme-colors';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const BOTTOM = { transformBox: 'fill-box' as const, transformOrigin: 'bottom' };
-const SHADOW = themeAlpha('primary', 0.38);
+const SHADOW = 'rgb(var(--aegis-primary) / 0.38)';
 
 export type PetSkin = 'robot' | 'lobster' | 'cat' | 'jellyfish' | 'ghost';
 export interface SkinProps { color: string; }

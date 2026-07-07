@@ -3,6 +3,8 @@
 // ConfigManager/index.tsx for testability and design pattern compliance).
 // ═══════════════════════════════════════════════════════════
 
+import { normalizeProviderAuthMode } from '@/types/providerAuthMode';
+
 // ── 1. Provider ID canonicalization (lookup table, not if-else) ──
 const PROVIDER_ALIASES: Record<string, string> = {
   modelstudio: 'qwen', qwencloud: 'qwen', 'qwen-dashscope': 'qwen',
@@ -143,11 +145,6 @@ export function normalizeChannelStreaming(
   return mutated ? result : channels;
 }
 
-// ── 4. Auth profiles normalization (pure function, no closure) ──
-function secretFieldForMode(mode: string): 'token' | 'apiKey' {
-  return mode === 'token' ? 'token' : 'apiKey';
-}
-
 export function authProfilesForRuntime(
   profiles: Record<string, any> | undefined,
   canonicalize: (id: string) => string,
@@ -156,18 +153,17 @@ export function authProfilesForRuntime(
 
   const out: Record<string, any> = {};
   for (const [k, p] of Object.entries(profiles)) {
-    const mode = p?.mode ?? p?.type ?? 'api_key';
+    const mode = normalizeProviderAuthMode(p?.mode ?? p?.type);
     const secret = p?.apiKey ?? p?.token ?? p?.key;
     const { type: _type, key: _key, ...rest } = (p ?? {}) as Record<string, any>;
     const keyParts = k.split(':');
     const profileName = keyParts.length > 1 ? keyParts.slice(1).join(':') : 'main';
     const provider = canonicalize(p?.provider ?? keyParts[0]);
-    const field = secretFieldForMode(mode);
     out[`${provider}:${profileName}`] = {
       ...rest,
       provider,
       mode,
-      ...(secret ? { [field]: secret } : {}),
+      ...(secret && mode === 'api_key' ? { apiKey: secret } : {}),
     };
   }
   return out;
@@ -179,15 +175,14 @@ export function normalizeAuthProfilesFromDisk(
   if (!profiles) return profiles;
   const out: Record<string, any> = {};
   for (const [k, p] of Object.entries(profiles)) {
-    const mode = p?.mode ?? p?.type ?? 'api_key';
+    const mode = normalizeProviderAuthMode(p?.mode ?? p?.type);
     out[k] = {
       ...p,
       mode,
-      apiKey: mode === 'token' ? undefined : (p?.apiKey ?? p?.key ?? p?.token),
-      token: mode === 'token' ? (p?.token ?? p?.key ?? p?.apiKey) : p?.token,
+      apiKey: mode === 'api_key' ? (p?.apiKey ?? p?.key ?? p?.token) : undefined,
+      token: undefined,
     };
   }
   return out;
 }
-
 

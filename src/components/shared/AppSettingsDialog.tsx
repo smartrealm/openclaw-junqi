@@ -28,6 +28,7 @@ import { SKIN_REGISTRY, type PetSkin } from '@/pet/skins';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { changeLanguage } from '@/i18n';
 import type { AegisTheme } from '@/theme';
+import { APP_LANGUAGE_OPTIONS, type SupportedLanguage } from '@/i18n/languages';
 import { StatusDot } from '@/components/shared/StatusDot';
 import clsx from 'clsx';
 
@@ -133,6 +134,13 @@ function GeneralPanel() {
   const { t } = useTranslation();
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
+  const handleLanguageChange = (lang: SupportedLanguage) => {
+    setLanguage(lang);
+    changeLanguage(lang);
+  };
+  const languageOptions = language === 'ar'
+    ? [...APP_LANGUAGE_OPTIONS, { value: 'ar' as const, label: 'العربية' }]
+    : APP_LANGUAGE_OPTIONS;
   return (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.general', 'General')}</h2>
@@ -140,11 +148,13 @@ function GeneralPanel() {
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{t('settings.language')}</label>
-          <select value={language} onChange={(e) => { setLanguage(e.target.value as 'en'|'zh'|'ar'); changeLanguage(e.target.value as 'en'|'zh'|'ar'); }}
+          <select value={language} onChange={(e) => handleLanguageChange(e.target.value as SupportedLanguage)}
             className="px-3 py-2 rounded-md text-[13px] w-[200px]" style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }}>
-            <option value="en">English</option><option value="zh">中文</option><option value="ar">العربية</option>
+            {languageOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
-          <p className="text-[11px] text-aegis-text-dim mt-1">{t('appSettings.languageHint', 'Reload required for changes to take effect.')}</p>
+          <p className="text-[11px] text-aegis-text-dim mt-1">{t('appSettings.languageHint', 'Applies immediately.')}</p>
         </div>
       </div>
     </div>

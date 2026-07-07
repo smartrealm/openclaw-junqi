@@ -119,10 +119,12 @@ pub async fn toggle_pet_window(app: AppHandle) -> Result<bool, String> {
     if let Some(win) = app.get_webview_window(PET_LABEL) {
         if win.is_visible().unwrap_or(false) {
             let _ = win.hide();
+            let _ = app.emit("pet-visibility", serde_json::json!({ "visible": false }));
             return Ok(false);
         }
         let _ = win.show();
         let _ = win.set_focus();
+        let _ = app.emit("pet-visibility", serde_json::json!({ "visible": true }));
         return Ok(true);
     }
     open_pet_window(app).await?;

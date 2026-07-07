@@ -20,6 +20,13 @@ import {
   MaskedInput,
 } from './components';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
+import {
+  buildGatewayAgentConfigEntry,
+  ensureMainGatewayAgentInList,
+  GATEWAY_AGENT_ID_RE,
+  MAIN_GATEWAY_AGENT_ID,
+  normalizeGatewayAgentId,
+} from '@/utils/gatewayAgentFlow';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -196,7 +203,7 @@ function TextareaField({ value, onChange, placeholder, rows = 3, className }: Te
 // Agent Row (expandable)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MAIN_AGENT_ID = 'main';
+const MAIN_AGENT_ID = MAIN_GATEWAY_AGENT_ID;
 
 interface AgentRowProps {
   agent: AgentConfig;
@@ -416,20 +423,17 @@ function AddAgentModal({ onClose, onAdd, existingIds }: AddAgentModalProps) {
   const [name, setName]   = useState('');
   const [model, setModel] = useState('');
   const trimmedId = id.trim();
-  const normalizedId = trimmedId.toLowerCase();
+  const normalizedId = normalizeGatewayAgentId(trimmedId);
   const isMainId = normalizedId === MAIN_AGENT_ID;
   const hasDuplicateId = existingIds.some((existingId) => existingId.toLowerCase() === normalizedId);
+  const hasInvalidId = !!normalizedId && !GATEWAY_AGENT_ID_RE.test(normalizedId);
 
   const handleAdd = () => {
-    if (!trimmedId) return;
-    if (isMainId || hasDuplicateId) {
+    if (!normalizedId) return;
+    if (isMainId || hasDuplicateId || hasInvalidId) {
       return; // Main agent is always present in the list; do not add duplicate
     }
-    const agent: AgentConfig = {
-      id: trimmedId,
-      name: name.trim() || undefined,
-      model: model.trim() ? { primary: model.trim() } : undefined,
-    };
+    const agent: AgentConfig = buildGatewayAgentConfigEntry({ id: normalizedId, name, model });
     onAdd(agent);
     onClose();
   };
@@ -470,6 +474,12 @@ function AddAgentModal({ onClose, onAdd, existingIds }: AddAgentModalProps) {
               mono
             />
           </FormField>
+          {hasInvalidId && (
+            <div className="flex items-start gap-2 rounded-lg border border-aegis-danger/20 bg-aegis-danger/10 px-3 py-2 text-[11px] leading-relaxed text-aegis-danger">
+              <AlertCircle size={13} className="mt-0.5 shrink-0" />
+              <span>{t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.')}</span>
+            </div>
+          )}
           <FormField label={t('config.agentName')}>
             <TextField
               value={name}
@@ -501,12 +511,14 @@ function AddAgentModal({ onClose, onAdd, existingIds }: AddAgentModalProps) {
           </button>
           <button
             onClick={handleAdd}
-            disabled={!trimmedId || isMainId || hasDuplicateId}
+            disabled={!normalizedId || isMainId || hasDuplicateId || hasInvalidId}
             title={
               isMainId
                 ? t('config.mainAgentReserved', 'Main agent is already in the list')
                 : hasDuplicateId
                   ? t('config.agentIdExists', 'Agent ID already exists')
+                  : hasInvalidId
+                    ? t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.')
                   : undefined
             }
             className={clsx(
@@ -537,18 +549,8 @@ export function AgentsTab({ config, onChange }: AgentsTabProps) {
     name: t('agents.mainAgent', 'Main Agent'),
   };
 
-  const normalizeAgentList = (input: AgentConfig[] | undefined): AgentConfig[] => {
-    const list = Array.isArray(input) ? input : [];
-    const mainInList = list.find((agent) => agent?.id === MAIN_AGENT_ID);
-    const normalizedMain = mainInList
-      ? { ...mainAgentDefault, ...mainInList, id: MAIN_AGENT_ID }
-      : { ...mainAgentDefault };
-    const others = list.filter((agent) => {
-      const agentId = String(agent?.id ?? '').trim();
-      return agentId.length > 0 && agentId !== MAIN_AGENT_ID;
-    });
-    return [normalizedMain, ...others];
-  };
+  const normalizeAgentList = (input: AgentConfig[] | undefined): AgentConfig[] =>
+    ensureMainGatewayAgentInList(input, mainAgentDefault);
 
   const defaults = config.agents?.defaults ?? {};
   const list     = normalizeAgentList(config.agents?.list);

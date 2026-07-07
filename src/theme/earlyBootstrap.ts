@@ -15,9 +15,10 @@
  * `useTheme` hook owns that sync once the app is alive.
  */
 import { applyToDocument } from './apply';
-import { STORAGE_KEY } from './constants';
-import { AEGIS_FONTS_STORAGE_KEYS } from './types';
+import { DEFAULT_SETTING, STORAGE_KEY } from './constants';
+import { AEGIS_FONTS_STORAGE_KEYS, isThemeSetting } from './types';
 import { detectOSPreference, resolveTheme } from './resolver';
+import { applyAccentColor, readPersistedAccentColor } from './accent';
 
 /** Reads localStorage, resolves to a concrete theme, writes data-theme to <html>. Also applies any persisted font families to --font-ui / --font-mono CSS custom properties so the correct fonts are ready before the first paint. Returns the resolved theme so callers can log / inspect it. */
 export function earlyBootstrap(): void {
@@ -28,7 +29,8 @@ export function earlyBootstrap(): void {
     // localStorage unavailable (incognito / sandboxed) — saved stays null
     // and we fall through to the OS preference.
   }
-  const resolved = resolveTheme(saved, detectOSPreference());
+  const setting = isThemeSetting(saved) ? saved : DEFAULT_SETTING;
+  const resolved = resolveTheme(setting, detectOSPreference());
   applyToDocument(resolved);
 
   // ── Apply persisted fonts as CSS custom properties ──────────
@@ -42,6 +44,12 @@ export function earlyBootstrap(): void {
   try {
     const monoFont = localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.monoFont);
     if (monoFont) root.style.setProperty('--font-mono', monoFont);
+  } catch {
+    // localStorage unavailable — skip
+  }
+  try {
+    const accent = readPersistedAccentColor();
+    if (accent) applyAccentColor(accent);
   } catch {
     // localStorage unavailable — skip
   }

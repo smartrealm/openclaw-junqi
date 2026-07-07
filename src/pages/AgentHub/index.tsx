@@ -22,6 +22,12 @@ import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway } from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
 import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
+import {
+  buildGatewayAgentCreatePayload,
+  GATEWAY_AGENT_ID_RE,
+  MAIN_GATEWAY_AGENT_ID,
+  normalizeGatewayAgentId,
+} from '@/utils/gatewayAgentFlow';
 import clsx from 'clsx';
 import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
@@ -113,7 +119,6 @@ function getTreeNodeConfig(id: string): { icon: React.ReactNode; color: string }
 /** Theme-aware primary color — call inside render, not at module scope */
 const mainColor = () => themeHex('primary');
 const formatTokens = (n: number) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
-const AGENT_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 const timeAgo = (ts?: number) => {
   if (!ts) return '—';
@@ -136,10 +141,6 @@ function fmtModel(m: any): string {
   if (typeof m === 'string') return m;
   if (m?.primary) return m.primary;
   return String(m);
-}
-
-function normalizeAgentId(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, '-');
 }
 
 interface NewAgentDraft {
@@ -166,19 +167,6 @@ function formatChannelBinding(t: ReturnType<typeof useTranslation>['t'], binding
   const template = getChannelTemplate(channelId);
   const channelLabel = t(template?.nameKey ?? `config.channel.${channelId}`, channelId);
   return accountId ? `${channelLabel} / ${accountId}` : channelLabel;
-}
-
-function buildAgentCreatePayload(input: NewAgentDraft, defaultWorkspace = '') {
-  const payload: { id: string; name?: string; model?: string; workspace?: string } = {
-    id: normalizeAgentId(input.id),
-  };
-  const name = input.name.trim();
-  const model = input.model.trim();
-  const workspace = input.workspace.trim() || (input.inheritWorkspace ? defaultWorkspace.trim() : '');
-  if (name) payload.name = name;
-  if (model) payload.model = model;
-  if (workspace) payload.workspace = workspace;
-  return payload;
 }
 
 function parseSessions(raw: any[]): SessionInfo[] {
@@ -686,9 +674,9 @@ export function AgentHubPage() {
     }),
     [agents, agentModels, agentExplicitModels, defaultAgentModel]
   );
-  const normalizedNewAgentId = normalizeAgentId(newAgent.id);
-  const newAgentIdExists = !!normalizedNewAgentId && (normalizedNewAgentId === 'main' || agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId));
-  const newAgentIdInvalid = !!normalizedNewAgentId && !AGENT_ID_RE.test(normalizedNewAgentId);
+  const normalizedNewAgentId = normalizeGatewayAgentId(newAgent.id);
+  const newAgentIdExists = !!normalizedNewAgentId && (normalizedNewAgentId === MAIN_GATEWAY_AGENT_ID || agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId));
+  const newAgentIdInvalid = !!normalizedNewAgentId && !GATEWAY_AGENT_ID_RE.test(normalizedNewAgentId);
   const canCreateAgent = connected && !!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists && !creatingAgent;
 
   // Sidebar "在线智能体" click navigates to /agents?agent=<id>. Open that
@@ -721,13 +709,13 @@ export function AgentHubPage() {
 
   const handleCreateAgent = async () => {
     if (creatingAgent) return;
-    const payload = buildAgentCreatePayload(newAgent, defaultAgentWorkspace);
+    const payload = buildGatewayAgentCreatePayload(newAgent, defaultAgentWorkspace);
     if (!payload.id) return;
-    if (!AGENT_ID_RE.test(payload.id)) {
+    if (!GATEWAY_AGENT_ID_RE.test(payload.id)) {
       setAgentFormError(t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'));
       return;
     }
-    const duplicate = agents.some((agent) => agent.id.toLowerCase() === payload.id) || payload.id === 'main';
+    const duplicate = agents.some((agent) => agent.id.toLowerCase() === payload.id) || payload.id === MAIN_GATEWAY_AGENT_ID;
     if (duplicate) {
       setAgentFormError(t('agentHub.addForm.duplicateId', 'This agent ID already exists.'));
       return;
@@ -1128,7 +1116,7 @@ export function AgentHubPage() {
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
                                   <div className="mb-1 text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.agentIdPlaceholder', 'Agent ID *')}</div>
-                                  <input disabled={creatingAgent} placeholder="research-assistant" value={newAgent.id} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, id: e.target.value })); }} onBlur={() => setNewAgent(p => ({ ...p, id: normalizeAgentId(p.id) }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
+                                  <input disabled={creatingAgent} placeholder="research-assistant" value={newAgent.id} onChange={e => { setAgentFormError(null); setNewAgent(p => ({ ...p, id: e.target.value })); }} onBlur={() => setNewAgent(p => ({ ...p, id: normalizeGatewayAgentId(p.id) }))} className="w-full bg-[rgb(var(--aegis-overlay)/0.05)] border border-[rgb(var(--aegis-overlay)/0.1)] rounded-lg px-3 py-2 text-sm text-aegis-text placeholder:text-aegis-text-dim focus:border-aegis-primary/50 focus:outline-none disabled:opacity-50" />
                                 </div>
                                 <div>
                                   <div className="mb-1 text-[10px] font-bold text-aegis-text-muted">{t('agentHub.addForm.namePlaceholder', 'Name')}</div>

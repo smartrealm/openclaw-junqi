@@ -15,3 +15,5 @@ export { detectOSPreference, resolveTheme } from './resolver';
 export { applyTheme, applyToDocument, syncNativeTitleBar } from './apply';
 export { earlyBootstrap } from './earlyBootstrap';
 export { useTheme } from './useTheme';
+export { ACCENT_COLORS, DEFAULT_ACCENT_COLOR, applyAccentColor, isAccentColor, normalizeAccentColor, readPersistedAccentColor } from './accent';
+export type { AccentColor } from './accent';

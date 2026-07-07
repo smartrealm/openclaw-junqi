@@ -72,6 +72,11 @@ if (!('document' in globalThis)) {
     configurable: true,
   });
 }
+if (typeof globalThis.getComputedStyle !== 'function') {
+  globalThis.getComputedStyle = () => ({
+    getPropertyValue: () => '',
+  } as unknown as CSSStyleDeclaration);
+}
 if (!('navigator' in globalThis)) {
   Object.defineProperty(globalThis, 'navigator', {
     value: { userAgent: 'node-test' },

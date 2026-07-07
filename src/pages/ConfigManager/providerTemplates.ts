@@ -6,6 +6,8 @@
 //   openclaw/src/commands/auth-choice-options.ts
 // ═══════════════════════════════════════════════════════════
 
+import type { ProviderAuthMode } from '@/types/providerAuthMode';
+import type { OpenClawApiProtocol } from '@/types/openclawApiProtocol';
 
 export interface ProviderTemplate {
   id: string;
@@ -13,22 +15,16 @@ export interface ProviderTemplate {
   name: string;
   icon: string;
   colorClass: string;
-  authModes: string[];
-  defaultAuthMode: string;
+  authModes: ProviderAuthMode[];
+  defaultAuthMode: ProviderAuthMode;
   envKey: string;
   envKeyAlt?: string[];
   baseUrl?: string;
   /**
    * API protocol — values must be in OPENCLAW_API_PROTOCOLS
    * (see src/types/openclawApiProtocol.ts, owned by JunQi).
-   * The legacy string 'anthropic' is kept as an alias to
-   * 'anthropic-messages' for old saved configs; normalizeApi()
-   * handles the mapping at write time.
    */
-  api?: 'openai-completions' | 'openai-responses' | 'openai-chatgpt-responses'
-      | 'anthropic' | 'anthropic-messages' | 'google-generative-ai'
-      | 'github-copilot' | 'bedrock-converse-stream' | 'ollama'
-      | 'azure-openai-responses';
+  api?: OpenClawApiProtocol;
   popularModels: { id: string; suggestedAlias?: string; supportsImage?: boolean }[];
   docsUrl?: string;
   /** If true, user must supply a URL (like vllm/custom). */
@@ -50,12 +46,12 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     name: 'Anthropic',
     icon: 'A',
     colorClass: 'from-amber-600 to-yellow-700',
-    authModes: ['token', 'api_key'],
+    authModes: ['api_key'],
     defaultAuthMode: 'api_key',
     envKey: 'ANTHROPIC_API_KEY',
     envKeyAlt: ['ANTHROPIC_OAUTH_TOKEN'],
     baseUrl: 'https://api.anthropic.com/v1',
-    api: 'anthropic',
+    api: 'anthropic-messages',
     popularModels: [
       { id: 'anthropic/claude-opus-4-6',   suggestedAlias: 'opus'     },
       { id: 'anthropic/claude-sonnet-4-6', suggestedAlias: 'sonnet'   },
@@ -95,7 +91,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     defaultAuthMode: 'api_key',
     envKey: 'GEMINI_API_KEY',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    api: 'openai-completions',
+    api: 'google-generative-ai',
     popularModels: [
       { id: 'google/gemini-2.5-pro',                suggestedAlias: 'g2.5-pro', supportsImage: true      },
       { id: 'google/gemini-2.5-flash',              suggestedAlias: 'g2.5-flash', supportsImage: true    },
@@ -280,8 +276,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     name: 'Hugging Face',
     icon: '',
     colorClass: 'from-yellow-500 to-amber-600',
-    authModes: ['token'],
-    defaultAuthMode: 'token',
+    authModes: ['api_key'],
+    defaultAuthMode: 'api_key',
     envKey: 'HF_TOKEN',
     envKeyAlt: ['HUGGINGFACE_HUB_TOKEN'],
     baseUrl: 'https://api-inference.huggingface.co',
@@ -359,8 +355,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     name: 'GitHub Copilot',
     icon: '',
     colorClass: 'from-gray-600 to-gray-700',
-    authModes: ['oauth'],
-    defaultAuthMode: 'oauth',
+    authModes: ['oauth_browser'],
+    defaultAuthMode: 'oauth_browser',
     // Priority order from bundled-provider-auth-env-vars.generated.ts
     envKey: 'COPILOT_GITHUB_TOKEN',
     envKeyAlt: ['GH_TOKEN', 'GITHUB_TOKEN'],
@@ -645,11 +641,11 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     name: 'Ollama',
     icon: '🦙',
     colorClass: 'from-stone-600 to-neutral-700',
-    authModes: ['token'],
-    defaultAuthMode: 'token',
+    authModes: ['local'],
+    defaultAuthMode: 'local',
     envKey: 'OLLAMA_API_KEY',
     baseUrl: 'http://localhost:11434',
-    api: 'openai-completions',
+    api: 'ollama',
     popularModels: [
       { id: 'ollama/llama3.2',      suggestedAlias: 'llama'   },
       { id: 'ollama/qwen3:8b',      suggestedAlias: 'qwen'    },
@@ -687,7 +683,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     name: 'Custom',
     icon: '⚙',
     colorClass: 'from-slate-500 to-gray-600',
-    authModes: ['api_key', 'token'],
+    authModes: ['api_key', 'local'],
     defaultAuthMode: 'api_key',
     envKey: 'OPENCLAW_CUSTOM_API_KEY',
     baseUrl: '',

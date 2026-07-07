@@ -796,7 +796,7 @@
     "reconnect": "Reconnect",
     "connectGateway": "Connect to Gateway",
     "toggleTheme": "Toggle Theme",
-    "toggleLanguage": "Switch to Arabic",
+    "toggleLanguage": "Switch language",
     "toggleNotifications": "Toggle Notifications",
     "searchPlaceholder": "Search commands..."
   },
@@ -1672,6 +1672,9 @@
     "apiKeyPlaceholder": "Enter API key...",
     "authModeOption": {
       "api_key": "API Key",
+      "oauth_browser": "Browser OAuth",
+      "oauth_device": "Device Code",
+      "local": "Local",
       "oauth": "OAuth",
       "token": "Token"
     },
@@ -1977,6 +1980,7 @@
     "settingUp": "Setting up JunQi Desktop",
     "subtitle": "Installing required components. This may take a few minutes.",
     "readySubtitle": "Installation and startup are complete. Enter the workspace to continue using JunQi Desktop.",
+    "petReadyHint": "You can enter the workspace now.",
     "enterWorkspace": "Enter workspace",
     "foundOclaw": "OpenClaw found. Checking Gateway status...",
     "modeNative": "Native Install",

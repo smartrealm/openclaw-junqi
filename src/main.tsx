@@ -12,7 +12,20 @@ function showError(title: string, detail: string) {
     `<pre style="color:#f87171;font-size:11px;max-width:600px;white-space:pre-wrap">${detail}</pre>` +
     `</div>`;
 }
-window.addEventListener('error', (e) => showError('JS Error', e.error?.stack || e.message));
+
+function isBenignResizeObserverError(message: unknown): boolean {
+  const text = String(message ?? '');
+  return text === 'ResizeObserver loop completed with undelivered notifications.'
+    || text === 'ResizeObserver loop limit exceeded';
+}
+
+window.addEventListener('error', (e) => {
+  if (isBenignResizeObserverError(e.message)) {
+    e.preventDefault();
+    return;
+  }
+  showError('JS Error', e.error?.stack || e.message);
+});
 window.addEventListener('unhandledrejection', (e) => showError('Promise Rejection', e.reason || String(e.reason)));
 
 // Apply the saved theme SYNCHRONOUSLY before any render so chrome-bg / glass-bg

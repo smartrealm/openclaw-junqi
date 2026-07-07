@@ -7,6 +7,7 @@ import {
   PROVIDER_AUTH_MODES,
   defaultAuthModeFor,
   authModesFor,
+  normalizeProviderAuthMode,
   type ProviderAuthMode,
 } from './providerAuthMode';
 
@@ -101,5 +102,17 @@ describe('authModesFor', () => {
         assert.ok(AUTH_MODE_ORDER.includes(m as ProviderAuthMode), `bad mode: ${m}`);
       }
     }
+  });
+});
+
+describe('normalizeProviderAuthMode', () => {
+  test('migrates legacy ClawX/OpenClaw mode names', () => {
+    assert.equal(normalizeProviderAuthMode('token'), 'api_key');
+    assert.equal(normalizeProviderAuthMode('oauth'), 'oauth_browser');
+  });
+
+  test('keeps current JunQi mode names', () => {
+    assert.equal(normalizeProviderAuthMode('api_key'), 'api_key');
+    assert.equal(normalizeProviderAuthMode('local'), 'local');
   });
 });

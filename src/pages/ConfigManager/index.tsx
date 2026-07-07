@@ -19,6 +19,7 @@ import {
   normalizeModelsProvidersForRuntime,
 } from './runtimeNormalization';
 import { preserveProviderSecretsFromDisk } from './providerSecretResolver';
+import { normalizeProviderAuthMode } from '@/types/providerAuthMode';
 // ModelsTab removed — models are now fetched per-provider from the ProvidersTab
 import { AgentsTab } from './AgentsTab';
 import { ChannelsTab } from './ChannelsTab';
@@ -517,7 +518,7 @@ export function ConfigManagerPage() {
     if (!profiles || Object.keys(profiles).length === 0) return profiles;
     const out: Record<string, any> = {};
     for (const [k, p] of Object.entries(profiles)) {
-      const mode = p?.mode ?? p?.type ?? 'api_key';
+      const mode = normalizeProviderAuthMode(p?.mode ?? p?.type);
       const secret = p?.apiKey ?? p?.token ?? p?.key;
       const { type: _type, key: _key, ...rest } = (p ?? {}) as Record<string, any>;
       const keyParts = k.split(':');
@@ -527,7 +528,7 @@ export function ConfigManagerPage() {
         ...rest,
         provider,
         mode,
-        ...(secret ? (mode === 'token' ? { token: secret } : { apiKey: secret }) : {}),
+        ...(secret && mode === 'api_key' ? { apiKey: secret } : {}),
       };
     }
     return out;
@@ -538,12 +539,12 @@ export function ConfigManagerPage() {
     if (!profiles) return profiles;
     const out: Record<string, any> = {};
     for (const [k, p] of Object.entries(profiles)) {
-      const mode = p?.mode ?? p?.type ?? 'api_key';
+      const mode = normalizeProviderAuthMode(p?.mode ?? p?.type);
       out[k] = {
         ...p,
         mode,
-        apiKey: mode === 'token' ? undefined : (p?.apiKey ?? p?.key ?? p?.token),
-        token: mode === 'token' ? (p?.token ?? p?.key ?? p?.apiKey) : p?.token,
+        apiKey: mode === 'api_key' ? (p?.apiKey ?? p?.key ?? p?.token) : undefined,
+        token: undefined,
       };
     }
     return out;

@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { pomodoroIcon, pomodoroColor } from './pomodoroView';
@@ -12,9 +11,11 @@ import type { PetMenuItem } from './petActions';
 import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { applyTheme } from '@/theme/apply';
+import { applyAccentColor, isAccentColor, readPersistedAccentColor } from '@/theme/accent';
 import { detectOSPreference, resolveTheme } from '@/theme/resolver';
 import { isThemeSetting, STORAGE_KEY as THEME_STORAGE_KEY, type ThemeSetting } from '@/theme';
 import { playPetSfx } from './petSounds';
+import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
@@ -68,11 +69,21 @@ export default function PetWindow() {
   // listener and read by the magnetic-pull RAF loop. Module-level state
   // (the listener may not have fired yet when the effect mounts).
   const dragCursorRef = useRef<null | { x: number; y: number; gx: number; gy: number; win_w: number; win_h: number }>(null);
+  const timeoutsRef = useRef<number[]>([]);
+
+  const defer = (fn: () => void, ms: number) => {
+    const id = window.setTimeout(() => {
+      timeoutsRef.current = timeoutsRef.current.filter((timeoutId) => timeoutId !== id);
+      fn();
+    }, ms);
+    timeoutsRef.current.push(id);
+    return id;
+  };
 
   // ── Theme sync from main window ──
   // The pet window is a separate Tauri window with its own document. Resolve
-  // the persisted ThemeSetting here, including "system", so `themeHex()` and
-  // `var(--aegis-*)` reflect the active palette in this webview too.
+  // the persisted ThemeSetting here, including "system", and mirror the accent
+  // token so SVG/CSS variables reflect the same palette as the main window.
   const theme = useSettingsStore((s) => s.theme);
   // Pull the latest drag state out of the store so we can re-derive the
   // magnetic-pull offsets whenever the cursor moves over the main window.
@@ -83,12 +94,19 @@ export default function PetWindow() {
   useLayoutEffect(() => {
     const applyResolved = (setting: ThemeSetting) => {
       applyTheme(resolveTheme(setting, detectOSPreference()));
+      const accent = readPersistedAccentColor();
+      if (accent) applyAccentColor(accent);
     };
     applyResolved(theme);
 
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== THEME_STORAGE_KEY || !isThemeSetting(event.newValue)) return;
-      applyResolved(event.newValue);
+      if (event.key === THEME_STORAGE_KEY && isThemeSetting(event.newValue)) {
+        applyResolved(event.newValue);
+        return;
+      }
+      if (event.key === 'aegis-accent-color') {
+        if (isAccentColor(event.newValue)) applyAccentColor(event.newValue);
+      }
     };
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
     const onSystemTheme = () => {
@@ -108,6 +126,7 @@ export default function PetWindow() {
     document.body.style.background = 'transparent';
     document.body.style.margin = '0';
     document.body.style.overflow = 'hidden';
+    invoke('set_pet_click_through', { ignore: false }).catch(() => undefined);
 
     if (position && typeof position.x === 'number' && typeof position.y === 'number') {
       invoke('set_pet_position', position).catch(() => undefined);
@@ -119,13 +138,10 @@ export default function PetWindow() {
       })
       .catch(() => undefined);
 
-    const unlistens: UnlistenFn[] = [];
-    listen<PetState>('pet-state', (e) => setState(e.payload))
-      .then((fn) => unlistens.push(fn))
-      .catch(() => undefined);
-    listen<{ x: number; y: number }>('pet-moved', (e) => setPosition(e.payload))
-      .then((fn) => unlistens.push(fn))
-      .catch(() => undefined);
+    const unlistens = [
+      subscribeTauriEvent<PetState>('pet-state', (e) => setState(e.payload)),
+      subscribeTauriEvent<{ x: number; y: number }>('pet-moved', (e) => setPosition(e.payload)),
+    ];
     // CRITICAL: PetWindow is a SEPARATE webview from the main window — its
     // Zustand store is a fresh instance with its own state. The main
     // window's `usePetStore.setDragActive()` call doesn't cross the IPC
@@ -133,36 +149,38 @@ export default function PetWindow() {
     // our local store. Without this listener, dragActive stays false here
     // and the chase loop never starts.
     const petStore = usePetStore.getState();
-    listen<string[]>('aegis:drag-active', (e) => {
-      const paths = e.payload ?? [];
-      dragCursorRef.current = { x: 0, y: 0, gx: window.screenX + 540, gy: window.screenY + 360, win_w: 1080, win_h: 720 };
-      petStore.setDragActive(true, paths);
-      isBeingDraggedOverRef.current = true;
-    }).then((fn) => unlistens.push(fn)).catch(() => undefined);
-    listen<{ x: number; y: number; gx: number; gy: number; win_w: number; win_h: number }>('aegis:drag-move', (e) => {
-      dragCursorRef.current = e.payload;
-      isBeingDraggedOverRef.current = true;
-    }).then((fn) => unlistens.push(fn)).catch(() => undefined);
-    listen('aegis:drag-inactive', () => {
-      dragCursorRef.current = null;
-      petStore.setDragActive(false);
-      petStore.setDragOver(false);
-      window.setTimeout(() => { isBeingDraggedOverRef.current = false; }, 250);
-    }).then((fn) => unlistens.push(fn)).catch(() => undefined);
+    unlistens.push(
+      subscribeTauriEvent<string[]>('aegis:drag-active', (e) => {
+        const paths = e.payload ?? [];
+        dragCursorRef.current = { x: 0, y: 0, gx: window.screenX + 540, gy: window.screenY + 360, win_w: 1080, win_h: 720 };
+        petStore.setDragActive(true, paths);
+        isBeingDraggedOverRef.current = true;
+      }),
+      subscribeTauriEvent<{ x: number; y: number; gx: number; gy: number; win_w: number; win_h: number }>('aegis:drag-move', (e) => {
+        dragCursorRef.current = e.payload;
+        isBeingDraggedOverRef.current = true;
+      }),
+      subscribeTauriEvent('aegis:drag-inactive', () => {
+        dragCursorRef.current = null;
+        petStore.setDragActive(false);
+        petStore.setDragOver(false);
+        defer(() => { isBeingDraggedOverRef.current = false; }, 250);
+      }),
+    );
     // NB: we deliberately do NOT listen for `aegis:file-dropped` here. The
     // swallow emotion (and the leap-to-catch sprint) arrives via the broadcast
     // `pet-state`, and drop also emits `aegis:drag-inactive` which stops the
     // chase — so bumping this window's local swallowTick would be a no-op (the
     // local store isn't read during derivation). The main window owns the drop.
     // Custom asset changed in the main window (upload/clear) → reload from disk.
-    listen('pet-asset-changed', () => {
-      invoke<string | null>('load_pet_asset')
-        .then((url) => setCustomAsset(url ?? null))
-        .catch(() => undefined);
-    })
-      .then((fn) => unlistens.push(fn))
-      .catch(() => undefined);
-    return () => unlistens.forEach((fn) => fn());
+    unlistens.push(
+      subscribeTauriEvent('pet-asset-changed', () => {
+        invoke<string | null>('load_pet_asset')
+          .then((url) => setCustomAsset(url ?? null))
+          .catch(() => undefined);
+      }),
+    );
+    return combineUnlisteners(unlistens);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -186,14 +204,16 @@ export default function PetWindow() {
     const glideTo = (fromX: number, fromY: number, toX: number, toY: number, onDone?: () => void) => {
       const dur = 200;
       const start = performance.now();
+      let raf = 0;
       const step = (now: number) => {
         const t = Math.min(1, (now - start) / dur);
         const e = easeOutCubic(t);
         invoke('set_pet_position', { x: fromX + (toX - fromX) * e, y: fromY + (toY - fromY) * e });
-        if (t < 1) requestAnimationFrame(step);
+        if (t < 1) raf = requestAnimationFrame(step);
         else onDone?.();
       };
-      requestAnimationFrame(step);
+      raf = requestAnimationFrame(step);
+      return () => cancelAnimationFrame(raf);
     };
     const snapToEdge = () => {
       setSnapping(true);
@@ -215,25 +235,21 @@ export default function PetWindow() {
       const d = drag.current;
       if (d?.moved) {
         justDragged.current = true;
-        window.setTimeout(() => {
+        defer(() => {
           justDragged.current = false;
         }, 350);
         snapToEdge();
       }
       drag.current = null;
       setDragging(false);
-      // Restore click-through AFTER release. A short delay keeps the window
-      // accepting cursor events long enough for the snap glide to settle
-      // without the cursor falling through to the desktop underneath.
-      window.setTimeout(() => {
-        invoke('set_pet_click_through', { ignore: true }).catch(() => undefined);
-      }, 600);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      for (const id of timeoutsRef.current) window.clearTimeout(id);
+      timeoutsRef.current = [];
     };
   }, []);
 
@@ -481,19 +497,10 @@ export default function PetWindow() {
       onContextMenu={onContextMenu}
       onMouseEnter={() => {
         setHovered(true);
-        // CRITICAL: petStore defaults clickThrough to true, which makes
-        // Tauri's set_ignore_cursor_events(true) silently swallow every
-        // mouseDown / mouseMove on the pet. Without toggling this on
-        // hover, the user can't even click the pet, let alone drag it.
         invoke('set_pet_click_through', { ignore: false }).catch(() => undefined);
       }}
       onMouseLeave={() => {
         setHovered(false);
-        // Re-arm click-through so the pet never blocks the desktop. A
-        // 200ms grace keeps it interactive during quick cursor slips.
-        window.setTimeout(() => {
-          if (!dragging) invoke('set_pet_click_through', { ignore: true }).catch(() => undefined);
-        }, 200);
       }}
       style={{
         width: '100vw',

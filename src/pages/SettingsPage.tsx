@@ -27,7 +27,10 @@ import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
+import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
+import { ACCENT_COLORS, type AccentColor } from '@/theme';
+import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 
 /** Chinese fallback labels for the skin picker (i18n key: pet.settings.<skin>). */
@@ -191,7 +194,7 @@ export function SettingsPageFull() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleLanguageChange = (lang: 'ar' | 'en' | 'zh') => {
+  const handleLanguageChange = (lang: AppLanguage) => {
     setLanguage(lang);
     changeLanguage(lang);
   };
@@ -410,28 +413,20 @@ export function SettingsPageFull() {
           {t('settings.language')}
         </h3>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => handleLanguageChange('zh')}
-            className={clsx(
-              'flex-1 py-3 rounded-xl text-[14px] font-medium border transition-colors',
-              language === 'zh'
-                ? 'bg-aegis-primary/15 border-aegis-primary/30 text-aegis-primary'
-                : 'border-aegis-border/20 text-aegis-text-dim hover:border-aegis-border/40'
-            )}
-          >
-            简体中文
-          </button>
-          <button
-            onClick={() => handleLanguageChange('en')}
-            className={clsx(
-              'flex-1 py-3 rounded-xl text-[14px] font-medium border transition-colors',
-              language === 'en'
-                ? 'bg-aegis-primary/15 border-aegis-primary/30 text-aegis-primary'
-                : 'border-aegis-border/20 text-aegis-text-dim hover:border-aegis-border/40'
-            )}
-          >
-            English
-          </button>
+          {APP_LANGUAGE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => handleLanguageChange(option.value)}
+              className={clsx(
+                'flex-1 py-3 rounded-xl text-[14px] font-medium border transition-colors',
+                language === option.value
+                  ? 'bg-aegis-primary/15 border-aegis-primary/30 text-aegis-primary'
+                  : 'border-aegis-border/20 text-aegis-text-dim hover:border-aegis-border/40',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </GlassCard>
 
@@ -526,7 +521,7 @@ export function SettingsPageFull() {
           {t('settings.accentColor', 'Accent Color')}
         </h3>
         <div className="flex gap-3 flex-wrap">
-          {(['teal', 'blue', 'purple', 'rose', 'amber', 'emerald'] as const).map((color) => (
+          {ACCENT_COLORS.map((color: AccentColor) => (
             <button
               key={color}
               onClick={() => setAccentColor(color)}
@@ -941,6 +936,8 @@ export function SettingsPageFull() {
 
       {activeTab === 'storage' && (
         <>
+      <GatewayLifecyclePanel variant="full" />
+
       {/* Conversation files — same managed index as File Manager */}
       <GlassCard delay={0.28}>
         <h3 className="text-[14px] font-semibold text-aegis-text mb-1 flex items-center gap-2">

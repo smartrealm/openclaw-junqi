@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Activity, Brain } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Plus } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -829,6 +829,16 @@ export function ChatTabs() {
     reorderTabs(reordered);
   }, [openTabs, reorderTabs]);
 
+  const activeTabIndex = openTabs.indexOf(activeSessionKey);
+  const canSwitchPrev = activeTabIndex > 0;
+  const canSwitchNext = activeTabIndex >= 0 && activeTabIndex < openTabs.length - 1;
+  const switchRelativeTab = useCallback((direction: -1 | 1) => {
+    const index = openTabs.indexOf(useChatStore.getState().activeSessionKey);
+    const nextKey = openTabs[index + direction];
+    if (!nextKey) return;
+    setActiveSession(nextKey);
+  }, [openTabs, setActiveSession]);
+
   // ── New session picker (+ button) ──
   const [showNewPicker, setShowNewPicker] = useState(false);
   const [newSessions, setNewSessions] = useState<Session[]>([]);
@@ -938,7 +948,10 @@ export function ChatTabs() {
 
     useChatStore.getState().setManualModelOverride(inheritedModel);
     void gateway.setSessionModel(inheritedModel, desktopKey)
-      .then(() => window.dispatchEvent(new Event('aegis:refresh')))
+      .then(() => {
+        useChatStore.getState().setSessionModel(desktopKey, inheritedModel);
+        window.dispatchEvent(new Event('aegis:refresh'));
+      })
       .catch((err) => {
         console.warn('[ChatTabs] Failed to inherit desktop session model:', err);
       });
@@ -972,6 +985,11 @@ export function ChatTabs() {
       return () => el.removeEventListener('scroll', updateTooltipPosition);
     }
   }, [showTooltip, updateTooltipPosition]);
+
+  useEffect(() => {
+    const activeEl = scrollContainerRef.current?.querySelector<HTMLElement>('[data-active-session-tab="true"]');
+    activeEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeSessionKey, openTabs]);
 
   const handleMainTabEnter = useCallback(() => {
     tooltipTimeout.current = setTimeout(() => setShowTooltip(true), 400);
@@ -1097,6 +1115,22 @@ export function ChatTabs() {
       role="tablist"
       aria-label={t('chat.sessions', 'Chat sessions')}
     >
+      <button
+        type="button"
+        onClick={() => switchRelativeTab(-1)}
+        disabled={!canSwitchPrev}
+        className={clsx(
+          'h-full w-8 shrink-0 flex items-center justify-center border-r border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
+          canSwitchPrev
+            ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
+            : 'text-aegis-text-dim/35 cursor-not-allowed',
+        )}
+        aria-label={t('chat.previousSession', 'Previous session')}
+        title={t('chat.previousSession', 'Previous session')}
+      >
+        <ChevronLeft size={14} />
+      </button>
+
       {/* ── Scrollable tab strip ── */}
       <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div ref={scrollContainerRef} className="flex-1 flex items-end h-full overflow-x-auto scrollbar-none min-w-0 pl-1">
@@ -1120,11 +1154,12 @@ export function ChatTabs() {
 
           return (
             <SortableTab id={key} disabled={isMain}>
-            <div
-              key={key}
-              className="relative shrink-0"
-              ref={isMain ? mainTabRef : undefined}
-              onMouseEnter={isMain ? handleMainTabEnter : undefined}
+	            <div
+	              key={key}
+	              className="relative shrink-0"
+                  data-active-session-tab={isActive ? 'true' : undefined}
+	              ref={isMain ? mainTabRef : undefined}
+	              onMouseEnter={isMain ? handleMainTabEnter : undefined}
               onMouseLeave={isMain ? handleMainTabLeave : undefined}
               onContextMenu={(e) => handleTabContextMenu(e, key)}
             >
@@ -1241,6 +1276,22 @@ export function ChatTabs() {
       </div>
       </DndContext>
 
+      <button
+        type="button"
+        onClick={() => switchRelativeTab(1)}
+        disabled={!canSwitchNext}
+        className={clsx(
+          'h-full w-8 shrink-0 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
+          canSwitchNext
+            ? 'text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
+            : 'text-aegis-text-dim/35 cursor-not-allowed',
+        )}
+        aria-label={t('chat.nextSession', 'Next session')}
+        title={t('chat.nextSession', 'Next session')}
+      >
+        <ChevronRight size={14} />
+      </button>
+
       {/* Tooltip rendered in portal so it is not clipped by overflow-x-auto */}
       {showTooltip && tooltipPosition &&
         createPortal(
@@ -1320,7 +1371,20 @@ export function ChatTabs() {
         );
       })()}
 
-      <div className="relative shrink-0 w-0 h-full" ref={newPickerRef}>
+      <div className="relative shrink-0 h-full" ref={newPickerRef}>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('aegis:open-new-session-picker'))}
+          className={clsx(
+            'h-full w-9 flex items-center justify-center border-l border-[rgb(var(--aegis-overlay)/0.06)] transition-colors',
+            'text-aegis-text-muted hover:text-aegis-primary hover:bg-aegis-primary/[0.06]',
+            showNewPicker && 'text-aegis-primary bg-aegis-primary/[0.06]',
+          )}
+          aria-label={t('chat.newSession', 'New session')}
+          title={t('chat.newSession', 'New session')}
+        >
+          <Plus size={14} />
+        </button>
         <NewSessionPicker
           open={showNewPicker}
           onClose={() => { setShowNewPicker(false); setPendingPersona(null); }}

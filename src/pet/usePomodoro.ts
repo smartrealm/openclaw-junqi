@@ -2,10 +2,7 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePetStore } from '@/stores/petStore';
 import { notifications } from '@/services/notifications';
-
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { minutesToMs, todayStr } from './pomodoroDomain';
 
 /**
  * Pomodoro timer (runs in the MAIN window). One timer per phase, scheduled to
@@ -41,7 +38,7 @@ export function usePomodoro() {
         const rounds = sameDay ? pomodoro.workRounds + 1 : 1; // day change → new cycle
         const isLong = rounds % 4 === 0;
         const completedToday = sameDay ? pomodoro.completedToday + 1 : 1;
-        const nextMs = (isLong ? pomodoro.longBreakMin : pomodoro.breakMin) * 60_000;
+        const nextMs = minutesToMs(isLong ? pomodoro.longBreakMin : pomodoro.breakMin);
         setPomodoro({
           phase: 'break',
           endsAt: now + nextMs,
@@ -60,7 +57,7 @@ export function usePomodoro() {
         const resetCycle = pomodoro.workRounds > 0 && pomodoro.workRounds % 4 === 0;
         setPomodoro({
           phase: 'work',
-          endsAt: now + pomodoro.workMin * 60_000,
+          endsAt: now + minutesToMs(pomodoro.workMin),
           lastDoneTs: now,
           workRounds: resetCycle ? 0 : pomodoro.workRounds,
         });

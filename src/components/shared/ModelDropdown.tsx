@@ -14,6 +14,7 @@ import { Check, ChevronDown } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
+import { Icon } from '@/components/shared/icons';
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -39,11 +40,12 @@ export function formatModelName(model: string | null | undefined): string {
   return parts[parts.length - 1];
 }
 
-function providerLabel(provider: string): string {
-  if (provider === 'anthropic') return 'Anthropic';
-  if (provider === 'google')    return 'Google';
-  if (provider === 'openai')    return 'OpenAI';
-  return provider;
+export function getProviderDisplayLabel(provider: string): string {
+  return Icon.provider[provider]?.label ?? provider;
+}
+
+function providerIcon(provider: string) {
+  return (Icon.provider[provider] ?? Icon.provider.other).icon;
 }
 
 // ── Props ─────────────────────────────────────────────────
@@ -131,6 +133,11 @@ export function ModelDropdown({
             disabled && 'opacity-60 cursor-not-allowed',
           )}
         >
+          {displayProvider && (
+            <span className="shrink-0 text-aegis-text-dim">
+              {providerIcon(displayProvider)}
+            </span>
+          )}
           <span>{displayShort}</span>
           <ChevronDown size={10} className={clsx('transition-transform duration-150', open && 'rotate-180')} />
         </button>
@@ -152,7 +159,8 @@ export function ModelDropdown({
               <div className="flex items-center gap-2 min-w-0">
                 <span className="truncate">{displayShort}</span>
                 {displayProvider && (
-                  <span className="text-[10px] text-aegis-text-muted font-mono shrink-0">
+                  <span className="inline-flex items-center gap-1 text-[10px] text-aegis-text-muted font-mono shrink-0">
+                    <span className="text-aegis-text-dim">{providerIcon(displayProvider)}</span>
                     {displayProvider}
                   </span>
                 )}
@@ -193,10 +201,11 @@ export function ModelDropdown({
                 {/* Provider label — only when multiple providers */}
                 {providers.length > 1 && (
                   <div className={clsx(
-                    'px-3 py-1 text-[9px] font-semibold uppercase tracking-widest text-aegis-text-dim',
+                    'px-3 py-1 text-[9px] font-semibold uppercase tracking-widest text-aegis-text-dim flex items-center gap-1.5',
                     pi > 0 && 'mt-1 border-t border-[rgb(var(--aegis-overlay)/0.07)] pt-2',
                   )}>
-                    {providerLabel(provider)}
+                    <span className="text-aegis-text-dim">{providerIcon(provider)}</span>
+                    {getProviderDisplayLabel(provider)}
                   </div>
                 )}
                 {grouped[provider].map((m) => {

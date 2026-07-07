@@ -40,21 +40,21 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
   const charCount = content.length;
   const sizeLabel = charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : `${charCount}`;
 
-    // ── Collapsed pill (finalized) — pl-[42px] aligns with bubble left edge
-  // (renderGroup px-1=4px + pl-42px=42px = 46px = avatar(28px)+gap(10px)+mx-1(4px)+px-1(4px))
+    // ── Collapsed pill (finalized) — pl-[46px] aligns with bubble left edge
+  // (renderGroup px-1=4px + pl-46px=46px = avatar(32px)+gap(10px)+mx-1(4px)+px-1(4px))
   if (!isStreaming && !expanded) {
     return (
-      <div className="pl-[42px] py-[2px] min-w-0">
+      <div className="pl-[46px] py-[2px] min-w-0">
         <div
           onClick={() => setExpanded(true)}
           className="inline-flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] rounded-full cursor-pointer
-            border border-violet-400/15 bg-violet-500/[0.04]
-            hover:bg-violet-500/[0.07] transition-colors"
+            border border-aegis-primary/15 bg-aegis-primary/[0.04]
+            hover:bg-aegis-primary/[0.07] transition-colors"
         >
           <span className="w-3 h-3 flex items-center justify-center shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400/55" />
+            <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/55" />
           </span>
-          <span className="text-[11px] font-medium text-violet-300/85">
+          <span className="text-[11px] font-medium text-aegis-primary/85">
             {t('thinking.thoughtProcess', 'Thinking')}
           </span>
           <span className="text-[9px] text-aegis-text-dim/55 font-mono tabular-nums">
@@ -66,15 +66,15 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
     );
   }
 
-  // ── Expanded / Streaming — pl-[42px] aligns with bubble left edge ──
+  // ── Expanded / Streaming — pl-[46px] aligns with bubble left edge ──
   return (
-    <div className="pl-[42px] py-[2px] min-w-0">
+    <div className="pl-[46px] py-[2px] min-w-0">
       <div
         className={clsx(
           'rounded-xl overflow-hidden transition-[border-color,background-color] duration-200',
           isStreaming
-            ? 'border border-violet-500/20 bg-violet-500/[0.04]'
-            : 'border border-violet-400/12 bg-violet-500/[0.02]',
+            ? 'border border-aegis-primary/20 bg-aegis-primary/[0.04]'
+            : 'border border-aegis-primary/12 bg-aegis-primary/[0.02]',
         )}
       >
         {/* Header row */}
@@ -86,16 +86,16 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           )}
         >
           {isStreaming ? (
-            <Loader2 size={12} className="text-violet-400/75 animate-spin shrink-0" />
+            <Loader2 size={12} className="text-aegis-primary/75 animate-spin shrink-0" />
           ) : (
             <span className="w-3 h-3 flex items-center justify-center shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400/45" />
+              <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/45" />
             </span>
           )}
 
           <span className={clsx(
             'text-[11px] font-medium',
-            isStreaming ? 'text-violet-300/75' : 'text-violet-300/70',
+            isStreaming ? 'text-aegis-primary/75' : 'text-aegis-primary/70',
           )}>
             {isStreaming ? t('thinking.thinking', 'Thinking…') : t('thinking.thoughtProcess', 'Thinking')}
           </span>
@@ -114,9 +114,9 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
 
           {isStreaming && (
             <span className="flex items-center gap-[3px] shrink-0">
-              <span className="w-[3px] h-[3px] rounded-full bg-violet-400/45 animate-pulse" />
-              <span className="w-[3px] h-[3px] rounded-full bg-violet-400/45 animate-pulse" style={{ animationDelay: '0.15s' }} />
-              <span className="w-[3px] h-[3px] rounded-full bg-violet-400/45 animate-pulse" style={{ animationDelay: '0.3s' }} />
+              <span className="w-[3px] h-[3px] rounded-full bg-aegis-primary/45 animate-pulse" />
+              <span className="w-[3px] h-[3px] rounded-full bg-aegis-primary/45 animate-pulse" style={{ animationDelay: '0.15s' }} />
+              <span className="w-[3px] h-[3px] rounded-full bg-aegis-primary/45 animate-pulse" style={{ animationDelay: '0.3s' }} />
             </span>
           )}
         </div>
@@ -132,7 +132,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           >
             {content}
             {isStreaming && (
-              <span className="inline-block w-[2px] h-[12px] bg-violet-400/35 ms-0.5 align-text-bottom animate-pulse" />
+              <span className="inline-block w-[2px] h-[12px] bg-aegis-primary/35 ms-0.5 align-text-bottom animate-pulse" />
             )}
           </div>
         </div>

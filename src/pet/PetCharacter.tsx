@@ -12,12 +12,15 @@ import type { PetEmotion } from './pet-states';
 import { EMOTION_CFG } from './emotion-config';
 import { SKIN_REGISTRY, type PetSkin } from './skins';
 import { EFFECT_REGISTRY } from './effects';
-import { themeHex } from '@/utils/theme-colors';
 
 export type { PetSkin };
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const INK = '#1b1b2f';
+const PET_PRIMARY = 'rgb(var(--aegis-primary))';
+const PET_PRIMARY_AURA = 'rgb(var(--aegis-primary) / 0.68)';
+const PET_PRIMARY_AURA_SOFT = 'rgb(var(--aegis-primary) / 0.52)';
+const PET_SPARKLE = 'rgb(var(--aegis-text) / 0.92)';
 const BOX = { transformBox: 'fill-box' as const, transformOrigin: 'center' };
 
 export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', customAsset, dragging = false, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
@@ -37,7 +40,7 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
   dragRotation?: number;
 }) {
   const cfg = EMOTION_CFG[emotion] ?? EMOTION_CFG.idle;
-  const bodyColor = themeHex('primary');
+  const bodyColor = PET_PRIMARY;
   const Effect = EFFECT_REGISTRY[cfg.effect];
 
   const [blink, setBlink] = useState(false);
@@ -121,7 +124,7 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
             inset: 0,
             borderRadius: '50%',
             background: 'transparent',
-            border: '3px solid rgba(78,201,176,0.7)',
+            border: `3px solid ${PET_PRIMARY_AURA}`,
             transform: 'translateY(10px)',
           }}
           initial={{ scale: 0.4, opacity: 0.9 }}
@@ -136,13 +139,13 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
           <svg width="96" height="110" viewBox="0 0 120 140" style={{ overflow: 'visible' }}>
             <motion.circle cx={60} cy={70} r={20}
-              fill="none" stroke="rgba(78,201,176,0.6)" strokeWidth={2}
+              fill="none" stroke={PET_PRIMARY_AURA} strokeWidth={2}
               initial={{ scale: 0.4, opacity: 0.9 }}
               animate={{ scale: [0.4, 1.6, 2.4], opacity: [0.9, 0.4, 0] }}
               transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut', delay: 0 }}
             />
             <motion.circle cx={60} cy={70} r={20}
-              fill="none" stroke="rgba(78,201,176,0.5)" strokeWidth={1.5}
+              fill="none" stroke={PET_PRIMARY_AURA_SOFT} strokeWidth={1.5}
               initial={{ scale: 0.4, opacity: 0.8 }}
               animate={{ scale: [0.4, 1.6, 2.4], opacity: [0.8, 0.3, 0] }}
               transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut', delay: 0.35 }}
@@ -153,7 +156,7 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
               const y = 70 + Math.sin(angle) * 32;
               return (
                 <motion.circle key={i} cx={x} cy={y} r={2.5}
-                  fill="rgba(255,255,255,0.9)"
+                  fill={PET_SPARKLE}
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{ scale: [0, 1, 0], opacity: [0, 1, 0] }}
                   transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15, ease: 'easeOut' }}

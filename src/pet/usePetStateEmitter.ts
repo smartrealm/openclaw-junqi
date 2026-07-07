@@ -86,6 +86,20 @@ function setupStepTitle(app: ReturnType<typeof useAppStore.getState>): string {
   });
 }
 
+function setupPetCopy(app: ReturnType<typeof useAppStore.getState>): { taskLabel: string; message: string } {
+  if (app.setupStep === 'ready') {
+    return {
+      taskLabel: i18n.t('setup.ready', { defaultValue: 'Ready!' }),
+      message: i18n.t('setup.petReadyHint', { defaultValue: 'You can enter the workspace now.' }),
+    };
+  }
+
+  return {
+    taskLabel: setupStepTitle(app),
+    message: localizedSetupMessage(app),
+  };
+}
+
 function setupEmotion(app: ReturnType<typeof useAppStore.getState>): PetState['emotion'] {
   if (app.setupStep === 'error') return 'error';
   if (app.setupStep === 'ready') return 'happy';
@@ -151,11 +165,12 @@ export function usePetStateEmitter() {
       const app = useAppStore.getState();
       if (app.setupComplete !== true) {
         if (!mem.activeStartedAt) mem.activeStartedAt = now;
+        const setupCopy = setupPetCopy(app);
         emitPetState({
           emotion: setupEmotion(app),
           progress: app.setupProgress,
-          message: localizedSetupMessage(app),
-          taskLabel: setupStepTitle(app),
+          message: setupCopy.message,
+          taskLabel: setupCopy.taskLabel,
           elapsedMs: mem.activeStartedAt ? now - mem.activeStartedAt : undefined,
           skin: usePetStore.getState().skin,
           setup: true,

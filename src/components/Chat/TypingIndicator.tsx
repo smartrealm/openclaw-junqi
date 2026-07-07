@@ -62,10 +62,10 @@ export function TypingIndicator() {
   };
 
   return (
-    <div className="group flex gap-2.5 items-start mx-1 mr-4 mb-2 animate-fade-in" dir={dir}>
+    <div className="group flex gap-2.5 items-start mx-1 mr-4 mb-2.5 animate-fade-in" dir={dir}>
       {/* Avatar — identical size/style to MessageBubble assistant avatar */}
-      <div className="w-7 h-7 rounded-full bg-gradient-to-br flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-white/5"
-        style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-accent)))' }}>
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-aegis-primary/20"
+        style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-primary-deep)))' }}>
         <span className="text-[10px] font-bold text-white">{activeAgentLetter}</span>
       </div>
 

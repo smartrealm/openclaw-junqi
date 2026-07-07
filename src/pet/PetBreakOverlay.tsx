@@ -9,6 +9,7 @@ import { X, Coffee, Star, Moon, SkipForward, Sparkles, type LucideIcon } from 'l
 import { useTranslation } from 'react-i18next';
 import { usePetStore } from '@/stores/petStore';
 import { PetCharacter } from './PetCharacter';
+import { minutesToMs } from './pomodoroDomain';
 
 function fmtClock(ms: number): string {
   const clamped = Math.max(0, ms);
@@ -69,7 +70,7 @@ export function PetBreakOverlay() {
   }, [isBreak, pomodoro.endsAt, pomodoro.paused, pomodoro.pausedRemainingMs]);
 
   const isLongBreak = pomodoro.workRounds > 0 && pomodoro.workRounds % 4 === 0;
-  const totalMs     = (isLongBreak ? pomodoro.longBreakMin : pomodoro.breakMin) * 60_000;
+  const totalMs     = minutesToMs(isLongBreak ? pomodoro.longBreakMin : pomodoro.breakMin);
   const progressPct = totalMs > 0 ? Math.min(100, ((totalMs - remainingMs) / totalMs) * 100) : 0;
 
   const skipBreak = () => {
@@ -77,7 +78,7 @@ export function PetBreakOverlay() {
     const resetCycle = pomodoro.workRounds > 0 && pomodoro.workRounds % 4 === 0;
     setPomodoro({
       phase: 'work',
-      endsAt: now + pomodoro.workMin * 60_000,
+      endsAt: now + minutesToMs(pomodoro.workMin),
       lastDoneTs: now,
       workRounds: resetCycle ? 0 : pomodoro.workRounds,
     });

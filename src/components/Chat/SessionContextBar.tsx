@@ -36,7 +36,7 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [switching, setSwitching] = useState(false);
-  const { setManualModelOverride, manualModelOverride, availableModels, addMessage } = useChatStore();
+  const { setManualModelOverride, setSessionModel, manualModelOverride, availableModels, addMessage } = useChatStore();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const effectiveModel = manualModelOverride ?? currentModel;
 
@@ -46,6 +46,7 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
     try {
       const sessionKey = activeSessionKey || 'agent:main:main';
       await gateway.setSessionModel(modelId, sessionKey);
+      setSessionModel(sessionKey, modelId);
       setManualModelOverride(modelId);
       persistSessionModelPreference(sessionKey, modelId);
       // Drop a system notice into the chat so the switch is visible in-stream.

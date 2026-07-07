@@ -37,7 +37,10 @@ export function applyToDocument(theme: AegisTheme): void {
 
   // Defer un-marking to the next frame so the new styles paint without
   // animation, then transitions resume on subsequent user interactions.
-  requestAnimationFrame(() => {
+  const schedule = typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame
+    : (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 16);
+  schedule(() => {
     html.classList.remove(SWITCHING_CLASS);
   });
 }

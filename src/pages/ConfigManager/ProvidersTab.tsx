@@ -6,8 +6,9 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertCircle, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Sparkles, Box } from 'lucide-react';
+import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertCircle, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film } from 'lucide-react';
 import clsx from 'clsx';
+import { Icon } from '@/components/shared/icons';
 import type {
   GatewayRuntimeConfig,
   AuthProfile,
@@ -35,6 +36,7 @@ import {
 } from '@/generated/mediaCatalog.generated';
 import { resolveProviderSecret, buildProviderSecretPatch, diagnoseProviders } from './providerSecretResolver';
 import { Badge, StatusDot } from '@/components/shared/badge';
+import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthMode';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider test: try GET /models first; if 404, fallback to POST /chat/completions
@@ -64,6 +66,8 @@ function buildTestHeaders(tmpl: ProviderTemplate | undefined, apiKey: string): R
   if (tmpl?.id === 'anthropic') {
     headers['x-api-key'] = apiKey;
     headers['anthropic-version'] = '2023-06-01';
+  } else if (tmpl?.id === 'google') {
+    // Gemini API authenticates with ?key=... on the URL, not a Bearer token.
   } else {
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
@@ -101,7 +105,7 @@ export async function testProviderConnection(
 
     // 404 on /models → fallback: POST /chat/completions
     // Anthropic 和 anthropic-messages（MiniMax 等兼容 provider）均不走 fallback
-    if (tmpl?.api === 'anthropic' || tmpl?.api === 'anthropic-messages') {
+    if (tmpl?.api === 'anthropic-messages') {
       const text = await res.text();
       const short = text ? text.slice(0, 120).replace(/\s+/g, ' ') : '';
       return { ok: false, message: `404 ${res.statusText}${short ? ` — ${short}` : ''}` };
@@ -248,6 +252,10 @@ function stripProviderNamespace(providerId: string, modelRef: string): string {
 function hasProviderConfigApiKey(value: unknown): boolean {
   if (typeof value === 'string') return value.trim().length > 0;
   return value != null;
+}
+
+function authModeNeedsApiKey(mode: unknown): boolean {
+  return AUTH_MODE_INFO[normalizeProviderAuthMode(mode)].hasApiKeyField;
 }
 
 function deriveProviderApiKeyEnvKey(providerId: string, tmpl?: ProviderTemplate): string {
@@ -873,27 +881,19 @@ function maskPreviewSecrets(value: any, path = ''): any {
 // Provider Icon
 // ─────────────────────────────────────────────────────────────────────────────
 
-function resolveProviderIcon(providerId: string): React.ReactNode {
-  const id = providerId.toLowerCase();
-  if (id === 'anthropic') return <Sparkles size={14} strokeWidth={1.75} />;
-  if (id === 'openai' || id === 'xai') return <Sparkles size={14} strokeWidth={1.75} />;
-  if (id === 'ollama') return <Box size={14} strokeWidth={1.75} />;
-  return null;
-}
-
 function ProviderIcon({ providerId, size = 'md' }: { providerId: string; size?: 'sm' | 'md' }) {
   const tmpl = getTemplateById(providerId);
+  const providerIcon = Icon.provider[providerId] ?? Icon.provider[normalizeProviderIdForCatalog(providerId)] ?? Icon.provider.other;
   const sizeClass = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm';
-  const icon = (tmpl?.icon && tmpl.icon.trim()) ? tmpl.icon : resolveProviderIcon(providerId);
   return (
     <div
       className={clsx(
-        'flex items-center justify-center rounded-lg font-black text-aegis-btn-primary-text flex-shrink-0',
+        'flex items-center justify-center rounded-lg font-semibold text-aegis-btn-primary-text flex-shrink-0',
         `bg-gradient-to-br ${tmpl?.colorClass ?? 'from-slate-500 to-gray-600'}`,
         sizeClass
       )}
     >
-      {icon ?? providerId[0]?.toUpperCase() ?? '?'}
+      {providerIcon.icon}
     </div>
   );
 }
@@ -1067,13 +1067,13 @@ function ProfileRow({
 
   // ── Inline edit state ──
   const [localProfile, setLocalProfile] = useState<string>(profile.profileName ?? profileKey);
-  const [localMode, setLocalMode]       = useState<string>(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode ?? 'api_key');
+  const [localMode, setLocalMode]       = useState<string>(normalizeProviderAuthMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode));
   const [apiKeyInput, setApiKeyInput]   = useState('');
   const [apiKeySaved, setApiKeySaved]   = useState(false);
 
   // Sync local state when prop changes (e.g. after backup restore)
   useEffect(() => { setLocalProfile(profile.profileName ?? profileKey); }, [profile.profileName, profileKey]);
-  useEffect(() => { setLocalMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode ?? 'api_key'); }, [profile.mode, (profile as any).type, tmpl?.defaultAuthMode]);
+  useEffect(() => { setLocalMode(normalizeProviderAuthMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode)); }, [profile.mode, (profile as any).type, tmpl?.defaultAuthMode]);
 
   const updateProfile = (patch: Partial<AuthProfile>) => {
     onChange((prev) => {
@@ -2250,7 +2250,7 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
     profile: {
       provider: effectiveProviderId,
       mode: authMode,
-      ...(authMode === 'token' ? { token: apiKey } : { apiKey }),
+      ...(authModeNeedsApiKey(authMode) && apiKey.trim() ? { apiKey } : {}),
     } satisfies AuthProfile,
     providerConfig: (
       isCustomLike ||
@@ -2313,10 +2313,10 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
   const effectiveBaseUrl = baseUrl.trim() || (tmpl.baseUrl ?? '').trim();
   const canTestConnection =
     effectiveBaseUrl &&
-    authMode !== 'oauth' &&
+    authModeNeedsApiKey(authMode) &&
     (isCustomLike ||
       tmpl.api === 'openai-completions' ||
-      tmpl.api === 'anthropic' ||
+      tmpl.api === 'google-generative-ai' ||
       tmpl.api === 'anthropic-messages');
 
   const testConnection = async () => {
@@ -2396,7 +2396,7 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
     let cancelled = false;
     if (
       !effectiveBaseUrl ||
-      authMode === 'oauth' ||
+      !authModeNeedsApiKey(authMode) ||
       !apiKey.trim() ||
       !isCustomLike
     ) {
@@ -2592,7 +2592,7 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
           </label>
           <select
             value={authMode}
-            onChange={(e) => setAuthMode(e.target.value)}
+            onChange={(e) => setAuthMode(normalizeProviderAuthMode(e.target.value))}
             className={clsx(
               'bg-aegis-menu-bg border border-aegis-menu-border rounded-lg px-3 py-2',
               'text-aegis-text text-sm outline-none focus:border-aegis-primary',
@@ -2606,7 +2606,7 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
             ))}
           </select>
         </div>
-        {authMode !== 'oauth' && (
+        {authModeNeedsApiKey(authMode) && (
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
               {t('config.apiKey')}
@@ -3177,7 +3177,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                 'bg-pink-500/10 border border-pink-500/20'
               )}
             >
-              🎬
+              <Film size={14} strokeWidth={1.75} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">

@@ -240,6 +240,21 @@ const updateSession = (
   updater: (session: Session) => Session,
 ): Session[] => sessions.map((session) => (session.key === key ? updater(session) : session));
 
+const upsertSession = (
+  sessions: Session[],
+  key: string,
+  build: (session: Session) => Session,
+): Session[] => {
+  let found = false;
+  const next = sessions.map((session) => {
+    if (session.key !== key) return session;
+    found = true;
+    return build(session);
+  });
+  if (found) return next;
+  return [...next, build({ key, label: key })];
+};
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool' | 'compaction';
@@ -367,6 +382,8 @@ interface ChatState {
   addLocalSession: (session: Session) => void;
   /** Update a single session's label locally without a full sessions.list refetch. */
   setSessionLabel: (key: string, label: string) => void;
+  /** Update a single session's model locally after sessions.patch succeeds. */
+  setSessionModel: (key: string, model: string | null) => void;
   /** Pin/unpin a session. Pinned sessions surface at the top of the
    *  sidebar above the active/recent sections. Pure local state — no
    *  backend round-trip. */
@@ -1115,6 +1132,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     sessions: updateSession(state.sessions, key, (session) =>
       session.label === label ? session : { ...session, label },
     ),
+  })),
+
+  /** Locally apply a model switch without waiting for sessions.list. */
+  setSessionModel: (key, model) => set((state) => ({
+    sessions: upsertSession(state.sessions, key, (session) =>
+      session.model === model ? session : { ...session, model },
+    ),
+    ...(state.activeSessionKey === key ? { currentModel: model } : {}),
   })),
 
   togglePinSession: (key) => set((state) => ({

@@ -15,6 +15,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { gateway } from '@/services/gateway';
 import { changeLanguage } from '@/i18n';
+import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
 import clsx from 'clsx';
 
@@ -110,8 +111,8 @@ export function CommandPalette() {
     }},
 
     // Settings
-    { id: 'set-lang', icon: Globe, name: t('palette.toggleLanguage'), keywords: ['language', 'لغة', 'english', 'عربي'], action: () => {
-      const newLang = language === 'ar' ? 'en' : 'ar';
+    { id: 'set-lang', icon: Globe, name: t('palette.toggleLanguage'), keywords: ['language', '中文', 'english'], action: () => {
+      const newLang = nextPrimaryLanguage(language);
       setLanguage(newLang);
       changeLanguage(newLang);
     }},

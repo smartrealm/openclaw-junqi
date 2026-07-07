@@ -249,7 +249,22 @@ export function useSetupFlow(
           ? String(t(key as string, { defaultValue: message, ...setupProgressI18nParams(key, message) }))
           : "";
         const display = key && translated !== key && !translated.includes("{{") ? translated : message;
-        report(display, p != null ? Math.round(p * 100) : undefined);
+        const nextProgress = p != null ? Math.round(p * 100) : undefined;
+
+        // ClawX-style setup keeps the primary onboarding copy coarse and calm.
+        // Gateway preparation emits useful diagnostics, but those belong in the
+        // activity log / current step detail rather than replacing the main
+        // guide text with internal phrases like "detect/connect/sync runtime".
+        const isGatewayDiagnostic =
+          step === "gateway" && typeof key === "string" && key.startsWith("setup.gateway.");
+        if (isGatewayDiagnostic) {
+          if (typeof nextProgress === "number") {
+            setProgress(nextProgress);
+            setSetupStatus(t("setup.preparingGateway"), nextProgress);
+          }
+        } else {
+          report(display, nextProgress);
+        }
         // Map Rust step names to our step IDs
         const stepMap: Record<string, string> = {
           node: "node", git: "git", openclaw: "openclaw",

@@ -1,7 +1,6 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { HashRouter, Routes, Route } from 'react-router-dom';
-import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { AppLayout } from '@/components/Layout/AppLayout';
@@ -62,6 +61,7 @@ import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
 import { usePomodoro } from '@/pet/usePomodoro';
 import { usePetActions } from '@/pet/usePetActions';
 import { usePetShortcuts } from '@/pet/usePetShortcuts';
+import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 
 const SESSION_MODEL_PREFS_KEY = 'aegis:session-model-prefs';
 // User-renamed session labels live in localStorage under
@@ -146,12 +146,8 @@ export default function App() {
   // when the user leaves the window or releases the payload.
   const dragSfxStop = useRef<null | (() => void)>(null);
   useEffect(() => {
-    const unlistenDrop: { current: null | (() => void) } = { current: null };
-    const unlistenEnter: { current: null | (() => void) } = { current: null };
-    const unlistenLeave: { current: null | (() => void) } = { current: null };
-    const unlistenOver: { current: null | (() => void) } = { current: null };
-    (async () => {
-      unlistenDrop.current = await listen<string[]>('aegis:file-dropped', async (e) => {
+    const unlisten = combineUnlisteners([
+      subscribeTauriEvent<string[]>('aegis:file-dropped', async (e) => {
         console.log('[aegis] file-dropped', e.payload);
         const paths = e.payload ?? [];
         if (paths.length === 0) return;
@@ -194,8 +190,8 @@ export default function App() {
         usePetStore.getState().bumpSwallowTick();
         usePetStore.getState().setDragActive(false);
         setDraggingOver(false);
-      });
-      unlistenEnter.current = await listen<string[]>('aegis:drag-active', (e) => {
+      }),
+      subscribeTauriEvent<string[]>('aegis:drag-active', (e) => {
         console.log('[aegis] drag-active', e.payload);
         const paths = e.payload ?? [];
         setDraggingOver(true);
@@ -206,8 +202,8 @@ export default function App() {
         // tear it down cleanly.
         dragSfxStop.current?.();
         dragSfxStop.current = playPetSfx('drag', useSettingsStore.getState().soundEnabled) ?? null;
-      });
-      unlistenLeave.current = await listen('aegis:drag-inactive', () => {
+      }),
+      subscribeTauriEvent('aegis:drag-inactive', () => {
         console.log('[aegis] drag-inactive');
         setDraggingOver(false);
         setDraggedPaths([]);
@@ -215,19 +211,16 @@ export default function App() {
         usePetStore.getState().setDragOver(false);
         dragSfxStop.current?.();
         dragSfxStop.current = null;
-      });
+      }),
       // Cursor is hovering directly over the pet during the drag — flip it into
       // "overdrag" (mouth opens, cheeks blush). Rust emits the boolean on every
       // Over event, so moving off the pet falls back to plain `drag`.
-      unlistenOver.current = await listen<boolean>('aegis:drag-over-main', (e) => {
+      subscribeTauriEvent<boolean>('aegis:drag-over-main', (e) => {
         usePetStore.getState().setDragOver(e.payload ?? false);
-      });
-    })();
+      }),
+    ]);
     return () => {
-      unlistenDrop.current?.();
-      unlistenEnter.current?.();
-      unlistenLeave.current?.();
-      unlistenOver.current?.();
+      unlisten();
       dragSfxStop.current?.();
       dragSfxStop.current = null;
     };
@@ -242,6 +235,7 @@ export default function App() {
     markSessionCompleted,
     setSessions,
     setAvailableModels,
+    setSessionModel: setLocalSessionModel,
   } = useChatStore();
 
   // ── Auto-Pairing State ──
@@ -351,9 +345,10 @@ export default function App() {
       const targetModel = persistedStillAvailable ? persistedModel! : models[0].id;
       if (targetModel === persistedModel) return;
 
-      state.setManualModelOverride(targetModel);
       try {
         await gateway.setSessionModel(targetModel, sessionKey);
+        state.setSessionModel(sessionKey, targetModel);
+        state.setManualModelOverride(targetModel);
         setSessionModelPref(sessionKey, targetModel);
         setTimeout(() => void loadSessions(), 500);
       } catch (err) { console.warn('[Models] Failed to auto-select model:', err); }
@@ -782,10 +777,17 @@ export default function App() {
       const providerChanged = detail.providerChanged === true;
       if (typeof primaryModel === 'string' && primaryModel.trim()) {
         const st = useChatStore.getState();
-        st.setManualModelOverride(primaryModel.trim());
         const key = st.activeSessionKey || 'agent:main:main';
-        setSessionModelPref(key, primaryModel.trim());
-        void gateway.setSessionModel(primaryModel.trim(), key).catch(() => {});
+        const model = primaryModel.trim();
+        void gateway.setSessionModel(model, key)
+          .then(() => {
+            st.setManualModelOverride(model);
+            setLocalSessionModel(key, model);
+            setSessionModelPref(key, model);
+          })
+          .catch((err) => {
+            console.warn('[Models] Failed to apply saved primary model to active session:', err);
+          });
       }
       if (providerChanged) {
         try { gateway.disconnect(); } catch {}

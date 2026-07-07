@@ -474,42 +474,28 @@ function stripInlineCodeTicks(md: string): string {
     return () => clearInterval(timer);
   }, [isEmptyAssistantStreaming, block.timestamp]);
 
-  // ── Avatar gradient per agent ──
-  const avatarGradient = (() => {
-    const idx = activeAgentId.charCodeAt(0) % 5;
-    const gradients = [
-      'from-violet-500 to-purple-700',
-      'from-blue-500 to-cyan-600',
-      'from-emerald-500 to-teal-600',
-      'from-amber-500 to-orange-600',
-      'from-rose-500 to-pink-600',
-    ];
-    return gradients[idx];
-  })();
-
   return (
     <div
-      className={clsx('group flex gap-2.5 items-start mx-1 mr-4 mb-2', isUser ? 'flex-row-reverse' : '')}
+      className={clsx('group flex gap-2.5 items-start mx-1 mr-4 mb-2.5', isUser ? 'flex-row-reverse' : '')}
       dir={dir}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}>
 
       {/* ── Avatar ── */}
       {isUser ? (
-        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
+        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5
           bg-aegis-primary/15 border border-aegis-primary/25">
-          <User size={13} className="text-aegis-primary" />
+          <User size={14} className="text-aegis-primary" />
         </div>
       ) : (
-        <div className={clsx(
-          'w-7 h-7 rounded-full bg-gradient-to-br flex items-center justify-center shrink-0 mt-0.5',
-          'shadow-sm ring-1 ring-white/5',
-          avatarGradient,
-        )}>
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-aegis-primary/20"
+          style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-primary-deep)))' }}
+        >
           {activeAgentName === 'Claude Code' ? (
-            <Sparkles size={13} className="text-white" />
+            <Sparkles size={14} className="text-white" />
           ) : activeAgentName === 'Codex' ? (
-            <Bot size={13} className="text-white" />
+            <Bot size={14} className="text-white" />
           ) : (
             <span className="text-[10px] font-bold text-white">{activeAgentLetter}</span>
           )}
@@ -530,7 +516,7 @@ function stripInlineCodeTicks(md: string): string {
             ? 'bg-transparent shadow-none p-0 pl-0 pr-0 py-0'
             : isUser
               ? 'bg-aegis-primary/[0.10] border border-aegis-primary/20 shadow-sm'
-              : 'bg-[rgb(var(--aegis-overlay)/0.03)] hover:bg-[rgb(var(--aegis-overlay)/0.06)] border border-[rgb(var(--aegis-overlay)/0.06)]',
+              : 'bg-[rgb(var(--aegis-primary)/0.035)] hover:bg-[rgb(var(--aegis-primary)/0.055)] border border-aegis-primary/10 shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.12)]',
           block.isStreaming && !isEmptyAssistantStreaming && 'ring-1 ring-aegis-primary/30',
         )} style={{ width: 'auto' }}>
 

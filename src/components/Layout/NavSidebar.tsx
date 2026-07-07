@@ -7,7 +7,7 @@ import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Cal
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { useChatStore } from '@/stores/chatStore';
+import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway } from '@/services/gateway';
@@ -17,6 +17,8 @@ import { resolveTab, type SidebarTab } from './tab-utils';
 import {
   bucketSessionsByActivity,
   isEmptyTransientSession,
+  isSessionActive,
+  sessionActivityTime,
   sessionTitle,
   type SessionBucketKey,
 } from './sidebarUtils';
@@ -76,7 +78,8 @@ function parseSkillStatus(result: any): Array<[string, { name: string; enabled: 
   return entries;
 }
 
-function sessionAgentLabel(sessionKey: string): string {
+function sessionAgentId(session: Session, sessionKey: string): string {
+  if (session.agentId) return session.agentId;
   const parts = String(sessionKey || '').split(':');
   if (parts[0] !== 'agent') return 'main';
   return parts[1] || 'main';
@@ -98,6 +101,24 @@ function sessionChannelLabel(channel?: string | null): string | null {
   return labels[normalized] ?? channel;
 }
 
+function formatSidebarTime(timestampMs: number): string {
+  if (!timestampMs) return '';
+  const date = new Date(timestampMs);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const sameDay = now.getFullYear() === date.getFullYear()
+    && now.getMonth() === date.getMonth()
+    && now.getDate() === date.getDate();
+  if (sameDay) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+}
+
+function compactMeta(value: string, max = 22): string {
+  return value.length > max ? `${value.slice(0, max - 1).trim()}…` : value;
+}
+
 function cleanupEmptyActiveSession(nextSessionKey?: string): boolean {
   const state = useChatStore.getState();
   const key = state.activeSessionKey;
@@ -112,19 +133,25 @@ function cleanupEmptyActiveSession(nextSessionKey?: string): boolean {
 // ═══════════════════════════════════════════════════════════
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
-function SessionRowItem({ sessionKey, currentTitle, isActive, channel }: {
+function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
+  session: Session;
   sessionKey: string;
   currentTitle: string;
   isActive: boolean;
-  channel?: string | null;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const agents = useGatewayDataStore((st) => (st as any).agents) ?? [];
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(currentTitle);
   const [renamingInFlight, setRenamingInFlight] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const channelLabel = sessionChannelLabel(channel);
+  const agentId = sessionAgentId(session, sessionKey);
+  const agentName = agents.find((agent: any) => agent?.id === agentId)?.name || agentId;
+  const agentLabel = compactMeta(agentName || t('agents.mainAgent', 'Main Agent'));
+  const isRunning = isSessionActive(session);
+  const channelLabel = sessionChannelLabel(session.channel ?? session.lastChannel ?? null);
+  const timeLabel = formatSidebarTime(sessionActivityTime(session));
 
   const goSession = () => {
     cleanupEmptyActiveSession(sessionKey);
@@ -203,47 +230,90 @@ function SessionRowItem({ sessionKey, currentTitle, isActive, channel }: {
 
   return (
     <div
-      className="group/session relative mx-2"
+      className="group/session relative mx-2 mb-1"
       onDoubleClick={(e) => { e.stopPropagation(); startRename(); }}
     >
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={goSession}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            goSession();
+          }
+        }}
         className={clsx(
-          'flex w-full items-center gap-2 rounded-lg border-l-2 px-2.5 py-2 text-left transition-colors',
-          'hover:bg-aegis-hover/30',
+          'flex w-full cursor-pointer items-start gap-2.5 rounded-lg border px-2.5 py-2.5 text-left transition-colors',
+          'hover:border-aegis-border/70 hover:bg-aegis-hover/25',
           isActive
-            ? 'border-l-aegis-primary bg-aegis-primary/[0.14] text-aegis-text'
-            : 'border-l-transparent text-aegis-text-secondary',
+            ? 'border-aegis-primary/40 bg-aegis-primary/[0.10] text-aegis-text shadow-[inset_2px_0_0_rgb(var(--aegis-primary))]'
+            : 'border-transparent text-aegis-text-secondary',
         )}
-      >
-        <span className="shrink-0 rounded-full bg-aegis-surface px-2 py-0.5 text-[10.5px] font-semibold text-aegis-text-dim">
-          {sessionAgentLabel(sessionKey)}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{currentTitle}</span>
-        {channelLabel && (
-          <span className="max-w-[52px] shrink-0 truncate rounded bg-aegis-primary/[0.10] px-1.5 py-0.5 text-[10.5px] font-medium text-aegis-primary">
-            {channelLabel}
+        >
+        <span
+          className={clsx(
+            'mt-[7px] h-2 w-2 shrink-0 rounded-full',
+            isRunning ? 'bg-aegis-success shadow-[0_0_0_3px_rgb(var(--aegis-success)/0.12)]' : isActive ? 'bg-aegis-primary' : 'bg-aegis-text-dim/35',
+          )}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className={clsx(
+              'min-w-0 flex-1 truncate text-[13px] font-medium leading-5 tracking-normal',
+              isActive ? 'text-aegis-text' : 'text-aegis-text-secondary',
+            )}>
+              {currentTitle}
+            </span>
+            {isRunning && (
+              <span className="shrink-0 rounded-full bg-aegis-success/10 px-1.5 py-0.5 text-[10px] font-semibold leading-3 text-aegis-success">
+                {t('sessions.statusRunning', 'Running')}
+              </span>
+            )}
           </span>
-        )}
-      </button>
-      <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/session:opacity-100">
+          <span className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-4 text-aegis-text-dim">
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-aegis-overlay/[0.035] px-1.5 py-0.5">
+              <Bot size={10.5} className="shrink-0 opacity-70" />
+              <span className="truncate">{agentLabel}</span>
+            </span>
+            {channelLabel && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-aegis-primary/[0.08] px-1.5 py-0.5 text-aegis-primary/90">
+                <MessageSquare size={10.5} className="shrink-0 opacity-75" />
+                <span className="truncate">{compactMeta(channelLabel, 10)}</span>
+              </span>
+            )}
+            {timeLabel && (
+              <span className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-aegis-text-dim/80">
+                <Clock size={10.5} className="shrink-0 opacity-65" />
+                <span>{timeLabel}</span>
+              </span>
+            )}
+          </span>
+        </span>
+        <span className={clsx(
+          'relative z-10 ml-1 flex shrink-0 items-center gap-0.5 rounded-md bg-aegis-surface/80 opacity-0 transition-opacity',
+          'group-hover/session:opacity-100 group-focus-within/session:opacity-100',
+        )}>
         <button
           type="button"
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
           onClick={(e) => { e.stopPropagation(); startRename(); }}
-          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-surface hover:text-aegis-text"
+          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover/50 hover:text-aegis-text"
           title={t('chat.renameSession', 'Rename session')}
         >
           <Pencil size={12} />
         </button>
         <button
           type="button"
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
           onClick={(e) => { e.stopPropagation(); handleDelete(); }}
           className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400"
           title={t('chat.deleteSession', 'Delete session')}
         >
           <Trash2 size={12} />
         </button>
+        </span>
       </div>
     </div>
   );
@@ -292,9 +362,8 @@ function WorkbenchPanel() {
   }, [activeKey, buckets]);
 
   const renderRow = (sx: typeof visibleSessions[number]) => (
-    <SessionRowItem key={sx.key} sessionKey={sx.key}
-      currentTitle={sessionTitle(sx, firstUserByKey[sx.key])} isActive={sx.key === activeKey}
-      channel={(sx as any).channel ?? (sx as any).lastChannel ?? null} />
+    <SessionRowItem key={sx.key} session={sx} sessionKey={sx.key}
+      currentTitle={sessionTitle(sx, firstUserByKey[sx.key])} isActive={sx.key === activeKey} />
   );
 
   const toggleBucket = (key: SessionBucketKey) => {
@@ -391,7 +460,7 @@ function WorkbenchPanel() {
         })}
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0 px-1">
         {visibleSessions.length === 0 && (
           <div className="px-4 py-3 text-[13px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
         )}
@@ -400,11 +469,11 @@ function WorkbenchPanel() {
           if (bucket.sessions.length === 0) return null;
           const isOpen = expandedBuckets[bucket.key] ?? false;
           return (
-            <div key={bucket.key} className="mb-1">
+            <div key={bucket.key} className="mb-2">
               <button
                 type="button"
                 onClick={() => toggleBucket(bucket.key)}
-                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[12px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim transition-colors hover:text-aegis-text-secondary"
+                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-normal text-aegis-text-dim transition-colors hover:text-aegis-text-secondary"
               >
                 {isOpen
                   ? <ChevronDown size={11} className="opacity-60" />

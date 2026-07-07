@@ -14,6 +14,11 @@ export type ProviderAuthMode =
   | 'oauth_browser'  // Browser-OAuth (OpenAI ChatGPT login)
   | 'local';         // Local server (Ollama, no key)
 
+const LEGACY_PROVIDER_AUTH_MODE_MIGRATIONS = {
+  token: 'api_key',
+  oauth: 'oauth_browser',
+} as const satisfies Record<string, ProviderAuthMode>;
+
 /** Display order in the UI. */
 export const AUTH_MODE_ORDER: ProviderAuthMode[] = [
   'api_key',
@@ -56,6 +61,14 @@ export function defaultAuthModeFor(providerType: string): ProviderAuthMode {
   if (OAUTH_PROVIDER_TYPES.has(providerType)) return 'oauth_browser';
   if (providerType === 'ollama') return 'local';
   return 'api_key';
+}
+
+export function normalizeProviderAuthMode(mode: unknown): ProviderAuthMode {
+  if (typeof mode !== 'string') return 'api_key';
+  if ((AUTH_MODE_ORDER as readonly string[]).includes(mode)) {
+    return mode as ProviderAuthMode;
+  }
+  return (LEGACY_PROVIDER_AUTH_MODE_MIGRATIONS as Record<string, ProviderAuthMode>)[mode] ?? 'api_key';
 }
 
 /**

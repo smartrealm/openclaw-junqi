@@ -1666,6 +1666,9 @@
     "apiKeyPlaceholder": "输入 API Key…",
     "authModeOption": {
       "api_key": "API Key",
+      "oauth_browser": "浏览器 OAuth",
+      "oauth_device": "设备码",
+      "local": "本地",
       "oauth": "OAuth",
       "token": "Token"
     },
@@ -1971,6 +1974,7 @@
     "settingUp": "正在配置 JunQi Desktop",
     "subtitle": "正在安装必需组件，可能需要几分钟。",
     "readySubtitle": "安装与启动已完成。点击进入工作台继续使用 JunQi Desktop。",
+    "petReadyHint": "可以进入工作台了",
     "enterWorkspace": "进入工作台",
     "foundOclaw": "检测到 OpenClaw，正在检查 Gateway 状态...",
     "modeNative": "本地安装",
@@ -2192,7 +2196,7 @@
     "hooks": "Hooks",
     "hooksDesc": "Agent 版本检测和 Hook 就绪状态。",
     "about": "关于",
-    "languageHint": "更改后需要重新加载才能生效。"
+    "languageHint": "更改后立即生效。"
   },
   "agent": {
     "perm": {

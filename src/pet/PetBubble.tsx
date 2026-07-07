@@ -104,6 +104,16 @@ function formatStatusDetail(value: string): string {
     .trim();
 }
 
+function isSameStatusCopy(a?: string, b?: string): boolean {
+  const normalize = (value?: string) => (value || '')
+    .replace(/[!！。.\s]/g, '')
+    .trim()
+    .toLocaleLowerCase();
+  const left = normalize(a);
+  const right = normalize(b);
+  return Boolean(left && right && left === right);
+}
+
 /** Resolve the user-selected theme to a concrete "is the UI dark?" boolean
  * (handles the 'system' value by following the OS preference). */
 function useResolvedDark(): boolean {
@@ -129,8 +139,8 @@ function useResolvedDark(): boolean {
 function petTextPalette(isDark: boolean): { primary: string; secondary: string; danger: string } {
   return isDark
     ? {
-        primary: '#f8fafc',
-        secondary: '#e5e7eb',
+        primary: '#ffffff',
+        secondary: '#e2e8f0',
         danger: '#fecaca',
       }
     : {
@@ -190,6 +200,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     maxWidth: 240,
     textAlign: 'center',
     color: textPalette.primary,
+    WebkitTextFillColor: textPalette.primary,
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 13,
     fontWeight: 760,
@@ -198,7 +209,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     wordBreak: 'normal',
     whiteSpace: 'normal',
     textShadow: 'none',
-    WebkitTextStroke: '0 transparent',
+    WebkitTextStroke: 'initial',
     filter: 'none',
     opacity: 1,
   };
@@ -273,7 +284,8 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     );
   } else if (state.setup) {
     bubbleKey = `setup-${e}`;
-    const detail = state.message || label;
+    const title = state.taskLabel || t('setup.settingUp', '正在配置 JunQi Desktop');
+    const detail = isSameStatusCopy(state.message, title) ? '' : (state.message || label);
     const progress = typeof state.progress === 'number' && state.progress > 0 && state.progress < 100
       ? `${Math.round(state.progress)}%`
       : null;
@@ -284,12 +296,13 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
             display: 'inline-block',
             fontWeight: 750,
             color: e === 'error' ? textPalette.danger : textPalette.primary,
+            WebkitTextFillColor: e === 'error' ? textPalette.danger : textPalette.primary,
             maxWidth: 232,
             textShadow: 'none',
-            WebkitTextStroke: '0 transparent',
+            WebkitTextStroke: 'initial',
           }}
         >
-          {state.taskLabel || t('setup.settingUp', '正在配置 JunQi Desktop')}
+          {title}
           {progress && <span style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 700 }}>{progress}</span>}
         </span>
         {detail && (
@@ -304,8 +317,9 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
               overflowWrap: 'anywhere',
               wordBreak: 'normal',
               color: textPalette.secondary,
+              WebkitTextFillColor: textPalette.secondary,
               textShadow: 'none',
-              WebkitTextStroke: '0 transparent',
+              WebkitTextStroke: 'initial',
             }}
           >
             {formatStatusDetail(detail)}

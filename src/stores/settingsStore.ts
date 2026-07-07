@@ -3,18 +3,28 @@ import {
   DEFAULT_SETTING,
   STORAGE_KEY as THEME_STORAGE_KEY,
   AEGIS_FONTS_STORAGE_KEYS,
+  DEFAULT_ACCENT_COLOR,
+  applyAccentColor,
+  normalizeAccentColor,
+  readPersistedAccentColor,
   isThemeSetting,
+  type AccentColor,
   type ThemeSetting,
 } from '@/theme';
 import { applyTheme } from '@/theme/apply';
 import { detectOSPreference, resolveTheme } from '@/theme/resolver';
 import { resolveTab, type SidebarTab } from '@/components/Layout/tab-utils';
+import {
+  applyDocumentLanguage,
+  browserDefaultLanguage,
+  isSupportedLanguage,
+  persistLanguagePreference,
+  type SupportedLanguage,
+} from '@/i18n/languages';
 
 // ═══════════════════════════════════════════════════════════
 // Settings Store
 // ═══════════════════════════════════════════════════════════
-
-type Lang = 'ar' | 'en' | 'zh';
 
 /** Three-stage sidebar: full → icons-only → fully hidden, cycled by the topbar toggle. */
 export type SidebarMode = 'expanded' | 'mini' | 'hidden';
@@ -31,7 +41,7 @@ interface SettingsState {
   sidebarOpen: boolean;
   sidebarWidth: number;
   settingsOpen: boolean;
-  language: Lang;
+  language: SupportedLanguage;
   notificationsEnabled: boolean;
   soundEnabled: boolean;
   dndMode: boolean;
@@ -65,7 +75,7 @@ interface SettingsState {
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
   setSettingsOpen: (open: boolean) => void;
-  setLanguage: (lang: Lang) => void;
+  setLanguage: (lang: SupportedLanguage) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setSoundEnabled: (enabled: boolean) => void;
   setDndMode: (dnd: boolean) => void;
@@ -86,8 +96,8 @@ interface SettingsState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   cycleSidebar: () => void;
   setActiveSidebarTab: (tab: SidebarTab) => void;
-  accentColor: string;
-  setAccentColor: (color: string) => void;
+  accentColor: AccentColor;
+  setAccentColor: (color: AccentColor) => void;
 }
 
 
@@ -103,24 +113,12 @@ async function applyUiZoom(scale: number): Promise<void> {
   }
 }
 
-const ACCENT_SHADES: Record<string, { 400: string; 500: string; 600: string; raw400: string }> = {
-  teal:    { 400: 'var(--color-teal-400)',    500: 'var(--color-teal-500)',    600: 'var(--color-teal-600)',    raw400: 'var(--color-teal-400)' },
-  blue:    { 400: 'var(--color-blue-400)',    500: 'var(--color-blue-500)',    600: 'var(--color-blue-600)',    raw400: 'var(--color-blue-400)' },
-  purple:  { 400: 'var(--color-purple-400)',  500: 'var(--color-purple-500)',  600: 'var(--color-purple-600)',  raw400: 'var(--color-purple-400)' },
-  rose:    { 400: 'var(--color-rose-400)',    500: 'var(--color-rose-500)',    600: 'var(--color-rose-600)',    raw400: 'var(--color-rose-400)' },
-  amber:   { 400: 'var(--color-amber-400)',   500: 'var(--color-amber-500)',   600: 'var(--color-amber-600)',   raw400: 'var(--color-amber-400)' },
-  emerald: { 400: 'var(--color-emerald-400)', 500: 'var(--color-emerald-500)', 600: 'var(--color-emerald-600)', raw400: 'var(--color-emerald-400)' },
-};
-
 // Auto-detect language on first run: check saved → system language → fallback to English
-const detectLang = (): Lang => {
+const detectLang = (): SupportedLanguage => {
   const saved = localStorage.getItem('aegis-language');
-  if (saved === 'ar' || saved === 'en' || saved === 'zh') return saved;
+  if (isSupportedLanguage(saved)) return saved;
   // First run — detect from system/browser language
-  const sysLang = (navigator.language || navigator.languages?.[0] || '').toLowerCase();
-  if (sysLang.startsWith('zh')) return 'zh';
-  if (sysLang.startsWith('ar')) return 'ar';
-  return 'en';
+  return browserDefaultLanguage();
 };
 const savedLang = detectLang();
 
@@ -181,7 +179,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   sidebarCollapsed: savedSidebarMode === 'mini',
   sidebarMode: savedSidebarMode,
   activeSidebarTab: (typeof window !== 'undefined' && window.location) ? resolveTab(window.location.pathname) : 'workbench',
-  accentColor: localStorage.getItem('aegis-accent-color') || 'teal',
+  accentColor: readPersistedAccentColor() ?? DEFAULT_ACCENT_COLOR,
 
   setTheme: (theme) => {
     if (!isThemeSetting(theme)) return;
@@ -217,7 +215,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
-  setLanguage: (lang) => set({ language: lang }),
+  setLanguage: (lang) => {
+    if (!isSupportedLanguage(lang)) return;
+    persistLanguagePreference(lang);
+    applyDocumentLanguage(lang);
+    set({ language: lang });
+  },
   setNotificationsEnabled: (enabled) => { localStorage.setItem('aegis-notifications', String(enabled)); set({ notificationsEnabled: enabled }); },
   setSoundEnabled: (enabled) => { localStorage.setItem('aegis-sound', String(enabled)); set({ soundEnabled: enabled }); },
   setDndMode: (dnd) => set({ dndMode: dnd }),
@@ -263,26 +266,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     return { sidebarMode: next, sidebarCollapsed: next === 'mini' };
   }),
   setAccentColor: (color) => {
-    localStorage.setItem('aegis-accent-color', color);
-    set({ accentColor: color });
-    // Apply CSS override
-    const root = document.documentElement;
-    const shades = ACCENT_SHADES[color as keyof typeof ACCENT_SHADES];
-    if (shades) {
-      root.style.setProperty('--aegis-primary', shades[400]);
-      root.style.setProperty('--aegis-primary-hover', shades[500]);
-      root.style.setProperty('--aegis-primary-deep', shades[600]);
-      root.style.setProperty('--aegis-primary-glow', `rgb(${shades.raw400} / 0.16)`);
-      root.style.setProperty('--aegis-primary-surface', `rgb(${shades.raw400} / 0.08)`);
-    }
+    const normalized = normalizeAccentColor(color);
+    localStorage.setItem('aegis-accent-color', normalized);
+    set({ accentColor: normalized });
+    applyAccentColor(normalized);
   },
 }));
 
 // Apply saved accent on load
-const savedAccent = localStorage.getItem('aegis-accent-color');
-if (savedAccent && savedAccent !== 'teal') {
-  useSettingsStore.getState().setAccentColor(savedAccent);
-}
+const savedAccent = readPersistedAccentColor();
+if (savedAccent) applyAccentColor(savedAccent);
 
 // Restore saved UI zoom on load (savedUiScale already clamped above).
 // 100 is the default — skip the setZoom(1.0) no-op on every cold start.

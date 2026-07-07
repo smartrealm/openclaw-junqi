@@ -1,5 +1,6 @@
 import { usePetStore, type PetSkin } from '@/stores/petStore';
 import { SKIN_REGISTRY } from './skins';
+import { minutesToMs, remainingMsFromPause } from './pomodoroDomain';
 
 /**
  * Pet actions that mutate the authoritative store. These run in the MAIN
@@ -24,7 +25,7 @@ export function startPomodoro(): void {
     running: true,
     paused: false,
     phase: 'work',
-    endsAt: Date.now() + workMin * 60_000,
+    endsAt: Date.now() + minutesToMs(workMin),
     lastDoneTs: 0,
   });
 }
@@ -42,10 +43,11 @@ export function stopPomodoro(): void {
 /** Pause if running, resume if paused — preserves the remaining time. */
 export function togglePausePomodoro(): void {
   const p = usePetStore.getState().pomodoro;
+  if (!p.running) return;
   if (p.paused) {
     usePetStore.getState().setPomodoro({
       paused: false,
-      endsAt: Date.now() + (p.pausedRemainingMs ?? 0),
+      endsAt: Date.now() + remainingMsFromPause(p.pausedRemainingMs),
       pausedRemainingMs: null,
     });
   } else {

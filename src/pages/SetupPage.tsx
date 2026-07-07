@@ -32,6 +32,8 @@ import { useAppStore } from "@/stores/app-store";
 import type { SetupStep } from "@/stores/app-store";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changeLanguage } from "@/i18n";
+import { APP_LANGUAGE_OPTIONS, type AppLanguage } from "@/i18n/languages";
+import { GatewayLifecyclePanel } from "@/components/settings/GatewayLifecyclePanel";
 import { useSetupFlow } from "@/hooks/useSetupFlow";
 import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
 import type { DockerStatus } from "@/api/tauri-commands";
@@ -268,8 +270,9 @@ function SetupShell({
       </main>
       {showActions && (
         <footer className="shrink-0 border-t border-aegis-border/60 bg-aegis-bg/95 px-6 py-3 backdrop-blur">
-          <div className={clsx("mx-auto flex w-full items-center justify-end gap-3", wide ? "max-w-5xl" : "max-w-3xl")}>
-            {previousAction && (
+          <div className={clsx("mx-auto flex w-full items-center justify-between gap-3", wide ? "max-w-5xl" : "max-w-3xl")}>
+            <div className="flex min-w-[112px] justify-start">
+              {previousAction && (
               <button
                 type="button"
                 onClick={previousAction.onClick}
@@ -285,8 +288,10 @@ function SetupShell({
                 <ChevronLeft size={15} />
                 {previousAction.label ?? t("setup.previousStep")}
               </button>
-            )}
-            {nextAction ? (
+              )}
+            </div>
+            <div className="flex min-w-[122px] justify-end">
+              {nextAction ? (
               <button
                 type="button"
                 onClick={nextAction.onClick}
@@ -303,7 +308,8 @@ function SetupShell({
                 {nextAction.label}
                 {!nextAction.loading && nextAction.icon !== "none" && <ChevronRight size={15} />}
               </button>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </footer>
       )}
@@ -361,16 +367,12 @@ function LanguageThemeControls() {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
 
-  const setLang = (lang: "en" | "zh" | "ar") => {
+  const setLang = (lang: AppLanguage) => {
     setLanguage(lang);
     changeLanguage(lang);
   };
 
-  const languageOptions: Array<{ value: "zh" | "en" | "ar"; label: string }> = [
-    { value: "zh", label: "中文" },
-    { value: "en", label: "English" },
-    { value: "ar", label: "العربية" },
-  ];
+  const languageOptions = APP_LANGUAGE_OPTIONS;
   const themeOptions: Array<{ value: ThemeSetting; label: string; icon: ReactNode; preview: string }> = [
     { value: "system", label: t("theme.followSystem", "跟随系统"), icon: <Monitor size={15} />, preview: "linear-gradient(135deg,#0f172a 0 49%,#f8fafc 50% 100%)" },
     { value: "aegis-dark", label: t("theme.dark", "深色"), icon: <Moon size={15} />, preview: "linear-gradient(135deg,#080c12,#182232)" },
@@ -492,6 +494,7 @@ function DetectingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) 
       subtitle={t("setup.runtimeSubtitle")}
       logs={logs}
       previousAction={{ onClick: () => navigateSetup("welcome") }}
+      nextAction={{ label: flow.statusMessage || t("setup.detecting"), disabled: true, loading: true, icon: "none" }}
     >
       <StatusPanel
         icon={<RefreshCw size={22} className="animate-spin" />}
@@ -549,6 +552,7 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
       subtitle={t("setup.chooseMode")}
       logs={logs}
       previousAction={{ onClick: () => navigateSetup("welcome") }}
+      nextAction={{ label: t("setup.modeNative"), onClick: () => flow.selectMode("native"), icon: "next" }}
     >
       <div className="grid gap-4 md:grid-cols-2">
         <button onClick={() => flow.selectMode("native")} className="group flex min-h-[168px] flex-col rounded-lg border border-aegis-border bg-aegis-surface/50 p-5 text-left transition-colors hover:border-aegis-primary hover:bg-aegis-primary/5">
@@ -662,19 +666,19 @@ function currentStepOf(steps: StepState[]): StepState | null {
 
 function InstallationTimeline({ steps }: { steps: StepState[] }) {
   const { t } = useTranslation();
-  if (steps.length === 0) return null;
+  const visibleSteps = steps.length > 0 ? steps : [{ id: "gateway", label: "Gateway", status: "pending" as const }];
   return (
-    <div className="rounded-xl border border-aegis-border bg-aegis-elevated">
+    <div className="min-h-[260px] rounded-xl border border-aegis-border bg-aegis-elevated">
       <div className="border-b border-aegis-border px-4 py-3">
         <div className="text-sm font-semibold text-aegis-text">{t("setup.installPanel.timeline", "执行步骤")}</div>
       </div>
       <div className="px-4 py-2">
-      {steps.map((s, index) => (
+      {visibleSteps.map((s, index) => (
         <div
           key={s.id}
           className={clsx(
             "relative grid grid-cols-[34px_1fr] gap-3 py-3",
-            index < steps.length - 1 && "after:absolute after:left-[16px] after:top-11 after:h-[calc(100%-34px)] after:w-px after:bg-aegis-border",
+            index < visibleSteps.length - 1 && "after:absolute after:left-[16px] after:top-11 after:h-[calc(100%-34px)] after:w-px after:bg-aegis-border",
           )}
         >
           <div className={clsx(
@@ -755,6 +759,9 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
               {flow.statusMessage}
             </div>
           )}
+          {current?.id === "gateway" && !isReady && (
+            <GatewayLifecyclePanel variant="compact" className="mt-3" />
+          )}
         </div>
         <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">
           <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
@@ -766,9 +773,9 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
         <InstallationTimeline steps={flow.steps} />
-        <aside className="rounded-xl border border-aegis-border bg-aegis-elevated p-4">
+        <aside className="min-h-[260px] rounded-xl border border-aegis-border bg-aegis-elevated p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-aegis-text">
             <TerminalSquare size={16} />
             {t("setup.installPanel.activity", "执行记录")}
@@ -816,7 +823,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           ? { label: t("setup.enterWorkspace"), onClick: () => flow.enterWorkspace() }
           : setupStep === "error"
             ? { label: t("setup.retry"), onClick: () => { void flow.retrySetup(); }, icon: "none" }
-            : undefined
+            : { label: flow.statusMessage || t("setup.settingUp"), disabled: true, loading: true, icon: "none" }
       }
     >
       <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
@@ -849,6 +856,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}
+      previousAction={{ onClick: () => flow.goBack() }}
       nextAction={{ label: t("setup.enterWorkspace"), onClick: () => flow.enterWorkspace() }}
     >
       <div className="flex flex-col items-center gap-6 py-5 text-center">
