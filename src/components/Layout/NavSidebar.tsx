@@ -18,7 +18,6 @@ import {
   bucketSessionsByActivity,
   isEmptyTransientSession,
   isSessionActive,
-  sessionActivityTime,
   sessionTitle,
   type SessionBucketKey,
 } from './sidebarUtils';
@@ -85,36 +84,6 @@ function sessionAgentId(session: Session, sessionKey: string): string {
   return parts[1] || 'main';
 }
 
-function sessionChannelLabel(channel?: string | null): string | null {
-  if (!channel) return null;
-  const normalized = channel.trim().toLowerCase();
-  if (!normalized || normalized === 'web' || normalized === 'webchat' || normalized === 'desktop') return null;
-  const labels: Record<string, string> = {
-    feishu: '飞书',
-    lark: '飞书',
-    dingtalk: '钉钉',
-    dingding: '钉钉',
-    wechat: '微信',
-    wecom: '企微',
-    slack: 'Slack',
-  };
-  return labels[normalized] ?? channel;
-}
-
-function formatSidebarTime(timestampMs: number): string {
-  if (!timestampMs) return '';
-  const date = new Date(timestampMs);
-  if (Number.isNaN(date.getTime())) return '';
-  const now = new Date();
-  const sameDay = now.getFullYear() === date.getFullYear()
-    && now.getMonth() === date.getMonth()
-    && now.getDate() === date.getDate();
-  if (sameDay) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
-}
-
 function compactMeta(value: string, max = 22): string {
   return value.length > max ? `${value.slice(0, max - 1).trim()}…` : value;
 }
@@ -148,10 +117,8 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
   const inputRef = useRef<HTMLInputElement>(null);
   const agentId = sessionAgentId(session, sessionKey);
   const agentName = agents.find((agent: any) => agent?.id === agentId)?.name || agentId;
-  const agentLabel = compactMeta(agentName || t('agents.mainAgent', 'Main Agent'));
+  const agentLabel = compactMeta(agentName || t('agents.mainAgent', 'Main Agent'), 20);
   const isRunning = isSessionActive(session);
-  const channelLabel = sessionChannelLabel(session.channel ?? session.lastChannel ?? null);
-  const timeLabel = formatSidebarTime(sessionActivityTime(session));
 
   const goSession = () => {
     cleanupEmptyActiveSession(sessionKey);
@@ -203,7 +170,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
 
   if (renaming) {
     return (
-      <div className="flex items-center gap-2 px-4 py-1.5 bg-[rgb(var(--aegis-primary)/0.10)] border-l-2 border-l-aegis-primary">
+      <div className="mx-2 mb-1 flex items-center gap-2 rounded-md border border-aegis-primary/25 bg-aegis-primary/[0.08] px-2 py-2">
         <input
           ref={inputRef}
           value={renameValue}
@@ -215,14 +182,14 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
             else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
           }}
           disabled={renamingInFlight}
-          className="flex-1 min-w-0 h-[24px] px-2 rounded bg-aegis-bg border border-aegis-primary/40 text-[13px] text-aegis-text outline-none focus:border-aegis-primary"
+          className="h-[26px] min-w-0 flex-1 rounded bg-aegis-bg px-2 text-[12.5px] text-aegis-text outline-none ring-1 ring-aegis-primary/35 focus:ring-aegis-primary"
         />
         <button
           onClick={(e) => { e.stopPropagation(); cancelRename(); }}
-          className="p-1 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/40"
+          className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover/40 hover:text-aegis-text"
           title={t('common.cancel', '取消')}
         >
-          <X size={11} />
+          <X size={12} />
         </button>
       </div>
     );
@@ -244,56 +211,43 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           }
         }}
         className={clsx(
-          'flex w-full cursor-pointer items-start gap-2.5 rounded-lg border px-2.5 py-2.5 text-left transition-colors',
-          'hover:border-aegis-border/70 hover:bg-aegis-hover/25',
+          'grid w-full cursor-pointer grid-cols-[4px_minmax(0,1fr)_52px] items-center gap-2 rounded-md px-1.5 py-2 text-left transition-colors',
+          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/55',
           isActive
-            ? 'border-aegis-primary/40 bg-aegis-primary/[0.10] text-aegis-text shadow-[inset_2px_0_0_rgb(var(--aegis-primary))]'
-            : 'border-transparent text-aegis-text-secondary',
+            ? 'bg-aegis-primary/[0.095] text-aegis-text'
+            : 'text-aegis-text-secondary hover:bg-aegis-hover/35',
         )}
         >
         <span
           className={clsx(
-            'mt-[7px] h-2 w-2 shrink-0 rounded-full',
-            isRunning ? 'bg-aegis-success shadow-[0_0_0_3px_rgb(var(--aegis-success)/0.12)]' : isActive ? 'bg-aegis-primary' : 'bg-aegis-text-dim/35',
+            'h-8 w-1 rounded-full',
+            isRunning ? 'bg-aegis-success shadow-[0_0_0_3px_rgb(var(--aegis-success)/0.12)]' : isActive ? 'bg-aegis-primary' : 'bg-aegis-border',
           )}
           aria-hidden="true"
         />
-        <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0">
+          <span className="flex min-w-0 items-center gap-1.5">
             <span className={clsx(
-              'min-w-0 flex-1 truncate text-[13px] font-medium leading-5 tracking-normal',
+              'min-w-0 flex-1 truncate text-[13px] font-semibold leading-[18px] tracking-normal',
               isActive ? 'text-aegis-text' : 'text-aegis-text-secondary',
             )}>
               {currentTitle}
             </span>
             {isRunning && (
-              <span className="shrink-0 rounded-full bg-aegis-success/10 px-1.5 py-0.5 text-[10px] font-semibold leading-3 text-aegis-success">
+              <span className="shrink-0 rounded bg-aegis-success/10 px-1 py-0.5 text-[9.5px] font-semibold leading-3 text-aegis-success">
                 {t('sessions.statusRunning', 'Running')}
               </span>
             )}
           </span>
-          <span className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-4 text-aegis-text-dim">
-            <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-aegis-overlay/[0.035] px-1.5 py-0.5">
-              <Bot size={10.5} className="shrink-0 opacity-70" />
-              <span className="truncate">{agentLabel}</span>
-            </span>
-            {channelLabel && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-aegis-primary/[0.08] px-1.5 py-0.5 text-aegis-primary/90">
-                <MessageSquare size={10.5} className="shrink-0 opacity-75" />
-                <span className="truncate">{compactMeta(channelLabel, 10)}</span>
-              </span>
-            )}
-            {timeLabel && (
-              <span className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-aegis-text-dim/80">
-                <Clock size={10.5} className="shrink-0 opacity-65" />
-                <span>{timeLabel}</span>
-              </span>
-            )}
+          <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] leading-4 text-aegis-text-dim">
+            <Bot size={10.5} className="shrink-0 opacity-65" />
+            <span className="truncate">{agentLabel}</span>
           </span>
         </span>
         <span className={clsx(
-          'relative z-10 ml-1 flex shrink-0 items-center gap-0.5 rounded-md bg-aegis-surface/80 opacity-0 transition-opacity',
+          'relative z-10 flex shrink-0 items-center justify-end gap-0.5 opacity-35 transition-opacity',
           'group-hover/session:opacity-100 group-focus-within/session:opacity-100',
+          isActive && 'opacity-70',
         )}>
         <button
           type="button"
@@ -805,7 +759,11 @@ export function NavSidebar() {
   const isHidden = sidebarMode === 'hidden';
   const isMini = sidebarMode === 'mini';
   const isExpanded = sidebarMode === 'expanded';
-  const targetWidth = isExpanded ? 220 : isMini ? 64 : 0;
+  const targetWidth = isExpanded
+    ? 'var(--aegis-sidebar-expanded)'
+    : isMini
+      ? 'var(--aegis-sidebar-mini)'
+      : 0;
   const tab = useSettingsStore((s) => s.activeSidebarTab);
   const setActiveTab = useSettingsStore((s) => s.setActiveSidebarTab);
 

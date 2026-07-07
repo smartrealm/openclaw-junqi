@@ -23,14 +23,27 @@ export function TabBar() {
   const setActiveTab = useSettingsStore((s) => s.setActiveSidebarTab);
 
   return (
-    <div className="flex h-[44px] shrink-0 items-center gap-0.5 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
-      <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,220px)] flex items-center px-3 pointer-events-none">
-        <div className="flex h-[38px] w-[204px] items-center overflow-hidden">
+    <div className="flex h-[44px] shrink-0 items-center gap-0.5 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 204px)' }}>
+      <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,204px)] flex items-center px-3 pointer-events-none">
+        <div className="flex min-w-0 items-center gap-2">
+          <div
+            className="flex h-8 w-10 shrink-0 items-center justify-center rounded-lg border"
+            style={{
+              background: 'rgb(var(--aegis-primary) / 0.08)',
+              borderColor: 'rgb(var(--aegis-primary) / 0.18)',
+            }}
+          >
           <JunQiLogo
-            className="h-[38px] w-[204px]"
+              variant="emblem"
+              className="h-7 w-9"
             title="JunQi Desktop"
             style={{ filter: 'drop-shadow(0 1px 1px rgb(var(--aegis-overlay) / 0.08))' }}
           />
+          </div>
+          <div className="min-w-0 leading-none">
+            <div className="truncate text-[14px] font-extrabold text-aegis-text">JunQi</div>
+            <div className="mt-1 truncate text-[10px] font-medium text-aegis-text-dim">Desktop</div>
+          </div>
         </div>
       </div>
       <div className="flex min-w-0 items-center gap-0.5">
