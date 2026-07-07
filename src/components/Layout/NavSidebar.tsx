@@ -18,6 +18,7 @@ import {
   bucketSessionsByActivity,
   isEmptyTransientSession,
   isSessionActive,
+  sessionActivityTime,
   sessionTitle,
   type SessionBucketKey,
 } from './sidebarUtils';
@@ -88,6 +89,20 @@ function compactMeta(value: string, max = 22): string {
   return value.length > max ? `${value.slice(0, max - 1).trim()}…` : value;
 }
 
+function formatSidebarTime(timestampMs: number): string {
+  if (!timestampMs) return '';
+  const date = new Date(timestampMs);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const sameDay = now.getFullYear() === date.getFullYear()
+    && now.getMonth() === date.getMonth()
+    && now.getDate() === date.getDate();
+  if (sameDay) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+}
+
 function cleanupEmptyActiveSession(nextSessionKey?: string): boolean {
   const state = useChatStore.getState();
   const key = state.activeSessionKey;
@@ -119,6 +134,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
   const agentName = agents.find((agent: any) => agent?.id === agentId)?.name || agentId;
   const agentLabel = compactMeta(agentName || t('agents.mainAgent', 'Main Agent'), 20);
   const isRunning = isSessionActive(session);
+  const timeLabel = formatSidebarTime(sessionActivityTime(session));
 
   const goSession = () => {
     cleanupEmptyActiveSession(sessionKey);
@@ -211,7 +227,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           }
         }}
         className={clsx(
-          'grid w-full cursor-pointer grid-cols-[4px_minmax(0,1fr)_52px] items-center gap-2 rounded-md px-1.5 py-2 text-left transition-colors',
+          'grid w-full cursor-pointer grid-cols-[4px_minmax(0,1fr)] items-center gap-2 rounded-md px-1.5 py-2 text-left transition-colors',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/55',
           isActive
             ? 'bg-aegis-primary/[0.095] text-aegis-text'
@@ -241,14 +257,22 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           </span>
           <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] leading-4 text-aegis-text-dim">
             <Bot size={10.5} className="shrink-0 opacity-65" />
-            <span className="truncate">{agentLabel}</span>
+            <span className="min-w-0 flex-1 truncate">{agentLabel}</span>
+            {timeLabel && (
+              <span className="ml-2 shrink-0 text-[10.5px] tabular-nums text-aegis-text-dim/70">
+                {timeLabel}
+              </span>
+            )}
           </span>
         </span>
-        <span className={clsx(
-          'relative z-10 flex shrink-0 items-center justify-end gap-0.5 opacity-35 transition-opacity',
+      </div>
+      <span
+        className={clsx(
+          'absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity',
+          'border-aegis-border/60 bg-aegis-surface/95 backdrop-blur-sm',
           'group-hover/session:opacity-100 group-focus-within/session:opacity-100',
-          isActive && 'opacity-70',
-        )}>
+        )}
+      >
         <button
           type="button"
           onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -267,8 +291,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
         >
           <Trash2 size={12} />
         </button>
-        </span>
-      </div>
+      </span>
     </div>
   );
 }
