@@ -62,9 +62,6 @@ export default function PetWindow() {
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
   const justDragged = useRef(false);
-  // True while a file drag is in flight over the main window — used so the
-  // magnetic-pull effect overrides the snap-back-to-edge animation.
-  const isBeingDraggedOverRef = useRef(false);
   // Latest cursor + main-window bounds, written by the `aegis:drag-move`
   // listener and read by the magnetic-pull RAF loop. Module-level state
   // (the listener may not have fired yet when the effect mounts).
@@ -90,7 +87,12 @@ export default function PetWindow() {
   // soundEnabled is read on demand inside the effect — no React re-render
   // is required when the user toggles sound in settings.
   const dragActive = usePetStore((s) => s.dragActive);
-  const dragOver = usePetStore((s) => s.dragOver);
+  const snapCancelRef = useRef<(() => void) | null>(null);
+  const cancelSnap = () => {
+    snapCancelRef.current?.();
+    snapCancelRef.current = null;
+    setSnapping(false);
+  };
   useLayoutEffect(() => {
     const applyResolved = (setting: ThemeSetting) => {
       applyTheme(resolveTheme(setting, detectOSPreference()));
@@ -154,17 +156,16 @@ export default function PetWindow() {
         const paths = e.payload ?? [];
         dragCursorRef.current = { x: 0, y: 0, gx: window.screenX + 540, gy: window.screenY + 360, win_w: 1080, win_h: 720 };
         petStore.setDragActive(true, paths);
-        isBeingDraggedOverRef.current = true;
+        cancelSnap();
       }),
       subscribeTauriEvent<{ x: number; y: number; gx: number; gy: number; win_w: number; win_h: number }>('aegis:drag-move', (e) => {
         dragCursorRef.current = e.payload;
-        isBeingDraggedOverRef.current = true;
+        cancelSnap();
       }),
       subscribeTauriEvent('aegis:drag-inactive', () => {
         dragCursorRef.current = null;
         petStore.setDragActive(false);
         petStore.setDragOver(false);
-        defer(() => { isBeingDraggedOverRef.current = false; }, 250);
       }),
     );
     // NB: we deliberately do NOT listen for `aegis:file-dropped` here. The
@@ -193,6 +194,7 @@ export default function PetWindow() {
       const dx = e.screenX - d.sx;
       const dy = e.screenY - d.sy;
       if (!d.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+        cancelSnap();
         d.moved = true;
         setDragging(true);
       }
@@ -227,7 +229,10 @@ export default function PetWindow() {
             setSnapping(false);
             return;
           }
-          glideTo(pos.x, pos.y, target.x, target.y, () => setSnapping(false));
+          snapCancelRef.current = glideTo(pos.x, pos.y, target.x, target.y, () => {
+            snapCancelRef.current = null;
+            setSnapping(false);
+          });
         })
         .catch(() => setSnapping(false));
     };
@@ -248,6 +253,7 @@ export default function PetWindow() {
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      cancelSnap();
       for (const id of timeoutsRef.current) window.clearTimeout(id);
       timeoutsRef.current = [];
     };
@@ -390,6 +396,7 @@ export default function PetWindow() {
   // to the cursor — the "leap to catch the falling morsel" gesture.
   useEffect(() => {
     if (state.emotion !== 'swallow') return;
+    cancelSnap();
     const cur = dragCursorRef.current;
     const pos = petPosRef.current;
     if (!cur || !pos) return;
@@ -423,6 +430,7 @@ export default function PetWindow() {
     // async result below refines it once we have the authoritative Rust
     // answer. The first few events may drift by ≤ a frame; negligible.
     drag.current = { sx: e.screenX, sy: e.screenY, bx: e.screenX, by: e.screenY, moved: false, ready: true };
+    cancelSnap();
     // Keep click-through OFF for the duration of the press so the OS keeps
     // dispatching events to this window even if the cursor briefly leaves
     // the small PetWindow rect mid-drag.

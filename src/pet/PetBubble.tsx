@@ -6,6 +6,7 @@ import { themeHex } from '@/utils/theme-colors';
 import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
+import { resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
 const STATUS_LABEL: Record<PetEmotion, string> = {
@@ -113,10 +114,6 @@ function isSameStatusCopy(a?: string, b?: string): boolean {
   return Boolean(left && right && left === right);
 }
 
-function isDarkThemeName(value: string | null): boolean {
-  return value === 'aegis-dark' || value === 'aegis-midnight';
-}
-
 /** Resolve the pet webview's actual applied theme, not the main window store.
  * The pet is a separate webview, so its Zustand settings state can lag behind
  * the `data-theme` token that was already applied to this document. */
@@ -124,9 +121,8 @@ function useResolvedDark(): boolean {
   const readDark = () => {
     if (typeof document === 'undefined') return true;
     const theme = document.documentElement.getAttribute('data-theme');
-    if (isDarkThemeName(theme)) return true;
-    if (theme === 'aegis-light' || theme === 'aegis-eyecare') return false;
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+    const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+    return resolvePetDarkMode(theme, systemDark);
   };
   const [dark, setDark] = useState<boolean>(readDark);
   useEffect(() => {
@@ -142,31 +138,6 @@ function useResolvedDark(): boolean {
     };
   }, []);
   return dark;
-}
-
-function petTextPalette(isDark: boolean): { primary: string; secondary: string; danger: string } {
-  return isDark
-    ? {
-        primary: '#f8fafc',
-        secondary: '#dbe4f0',
-        danger: '#fecaca',
-      }
-    : {
-        primary: '#111827',
-        secondary: '#1f2937',
-        danger: '#991b1b',
-      };
-}
-
-function solidTextStyle(color: string): CSSProperties {
-  return {
-    color,
-    WebkitTextFillColor: color,
-    WebkitTextStrokeWidth: 0,
-    WebkitTextStrokeColor: 'transparent',
-    paintOrder: 'fill',
-    textShadow: 'none',
-  };
 }
 
 /**
@@ -187,7 +158,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const dragMeta = useDragKindMeta();
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
-  const textPalette = petTextPalette(isDark);
+  const textPalette = resolvePetTextPalette(isDark);
 
   // Operation-hint carousel, shown only while the cursor is over the pet
   // AND the pet is idle (i.e. the tip branch is the rendered body — busy
@@ -218,7 +189,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const bubbleStyle: CSSProperties = {
     maxWidth: 240,
     textAlign: 'center',
-    ...solidTextStyle(textPalette.primary),
+    ...solidPetTextStyle(textPalette.primary),
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 13,
     fontWeight: 760,
@@ -235,18 +206,18 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
 
   if (dragging) {
     bubbleKey = 'dragging';
-    body = <span style={{ fontWeight: 600 }}>{t('pet.hint.moving', '移动中…')}</span>;
+    body = <span style={{ fontWeight: 600, ...solidPetTextStyle(textPalette.primary) }}>{t('pet.hint.moving', '移动中…')}</span>;
   } else if (e === 'rapidSwallow') {
     bubbleKey = 'rapid-swallow';
     body = (
-      <span style={{ fontWeight: 700, color: 'inherit', fontSize: 12.5 }}>
+      <span style={{ fontWeight: 700, fontSize: 12.5, ...solidPetTextStyle(textPalette.primary) }}>
         {t('pet.status.rapidSwallow', STATUS_LABEL.rapidSwallow)}
       </span>
     );
   } else if (e === 'swallow') {
     bubbleKey = 'swallow';
     body = (
-      <span style={{ fontWeight: 700, color: 'inherit', fontSize: 12.5 }}>
+      <span style={{ fontWeight: 700, fontSize: 12.5, ...solidPetTextStyle(textPalette.primary) }}>
         {t('pet.status.swallow', '嚼嚼嚼…')}
       </span>
     );
@@ -282,7 +253,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       <span
         style={{
           fontWeight: 700,
-          color: 'inherit',
+          ...solidPetTextStyle(textPalette.primary),
           display: 'inline-flex',
           alignItems: 'center',
           gap: 5,
@@ -311,7 +282,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
           style={{
             display: 'inline-block',
             fontWeight: 750,
-            ...solidTextStyle(e === 'error' ? textPalette.danger : textPalette.primary),
+            ...solidPetTextStyle(e === 'error' ? textPalette.danger : textPalette.primary),
             maxWidth: 232,
           }}
         >
@@ -329,7 +300,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
               whiteSpace: 'pre-line',
               overflowWrap: 'anywhere',
               wordBreak: 'normal',
-              ...solidTextStyle(textPalette.secondary),
+              ...solidPetTextStyle(textPalette.secondary),
             }}
           >
             {formatStatusDetail(detail)}
@@ -339,14 +310,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     );
   } else if (e === 'error') {
     bubbleKey = 'error';
-    body = <span style={{ fontWeight: 760, ...solidTextStyle(textPalette.danger) }}>{label}</span>;
+    body = <span style={{ fontWeight: 760, ...solidPetTextStyle(textPalette.danger) }}>{label}</span>;
   } else if (ACTIVE.has(e)) {
     bubbleKey = `active-${e}`;
     const detail = state.message || state.taskLabel;
     const elapsed = state.elapsedMs ? fmtDuration(state.elapsedMs) : null;
     body = (
       <>
-        <span style={{ fontWeight: 700, ...solidTextStyle(textPalette.primary) }}>
+        <span style={{ fontWeight: 700, ...solidPetTextStyle(textPalette.primary) }}>
           {label}
           {elapsed && <span style={{ fontSize: 10.5, opacity: 0.65, fontWeight: 400 }}> · {elapsed}</span>}
         </span>
@@ -361,7 +332,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
               whiteSpace: 'pre-line',
               overflowWrap: 'anywhere',
               wordBreak: 'normal',
-              ...solidTextStyle(textPalette.secondary),
+              ...solidPetTextStyle(textPalette.secondary),
               opacity: 0.92,
             }}
           >
@@ -378,7 +349,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     const caption = pomoKind ? t(CELEBRATE_CAPTION[pomoKind].key, CELEBRATE_CAPTION[pomoKind].fallback) : label;
     const CelebrateIcon = pomoKind ? celebrateIcon(pomoKind) : null;
     body = (
-      <span style={{ fontWeight: 700, ...solidTextStyle(textPalette.primary), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontWeight: 700, ...solidPetTextStyle(textPalette.primary), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         {CelebrateIcon && <CelebrateIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />}
         {caption}
       </span>
@@ -395,14 +366,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       : t(p.phase === 'work' ? 'pet.pomodoro.focusing' : 'pet.pomodoro.resting', p.phase === 'work' ? '专注中' : '休息中');
     const PomoIcon = pomodoroIcon(p);
     body = (
-      <span style={{ fontWeight: 700, ...solidTextStyle(textPalette.primary), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontWeight: 700, ...solidPetTextStyle(textPalette.primary), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0, color: pomodoroColor(p, isDark) }} />
         {p.paused ? phaseLabel : `${phaseLabel} ${fmtClock(p.remainingMs)}`}
       </span>
     );
   } else if (e === 'sleep' || e === 'sleepy') {
     bubbleKey = e;
-    body = <span style={{ fontWeight: 700, opacity: 1, ...solidTextStyle(textPalette.primary) }}>{label}</span>;
+    body = <span style={{ fontWeight: 700, opacity: 1, ...solidPetTextStyle(textPalette.primary) }}>{label}</span>;
   } else if (hovered) {
     bubbleKey = 'tips';
     body = (
@@ -416,7 +387,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18, ease: 'easeInOut' }}
-          style={{ display: 'block', fontWeight: 600, ...solidTextStyle(textPalette.primary) }}
+          style={{ display: 'block', fontWeight: 600, ...solidPetTextStyle(textPalette.primary) }}
         >
           {tips[tipIndex]}
         </motion.span>

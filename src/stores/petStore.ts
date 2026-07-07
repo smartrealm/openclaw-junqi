@@ -156,8 +156,8 @@ export const usePetStore = create<PetSettings>()(
           dragActive: v,
           dragCount: v ? paths?.length ?? 0 : 0,
           dragKind: v ? classifyDragKind(paths ?? []) : null,
-          // Leaving the window → also drop the over flag.
-          dragOver: v ? false : false,
+          // A new drag starts outside the drop target; inactive also clears it.
+          dragOver: false,
         })),
       setDragOver: (v) => set({ dragOver: v }),
       setSoundEnabled: (v) => set({ soundEnabled: v }),

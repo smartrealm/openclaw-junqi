@@ -131,9 +131,9 @@ pub async fn toggle_pet_window(app: AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Toggle mouse pass-through on the pet window. When `ignore` is true, clicks
-/// fall through to whatever is behind the pet (the default, so it never blocks
-/// the desktop); the pet flips it to false on hover so it becomes interactive.
+/// Toggle mouse pass-through on the pet window. Current UX keeps the pet
+/// interactive by default so dragging/double-click/context-menu stay reliable;
+/// `ignore=true` remains available for future temporary pass-through modes.
 #[tauri::command]
 pub async fn set_pet_click_through(app: AppHandle, ignore: bool) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(PET_LABEL) {
