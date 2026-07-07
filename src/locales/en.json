@@ -2198,7 +2198,11 @@
       "config": "Syncing models, config, and scheduled jobs",
       "conversation": "Restoring session list and recent history",
       "background": "Refreshing usage, cost, and agent state"
-    }
+    },
+    "gatewayRecoveryTitle": "Gateway connection recovery",
+    "gatewayRecoveryManual": "Connection retries did not finish the handshake. Try restarting Gateway manually.",
+    "gatewayRecoveryRetrying": "Retrying WebSocket connection ({{attempt}}/3)",
+    "restartGateway": "Restart Gateway"
   },
   "sessions": {
     "title": "Sessions",

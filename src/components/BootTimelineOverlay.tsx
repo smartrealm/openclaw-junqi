@@ -84,8 +84,8 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
                 <div className="text-xs font-semibold text-aegis-text">{t('boot.gatewayRecoveryTitle', 'Gateway connection recovery')}</div>
                 <div className="text-[11px] text-aegis-text-muted mt-0.5">
                   {recovery.showRestart
-                    ? t('boot.gatewayRecoveryManual', 'Auto retries did not finish the handshake. Try restarting Gateway manually.')
-                    : t('boot.gatewayRecoveryRetrying', { attempt: recovery.attempt, defaultValue: `Retrying connection (${recovery.attempt}/3)` })}
+                    ? t('boot.gatewayRecoveryManual', 'Connection retries did not finish the handshake. Try restarting Gateway manually.')
+                    : t('boot.gatewayRecoveryRetrying', { attempt: recovery.attempt, defaultValue: `Retrying WebSocket connection (${recovery.attempt}/3)` })}
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">

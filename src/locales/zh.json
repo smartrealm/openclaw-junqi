@@ -2242,7 +2242,11 @@
       "config": "同步模型、配置和定时任务",
       "conversation": "恢复会话列表和最近历史",
       "background": "刷新用量、成本和智能体状态"
-    }
+    },
+    "gatewayRecoveryTitle": "Gateway 连接恢复",
+    "gatewayRecoveryManual": "连接重试仍未完成握手。可以手动重启 Gateway。",
+    "gatewayRecoveryRetrying": "正在重试 WebSocket 连接（{{attempt}}/3）",
+    "restartGateway": "重启 Gateway"
   },
   "sessions": {
     "title": "会话",

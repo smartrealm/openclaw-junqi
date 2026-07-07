@@ -477,12 +477,11 @@ export default function App() {
     try { window.location.hash = '#/logs'; } catch {}
   }, []);
 
-  // If gateway process is running but WS handshake is stuck during cold boot,
-  // retry at 4s / 9s / 16s with exponential backoff. After 3 failed attempts,
-  // surface the manual restart button to the user. Each attempt calls
-  // `restartGatewayFromBoot` — the only path that actually re-invokes the Rust
-  // gateway.retry command. `triggerGatewayReconnect` (WS-only) is reserved for
-  // the user's manual reconnect button, not the auto-recovery loop.
+  // If the gateway process is running but the WS handshake is stuck during
+  // cold boot, prefer cheap reconnect probes. Restarting OpenClaw is expensive
+  // and can turn a short token/port-cache delay into a 20s+ boot, so automatic
+  // recovery never restarts the service. The manual "Restart Gateway" button
+  // remains available once lightweight retries have failed.
   useEffect(() => {
     if (setupComplete !== true) return;
     if (connected) {
@@ -499,35 +498,24 @@ export default function App() {
     bootRecoveryStartedRef.current = true;
     setBootRecoveryLogs([]);
     addBootRecoveryLog('Waiting for Gateway WebSocket handshake…');
-    // First-pass: try the orchestrator (native → docker fallback).
-    // If native is down AND Docker has a usable container, this swaps
-    // modes and the boot completes without user intervention.
-    void window.aegis.gateway.ensureRunning?.().then((r: any) => {
-      if (r?.healthy) {
-        addBootRecoveryLog(`Gateway ready via ${r.mode}${r.attempted_fallback ? ' (fallback)' : ''}`);
-        triggerGatewayReconnect('after-ensure');
-      } else if (r?.error) {
-        addBootRecoveryLog(`ensure_gateway_running: ${r.error}`);
-      }
-    }).catch(() => { /* swallow — retry path below */ });
-    const delays = [4000, 9000, 16000];
+    const delays = [2500, 6000, 10000];
     bootRecoveryTimersRef.current = delays.map((delay, idx) => setTimeout(() => {
       if (useChatStore.getState().connected) return;
       const attempt = idx + 1;
       setBootRecoveryAttempt(attempt);
-      addBootRecoveryLog(`Auto reconnect attempt ${attempt}/3 (Gateway restart)`);
-      // No await — fire-and-forget, status is observed via bootRecoveryRestarting state.
-      void restartGatewayFromBoot();
+      addBootRecoveryLog(`Connection retry ${attempt}/3 (WebSocket reconnect)`);
+      try { gateway.disconnect(); } catch {}
+      try { gatewayManager.reconnect(); } catch {}
       if (attempt === 3) {
         setBootRecoveryReady(true);
-        addBootRecoveryLog('Auto reconnect attempts exhausted. Manual restart is available.');
+        addBootRecoveryLog('Connection retries did not finish. Manual restart is available.');
       }
     }, delay));
     return () => {
       bootRecoveryTimersRef.current.forEach(clearTimeout);
       bootRecoveryTimersRef.current = [];
     };
-  }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog, restartGatewayFromBoot, triggerGatewayReconnect]);
+  }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform

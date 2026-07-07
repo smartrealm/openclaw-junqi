@@ -1588,7 +1588,11 @@
       "config": "مزامنة النماذج والإعدادات والمهام المجدولة",
       "conversation": "استعادة قائمة الجلسات والسجل الحديث",
       "background": "تحديث الاستخدام والتكلفة وحالة الوكلاء"
-    }
+    },
+    "gatewayRecoveryTitle": "استعادة اتصال Gateway",
+    "gatewayRecoveryManual": "لم تُكمل محاولات الاتصال المصافحة. جرّب إعادة تشغيل Gateway يدويًا.",
+    "gatewayRecoveryRetrying": "إعادة محاولة اتصال WebSocket ({{attempt}}/3)",
+    "restartGateway": "إعادة تشغيل Gateway"
   },
   "gateway": {
     "statusChanged": "تغيّرت حالة Gateway",
