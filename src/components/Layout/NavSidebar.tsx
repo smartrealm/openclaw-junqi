@@ -24,6 +24,7 @@ import {
 } from './sidebarUtils';
 import { SidebarRow, SidebarSection } from './SidebarRow';
 import { applySessionRename } from '@/utils/sessionRename';
+import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 
 // ═══════════════════════════════════════════════════════════
 // 静态配置
@@ -178,8 +179,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
       t('chat.deleteSession', '删除会话'),
       t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
       async () => {
-        try { await gateway.deleteSession(sessionKey); } catch {}
-        useChatStore.getState().removeSession(sessionKey);
+        await deleteSessionEverywhere(sessionKey);
       }
     );
   }, [sessionKey, t]);

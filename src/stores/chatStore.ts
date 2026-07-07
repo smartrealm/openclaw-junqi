@@ -16,6 +16,39 @@ import { useSettingsStore } from './settingsStore';
 
 const MAIN_SESSION = 'agent:main:main';
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
+const DELETED_SESSION_PREFS_KEY = 'aegis:deleted-session-keys';
+
+function readDeletedSessionKeys(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_SESSION_PREFS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((key): key is string => typeof key === 'string' && key.trim().length > 0));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeDeletedSessionKeys(keys: Set<string>): void {
+  try {
+    localStorage.setItem(DELETED_SESSION_PREFS_KEY, JSON.stringify([...keys]));
+  } catch {
+    // ignore persistence errors
+  }
+}
+
+export function isSessionDeletedLocally(sessionKey: string): boolean {
+  if (!sessionKey || sessionKey === MAIN_SESSION) return false;
+  return readDeletedSessionKeys().has(sessionKey);
+}
+
+export function markSessionDeletedLocally(sessionKey: string): void {
+  if (!sessionKey || sessionKey === MAIN_SESSION) return;
+  const keys = readDeletedSessionKeys();
+  keys.add(sessionKey);
+  writeDeletedSessionKeys(keys);
+}
 
 function readSessionTopicPrefs(): Record<string, string> {
   try {
@@ -1003,9 +1036,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messagesPerSession,
     } = get();
     const defs = defaults ?? prev;
+    const deletedSessionKeys = readDeletedSessionKeys();
+    const visibleIncomingSessions = sessions.filter((session) => (
+      session.key === MAIN_SESSION || !deletedSessionKeys.has(session.key)
+    ));
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
-    const incomingKeys = new Set(sessions.map((session) => session.key));
-    const mergedSessions = sessions.map((session) => {
+    const incomingKeys = new Set(visibleIncomingSessions.map((session) => session.key));
+    const mergedSessions = visibleIncomingSessions.map((session) => {
       const previous = previousByKey.get(session.key);
       const hasCachedMessages = Object.prototype.hasOwnProperty.call(messagesPerSession, session.key);
       const cachedMessages = hasCachedMessages ? messagesPerSession[session.key] ?? [] : [];
@@ -1044,6 +1081,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
     const localOnlySessions = previousSessions.filter((session) => {
       if (incomingKeys.has(session.key)) return false;
+      if (session.key !== MAIN_SESSION && deletedSessionKeys.has(session.key)) return false;
       if (session.archived) return false;
       const createdAt = session.createdAt;
       const isLocalPlaceholder = typeof createdAt === 'number' || (typeof createdAt === 'string' && createdAt.trim().length > 0);

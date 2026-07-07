@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { useChatStore, type Session } from './chatStore';
+import { markSessionDeletedLocally, useChatStore, type Session } from './chatStore';
 
 const MAIN_KEY = 'agent:main:main';
 const OTHER_KEY = 'agent:worker:main';
@@ -57,4 +57,18 @@ test('setSessionModel upserts a local session row when sessions.list has not cau
     state.sessions.find((session) => session.key === desktopKey),
     { key: desktopKey, label: desktopKey, model: 'openai/gpt-5.4' },
   );
+});
+
+test('setSessions does not resurrect locally deleted sessions', () => {
+  const deletedKey = 'agent:worker:s-deleted';
+  markSessionDeletedLocally(deletedKey);
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main' },
+    { key: deletedKey, label: 'Deleted worker' },
+  ]);
+
+  const state = useChatStore.getState();
+  assert.equal(state.sessions.some((session) => session.key === deletedKey), false);
+  assert.equal(state.sessions.some((session) => session.key === MAIN_KEY), true);
 });

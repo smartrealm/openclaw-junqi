@@ -14,6 +14,7 @@ import { gateway } from '@/services/gateway';
 import { themeHex, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
+import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
@@ -463,11 +464,8 @@ function NewSessionPicker({
       t('chat.deleteSession', '删除会话'),
       t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
       async () => {
-        try { await gateway.deleteSession(session.key); } catch (err) {
-          console.warn('[NewSessionPicker] deleteSession failed:', err);
-        }
-        useChatStore.getState().removeSession(session.key);
-        onClose();
+        const deleted = await deleteSessionEverywhere(session.key);
+        if (deleted) onClose();
       }
     );
   }, [t, onClose]);
@@ -1054,11 +1052,10 @@ export function ChatTabs() {
       t('chat.deleteSession', '删除会话'),
       t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
       async () => {
-        try { await gateway.deleteSession(key); } catch {}
-        removeSession(key);
+        await deleteSessionEverywhere(key);
       }
     );
-  }, [ctxMenu, t, removeSession]);
+  }, [ctxMenu, t]);
 
   const { clearSessionMessages, clearSessionTokens } = useChatStore();
   const handleResetSession = useCallback(async () => {
