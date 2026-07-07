@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 146.3 81.2">
+  <defs>
+    <linearGradient id="g1" gradientUnits="userSpaceOnUse" x1="9.686" y1="25.7093" x2="102.0827" y2="25.7093">
+      <stop offset="0" stop-color="#DDE53F"/>
+      <stop offset="0.5168" stop-color="#1A98C5"/>
+      <stop offset="1" stop-color="#245C9F"/>
+    </linearGradient>
+    <linearGradient id="g2" gradientUnits="userSpaceOnUse" x1="36.7607" y1="18.9464" x2="146.2872" y2="18.9464">
+      <stop offset="0" stop-color="#DDE53F"/>
+      <stop offset="0.5168" stop-color="#1A98C5"/>
+      <stop offset="1" stop-color="#245C9F"/>
+    </linearGradient>
+    <linearGradient id="g3" gradientUnits="userSpaceOnUse" x1="109.4429" y1="10.2017" x2="143.2178" y2="23.3497">
+      <stop offset="0" stop-color="#DDE53F"/>
+      <stop offset="0.5168" stop-color="#1A98C5"/>
+      <stop offset="1" stop-color="#245C9F"/>
+    </linearGradient>
+    <linearGradient id="g4" gradientUnits="userSpaceOnUse" x1="111.1956" y1="5.6994" x2="144.9704" y2="18.8475">
+      <stop offset="0" stop-color="#DDE53F"/>
+      <stop offset="0.5168" stop-color="#1A98C5"/>
+      <stop offset="1" stop-color="#245C9F"/>
+    </linearGradient>
+    <linearGradient id="g5" gradientUnits="userSpaceOnUse" x1="0" y1="49.7305" x2="71.9555" y2="49.7305">
+      <stop offset="0" stop-color="#DDE53F"/>
+      <stop offset="0.5168" stop-color="#1A98C5"/>
+      <stop offset="1" stop-color="#245C9F"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#g1)" d="M102.1,40C77.9,48.8,55.2,5.1,32.9,6.6C17.6,7.8,9.7,21.8,9.7,21.8s17.6-15.4,36-3.3C62.1,29.1,77.5,55.7,102.1,40z"/>
+  <path fill="url(#g2)" d="M36.8,0.6c0,0,15.1-5.7,39.5,18.7s49.1-17.7,64,0.4c0,0,6.1,0.6,6,6.2c0,0-9.7-6.4-28.6,5.8s-35,4.3-45.1-6.9S52.5,1.9,36.8,0.6z"/>
+  <path fill="url(#g3)" d="M130,14.1c0,0-14.2,2-29-8.1C101,6,101.9,19.4,130,14.1z"/>
+  <path fill="url(#g4)" d="M129.7,13.6c0,0-8.3-1-15.1-8.9C114.6,4.6,113,12.3,129.7,13.6z"/>
+  <path fill="url(#g5)" d="M33.3,25.1C45.5,26.6,54,48.8,72,43.5c-20.4-3.6-24.2-33.1-50.6-23.2c-22.3,8.4-25,31.3-17.7,44.9C10,77.1,23.6,84.5,36,79.7C18.6,83.7,5.3,64,7.3,46.8C8.8,33.1,21.2,23.7,33.3,25.1z"/>
+</svg>

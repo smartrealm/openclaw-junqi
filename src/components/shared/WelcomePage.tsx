@@ -201,21 +201,7 @@ export function WelcomePage({ onLaunchTool }: WelcomePageProps) {
         }}
       >
         <div className="px-3 py-4 border-b" style={{ borderColor: 'rgb(var(--aegis-border))' }}>
-          <div className="flex items-center gap-2">
-            <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center"
-              style={{
-                background: 'rgb(var(--aegis-primary) / 0.10)',
-                border: '1px solid rgb(var(--aegis-primary) / 0.22)',
-              }}
-            >
-              <JunQiLogo variant="emblem" className="h-7 w-8" title="JunQi" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-bold text-aegis-text">JunQi</div>
-              <div className="text-[10px] text-aegis-text-dim">Desktop workspace</div>
-            </div>
-          </div>
+          <JunQiLogo variant="lockup" title="JunQi Desktop" />
         </div>
 
         <nav className="flex-1 px-2 py-3 flex flex-col gap-0.5">

@@ -1016,10 +1016,14 @@ export function SettingsPageFull() {
       {/* About + System Info */}
       <GlassCard delay={0.3}>
         <div className="text-center py-4 mb-4">
-          {/* JunQi Desktop brand mark */}
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-3"
-            style={{ background: 'rgb(var(--aegis-primary) / 0.10)', border: '1px solid rgb(var(--aegis-primary) / 0.22)' }}>
-            <JunQiLogo variant="emblem" className="h-9 w-12" title="JunQi Desktop" />
+          <div className="mb-4 flex justify-center">
+            <div className="rounded-xl border border-aegis-border/50 bg-white px-5 py-3 shadow-sm">
+              <JunQiLogo
+                variant="full"
+                className="h-[64px] w-[320px] max-w-full"
+                title="陕西浚启智境科技有限公司 JunQi"
+              />
+            </div>
           </div>
           <div className="text-[15px] font-bold text-aegis-text">JunQi Desktop</div>
           <div className="text-[12px] text-aegis-text-dim mt-1">v{APP_VERSION}</div>
