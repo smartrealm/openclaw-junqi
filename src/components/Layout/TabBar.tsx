@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import type { SidebarTab } from './tab-utils';
 import { LayoutDashboard, Bot, Wrench, Settings } from 'lucide-react';
 import clsx from 'clsx';
-import junqiLogo from '@/assets/brand/junqi-logo-full-16x.png';
+import { JunQiLogo } from '@/components/shared/JunQiLogo';
 
 const TABS = [
   { id: 'workbench', labelKey: 'nav.dashboard', labelFallback: '仪表盘', path: '/', Icon: LayoutDashboard },
@@ -25,13 +25,11 @@ export function TabBar() {
   return (
     <div className="flex h-[44px] shrink-0 items-center gap-0.5 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 220px)' }}>
       <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,220px)] flex items-center px-3 pointer-events-none">
-        <div className="h-[38px] w-[204px] overflow-hidden">
-          <img
-            src={junqiLogo}
-            alt="JunQi"
-            className="h-[62px] max-w-none object-contain object-left"
-            style={{ transform: 'translate(-19.5px, -8.25px)' }}
-            draggable={false}
+        <div className="flex h-[38px] w-[204px] items-center overflow-hidden">
+          <JunQiLogo
+            className="h-[38px] w-[204px]"
+            title="JunQi Desktop"
+            style={{ filter: 'drop-shadow(0 1px 1px rgb(var(--aegis-overlay) / 0.08))' }}
           />
         </div>
       </div>

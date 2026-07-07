@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, FolderOpen, Plus, Trash2, Clock, Blocks, Inbox, Layers, FolderSearch, Loader2, AlertCircle, Terminal, Container, GitBranch, Server, Codepen, Package, Box, Hammer, Settings2, Monitor, Cpu, RefreshCw } from 'lucide-react';
 import { Sparkle, Robot, Diamond, Wrench, Cube } from '@phosphor-icons/react';
 import { Icon } from '@/components/shared/icons';
+import { JunQiLogo } from '@/components/shared/JunQiLogo';
 
 /** Map tool IDs from detect_cli_tools to phosphor/lucide icons. */
 function toolIcon(id: string): React.ReactNode {
@@ -202,13 +203,13 @@ export function WelcomePage({ onLaunchTool }: WelcomePageProps) {
         <div className="px-3 py-4 border-b" style={{ borderColor: 'rgb(var(--aegis-border))' }}>
           <div className="flex items-center gap-2">
             <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold"
+              className="w-7 h-7 rounded-lg flex items-center justify-center"
               style={{
-                background: 'rgb(var(--aegis-primary))',
-                color: 'rgb(var(--aegis-on-primary))',
+                background: 'rgb(var(--aegis-primary) / 0.10)',
+                border: '1px solid rgb(var(--aegis-primary) / 0.22)',
               }}
             >
-              JQ
+              <JunQiLogo variant="emblem" className="h-[18px] w-6" title="JunQi" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[12.5px] font-bold text-aegis-text">JunQi</div>

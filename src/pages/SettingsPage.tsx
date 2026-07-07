@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -1016,9 +1017,9 @@ export function SettingsPageFull() {
       <GlassCard delay={0.3}>
         <div className="text-center py-4 mb-4">
           {/* JunQi Desktop brand mark */}
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl mb-3"
-            style={{ background: 'rgb(var(--aegis-primary) / 0.15)', border: '1px solid rgb(var(--aegis-primary) / 0.25)' }}>
-            <span className="text-[22px] font-extrabold tracking-tight text-aegis-primary">JQ</span>
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-3"
+            style={{ background: 'rgb(var(--aegis-primary) / 0.10)', border: '1px solid rgb(var(--aegis-primary) / 0.22)' }}>
+            <JunQiLogo variant="emblem" className="h-9 w-12" title="JunQi Desktop" />
           </div>
           <div className="text-[15px] font-bold text-aegis-text">JunQi Desktop</div>
           <div className="text-[12px] text-aegis-text-dim mt-1">v{APP_VERSION}</div>
