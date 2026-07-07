@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image, FileArchive, FileCode2, FileText, FolderOpen, type LucideIcon } from 'lucide-react';
 import { themeHex } from '@/utils/theme-colors';
-import { useSettingsStore } from '@/stores/settingsStore';
 import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
@@ -114,33 +113,42 @@ function isSameStatusCopy(a?: string, b?: string): boolean {
   return Boolean(left && right && left === right);
 }
 
-/** Resolve the user-selected theme to a concrete "is the UI dark?" boolean
- * (handles the 'system' value by following the OS preference). */
+function isDarkThemeName(value: string | null): boolean {
+  return value === 'aegis-dark' || value === 'aegis-midnight';
+}
+
+/** Resolve the pet webview's actual applied theme, not the main window store.
+ * The pet is a separate webview, so its Zustand settings state can lag behind
+ * the `data-theme` token that was already applied to this document. */
 function useResolvedDark(): boolean {
-  const theme = useSettingsStore((s) => s.theme);
-  const [systemDark, setSystemDark] = useState<boolean>(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return true;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  const readDark = () => {
+    if (typeof document === 'undefined') return true;
+    const theme = document.documentElement.getAttribute('data-theme');
+    if (isDarkThemeName(theme)) return true;
+    if (theme === 'aegis-light' || theme === 'aegis-eyecare') return false;
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+  };
+  const [dark, setDark] = useState<boolean>(readDark);
   useEffect(() => {
-    if (!window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => setSystemDark(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
+    const refresh = () => setDark(readDark());
+    const observer = new MutationObserver(refresh);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    mq?.addEventListener('change', refresh);
+    refresh();
+    return () => {
+      observer.disconnect();
+      mq?.removeEventListener('change', refresh);
+    };
   }, []);
-  if (theme === 'aegis-dark') return true;
-  if (theme === 'aegis-midnight') return true;
-  if (theme === 'aegis-light') return false;
-  if (theme === 'aegis-eyecare') return false;
-  return systemDark;
+  return dark;
 }
 
 function petTextPalette(isDark: boolean): { primary: string; secondary: string; danger: string } {
   return isDark
     ? {
-        primary: '#ffffff',
-        secondary: '#e2e8f0',
+        primary: '#f8fafc',
+        secondary: '#dbe4f0',
         danger: '#fecaca',
       }
     : {
@@ -148,6 +156,17 @@ function petTextPalette(isDark: boolean): { primary: string; secondary: string; 
         secondary: '#1f2937',
         danger: '#991b1b',
       };
+}
+
+function solidTextStyle(color: string): CSSProperties {
+  return {
+    color,
+    WebkitTextFillColor: color,
+    WebkitTextStrokeWidth: 0,
+    WebkitTextStrokeColor: 'transparent',
+    paintOrder: 'fill',
+    textShadow: 'none',
+  };
 }
 
 /**
@@ -199,8 +218,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
   const bubbleStyle: CSSProperties = {
     maxWidth: 240,
     textAlign: 'center',
-    color: textPalette.primary,
-    WebkitTextFillColor: textPalette.primary,
+    ...solidTextStyle(textPalette.primary),
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
     fontSize: 13,
     fontWeight: 760,
@@ -208,8 +226,6 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     overflowWrap: 'anywhere',
     wordBreak: 'normal',
     whiteSpace: 'normal',
-    textShadow: 'none',
-    WebkitTextStroke: 'initial',
     filter: 'none',
     opacity: 1,
   };
@@ -295,11 +311,8 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
           style={{
             display: 'inline-block',
             fontWeight: 750,
-            color: e === 'error' ? textPalette.danger : textPalette.primary,
-            WebkitTextFillColor: e === 'error' ? textPalette.danger : textPalette.primary,
+            ...solidTextStyle(e === 'error' ? textPalette.danger : textPalette.primary),
             maxWidth: 232,
-            textShadow: 'none',
-            WebkitTextStroke: 'initial',
           }}
         >
           {title}
@@ -316,10 +329,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
               whiteSpace: 'pre-line',
               overflowWrap: 'anywhere',
               wordBreak: 'normal',
-              color: textPalette.secondary,
-              WebkitTextFillColor: textPalette.secondary,
-              textShadow: 'none',
-              WebkitTextStroke: 'initial',
+              ...solidTextStyle(textPalette.secondary),
             }}
           >
             {formatStatusDetail(detail)}
@@ -329,14 +339,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     );
   } else if (e === 'error') {
     bubbleKey = 'error';
-    body = <span style={{ fontWeight: 760, color: textPalette.danger }}>{label}</span>;
+    body = <span style={{ fontWeight: 760, ...solidTextStyle(textPalette.danger) }}>{label}</span>;
   } else if (ACTIVE.has(e)) {
     bubbleKey = `active-${e}`;
     const detail = state.message || state.taskLabel;
     const elapsed = state.elapsedMs ? fmtDuration(state.elapsedMs) : null;
     body = (
       <>
-        <span style={{ fontWeight: 700, color: 'inherit' }}>
+        <span style={{ fontWeight: 700, ...solidTextStyle(textPalette.primary) }}>
           {label}
           {elapsed && <span style={{ fontSize: 10.5, opacity: 0.65, fontWeight: 400 }}> · {elapsed}</span>}
         </span>
@@ -351,7 +361,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
               whiteSpace: 'pre-line',
               overflowWrap: 'anywhere',
               wordBreak: 'normal',
-              color: 'inherit',
+              ...solidTextStyle(textPalette.secondary),
               opacity: 0.92,
             }}
           >
@@ -368,7 +378,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     const caption = pomoKind ? t(CELEBRATE_CAPTION[pomoKind].key, CELEBRATE_CAPTION[pomoKind].fallback) : label;
     const CelebrateIcon = pomoKind ? celebrateIcon(pomoKind) : null;
     body = (
-      <span style={{ fontWeight: 700, color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontWeight: 700, ...solidTextStyle(textPalette.primary), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         {CelebrateIcon && <CelebrateIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0 }} />}
         {caption}
       </span>
@@ -385,14 +395,14 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       : t(p.phase === 'work' ? 'pet.pomodoro.focusing' : 'pet.pomodoro.resting', p.phase === 'work' ? '专注中' : '休息中');
     const PomoIcon = pomodoroIcon(p);
     body = (
-      <span style={{ fontWeight: 700, color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontWeight: 700, ...solidTextStyle(textPalette.primary), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0, color: pomodoroColor(p, isDark) }} />
         {p.paused ? phaseLabel : `${phaseLabel} ${fmtClock(p.remainingMs)}`}
       </span>
     );
   } else if (e === 'sleep' || e === 'sleepy') {
     bubbleKey = e;
-    body = <span style={{ fontWeight: 700, opacity: 1, color: 'inherit' }}>{label}</span>;
+    body = <span style={{ fontWeight: 700, opacity: 1, ...solidTextStyle(textPalette.primary) }}>{label}</span>;
   } else if (hovered) {
     bubbleKey = 'tips';
     body = (
@@ -406,7 +416,7 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18, ease: 'easeInOut' }}
-          style={{ display: 'block', fontWeight: 600 }}
+          style={{ display: 'block', fontWeight: 600, ...solidTextStyle(textPalette.primary) }}
         >
           {tips[tipIndex]}
         </motion.span>
