@@ -65,6 +65,8 @@ function setupStepMessageKey(step: SetupStep): string {
     case "install-git":
     case "install-node":
     case "install-openclaw":
+    case "install-complete":
+      return "setup.installComplete";
     default:
       return "setup.settingUp";
   }
@@ -85,6 +87,8 @@ function setupStepProgress(step: SetupStep): number {
     case "install-openclaw":
     case "error":
       return 52;
+    case "install-complete":
+      return 68;
     case "ready":
       return 100;
     default:
@@ -735,6 +739,7 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
   const recentLogs = logs.slice(-3);
   const isReady = setupStep === "ready";
   const isError = setupStep === "error";
+  const isAwaitingGatewayStart = setupStep === "install-complete";
   const currentMeta = current ? STEP_META[current.id] : null;
   const currentTitle = current
     ? currentMeta ? t(currentMeta.titleKey, currentMeta.titleFallback) : current.label
@@ -749,8 +754,14 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
       )}>
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-            {isReady ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
-            {isReady ? t("setup.ready", "就绪") : isError ? t("setup.error", "安装遇到问题") : t("setup.installPanel.current", "当前执行")}
+            {isReady || isAwaitingGatewayStart ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
+            {isReady
+              ? t("setup.ready", "就绪")
+              : isAwaitingGatewayStart
+                ? t("setup.installComplete", "必需组件已安装完成")
+                : isError
+                  ? t("setup.error", "安装遇到问题")
+                  : t("setup.installPanel.current", "当前执行")}
           </div>
           <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
           <p className="mt-1 max-w-[62ch] text-sm leading-6 text-aegis-text-muted">{currentDescription}</p>
@@ -759,7 +770,7 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
               {flow.statusMessage}
             </div>
           )}
-          {current?.id === "gateway" && !isReady && (
+          {current?.id === "gateway" && !isReady && !isAwaitingGatewayStart && (
             <GatewayLifecyclePanel variant="compact" className="mt-3" />
           )}
         </div>
@@ -797,7 +808,9 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
               ? t("setup.installPanel.errorHint", "请复制错误信息或返回上一步重新选择安装方式。")
               : isReady
                 ? t("setup.installPanel.readyHint", "Gateway 已就绪。点击进入工作台继续。")
-                : t("setup.installPanel.keepOpen", "安装过程中请保持窗口打开。完成后点击进入工作台。")}
+                : isAwaitingGatewayStart
+                  ? t("setup.installPanel.gatewayPendingHint", "必需组件已完成。点击启动 Gateway 进入下一步。")
+                  : t("setup.installPanel.keepOpen", "安装过程中请保持窗口打开。完成后点击进入工作台。")}
           </div>
         </aside>
       </div>
@@ -809,18 +822,21 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const { setupStep, setupError } = useAppStore();
   const active = setupStep === "ready" ? 3 : 2;
+  const isInstallComplete = setupStep === "install-complete";
 
   return (
     <SetupShell
       active={active}
-      title={setupStep === "ready" ? t("setup.ready") : t("setup.settingUp")}
-      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : t("setup.subtitle")}
+      title={setupStep === "ready" ? t("setup.ready") : isInstallComplete ? t("setup.installComplete", "必需组件已安装完成") : t("setup.settingUp")}
+      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isInstallComplete ? t("setup.installCompleteSubtitle", "安装与配置已完成。请确认后手动启动 Gateway。") : t("setup.subtitle")}
       logs={logs}
       wide
       previousAction={setupStep === "ready" ? undefined : { onClick: () => flow.goBack() }}
       nextAction={
         setupStep === "ready"
           ? { label: t("setup.enterWorkspace"), onClick: () => flow.enterWorkspace() }
+          : isInstallComplete
+            ? { label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }
           : setupStep === "error"
             ? { label: t("setup.retry"), onClick: () => { void flow.retrySetup(); }, icon: "none" }
             : { label: flow.statusMessage || t("setup.settingUp"), disabled: true, loading: true, icon: "none" }
@@ -964,6 +980,7 @@ export function SetupPage() {
     case "install-git":
     case "install-node":
     case "install-openclaw":
+    case "install-complete":
     case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
     case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
     default: return <DetectingScreen flow={flow} logs={sharedLogs} />;

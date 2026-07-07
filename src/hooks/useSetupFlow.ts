@@ -296,14 +296,22 @@ export function useSetupFlow(
     const runId = beginRun();
     setSetupStep("checking");
     report(t("setup.startingGateway"), 30);
-    setSteps([{ id: "gateway", label: "Gateway", status: "running" }]);
+    if (stepsRef.current.some((s) => s.id === "gateway")) {
+      patchStep("gateway", "running", t("setup.startingGateway"));
+    } else {
+      setSteps([{ id: "gateway", label: "Gateway", status: "running", detail: t("setup.startingGateway") }]);
+    }
     try {
       const status: any = await startGateway();
       cacheGatewayTarget(status?.port, status?.token);
       await waitForGatewayReady(runId, 30_000, status?.port);
       if (!isRunActive(runId)) return;
       setGatewayRunning(true);
-      setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
+      if (stepsRef.current.some((s) => s.id === "gateway")) {
+        patchStep("gateway", "done");
+      } else {
+        setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
+      }
       report(t("setup.ready"), 100);
       await new Promise((r) => setTimeout(r, 600));
       if (!isRunActive(runId)) return;
@@ -311,7 +319,11 @@ export function useSetupFlow(
       setSetupStep("ready");
     } catch (e: any) {
       if (!isRunActive(runId)) return;
-      setSteps([{ id: "gateway", label: "Gateway", status: "error", detail: String(e?.message ?? e) }]);
+      if (stepsRef.current.some((s) => s.id === "gateway")) {
+        patchStep("gateway", "error", String(e?.message ?? e));
+      } else {
+        setSteps([{ id: "gateway", label: "Gateway", status: "error", detail: String(e?.message ?? e) }]);
+      }
       setSetupError(e?.message || String(e));
       report(e?.message || String(e));
       setSetupStep("error");
@@ -385,22 +397,9 @@ export function useSetupFlow(
         console.warn('[setup] prepare_gateway failed, continuing to start_gateway:', e);
       }
       if (!isRunActive(runId)) return;
-      patchStep("gateway", "running", t("setup.startingGateway"));
-      report(t("setup.startingGateway"), 70);
-      const gatewayStatus: any = await startGateway();
-      cacheGatewayTarget(gatewayStatus?.port, gatewayStatus?.token);
-      await waitForGatewayReady(runId, 30_000, gatewayStatus?.port);
-      if (!isRunActive(runId)) return;
-      setGatewayRunning(true);
-      patchStep("gateway", "done");
-
-      report(t("setup.waitingGateway"), 90);
-      await new Promise((r) => setTimeout(r, 600));
-      if (!isRunActive(runId)) return;
-
-      report(t("setup.ready"), 100);
-      markSetupReady();
-      setSetupStep("ready");
+      patchStep("gateway", "pending", t("setup.installCompleteGatewayPending", "Gateway 配置已准备，点击启动 Gateway 继续。"));
+      report(t("setup.installComplete", "必需组件已安装完成"), 68);
+      setSetupStep("install-complete");
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       const msg = err?.message || String(err);

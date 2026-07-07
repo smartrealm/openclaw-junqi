@@ -10,6 +10,7 @@ export type SetupStep =
   | "git-missing"
   | "install-node"
   | "install-openclaw"
+  | "install-complete"
   | "ready"
   | "error";
 
