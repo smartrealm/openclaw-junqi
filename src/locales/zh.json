@@ -2229,19 +2229,19 @@
     }
   },
   "boot": {
-    "preparingGateway": "正在准备 OpenClaw Gateway",
-    "preparingGatewayDesc": "检测、连接并同步运行时状态…",
+    "preparingGateway": "正在连接 JunQi 工作台",
+    "preparingGatewayDesc": "连接本地 Gateway，并恢复运行时状态…",
     "stage": {
       "connection": "连接",
-      "config": "配置",
+      "config": "运行配置",
       "conversation": "会话",
-      "background": "后台同步"
+      "background": "后台数据"
     },
     "detail": {
-      "connection": "等待 WebSocket 握手",
-      "config": "等待模型 / 配置 / 定时任务",
-      "conversation": "等待最近历史和会话列表",
-      "background": "等待成本 / 用量 / Agent 同步"
+      "connection": "建立本地 Gateway 连接",
+      "config": "同步模型、配置和定时任务",
+      "conversation": "恢复会话列表和最近历史",
+      "background": "刷新用量、成本和智能体状态"
     }
   },
   "sessions": {
@@ -2374,8 +2374,8 @@
   "gateway.connectedLabel": "已连接",
   "gateway.connectingLabel": "连接中…",
   "gateway.disconnectedLabel": "未连接",
-  "boot.preparingGateway": "正在准备 OpenClaw Gateway",
-  "boot.preparingGatewayDesc": "检测、连接并同步运行时状态…",
+  "boot.preparingGateway": "正在连接 JunQi 工作台",
+  "boot.preparingGatewayDesc": "连接本地 Gateway，并恢复运行时状态…",
   "chat.pinSession": "置顶",
   "chat.unpinSession": "取消置顶",
   "chat.archiveSession": "归档",

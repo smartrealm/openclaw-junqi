@@ -1575,19 +1575,19 @@
     "previewMono": "console.log('مرحباً بالعالم!')؛ // abcdef 1234567890"
   },
   "boot": {
-    "preparingGateway": "جارٍ تجهيز OpenClaw Gateway",
-    "preparingGatewayDesc": "جارٍ الفحص والاتصال ومزامنة حالة التشغيل…",
+    "preparingGateway": "جارٍ الاتصال بمساحة عمل JunQi",
+    "preparingGatewayDesc": "جارٍ الاتصال بالبوابة المحلية واستعادة حالة التشغيل…",
     "stage": {
       "connection": "الاتصال",
-      "config": "الإعدادات",
-      "conversation": "المحادثة",
-      "background": "مزامنة الخلفية"
+      "config": "إعدادات التشغيل",
+      "conversation": "الجلسات",
+      "background": "بيانات الخلفية"
     },
     "detail": {
-      "connection": "انتظار مصافحة WebSocket",
-      "config": "انتظار النماذج / الإعدادات / المهام",
-      "conversation": "انتظار السجل الحديث وقائمة الجلسات",
-      "background": "انتظار التكلفة / الاستخدام / الوكلاء"
+      "connection": "فتح اتصال Gateway المحلي",
+      "config": "مزامنة النماذج والإعدادات والمهام المجدولة",
+      "conversation": "استعادة قائمة الجلسات والسجل الحديث",
+      "background": "تحديث الاستخدام والتكلفة وحالة الوكلاء"
     }
   },
   "gateway": {
@@ -1758,8 +1758,8 @@
   "gateway.connectedLabel": "متصل",
   "gateway.connectingLabel": "جارٍ الاتصال…",
   "gateway.disconnectedLabel": "غير متصل",
-  "boot.preparingGateway": "جارٍ تجهيز OpenClaw Gateway",
-  "boot.preparingGatewayDesc": "جارٍ الفحص والاتصال ومزامنة حالة التشغيل…",
+  "boot.preparingGateway": "جارٍ الاتصال بمساحة عمل JunQi",
+  "boot.preparingGatewayDesc": "جارٍ الاتصال بالبوابة المحلية واستعادة حالة التشغيل…",
   "chat.pinSession": "تثبيت",
   "chat.unpinSession": "إلغاء التثبيت",
   "chat.archiveSession": "أرشفة",

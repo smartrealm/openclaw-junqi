@@ -2185,19 +2185,19 @@
     "sevenDay": "7d"
   },
   "boot": {
-    "preparingGateway": "Preparing OpenClaw Gateway",
-    "preparingGatewayDesc": "Detecting, connecting, and syncing runtime state…",
+    "preparingGateway": "Connecting JunQi workspace",
+    "preparingGatewayDesc": "Connecting to the local Gateway and restoring runtime state…",
     "stage": {
-      "connection": "Connection",
-      "config": "Configuration",
-      "conversation": "Conversation",
-      "background": "Background sync"
+      "connection": "Connect",
+      "config": "Runtime config",
+      "conversation": "Sessions",
+      "background": "Background data"
     },
     "detail": {
-      "connection": "Waiting for WebSocket handshake",
-      "config": "Waiting for models / config / cron",
-      "conversation": "Waiting for recent history and sessions.list",
-      "background": "Waiting for cost / usage / agents"
+      "connection": "Opening local Gateway connection",
+      "config": "Syncing models, config, and scheduled jobs",
+      "conversation": "Restoring session list and recent history",
+      "background": "Refreshing usage, cost, and agent state"
     }
   },
   "sessions": {
@@ -2330,8 +2330,8 @@
   "gateway.connectedLabel": "Connected",
   "gateway.connectingLabel": "Connecting…",
   "gateway.disconnectedLabel": "Disconnected",
-  "boot.preparingGateway": "Preparing OpenClaw Gateway",
-  "boot.preparingGatewayDesc": "Detecting, connecting, and syncing runtime state…",
+  "boot.preparingGateway": "Connecting JunQi workspace",
+  "boot.preparingGatewayDesc": "Connecting to the local Gateway and restoring runtime state…",
   "chat.pinSession": "Pin to top",
   "chat.unpinSession": "Unpin",
   "chat.archiveSession": "Archive",

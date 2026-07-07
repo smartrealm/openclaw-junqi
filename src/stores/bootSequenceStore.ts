@@ -28,30 +28,30 @@ function createDefaultStages(): Record<BootStageId, BootStage> {
   return {
     connection: {
       id: 'connection',
-      title: 'Connection',
+      title: 'Connect',
       status: 'pending',
-      detail: 'Waiting for WebSocket handshake',
+      detail: 'Opening local Gateway connection',
       updatedAt: now,
     },
     config: {
       id: 'config',
-      title: 'Configuration',
+      title: 'Runtime config',
       status: 'pending',
-      detail: 'Waiting for models / config / cron',
+      detail: 'Syncing models, config, and scheduled jobs',
       updatedAt: now,
     },
     conversation: {
       id: 'conversation',
-      title: 'Conversation',
+      title: 'Sessions',
       status: 'pending',
-      detail: 'Waiting for recent history and sessions.list',
+      detail: 'Restoring session list and recent history',
       updatedAt: now,
     },
     background: {
       id: 'background',
-      title: 'Background sync',
+      title: 'Background data',
       status: 'pending',
-      detail: 'Waiting for cost / usage / agents',
+      detail: 'Refreshing usage, cost, and agent state',
       updatedAt: now,
     },
   };
