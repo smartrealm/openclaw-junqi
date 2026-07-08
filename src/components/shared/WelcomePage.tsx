@@ -18,6 +18,7 @@ import { Search, FolderOpen, Plus, Trash2, Clock, Blocks, Inbox, Layers, FolderS
 import { Sparkle, Robot, Diamond, Wrench, Cube } from '@phosphor-icons/react';
 import { Icon } from '@/components/shared/icons';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
+import { debugWarn } from '@/utils/debugLog';
 
 /** Map tool IDs from detect_cli_tools to phosphor/lucide icons. */
 function toolIcon(id: string): React.ReactNode {
@@ -151,7 +152,7 @@ export function WelcomePage({ onLaunchTool }: WelcomePageProps) {
         })
         .catch((err) => {
           if (!cancelled) {
-            console.warn('[WelcomePage] detect_cli_tools failed', err);
+            debugWarn('app', '[WelcomePage] detect_cli_tools failed', err);
           }
         })
         .finally(() => {

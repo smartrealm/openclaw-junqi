@@ -9,6 +9,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ShieldCheck, RefreshCw, X, Loader2, Key, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { debugError, debugWarn } from '@/utils/debugLog';
 
 interface PairingScreenProps {
   /** HTTP base URL of the Gateway (derived from WS URL) */
@@ -101,7 +102,7 @@ export function PairingScreen({ gatewayHttpUrl, onPaired, onCancel, errorMessage
       startPolling(result.deviceId);
     } catch (err: any) {
       if (!mountedRef.current) return;
-      console.error('[Pairing] Request failed:', err);
+      debugError('gateway', '[Pairing] Request failed:', err);
       setError(err.message || 'Failed to request pairing');
       // /v1/pair not available — fall back to CLI approval mode
       // Gateway is retrying WS connection every 5s in the background;
@@ -159,7 +160,7 @@ export function PairingScreen({ gatewayHttpUrl, onPaired, onCancel, errorMessage
         // 'pending' → keep polling
       } catch (err: any) {
         // Network errors during poll are non-fatal — keep trying
-        console.warn('[Pairing] Poll error (will retry):', err.message);
+        debugWarn('gateway', '[Pairing] Poll error (will retry):', err.message);
       }
     }, 3000);
   }, [gatewayHttpUrl, onPaired]);

@@ -1,7 +1,7 @@
 # Nezha 拆零件移植计划（Option A）
 
-> **Status**: execution plan
-> **Source**: hanshuaikang/nezha（已镜像至 `src/_nezha_root/`、`src/components/nezha/`、`src/styles/nezha/`、`src/hooks/nezha/`、`src-tauri/src/nezha/`）
+> **Status**: historical execution plan; local mirror directories were removed after the useful pieces were migrated.
+> **Source**: hanshuaikang/nezha（历史镜像目录已删除；当前前端实现以 `src/components/shared/`、`src/components/Terminal/`、`src/components/settings/`、`src/styles/nezha-bridge.css` 等迁移后文件为准）
 > **Target**: openclaw-junqi
 > **Branch**: `feat/port-nezha-fullsuite`
 > **总估时**: 7-10 个工作日
@@ -27,15 +27,15 @@
 
 ---
 
-## 1 — 现有 nezha 资产盘点
+## 1 — 现有 nezha 资产盘点（历史记录）
 
 | 资产 | 位置 | 体量 | 状态 |
 |---|---|---|---|
-| 26 个 nezha 组件 | `src/components/nezha/` | ~8000 行 | 已镜像未接入 |
-| 11 个 AppSettings 子面板 | `src/components/nezha/app-settings/` | ~1500 行 | 已镜像未接入 |
-| 14 个样式模块 | `src/styles/nezha/` | ~3000 行 | 已镜像未接入 |
-| 6 个 hooks | `src/hooks/nezha/` | ~800 行 | 已镜像未接入 |
-| nezha App + main + types + i18n + utils | `src/_nezha_root/` | ~3000 行 | 已镜像未接入 |
+| 26 个 nezha 组件 | 历史镜像 | ~8000 行 | 已拆分迁移，镜像目录已删除 |
+| 11 个 AppSettings 子面板 | 历史镜像 | ~1500 行 | 已拆分迁移，镜像目录已删除 |
+| 14 个样式模块 | 历史镜像 | ~3000 行 | 已收敛为 `src/styles/nezha-bridge.css` 等当前样式 |
+| 6 个 hooks | 历史镜像 | ~800 行 | 已拆分迁移，镜像目录已删除 |
+| nezha App + main + types + i18n + utils | 历史镜像：`src/_nezha_root/` | ~3000 行 | 仅保留仍被当前代码使用的 `platform.ts` / `shortcuts.ts` / `types.ts` |
 | 19 个 nezha Rust 模块 | `src-tauri/src/nezha/` | 10683 行 | 已镜像未注册 |
 | Terminal 组件 | `src/components/Terminal/` | ~700 行 | ✅ 已接入 |
 | **git 命令** | `src-tauri/src/commands/git_neu.rs` | 1370 行 | ✅ **已移植 + 注册** |
@@ -87,34 +87,23 @@ Phase 5: Agent/任务/Skill      2-3d ─┘
 
 ### 3.2 nezha 样式注入
 
-**改动**：`src/main.tsx` 顶部 import nezha styles：
+**当前状态**：旧镜像样式目录已删除；迁移后的兼容变量桥保留在 `src/styles/nezha-bridge.css`，由 `src/styles/index.css` 统一加载。
 
-```ts
-// src/main.tsx 顶部新增
-import "@/styles/nezha/index.ts";  // CSS-in-JS 注册副作用
-```
+### 3.3 nezha 类型与 utils 暴露（历史记录）
 
-### 3.3 nezha 类型与 utils 暴露
-
-**改动**：`tsconfig.json` 加 path alias
+**当前状态**：不再新增 `@nezha/*` alias；保留的兼容类型直接从当前文件导入，避免继续依赖已删除镜像。
 
 ```json
 {
-  "compilerOptions": {
-    "paths": {
-      "@nezha/types": ["src/_nezha_root/types.ts"],
-      "@nezha/utils": ["src/_nezha_root/utils.ts"],
-      "@nezha/shortcuts": ["src/_nezha_root/shortcuts.ts"]
-    }
-  }
+  "compilerOptions": {}
 }
 ```
 
 ### 3.4 验收
 
 - [ ] `pnpm tauri dev` 能起，无命名冲突编译错误
-- [ ] 在 junqi 任意页面 `import { DEFAULT_TERMINAL_FONT_SIZE } from "@nezha/types"` 编译通过
-- [ ] 在 junqi 任意页面 `import s from "@/styles/nezha/layout"` 能用 `s.welcomeBody`
+- [ ] 当前组件不依赖已删除的 `@nezha/*` alias
+- [ ] 当前组件不依赖已删除的历史镜像样式模块
 
 ---
 
@@ -124,7 +113,7 @@ import "@/styles/nezha/index.ts";  // CSS-in-JS 注册副作用
 
 ### 4.1 PR-1: 统一 StatusIcon（4h）
 
-**来源**：`src/components/nezha/StatusIcon.tsx`
+**上游来源**：`nezha/src/components/nezha/StatusIcon.tsx`
 
 **接入位置**：
 
@@ -151,7 +140,7 @@ src/components/shared/StatusDot.tsx     // 标为 deprecated，保留 shim
 
 ### 4.2 PR-2: 主题选择器升级（2h）
 
-**来源**：`src/components/nezha/app-settings/ThemePanel.tsx`
+**上游来源**：`nezha/src/components/nezha/app-settings/ThemePanel.tsx`
 
 **接入位置**：替换 `src/components/settings/ThemePicker.tsx`
 
@@ -175,7 +164,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 4.3 PR-3: SidebarFooterActions 复用（2h）
 
-**来源**：`src/components/nezha/SidebarFooterActions.tsx`
+**上游来源**：`nezha/src/components/nezha/SidebarFooterActions.tsx`
 
 **接入位置**：`src/components/Layout/NavSidebar.tsx` 底部
 
@@ -187,7 +176,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 5.1 PR-4: NotificationBell 接入（4h）
 
-**来源**：`src/components/nezha/NotificationBell.tsx` + `src/hooks/nezha/useNotifications.tsx`
+**上游来源**：`nezha/src/components/nezha/NotificationBell.tsx` + `nezha/src/hooks/nezha/useNotifications.tsx`
 
 **接入位置**：`src/components/Layout/TopBar.tsx` 通知铃铛位置
 
@@ -206,7 +195,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 5.2 PR-5: UsagePopover 接入（3h，可选）
 
-**来源**：`src/components/nezha/UsagePopover.tsx` + `src/hooks/nezha/useUsageSnapshot.ts`
+**上游来源**：`nezha/src/components/nezha/UsagePopover.tsx` + `nezha/src/hooks/nezha/useUsageSnapshot.ts`
 
 **接入位置**：TopBar 通知铃铛旁 / SidebarFooterActions 内
 
@@ -224,7 +213,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 6.1 PR-6: FileExplorer 替换（6h）
 
-**来源**：`src/components/nezha/FileExplorer.tsx` + `src/components/nezha/file-explorer/*`
+**上游来源**：`nezha/src/components/nezha/FileExplorer.tsx` + `nezha/src/components/nezha/file-explorer/*`
 
 **接入位置**：`src/pages/FileManager.tsx`（目前是 junqi 自己的实现）
 
@@ -253,7 +242,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 6.2 PR-7: FileViewer 替换（6h）
 
-**来源**：`src/components/nezha/FileViewer.tsx`
+**上游来源**：`nezha/src/components/nezha/FileViewer.tsx`
 
 **接入位置**：FileManager 内打开文件时 / `Workshop.tsx` 的代码片段查看
 
@@ -274,7 +263,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 7.1 PR-8: GitChanges 替换（5h）
 
-**来源**：`src/components/nezha/GitChanges.tsx` + `git-view/GitFileBrowser.tsx`
+**上游来源**：`nezha/src/components/nezha/GitChanges.tsx` + `git-view/GitFileBrowser.tsx`
 
 **接入位置**：`src/pages/GitPage.tsx`（目前是分析视图，**不是变更视图**）
 
@@ -291,7 +280,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 7.2 PR-9: GitHistory 替换（3h）
 
-**来源**：`src/components/nezha/GitHistory.tsx`
+**上游来源**：`nezha/src/components/nezha/GitHistory.tsx`
 
 **接入位置**：GitPage → History tab
 
@@ -299,13 +288,13 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 7.3 PR-10: GitDiffViewer 接入（2h）
 
-**来源**：`src/components/nezha/GitDiffViewer.tsx`
+**上游来源**：`nezha/src/components/nezha/GitDiffViewer.tsx`
 
 **接入位置**：在 GitChanges / GitHistory 内点击文件/提交触发
 
 ### 7.4 PR-11: AI 生成 commit message（2h）
 
-**来源**：`src/components/nezha/GitChanges.tsx` 的 Sparkles 按钮 + `src-tauri/src/nezha/git.rs::generate_commit_message`
+**上游来源**：`nezha/src/components/nezha/GitChanges.tsx` 的 Sparkles 按钮 + `src-tauri/src/nezha/git.rs::generate_commit_message`
 
 **接入位置**：GitChanges 提交区
 
@@ -321,7 +310,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 8.1 PR-12: SkillHub 接入（6h）
 
-**来源**：`src/components/nezha/skill-hub/*` + `src-tauri/src/nezha/skills.rs` + `src/components/nezha/app-settings/SkillsPanel.tsx`
+**上游来源**：`nezha/src/components/nezha/skill-hub/*` + `src-tauri/src/nezha/skills.rs` + `nezha/src/components/nezha/app-settings/SkillsPanel.tsx`
 
 **接入位置**：junqi 的 `SkillsPage` 已有部分实现，可借鉴 nezha 的 SkillHub 架构（软链管理 / frontmatter 解析 / 冲突处理）
 
@@ -333,7 +322,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 8.2 PR-13: Terminal 升级（4h）
 
-**来源**：`src/components/nezha/ShellTerminalPanel.tsx` 已部分接入，补全：
+**上游来源**：`nezha/src/components/nezha/ShellTerminalPanel.tsx` 已部分接入，补全：
 
 - 多 Tab（最多 5 个）
 - 拖拽调高度（用 nezha 的 `onResizeStart` 模式替换现有 `useEffect + window mousemove`）
@@ -343,7 +332,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 8.3 PR-14: Make Target 一键运行（3h）
 
-**来源**：`src/components/nezha/FileViewer.tsx` 的 Makefile 检测逻辑
+**上游来源**：`nezha/src/components/nezha/FileViewer.tsx` 的 Makefile 检测逻辑
 
 **接入位置**：FileViewer 顶部
 
@@ -353,7 +342,7 @@ export { ThemePanel as ThemePicker } from "@/components/nezha/app-settings/Theme
 
 ### 8.4 PR-15: @ 文件提及（半天，可选）
 
-**来源**：`src/components/nezha/new-task/MentionPopover.tsx` + `PromptEditor.tsx`
+**上游来源**：`nezha/src/components/nezha/new-task/MentionPopover.tsx` + `PromptEditor.tsx`
 
 **接入位置**：`src/components/Chat/MessageInput.tsx`
 

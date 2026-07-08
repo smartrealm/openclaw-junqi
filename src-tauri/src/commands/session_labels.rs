@@ -77,15 +77,13 @@ pub async fn upsert_session_label(key: String, label: Option<String>) -> Result<
     if let Some(l) = label {
         let trimmed = l.trim();
         if trimmed.is_empty() {
-            map.as_object_mut()
-                .and_then(|o| o.remove(&key));
+            map.as_object_mut().and_then(|o| o.remove(&key));
         } else {
             map.as_object_mut()
                 .and_then(|o| o.insert(key.clone(), Value::String(trimmed.to_string())));
         }
     } else {
-        map.as_object_mut()
-            .and_then(|o| o.remove(&key));
+        map.as_object_mut().and_then(|o| o.remove(&key));
     }
 
     // Serialize and atomically replace the file. We use a tempfile +

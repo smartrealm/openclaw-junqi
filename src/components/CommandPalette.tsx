@@ -4,7 +4,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, MessageCircle, Kanban, DollarSign, Clock, Bot, Brain,
   Settings, Wifi, WifiOff, Heart, Mail, Calendar, RefreshCw,
@@ -198,18 +197,17 @@ export function CommandPalette() {
   if (!commandPaletteOpen) return null;
 
   return (
-    <AnimatePresence>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[2147481000] flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm"
-        onClick={() => setCommandPaletteOpen(false)}>
-        <motion.div
-          initial={{ opacity: 0, y: -10, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -10, scale: 0.98 }}
-          transition={{ duration: 0.12 }}
-          onClick={(e) => e.stopPropagation()}
-          className="w-[520px] rounded-2xl bg-aegis-bg border border-aegis-border/30 shadow-2xl overflow-hidden"
-        >
+    <div
+      className="fixed inset-0 z-[2147481000] flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm animate-[command-palette-backdrop-in_120ms_ease-out]"
+      onClick={() => setCommandPaletteOpen(false)}
+    >
+      <style>
+        {'@keyframes command-palette-backdrop-in{from{opacity:0}to{opacity:1}}@keyframes command-palette-panel-in{from{opacity:0;transform:translateY(-10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}'}
+      </style>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-[520px] rounded-2xl bg-aegis-bg border border-aegis-border/30 shadow-2xl overflow-hidden animate-[command-palette-panel-in_120ms_ease-out]"
+      >
           {/* Search input */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-aegis-border/20">
             <Command size={16} className="text-aegis-text-dim shrink-0" />
@@ -264,8 +262,7 @@ export function CommandPalette() {
             <span>↵ {t('commandPaletteFooter.execute')}</span>
             <span>ESC {t('commandPaletteFooter.close')}</span>
           </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+      </div>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildSemanticBlocks } from './buildSemanticBlocks';
+import { normalizeGatewayMessage } from './normalizeGatewayMessage';
 import type { NormalizedMessage } from '@/types/NormalizedMessage';
 
 function createAssistantMessage(text: string): NormalizedMessage {
@@ -149,4 +150,26 @@ test('strips standalone timestamp prefix from persisted user message', () => {
 
   assert.ok(messageBlock && messageBlock.type === 'message-content');
   assert.equal(messageBlock.markdown, '你能做什么？');
+});
+
+test('preserves tool duration aliases when rebuilding history tool blocks', () => {
+  const normalized = normalizeGatewayMessage({
+    id: 'tool-1',
+    sessionKey: 'agent:main:main',
+    role: 'tool',
+    timestamp: '2026-07-07T10:00:00.000Z',
+    toolName: 'exec',
+    toolInput: { command: 'npm test' },
+    toolOutput: 'ok',
+    status: 'completed',
+    duration_ms: '1234',
+  });
+
+  const blocks = buildSemanticBlocks(normalized, { toolIntentEnabled: true });
+  const toolBlock = blocks.find((block) => block.type === 'tool-activity');
+
+  assert.ok(toolBlock && toolBlock.type === 'tool-activity');
+  assert.equal(toolBlock.toolName, 'exec');
+  assert.equal(toolBlock.status, 'done');
+  assert.equal(toolBlock.durationMs, 1234);
 });

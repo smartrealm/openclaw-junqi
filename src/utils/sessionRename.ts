@@ -17,6 +17,31 @@
 import { invoke } from '@tauri-apps/api/core';
 import { gateway } from '@/services/gateway';
 import { useChatStore, applyLocalSessionLabelCache } from '@/stores/chatStore';
+import { debugWarn } from '@/utils/debugLog';
+
+type SessionRenameDeps = {
+  persistLabel: (sessionKey: string, label: string) => Promise<void>;
+  syncGatewayLabel: (sessionKey: string, label: string) => Promise<void>;
+  warn: (...args: unknown[]) => void;
+};
+
+const defaultSessionRenameDeps: SessionRenameDeps = {
+  persistLabel: async (sessionKey, label) => {
+    await invoke('upsert_session_label', { key: sessionKey, label: label.trim() });
+  },
+  syncGatewayLabel: async (sessionKey, label) => {
+    await gateway.setSessionLabel(label, sessionKey);
+  },
+  warn: (...args) => debugWarn('app', ...args),
+};
+
+let sessionRenameDeps: SessionRenameDeps = defaultSessionRenameDeps;
+
+export function __setSessionRenameDepsForTest(overrides?: Partial<SessionRenameDeps>): void {
+  sessionRenameDeps = overrides
+    ? { ...defaultSessionRenameDeps, ...overrides }
+    : defaultSessionRenameDeps;
+}
 
 /** Persist a single label override via the Tauri backend. Fire-and-forget
  *  from the caller's perspective — the local store is already updated by
@@ -25,9 +50,9 @@ import { useChatStore, applyLocalSessionLabelCache } from '@/stores/chatStore';
  *  before a second rename starts (preserves order in the file). */
 async function writeSessionLabelPref(sessionKey: string, label: string): Promise<void> {
   try {
-    await invoke('upsert_session_label', { key: sessionKey, label: label.trim() });
+    await sessionRenameDeps.persistLabel(sessionKey, label);
   } catch (err) {
-    console.warn('[sessionRename] Tauri persist failed (label still in live store):', err);
+    sessionRenameDeps.warn('[sessionRename] Tauri persist failed (label still in live store):', err);
   }
 }
 
@@ -52,6 +77,8 @@ async function writeSessionLabelPref(sessionKey: string, label: string): Promise
 export async function applySessionRename(key: string, next: string): Promise<boolean> {
   const trimmed = next.trim();
   if (!trimmed) return false;
+  const current = useChatStore.getState().sessions.find((session) => session.key === key)?.label?.trim();
+  if (current === trimmed) return true;
   // 1. Persist the override to disk FIRST so a crash mid-rename still
   //    leaves a recoverable override. Tauri write is best-effort — the
   //    in-memory store is always the source of truth for the running UI.
@@ -64,9 +91,9 @@ export async function applySessionRename(key: string, next: string): Promise<boo
   useChatStore.getState().setSessionLabel(key, trimmed);
   // 3. Backend notification — best effort. Log and continue on failure.
   try {
-    await gateway.setSessionLabel(trimmed, key);
+    await sessionRenameDeps.syncGatewayLabel(key, trimmed);
   } catch (err) {
-    console.warn('[sessionRename] gateway.setSessionLabel failed (local label still applied):', err);
+    sessionRenameDeps.warn('[sessionRename] gateway.setSessionLabel failed (local label still applied):', err);
   }
   return true;
 }

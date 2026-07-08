@@ -56,7 +56,10 @@ pub async fn managed_file_open(path: String) -> Result<OpenResult, String> {
 #[tauri::command]
 pub async fn managed_file_exists(path: String) -> Result<ExistsResult, String> {
     let exists = Path::new(&path).exists();
-    Ok(ExistsResult { success: true, exists })
+    Ok(ExistsResult {
+        success: true,
+        exists,
+    })
 }
 
 /// List directory entries.
@@ -86,10 +89,20 @@ pub async fn list_directory(path: String) -> Result<ListDirResult, String> {
                 });
             }
             entries.sort_by(|a, b| {
-                if a.is_dir != b.is_dir { return if a.is_dir { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }; }
+                if a.is_dir != b.is_dir {
+                    return if a.is_dir {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Greater
+                    };
+                }
                 a.name.to_lowercase().cmp(&b.name.to_lowercase())
             });
-            Ok(ListDirResult { success: true, entries, error: None })
+            Ok(ListDirResult {
+                success: true,
+                entries,
+                error: None,
+            })
         }
         Err(e) => Ok(ListDirResult {
             success: false,
@@ -112,19 +125,44 @@ pub async fn read_file_text(path: String) -> Result<ReadFileResult, String> {
             error: Some(format!("Not a file: {}", path)),
         });
     }
-    let meta = p.metadata().map_err(|e| format!("Failed to read metadata: {}", e))?;
+    let meta = p
+        .metadata()
+        .map_err(|e| format!("Failed to read metadata: {}", e))?;
     let byte_size = meta.len();
     let max_bytes = 512 * 1024;
     let truncated = byte_size > max_bytes;
-    let read_size = if truncated { max_bytes as usize } else { byte_size as usize };
+    let read_size = if truncated {
+        max_bytes as usize
+    } else {
+        byte_size as usize
+    };
     match std::fs::read_to_string(p) {
         Ok(full) => {
-            let content = if truncated { full.chars().take(read_size).collect() } else { full };
-            Ok(ReadFileResult { success: true, content: Some(content), byte_size, truncated, error: None })
+            let content = if truncated {
+                full.chars().take(read_size).collect()
+            } else {
+                full
+            };
+            Ok(ReadFileResult {
+                success: true,
+                content: Some(content),
+                byte_size,
+                truncated,
+                error: None,
+            })
         }
         Err(_) => {
-            let preview = format!("[Binary file — {} bytes, cannot preview as text]", byte_size);
-            Ok(ReadFileResult { success: true, content: Some(preview), byte_size, truncated, error: None })
+            let preview = format!(
+                "[Binary file — {} bytes, cannot preview as text]",
+                byte_size
+            );
+            Ok(ReadFileResult {
+                success: true,
+                content: Some(preview),
+                byte_size,
+                truncated,
+                error: None,
+            })
         }
     }
 }
@@ -134,11 +172,12 @@ pub async fn read_file_text(path: String) -> Result<ReadFileResult, String> {
 pub async fn managed_file_reveal(path: String) -> Result<RevealResult, String> {
     let p = Path::new(&path);
     let target = if p.is_file() || !p.exists() {
-        p.parent().map(|parent| parent.to_path_buf()).unwrap_or(p.to_path_buf())
+        p.parent()
+            .map(|parent| parent.to_path_buf())
+            .unwrap_or(p.to_path_buf())
     } else {
         p.to_path_buf()
     };
-    open::that(target.to_str().unwrap_or(&path))
-        .map_err(|e| format!("Failed to reveal: {}", e))?;
+    open::that(target.to_str().unwrap_or(&path)).map_err(|e| format!("Failed to reveal: {}", e))?;
     Ok(RevealResult { success: true })
 }

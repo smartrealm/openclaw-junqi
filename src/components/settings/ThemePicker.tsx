@@ -24,7 +24,7 @@
 import type React from 'react';
 import { Check, Monitor } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { AegisTheme, ThemeSetting } from '@/theme';
+import type { AegisTheme, ThemeSetting } from '@/theme/types';
 
 // ── Mode translation between our store shape and nezha's shape ──
 

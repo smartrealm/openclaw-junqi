@@ -15,6 +15,7 @@ import {
   startGateway, checkDocker, pullOpenclawImage, startDockerGateway,
   type DockerStatus,
 } from "@/api/tauri-commands";
+import { debugWarn } from "@/utils/debugLog";
 
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
@@ -394,7 +395,7 @@ export function useSetupFlow(
         await prepareGateway();
       } catch (e) {
         // 即便 Rust 端 prepare 失败也要继续尝试 start_gateway
-        console.warn('[setup] prepare_gateway failed, continuing to start_gateway:', e);
+        debugWarn('gateway', '[setup] prepare_gateway failed, continuing to start_gateway:', e);
       }
       if (!isRunActive(runId)) return;
       patchStep("gateway", "pending", t("setup.installCompleteGatewayPending", "Gateway 配置已准备，点击启动 Gateway 继续。"));

@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Plus } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
-import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -18,6 +17,7 @@ import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
+import { debugWarn } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // ChatTabs — Browser-style tab bar
@@ -239,13 +239,9 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
   const usageColor = usagePct > 70 ? themeHex('danger') : usagePct > 40 ? themeHex('warning') : themeHex('primary');
 
   return (
-    <AnimatePresence>
+    <>
       {visible && (
-        <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 4 }}
-          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        <div
           className="absolute start-0 top-0 mt-2 w-[300px] rounded-2xl border border-[rgb(var(--aegis-overlay)/0.1)] z-[9999] overflow-hidden"
           style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(40px)', boxShadow: '0 16px 48px rgb(var(--aegis-overlay) / 0.2)' }}
         >
@@ -291,12 +287,9 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
               </span>
             </div>
             <div className="w-full h-[5px] rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${usagePct}%` }}
-                transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+              <div
                 className="h-full rounded-full"
-                style={{ background: `linear-gradient(90deg, ${themeHex('primary')}, ${usageColor})` }}
+                style={{ width: `${usagePct}%`, background: `linear-gradient(90deg, ${themeHex('primary')}, ${usageColor})` }}
               />
             </div>
           </div>
@@ -321,9 +314,9 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, mainAgentName, thi
               <span className="text-[10px] font-bold font-mono" style={{ color: dataColor(3) }}>{thinkingLabel}</span>
             </div>
           </div>
-        </motion.div>
+        </div>
       )}
-    </AnimatePresence>
+    </>
   );
 }
 
@@ -449,7 +442,7 @@ function NewSessionPicker({
           }));
           setNewSessions(list);
         } catch (err) {
-          console.warn('[NewSessionPicker] refresh after rename failed:', err);
+          debugWarn('app', '[NewSessionPicker] refresh after rename failed:', err);
         }
       }
     } finally {
@@ -503,13 +496,9 @@ function NewSessionPicker({
   }, [agentDropdownOpen]);
 
   return (
-    <AnimatePresence>
+    <>
       {open && (
-        <motion.div
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.12 }}
+        <div
           className="absolute top-full end-0 mt-1.5 w-72 max-w-[min(24rem,calc(100vw-1rem))] max-h-[min(24rem,70vh)] overflow-y-auto rounded-xl overflow-hidden z-[100] bg-aegis-menu-bg border border-aegis-menu-border"
           style={{ boxShadow: 'var(--aegis-menu-shadow)' }}
         >
@@ -712,7 +701,7 @@ function NewSessionPicker({
             );
             })()}
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* Available-session context menu — portal'd so it's not clipped by the
@@ -750,7 +739,7 @@ function NewSessionPicker({
         </div>,
         document.body,
       )}
-    </AnimatePresence>
+    </>
   );
 }
 
@@ -908,11 +897,7 @@ export function ChatTabs() {
     };
     window.addEventListener('aegis:open-new-session-picker', handler);
     return () => window.removeEventListener('aegis:open-new-session-picker', handler);
-    // handleOpenNewPicker is stable enough by the linter; depends are kept
-    // minimal so we don't churn the listener on every sessions / openTabs
-    // refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [handleOpenNewPicker]);
 
   const handleOpenMainSession = useCallback((agentId: string, persona?: SkillPersona | null) => {
     const sessionKey = `agent:${agentId}:main`;
@@ -921,7 +906,7 @@ export function ChatTabs() {
     setPendingPersona(null);
     if (persona && persona.prompt) {
       void gateway.setSessionPersona(persona.prompt, sessionKey)
-        .catch((err) => console.warn('[ChatTabs] setSessionPersona failed:', err));
+        .catch((err) => debugWarn('app', '[ChatTabs] setSessionPersona failed:', err));
     }
   }, [openTab]);
 
@@ -939,7 +924,7 @@ export function ChatTabs() {
 
     if (persona && persona.prompt) {
       void gateway.setSessionPersona(persona.prompt, desktopKey)
-        .catch((err) => console.warn('[ChatTabs] setSessionPersona failed:', err));
+        .catch((err) => debugWarn('app', '[ChatTabs] setSessionPersona failed:', err));
     }
 
     if (!inheritedModel) return;
@@ -951,7 +936,7 @@ export function ChatTabs() {
         window.dispatchEvent(new Event('aegis:refresh'));
       })
       .catch((err) => {
-        console.warn('[ChatTabs] Failed to inherit desktop session model:', err);
+        debugWarn('models', '[ChatTabs] Failed to inherit desktop session model:', err);
       });
   }, [openTab, sessions, activeSessionKey, manualModelOverride, currentModel]);
 

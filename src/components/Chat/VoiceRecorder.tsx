@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
 import clsx from 'clsx';
+import { debugError } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // VoiceRecorder — Record audio and save to shared folder
@@ -239,7 +240,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
       // Start level visualizer
       updateLevel();
     } catch (err) {
-      console.error('[VoiceRecorder] Failed to start:', err);
+      debugError('media', '[VoiceRecorder] Failed to start:', err);
       alert(t('voice.micError'));
     }
   }, [updateLevel]);
@@ -292,7 +293,7 @@ export function VoiceRecorder({ onSendVoice, onCancel, disabled }: VoiceRecorder
       onSendVoice(base64, mimeType, elapsed, dataUrl);
       setSaving(false);
     } catch (err) {
-      console.error('[VoiceRecorder] Send failed:', err);
+      debugError('media', '[VoiceRecorder] Send failed:', err);
       setSaving(false);
     }
   }, [stopRecording, elapsed, onSendVoice, onCancel]);

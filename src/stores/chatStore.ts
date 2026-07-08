@@ -17,6 +17,15 @@ import { useSettingsStore } from './settingsStore';
 const MAIN_SESSION = 'agent:main:main';
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 const DELETED_SESSION_PREFS_KEY = 'aegis:deleted-session-keys';
+const OPEN_TABS_PREFS_KEY = 'aegis-open-tabs';
+
+function persistOpenTabs(tabs: string[]): void {
+  try {
+    localStorage.setItem(OPEN_TABS_PREFS_KEY, JSON.stringify(tabs));
+  } catch {
+    // ignore persistence errors
+  }
+}
 
 function readDeletedSessionKeys(): Set<string> {
   try {
@@ -614,24 +623,38 @@ const stripThinkingPrefix = (content: string, thinkingContent?: string): string 
 
 const recomputeBlocks = (messages: ChatMessage[], sessionKey: string): RenderBlock[] => {
   const raw = createRawHistoryPayload(messages, sessionKey);
-  const toolIntentEnabled = useSettingsStore.getState().toolIntentEnabled;
-  return parseHistory(raw, toolIntentEnabled);
+  const settings = useSettingsStore.getState();
+  const chat = useChatStore.getState();
+  return parseHistory(raw, settings.toolIntentEnabled, {
+    tokenUsage: chat.tokenUsage,
+    currentModel: chat.currentModel,
+  });
 };
 
 const recomputeGroups = (messages: ChatMessage[], sessionKey: string): ResponseGroup[] => {
   const raw = createRawHistoryPayload(messages, sessionKey);
-  const toolIntentEnabled = useSettingsStore.getState().toolIntentEnabled;
+  const settings = useSettingsStore.getState();
+  const chat = useChatStore.getState();
   const semanticBlocks = raw.flatMap((message) =>
-    buildSemanticBlocks(normalizeGatewayMessage(message), { toolIntentEnabled }),
+    buildSemanticBlocks(normalizeGatewayMessage(message), {
+      toolIntentEnabled: settings.toolIntentEnabled,
+      tokenUsage: chat.tokenUsage,
+      currentModel: chat.currentModel,
+    }),
   );
   return buildResponseGroups(semanticBlocks);
 };
 
 const recomputeDerived = (messages: ChatMessage[], sessionKey: string): { blocks: RenderBlock[]; groups: ResponseGroup[] } => {
   const raw = createRawHistoryPayload(messages, sessionKey);
-  const toolIntentEnabled = useSettingsStore.getState().toolIntentEnabled;
+  const settings = useSettingsStore.getState();
+  const chat = useChatStore.getState();
   const semanticBlocks = raw.flatMap((message) =>
-    buildSemanticBlocks(normalizeGatewayMessage(message), { toolIntentEnabled }),
+    buildSemanticBlocks(normalizeGatewayMessage(message), {
+      toolIntentEnabled: settings.toolIntentEnabled,
+      tokenUsage: chat.tokenUsage,
+      currentModel: chat.currentModel,
+    }),
   );
   const groups = buildResponseGroups(semanticBlocks);
   const blocks = groups.flatMap((group) => projectSemanticBlocksToRenderBlocks(group.blocks));
@@ -656,7 +679,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (currentMessages.some((m) => m.id === msg.id)) return state;
       const updated = [...currentMessages, msg];
 
-      const toolIntentEnabled = useSettingsStore.getState().toolIntentEnabled;
+      const settings = useSettingsStore.getState();
+      const chat = useChatStore.getState();
       const newBlocks = parseHistoryMessage(
         {
           id: msg.id,
@@ -684,7 +708,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           model: msg.model,
           isStreaming: msg.isStreaming,
         },
-        toolIntentEnabled,
+        settings.toolIntentEnabled,
+        {
+          tokenUsage: chat.tokenUsage,
+          currentModel: chat.currentModel,
+        },
       );
 
       const updatedBlocks = [...getSessionBlocks(state, targetKey, currentMessages), ...newBlocks];
@@ -1108,8 +1136,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const clearedSessions = updateSession(state.sessions, key, clearSessionAttentionState);
     const session = clearedSessions.find((s) => s.key === key) ?? state.sessions.find((s) => s.key === key);
     const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
+    const openTabs = state.openTabs.includes(key) ? state.openTabs : [...state.openTabs, key];
+    if (openTabs !== state.openTabs) persistOpenTabs(openTabs);
     set({
       sessions: clearedSessions,
+      openTabs,
       activeSessionKey: key,
       messages: msgs,
       renderBlocks: blocks ?? recomputeBlocks(msgs, key),
@@ -1156,12 +1187,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
    *  any messages. */
   addLocalSession: (session) => set((state) => {
     const exists = state.sessions.some((s) => s.key === session.key);
+    const openTabs = state.openTabs.includes(session.key) ? state.openTabs : [...state.openTabs, session.key];
+    if (openTabs !== state.openTabs) persistOpenTabs(openTabs);
+    const msgs = state.messagesPerSession[session.key] || [];
+    const blocks = state._blocksCache[session.key];
+    const groups = state._groupsCache[session.key];
+    const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
+    const activeState = {
+      openTabs,
+      activeSessionKey: session.key,
+      messages: msgs,
+      renderBlocks: blocks ?? recomputeBlocks(msgs, session.key),
+      responseGroups: groups ?? recomputeGroups(msgs, session.key),
+      isTyping: state.typingBySession[session.key] || false,
+      quickReplies: state.quickRepliesBySession[session.key] || [],
+      thinkingText: state.thinkingBySession[session.key]?.text || '',
+      thinkingRunId: state.thinkingBySession[session.key]?.runId || null,
+      ...titleBar,
+    };
     if (exists) {
-      return { activeSessionKey: session.key };
+      return activeState;
     }
     return {
+      ...activeState,
       sessions: [...state.sessions, session],
-      activeSessionKey: session.key,
     };
   }),
 
@@ -1224,7 +1273,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Tabs ──
   openTabs: (() => {
     try {
-      const raw = localStorage.getItem('aegis-open-tabs');
+      const raw = localStorage.getItem(OPEN_TABS_PREFS_KEY);
       if (!raw) return [MAIN_SESSION];
       const arr: string[] = JSON.parse(raw);
       if (!Array.isArray(arr) || arr.length === 0) return [MAIN_SESSION];
@@ -1235,7 +1284,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   })(),
 
   openTab: (key) => set((state) => {
-    const persist = (tabs: string[]) => { try { localStorage.setItem('aegis-open-tabs', JSON.stringify(tabs)); } catch {} };
     const clearedSessions = updateSession(state.sessions, key, clearSessionAttentionState);
     const session = clearedSessions.find((s) => s.key === key) ?? state.sessions.find((s) => s.key === key);
     const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
@@ -1260,7 +1308,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const blocks = state._blocksCache[key];
     const groups = state._groupsCache[key];
     const newTabs = [...state.openTabs, key];
-    persist(newTabs);
+    persistOpenTabs(newTabs);
     return {
       sessions: clearedSessions,
       openTabs: newTabs,
@@ -1280,7 +1328,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (key === MAIN_SESSION) return state;
     const newTabs = state.openTabs.filter((t) => t !== key);
     if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
-    try { localStorage.setItem('aegis-open-tabs', JSON.stringify(newTabs)); } catch {}
+    persistOpenTabs(newTabs);
     const newActive = state.activeSessionKey === key
       ? newTabs[newTabs.length - 1]
       : state.activeSessionKey;
@@ -1305,12 +1353,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
   }),
 
-  reorderTabs: (keys) => set({ openTabs: keys }),
+  reorderTabs: (keys) => {
+    persistOpenTabs(keys);
+    set({ openTabs: keys });
+  },
 
   removeSession: (key) => set((state) => {
     if (key === MAIN_SESSION) return state;
     const newTabs = state.openTabs.filter((t) => t !== key);
     if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
+    persistOpenTabs(newTabs);
     const newActive = state.activeSessionKey === key
       ? newTabs[newTabs.length - 1]
       : state.activeSessionKey;

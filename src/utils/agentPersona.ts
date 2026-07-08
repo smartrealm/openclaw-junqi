@@ -15,10 +15,12 @@ type StoredMap = Record<string, SkillPersona>;
 // collapse runs of whitespace. Keeps the prompt readable in the chip
 // preview while neutralizing the simplest prompt-injection vectors.
 function sanitizePrompt(raw: string): string {
-  // eslint-disable-next-line no-control-regex
-  const CTRL_RE = new RegExp('[\\x00-\\x1F\\x7F]', 'g');
-  return raw
-    .replace(CTRL_RE, '')
+  return Array.from(raw)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 0x1F && code !== 0x7F;
+    })
+    .join('')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_PROMPT_LENGTH);

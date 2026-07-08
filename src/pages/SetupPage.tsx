@@ -37,7 +37,7 @@ import { GatewayLifecyclePanel } from "@/components/settings/GatewayLifecyclePan
 import { useSetupFlow } from "@/hooks/useSetupFlow";
 import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
 import type { DockerStatus } from "@/api/tauri-commands";
-import type { ThemeSetting } from "@/theme";
+import type { ThemeSetting } from "@/theme/types";
 import clsx from "clsx";
 
 type SetupStepId = "identity" | "runtime" | "install" | "ready";

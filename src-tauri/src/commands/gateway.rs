@@ -1,7 +1,7 @@
-use std::sync::Mutex;
 use crate::paths;
 use crate::state::GatewayProcess;
 use serde::Serialize;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::net::TcpStream;
 
@@ -68,7 +68,11 @@ impl ConfigMetadata {
 fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
     let raw = std::fs::read_to_string(config_path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    v.get("gateway")?.get("auth")?.get("token")?.as_str().map(|s| s.to_string())
+    v.get("gateway")?
+        .get("auth")?
+        .get("token")?
+        .as_str()
+        .map(|s| s.to_string())
 }
 
 /// Generate a random token for localhost gateway authentication.
@@ -95,7 +99,11 @@ pub(crate) fn generate_token() -> String {
     token
 }
 
-pub(crate) fn ensure_config_with_token(config_path: &std::path::Path, port: u16, bind: &str) -> Result<String, String> {
+pub(crate) fn ensure_config_with_token(
+    config_path: &std::path::Path,
+    port: u16,
+    bind: &str,
+) -> Result<String, String> {
     // Origins that Tauri webviews may send depending on OS/version
     let allowed_origins = serde_json::json!([
         "tauri://localhost",
@@ -120,8 +128,8 @@ pub(crate) fn ensure_config_with_token(config_path: &std::path::Path, port: u16,
         // Read existing config and extract token
         let raw = std::fs::read_to_string(config_path)
             .map_err(|e| format!("Failed to read config: {}", e))?;
-        let config: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| format!("Failed to parse config: {}", e))?;
+        let config: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("Failed to parse config: {}", e))?;
 
         // Try to get existing token
         if let Some(token) = config
@@ -149,11 +157,8 @@ pub(crate) fn ensure_config_with_token(config_path: &std::path::Path, port: u16,
                 gw.insert("controlUi".into(), control_ui.clone());
             }
 
-            std::fs::write(
-                config_path,
-                serde_json::to_string_pretty(&config).unwrap(),
-            )
-            .map_err(|e| format!("Failed to write config: {}", e))?;
+            std::fs::write(config_path, serde_json::to_string_pretty(&config).unwrap())
+                .map_err(|e| format!("Failed to write config: {}", e))?;
 
             return Ok(token);
         }
@@ -165,12 +170,12 @@ pub(crate) fn ensure_config_with_token(config_path: &std::path::Path, port: u16,
             .ok_or("Config is not an object")?
             .entry("gateway")
             .or_insert_with(|| serde_json::json!({}));
-        let gw_obj = gateway
-            .as_object_mut()
-            .ok_or("gateway is not an object")?;
+        let gw_obj = gateway.as_object_mut().ok_or("gateway is not an object")?;
 
         // Ensure gateway.mode is set
-        gw_obj.entry("mode").or_insert_with(|| serde_json::json!("local"));
+        gw_obj
+            .entry("mode")
+            .or_insert_with(|| serde_json::json!("local"));
 
         // Always update bind and port to match the requested values
         gw_obj.insert("bind".into(), serde_json::json!(bind));
@@ -182,18 +187,13 @@ pub(crate) fn ensure_config_with_token(config_path: &std::path::Path, port: u16,
         let auth = gw_obj
             .entry("auth")
             .or_insert_with(|| serde_json::json!({}));
-        let auth_obj = auth
-            .as_object_mut()
-            .ok_or("auth is not an object")?;
+        let auth_obj = auth.as_object_mut().ok_or("auth is not an object")?;
         let token = generate_token();
         auth_obj.insert("mode".into(), serde_json::json!("token"));
         auth_obj.insert("token".into(), serde_json::json!(token));
 
-        std::fs::write(
-            config_path,
-            serde_json::to_string_pretty(&config).unwrap(),
-        )
-        .map_err(|e| format!("Failed to write config: {}", e))?;
+        std::fs::write(config_path, serde_json::to_string_pretty(&config).unwrap())
+            .map_err(|e| format!("Failed to write config: {}", e))?;
 
         return Ok(token);
     }
@@ -279,8 +279,12 @@ fn ensure_paired_devices_full_scopes(base_dir: &std::path::Path) {
                     entry_obj.insert("scopes".into(), full_scopes.clone());
                     entry_obj.insert("approvedScopes".into(), full_scopes.clone());
                     // Also update tokens to include full scopes
-                    if let Some(tokens) = entry_obj.get_mut("tokens").and_then(|t| t.as_object_mut()) {
-                        if let Some(op_token) = tokens.get_mut("operator").and_then(|t| t.as_object_mut()) {
+                    if let Some(tokens) =
+                        entry_obj.get_mut("tokens").and_then(|t| t.as_object_mut())
+                    {
+                        if let Some(op_token) =
+                            tokens.get_mut("operator").and_then(|t| t.as_object_mut())
+                        {
                             op_token.insert("scopes".into(), full_scopes.clone());
                         }
                     }
@@ -307,8 +311,8 @@ pub async fn get_gateway_token() -> Result<String, String> {
 
     let raw = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read config: {}", e))?;
-    let config: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("Failed to parse config: {}", e))?;
+    let config: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse config: {}", e))?;
 
     config
         .get("gateway")
@@ -396,15 +400,24 @@ pub async fn restart_gateway(
     // gateway_status returns running=true, start_gateway refuses to spawn.
     *state.restarting.lock().map_err(|e| e.to_string())? = true;
     // Guard: clear the flag no matter how we exit (success, error, panic).
-    struct RestartGuard<'a> { flag: &'a Mutex<bool> }
+    struct RestartGuard<'a> {
+        flag: &'a Mutex<bool>,
+    }
     impl<'a> Drop for RestartGuard<'a> {
         fn drop(&mut self) {
-            if let Ok(mut g) = self.flag.lock() { *g = false; }
+            if let Ok(mut g) = self.flag.lock() {
+                *g = false;
+            }
         }
     }
-    let _restart_guard = RestartGuard { flag: &state.restarting };
+    let _restart_guard = RestartGuard {
+        flag: &state.restarting,
+    };
 
-    emit_restart_progress(&app, format!("Restarting OpenClaw Gateway service on port {}...", port));
+    emit_restart_progress(
+        &app,
+        format!("Restarting OpenClaw Gateway service on port {}...", port),
+    );
 
     // Stop any foreground gateway spawned by this desktop app first. This does
     // not affect a user-managed LaunchAgent/systemd/schtasks service.
@@ -418,9 +431,8 @@ pub async fn restart_gateway(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
-    let openclaw = resolve_openclaw_binary().ok_or_else(|| {
-        "OpenClaw not found. Run: npm install -g openclaw".to_string()
-    })?;
+    let openclaw = resolve_openclaw_binary()
+        .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
     let gw_path = augmented_path();
 
     // Restart the installed Gateway service (launchd/systemd/schtasks). This is
@@ -444,8 +456,20 @@ pub async fn restart_gateway(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    if let Some(out) = stdout { spawn_restart_log_reader(app.clone(), out, crate::state::gateway_process::LogSource::ChildStdout); }
-    if let Some(err) = stderr { spawn_restart_log_reader(app.clone(), err, crate::state::gateway_process::LogSource::ChildStderr); }
+    if let Some(out) = stdout {
+        spawn_restart_log_reader(
+            app.clone(),
+            out,
+            crate::state::gateway_process::LogSource::ChildStdout,
+        );
+    }
+    if let Some(err) = stderr {
+        spawn_restart_log_reader(
+            app.clone(),
+            err,
+            crate::state::gateway_process::LogSource::ChildStderr,
+        );
+    }
 
     let status = tokio::time::timeout(std::time::Duration::from_secs(45), child.wait())
         .await
@@ -457,7 +481,10 @@ pub async fn restart_gateway(
         return Err(msg);
     }
 
-    emit_restart_progress(&app, "Gateway service restart command completed; waiting for health check...");
+    emit_restart_progress(
+        &app,
+        "Gateway service restart command completed; waiting for health check...",
+    );
 
     emit_restart_progress(&app, "Waiting for Gateway to become reachable...");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
@@ -465,7 +492,12 @@ pub async fn restart_gateway(
         if is_gateway_serving(port).await {
             let token = read_gateway_token(&config_path);
             emit_restart_progress(&app, "Gateway health check passed.");
-            return Ok(GatewayStatus { running: true, port, pid: None, token });
+            return Ok(GatewayStatus {
+                running: true,
+                port,
+                pid: None,
+                token,
+            });
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
@@ -501,7 +533,12 @@ pub async fn start_gateway(
     // spawn a competing foreground child. Report the configured port so the
     // caller retries status instead of racing the restart.
     if *state.restarting.lock().map_err(|e| e.to_string())? {
-        return Ok(GatewayStatus { running: true, port, pid: None, token: None });
+        return Ok(GatewayStatus {
+            running: true,
+            port,
+            pid: None,
+            token: None,
+        });
     }
 
     // If a gateway is already serving on JunQi's configured port, connect to it.
@@ -511,7 +548,12 @@ pub async fn start_gateway(
         // Gateway already running — read the token from config so the frontend
         // can connect without an extra round-trip.
         let existing_token = read_gateway_token(&config_path);
-        return Ok(GatewayStatus { running: true, port, pid: None, token: existing_token });
+        return Ok(GatewayStatus {
+            running: true,
+            port,
+            pid: None,
+            token: existing_token,
+        });
     }
 
     // Nothing is serving — (re)start our own managed child. We only ever kill
@@ -552,9 +594,8 @@ pub async fn start_gateway(
     }
 
     // Find openclaw on PATH (same approach as openclaw-desktop)
-    let openclaw = resolve_openclaw_binary().ok_or_else(|| {
-        "OpenClaw not found. Run: npm install -g openclaw".to_string()
-    })?;
+    let openclaw = resolve_openclaw_binary()
+        .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
 
     let gw_path = augmented_path();
 
@@ -565,10 +606,17 @@ pub async fn start_gateway(
     let extra_env_vars = meta.env_vars;
 
     let mut cmd = tokio::process::Command::new(&openclaw);
-    cmd.args(["gateway", "run", "--bind", &bind, "--port", &port.to_string()])
-        .env("PATH", &gw_path)
-        .env("OPENCLAW_STATE_DIR", base_dir.to_str().unwrap())
-        .env("OPENCLAW_CONFIG_PATH", config_path.to_str().unwrap());
+    cmd.args([
+        "gateway",
+        "run",
+        "--bind",
+        &bind,
+        "--port",
+        &port.to_string(),
+    ])
+    .env("PATH", &gw_path)
+    .env("OPENCLAW_STATE_DIR", base_dir.to_str().unwrap())
+    .env("OPENCLAW_CONFIG_PATH", config_path.to_str().unwrap());
     for (k, v) in &extra_env_vars {
         cmd.env(k, v);
     }
@@ -619,7 +667,10 @@ pub async fn start_gateway(
     }
 
     // Emit initial status
-    let _ = app.emit("gateway-log", "Gateway process started, waiting for ready...");
+    let _ = app.emit(
+        "gateway-log",
+        "Gateway process started, waiting for ready...",
+    );
     crate::state::gateway_process::push_log(
         &state.logs,
         crate::state::gateway_process::LogSource::Lifecycle,
@@ -670,7 +721,10 @@ pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, St
     };
 
     if let Some(mut child) = child {
-        child.kill().await.map_err(|e| format!("Failed to kill gateway: {}", e))?;
+        child
+            .kill()
+            .await
+            .map_err(|e| format!("Failed to kill gateway: {}", e))?;
         Ok("Gateway stopped".into())
     } else {
         Ok("Gateway not running — nothing to stop".into())
@@ -682,14 +736,23 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
     let config_path = paths::config_path();
     let configured_port = ConfigMetadata::load(&config_path).port;
     let state_port = *state.port.lock().map_err(|e| e.to_string())?;
-    let port = if configured_port > 0 { configured_port } else { state_port };
+    let port = if configured_port > 0 {
+        configured_port
+    } else {
+        state_port
+    };
 
     // If a real restart is in progress, report running=true so the frontend
     // status poller does NOT see a down→up flap and trigger a competing
     // start_gateway. The restart command owns the lifecycle right now.
     if *state.restarting.lock().map_err(|e| e.to_string())? {
         let token = read_gateway_token(&config_path);
-        return Ok(GatewayStatus { running: true, port, pid: None, token });
+        return Ok(GatewayStatus {
+            running: true,
+            port,
+            pid: None,
+            token,
+        });
     }
 
     // 1. Our own managed child takes priority. Compute the "still alive" flag
@@ -721,19 +784,39 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         // causes the UI to keep waiting — BootTimelineOverlay will retry.
         if is_gateway_serving(port).await {
             let status_token = read_gateway_token(&config_path);
-            return Ok(GatewayStatus { running: true, port, pid: child_pid, token: status_token });
+            return Ok(GatewayStatus {
+                running: true,
+                port,
+                pid: child_pid,
+                token: status_token,
+            });
         }
-        return Ok(GatewayStatus { running: false, port, pid: child_pid, token: None });
+        return Ok(GatewayStatus {
+            running: false,
+            port,
+            pid: child_pid,
+            token: None,
+        });
     }
 
     // 2. No managed child: probe JunQi's configured OpenClaw port only.
     if is_gateway_serving(port).await {
         *state.port.lock().map_err(|e| e.to_string())? = port;
         let probe_token = read_gateway_token(&config_path);
-        return Ok(GatewayStatus { running: true, port, pid: None, token: probe_token });
+        return Ok(GatewayStatus {
+            running: true,
+            port,
+            pid: None,
+            token: probe_token,
+        });
     }
 
-    Ok(GatewayStatus { running: false, port, pid: None, token: None })
+    Ok(GatewayStatus {
+        running: false,
+        port,
+        pid: None,
+        token: None,
+    })
 }
 
 /// Check if ANY gateway is listening on the given port (not just Tauri-managed).
@@ -753,9 +836,8 @@ pub async fn probe_gateway_port(port: Option<u16>) -> Result<bool, String> {
 /// Run `openclaw doctor` and return the output
 #[tauri::command]
 pub async fn run_doctor() -> Result<String, String> {
-    let openclaw = resolve_openclaw_binary().ok_or_else(|| {
-        "OpenClaw not found. Run: npm install -g openclaw".to_string()
-    })?;
+    let openclaw = resolve_openclaw_binary()
+        .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
     let base_dir = paths::desktop_dir();
     let config_path = paths::config_path();
 

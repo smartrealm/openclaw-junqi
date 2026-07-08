@@ -21,7 +21,7 @@ const BOTTOM = { transformBox: 'fill-box' as const, transformOrigin: 'bottom' };
 const SHADOW = 'rgb(var(--aegis-primary) / 0.38)';
 
 export type PetSkin = 'robot' | 'lobster' | 'cat' | 'jellyfish' | 'ghost';
-export interface SkinProps { color: string; }
+export interface SkinProps { color: string; highlight?: string; }
 
 // ─── shared gradient helpers ────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ function shadowFilter(prefix: string, color: string) {
 // Robot — boxy body, antenna, screen face, rivets
 // ═══════════════════════════════════════════════════════════════════════
 
-export function RobotSkin({ color }: SkinProps) {
+export function RobotSkin({ color, highlight = '#fff' }: SkinProps) {
   const id = 'bot';
   return (
     <>
@@ -62,7 +62,7 @@ export function RobotSkin({ color }: SkinProps) {
       <motion.line x1={60} y1={28} x2={48} y2={8} stroke={color} strokeWidth={2.5} strokeLinecap="round"
         style={BOTTOM} animate={{ rotate: [-3, 3, -3] }} transition={{ duration: 2.6, repeat: Infinity, ease: EASE }} />
       <circle cx={48} cy={7} r={4.5} fill={color} opacity={0.85} />
-      <circle cx={48} cy={7} r={2.2} fill="#fff" opacity={0.4} />
+      <circle cx={48} cy={7} r={2.2} fill={highlight} opacity={0.4} />
 
       {/* Body — rounded rectangle with 3D gradient + shadow */}
       <rect x={26} y={28} width={68} height={90} rx={20} ry={20}
@@ -72,21 +72,21 @@ export function RobotSkin({ color }: SkinProps) {
       <rect x={46} y={42} width={28} height={24} rx={6}
         fill={color} opacity={0.3} stroke={color} strokeWidth={0.8} strokeOpacity={0.4} />
       {/* Eye dots on screen */}
-      <circle cx={55} cy={51} r={3} fill="#fff" opacity={0.7} />
-      <circle cx={65} cy={51} r={3} fill="#fff" opacity={0.7} />
+      <circle cx={55} cy={51} r={3} fill={highlight} opacity={0.7} />
+      <circle cx={65} cy={51} r={3} fill={highlight} opacity={0.7} />
       {/* Mouth line on screen */}
-      <line x1={54} y1={58} x2={66} y2={58} stroke="#fff" strokeWidth={1} opacity={0.35} strokeLinecap="round" />
+      <line x1={54} y1={58} x2={66} y2={58} stroke={highlight} strokeWidth={1} opacity={0.35} strokeLinecap="round" />
 
       {/* Ear bolts */}
       <circle cx={28} cy={48} r={4} fill={color} opacity={0.5} stroke={SHADOW} strokeWidth={0.8} />
       <circle cx={92} cy={48} r={4} fill={color} opacity={0.5} stroke={SHADOW} strokeWidth={0.8} />
 
       {/* Rivets — bottom corners */}
-      <circle cx={36} cy={108} r={2.5} fill="#fff" opacity={0.18} />
-      <circle cx={84} cy={108} r={2.5} fill="#fff" opacity={0.18} />
+      <circle cx={36} cy={108} r={2.5} fill={highlight} opacity={0.18} />
+      <circle cx={84} cy={108} r={2.5} fill={highlight} opacity={0.18} />
 
       {/* Body highlight — top edge reflection */}
-      <rect x={34} y={32} width={52} height={6} rx={3} fill="#fff" opacity={0.1} />
+      <rect x={34} y={32} width={52} height={6} rx={3} fill={highlight} opacity={0.1} />
     </>
   );
 }
@@ -95,7 +95,7 @@ export function RobotSkin({ color }: SkinProps) {
 // Cat — sitting kitten: round head, big pointed ears, curved body, thick tail
 // ═══════════════════════════════════════════════════════════════════════
 
-export function CatSkin({ color }: SkinProps) {
+export function CatSkin({ color, highlight = '#fff' }: SkinProps) {
   const id = 'cat';
   return (
     <>
@@ -136,7 +136,7 @@ export function CatSkin({ color }: SkinProps) {
       </motion.g>
 
       {/* Head highlight */}
-      <ellipse cx={54} cy={42} rx={14} ry={9} fill="#fff" opacity={0.13} />
+      <ellipse cx={54} cy={42} rx={14} ry={9} fill={highlight} opacity={0.13} />
     </>
   );
 }
@@ -145,7 +145,7 @@ export function CatSkin({ color }: SkinProps) {
 // Jellyfish — domed bell + 5 wavy tentacles, translucent
 // ═══════════════════════════════════════════════════════════════════════
 
-export function JellyfishSkin({ color }: SkinProps) {
+export function JellyfishSkin({ color, highlight = '#fff' }: SkinProps) {
   const id = 'jelly';
   return (
     <>
@@ -180,8 +180,8 @@ export function JellyfishSkin({ color }: SkinProps) {
         style={BOTTOM} animate={{ rotate: [-2, 2, -2] }} transition={{ duration: 3.1, repeat: Infinity, ease: EASE }} />
 
       {/* Bell highlight curves */}
-      <path d="M38,72 Q38,36 60,34" stroke="#fff" strokeWidth={1.2} fill="none" opacity={0.22} />
-      <path d="M82,72 Q82,36 60,34" stroke="#fff" strokeWidth={1.2} fill="none" opacity={0.22} />
+      <path d="M38,72 Q38,36 60,34" stroke={highlight} strokeWidth={1.2} fill="none" opacity={0.22} />
+      <path d="M82,72 Q82,36 60,34" stroke={highlight} strokeWidth={1.2} fill="none" opacity={0.22} />
     </>
   );
 }
@@ -190,7 +190,7 @@ export function JellyfishSkin({ color }: SkinProps) {
 // Ghost — cute floating spirit with raised nub arms and big round eyes
 // ═══════════════════════════════════════════════════════════════════════
 
-export function GhostSkin({ color }: SkinProps) {
+export function GhostSkin({ color, highlight = '#fff' }: SkinProps) {
   const id = 'ghost';
   return (
     <>
@@ -216,7 +216,7 @@ export function GhostSkin({ color }: SkinProps) {
         fill={`url(#${id}-body)`} stroke={SHADOW} strokeWidth={1.2} filter={`url(#${id}-shadow)`} />
 
       {/* Top highlight */}
-      <ellipse cx={56} cy={34} rx={16} ry={8} fill="#fff" opacity={0.12} />
+      <ellipse cx={56} cy={34} rx={16} ry={8} fill={highlight} opacity={0.12} />
     </>
   );
 }
@@ -225,7 +225,7 @@ export function GhostSkin({ color }: SkinProps) {
 // Lobster 🦞 — chibi/cartoon: oversized claws, simple curved body, cute eyes
 // ═══════════════════════════════════════════════════════════════════════
 
-export function LobsterSkin({ color }: SkinProps) {
+export function LobsterSkin({ color, highlight = '#fff' }: SkinProps) {
   const id = 'lob';
   return (
     <>
@@ -279,7 +279,7 @@ export function LobsterSkin({ color }: SkinProps) {
       <path d="M74,68 L84,66 M74,76 L84,78" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" opacity={0.6} />
 
       {/* Body highlight */}
-      <path d="M50,68 Q60,62 70,68 Q62,72 50,68 Z" fill="#fff" opacity={0.13} />
+      <path d="M50,68 Q60,62 70,68 Q62,72 50,68 Z" fill={highlight} opacity={0.13} />
     </>
   );
 }

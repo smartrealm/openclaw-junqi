@@ -43,7 +43,7 @@ function ThinkDots(): ReactElement {
     <>
       <circle cx={78} cy={26} r={2.5} fill={themeAlpha('primary', 0.6)} />
       <motion.circle cx={72} cy={18} r={3.5} fill={themeAlpha('primary', 0.7)} animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.2, repeat: Infinity }} />
-      <motion.ellipse cx={66} cy={8} rx={7} ry={5} fill="#fff" stroke={themeAlpha('primary', 0.4)} strokeWidth={1} animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.3 }} />
+      <motion.ellipse cx={66} cy={8} rx={7} ry={5} fill={themeAlpha('primary', 0.18)} stroke={themeAlpha('primary', 0.42)} strokeWidth={1} animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.3 }} />
     </>
   );
 }
@@ -89,8 +89,8 @@ function Book(): ReactElement {
   return (
     <motion.g style={BOX} transform="translate(58,6)" animate={{ rotate: [-2, 2, -2] }} transition={{ duration: 2, repeat: Infinity, ease: EASE }}>
       <rect x={-8} y={-6} width={16} height={12} rx={1.5} fill={themeAlpha('accent', 0.95)} />
-      <line x1={0} y1={-6} x2={0} y2={6} stroke="#fff" strokeWidth={1.2} />
-      <line x1={0} y1={0} x2={8} y2={0} stroke="#fff" strokeWidth={0.8} opacity={0.6} />
+      <line x1={0} y1={-6} x2={0} y2={6} stroke="rgb(var(--aegis-text-secondary))" strokeWidth={1.2} />
+      <line x1={0} y1={0} x2={8} y2={0} stroke="rgb(var(--aegis-text-secondary))" strokeWidth={0.8} opacity={0.6} />
     </motion.g>
   );
 }

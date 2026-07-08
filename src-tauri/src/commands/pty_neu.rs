@@ -40,7 +40,8 @@ struct PtyHandles {
 type PtyHandle = Arc<Mutex<Option<PtyHandles>>>;
 
 fn pty_registry() -> &'static Mutex<std::collections::HashMap<String, PtyHandle>> {
-    static REGISTRY: OnceLock<Mutex<std::collections::HashMap<String, PtyHandle>>> = OnceLock::new();
+    static REGISTRY: OnceLock<Mutex<std::collections::HashMap<String, PtyHandle>>> =
+        OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -110,7 +111,10 @@ fn send_pty_chunk(app: &AppHandle, id: &str, sink: &OutputSink, data: String) {
     match sink {
         OutputSink::Event { event_name, id_key } => {
             let mut payload = serde_json::Map::new();
-            payload.insert((*id_key).to_string(), serde_json::Value::String(id.to_string()));
+            payload.insert(
+                (*id_key).to_string(),
+                serde_json::Value::String(id.to_string()),
+            );
             payload.insert("data".to_string(), serde_json::Value::String(data));
             let _ = app.emit(event_name, serde_json::Value::Object(payload));
         }
@@ -159,29 +163,14 @@ fn spawn_pty_reader(
                             Ok(chunk) => {
                                 batch.push_str(&chunk);
                                 if batch.len() >= max_batch_bytes {
-                                    flush_pty_batch(
-                                        &emit_app,
-                                        &emit_id,
-                                        &worker_sink,
-                                        &mut batch,
-                                    );
+                                    flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                                 }
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                flush_pty_batch(
-                                    &emit_app,
-                                    &emit_id,
-                                    &worker_sink,
-                                    &mut batch,
-                                );
+                                flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                                flush_pty_batch(
-                                    &emit_app,
-                                    &emit_id,
-                                    &worker_sink,
-                                    &mut batch,
-                                );
+                                flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
                                 break;
                             }
                         }
@@ -270,10 +259,7 @@ pub fn open_shell(
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| e.to_string())?;
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
     let handles = PtyHandles {

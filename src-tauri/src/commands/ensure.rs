@@ -9,9 +9,7 @@
 //! function — callers should invoke it on boot, on user-triggered
 //! reconnect, or after observing N consecutive gateway reachability failures.
 
-use crate::commands::docker::{
-    check_docker, docker_gateway_status, start_docker_gateway,
-};
+use crate::commands::docker::{check_docker, docker_gateway_status, start_docker_gateway};
 use crate::state::gateway_process::{push_log, LogLevel, LogSource};
 use crate::state::GatewayProcess;
 use serde::Serialize;
@@ -129,7 +127,11 @@ pub async fn ensure_gateway_running(
         // chain. Still do a cheap local health probe first.
         let configured_port = read_gateway_port();
         let state_port = *state.port.lock().map_err(|e| e.to_string())?;
-        let port = if configured_port > 0 { configured_port } else { state_port };
+        let port = if configured_port > 0 {
+            configured_port
+        } else {
+            state_port
+        };
         if probe_gateway_port(port).await {
             let token = read_gateway_token();
             return Ok(EnsureResult {
@@ -158,8 +160,12 @@ pub async fn ensure_gateway_running(
     if probe_gateway_port(port).await {
         let token = read_gateway_token();
         *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
-        push_log(&state.logs, LogSource::Lifecycle, LogLevel::Info,
-                 format!("ensure_gateway_running: native healthy on port {}", port));
+        push_log(
+            &state.logs,
+            LogSource::Lifecycle,
+            LogLevel::Info,
+            format!("ensure_gateway_running: native healthy on port {}", port),
+        );
         return Ok(EnsureResult {
             mode: GatewayMode::Native,
             healthy: true,
@@ -185,12 +191,17 @@ pub async fn ensure_gateway_running(
     }
 
     // 3/4. Docker fallback.
-    push_log(&state.logs, LogSource::Lifecycle, LogLevel::Warn,
-             "ensure_gateway_running: native unhealthy, attempting Docker fallback");
+    push_log(
+        &state.logs,
+        LogSource::Lifecycle,
+        LogLevel::Warn,
+        "ensure_gateway_running: native unhealthy, attempting Docker fallback",
+    );
     match check_docker().await {
         Ok(ds) if ds.daemon_running => {
             // Container present? Try to start it.
-            let present = docker_gateway_status(Some(port)).await
+            let present = docker_gateway_status(Some(port))
+                .await
                 .map(|s| s.running)
                 .unwrap_or(false);
             let mut docker_token = read_docker_gateway_token();
@@ -221,8 +232,12 @@ pub async fn ensure_gateway_running(
                 if probe_gateway_port(port).await {
                     let token = docker_token.or_else(read_docker_gateway_token);
                     *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
-                    push_log(&state.logs, LogSource::Lifecycle, LogLevel::Info,
-                             "ensure_gateway_running: docker fallback succeeded");
+                    push_log(
+                        &state.logs,
+                        LogSource::Lifecycle,
+                        LogLevel::Info,
+                        "ensure_gateway_running: docker fallback succeeded",
+                    );
                     return Ok(EnsureResult {
                         mode: GatewayMode::Docker,
                         healthy: true,
@@ -233,7 +248,8 @@ pub async fn ensure_gateway_running(
                     });
                 }
             }
-            let err = "Docker container up but gateway port never became reachable within 30s".to_string();
+            let err = "Docker container up but gateway port never became reachable within 30s"
+                .to_string();
             push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
             *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
             return Ok(EnsureResult {
@@ -247,7 +263,8 @@ pub async fn ensure_gateway_running(
         }
         Ok(_) => {
             // Docker daemon not running or CLI missing.
-            let err = "Docker unavailable — install Docker Desktop or run openclaw natively".to_string();
+            let err =
+                "Docker unavailable — install Docker Desktop or run openclaw natively".to_string();
             push_log(&state.logs, LogSource::Lifecycle, LogLevel::Warn, &err);
             *LAST_ENSURE.lock().map_err(|e| e.to_string())? = Some(Instant::now());
             Ok(EnsureResult {

@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useNotificationStore, type NotificationType } from '@/stores/notificationStore';
+import { debugLog, debugWarn } from '@/utils/debugLog';
 
 export interface NotifyOptions {
   type: NotificationType;
@@ -103,10 +104,10 @@ class NotificationService {
     if (hasIPC) {
       try {
         (window as any).aegis.notify(title, body);
-        console.log('[Notify] IPC — sent');
+        debugLog('notifications', '[Notify] IPC — sent');
         return;
       } catch (err) {
-        console.warn('[Notify] IPC failed:', err);
+        debugWarn('notifications', '[Notify] IPC failed:', err);
       }
     }
 
@@ -114,12 +115,12 @@ class NotificationService {
     try {
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification(title, { body, silent: true });
-        console.log('[Notify] Web API — shown');
+        debugLog('notifications', '[Notify] Web API — shown');
       } else {
-        console.log('[Notify] Web API — permission:', 'Notification' in window ? Notification.permission : 'unavailable');
+        debugLog('notifications', '[Notify] Web API — permission:', 'Notification' in window ? Notification.permission : 'unavailable');
       }
     } catch (err) {
-      console.warn('[Notify] Web API failed:', err);
+      debugWarn('notifications', '[Notify] Web API failed:', err);
     }
   }
 
@@ -129,10 +130,10 @@ class NotificationService {
     this.permissionRequested = true;
     try {
       if ('Notification' in window) {
-        console.log('[Notify] Current permission:', Notification.permission);
+        debugLog('notifications', '[Notify] Current permission:', Notification.permission);
         if (Notification.permission === 'default') {
           Notification.requestPermission().then((result) => {
-            console.log('[Notify] Permission result:', result);
+            debugLog('notifications', '[Notify] Permission result:', result);
           });
         }
       }

@@ -72,3 +72,32 @@ test('setSessions does not resurrect locally deleted sessions', () => {
   assert.equal(state.sessions.some((session) => session.key === deletedKey), false);
   assert.equal(state.sessions.some((session) => session.key === MAIN_KEY), true);
 });
+
+test('removeSession closes the tab, switches active session, and persists tab order', () => {
+  const deletedKey = 'agent:worker:s-delete-tab';
+  useChatStore.setState({
+    sessions: [
+      { key: MAIN_KEY, label: 'Main' },
+      { key: deletedKey, label: 'Delete me' },
+    ],
+    openTabs: [MAIN_KEY, deletedKey],
+    activeSessionKey: deletedKey,
+    messagesPerSession: {
+      [deletedKey]: [{
+        id: 'm1',
+        role: 'user',
+        content: 'delete me',
+        timestamp: new Date(0).toISOString(),
+      }],
+    },
+  });
+
+  useChatStore.getState().removeSession(deletedKey);
+
+  const state = useChatStore.getState();
+  assert.deepEqual(state.openTabs, [MAIN_KEY]);
+  assert.equal(state.activeSessionKey, MAIN_KEY);
+  assert.equal(state.sessions.some((session) => session.key === deletedKey), false);
+  assert.equal(state.messagesPerSession[deletedKey], undefined);
+  assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([MAIN_KEY]));
+});

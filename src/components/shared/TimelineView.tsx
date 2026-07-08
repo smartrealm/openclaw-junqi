@@ -6,8 +6,7 @@
 // Differences from upstream nezha TimelineView:
 //   - No cross-project grouping (junqi's "Project" is a CLI tool / skill,
 //     not a source-code repository like nezha — different semantics).
-//   - Uses Tailwind + aegis CSS vars instead of nezha's `s.xxx` styles
-//     (junqi's styles/nezha/ is excluded by tsconfig).
+//   - Uses Tailwind + aegis CSS vars instead of nezha's `s.xxx` styles.
 //   - i18n via react-i18next (junqi's i18n) instead of nezha's useI18n.
 //
 // Source: nezha/src/components/nezha/TimelineView.tsx
@@ -33,6 +32,16 @@ export interface TimelineTask {
 }
 
 type Bucket = 'today' | 'yesterday' | 'earlier';
+
+type TimelineViewProps = {
+  tasks: TimelineTask[];
+  onTaskClick?: (task: TimelineTask) => void;
+  title?: string;
+  subtitle?: string;
+  emptyMessage?: string;
+  /** Reference "now" for date bucketing. Defaults to real time; tests inject a fixed value. */
+  now?: Date;
+};
 
 function startOfDay(date: Date): number {
   const d = new Date(date);
@@ -103,28 +112,16 @@ function TimelineRow({
   );
 }
 
-export function TimelineView({
+export function TimelineViewContent({
   tasks,
   onTaskClick,
   title,
   subtitle,
   emptyMessage,
   now: nowProp,
-}: {
-  tasks: TimelineTask[];
-  onTaskClick?: (task: TimelineTask) => void;
-  title?: string;
-  subtitle?: string;
-  emptyMessage?: string;
-  /** Reference "now" for date bucketing. Defaults to real time; tests inject a fixed value. */
-  now?: Date;
-}) {
+}: TimelineViewProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-
-  const handleClick = onTaskClick ?? ((task: TimelineTask) => {
-    if (task.href) navigate(task.href);
-  });
+  const handleClick = onTaskClick;
 
   const groups = useMemo(() => {
     const now = nowProp ?? new Date();
@@ -195,4 +192,12 @@ export function TimelineView({
       )}
     </div>
   );
+}
+
+export function TimelineView(props: TimelineViewProps) {
+  const navigate = useNavigate();
+  const handleClick = props.onTaskClick ?? ((task: TimelineTask) => {
+    if (task.href) navigate(task.href);
+  });
+  return <TimelineViewContent {...props} onTaskClick={handleClick} />;
 }

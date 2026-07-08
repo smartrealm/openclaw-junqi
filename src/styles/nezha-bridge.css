@@ -1,10 +1,9 @@
 /* ═══════════════════════════════════════════════════════════
    Nezha → Aegis CSS var bridge
-   
-   Allows nezha-original components (ShellTerminalPanel,
-   TerminalView, terminalShared.ts theme presets) to run
-   verbatim — their `var(--bg-panel)` / `var(--text-primary)`
-   etc. resolve to our `--aegis-*` values transparently.
+
+   Compatibility variables for components that were migrated from
+   Nezha but still refer to tokens like `--bg-panel` and
+   `--text-primary`. The canonical theme tokens remain `--aegis-*`.
    
    Must be imported AFTER themes/*.css so --aegis-* are defined.
    ═══════════════════════════════════════════════════════════ */

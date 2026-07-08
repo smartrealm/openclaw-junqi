@@ -23,6 +23,7 @@ import {
   refreshTerminalDisplay,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import { debugError } from "@/utils/debugLog";
 import { Plus, Terminal as TerminalIcon, Trash2, X, SplitSquareHorizontal, SplitSquareVertical, PanelLeft } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
@@ -355,7 +356,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       ref,
       () => ({
         sendCommand: (cmd: string) => {
-          invoke("send_input", { taskId: shellId, data: cmd }).catch(console.error);
+          invoke("send_input", { taskId: shellId, data: cmd }).catch((err) => {
+            debugError("terminal", "[ShellTerminalPanel] send_input failed:", err);
+          });
         },
       }),
       [shellId],
@@ -445,7 +448,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
                 }
               }, 300);
             })
-            .catch(console.error);
+            .catch((err) => {
+              debugError("terminal", "[ShellTerminalPanel] open_shell failed:", err);
+            });
           if (isActiveRef.current) {
             term.focus();
           }

@@ -35,127 +35,21 @@ import {
   GENERATED_VIDEO_GENERATION_MODELS,
 } from '@/generated/mediaCatalog.generated';
 import { resolveProviderSecret, buildProviderSecretPatch, diagnoseProviders } from './providerSecretResolver';
+import {
+  applyFetchedModelAdditionsToDefaults,
+  buildDefaultsWithResolvedModels,
+  buildFetchedModelAdditions,
+} from './providerDefaults';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthMode';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Provider test: try GET /models first; if 404, fallback to POST /chat/completions
-// Not all providers expose /models (e.g. some use other paths); fallback is more universal.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Build path suffix for baseUrl: either /models or /chat/completions (same version segment). */
-function modelsEndpointUrl(baseUrl: string): string {
-  const base = baseUrl.replace(/\/$/, '');
-  if (!base) return '';
-  if (/\/v\d+(beta)?$/i.test(base)) return `${base}/models`;
-  return `${base}/v1/models`;
-}
-
-function chatCompletionsEndpointUrl(baseUrl: string): string {
-  const base = baseUrl.replace(/\/$/, '');
-  if (!base) return '';
-  if (/\/v\d+(beta)?$/i.test(base)) return `${base}/chat/completions`;
-  return `${base}/v1/chat/completions`;
-}
-
-const PROVIDER_TEST_TIMEOUT_MS = 15_000;
-
-function buildTestHeaders(tmpl: ProviderTemplate | undefined, apiKey: string): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (!apiKey) return headers;
-  if (tmpl?.id === 'anthropic') {
-    headers['x-api-key'] = apiKey;
-    headers['anthropic-version'] = '2023-06-01';
-  } else if (tmpl?.id === 'google') {
-    // Gemini API authenticates with ?key=... on the URL, not a Bearer token.
-  } else {
-    headers['Authorization'] = `Bearer ${apiKey}`;
-  }
-  return headers;
-}
-
-/** Test provider connection. Tries GET /models first; on 404, tries POST /chat/completions (minimal body). */
-export async function testProviderConnection(
-  baseUrl: string,
-  apiKey: string,
-  tmpl?: ProviderTemplate,
-  modelOverride?: string
-): Promise<{ ok: boolean; message: string }> {
-  const modelsUrl = modelsEndpointUrl(baseUrl);
-  if (!modelsUrl) return { ok: false, message: 'Missing API endpoint' };
-
-  const headers = buildTestHeaders(tmpl, apiKey);
-  // Google Gemini uses ?key= for auth
-  const isGoogle = tmpl?.id === 'google';
-  const url = isGoogle && apiKey ? `${modelsUrl}?key=${encodeURIComponent(apiKey)}` : modelsUrl;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), PROVIDER_TEST_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(url, { method: 'GET', headers, signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (res.ok) return { ok: true, message: 'OK' };
-    if (res.status !== 404) {
-      const text = await res.text();
-      const short = text ? text.slice(0, 120).replace(/\s+/g, ' ') : '';
-      return { ok: false, message: `${res.status} ${res.statusText}${short ? ` — ${short}` : ''}` };
-    }
-
-    // 404 on /models → fallback: POST /chat/completions
-    // Anthropic 和 anthropic-messages（MiniMax 等兼容 provider）均不走 fallback
-    if (tmpl?.api === 'anthropic-messages') {
-      const text = await res.text();
-      const short = text ? text.slice(0, 120).replace(/\s+/g, ' ') : '';
-      return { ok: false, message: `404 ${res.statusText}${short ? ` — ${short}` : ''}` };
-    }
-    const chatUrl = isGoogle && apiKey
-      ? `${chatCompletionsEndpointUrl(baseUrl)}?key=${encodeURIComponent(apiKey)}`
-      : chatCompletionsEndpointUrl(baseUrl);
-    const generatedRows = tmpl ? getGeneratedCatalogRows(tmpl.id) : [];
-    const modelId =
-      modelOverride ??
-      generatedRows[0]?.id?.split('/').pop() ??
-      'gpt-3.5-turbo';
-    const body = JSON.stringify({
-      model: modelId,
-      messages: [{ role: 'user' as const, content: 'Hi' }],
-      max_tokens: 1,
-    });
-
-    const controller2 = new AbortController();
-    const t2 = setTimeout(() => controller2.abort(), PROVIDER_TEST_TIMEOUT_MS);
-    try {
-      const res2 = await fetch(chatUrl, {
-        method: 'POST',
-        headers,
-        body,
-        signal: controller2.signal,
-      });
-      clearTimeout(t2);
-      if (res2.ok) return { ok: true, message: 'OK' };
-      if (res2.status === 401 || res2.status === 403) {
-        return { ok: false, message: `__i18n:config.connectionReachableCheckKey:${res2.status}__` };
-      }
-      const text2 = await res2.text();
-      const short2 = text2 ? text2.slice(0, 120).replace(/\s+/g, ' ') : '';
-      return { ok: false, message: `${res2.status} ${res2.statusText}${short2 ? ` — ${short2}` : ''}` };
-    } catch (e2: any) {
-      clearTimeout(t2);
-      if (e2?.name === 'AbortError') {
-        return { ok: false, message: `Connection timed out (${PROVIDER_TEST_TIMEOUT_MS / 1000}s)` };
-      }
-      return { ok: false, message: e2?.message || String(e2) };
-    }
-  } catch (e: any) {
-    clearTimeout(timeoutId);
-    if (e?.name === 'AbortError') {
-      return { ok: false, message: `Connection timed out (${PROVIDER_TEST_TIMEOUT_MS / 1000}s)` };
-    }
-    return { ok: false, message: e?.message || String(e) };
-  }
-}
+import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
+import {
+  buildTestHeaders,
+  modelsEndpointUrl,
+  PROVIDER_TEST_TIMEOUT_MS,
+  testProviderConnection,
+  type ConnectionPrecheckProbe,
+} from './providerConnectionTest';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -258,6 +152,15 @@ function authModeNeedsApiKey(mode: unknown): boolean {
   return AUTH_MODE_INFO[normalizeProviderAuthMode(mode)].hasApiKeyField;
 }
 
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
 function deriveProviderApiKeyEnvKey(providerId: string, tmpl?: ProviderTemplate): string {
   if (tmpl?.id === 'custom' && tmpl.envKey) return tmpl.envKey;
   const normalized = String(providerId ?? '')
@@ -335,28 +238,6 @@ function resolveImagePrimaryModel(
     return currentImagePrimary;
   }
   return pickFirstImageCapableModel(availableModelIds, imageSupportMap);
-}
-
-function resolveModelSupportsImage(value: any): boolean | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  if (typeof value.supportsImage === 'boolean') return value.supportsImage;
-  if (typeof value.supports_image === 'boolean') return value.supports_image;
-  if (Array.isArray(value.input)) {
-    const modalities = value.input.map((m: any) => String(m).toLowerCase());
-    if (modalities.includes('image')) return true;
-    if (modalities.includes('text')) return false;
-  }
-  if (Array.isArray(value.modalities?.input)) {
-    const modalities = value.modalities.input.map((m: any) => String(m).toLowerCase());
-    if (modalities.includes('image')) return true;
-    if (modalities.includes('text')) return false;
-  }
-  if (Array.isArray(value.architecture?.input_modalities)) {
-    const modalities = value.architecture.input_modalities.map((m: any) => String(m).toLowerCase());
-    if (modalities.includes('image')) return true;
-    if (modalities.includes('text')) return false;
-  }
-  return undefined;
 }
 
 function parseGatewayModelsResponse(res: unknown): GatewayModelOption[] {
@@ -455,36 +336,12 @@ async function fetchProviderModelCatalog(
   }
 }
 
-// Backward-compat alias
-const providerFromProfileKey = getProviderFromProfileKey;
-
 function getModelsForProvider(
   provider: string,
   models: Record<string, ModelEntry>
 ): Record<string, ModelEntry> {
   return Object.fromEntries(
     Object.entries(models).filter(([id]) => providerNamespaceMatches(getProviderFromModelId(id), provider))
-  );
-}
-
-/** @deprecated use getModelsForProvider — kept for ProfileRow backward compat */
-function modelsForProvider(
-  profileKey: string,
-  models: Record<string, ModelEntry> | undefined
-): Record<string, ModelEntry> {
-  if (!models) return {};
-  const provider = providerFromProfileKey(profileKey);
-  return Object.fromEntries(
-    Object.entries(models).filter(([id]) => {
-      const tmpl = getTemplateById(provider);
-      const generatedRows = GENERATED_PROVIDER_CATALOG[normalizeProviderIdForCatalog(provider)] ?? [];
-      if (!tmpl) return providerNamespaceMatches(getProviderFromModelId(id), provider);
-      return (
-        generatedRows.some((m) => normalizeProviderModelRef(provider, m.id) === id) ||
-        providerNamespaceMatches(getProviderFromModelId(id), provider) ||
-        id.startsWith(provider + ':')
-      );
-    })
   );
 }
 
@@ -811,20 +668,12 @@ function applyProviderAddition(
       ? currentImagePrimary
       : pickFirstImageCapableModel(modelIds, imageSupportMap);
 
-  const nextDefaults = {
-    ...next.agents?.defaults,
+  const nextDefaults = buildDefaultsWithResolvedModels({
+    defaults: next.agents?.defaults,
     models: existingModels,
-    model: {
-      ...(next.agents?.defaults?.model ?? {}),
-      primary: nextPrimary ?? undefined,
-    },
-    imageModel: nextImagePrimary
-      ? {
-        ...(next.agents?.defaults?.imageModel ?? {}),
-        primary: nextImagePrimary,
-      }
-      : undefined,
-  };
+    primary: nextPrimary,
+    imagePrimary: nextImagePrimary,
+  });
 
   return {
     ...next,
@@ -906,6 +755,7 @@ interface ProfileRowProps {
   profileKey: string;
   profile: AuthProfile;
   allModels: Record<string, ModelEntry> | undefined;
+  modelsProvider?: ModelProviderConfig;
   primaryModel: string | undefined;
   imagePrimaryModel: string | undefined;
   imageSupportMap: Map<string, boolean>;
@@ -922,12 +772,13 @@ interface ProfileRowProps {
 }
 
 // ── Fetch Models Button (inline in expanded provider card) ──
-function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, saving, t, envKeyValue }: {
+function FetchModelsButton({ providerId, tmpl, profile, allModels, modelsProvider, onChange, saving, t, envKeyValue }: {
   providerId: string;
   tmpl: ProviderTemplate | undefined;
   profile: AuthProfile;
+  allModels: Record<string, ModelEntry>;
+  modelsProvider?: ModelProviderConfig;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
-  profileKey: string;
   saving?: boolean;
   t: any;
   envKeyValue?: string;
@@ -937,67 +788,44 @@ function FetchModelsButton({ providerId, tmpl, profile, onChange, profileKey, sa
   const [fetchSuccess, setFetchSuccess] = useState(false);
 
   const handleFetch = async () => {
-    const baseUrl = tmpl?.baseUrl?.replace(/\/$/, '');
+    const baseUrl = (modelsProvider?.baseUrl ?? tmpl?.baseUrl ?? '').replace(/\/$/, '');
     if (!baseUrl) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoEndpoint')); return; }
-    const apiKey: string | undefined =
-      (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key ?? envKeyValue;
-    if (!apiKey) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoApiKey')); return; }
+    const apiKey = firstNonEmptyString(
+      (profile as any).token,
+      (profile as any).apiKey,
+      (profile as any).key,
+      envKeyValue,
+    );
+    const mode = normalizeProviderAuthMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode);
+    if (authModeNeedsApiKey(mode) && !apiKey) {
+      setFetchSuccess(false);
+      setFetchResult(t('config.fetchModelsNoApiKey'));
+      return;
+    }
 
     setFetching(true);
     setFetchResult(null);
     try {
-      const url = modelsEndpointUrl(baseUrl);
-      const headers = buildTestHeaders(tmpl, apiKey);
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), PROVIDER_TEST_TIMEOUT_MS);
+      const fetchedModels = await fetchProviderModelCatalog(baseUrl, apiKey ?? '', tmpl);
 
-      const res = await fetch(url, { headers, signal: controller.signal });
-      clearTimeout(timer);
+      if (fetchedModels.length === 0) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoneFound')); return; }
 
-      if (!res.ok) { setFetchSuccess(false); setFetchResult(`${res.status} ${res.statusText}`); return; }
-
-      const data = await res.json();
-      const modelIds: string[] = [];
-      // 兼容三种响应格式：{ data: [...] } | { models: [...] } | [...]
-      const raw = (
-        Array.isArray(data?.data) ? data.data :
-        Array.isArray(data?.models) ? data.models :
-        Array.isArray(data) ? data : []
-      ) as any[];
-      for (const entry of raw) {
-        const id = String(entry?.id ?? entry?.model ?? (typeof entry === 'string' ? entry : '')).trim();
-        if (id) modelIds.push(id);
-      }
-
-      if (modelIds.length === 0) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoneFound')); return; }
-
-      // Compute addedCount outside updater to avoid StrictMode double-invoke
-      // producing an incorrect count (side-effect inside updater is unsafe).
-      const currentModels = (() => {
-        // Read current state snapshot without triggering a re-render
-        let snapshot: Record<string, any> = {};
-        onChange((prev) => { snapshot = prev.agents?.defaults?.models ?? {}; return prev; });
-        return snapshot;
-      })();
-      const toAdd: Array<{ fullRef: string; alias: string }> = [];
-      for (const id of modelIds) {
-        const fullRef = normalizeProviderModelRef(providerId, id);
-        if (fullRef && !currentModels[fullRef]) {
-          toAdd.push({ fullRef, alias: stripProviderNamespace(providerId, id) });
-        }
-      }
+      const toAdd = buildFetchedModelAdditions({
+        providerId,
+        fetchedModels,
+        existingModels: allModels,
+      });
       const addedCount = toAdd.length;
       if (addedCount > 0) {
         onChange((prev) => {
-          const existing = { ...(prev.agents?.defaults?.models ?? {}) };
-          for (const { fullRef, alias } of toAdd) {
-            existing[fullRef] = { alias };
-          }
           return {
             ...prev,
             agents: {
               ...prev.agents,
-              defaults: { ...prev.agents?.defaults, models: existing },
+              defaults: applyFetchedModelAdditionsToDefaults({
+                defaults: prev.agents?.defaults,
+                additions: toAdd,
+              }),
             },
           };
         });
@@ -1046,6 +874,7 @@ function ProfileRow({
   profileKey,
   profile,
   allModels,
+  modelsProvider,
   primaryModel,
   imagePrimaryModel,
   imageSupportMap,
@@ -1057,9 +886,9 @@ function ProfileRow({
 }: ProfileRowProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const providerId    = providerFromProfileKey(profileKey);
+  const providerId    = getProviderFromProfileKey(profileKey);
   const tmpl          = getTemplateById(providerId);
-  const providerModels = modelsForProvider(profileKey, allModels);
+  const providerModels = getModelsForProvider(providerId, allModels ?? {});
   const modelCount    = Object.keys(providerModels).length;
   const hasStoredSecret = Boolean(
     profile.token ?? profile.apiKey ?? (profile as any).key ?? apiKeyConfigured
@@ -1084,7 +913,7 @@ function ProfileRow({
 
       let next = buildProviderSecretPatch({
         prev,
-        providerId: profile.provider || providerFromProfileKey(profileKey),
+        providerId: profile.provider || getProviderFromProfileKey(profileKey),
         profileKey,
         profile: { ...existing, ...restPatch },
         secret: key,
@@ -1111,7 +940,7 @@ function ProfileRow({
 
   const removeProfile = () => {
     onChange((prev) => {
-      const providerId = profile.provider || providerFromProfileKey(profileKey);
+      const providerId = profile.provider || getProviderFromProfileKey(profileKey);
       const tmplForEnv = getTemplateById(providerId);
 
       // 1) Remove auth profile
@@ -1142,27 +971,6 @@ function ProfileRow({
       const nextDefaultsModels = { ...existingModels };
       for (const id of modelsToRemove) delete nextDefaultsModels[id];
 
-      const removedModelIds = new Set(modelsToRemove);
-      const currentPrimary = prev.agents?.defaults?.model?.primary;
-      const currentImagePrimary = prev.agents?.defaults?.imageModel?.primary;
-      const nextPrimary =
-        Object.keys(nextDefaultsModels).length === 0
-          ? undefined
-          : currentPrimary && removedModelIds.has(currentPrimary)
-            ? Object.keys(nextDefaultsModels)[0] ?? undefined
-            : currentPrimary;
-      const nextImagePrimary =
-        currentImagePrimary && removedModelIds.has(currentImagePrimary)
-          ? pickFirstImageCapableModel(
-            Object.keys(nextDefaultsModels),
-            buildConfiguredImageSupportMap(nextDefaultsModels)
-          )
-          : resolveImagePrimaryModel(
-            currentImagePrimary,
-            Object.keys(nextDefaultsModels),
-            buildConfiguredImageSupportMap(nextDefaultsModels)
-          );
-
       return {
         ...prev,
         auth: { ...prev.auth, profiles },
@@ -1170,18 +978,10 @@ function ProfileRow({
         models: nextModels,
         agents: {
           ...prev.agents,
-          defaults: {
-            ...prev.agents?.defaults,
+          defaults: buildDefaultsWithResolvedModels({
+            defaults: prev.agents?.defaults,
             models: nextDefaultsModels,
-            model: {
-              ...prev.agents?.defaults?.model,
-              primary: nextPrimary,
-            },
-            imageModel: {
-              ...prev.agents?.defaults?.imageModel,
-              primary: nextImagePrimary,
-            },
-          },
+          }),
         },
       };
     });
@@ -1203,11 +1003,11 @@ function ProfileRow({
         ...prev,
         agents: {
           ...prev.agents,
-          defaults: {
-            ...prev.agents?.defaults,
+          defaults: buildDefaultsWithResolvedModels({
+            defaults: prev.agents?.defaults,
             models: nextModels,
-            model: { ...prev.agents?.defaults?.model, primary: modelId },
-          },
+            primary: modelId,
+          }),
         },
       };
     });
@@ -1223,11 +1023,11 @@ function ProfileRow({
         ...prev,
         agents: {
           ...prev.agents,
-          defaults: {
-            ...prev.agents?.defaults,
+          defaults: buildDefaultsWithResolvedModels({
+            defaults: prev.agents?.defaults,
             models: nextModels,
-            imageModel: { ...prev.agents?.defaults?.imageModel, primary: modelId },
-          },
+            imagePrimary: modelId,
+          }),
         },
       };
     });
@@ -1237,28 +1037,14 @@ function ProfileRow({
     onChange((prev) => {
       const models = { ...prev.agents?.defaults?.models };
       delete models[modelId];
-      const nextPrimary =
-        prev.agents?.defaults?.model?.primary === modelId
-          ? Object.keys(models)[0] ?? undefined
-          : prev.agents?.defaults?.model?.primary;
-      const nextImagePrimary =
-        prev.agents?.defaults?.imageModel?.primary === modelId
-          ? pickFirstImageCapableModel(Object.keys(models), buildConfiguredImageSupportMap(models))
-          : resolveImagePrimaryModel(
-            prev.agents?.defaults?.imageModel?.primary,
-            Object.keys(models),
-            buildConfiguredImageSupportMap(models)
-          );
       return {
         ...prev,
         agents: {
           ...prev.agents,
-          defaults: {
-            ...prev.agents?.defaults,
+          defaults: buildDefaultsWithResolvedModels({
+            defaults: prev.agents?.defaults,
             models,
-            model: { ...prev.agents?.defaults?.model, primary: nextPrimary },
-            imageModel: { ...prev.agents?.defaults?.imageModel, primary: nextImagePrimary },
-          },
+          }),
         },
       };
     });
@@ -1428,8 +1214,9 @@ function ProfileRow({
               providerId={providerId}
               tmpl={tmpl}
               profile={profile}
+              allModels={allModels ?? {}}
+              modelsProvider={modelsProvider}
               onChange={onChange}
-              profileKey={profileKey}
               saving={saving}
               t={t}
               envKeyValue={envKeyValue}
@@ -1499,44 +1286,15 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
       const nextDefaultsModels = { ...existingModels };
       for (const id of modelsToRemove) delete nextDefaultsModels[id];
 
-      const removedIds = new Set(modelsToRemove);
-      const currentPrimary = prev.agents?.defaults?.model?.primary;
-      const currentImagePrimary = prev.agents?.defaults?.imageModel?.primary;
-      const nextPrimary =
-        Object.keys(nextDefaultsModels).length === 0
-          ? undefined
-          : currentPrimary && removedIds.has(currentPrimary)
-            ? Object.keys(nextDefaultsModels)[0] ?? undefined
-            : currentPrimary;
-      const nextImagePrimary =
-        currentImagePrimary && removedIds.has(currentImagePrimary)
-          ? pickFirstImageCapableModel(
-            Object.keys(nextDefaultsModels),
-            buildConfiguredImageSupportMap(nextDefaultsModels)
-          )
-          : resolveImagePrimaryModel(
-            currentImagePrimary,
-            Object.keys(nextDefaultsModels),
-            buildConfiguredImageSupportMap(nextDefaultsModels)
-          );
-
       return {
         ...prev,
         models: { ...prev.models, providers },
         agents: {
           ...prev.agents,
-          defaults: {
-            ...prev.agents?.defaults,
+          defaults: buildDefaultsWithResolvedModels({
+            defaults: prev.agents?.defaults,
             models: nextDefaultsModels,
-            model: {
-              ...prev.agents?.defaults?.model,
-              primary: nextPrimary,
-            },
-            imageModel: {
-              ...prev.agents?.defaults?.imageModel,
-              primary: nextImagePrimary,
-            },
-          },
+          }),
         },
       };
     });
@@ -1977,7 +1735,7 @@ function CatalogCard({
   );
 }
 
-/** Legacy compact card, only used for the existing providers list (not the picker). */
+/** Compact card used by the existing providers list. The picker uses ProviderCatalogEntry. */
 function ProviderCard({
   tmpl,
   onPick,
@@ -2030,14 +1788,6 @@ export interface ProviderConfigOverride {
   textPrimaryModel?: string;
   imagePrimaryModel?: string;
   imageCapableModels?: string[];
-}
-
-export interface ConnectionPrecheckProbe {
-  providerId: string;
-  profileKey: string;
-  baseUrl: string;
-  apiKey: string;
-  modelOverride?: string;
 }
 
 interface ConfigureStepProps {
@@ -3232,6 +2982,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                       profileKey={up.profileKey!}
                       profile={up.authProfile!}
                       allModels={allModels}
+                      modelsProvider={up.modelsProvider}
                       primaryModel={primaryModel}
                       imagePrimaryModel={imagePrimaryModel}
                       imageSupportMap={allModelImageSupportMap}
@@ -3363,10 +3114,11 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                   ...prev,
                   agents: {
                     ...prev.agents,
-                    defaults: {
-                      ...prev.agents?.defaults,
-                      model: { ...prev.agents?.defaults?.model, primary: id },
-                    },
+                    defaults: buildDefaultsWithResolvedModels({
+                      defaults: prev.agents?.defaults,
+                      models: prev.agents?.defaults?.models ?? {},
+                      primary: id,
+                    }),
                   },
                 }));
               }}
@@ -3375,10 +3127,11 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                   ...prev,
                   agents: {
                     ...prev.agents,
-                    defaults: {
-                      ...prev.agents?.defaults,
-                      imageModel: { ...prev.agents?.defaults?.imageModel, primary: id },
-                    },
+                    defaults: buildDefaultsWithResolvedModels({
+                      defaults: prev.agents?.defaults,
+                      models: prev.agents?.defaults?.models ?? {},
+                      imagePrimary: id,
+                    }),
                   },
                 }));
               }}
@@ -3386,31 +3139,14 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                 onChange((prev) => {
                   const models = { ...prev.agents?.defaults?.models };
                   delete models[id];
-                  const nextPrimary =
-                    prev.agents?.defaults?.model?.primary === id
-                      ? Object.keys(models)[0] ?? undefined
-                      : prev.agents?.defaults?.model?.primary;
-                  const nextImagePrimary =
-                    prev.agents?.defaults?.imageModel?.primary === id
-                      ? pickFirstImageCapableModel(
-                        Object.keys(models),
-                        buildConfiguredImageSupportMap(models)
-                      )
-                      : resolveImagePrimaryModel(
-                        prev.agents?.defaults?.imageModel?.primary,
-                        Object.keys(models),
-                        buildConfiguredImageSupportMap(models)
-                      );
                   return {
                     ...prev,
                     agents: {
                       ...prev.agents,
-                      defaults: {
-                        ...prev.agents?.defaults,
+                      defaults: buildDefaultsWithResolvedModels({
+                        defaults: prev.agents?.defaults,
                         models,
-                        model: { ...prev.agents?.defaults?.model, primary: nextPrimary },
-                        imageModel: { ...prev.agents?.defaults?.imageModel, primary: nextImagePrimary },
-                      },
+                      }),
                     },
                   };
                 });

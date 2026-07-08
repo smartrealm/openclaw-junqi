@@ -1,69 +1,24 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
-import { AnimatePresence } from 'framer-motion';
-import { HashRouter, Routes, Route } from 'react-router-dom';
-import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import { AppLayout } from '@/components/Layout/AppLayout';
-import { GlobalAlertDialog } from '@/components/shared/AlertDialog';
-import { SetupPage } from '@/pages/SetupPage';
 import { useAppStore } from '@/stores/app-store';
-import { PairingScreen } from '@/components/PairingScreen';
-import { GatewayErrorScreen } from '@/components/GatewayErrorScreen';
-import { ToastContainer } from '@/components/Toast/ToastContainer';
-import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
-import { BootTimelineOverlay } from '@/components/BootTimelineOverlay';
-import { useTheme } from '@/theme';
-import { playPetSfx } from '@/pet/petSounds';
+import { useTheme } from '@/theme/useTheme';
 
-// Lazy-loaded pages
-const DashboardPage = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.DashboardPage })));
-const ChatPage = lazy(() => import('@/pages/ChatPage').then(m => ({ default: m.ChatPage })));
-const QuickChatPage = lazy(() => import('@/pages/QuickChatPage').then(m => ({ default: m.QuickChatPage })));
-const WorkshopPage = lazy(() => import('@/pages/Workshop').then(m => ({ default: m.WorkshopPage })));
-const FullAnalyticsPage = lazy(() => import('@/pages/FullAnalytics').then(m => ({ default: m.FullAnalyticsPage })));
-const CronMonitorPage = lazy(() => import('@/pages/CronMonitor').then(m => ({ default: m.CronMonitorPage })));
-const AgentHubPage = lazy(() => import('@/pages/AgentHub').then(m => ({ default: m.AgentHubPage })));
-const ChannelsCenterPage = lazy(() => import('@/pages/ChannelsCenter').then(m => ({ default: m.ChannelsCenterPage })));
-const MemoryExplorerPage = lazy(() => import('@/pages/MemoryExplorer').then(m => ({ default: m.MemoryExplorerPage })));
-const SkillsPageFull = lazy(() => import('@/pages/SkillsPage').then(m => ({ default: m.SkillsPage })));
-const SkillHubManagerPage = lazy(() => import('@/pages/SkillHubManager').then(m => ({ default: m.SkillHubManager })));
-const TimelinePage = lazy(() => import('@/pages/TimelinePage').then(m => ({ default: m.TimelinePage })));
-const WelcomePageView = lazy(() => import('@/pages/WelcomePageView').then(m => ({ default: m.default })));
-const AgentRunView = lazy(() => import('@/pages/AgentRunView').then(m => ({ default: m.default })));
-const WorkspaceView = lazy(() => import('@/components/Workspace/WorkspaceView').then(m => ({ default: m.WorkspaceView })));
-const SessionViewPage = lazy(() => import('@/pages/SessionViewPage').then(m => ({ default: m.default })));
-const TerminalPage = lazy(() => import('@/pages/TerminalPage').then(m => ({ default: m.TerminalPage })));
-const SettingsPageFull = lazy(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPageFull })));
-const ConfigManagerPage = lazy(() => import('@/pages/ConfigManager').then(m => ({ default: m.ConfigManagerPage })));
-const SessionManagerPage = lazy(() => import('@/pages/SessionManager').then(m => ({ default: m.SessionManagerPage })));
-const LogsViewerPage = lazy(() => import('@/pages/LogsViewer').then(m => ({ default: m.LogsViewerPage })));
-const MultiAgentViewPage = lazy(() => import('@/pages/MultiAgentView').then(m => ({ default: m.MultiAgentViewPage })));
-const FileManagerPage = lazy(() => import('@/pages/FileManager').then(m => ({ default: m.FileManagerPage })));
-const CalendarPage = lazy(() => import('@/pages/Calendar'));
-const CodeInterpreterPage = lazy(() => import('@/pages/CodeInterpreter').then(m => ({ default: m.CodeInterpreterPage })));
-const McpToolsPage = lazy(() => import('@/pages/McpTools').then(m => ({ default: m.McpToolsPage })));
-const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
-const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
-const GitPage = lazy(() => import('@/pages/GitPage'));
-const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
-import { FeatureRoute } from '@/components/FeatureRoute';
+const AppRoutes = lazy(() => import('@/AppRoutes'));
+const PetRuntime = lazy(() => import('@/pet/PetRuntime'));
+const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m.SetupPage })));
+const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => ({ default: m.PairingScreen })));
+const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
+const BootTimelineOverlay = lazy(() => import('@/components/BootTimelineOverlay').then(m => ({ default: m.BootTimelineOverlay })));
+const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
 import { useChatStore, primeSessionLabelCache, getSessionLabelPref } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
-import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
-import { ModelLoaderChain, ConfigGetLoader, FileReadLoader, AgentsSessionLoader, type ModelEntry, type ModelLoadContext } from '@/services/gateway/modelLoaders';
-import { notifications } from '@/services/notifications';
-import { useNotificationStore } from '@/stores/notificationStore';
+import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import { changeLanguage } from '@/i18n';
-import { usePetStateEmitter } from '@/pet/usePetStateEmitter';
-import { usePomodoro } from '@/pet/usePomodoro';
-import { usePetActions } from '@/pet/usePetActions';
-import { usePetShortcuts } from '@/pet/usePetShortcuts';
-import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
-
-const SESSION_MODEL_PREFS_KEY = 'aegis:session-model-prefs';
+import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
+import { debugLog, debugWarn } from '@/utils/debugLog';
 // User-renamed session labels live in localStorage under
 // 'aegis:session-label-prefs'. The chatStore reads them at sessions.list
 // merge time so renames survive an app restart even when the openclaw
@@ -79,40 +34,24 @@ function RouteLoadingFallback() {
   );
 }
 
-function readSessionModelPrefs(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(SESSION_MODEL_PREFS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => (
-        typeof entry[0] === 'string' && typeof entry[1] === 'string' && entry[1].trim().length > 0
-      )),
-    );
-  } catch {
-    return {};
-  }
+function LazyPetRuntimeHost() {
+  const shouldRun = usePetStore((s) => s.enabled || s.pomodoro.enabled);
+  if (!shouldRun) return null;
+  return (
+    <Suspense fallback={null}>
+      <PetRuntime />
+    </Suspense>
+  );
 }
 
-function getSessionModelPref(sessionKey: string): string | null {
-  const prefs = readSessionModelPrefs();
-  const model = prefs[sessionKey];
-  return typeof model === 'string' && model.trim().length > 0 ? model : null;
+async function notifyLazy(options: { type: 'message' | 'task_complete' | 'info' | 'error'; title: string; body: string }) {
+  const mod = await import('@/services/notifications');
+  mod.notifications.notify(options);
 }
 
-function setSessionModelPref(sessionKey: string, model: string | null): void {
-  try {
-    const prefs = readSessionModelPrefs();
-    if (model && model.trim()) {
-      prefs[sessionKey] = model.trim();
-    } else {
-      delete prefs[sessionKey];
-    }
-    localStorage.setItem(SESSION_MODEL_PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    // ignore persistence errors
-  }
+async function addToastLazy(type: 'message' | 'task_complete' | 'info' | 'error', title: string, body: string) {
+  const mod = await import('@/stores/notificationStore');
+  mod.useNotificationStore.getState().addToast(type, title, body);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -135,96 +74,6 @@ export default function App() {
     void primeSessionLabelCache();
   }, []);
 
-  // ── Global drag-drop bridge ────────────────────────────────────────────
-  // Rust forwards OS drag-drop events from any webview as `aegis:file-dropped`.
-  // We spawn a compact QuickChatWindow seeded with those paths, then ping
-  // the pet so it plays the "swallow" emotion — closes the loop on the
-  // "drop file → pet eats it → standalone chat opens" interaction.
-  const [draggingOver, setDraggingOver] = useState(false);
-  const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
-  // Hold the stop() handle for the sustained "drag hum" so we can cancel it
-  // when the user leaves the window or releases the payload.
-  const dragSfxStop = useRef<null | (() => void)>(null);
-  useEffect(() => {
-    const unlisten = combineUnlisteners([
-      subscribeTauriEvent<string[]>('aegis:file-dropped', async (e) => {
-        console.log('[aegis] file-dropped', e.payload);
-        const paths = e.payload ?? [];
-        if (paths.length === 0) return;
-        // Spawn a brand-new chat session scoped to the main agent, attach
-        // the dropped paths as the initial context, then navigate. The pet
-        // swallows the payload visually; ChatPage drains pendingFiles on
-        // mount and renders them as the first user-message attachment.
-        const cs = useChatStore.getState();
-        const newKey = `agent:main:s-${Date.now().toString(36).slice(-5)}`;
-        cs.addLocalSession({
-          key: newKey,
-          label: paths.length === 1
-            ? `📎 ${paths[0].split(/[\\/]/).pop()}`
-            : `📎 ${paths.length} 个文件`,
-          agentId: 'main',
-          createdAt: Date.now(),
-        } as any);
-        cs.setActiveSession(newKey);
-        cs.setPendingFiles(paths);
-        // Notify ChatPage (if mounted) so the attachment bar updates immediately.
-        window.dispatchEvent(new CustomEvent('aegis:files-dropped', { detail: { paths, sessionKey: newKey } }));
-        // Navigate to the chat route — the new session becomes the active tab.
-        // Using replaceState keeps the browser back stack clean.
-        const url = new URL(window.location.href);
-        url.hash = `#/chat?session=${encodeURIComponent(newKey)}`;
-        window.history.replaceState({}, '', url.toString());
-        // Trigger a soft re-render of the router by dispatching popstate —
-        // HashRouter listens for this and re-evaluates the route.
-        window.dispatchEvent(new PopStateEvent('popstate'));
-        // Cancel the drag pad (if still playing) before the drop click.
-        dragSfxStop.current?.();
-        dragSfxStop.current = null;
-        const soundOn = useSettingsStore.getState().soundEnabled;
-        playPetSfx('drop', soundOn);
-        playPetSfx('munch', soundOn);
-        // Pet reaction.
-        window.dispatchEvent(new CustomEvent('aegis:pet-swallow', {
-          detail: { count: paths.length },
-        }));
-        usePetStore.getState().bumpSwallowTick();
-        usePetStore.getState().setDragActive(false);
-        setDraggingOver(false);
-      }),
-      subscribeTauriEvent<string[]>('aegis:drag-active', (e) => {
-        console.log('[aegis] drag-active', e.payload);
-        const paths = e.payload ?? [];
-        setDraggingOver(true);
-        setDraggedPaths(paths);
-        usePetStore.getState().setDragActive(true, paths);
-        // Start the sustained "hum" while the user is hovering with a payload.
-        // playPetSfx returns a stop() handle we keep so leave/inactive can
-        // tear it down cleanly.
-        dragSfxStop.current?.();
-        dragSfxStop.current = playPetSfx('drag', useSettingsStore.getState().soundEnabled) ?? null;
-      }),
-      subscribeTauriEvent('aegis:drag-inactive', () => {
-        console.log('[aegis] drag-inactive');
-        setDraggingOver(false);
-        setDraggedPaths([]);
-        usePetStore.getState().setDragActive(false);
-        usePetStore.getState().setDragOver(false);
-        dragSfxStop.current?.();
-        dragSfxStop.current = null;
-      }),
-      // Cursor is hovering directly over the pet during the drag — flip it into
-      // "overdrag" (mouth opens, cheeks blush). Rust emits the boolean on every
-      // Over event, so moving off the pet falls back to plain `drag`.
-      subscribeTauriEvent<boolean>('aegis:drag-over-main', (e) => {
-        usePetStore.getState().setDragOver(e.payload ?? false);
-      }),
-    ]);
-    return () => {
-      unlisten();
-      dragSfxStop.current?.();
-      dragSfxStop.current = null;
-    };
-  }, []);
   const {
     addMessage,
     updateStreamingMessage,
@@ -351,23 +200,20 @@ export default function App() {
         state.setManualModelOverride(targetModel);
         setSessionModelPref(sessionKey, targetModel);
         setTimeout(() => void loadSessions(), 500);
-      } catch (err) { console.warn('[Models] Failed to auto-select model:', err); }
+      } catch (err) { debugWarn('models', '[Models] Failed to auto-select model:', err); }
     };
 
-    // Build the chain context (shared extraction logic)
-    const ctx: ModelLoadContext = {
-      hasProviders: (config: any) => {
-        const p = config ?? {};
-        return Object.keys(p.auth?.profiles ?? {}).length > 0
-            || Object.keys(p.models?.providers ?? {}).length > 0
-            || Object.keys(p.env?.vars ?? {}).length > 0;
-      },
-      extractModels: (config: any) => {
-        const modelsSection: Record<string, any> = config?.agents?.defaults?.models ?? {};
-        return Object.entries(modelsSection).map(([id, cfg]: [string, any]) => ({
-          id, label: id, alias: (cfg?.alias as string) || undefined,
-        }));
-      },
+    const [
+      { ModelLoaderChain, ConfigGetLoader, FileReadLoader, AgentsSessionLoader },
+      { extractAvailableModelsFromConfig, hasConfiguredModelProviders },
+    ] = await Promise.all([
+      import('@/services/gateway/modelLoaders'),
+      import('@/services/gateway/modelCatalog'),
+    ]);
+
+    const ctx = {
+      hasProviders: hasConfiguredModelProviders,
+      extractModels: extractAvailableModelsFromConfig,
     };
 
     // Chain: WS config.get → file read → agents+sessions
@@ -394,17 +240,13 @@ export default function App() {
     await applyModels(models);
   }, [setAvailableModels, loadSessions]);
 
-
-  // ── Desktop pet companion: open window + broadcast state (main window only) ──
-  usePetStateEmitter();
-  usePomodoro();
-  // Pet-window interactions (single-click cycle skin, right-click menu) are
-  // forwarded here via the "pet-action" event — execute them in the main window.
-  usePetActions();
-  usePetShortcuts();
-
   // ── Request notification permission (Web Notification API) ──
-  useEffect(() => { notifications.requestPermission(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void import('@/services/notifications').then((mod) => mod.notifications.requestPermission());
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // ── Cold-start boot overlay: keep visible until WebSocket is really connected
   // and show it for a minimum duration to avoid a flash/jump effect.
@@ -477,11 +319,10 @@ export default function App() {
     try { window.location.hash = '#/logs'; } catch {}
   }, []);
 
-  // If the gateway process is running but the WS handshake is stuck during
-  // cold boot, prefer cheap reconnect probes. Restarting OpenClaw is expensive
-  // and can turn a short token/port-cache delay into a 20s+ boot, so automatic
-  // recovery never restarts the service. The manual "Restart Gateway" button
-  // remains available once lightweight retries have failed.
+  // If the gateway process is running but the WS handshake is slow during boot,
+  // use the cheap process status probe first. `ensureRunning()` can escalate into
+  // Docker fallback and take tens of seconds, which is too heavy for the normal
+  // non-first-launch path.
   useEffect(() => {
     if (setupComplete !== true) return;
     if (connected) {
@@ -497,25 +338,59 @@ export default function App() {
     if (!window.aegis?.gateway?.retry) return; // not under Tauri — nothing to restart
     bootRecoveryStartedRef.current = true;
     setBootRecoveryLogs([]);
-    addBootRecoveryLog('Waiting for Gateway WebSocket handshake…');
-    const delays = [2500, 6000, 10000];
-    bootRecoveryTimersRef.current = delays.map((delay, idx) => setTimeout(() => {
-      if (useChatStore.getState().connected) return;
-      const attempt = idx + 1;
-      setBootRecoveryAttempt(attempt);
-      addBootRecoveryLog(`Connection retry ${attempt}/3 (WebSocket reconnect)`);
-      try { gateway.disconnect(); } catch {}
-      try { gatewayManager.reconnect(); } catch {}
-      if (attempt === 3) {
-        setBootRecoveryReady(true);
-        addBootRecoveryLog('Connection retries did not finish. Manual restart is available.');
-      }
-    }, delay));
-    return () => {
+
+    let cancelled = false;
+    const clearRecoveryTimers = () => {
       bootRecoveryTimersRef.current.forEach(clearTimeout);
       bootRecoveryTimersRef.current = [];
     };
-  }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog]);
+    const scheduleReconnectRetries = () => {
+      clearRecoveryTimers();
+      const delays = [3_000, 6_000, 10_000];
+      bootRecoveryTimersRef.current = delays.map((delay, idx) => setTimeout(() => {
+        if (cancelled || useChatStore.getState().connected) return;
+        const attempt = idx + 1;
+        setBootRecoveryAttempt(attempt);
+        addBootRecoveryLog(`WebSocket handshake still pending; reconnect attempt ${attempt}/3`);
+        try { gateway.disconnect(); } catch {}
+        try { gatewayManager.reconnect(); } catch {}
+        if (attempt === 3) {
+          setBootRecoveryReady(true);
+          addBootRecoveryLog('Connection retries did not finish. Manual restart is available.');
+        }
+      }, delay));
+    };
+
+    void (async () => {
+      if (useChatStore.getState().connected) return;
+      addBootRecoveryLog('Checking local Gateway status before recovery…');
+      try {
+        const status = await window.aegis?.gateway?.getStatus?.();
+        if (cancelled || useChatStore.getState().connected) return;
+        if (status?.running && !status.error) {
+          addBootRecoveryLog('Gateway process is running; reconnecting WebSocket quietly…');
+          emitGatewayProgress(
+            'Gateway process is running, reconnecting…',
+            0.72,
+            'gateway.progress.gatewayHealthy',
+          );
+          try { gatewayManager.reconnect(); } catch {}
+          scheduleReconnectRetries();
+          return;
+        }
+        addBootRecoveryLog(`Gateway status is not ready: ${status?.error ?? 'not running'}`);
+      } catch (err) {
+        if (cancelled || useChatStore.getState().connected) return;
+        addBootRecoveryLog(`Gateway status check failed: ${String(err)}`);
+      }
+      scheduleReconnectRetries();
+    })();
+
+    return () => {
+      cancelled = true;
+      clearRecoveryTimers();
+    };
+  }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog, emitGatewayProgress]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
@@ -539,6 +414,16 @@ export default function App() {
     });
   }, []);
 
+  useEffect(() => {
+    const handleSessionInactive = (event: Event) => {
+      const sessionKey = (event as CustomEvent<{ sessionKey?: string }>).detail?.sessionKey;
+      if (!sessionKey) return;
+      useChatStore.getState().setIsTyping(false, sessionKey);
+    };
+    window.addEventListener('aegis:session-inactive', handleSessionInactive);
+    return () => window.removeEventListener('aegis:session-inactive', handleSessionInactive);
+  }, []);
+
   // ── Gateway Setup ──
   useEffect(() => {
     if (setupComplete !== true) return;
@@ -556,7 +441,7 @@ export default function App() {
         // Notify when app is minimized/background OR user is on a different page
         const isOnChat = window.location.hash === '#/chat' || window.location.hash.startsWith('#/chat?');
         if (!document.hasFocus() || !isOnChat) {
-          notifications.notify({
+          void notifyLazy({
             type: 'message',
             title: t('notifications.newMessage'),
             body: msg.content.substring(0, 120),
@@ -608,7 +493,7 @@ export default function App() {
         // Notify (sound + toast) when app is minimized/background OR user is on a different page
         const isOnChat = window.location.hash === '#/chat' || window.location.hash.startsWith('#/chat?');
         if (!document.hasFocus() || !isOnChat) {
-          notifications.notify({
+          void notifyLazy({
             type: 'task_complete',
             title: t('notifications.replyComplete'),
             body: content.substring(0, 120),
@@ -633,7 +518,7 @@ export default function App() {
           );
           thinkingKeys.forEach((k) => cs.clearThinking(k));
           if (typingKeys.length || thinkingKeys.length) {
-            console.log('[App] 🧹 Cleared stale typing/thinking on disconnect');
+            debugLog('app', '[App] 🧹 Cleared stale typing/thinking on disconnect');
           }
         }
         if (status.connected) {
@@ -695,7 +580,7 @@ export default function App() {
         }
       },
       onScopeError: (error) => {
-        console.warn('[App] 🔑 Scope error — triggering pairing flow:', error);
+        debugWarn('app', '[App] 🔑 Scope error — triggering pairing flow:', error);
         // Only trigger pairing once per connection attempt
         if (!pairingTriggeredRef.current) {
           pairingTriggeredRef.current = true;
@@ -728,14 +613,14 @@ export default function App() {
       if (bootOverlayDismissedRef.current) {
         if (snap.error && snap.error !== previousError) {
           lastGatewayErrorToastRef.current = snap.error;
-          useNotificationStore.getState().addToast(
+          void addToastLazy(
             'error',
             t('gateway.statusChanged', 'Gateway status changed'),
             t('gateway.statusError', { error: snap.error, defaultValue: `Error: ${snap.error}` }),
           );
         } else if (!snap.error && previousError && snap.connected && previousToastKey !== toastKey) {
           lastGatewayErrorToastRef.current = null;
-          useNotificationStore.getState().addToast(
+          void addToastLazy(
             'info',
             t('gateway.statusChanged', 'Gateway status changed'),
             t('gateway.statusConnected', 'Connected'),
@@ -774,7 +659,7 @@ export default function App() {
             setSessionModelPref(key, model);
           })
           .catch((err) => {
-            console.warn('[Models] Failed to apply saved primary model to active session:', err);
+            debugWarn('models', '[Models] Failed to apply saved primary model to active session:', err);
           });
       }
       if (providerChanged) {
@@ -797,6 +682,11 @@ export default function App() {
       setTimeout(() => void loadSessions(), 400);
     };
     window.addEventListener('aegis:session-reset', handleSessionReset);
+
+    const handleSessionsChanged = () => {
+      setTimeout(() => void loadSessions(), 250);
+    };
+    window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
 
     // StatusBar Gateway action fires this event. Connected state requests a
     // real Gateway restart; disconnected state only ensures the process is
@@ -845,6 +735,7 @@ export default function App() {
       window.removeEventListener('aegis:model-changed', handleModelChanged);
       window.removeEventListener('aegis:config-saved', handleConfigSaved);
       window.removeEventListener('aegis:session-reset', handleSessionReset);
+      window.removeEventListener('aegis:sessions-changed', handleSessionsChanged);
       window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
       gateway.disconnect();
     };
@@ -853,7 +744,7 @@ export default function App() {
 
   // ── Pairing Handlers ──
   const handlePairingComplete = useCallback(async (token: string) => {
-    console.log('[App] 🔑 Pairing complete — reconnecting with new token');
+    debugLog('gateway', '[App] 🔑 Pairing complete — reconnecting with new token');
     // Save token to config via IPC
     if (window.aegis?.pairing?.saveToken) {
       await window.aegis.pairing.saveToken(token);
@@ -869,7 +760,7 @@ export default function App() {
   }, []);
 
   const handlePairingCancel = useCallback(() => {
-    console.log('[App] Pairing cancelled by user');
+    debugLog('gateway', '[App] Pairing cancelled by user');
     setNeedsPairing(false);
     pairingTriggeredRef.current = false;
     // Stop gateway pairing retry loop — user chose to dismiss
@@ -890,24 +781,37 @@ export default function App() {
     gatewayManager.reconnect();
   }, []);
 
-  if (!setupComplete) return <SetupPage />;
+  if (!setupComplete) {
+    return (
+      <>
+        <LazyPetRuntimeHost />
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <SetupPage />
+        </Suspense>
+      </>
+    );
+  }
 
   return (
     <>
+      <LazyPetRuntimeHost />
+
       {/* Gateway process error overlay — shown when the gateway failed to start.
           Takes priority over everything; user must recover before using the app. */}
       {gatewayBootError && (
-        <GatewayErrorScreen
-          error={gatewayBootError}
-          logs={gatewayBootLogs}
-          retrying={gatewayRetrying}
-          onRetry={handleGatewayRetry}
-          onRecovered={handleGatewayRecovered}
-        />
+        <Suspense fallback={null}>
+          <GatewayErrorScreen
+            error={gatewayBootError}
+            logs={gatewayBootLogs}
+            retrying={gatewayRetrying}
+            onRetry={handleGatewayRetry}
+            onRecovered={handleGatewayRecovered}
+          />
+        </Suspense>
       )}
 
-      <AnimatePresence mode="wait">
-        {bootOverlayVisible && !gatewayBootError && !needsPairing && (
+      {bootOverlayVisible && !gatewayBootError && !needsPairing && (
+        <Suspense fallback={null}>
           <BootTimelineOverlay
             recovery={{
               attempt: bootRecoveryAttempt,
@@ -919,99 +823,28 @@ export default function App() {
               onOpenLogs: openBootLogs,
             }}
           />
-        )}
-      </AnimatePresence>
-
-      {/* File-drop overlay — soft tinted scrim + label + file preview chips.
-          Active whenever Rust reports `aegis:drag-active` (OS-level drag
-          entering the window). Pure visual cue; the actual spawn happens on
-          drop. pointer-events-none so the overlay never intercepts the drop. */}
-      {draggingOver && (
-        <div
-          className="fixed inset-0 z-[9998] pointer-events-none flex items-center justify-center"
-          style={{ animation: 'fadeIn 120ms ease-out' }}
-        >
-          <div className="absolute inset-3 rounded-2xl border-2 border-dashed border-aegis-primary/60
-                          bg-aegis-primary/[0.06] backdrop-blur-sm" />
-          <div className="relative flex flex-col items-center gap-2 px-6 py-4 rounded-xl bg-black/40 border border-aegis-primary/30">
-            <div className="text-aegis-primary text-[14px] font-semibold tracking-wide">
-              拖入到 JunQi Quick Chat
-            </div>
-            <div className="text-aegis-text-dim text-[11px]">
-              {draggedPaths.length} 项，松开会单独打开会话
-            </div>
-            <div className="flex flex-wrap gap-1.5 max-w-[420px] mt-1 justify-center">
-              {draggedPaths.slice(0, 6).map((p, i) => (
-                <span key={i} className="px-2 py-0.5 rounded bg-white/10 border border-white/10 text-[10.5px] truncate max-w-[180px]">
-                  {p.split('/').pop() || p}
-                </span>
-              ))}
-              {draggedPaths.length > 6 && (
-                <span className="px-2 py-0.5 rounded bg-white/10 border border-white/10 text-[10.5px]">
-                  +{draggedPaths.length - 6}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+        </Suspense>
       )}
+
+      <Suspense fallback={null}>
+        <DragDropRuntime />
+      </Suspense>
 
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
       {needsPairing && !gatewayBootError && (
-        <PairingScreen
-          gatewayHttpUrl={gatewayHttpUrl}
-          onPaired={handlePairingComplete}
-          onCancel={handlePairingCancel}
-          errorMessage={scopeError}
-        />
+        <Suspense fallback={null}>
+          <PairingScreen
+            gatewayHttpUrl={gatewayHttpUrl}
+            onPaired={handlePairingComplete}
+            onCancel={handlePairingCancel}
+            errorMessage={scopeError}
+          />
+        </Suspense>
       )}
 
-      <HashRouter>
-        {/* In-app toast notifications — always visible, above all routes */}
-        <ToastContainer />
-        <ErrorBoundary>
-        <Suspense fallback={<RouteLoadingFallback />}>
-          <Routes>
-              <Route element={<AppLayout />}>
-                <Route path="/" element={<FeatureRoute feature="dashboard"><DashboardPage /></FeatureRoute>} />
-                <Route path="/chat" element={<FeatureRoute feature="chat"><ChatPage /></FeatureRoute>} />
-                {/* /quickchat is the compact 1-session window spawned when the user
-                    drops a file onto the main window or pet. Independent route so
-                    it can be hosted in its own WebviewWindow with no NavSidebar,
-                    no workbench — just the focused chat surface. */}
-                <Route path="/quickchat" element={<QuickChatPage />} />
-                <Route path="/workshop" element={<FeatureRoute feature="workshop"><WorkshopPage /></FeatureRoute>} />
-                <Route path="/analytics" element={<FeatureRoute feature="analytics"><FullAnalyticsPage /></FeatureRoute>} />
-                <Route path="/cron" element={<FeatureRoute feature="cron"><CronMonitorPage /></FeatureRoute>} />
-                <Route path="/agents" element={<FeatureRoute feature="agents"><AgentHubPage /></FeatureRoute>} />
-                <Route path="/channels" element={<FeatureRoute feature="configManager"><ChannelsCenterPage /></FeatureRoute>} />
-                <Route path="/skills" element={<FeatureRoute feature="skills"><SkillsPageFull /></FeatureRoute>} />
-                <Route path="/skill-hub" element={<FeatureRoute feature="skills"><SkillHubManagerPage /></FeatureRoute>} />
-                <Route path="/timeline" element={<FeatureRoute feature="workshop"><TimelinePage /></FeatureRoute>} />
-                <Route path="/welcome" element={<FeatureRoute feature="dashboard"><WelcomePageView /></FeatureRoute>} />
-                <Route path="/agent-run" element={<FeatureRoute feature="agentRun"><AgentRunView /></FeatureRoute>} />
-                <Route path="/session" element={<FeatureRoute feature="dashboard"><SessionViewPage /></FeatureRoute>} />
-                <Route path="/terminal" element={<FeatureRoute feature="terminal"><TerminalPage /></FeatureRoute>} />
-                <Route path="/memory" element={<FeatureRoute feature="memory"><MemoryExplorerPage /></FeatureRoute>} />
-                <Route path="/config" element={<FeatureRoute feature="configManager"><ConfigManagerPage /></FeatureRoute>} />
-                <Route path="/sessions" element={<FeatureRoute feature="sessions"><SessionManagerPage /></FeatureRoute>} />
-                <Route path="/logs" element={<FeatureRoute feature="logs"><LogsViewerPage /></FeatureRoute>} />
-                <Route path="/agents/live" element={<FeatureRoute feature="liveAgents"><MultiAgentViewPage /></FeatureRoute>} />
-                <Route path="/files" element={<FeatureRoute feature="files"><FileManagerPage /></FeatureRoute>} />
-                <Route path="/git" element={<FeatureRoute feature="git"><GitPage /></FeatureRoute>} />
-                <Route path="/calendar" element={<FeatureRoute feature="calendar"><CalendarPage /></FeatureRoute>} />
-                <Route path="/sandbox" element={<FeatureRoute feature="sandbox"><CodeInterpreterPage /></FeatureRoute>} />
-                <Route path="/tools" element={<FeatureRoute feature="tools"><McpToolsPage /></FeatureRoute>} />
-                <Route path="/perf" element={<PerformancePage />} />
-                <Route path="/kanban" element={<KanbanPage />} />
-                <Route path="/ui-showcase" element={<UIShowcase />} />
-                <Route path="/settings" element={<FeatureRoute feature="settings"><SettingsPageFull /></FeatureRoute>} />
-              </Route>
-            </Routes>
-        </Suspense>
-        </ErrorBoundary>
-        <GlobalAlertDialog />
-      </HashRouter>
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <AppRoutes />
+      </Suspense>
     </>
   );
 }

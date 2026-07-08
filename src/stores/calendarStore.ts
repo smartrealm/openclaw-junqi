@@ -8,6 +8,7 @@ import { gateway } from '@/services/gateway';
 import type { CalendarEvent, CalendarFilter, CalendarSettings } from '@/pages/Calendar/calendarTypes';
 import { DEFAULT_SETTINGS, DEFAULT_FILTER } from '@/pages/Calendar/calendarTypes';
 import { generateEventId, getLocalTimezone } from '@/pages/Calendar/calendarUtils';
+import { debugError } from '@/utils/debugLog';
 
 // ── localStorage persistence ──
 
@@ -68,7 +69,7 @@ async function createCronReminder(event: CalendarEvent): Promise<string | null> 
     });
     return result?.id || result?.jobId || null;
   } catch (err) {
-    console.error('[Calendar] Failed to create cron reminder:', err);
+    debugError('app', '[Calendar] Failed to create cron reminder:', err);
     return null;
   }
 }
@@ -77,7 +78,7 @@ async function removeCronReminder(jobId: string): Promise<void> {
   try {
     await gateway.call('cron.remove', { jobId });
   } catch (err) {
-    console.error('[Calendar] Failed to remove cron reminder:', err);
+    debugError('app', '[Calendar] Failed to remove cron reminder:', err);
   }
 }
 

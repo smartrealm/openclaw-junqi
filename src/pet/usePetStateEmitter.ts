@@ -8,7 +8,10 @@ import { useAppStore } from '@/stores/app-store';
 import { derivePetState, type CelebrateKind, type PetState } from './pet-states';
 import i18n from '@/i18n';
 
-const TICK_MS = 250;
+const FAST_TICK_MS = 250;
+const ACTIVE_TICK_MS = 1_000;
+const IDLE_TICK_MS = 5_000;
+const WAKE_DEBOUNCE_MS = 100;
 
 // Module-level guard: React StrictMode double-invokes effects in dev. Without
 // this (and the Rust-side PET_CREATE_GUARD), open_pet_window fires twice and
@@ -106,10 +109,58 @@ function setupEmotion(app: ReturnType<typeof useAppStore.getState>): PetState['e
   return 'working';
 }
 
+function petStateKey(state: PetState): string {
+  const pomodoro = state.pomodoro
+    ? {
+        ...state.pomodoro,
+        remainingSec: Math.ceil(state.pomodoro.remainingMs / 1000),
+        remainingMs: undefined,
+      }
+    : undefined;
+  return JSON.stringify({
+    emotion: state.emotion,
+    progress: typeof state.progress === 'number' ? Math.round(state.progress) : undefined,
+    message: state.message,
+    taskLabel: state.taskLabel,
+    celebrateUntil: state.celebrateUntil,
+    elapsedSec: state.elapsedMs ? Math.floor(state.elapsedMs / 1000) : undefined,
+    skin: state.skin,
+    setup: state.setup,
+    pomodoro,
+    celebrateKind: state.celebrateKind,
+    drag: state.drag,
+  });
+}
+
+function nextTickDelay(state: PetState): number {
+  if (
+    state.emotion === 'drag' ||
+    state.emotion === 'overdrag' ||
+    state.emotion === 'swallow' ||
+    state.emotion === 'rapidSwallow'
+  ) {
+    return FAST_TICK_MS;
+  }
+  if (
+    state.setup ||
+    state.pomodoro?.running ||
+    state.emotion === 'thinking' ||
+    state.emotion === 'typing' ||
+    state.emotion === 'tool' ||
+    state.emotion === 'working' ||
+    state.emotion === 'memory' ||
+    state.emotion === 'happy' ||
+    state.emotion === 'celebrate'
+  ) {
+    return ACTIVE_TICK_MS;
+  }
+  return IDLE_TICK_MS;
+}
+
 /**
  * Runs in the MAIN window (single source of truth). Opens the pet window when
  * enabled and broadcasts a `PetState` derived from the live business stores
- * every TICK_MS. Edge transitions (reply ended / task done / pomodoro phase
+ * on an adaptive cadence. Edge transitions (reply ended / task done / pomodoro phase
  * done / activity start) are detected by diffing against the previous tick and
  * timestamped, so the bubble can show what the pet is doing and for how long,
  * plus the live Pomodoro countdown.
@@ -157,7 +208,19 @@ export function usePetStateEmitter() {
     let prevSwallowTick = usePetStore.getState().swallowTick;
     let prevDragActive = usePetStore.getState().dragActive;
 
-    const tick = () => {
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    let lastEmittedKey = '';
+    let wakeQueued = false;
+
+    const emitIfChanged = (state: PetState) => {
+      const key = petStateKey(state);
+      if (key === lastEmittedKey) return;
+      lastEmittedKey = key;
+      emitPetState(state);
+    };
+
+    const tick = (): PetState => {
       const now = Date.now();
       const cs = useChatStore.getState();
       const gw = useGatewayDataStore.getState();
@@ -166,7 +229,7 @@ export function usePetStateEmitter() {
       if (app.setupComplete !== true) {
         if (!mem.activeStartedAt) mem.activeStartedAt = now;
         const setupCopy = setupPetCopy(app);
-        emitPetState({
+        const state: PetState = {
           emotion: setupEmotion(app),
           progress: app.setupProgress,
           message: setupCopy.message,
@@ -174,8 +237,9 @@ export function usePetStateEmitter() {
           elapsedMs: mem.activeStartedAt ? now - mem.activeStartedAt : undefined,
           skin: usePetStore.getState().skin,
           setup: true,
-        });
-        return;
+        };
+        emitIfChanged(state);
+        return state;
       }
 
       const typing = Object.values(cs.typingBySession).some(Boolean);
@@ -325,7 +389,7 @@ export function usePetStateEmitter() {
         }
       }
 
-      emitPetState({
+      const state: PetState = {
         ...derived,
         message,
         taskLabel,
@@ -334,12 +398,47 @@ export function usePetStateEmitter() {
         pomodoro: pomodoro.enabled
           ? { running: pomodoro.running, paused: pomodoro.paused, phase: pomodoro.phase, remainingMs, enabled: true }
           : undefined,
-      });
+      };
+      emitIfChanged(state);
+      return state;
     };
 
-    tick();
-    const id = setInterval(tick, TICK_MS);
-    return () => clearInterval(id);
+    let loop: () => void;
+
+    const scheduleNext = (state: PetState) => {
+      if (stopped) return;
+      timerId = setTimeout(loop, nextTickDelay(state));
+    };
+    loop = () => {
+      if (stopped) return;
+      wakeQueued = false;
+      scheduleNext(tick());
+    };
+
+    const wake = () => {
+      if (stopped || wakeQueued) return;
+      wakeQueued = true;
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      setTimeout(loop, WAKE_DEBOUNCE_MS);
+    };
+
+    const unsubs = [
+      useChatStore.subscribe(wake),
+      useGatewayDataStore.subscribe(wake),
+      useWorkshopStore.subscribe(wake),
+      usePetStore.subscribe(wake),
+      useAppStore.subscribe(wake),
+    ];
+
+    loop();
+    return () => {
+      stopped = true;
+      if (timerId) clearTimeout(timerId);
+      unsubs.forEach((unsub) => unsub());
+    };
   }, [enabled]);
 }
 

@@ -55,10 +55,14 @@ async fn store_in_keychain(account_id: &str, label: &str, value: &str) -> Result
     let output = tokio::process::Command::new("security")
         .args([
             "add-generic-password",
-            "-a", account_id,
-            "-s", service,
-            "-l", label,
-            "-w", value,
+            "-a",
+            account_id,
+            "-s",
+            service,
+            "-l",
+            label,
+            "-w",
+            value,
             "-U", // update if exists
         ])
         .output()
@@ -88,8 +92,10 @@ async fn get_from_keychain(account_id: &str) -> Result<String, String> {
     let output = tokio::process::Command::new("security")
         .args([
             "find-generic-password",
-            "-a", account_id,
-            "-s", service,
+            "-a",
+            account_id,
+            "-s",
+            service,
             "-w",
         ])
         .output()
@@ -128,8 +134,7 @@ async fn delete_from_keychain(account_id: &str) -> Result<(), String> {
 fn secrets_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
     let dir = home.join(".openclaw").join("secrets");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("create secrets dir: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create secrets dir: {e}"))?;
     Ok(dir.join("provider-secrets.json"))
 }
 
@@ -142,12 +147,14 @@ async fn store_in_keychain(account_id: &str, label: &str, value: &str) -> Result
     } else {
         Default::default()
     };
-    entries.insert(account_id.to_string(), serde_json::json!({
-        "label": label,
-        "value": value,
-    }));
-    let json = serde_json::to_string_pretty(&entries)
-        .map_err(|e| format!("serialize: {e}"))?;
+    entries.insert(
+        account_id.to_string(),
+        serde_json::json!({
+            "label": label,
+            "value": value,
+        }),
+    );
+    let json = serde_json::to_string_pretty(&entries).map_err(|e| format!("serialize: {e}"))?;
     std::fs::write(&path, &json).map_err(|e| format!("write: {e}"))?;
     #[cfg(unix)]
     {
@@ -160,13 +167,14 @@ async fn store_in_keychain(account_id: &str, label: &str, value: &str) -> Result
 #[cfg(not(target_os = "macos"))]
 async fn get_from_keychain(account_id: &str) -> Result<String, String> {
     let path = secrets_file_path()?;
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("read secrets file: {e}"))?;
-    let entries: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&raw)
-        .map_err(|e| format!("parse secrets file: {e}"))?;
-    let entry = entries.get(account_id)
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("read secrets file: {e}"))?;
+    let entries: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&raw).map_err(|e| format!("parse secrets file: {e}"))?;
+    let entry = entries
+        .get(account_id)
         .ok_or_else(|| "secret not found".to_string())?;
-    entry["value"].as_str()
+    entry["value"]
+        .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "invalid secret entry".to_string())
 }
@@ -181,8 +189,7 @@ async fn delete_from_keychain(account_id: &str) -> Result<(), String> {
         return Ok(());
     };
     entries.remove(account_id);
-    let json = serde_json::to_string_pretty(&entries)
-        .map_err(|e| format!("serialize: {e}"))?;
+    let json = serde_json::to_string_pretty(&entries).map_err(|e| format!("serialize: {e}"))?;
     std::fs::write(&path, &json).map_err(|e| format!("write: {e}"))?;
     Ok(())
 }

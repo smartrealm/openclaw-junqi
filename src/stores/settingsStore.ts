@@ -2,15 +2,19 @@ import { create } from 'zustand';
 import {
   DEFAULT_SETTING,
   STORAGE_KEY as THEME_STORAGE_KEY,
+} from '@/theme/constants';
+import {
   AEGIS_FONTS_STORAGE_KEYS,
+  isThemeSetting,
+  type ThemeSetting,
+} from '@/theme/types';
+import {
   DEFAULT_ACCENT_COLOR,
   applyAccentColor,
   normalizeAccentColor,
   readPersistedAccentColor,
-  isThemeSetting,
   type AccentColor,
-  type ThemeSetting,
-} from '@/theme';
+} from '@/theme/accent';
 import { applyTheme } from '@/theme/apply';
 import { detectOSPreference, resolveTheme } from '@/theme/resolver';
 import { resolveTab, type SidebarTab } from '@/components/Layout/tab-utils';

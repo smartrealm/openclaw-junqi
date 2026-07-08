@@ -2,7 +2,6 @@
 ///
 /// Uses `which` to check each candidate. Runs in ~5ms (all candidates
 /// checked in parallel via spawn_blocking).
-
 use std::process::Command;
 
 type Label = &'static str;

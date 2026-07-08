@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import type { PetSkin } from '@/pet/skins';
 export type { PetSkin };
 
+export const DEFAULT_PET_SKIN: PetSkin = 'jellyfish';
+
 /** Coarse classification of a drag payload — drives the bubble icon + accent
  *  colour so the user can tell at a glance whether they dragged an image, an
  *  archive, code, text, or a folder. Heuristic, not authoritative. */
@@ -112,7 +114,7 @@ export const usePetStore = create<PetSettings>()(
       enabled: true,
       position: null,
       clickThrough: true,
-      skin: 'lobster',
+      skin: DEFAULT_PET_SKIN,
       customAsset: null,
       pomodoro: {
         enabled: false,
@@ -164,6 +166,27 @@ export const usePetStore = create<PetSettings>()(
     }),
     {
       name: 'aegis-pet-settings',
+      version: 2,
+      migrate: (persisted) => {
+        const p = (persisted as Partial<PetSettings>) || {};
+        const pomodoro: Partial<PomodoroState> = p.pomodoro || {};
+        return {
+          enabled: p.enabled ?? true,
+          position: p.position ?? null,
+          clickThrough: p.clickThrough ?? true,
+          skin: DEFAULT_PET_SKIN,
+          pomodoro: {
+            enabled: pomodoro.enabled ?? false,
+            workMin: pomodoro.workMin ?? 30,
+            breakMin: pomodoro.breakMin ?? 5,
+            longBreakMin: pomodoro.longBreakMin ?? 15,
+            workRounds: pomodoro.workRounds ?? 0,
+            completedToday: pomodoro.completedToday ?? 0,
+            completedDate: pomodoro.completedDate ?? '',
+          },
+          soundEnabled: p.soundEnabled ?? true,
+        };
+      },
       // customAsset (data URL) stays out of localStorage. pomodoro: persist
       // config + daily count + cycle progress; runtime (running/paused/phase/endsAt/...) resets.
       partialize: ({ enabled, position, clickThrough, skin, pomodoro, soundEnabled }) => ({

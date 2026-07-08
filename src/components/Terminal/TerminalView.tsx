@@ -67,6 +67,13 @@ export function TerminalView({
   const onSnapshotRef = useRef(onSnapshot);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const shiftEnterNewlineRef = useRef<boolean>(DEFAULT_SHIFT_ENTER_NEWLINE);
+  const initialConfigRef = useRef({
+    themeVariant,
+    terminalFontSize,
+    monoFontFamily,
+    initialData,
+    initialSnapshot,
+  });
   onReadyRef.current = onReady;
   onSnapshotRef.current = onSnapshot;
 
@@ -87,14 +94,15 @@ export function TerminalView({
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
+    const initialConfig = initialConfigRef.current;
 
     const { term, fitAddon, whenFontsReady } = initTerminal(
-      themeVariant,
+      initialConfig.themeVariant,
       1000,
-      terminalFontSize,
-      monoFontFamily,
+      initialConfig.terminalFontSize,
+      initialConfig.monoFontFamily,
     );
-    applyTerminalThemeOnPanel(term, themeVariant, container);
+    applyTerminalThemeOnPanel(term, initialConfig.themeVariant, container);
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     let disposed = false;
@@ -155,18 +163,18 @@ export function TerminalView({
       window.requestAnimationFrame(() => {
         const s = safeFit(fitAddon, term, container);
         if (s) notifyResize(s.cols, s.rows);
-        if (initialSnapshot) {
-          term.write(initialSnapshot, () => {
-            if (initialData) {
-              term.write(initialData, completeRestore);
+        if (initialConfig.initialSnapshot) {
+          term.write(initialConfig.initialSnapshot, () => {
+            if (initialConfig.initialData) {
+              term.write(initialConfig.initialData, completeRestore);
               return;
             }
             completeRestore();
           });
           return;
         }
-        if (initialData) {
-          term.write(initialData, completeRestore);
+        if (initialConfig.initialData) {
+          term.write(initialConfig.initialData, completeRestore);
           return;
         }
         completeRestore();
@@ -238,7 +246,7 @@ export function TerminalView({
       terminalRef.current = null;
       term.dispose();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [notifyResize]);
 
   // Keep the configured "insert newline" combo in sync with app settings.
   // Mirrors NewTaskView: load once, then react to the global settings event.

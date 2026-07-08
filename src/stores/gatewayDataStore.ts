@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { useChatStore } from './chatStore';
+import { debugLog } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -114,7 +114,7 @@ function applyTaskStatus(store: ReturnType<typeof useGatewayDataStore.getState>,
     ),
   );
   if (!isActive) {
-    useChatStore.getState().setIsTyping(false, sessionKey);
+    window.dispatchEvent(new CustomEvent('aegis:session-inactive', { detail: { sessionKey } }));
   }
 }
 
@@ -299,12 +299,23 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
 
 // Polling intervals (ms)
 const FAST_INTERVAL  = 10_000;   // 10s — sessions
-const MID_INTERVAL   = 30_000;   // 30s — agents + cron
-const SLOW_INTERVAL  = 120_000;  // 120s — cost + usage
+const MID_INTERVAL   = 30_000;   // 30s — agents / cron
+const SLOW_INTERVAL  = 120_000;  // 120s — cost / usage
 
 let fastTimer:  ReturnType<typeof setInterval> | null = null;
-let midTimer:   ReturnType<typeof setInterval> | null = null;
-let slowTimer:  ReturnType<typeof setInterval> | null = null;
+let agentsTimer: ReturnType<typeof setInterval> | null = null;
+let cronTimer: ReturnType<typeof setInterval> | null = null;
+let costTimer: ReturnType<typeof setInterval> | null = null;
+let usageTimer: ReturnType<typeof setInterval> | null = null;
+
+type PollGroup = 'sessions' | 'agents' | 'cost' | 'usage' | 'cron';
+const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
+  sessions: FAST_INTERVAL,
+  agents: MID_INTERVAL,
+  cron: MID_INTERVAL,
+  cost: SLOW_INTERVAL,
+  usage: SLOW_INTERVAL,
+};
 
 // Reference to gateway connection (set by startPolling)
 // Uses request() directly to avoid circular imports with gateway facade
@@ -422,11 +433,39 @@ async function tickFast() {
 }
 
 async function tickMid() {
-  await Promise.allSettled([fetchAgents(), fetchCron()]);
+  await fetchAgents();
 }
 
 async function tickSlow() {
   await Promise.allSettled([fetchCost(), fetchUsage()]);
+}
+
+function ensureTimer(group: Exclude<PollGroup, 'sessions'>) {
+  if (!gw) return;
+  switch (group) {
+    case 'agents':
+      if (!agentsTimer) agentsTimer = setInterval(fetchAgents, MID_INTERVAL);
+      return;
+    case 'cron':
+      if (!cronTimer) cronTimer = setInterval(fetchCron, MID_INTERVAL);
+      return;
+    case 'cost':
+      if (!costTimer) costTimer = setInterval(fetchCost, SLOW_INTERVAL);
+      return;
+    case 'usage':
+      if (!usageTimer) usageTimer = setInterval(fetchUsage, SLOW_INTERVAL);
+      return;
+  }
+}
+
+async function fetchGroup(group: PollGroup) {
+  switch (group) {
+    case 'sessions': return fetchSessions();
+    case 'agents':   return fetchAgents();
+    case 'cost':     return fetchCost();
+    case 'usage':    return fetchUsage();
+    case 'cron':     return fetchCron();
+  }
 }
 
 // ── Public API ──────────────────────────────────────────
@@ -441,17 +480,16 @@ export function startPolling(gateway: { request: (method: string, params: any) =
 
   gw = gateway;
   useGatewayDataStore.getState().setPolling(true);
-  console.log('[DataStore] ▶ Polling started (fast=10s, mid=30s, slow=120s)');
+  debugLog('datastore', '[DataStore] ▶ Polling started (sessions=10s, agents=30s, demand groups lazy)');
 
-  // Immediate initial fetch — all groups
+  // Immediate initial fetch — only globally useful groups. Heavier dashboard /
+  // cron / analytics data is fetched when a page asks for it.
   tickFast();
   tickMid();
-  tickSlow();
 
   // Set up intervals
   fastTimer = setInterval(tickFast, FAST_INTERVAL);
-  midTimer  = setInterval(tickMid,  MID_INTERVAL);
-  slowTimer = setInterval(tickSlow, SLOW_INTERVAL);
+  agentsTimer = setInterval(tickMid, MID_INTERVAL);
 }
 
 /**
@@ -459,8 +497,10 @@ export function startPolling(gateway: { request: (method: string, params: any) =
  */
 export function stopPolling() {
   if (fastTimer)  { clearInterval(fastTimer);  fastTimer  = null; }
-  if (midTimer)   { clearInterval(midTimer);   midTimer   = null; }
-  if (slowTimer)  { clearInterval(slowTimer);  slowTimer  = null; }
+  if (agentsTimer) { clearInterval(agentsTimer); agentsTimer = null; }
+  if (cronTimer) { clearInterval(cronTimer); cronTimer = null; }
+  if (costTimer) { clearInterval(costTimer); costTimer = null; }
+  if (usageTimer) { clearInterval(usageTimer); usageTimer = null; }
   gw = null;
   const store = useGatewayDataStore.getState();
   store.setPolling(false);
@@ -469,9 +509,9 @@ export function stopPolling() {
   // in "working" state indefinitely after a gateway disconnect/reconnect cycle.
   if (store.runningSubAgents.length > 0) {
     store.setRunningSubAgents([]);
-    console.log('[DataStore] 🧹 Cleared runningSubAgents on disconnect');
+    debugLog('datastore', '[DataStore] 🧹 Cleared runningSubAgents on disconnect');
   }
-  console.log('[DataStore] ⏹ Polling stopped');
+  debugLog('datastore', '[DataStore] ⏹ Polling stopped');
 }
 
 /**
@@ -479,7 +519,11 @@ export function stopPolling() {
  */
 export async function refreshAll() {
   if (!gw) return;
-  console.log('[DataStore] 🔄 Manual refresh — all groups');
+  debugLog('datastore', '[DataStore] 🔄 Manual refresh — all groups');
+  ensureTimer('agents');
+  ensureTimer('cron');
+  ensureTimer('cost');
+  ensureTimer('usage');
   await Promise.allSettled([tickFast(), tickMid(), tickSlow()]);
 }
 
@@ -488,13 +532,22 @@ export async function refreshAll() {
  */
 export async function refreshGroup(group: 'sessions' | 'agents' | 'cost' | 'usage' | 'cron') {
   if (!gw) return;
-  switch (group) {
-    case 'sessions': return fetchSessions();
-    case 'agents':   return fetchAgents();
-    case 'cost':     return fetchCost();
-    case 'usage':    return fetchUsage();
-    case 'cron':     return fetchCron();
-  }
+  if (group !== 'sessions') ensureTimer(group);
+  return fetchGroup(group);
+}
+
+/**
+ * Fetch a group only when the existing data is stale or absent. Also arms the
+ * group's background timer for data that is only useful on specific pages.
+ */
+export async function ensureGroupFresh(group: PollGroup, maxAgeMs = DEFAULT_FRESHNESS_MS[group]) {
+  if (!gw) return;
+  if (group !== 'sessions') ensureTimer(group);
+  const store = useGatewayDataStore.getState();
+  if (store.loading[group]) return;
+  const last = store.lastFetch[group] ?? 0;
+  if (last > 0 && Date.now() - last < maxAgeMs) return;
+  return fetchGroup(group);
 }
 
 /**
@@ -597,12 +650,12 @@ function syncRunningSubAgents() {
   // Log transitions
   for (const r of running) {
     if (!prevKeys.has(r.sessionKey)) {
-      console.log('[DataStore] 🚀 Sub-agent detected:', r.agentId, r.label);
+      debugLog('datastore', '[DataStore] 🚀 Sub-agent detected:', r.agentId, r.label);
     }
   }
   for (const old of prev) {
     if (!newKeys.has(old.sessionKey)) {
-      console.log('[DataStore] ✅ Sub-agent done:', old.agentId);
+      debugLog('datastore', '[DataStore] ✅ Sub-agent done:', old.agentId);
     }
   }
 
@@ -636,7 +689,7 @@ export function handleGatewayEvent(event: string, payload: any) {
         // Spread payload first so our explicit fields (running, runningUpdatedAt) always win.
         store.setSessions([...store.sessions, { ...payload, key, running: true, runningUpdatedAt: Date.now() }]);
       }
-      console.log('[DataStore] 📡 Session started:', key);
+      debugLog('datastore', '[DataStore] 📡 Session started:', key);
       break;
     }
 
@@ -654,10 +707,10 @@ export function handleGatewayEvent(event: string, payload: any) {
         const filtered = store.runningSubAgents.filter((r) => r.sessionKey !== key);
         if (filtered.length !== store.runningSubAgents.length) {
           store.setRunningSubAgents(filtered);
-          console.log('[DataStore] 🧹 Sub-agent removed on session.ended:', key);
+          debugLog('datastore', '[DataStore] 🧹 Sub-agent removed on session.ended:', key);
         }
       }
-      console.log('[DataStore] 📡 Session ended:', key);
+      debugLog('datastore', '[DataStore] 📡 Session ended:', key);
       break;
     }
 
@@ -679,11 +732,11 @@ export function handleGatewayEvent(event: string, payload: any) {
         // task-session has not arrived yet — buffer and replay when it does.
         // Do NOT fall back to activeSessionKey: that would pollute the wrong session.
         pendingTaskStatus.set(taskId, { status, ts: Date.now() });
-        console.log('[DataStore] 📡 task-status buffered (awaiting task-session):', taskId, '→', status);
+        debugLog('datastore', '[DataStore] 📡 task-status buffered (awaiting task-session):', taskId, '→', status);
         break;
       }
       applyTaskStatus(store, sessionKey, isActive);
-      console.log('[DataStore] 📡 task-status:', taskId, '→', status, '(session:', sessionKey, ')');
+      debugLog('datastore', '[DataStore] 📡 task-status:', taskId, '→', status, '(session:', sessionKey, ')');
       break;
     }
 
@@ -701,10 +754,10 @@ export function handleGatewayEvent(event: string, payload: any) {
           if (age < PENDING_TASK_TTL) {
             const isActive = pending.status === 'running';
             applyTaskStatus(useGatewayDataStore.getState(), sessionId, isActive);
-            console.log('[DataStore] 📡 task-status replayed:', taskId, '→', pending.status,
+            debugLog('datastore', '[DataStore] 📡 task-status replayed:', taskId, '→', pending.status,
               '(session:', sessionId, ', lag:', age, 'ms)');
           } else {
-            console.log('[DataStore] 📡 task-status pending expired, discarding:', taskId);
+            debugLog('datastore', '[DataStore] 📡 task-status pending expired, discarding:', taskId);
           }
         }
       }
@@ -718,7 +771,7 @@ export function handleGatewayEvent(event: string, payload: any) {
       store.setCronJobs(
         store.cronJobs.map((j) => j.id === jobId ? { ...j, state: 'running' } : j)
       );
-      console.log('[DataStore] 📡 Cron started:', jobId);
+      debugLog('datastore', '[DataStore] 📡 Cron started:', jobId);
       break;
     }
 
@@ -731,7 +784,7 @@ export function handleGatewayEvent(event: string, payload: any) {
           ? { ...j, state: 'idle', lastRun: new Date().toISOString() }
           : j)
       );
-      console.log('[DataStore] 📡 Cron completed:', jobId);
+      debugLog('datastore', '[DataStore] 📡 Cron completed:', jobId);
       break;
     }
 
@@ -740,7 +793,7 @@ export function handleGatewayEvent(event: string, payload: any) {
     case 'agent.created': {
       // Trigger a full agents refresh to get accurate data
       fetchAgents();
-      console.log('[DataStore] 📡 Agent event — refreshing agents');
+      debugLog('datastore', '[DataStore] 📡 Agent event — refreshing agents');
       break;
     }
 
@@ -752,7 +805,7 @@ export function handleGatewayEvent(event: string, payload: any) {
 
     // ── Catch-all logging ──
     default:
-      console.log('[DataStore] 📡 Unhandled event:', event, JSON.stringify(payload).substring(0, 200));
+      debugLog('datastore', '[DataStore] 📡 Unhandled event:', event, JSON.stringify(payload).substring(0, 200));
       break;
   }
 }

@@ -8,7 +8,9 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let toggle = MenuItemBuilder::with_id("toggle", "Show/Hide").build(app)?;
     let toggle_pet = MenuItemBuilder::with_id("toggle-pet", "Show/Hide Pet").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit JunQi Desktop").build(app)?;
-    let menu = MenuBuilder::new(app).items(&[&toggle, &toggle_pet, &quit]).build()?;
+    let menu = MenuBuilder::new(app)
+        .items(&[&toggle, &toggle_pet, &quit])
+        .build()?;
 
     let _tray = TrayIconBuilder::new()
         .icon(app.default_window_icon().cloned().expect("app icon"))

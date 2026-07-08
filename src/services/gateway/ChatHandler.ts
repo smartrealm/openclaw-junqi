@@ -9,8 +9,8 @@ import { extractText, stripDirectives } from '@/processing/TextCleaner';
 import { extractThinkingContent } from '@/processing/normalizeGatewayMessage';
 import { handleGatewayEvent } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
-import { useWorkshopStore, Task } from '@/stores/workshopStore';
 import { parseButtons } from '@/utils/buttonParser';
+import { debugLog, debugWarn } from '@/utils/debugLog';
 import i18n from '@/i18n';
 import { GatewayConnection, type MediaInfo } from './Connection';
 import { APP_VERSION } from '@/hooks/useAppVersion';
@@ -76,8 +76,16 @@ interface WorkshopCommandResult {
   executed: string[];
 }
 
-function parseAndExecuteWorkshopCommands(content: string): WorkshopCommandResult {
+type WorkshopPriority = 'high' | 'medium' | 'low';
+type WorkshopStatus = 'queue' | 'inProgress' | 'review' | 'done';
+
+async function parseAndExecuteWorkshopCommands(content: string): Promise<WorkshopCommandResult> {
   const executed: string[] = [];
+  if (!content.includes('[[workshop:')) {
+    return { cleanContent: content.trim(), executed };
+  }
+
+  const { useWorkshopStore } = await import('@/stores/workshopStore');
   const store = useWorkshopStore.getState();
 
   // Pattern: [[workshop:action param1="value1" param2="value2"]]
@@ -96,7 +104,7 @@ function parseAndExecuteWorkshopCommands(content: string): WorkshopCommandResult
       switch (action) {
         case 'add': {
           const title = params.title || 'Untitled Task';
-          const priority = (params.priority as Task['priority']) || 'medium';
+          const priority = (params.priority as WorkshopPriority) || 'medium';
           const description = params.description || '';
           const assignedAgent = params.agent || undefined;
 
@@ -107,7 +115,7 @@ function parseAndExecuteWorkshopCommands(content: string): WorkshopCommandResult
 
         case 'move': {
           const id = params.id;
-          const status = params.status as Task['status'];
+          const status = params.status as WorkshopStatus;
           if (id && status && ['queue', 'inProgress', 'done'].includes(status)) {
             store.moveTask(id, status);
             executed.push(`✅ Moved task to ${status}`);
@@ -246,7 +254,7 @@ export class ChatHandler {
         .filter((ref): ref is FileRef => ref !== null);
       return refs;
     } catch (err) {
-      console.warn('[GW] capture output refs failed:', err);
+      debugWarn('gateway', '[GW] capture output refs failed:', err);
       return [];
     }
   }
@@ -391,7 +399,7 @@ export class ChatHandler {
 
     finalText = stripDirectives(finalText || '');
 
-    const { cleanContent, executed } = parseAndExecuteWorkshopCommands(finalText);
+    const { cleanContent, executed } = await parseAndExecuteWorkshopCommands(finalText);
     const workshopEvents =
       executed.length > 0
         ? executed.map((text) => ({
@@ -522,7 +530,7 @@ export class ChatHandler {
   injectDesktopContext(message: string): string {
     if (!this.conn.contextSent && message.trim()) {
       this.conn.contextSent = true;
-      console.log('[GW] 📋 Desktop context injected with first message');
+      debugLog('gateway', '[GW] 📋 Desktop context injected with first message');
       return `${OPENCLAW_DESKTOP_CONTEXT}\n\n${message}`;
     }
     return message;
@@ -635,7 +643,7 @@ export class ChatHandler {
       return;
     }
 
-    console.log('[GW] Tool stream — unknown phase:', phase, toolCallId);
+    debugLog('gateway', '[GW] Tool stream — unknown phase:', phase, toolCallId);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -702,7 +710,7 @@ export class ChatHandler {
             content: '',
             timestamp: new Date().toISOString(),
           });
-          console.log('[GW] 📦 Compaction detected — divider injected');
+          debugLog('gateway', '[GW] 📦 Compaction detected — divider injected');
         }
       }
     }
@@ -766,7 +774,7 @@ export class ChatHandler {
     // Block only truly isolated sessions (cron jobs and sub-agent runs).
     // Main sessions may use any suffix: agent:main:main, agent:main:webchat, etc.
     if (sessionKey && (sessionKey.includes(':subagent:') || sessionKey.includes(':cron:'))) {
-      console.log('[GW] Ignoring event from isolated session:', sessionKey);
+      debugLog('gateway', '[GW] Ignoring event from isolated session:', sessionKey);
       return;
     }
 
@@ -811,18 +819,18 @@ export class ChatHandler {
         if (/^https?:\/\//.test(mediaPath)) {
           // HTTP URL — use directly (Edge TTS server or any HTTP source)
           mediaUrl = mediaPath;
-          console.log('[GW] 🔊 Media URL (HTTP):', mediaUrl);
+          debugLog('media', '[GW] 🔊 Media URL (HTTP):', mediaUrl);
         } else {
           // File path — resolve via Electron IPC
           mediaUrl = `aegis-media:${mediaPath}`;
-          console.log('[GW] 🔊 Media path:', mediaPath);
+          debugLog('media', '[GW] 🔊 Media path:', mediaPath);
         }
       }
     }
 
     const media: MediaInfo | undefined = mediaUrl ? { mediaUrl, mediaType } : undefined;
 
-    console.log('[GW] Chat event — state:', state, 'runId:', runId?.substring(0, 12), 'text length:', messageText.length, 'text preview:', messageText.substring(0, 80));
+    debugLog('gateway', '[GW] Chat event — state:', state, 'runId:', runId?.substring(0, 12), 'text length:', messageText.length, 'text preview:', messageText.substring(0, 80));
 
     const stableRunKey = runId || this.currentRunIdBySession.get(sessionKey) || `runless:${sessionKey}`;
     const mId = this.ensureActiveMessageId(sessionKey, stableRunKey, p);
@@ -837,7 +845,7 @@ export class ChatHandler {
     if (state === 'final' && messageText && reasoningPrefix.test(messageText)) {
       const reasoningText = messageText.replace(reasoningPrefix, '').trim();
       if (reasoningText) {
-        console.log('[GW] 🧠 Reasoning message captured:', reasoningText.length, 'chars');
+        debugLog('gateway', '[GW] 🧠 Reasoning message captured:', reasoningText.length, 'chars');
         // Store as live thinking, then it will be finalized onto the next assistant message
         useChatStore.getState().setThinkingStream(runId || mId, reasoningText, sessionKey || 'agent:main:main');
       }
@@ -946,7 +954,7 @@ export class ChatHandler {
       }
 
       default:
-        console.log('[GW] Unknown chat state:', state);
+        debugLog('gateway', '[GW] Unknown chat state:', state);
     }
   }
 }

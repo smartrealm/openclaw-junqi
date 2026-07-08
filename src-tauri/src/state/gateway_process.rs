@@ -1,8 +1,8 @@
+use crate::state::restart_governor::RestartGovernor;
+use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Mutex;
-use serde::Serialize;
 use tokio::process::Child;
-use crate::state::restart_governor::RestartGovernor;
 
 /// Maximum number of log entries kept in the circular buffer.
 /// Matches the maxauto behaviour: small enough to ship over IPC cheaply,
@@ -88,7 +88,9 @@ impl GatewayProcess {
 /// flow — doing so can kill a just-spawned process and leave the manager
 /// stuck in a phantom "running" state with no real process behind it.
 pub fn should_defer_restart(lifecycle: GatewayLifecycle, start_lock: bool) -> bool {
-    start_lock || lifecycle == GatewayLifecycle::Starting || lifecycle == GatewayLifecycle::Reconnecting
+    start_lock
+        || lifecycle == GatewayLifecycle::Starting
+        || lifecycle == GatewayLifecycle::Reconnecting
 }
 
 /// Push a log entry into the buffer. Evicts the oldest entry if the buffer
@@ -137,10 +139,18 @@ mod tests {
     fn buffer_caps_at_log_buffer_cap() {
         let buf = Mutex::new(VecDeque::with_capacity(LOG_BUFFER_CAP));
         for i in 0..(LOG_BUFFER_CAP + 800) {
-            push_log(&buf, LogSource::Lifecycle, LogLevel::Info, format!("entry {}", i));
+            push_log(
+                &buf,
+                LogSource::Lifecycle,
+                LogLevel::Info,
+                format!("entry {}", i),
+            );
         }
         let len = buf.lock().unwrap().len();
-        assert_eq!(len, LOG_BUFFER_CAP, "buffer length should be capped at LOG_BUFFER_CAP");
+        assert_eq!(
+            len, LOG_BUFFER_CAP,
+            "buffer length should be capped at LOG_BUFFER_CAP"
+        );
     }
 
     #[test]
@@ -149,12 +159,20 @@ mod tests {
         // Insert 1000 entries. The buffer keeps the last 200.
         // The first kept entry must be "entry 800" (1000 - 200 = 800).
         for i in 0..1000 {
-            push_log(&buf, LogSource::Lifecycle, LogLevel::Info, format!("entry {}", i));
+            push_log(
+                &buf,
+                LogSource::Lifecycle,
+                LogLevel::Info,
+                format!("entry {}", i),
+            );
         }
         let g = buf.lock().unwrap();
         assert_eq!(g.len(), LOG_BUFFER_CAP);
         let first = g.front().expect("buffer should not be empty");
-        assert_eq!(first.message, "entry 800", "oldest evicted, first kept should be 800");
+        assert_eq!(
+            first.message, "entry 800",
+            "oldest evicted, first kept should be 800"
+        );
         let last = g.back().expect("buffer should not be empty");
         assert_eq!(last.message, "entry 999", "newest should be 999");
     }
@@ -189,7 +207,12 @@ mod tests {
             panic!("intentional poison");
         })
         .join();
-        push_log(&buf, LogSource::Lifecycle, LogLevel::Info, "should not crash");
+        push_log(
+            &buf,
+            LogSource::Lifecycle,
+            LogLevel::Info,
+            "should not crash",
+        );
         // No assertion — test passes if push_log returned without panicking.
     }
 
@@ -203,8 +226,20 @@ mod tests {
             message: "container log line".to_string(),
         };
         let json = serde_json::to_string(&entry).expect("serialize");
-        assert!(json.contains("\"level\":\"warn\""), "level snake_case: {}", json);
-        assert!(json.contains("\"source\":\"docker_stdout\""), "source snake_case: {}", json);
-        assert!(json.contains("\"timestamp_ms\":1700000000000"), "timestamp numeric: {}", json);
+        assert!(
+            json.contains("\"level\":\"warn\""),
+            "level snake_case: {}",
+            json
+        );
+        assert!(
+            json.contains("\"source\":\"docker_stdout\""),
+            "source snake_case: {}",
+            json
+        );
+        assert!(
+            json.contains("\"timestamp_ms\":1700000000000"),
+            "timestamp numeric: {}",
+            json
+        );
     }
 }

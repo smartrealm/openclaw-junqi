@@ -204,7 +204,7 @@ export function MultiAgentViewPage() {
     if (!selectedKey && runningSessions.length > 0) {
       setSelectedKey(runningSessions[0].key);
     }
-  }, [runningSessions.length]); // eslint-disable-line
+  }, [runningSessions, selectedKey]);
 
   // Fetch history for selected session
   const fetchHistory = useCallback(async (key: string, silent = false) => {
@@ -259,7 +259,7 @@ export function MultiAgentViewPage() {
         autoRefreshRef.current = null;
       }
     };
-  }, [selectedKey, runningKeys.size, fetchHistory]); // eslint-disable-line
+  }, [fetchHistory, runningKeys, selectedKey]);
 
   // ── Selected session info ──
   const selectedSession = sessions.find((s) => s.key === selectedKey) || null;

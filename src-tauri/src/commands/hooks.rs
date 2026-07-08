@@ -72,7 +72,10 @@ pub fn cache_status(status: HookInstallStatus) {
 
 /// Read the cached install status.
 pub fn current_status() -> HookInstallStatus {
-    cached_status().lock().expect("hook status poisoned").clone()
+    cached_status()
+        .lock()
+        .expect("hook status poisoned")
+        .clone()
 }
 
 /// Whether `agent`'s hooks are usable. Without the full installer landed,

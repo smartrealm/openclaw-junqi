@@ -34,8 +34,7 @@ pub struct SessionMetrics {
 }
 
 fn metrics_cache() -> &'static Mutex<HashMap<String, (SystemTime, SessionMetrics)>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, (SystemTime, SessionMetrics)>>> =
-        OnceLock::new();
+    static CACHE: OnceLock<Mutex<HashMap<String, (SystemTime, SessionMetrics)>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -102,8 +101,14 @@ fn parse_claude_metrics(content: &str) -> SessionMetrics {
         };
 
         if let Some(usage) = message.get("usage") {
-            let inp = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-            let out = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            let inp = usage
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let out = usage
+                .get("output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             let cc = usage
                 .get("cache_creation_input_tokens")
                 .and_then(|v| v.as_u64())
@@ -172,25 +177,26 @@ fn parse_codex_metrics(content: &str) -> SessionMetrics {
         }
     }
 
-    let (total_tokens, context_tokens, context_window) = if let Some(info) = last_token_info.as_ref() {
-        let total = info.get("total_token_usage");
-        let last = info.get("last_token_usage");
-        let tot = total
-            .and_then(|t| t.get("total_tokens"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let ctx = last
-            .and_then(|l| l.get("total_tokens"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let win = info
-            .get("model_context_window")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        (tot, ctx, win)
-    } else {
-        (0, 0, 0)
-    };
+    let (total_tokens, context_tokens, context_window) =
+        if let Some(info) = last_token_info.as_ref() {
+            let total = info.get("total_token_usage");
+            let last = info.get("last_token_usage");
+            let tot = total
+                .and_then(|t| t.get("total_tokens"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let ctx = last
+                .and_then(|l| l.get("total_tokens"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let win = info
+                .get("model_context_window")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            (tot, ctx, win)
+        } else {
+            (0, 0, 0)
+        };
 
     SessionMetrics {
         tool_calls,
@@ -275,9 +281,17 @@ pub struct SessionMessage {
 #[derive(serde::Serialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionContent {
-    Text { text: String },
-    ToolUse { id: String, name: String, input: String },
-    Thinking { thinking: String },
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: String,
+    },
+    Thinking {
+        thinking: String,
+    },
 }
 
 fn is_codex_format(lines: &[&str]) -> bool {
@@ -573,7 +587,11 @@ fn render_session_markdown(messages: &[SessionMessage], meta: &ExportTaskMeta) -
     let _ = writeln!(out, "\n---\n");
 
     for (idx, msg) in messages.iter().enumerate() {
-        let role = if msg.role == "user" { "User" } else { "Assistant" };
+        let role = if msg.role == "user" {
+            "User"
+        } else {
+            "Assistant"
+        };
         let _ = writeln!(out, "## {}. {}\n", idx + 1, role);
         for chunk in &msg.content {
             match chunk {
@@ -584,7 +602,11 @@ fn render_session_markdown(messages: &[SessionMessage], meta: &ExportTaskMeta) -
                     let _ = writeln!(out, "**Tool: `{}`**\n\n```json\n{}\n```", name, input);
                 }
                 SessionContent::Thinking { thinking } => {
-                    let _ = writeln!(out, "<details><summary>Thinking</summary>\n\n{}\n\n</details>", thinking);
+                    let _ = writeln!(
+                        out,
+                        "<details><summary>Thinking</summary>\n\n{}\n\n</details>",
+                        thinking
+                    );
                 }
             }
         }
@@ -601,10 +623,7 @@ pub async fn export_session_markdown(
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || -> Result<String, String> {
         let content = std::fs::read_to_string(&session_path).map_err(|e| e.to_string())?;
-        let lines: Vec<&str> = content
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .collect();
+        let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
         let messages = if is_codex_format(&lines) {
             parse_codex_session(&lines)
         } else {
@@ -662,7 +681,9 @@ mod export_tests {
         };
         let messages = vec![SessionMessage {
             role: "user".into(),
-            content: vec![SessionContent::Text { text: "hello".into() }],
+            content: vec![SessionContent::Text {
+                text: "hello".into(),
+            }],
         }];
         let out = render_session_markdown(&messages, &meta);
         assert!(out.contains("## 1. User"));

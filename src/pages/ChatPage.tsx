@@ -2,12 +2,21 @@
 // ChatPage — Multi-session chat with tab bar
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Paperclip, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { ChatTabs } from '@/components/Chat/ChatTabs';
-import { ChatView } from '@/components/Chat/ChatView';
-import { SessionContextBar } from '@/components/Chat/SessionContextBar';
+
+const ChatTabs = lazy(() => import('@/components/Chat/ChatTabs').then((m) => ({ default: m.ChatTabs })));
+const ChatView = lazy(() => import('@/components/Chat/ChatView').then((m) => ({ default: m.ChatView })));
+const SessionContextBar = lazy(() => import('@/components/Chat/SessionContextBar').then((m) => ({ default: m.SessionContextBar })));
+
+function ChatPageFallback() {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-aegis-text-dim">
+      Loading chat...
+    </div>
+  );
+}
 
 /** Stable empty reference for `draftAttachments[k] ?? ...`. Inline `?? []`
  *  would allocate a fresh array each render and trip React #185 when the
@@ -94,10 +103,14 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <SessionContextBar />
-      <ChatTabs />
+      <Suspense fallback={null}>
+        <SessionContextBar />
+        <ChatTabs />
+      </Suspense>
       <AttachmentBar />
-      <ChatView />
+      <Suspense fallback={<ChatPageFallback />}>
+        <ChatView />
+      </Suspense>
     </div>
   );
 }

@@ -8,19 +8,6 @@ import CodeMirror from '@uiw/react-codemirror';
 import { useTranslation } from 'react-i18next';
 import { githubLight, githubDark } from '@uiw/codemirror-theme-github';
 import type { Extension } from '@codemirror/state';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { rust } from '@codemirror/lang-rust';
-import { go } from '@codemirror/lang-go';
-import { json } from '@codemirror/lang-json';
-import { markdown } from '@codemirror/lang-markdown';
-import { html } from '@codemirror/lang-html';
-import { css } from '@codemirror/lang-css';
-import { yaml } from '@codemirror/lang-yaml';
-import { sql } from '@codemirror/lang-sql';
-import { java } from '@codemirror/lang-java';
-import { cpp } from '@codemirror/lang-cpp';
-import { xml } from '@codemirror/lang-xml';
 import { ChevronLeft, RefreshCw, Save, Loader2, FileWarning } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -30,26 +17,7 @@ import {
   readFileText, writeFileText, readImagePreview, getWorkspacePath, isImageExt,
   type FsEntry, type ImagePreview,
 } from '@/services/workspaceFs';
-
-function langFor(ext?: string | null): Extension[] {
-  switch ((ext || '').toLowerCase()) {
-    case 'js': case 'jsx': case 'mjs': case 'cjs': return [javascript({ jsx: true })];
-    case 'ts': case 'tsx': return [javascript({ jsx: true, typescript: true })];
-    case 'py': return [python()];
-    case 'rs': return [rust()];
-    case 'go': return [go()];
-    case 'json': return [json()];
-    case 'md': case 'mdx': case 'markdown': return [markdown()];
-    case 'html': case 'htm': case 'vue': case 'svelte': return [html()];
-    case 'css': case 'scss': case 'less': return [css()];
-    case 'yaml': case 'yml': return [yaml()];
-    case 'sql': return [sql()];
-    case 'java': case 'kt': return [java()];
-    case 'c': case 'h': case 'cpp': case 'hpp': case 'cc': case 'cxx': return [cpp()];
-    case 'xml': case 'toml': case 'svg': return [xml()];
-    default: return [];
-  }
-}
+import { loadCodeMirrorLanguage } from '@/utils/codeMirrorLanguages';
 
 interface OpenFile {
   entry: FsEntry;
@@ -80,6 +48,7 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [treeKey, setTreeKey] = useState(0); // bump to force tree reload
+  const [languageExtension, setLanguageExtension] = useState<Extension>([]);
 
   // Resolve the target agent's workspace dir (fall back to the runtime default).
   const agentId = useMemo(() => agentIdProp || activeKey?.split(':')[1] || 'main', [agentIdProp, activeKey]);
@@ -104,6 +73,22 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
   // without depending on `open` (which would rebuild the callback each edit).
   const openRef = useRef<OpenFile | null>(null);
   useEffect(() => { openRef.current = open; }, [open]);
+
+  useEffect(() => {
+    let alive = true;
+    setLanguageExtension([]);
+    if (!open || open.image !== null || open.error !== null) return;
+    loadCodeMirrorLanguage(open.entry.name || open.entry.extension)
+      .then((extension) => {
+        if (alive) setLanguageExtension(extension);
+      })
+      .catch(() => {
+        if (alive) setLanguageExtension([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open?.entry.name, open?.entry.extension, open?.image, open?.error]);
 
   const openFile = useCallback(async (entry: FsEntry) => {
     if (!root) return;
@@ -220,7 +205,7 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
               <CodeMirror
                 value={open.content}
                 theme={isDark ? githubDark : githubLight}
-                extensions={langFor(open.entry.extension)}
+                extensions={[languageExtension]}
                 onChange={(v) => { setSaveError(null); setOpen((o) => (o ? { ...o, content: v } : o)); }}
                 basicSetup={{ lineNumbers: true, highlightActiveLine: true, foldGutter: true }}
                 style={{ fontSize: 12.5 }}

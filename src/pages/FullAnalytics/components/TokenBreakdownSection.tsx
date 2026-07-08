@@ -3,7 +3,6 @@
 // Shows input / output / cache-read / cache-write breakdown
 // ═══════════════════════════════════════════════════════════
 
-import { motion } from 'framer-motion';
 import { Database } from 'lucide-react';
 import { ArrowDown, ArrowUp, ArrowsClockwise, FloppyDisk } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
@@ -68,13 +67,10 @@ export function TokenBreakdownSection({ totals }: TokenBreakdownSectionProps) {
         {segments
           .filter((s) => s.cost > 0)
           .map((seg) => (
-            <motion.div
+            <div
               key={seg.label}
-              initial={{ width: 0 }}
-              animate={{ width: `${(seg.cost / totalCost) * 100}%` }}
-              transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
               className="h-full first:rounded-s-full last:rounded-e-full"
-              style={{ background: seg.color }}
+              style={{ width: `${(seg.cost / totalCost) * 100}%`, background: seg.color }}
             />
           ))}
       </div>
@@ -112,12 +108,9 @@ export function TokenBreakdownSection({ totals }: TokenBreakdownSectionProps) {
               </div>
               {/* Mini progress bar */}
               <div className="w-full h-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] mt-2 overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${costPct}%` }}
-                  transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
+                <div
                   className="h-full rounded-full"
-                  style={{ background: seg.color }}
+                  style={{ width: `${costPct}%`, background: seg.color }}
                 />
               </div>
             </div>

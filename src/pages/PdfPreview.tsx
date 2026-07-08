@@ -2,14 +2,13 @@
 // Accepts raw base64 PDF data so it works inside Electron's strict CSP.
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.min.mjs';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 // Use upstream worker directly. We pin pdfjs-dist to a Chromium-compatible
 // release, so no custom worker/polyfill bridge is needed.
-// @ts-ignore - Vite resolves this at build time
 import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 

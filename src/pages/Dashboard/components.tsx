@@ -4,17 +4,12 @@
 //                 FeedItem, AgentItem
 // ═══════════════════════════════════════════════════════════
 
-import { motion } from 'framer-motion';
 import { Loader2, Pin, PinOff } from 'lucide-react';
 import clsx from 'clsx';
 import { themeHex } from '@/utils/theme-colors';
 import { Badge, StatusDot } from '@/components/shared/badge';
 
 // ── Format helpers (shared with index.tsx) ──────────────────
-import { formatTokens } from '@/utils/format';
-
-export const fmtTokens = formatTokens; // re-export alias for backward compat
-
 export const fmtCost = (n: number) => `$${n.toFixed(2)}`;
 
 export const fmtCostShort = (n: number) =>
@@ -202,13 +197,10 @@ export function FeedItem({ color, text, time, isLast, agentName, onClick }: {
   onClick?: () => void;
 }) {
   return (
-    <motion.button
+    <button
       type="button"
       onClick={onClick}
-      initial={{ opacity: 0, x: 6 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.25 }}
-      className="w-full text-left flex gap-2.5 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors"
+      className="w-full text-left flex gap-2.5 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors animate-slide-in-right"
     >
       <div className="flex flex-col items-center pt-1.5">
         <div
@@ -228,7 +220,7 @@ export function FeedItem({ color, text, time, isLast, agentName, onClick }: {
           <span className="text-[9px] text-aegis-text-muted font-mono">{time}</span>
         </div>
       </div>
-    </motion.button>
+    </button>
   );
 }
 

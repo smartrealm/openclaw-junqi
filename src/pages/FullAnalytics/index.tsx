@@ -3,7 +3,7 @@
 // Composition layer: wires useAnalyticsData hook to sections.
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useCallback } from 'react';
+import { lazy, Suspense, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Activity, AlertCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
@@ -21,8 +21,9 @@ import {
   DateRangePicker,
   LoadingSkeleton,
   OverviewCards,
-  ChartsSection,
 } from './components';
+
+const ChartsSection = lazy(() => import('./components/ChartsSection').then((m) => ({ default: m.ChartsSection })));
 
 // ─────────────────────────────────────────────────────────────
 // Main Page Component
@@ -191,11 +192,20 @@ export function FullAnalyticsPage() {
           <TokenBreakdownSection totals={totals} />
 
           {/* ── Section 3: Charts (Daily Cost + Agent Donut) ── */}
-          <ChartsSection
-            chartData={chartData}
-            donutData={donutData}
-            totalCost={totals.totalCost}
-          />
+          <Suspense
+            fallback={
+              <div className="grid grid-cols-5 gap-4">
+                <div className="col-span-3 h-[312px] rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] animate-pulse" />
+                <div className="col-span-2 h-[312px] rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] animate-pulse" />
+              </div>
+            }
+          >
+            <ChartsSection
+              chartData={chartData}
+              donutData={donutData}
+              totalCost={totals.totalCost}
+            />
+          </Suspense>
 
           {/* ── Section 4: Per-Agent Breakdown ── */}
           <AgentBreakdownSection byAgent={byAgent} totalCost={totals.totalCost} />

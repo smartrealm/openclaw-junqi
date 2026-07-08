@@ -8,20 +8,8 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import { exportChatMarkdown } from '@/utils/exportChat';
-
-const SESSION_MODEL_PREFS_KEY = 'aegis:session-model-prefs';
-
-function persistSessionModelPreference(sessionKey: string, modelId: string) {
-  try {
-    const raw = localStorage.getItem(SESSION_MODEL_PREFS_KEY);
-    const prev = raw ? JSON.parse(raw) : {};
-    const next = (prev && typeof prev === 'object') ? prev : {};
-    next[sessionKey] = modelId;
-    localStorage.setItem(SESSION_MODEL_PREFS_KEY, JSON.stringify(next));
-  } catch {
-    // ignore persistence errors
-  }
-}
+import { setSessionModelPref } from '@/utils/sessionModelPrefs';
+import { debugError } from '@/utils/debugLog';
 
 const THINKING_LEVELS = [
   { id: 'auto', label: 'Auto' },
@@ -48,7 +36,7 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
       await gateway.setSessionModel(modelId, sessionKey);
       setSessionModel(sessionKey, modelId);
       setManualModelOverride(modelId);
-      persistSessionModelPreference(sessionKey, modelId);
+      setSessionModelPref(sessionKey, modelId);
       // Drop a system notice into the chat so the switch is visible in-stream.
       const fromModel = effectiveModel || '';
       if (fromModel && fromModel !== modelId) {
@@ -62,7 +50,7 @@ function SessionModelPicker({ currentModel }: { currentModel: string | null }) {
       }
       setTimeout(() => window.dispatchEvent(new Event('aegis:model-changed')), 500);
     } catch (err) {
-      console.error('[SessionModelPicker] Failed to switch model:', err);
+      debugError('models', '[SessionModelPicker] Failed to switch model:', err);
     } finally {
       setSwitching(false);
     }
@@ -122,7 +110,7 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
     setOpen(false);
     setQuery('');
     persist(ws);
-    try { await gateway.updateAgent(agentId, { workspace: ws }); } catch (e) { console.error('[WorkspacePicker] switch failed:', e); }
+    try { await gateway.updateAgent(agentId, { workspace: ws }); } catch (e) { debugError('app', '[WorkspacePicker] switch failed:', e); }
   };
   const pickFolder = async () => {
     const openDialog = (window.aegis?.file as any)?.openDialog;
@@ -208,7 +196,7 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
       await gateway.setSessionThinking(nextLevel, sessionKey);
       setCurrentThinking(nextLevel);
     } catch (err) {
-      console.error('[SessionThinkingPicker] Failed to switch thinking:', err);
+      debugError('app', '[SessionThinkingPicker] Failed to switch thinking:', err);
     } finally {
       setSwitching(false);
     }

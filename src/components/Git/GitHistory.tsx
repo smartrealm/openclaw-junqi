@@ -62,10 +62,9 @@ function useCancellableInvoke() {
     return () => { cancelledRef.current = true; };
   }, []);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const safeInvoke = useCallback(
-    async (cmd: string, args?: Record<string, unknown>) => {
-      const result = await invoke(cmd, args);
+    async <T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T | null> => {
+      const result = await invoke<T>(cmd, args);
       if (cancelledRef.current) return null;
       return result;
     },
@@ -319,7 +318,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
 
   const loadBranches = useCallback(async () => {
     try {
-      const list = await safeInvoke("git_list_branches", { projectPath }) as GitBranchInfo[] | null;
+      const list = await safeInvoke<GitBranchInfo[]>("git_list_branches", { projectPath });
       if (list === null) return;
       setBranches(list);
       setSelectedBranch((prev) => {
@@ -338,13 +337,13 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       const activeBranch = branch ?? selectedBranch;
       try {
         const [log, remote] = (await Promise.all([
-          safeInvoke("git_log", {
+          safeInvoke<GitCommit[]>("git_log", {
             projectPath,
             limit: 50,
             search: query ?? searchQuery,
             branch: activeBranch || null,
           }),
-          safeInvoke("git_remote_counts", {
+          safeInvoke<GitRemoteCounts>("git_remote_counts", {
             projectPath,
             branch: activeBranch || null,
           }).catch(() => ({ ahead: 0, behind: 0, branch: "" })),
@@ -373,8 +372,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
     if (selectedBranch !== "") {
       refresh(undefined, selectedBranch);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranch]);
+  }, [refresh, selectedBranch]);
 
   const handleSearch = useCallback(
     (q: string) => {
@@ -390,7 +388,7 @@ export function GitHistory({ projectPath, onCommitSelect, onFileClick, width = 2
       onCommitSelect(commit.hash, commit.message);
       setLoadingDetail(true);
       try {
-        const detail = await safeInvoke("git_commit_detail", {
+        const detail = await safeInvoke<GitCommitDetail>("git_commit_detail", {
           projectPath,
           commitHash: commit.hash,
         }) as GitCommitDetail | null;

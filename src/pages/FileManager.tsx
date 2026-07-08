@@ -2,11 +2,9 @@
 // FileManager — Managed Files (uploads + outputs) + Tree Explorer
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import {
   FolderOpen,
@@ -30,11 +28,13 @@ import {
 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';
-import { PdfPreview } from './PdfPreview';
-import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
-import { FileViewer } from '@/components/FileExplorer/FileViewer';
 import type { OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import clsx from 'clsx';
+
+const PdfPreview = lazy(() => import('./PdfPreview').then((m) => ({ default: m.PdfPreview })));
+const FileMarkdownPreview = lazy(() => import('./FileMarkdownPreview').then((m) => ({ default: m.FileMarkdownPreview })));
+const FileExplorer = lazy(() => import('@/components/FileExplorer/FileExplorer').then((m) => ({ default: m.FileExplorer })));
+const FileViewer = lazy(() => import('@/components/FileExplorer/FileViewer').then((m) => ({ default: m.FileViewer })));
 
 interface FileEntry {
   name: string;
@@ -108,59 +108,6 @@ function getLanguageLabel(ext: string): string {
   };
   return map[ext] || ext.toUpperCase() || 'File';
 }
-
-const markdownPreviewComponents = {
-  table({ children }: any) {
-    return (
-      <div className="table-wrapper">
-        <table>{children}</table>
-      </div>
-    );
-  },
-  code({ className, children, ...props }: any) {
-    const codeString = String(children).replace(/\n$/, '');
-    const isBlock = /language-(\w+)/.test(className || '') || codeString.includes('\n');
-    if (isBlock) {
-      return (
-        <pre className="my-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] p-3 text-[12px] leading-relaxed text-aegis-text-muted overflow-auto">
-          <code {...props}>{codeString}</code>
-        </pre>
-      );
-    }
-    return (
-      <code
-        className="text-[12px] font-mono px-1.5 py-0.5 rounded"
-        style={{ background: 'rgb(var(--aegis-primary) / 0.12)', color: 'rgb(var(--aegis-primary))' }}
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  },
-  a({ href, children }: any) {
-    return (
-      <a
-        href={href}
-        onClick={async (e) => {
-          e.preventDefault();
-          if (!href) return;
-          const openManagedPath =
-            window.aegis?.managedFiles?.open ||
-            window.aegis?.uploads?.open;
-          const value = String(href).trim();
-          if ((value.startsWith('/') || value.startsWith('~/') || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('file://')) && openManagedPath) {
-            await openManagedPath(value);
-            return;
-          }
-          window.open(value, '_blank');
-        }}
-        className="text-aegis-primary hover:text-aegis-primary/70 underline underline-offset-2"
-      >
-        {children}
-      </a>
-    );
-  },
-};
 
 function getKindLabel(t: any, kind?: string): string {
   if (kind === 'uploads' || kind === 'upload') return t('fileManager.kindUploads');
@@ -651,68 +598,84 @@ export function FileManagerPage() {
       {/* ── Tree Explorer View ── */}
       {activeView === 'tree' && (
         <div className="flex flex-1 min-h-0">
-          <FileExplorer
-            projectPath={treeProjectPath}
-            projectName={treeProjectPath.split(/[\\/]/).pop() || 'project'}
-            onFileSelect={(path, name) => {
-              setTreeTabs((prev) => {
-                const exists = prev.some((t) => t.path === path);
-                if (exists) {
-                  setTreeActiveFilePath(path);
-                  return prev;
-                }
-                const tab: OpenFileTab = { path, name };
-                setTreeActiveFilePath(path);
-                return [...prev, tab];
-              });
-            }}
-            width={260}
-          />
-          {treeTabs.length > 0 && treeActiveFilePath ? (
-            <FileViewer
-              tabs={treeTabs}
-              activeFilePath={treeActiveFilePath}
+          <Suspense
+            fallback={
+              <div className="w-[260px] shrink-0 border-e border-[rgb(var(--aegis-overlay)/0.06)] flex items-center justify-center">
+                <Loader2 size={16} className="animate-spin text-aegis-text-dim" />
+              </div>
+            }
+          >
+            <FileExplorer
               projectPath={treeProjectPath}
-              onSelectTab={setTreeActiveFilePath}
-              onCloseTab={(path) => {
+              projectName={treeProjectPath.split(/[\\/]/).pop() || 'project'}
+              onFileSelect={(path, name) => {
                 setTreeTabs((prev) => {
-                  const next = prev.filter((t) => t.path !== path);
-                  if (treeActiveFilePath === path) {
-                    setTreeActiveFilePath(next.length > 0 ? next[next.length - 1].path : null);
+                  const exists = prev.some((t) => t.path === path);
+                  if (exists) {
+                    setTreeActiveFilePath(path);
+                    return prev;
                   }
-                  return next;
+                  const tab: OpenFileTab = { path, name };
+                  setTreeActiveFilePath(path);
+                  return [...prev, tab];
                 });
               }}
-              onCloseOtherTabs={(path) => {
-                setTreeTabs((prev) => prev.filter((t) => t.path === path));
-              }}
-              onCloseTabsToRight={(path) => {
-                setTreeTabs((prev) => {
-                  const idx = prev.findIndex((t) => t.path === path);
-                  return idx >= 0 ? prev.slice(0, idx + 1) : prev;
-                });
-              }}
-              onCloseTabsToLeft={(path) => {
-                setTreeTabs((prev) => {
-                  const idx = prev.findIndex((t) => t.path === path);
-                  return idx >= 0 ? prev.slice(idx) : prev;
-                });
-              }}
-              onCloseAllTabs={() => {
-                setTreeTabs([]);
-                setTreeActiveFilePath(null);
-              }}
-              onRunMakeTarget={(target) => {
-                // Forward to TerminalPage via a window CustomEvent.
-                // TerminalPage listens for "junqi:run-terminal-command" and
-                // forwards to its active ShellTerminalPanel via sendCommand.
-                window.dispatchEvent(
-                  new CustomEvent("junqi:run-terminal-command", {
-                    detail: { command: `make ${target}\n`, projectPath: treeProjectPath },
-                  }),
-                );
-              }}
+              width={260}
             />
+          </Suspense>
+          {treeTabs.length > 0 && treeActiveFilePath ? (
+            <Suspense
+              fallback={
+                <div className="flex-1 flex items-center justify-center">
+                  <Loader2 size={18} className="animate-spin text-aegis-text-dim" />
+                </div>
+              }
+            >
+              <FileViewer
+                tabs={treeTabs}
+                activeFilePath={treeActiveFilePath}
+                projectPath={treeProjectPath}
+                onSelectTab={setTreeActiveFilePath}
+                onCloseTab={(path) => {
+                  setTreeTabs((prev) => {
+                    const next = prev.filter((t) => t.path !== path);
+                    if (treeActiveFilePath === path) {
+                      setTreeActiveFilePath(next.length > 0 ? next[next.length - 1].path : null);
+                    }
+                    return next;
+                  });
+                }}
+                onCloseOtherTabs={(path) => {
+                  setTreeTabs((prev) => prev.filter((t) => t.path === path));
+                }}
+                onCloseTabsToRight={(path) => {
+                  setTreeTabs((prev) => {
+                    const idx = prev.findIndex((t) => t.path === path);
+                    return idx >= 0 ? prev.slice(0, idx + 1) : prev;
+                  });
+                }}
+                onCloseTabsToLeft={(path) => {
+                  setTreeTabs((prev) => {
+                    const idx = prev.findIndex((t) => t.path === path);
+                    return idx >= 0 ? prev.slice(idx) : prev;
+                  });
+                }}
+                onCloseAllTabs={() => {
+                  setTreeTabs([]);
+                  setTreeActiveFilePath(null);
+                }}
+                onRunMakeTarget={(target) => {
+                  // Forward to TerminalPage via a window CustomEvent.
+                  // TerminalPage listens for "junqi:run-terminal-command" and
+                  // forwards to its active ShellTerminalPanel via sendCommand.
+                  window.dispatchEvent(
+                    new CustomEvent("junqi:run-terminal-command", {
+                      detail: { command: `make ${target}\n`, projectPath: treeProjectPath },
+                    }),
+                  );
+                }}
+              />
+            </Suspense>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
               <div className="w-12 h-12 rounded-xl bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] flex items-center justify-center">
@@ -959,7 +922,15 @@ export function FileManagerPage() {
                     <video controls src={binaryPreview.dataUrl} className="max-w-full max-h-full rounded-lg" />
                   </div>
                 ) : PDF_EXTS.has(selected.ext) && binaryPreview?.rawBase64 ? (
-                  <PdfPreview base64={binaryPreview.rawBase64} onOpenExternal={() => openFile(selected)} />
+                  <Suspense
+                    fallback={
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 size={22} className="animate-spin text-aegis-primary" />
+                      </div>
+                    }
+                  >
+                    <PdfPreview base64={binaryPreview.rawBase64} onOpenExternal={() => openFile(selected)} />
+                  </Suspense>
                 ) : HTML_EXTS.has(selected.ext) && selected.content ? (
                   <div className="h-full bg-[rgb(var(--aegis-overlay)/0.03)] p-3 flex flex-col gap-2">
                     <div className="flex items-center justify-end">
@@ -975,11 +946,15 @@ export function FileManagerPage() {
                     <iframe title={selected.name} srcDoc={selected.content} sandbox="allow-scripts" className="w-full flex-1 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-white" />
                   </div>
                 ) : MARKDOWN_EXTS.has(selected.ext) && selected.content ? (
-                  <div className="markdown-body p-4 text-[13px] leading-relaxed text-aegis-text overflow-auto">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownPreviewComponents}>
-                      {selected.content}
-                    </ReactMarkdown>
-                  </div>
+                  <Suspense
+                    fallback={
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 size={22} className="animate-spin text-aegis-primary" />
+                      </div>
+                    }
+                  >
+                    <FileMarkdownPreview content={selected.content} />
+                  </Suspense>
                 ) : selected.content ? (
                   <pre className="p-4 text-[11.5px] leading-[1.65] font-mono text-aegis-text-muted whitespace-pre-wrap break-all select-text" style={{ minHeight: '100%', tabSize: 2 }}>
                     {selected.content}

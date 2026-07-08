@@ -10,7 +10,7 @@ import { Play, RotateCcw, Loader2, Check, X, Plus, Search , Heart, Zap, RefreshC
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
-import { useGatewayDataStore, refreshGroup } from '@/stores/gatewayDataStore';
+import { useGatewayDataStore, refreshGroup, ensureGroupFresh } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { dataColor, themeHex, themeAlpha } from '@/utils/theme-colors';
@@ -395,6 +395,11 @@ export function CronMonitorPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
+    if (!connected) return;
+    void ensureGroupFresh('cron');
+  }, [connected]);
+
+  useEffect(() => {
     if (searchParams.get('new') === '1') {
       setShowCreateForm(true);
       setCreateError(null);
@@ -419,7 +424,7 @@ export function CronMonitorPage() {
   }, []);
 
   // Fix #11: Cache theme hex values (re-computed on mount only)
-  const tc = useMemo(() => ({
+  const [tc] = useState(() => ({
     primary: themeHex('primary'),
     accent: themeHex('accent'),
     danger: themeHex('danger'),
@@ -429,7 +434,7 @@ export function CronMonitorPage() {
     dangerA40: themeAlpha('danger', 0.4),
     dangerA25: themeAlpha('danger', 0.25),
     primaryA50: themeAlpha('primary', 0.5),
-  }), []); // eslint-disable-line
+  }));
 
   // ── Derived ──
   const colorMap = useMemo(() => {
@@ -521,7 +526,7 @@ export function CronMonitorPage() {
   // Load once on first mount only
   useEffect(() => {
     if (jobs.length > 0 && !runsCacheLoaded.current) loadAllRuns();
-  }, [jobs.length]); // eslint-disable-line
+  }, [jobs.length, loadAllRuns]);
 
   // ── Load selected job runs (cache-first, then fetch) ──
   // Fix #3: stale request guard — rapid clicks don't cause race conditions
@@ -590,7 +595,7 @@ export function CronMonitorPage() {
   };
 
   // Auto-select first job — Fix #10: deps = [jobs.length] not [jobs]
-  useEffect(() => { if (jobs.length > 0 && !selectedJobId) setSelectedJobId(jobs[0].id); }, [jobs.length]); // eslint-disable-line
+  useEffect(() => { if (jobs.length > 0 && !selectedJobId) setSelectedJobId(jobs[0].id); }, [jobs, selectedJobId]);
 
   // ═══ RENDER ═══
   // Activity log shows selected job's runs when a job is selected, otherwise all recent runs

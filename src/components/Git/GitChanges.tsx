@@ -36,10 +36,9 @@ function useCancellableInvoke() {
     };
   }, []);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const safeInvoke = useCallback(
-    async (cmd: string, args?: Record<string, unknown>) => {
-      const result = await invoke(cmd, args);
+    async <T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T | null> => {
+      const result = await invoke<T>(cmd, args);
       if (cancelledRef.current) return null;
       return result;
     },
@@ -242,7 +241,7 @@ export function GitChanges({
       setLoading(true);
       if (options?.clearError !== false) setError(null);
       try {
-        const result = await safeInvoke("git_status", { projectPath });
+        const result = await safeInvoke<{ changes?: GitFileChange[] } | GitFileChange[]>("git_status", { projectPath });
         if (result === null) return;
         setChanges(result as GitFileChange[]);
       } catch (e) {
@@ -434,7 +433,7 @@ export function GitChanges({
     setGeneratingMsg(true);
     setError(null);
     try {
-      const msg = await safeInvoke("generate_commit_message", { projectPath });
+      const msg = await safeInvoke<string>("generate_commit_message", { projectPath });
       if (msg === null) return;
       setCommitMsg(msg as string);
       if (commitMsgError) setCommitMsgError(false);

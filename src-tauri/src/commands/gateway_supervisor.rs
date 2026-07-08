@@ -38,7 +38,10 @@ pub async fn wait_for_port_free(port: u16, timeout_ms: u64) -> Result<u64, Strin
             }
             Err(_) => {
                 if !logged {
-                    eprintln!("[gateway_supervisor] waiting for port {} to become available...", port);
+                    eprintln!(
+                        "[gateway_supervisor] waiting for port {} to become available...",
+                        port
+                    );
                     logged = true;
                 }
                 sleep(Duration::from_millis(500)).await;
@@ -63,11 +66,17 @@ pub async fn terminate_owned_gateway(child: &mut tokio::process::Child) {
 /// Probe for an orphaned process on our port and kill it if found.
 /// Returns true if we freed the port (orphan was killed, now port is free).
 pub async fn find_and_kill_orphans(port: u16) -> bool {
-    if TcpListener::bind(format!("127.0.0.1:{}", port)).await.is_ok() {
+    if TcpListener::bind(format!("127.0.0.1:{}", port))
+        .await
+        .is_ok()
+    {
         return false; // port is already free
     }
     // Something is listening. Try to identify and kill it.
-    eprintln!("[gateway_supervisor] port {} is occupied, checking for orphan", port);
+    eprintln!(
+        "[gateway_supervisor] port {} is occupied, checking for orphan",
+        port
+    );
     // Best-effort: we don't know the PID without lsof/netstat, so skip the
     // PID-based approach from JunQi. Instead, we trust wait_for_port_free
     // to handle the TIME_WAIT window after a quick SIGKILL attempt via the
@@ -80,7 +89,10 @@ pub async fn find_and_kill_orphans(port: u16) -> bool {
 /// Tauri command: run `openclaw doctor --fix`.
 /// Called by the Settings → Storage tab when the user clicks "Auto-Repair Config".
 #[tauri::command]
-pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, GatewayProcess>) -> Result<bool, String> {
+pub async fn openclaw_doctor_repair(
+    app: AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<bool, String> {
     push_log(
         &state.logs,
         LogSource::Lifecycle,
@@ -91,8 +103,12 @@ pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, Gate
     let openclaw = match resolve_openclaw_binary() {
         Some(p) => p,
         None => {
-            push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error,
-                     "openclaw_doctor_repair: openclaw binary not found");
+            push_log(
+                &state.logs,
+                LogSource::Lifecycle,
+                LogLevel::Error,
+                "openclaw_doctor_repair: openclaw binary not found",
+            );
             return Ok(false);
         }
     };
@@ -100,7 +116,10 @@ pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, Gate
     let mut cmd = tokio::process::Command::new(&openclaw);
     cmd.args(["doctor", "--fix", "--yes", "--non-interactive"])
         .env("OPENCLAW_STATE_DIR", paths::desktop_dir().to_str().unwrap())
-        .env("OPENCLAW_CONFIG_PATH", paths::config_path().to_str().unwrap())
+        .env(
+            "OPENCLAW_CONFIG_PATH",
+            paths::config_path().to_str().unwrap(),
+        )
         .env("OPENCLAW_NO_RESPAWN", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -109,8 +128,12 @@ pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, Gate
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error,
-                     format!("openclaw_doctor_repair: spawn failed: {}", e));
+            push_log(
+                &state.logs,
+                LogSource::Lifecycle,
+                LogLevel::Error,
+                format!("openclaw_doctor_repair: spawn failed: {}", e),
+            );
             return Ok(false);
         }
     };
@@ -126,8 +149,12 @@ pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, Gate
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 let logs = &app_out.state::<GatewayProcess>().logs;
-                push_log(logs, LogSource::ChildStdout, LogLevel::Info,
-                         format!("[doctor] {}", line));
+                push_log(
+                    logs,
+                    LogSource::ChildStdout,
+                    LogLevel::Info,
+                    format!("[doctor] {}", line),
+                );
             }
         });
     }
@@ -138,8 +165,12 @@ pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, Gate
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 let logs = &app_err.state::<GatewayProcess>().logs;
-                push_log(logs, LogSource::ChildStderr, LogLevel::Warn,
-                         format!("[doctor] {}", line));
+                push_log(
+                    logs,
+                    LogSource::ChildStderr,
+                    LogLevel::Warn,
+                    format!("[doctor] {}", line),
+                );
             }
         });
     }
@@ -148,21 +179,35 @@ pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, Gate
     match timeout(Duration::from_secs(120), child.wait()).await {
         Ok(Ok(status)) => {
             let ok = status.success();
-            push_log(&state.logs, LogSource::Lifecycle,
-                     if ok { LogLevel::Info } else { LogLevel::Error },
-                     format!("openclaw_doctor_repair: exited code {} {}", status.code().unwrap_or(-1),
-                             if ok { "(repaired)" } else { "" }));
+            push_log(
+                &state.logs,
+                LogSource::Lifecycle,
+                if ok { LogLevel::Info } else { LogLevel::Error },
+                format!(
+                    "openclaw_doctor_repair: exited code {} {}",
+                    status.code().unwrap_or(-1),
+                    if ok { "(repaired)" } else { "" }
+                ),
+            );
             Ok(ok)
         }
         Ok(Err(e)) => {
-            push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error,
-                     format!("openclaw_doctor_repair: wait failed: {}", e));
+            push_log(
+                &state.logs,
+                LogSource::Lifecycle,
+                LogLevel::Error,
+                format!("openclaw_doctor_repair: wait failed: {}", e),
+            );
             Ok(false)
         }
         Err(_) => {
             let _ = child.kill().await;
-            push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error,
-                     "openclaw_doctor_repair: timed out after 120s");
+            push_log(
+                &state.logs,
+                LogSource::Lifecycle,
+                LogLevel::Error,
+                "openclaw_doctor_repair: timed out after 120s",
+            );
             Ok(false)
         }
     }
@@ -170,18 +215,18 @@ pub async fn openclaw_doctor_repair(app: AppHandle, state: tauri::State<'_, Gate
 
 /// Tauri command: return the current lifecycle state for the frontend.
 #[tauri::command]
-pub async fn get_gateway_lifecycle(state: tauri::State<'_, GatewayProcess>) -> Result<GatewayLifecycle, String> {
-    state.lifecycle.lock()
+pub async fn get_gateway_lifecycle(
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<GatewayLifecycle, String> {
+    state
+        .lifecycle
+        .lock()
         .map(|lc| *lc)
         .map_err(|e| e.to_string())
 }
 
 /// Transition the lifecycle state and push a log entry.
-pub fn transition_lifecycle(
-    state: &GatewayProcess,
-    next: GatewayLifecycle,
-    reason: &str,
-) {
+pub fn transition_lifecycle(state: &GatewayProcess, next: GatewayLifecycle, reason: &str) {
     if let Ok(mut lc) = state.lifecycle.lock() {
         *lc = next;
     }

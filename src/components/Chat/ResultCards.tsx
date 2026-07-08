@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Code2, Eye, FileText, FileCode, FileImage, FileSpreadsheet, FolderOpen, Info, Sparkles, ChevronDown, Loader2, Globe, Image, FileCode2, Layers, type LucideIcon } from 'lucide-react';
 import { ArrowsClockwise } from '@phosphor-icons/react';
-import ReactMarkdown from 'react-markdown';
-
-import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Artifact, DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { Icon } from '@/components/shared/icons';
+import { debugError, debugWarn } from '@/utils/debugLog';
+
+const ResultMarkdownPreview = lazy(() => import('./ResultMarkdownPreview').then((m) => ({ default: m.ResultMarkdownPreview })));
 
 function isLocalFilePath(value?: string) {
   if (!value) return false;
@@ -79,7 +79,7 @@ export function ArtifactResultCard({ artifact }: { artifact: Artifact }) {
     try {
       await window.aegis?.artifact?.open(artifact);
     } catch (err) {
-      console.error('[ArtifactResultCard] Failed to open preview:', err);
+      debugError('media', '[ArtifactResultCard] Failed to open preview:', err);
     } finally {
       setTimeout(() => setOpening(false), 500);
     }
@@ -168,7 +168,7 @@ function FileRow({ file }: { file: FileRef }) {
       const url = openPath.startsWith('file://') ? openPath : `file://${openPath}`;
       window.open(url, '_blank');
     } catch (err) {
-      console.error('[FileResultCard] open file failed:', err);
+      debugError('media', '[FileResultCard] open file failed:', err);
       addToast('info', t('resultCards.open', 'Open'), t('errors.occurred', 'An error occurred'));
     }
   };
@@ -187,7 +187,7 @@ function FileRow({ file }: { file: FileRef }) {
         setPreviewContent(decodeURIComponent(escape(bin)));
       }
     } catch (err) {
-      console.error('[FileResultCard] preview failed:', err);
+      debugError('media', '[FileResultCard] preview failed:', err);
       setPreviewContent(null);
     }
     setPreviewLoading(false);
@@ -205,7 +205,7 @@ function FileRow({ file }: { file: FileRef }) {
       const revealManagedPath = window.aegis?.managedFiles?.reveal || window.aegis?.uploads?.reveal;
       await revealManagedPath?.(revealPath);
     } catch (err) {
-      console.error('[FileResultCard] reveal file failed:', err);
+      debugError('media', '[FileResultCard] reveal file failed:', err);
     }
   };
 
@@ -216,7 +216,7 @@ function FileRow({ file }: { file: FileRef }) {
       setTimeout(() => setCopied(false), 1200);
       addToast('info', t('fileManager.copyPathDone', 'Path copied'), path);
     } catch (err) {
-      console.warn('[FileResultCard] copy path failed:', err);
+      debugWarn('media', '[FileResultCard] copy path failed:', err);
       addToast('info', t('resultCards.path', 'Path'), t('errors.occurred', 'An error occurred'));
     }
   };
@@ -245,9 +245,16 @@ function FileRow({ file }: { file: FileRef }) {
     }
     if (isMarkdown) {
       return (
-        <div className="markdown-body max-h-[420px] overflow-auto rounded-lg bg-[rgb(var(--aegis-overlay)/0.03)] p-3 text-[12px] leading-relaxed">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{previewContent}</ReactMarkdown>
-        </div>
+        <Suspense
+          fallback={
+            <div className="flex items-center gap-2 p-3 text-[11px] text-aegis-text-muted">
+              <Loader2 size={12} className="animate-spin" />
+              {t('common.loading', 'Loading…')}
+            </div>
+          }
+        >
+          <ResultMarkdownPreview content={previewContent} />
+        </Suspense>
       );
     }
     return (

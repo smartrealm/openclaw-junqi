@@ -1,4 +1,5 @@
 import type { GatewayRuntimeConfig } from './types';
+import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 
 export interface GeneratedProviderCatalogEntry {
   id: string;
@@ -11,18 +12,6 @@ function ensureMainAgentInList(list: GatewayRuntimeConfig['agents'] extends { li
   const main = existingMain && typeof existingMain === 'object' ? existingMain : { id: 'main' };
   const others = items.filter((item: any) => item?.id !== 'main');
   return [main, ...others];
-}
-
-function resolveModelSupportsImage(value: any): boolean | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  if (typeof value.supportsImage === 'boolean') return value.supportsImage;
-  if (typeof value.supports_image === 'boolean') return value.supports_image;
-  if (Array.isArray(value.input)) {
-    const modalities = value.input.map((m: any) => String(m).toLowerCase());
-    if (modalities.includes('image')) return true;
-    if (modalities.includes('text')) return false;
-  }
-  return undefined;
 }
 
 function sanitizeAgentModelEntry(value: any): Record<string, any> {

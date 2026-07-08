@@ -1,23 +1,25 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Send, Paperclip, Camera, Mic, X, Loader2, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio } from 'lucide-react';
+import { Send, Paperclip, Camera, Mic, X, Square, Clock, ChevronDown, ChevronUp, Check, Trash2, Pencil, Sparkles, Cpu, Eye, File, FileText, FileSpreadsheet, FileArchive, Music, Film, FileJson, Radio, Smile } from 'lucide-react';
 import { showAlert } from '@/components/shared/AlertDialog';
 import { useVoiceWake } from '@/hooks/useVoiceWake';
 import { Icon } from '@/components/shared/icons';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
-import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
-import { ScreenshotPicker } from './ScreenshotPicker';
-import { VoiceRecorder } from './VoiceRecorder';
-import { EmojiPicker } from './EmojiPicker';
 import { getDirection } from '@/i18n';
 import { SLASH_COMMANDS, CATEGORY_META, type SlashCommand, type SlashCategory } from '@/data/slashCommands';
 import { cmdIcon } from '@/data/cmdIcons';
 import clsx from 'clsx';
 
 import { formatBytes } from '@/utils/format';
+import { debugError } from '@/utils/debugLog';
+
+const EmojiPicker = lazy(() => import('./EmojiPicker').then((m) => ({ default: m.EmojiPicker })));
+const ScreenshotPicker = lazy(() => import('./ScreenshotPicker').then((m) => ({ default: m.ScreenshotPicker })));
+const VoiceRecorder = lazy(() => import('./VoiceRecorder').then((m) => ({ default: m.VoiceRecorder })));
 
 // ═══════════════════════════════════════════════════════════
 // Message Input — premium input with attachments
@@ -40,6 +42,53 @@ interface PendingFile {
   size: number;
   preview?: string;
   path?: string;  // Windows path — non-image files send path instead of base64
+}
+
+function DeferredEmojiPicker({
+  onSelect,
+  disabled,
+  title,
+}: {
+  onSelect: (emoji: string) => void;
+  disabled?: boolean;
+  title: string;
+}) {
+  const [armed, setArmed] = useState(false);
+
+  if (!armed) {
+    return (
+      <button
+        onClick={() => {
+          if (!disabled) setArmed(true);
+        }}
+        disabled={disabled}
+        className={clsx(
+          'p-2 rounded-xl transition-colors',
+          'hover:bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim hover:text-aegis-text-muted',
+          'disabled:opacity-30',
+        )}
+        title={title}
+      >
+        <Smile size={17} />
+      </button>
+    );
+  }
+
+  return (
+    <Suspense
+      fallback={
+        <button
+          disabled
+          className="p-2 rounded-xl text-aegis-text-dim opacity-60"
+          title={title}
+        >
+          <Smile size={17} />
+        </button>
+      }
+    >
+      <EmojiPicker onSelect={onSelect} disabled={disabled} defaultOpen />
+    </Suspense>
+  );
 }
 
 export function MessageInput() {
@@ -143,9 +192,8 @@ export function MessageInput() {
       return next;
     });
     // Clear the draft via getState() (no subscription, no re-render storm).
-    useChatStore.getState().setDraftAttachments(useChatStore.getState().activeSessionKey, []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftAttach]);
+    useChatStore.getState().setDraftAttachments(activeSessionKey, []);
+  }, [activeSessionKey, draftAttach]);
   useEffect(() => {
     if (!connected) return;
     gateway.getSkills().then((r: any) => {
@@ -255,10 +303,6 @@ export function MessageInput() {
       })()
     : [];
 
-  // Keep the legacy name around so the rest of the file (keyboard handler,
-  // render loop) keeps working without churn.
-  const matchedSkills = matchedAtItems;
-
   // ── Input history (ArrowUp/Down when input is empty) ──
   const userMessageHistory = (() => {
     const seen = new Set<string>();
@@ -304,7 +348,7 @@ export function MessageInput() {
 
   // Clamp picker idx when filtered lists change (after all declarations)
   useEffect(() => { setSlashPicker((s) => ({ ...s, idx: Math.min(s.idx, Math.max(0, matchedSlash.length - 1)) })); }, [matchedSlash.length]);
-  useEffect(() => { setAtPicker((s) => ({ ...s, idx: Math.min(s.idx, Math.max(0, matchedSkills.length - 1)) })); }, [matchedSkills.length]);
+  useEffect(() => { setAtPicker((s) => ({ ...s, idx: Math.min(s.idx, Math.max(0, matchedAtItems.length - 1)) })); }, [matchedAtItems.length]);
   useEffect(() => { setArgPicker((s) => ({ ...s, idx: Math.min(s.idx, Math.max(0, argCompletions.length - 1)) })); }, [argCompletions.length]);
 
   const pickSkill = (skill: { name: string }) => {
@@ -490,6 +534,7 @@ export function MessageInput() {
     {
       const { budgetLimit } = useSettingsStore.getState();
       if (budgetLimit > 0) {
+        await ensureGroupFresh('cost');
         const costSummary = useGatewayDataStore.getState().costSummary;
         const used = costSummary?.totals?.totalCost ?? 0;
         if (used >= budgetLimit) {
@@ -535,7 +580,7 @@ export function MessageInput() {
         activeSessionKey,
       );
     } catch (err) {
-      console.error('[Send] Error:', err);
+      debugError('app', '[Send] Error:', err);
     } finally {
       setIsSending(false);
     }
@@ -623,7 +668,7 @@ export function MessageInput() {
         );
       }
     } catch (err) {
-      console.error('[Voice] Send error:', err);
+      debugError('media', '[Voice] Send error:', err);
     } finally {
       setIsSending(false);
     }
@@ -843,11 +888,29 @@ export function MessageInput() {
 
       {/* Input Area */}
       {voiceMode ? (
-        <VoiceRecorder
-          onSendVoice={handleVoiceSend}
-          onCancel={() => setVoiceMode(false)}
-          disabled={!connected || isHistoryWarmupGate}
-        />
+        <Suspense
+          fallback={
+            <div className="flex items-center gap-3 w-full px-3 py-2" dir={dir}>
+              <div className="flex-1 h-10 rounded bg-[rgb(var(--aegis-overlay)/0.04)] animate-pulse" />
+              <span className="text-[13px] font-mono text-aegis-text-muted shrink-0 min-w-[40px] text-center" dir="ltr">
+                0:00
+              </span>
+              <button
+                onClick={() => setVoiceMode(false)}
+                className="p-2 rounded-lg hover:bg-aegis-danger/20 text-aegis-danger transition-colors"
+                title={t('voice.cancel')}
+              >
+                <X size={18} />
+              </button>
+            </div>
+          }
+        >
+          <VoiceRecorder
+            onSendVoice={handleVoiceSend}
+            onCancel={() => setVoiceMode(false)}
+            disabled={!connected || isHistoryWarmupGate}
+          />
+        </Suspense>
       ) : (
         <div className="flex items-end gap-2 p-3" dir={dir}>
           {/* Input Wrapper (matches mockup) */}
@@ -860,9 +923,10 @@ export function MessageInput() {
             !connected && 'opacity-40'
           )} onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
             {/* Action Buttons */}
-            <EmojiPicker
+            <DeferredEmojiPicker
               onSelect={(emoji) => { setText((prev) => prev + emoji); textareaRef.current?.focus(); }}
               disabled={!connected}
+              title={t('input.emoji')}
             />
             {[
               { icon: Paperclip, action: handleFileSelect, title: t('input.attachFile') },
@@ -955,7 +1019,7 @@ export function MessageInput() {
                 </div>
                 {/* Skill + file list or empty state */}
                 <div className="max-h-[240px] overflow-y-auto scrollbar-hidden py-0.5">
-                  {matchedSkills.length > 0 ? matchedSkills.map((item, i) => {
+                  {matchedAtItems.length > 0 ? matchedAtItems.map((item, i) => {
                     const isSkill = item.kind === 'skill';
                     const label = isSkill ? item.name : item.name;
                     const sub = isSkill ? item.description : item.path;
@@ -1213,10 +1277,10 @@ export function MessageInput() {
                   if (e.key === 'Escape') { e.preventDefault(); setSlashPicker({ open: false, query: '', idx: 0 }); return; }
                 }
                 // @ Skills picker navigation
-                if (atPicker.open && matchedSkills.length > 0) {
-                  if (e.key === 'ArrowDown') { e.preventDefault(); setAtPicker((s) => ({ ...s, idx: (s.idx + 1) % matchedSkills.length })); return; }
-                  if (e.key === 'ArrowUp') { e.preventDefault(); setAtPicker((s) => ({ ...s, idx: (s.idx - 1 + matchedSkills.length) % matchedSkills.length })); return; }
-                  if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); pickSkill(matchedSkills[atPicker.idx]); return; }
+                if (atPicker.open && matchedAtItems.length > 0) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setAtPicker((s) => ({ ...s, idx: (s.idx + 1) % matchedAtItems.length })); return; }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); setAtPicker((s) => ({ ...s, idx: (s.idx - 1 + matchedAtItems.length) % matchedAtItems.length })); return; }
+                  if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); pickSkill(matchedAtItems[atPicker.idx]); return; }
                   if (e.key === 'Escape') { e.preventDefault(); setAtPicker({ open: false, query: '', idx: 0 }); return; }
                 }
                 if (e.key !== 'Enter' || e.shiftKey) return;
@@ -1277,7 +1341,7 @@ export function MessageInput() {
                   setIsTyping(false, activeSessionKey);
                   setIsSending(false);
                 } catch (err) {
-                  console.error('[Abort] Error:', err);
+                  debugError('app', '[Abort] Error:', err);
                 }
               }}
                 className="w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0 bg-aegis-danger/80 hover:bg-aegis-danger text-aegis-text transition-all">
@@ -1288,7 +1352,15 @@ export function MessageInput() {
         </div>
       )}
 
-      <ScreenshotPicker open={screenshotOpen} onClose={() => setScreenshotOpen(false)} onCapture={handleScreenshotCapture} />
+      {screenshotOpen && (
+        <Suspense fallback={null}>
+          <ScreenshotPicker
+            open={screenshotOpen}
+            onClose={() => setScreenshotOpen(false)}
+            onCapture={handleScreenshotCapture}
+          />
+        </Suspense>
+      )}
 
       {/* Image lightbox */}
       {lightbox && (

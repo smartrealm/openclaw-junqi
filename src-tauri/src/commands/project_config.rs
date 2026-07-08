@@ -181,7 +181,9 @@ pub fn read_agent_config_file(agent: String) -> Result<Option<String>, String> {
     if !path.exists() {
         return Ok(None);
     }
-    fs::read_to_string(&path).map(Some).map_err(|e| e.to_string())
+    fs::read_to_string(&path)
+        .map(Some)
+        .map_err(|e| e.to_string())
 }
 
 /// Writes raw content back to the agent's local settings file.

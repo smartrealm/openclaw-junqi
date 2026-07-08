@@ -112,6 +112,12 @@ export function PromptEditor({
   onExpandedChange,
 }: PromptEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftSnapshotRef = useRef({
+    value,
+    images: images ?? [],
+    onChange,
+    onAttachImages,
+  });
   const [picker, setPicker] = useState<{
     open: boolean;
     query: string;
@@ -128,23 +134,32 @@ export function PromptEditor({
     loading: false,
   });
 
+  useEffect(() => {
+    draftSnapshotRef.current = {
+      value,
+      images: images ?? [],
+      onChange,
+      onAttachImages,
+    };
+  }, [images, onAttachImages, onChange, value]);
+
   // ── Draft cache: restore on mount, save on unmount ───────────────────────
   useEffect(() => {
     if (!draftKey) return;
     const cached = draftCache.get(draftKey);
     if (cached) {
-      if (cached.text && !value) onChange(cached.text);
-      if (cached.images.length > 0 && onAttachImages) onAttachImages(cached.images);
+      const snapshot = draftSnapshotRef.current;
+      if (cached.text && !snapshot.value) snapshot.onChange(cached.text);
+      if (cached.images.length > 0 && snapshot.onAttachImages) snapshot.onAttachImages(cached.images);
     }
     return () => {
+      const snapshot = draftSnapshotRef.current;
       // Save on unmount
       draftCache.set(draftKey, {
-        text: value,
-        images: images ?? [],
+        text: snapshot.value,
+        images: snapshot.images,
       });
     };
-    // Only run on mount/unmount — not on value changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey]);
 
   // ── ⌘L multi-line composer (kooky-style) ────────────────────────────────────

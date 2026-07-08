@@ -5,8 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
-import { MemoryRouter } from 'react-router-dom';
-import { TimelineView, type TimelineTask } from './TimelineView';
+import { TimelineViewContent, type TimelineTask } from './TimelineView';
 
 const NOW = Date.parse('2026-06-22T10:00:00Z');
 const ONE_DAY = 24 * 60 * 60 * 1000;
@@ -23,11 +22,7 @@ function task(overrides: Partial<TimelineTask> = {}): TimelineTask {
 
 function render(tasks: TimelineTask[], props: Record<string, unknown> = {}) {
   return renderToStaticMarkup(
-    createElement(
-      MemoryRouter,
-      null,
-      createElement(TimelineView, { tasks, now: new Date(NOW), ...props }),
-    ),
+    createElement(TimelineViewContent, { tasks, now: new Date(NOW), ...props }),
   );
 }
 

@@ -30,10 +30,7 @@ const MARGIN: f64 = 24.0;
 
 /// Open (or refocus) the QuickChatWindow, optionally seeding it with file paths.
 #[tauri::command]
-pub async fn open_quickchat_with_files(
-    app: AppHandle,
-    paths: Vec<String>,
-) -> Result<(), String> {
+pub async fn open_quickchat_with_files(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
     // If the window already exists, just send the new paths + refocus.
     if let Some(win) = app.get_webview_window(LABEL) {
         if !paths.is_empty() {
@@ -98,7 +95,10 @@ pub async fn open_quickchat_with_files(
         });
     }
 
-    let _ = app.emit("quickchat-visibility", serde_json::json!({ "visible": true }));
+    let _ = app.emit(
+        "quickchat-visibility",
+        serde_json::json!({ "visible": true }),
+    );
     Ok(())
 }
 
@@ -107,7 +107,10 @@ pub async fn close_quickchat(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(LABEL) {
         let _ = win.close();
     }
-    let _ = app.emit("quickchat-visibility", serde_json::json!({ "visible": false }));
+    let _ = app.emit(
+        "quickchat-visibility",
+        serde_json::json!({ "visible": false }),
+    );
     Ok(())
 }
 
@@ -125,8 +128,12 @@ pub fn spawn_quickchat_for_paths(app: &AppHandle, paths: Vec<String>) {
     // via the open_quickchat_with_files command.
     let labels: Vec<String> = paths
         .iter()
-        .map(|p| PathBuf::from(p).file_name().map(|s| s.to_string_lossy().to_string())
-             .unwrap_or_else(|| p.clone()))
+        .map(|p| {
+            PathBuf::from(p)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| p.clone())
+        })
         .collect();
 
     // Toast the user; non-blocking.

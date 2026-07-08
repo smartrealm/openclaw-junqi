@@ -64,12 +64,6 @@ earlyBootstrap();
 })();
 
 (async function boot() {
-  // Inter UI font (weights used across the app). Imported before index.css so
-  // the --font-sans stack can resolve it on first paint.
-  await import('@fontsource/inter/400.css');
-  await import('@fontsource/inter/500.css');
-  await import('@fontsource/inter/600.css');
-  await import('@fontsource/inter/700.css');
   await import('./api/tauri-adapter');
   await import('./i18n');
   await import('@/styles/index.css');

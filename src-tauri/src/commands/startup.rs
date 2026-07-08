@@ -36,25 +36,32 @@ const DEFAULT_HEALTH_RETRY_INTERVAL_MS: u64 = 1_000;
 /// now, doctor-repair is skipped on the orchestrator path; the
 /// frontend can still trigger it explicitly via the standalone
 /// Tauri command.
-pub async fn run_gateway_startup_sequence(
-    state: &GatewayProcess,
-) -> Result<GatewayStatus, String> {
-    transition_lifecycle(state, GatewayLifecycle::Starting,
-                        "startup_orchestrator: beginning sequence");
+pub async fn run_gateway_startup_sequence(state: &GatewayProcess) -> Result<GatewayStatus, String> {
+    transition_lifecycle(
+        state,
+        GatewayLifecycle::Starting,
+        "startup_orchestrator: beginning sequence",
+    );
 
     // 1. Foreign gateway on our port? Just connect.
     let port = *state.port.lock().map_err(|e| e.to_string())?;
     if is_gateway_serving(port).await {
-        transition_lifecycle(state, GatewayLifecycle::Running,
-                            "startup_orchestrator: foreign gateway already up");
+        transition_lifecycle(
+            state,
+            GatewayLifecycle::Running,
+            "startup_orchestrator: foreign gateway already up",
+        );
         return report_status(state, port).await;
     }
 
     // 2. No foreign gateway. Try to wait for the port to be free
     //    (handles TCP TIME_WAIT and launchd ghost children).
     if let Err(e) = wait_for_port_free(port, 30_000).await {
-        transition_lifecycle(state, GatewayLifecycle::Error,
-                            &format!("startup_orchestrator: port {} not free: {}", port, e));
+        transition_lifecycle(
+            state,
+            GatewayLifecycle::Error,
+            &format!("startup_orchestrator: port {} not free: {}", port, e),
+        );
         return Err(e);
     }
 
@@ -65,13 +72,21 @@ pub async fn run_gateway_startup_sequence(
     let mut last_err: Option<String> = None;
     for attempt in 1..=DEFAULT_MAX_START_ATTEMPTS {
         crate::state::gateway_process::push_log(
-            &state.logs, LogSource::Lifecycle, LogLevel::Info,
-            format!("startup_orchestrator: attempt {}/{}", attempt, DEFAULT_MAX_START_ATTEMPTS),
+            &state.logs,
+            LogSource::Lifecycle,
+            LogLevel::Info,
+            format!(
+                "startup_orchestrator: attempt {}/{}",
+                attempt, DEFAULT_MAX_START_ATTEMPTS
+            ),
         );
         match report_status(state, port).await {
             Ok(status) if status.running => {
-                transition_lifecycle(state, GatewayLifecycle::Running,
-                                    "startup_orchestrator: managed gateway up");
+                transition_lifecycle(
+                    state,
+                    GatewayLifecycle::Running,
+                    "startup_orchestrator: managed gateway up",
+                );
                 return Ok(status);
             }
             Ok(_) => {
@@ -84,7 +99,9 @@ pub async fn run_gateway_startup_sequence(
         // Exponential backoff between attempts.
         let backoff_ms = 1_000u64 * (1u64 << (attempt as u32 - 1));
         crate::state::gateway_process::push_log(
-            &state.logs, LogSource::Lifecycle, LogLevel::Warn,
+            &state.logs,
+            LogSource::Lifecycle,
+            LogLevel::Warn,
             format!("startup attempt {attempt} returned; backing off {backoff_ms}ms"),
         );
         tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
@@ -92,8 +109,11 @@ pub async fn run_gateway_startup_sequence(
 
     // 4. All attempts failed. (Doctor-repair step is TODO — see top.)
     let msg = last_err.unwrap_or_else(|| "all start attempts failed".to_string());
-    transition_lifecycle(state, GatewayLifecycle::Error,
-                        &format!("startup_orchestrator: gave up: {msg}"));
+    transition_lifecycle(
+        state,
+        GatewayLifecycle::Error,
+        &format!("startup_orchestrator: gave up: {msg}"),
+    );
     Err(msg)
 }
 
@@ -113,28 +133,40 @@ async fn report_status(state: &GatewayProcess, port: u16) -> Result<GatewayStatu
         let child_lock = state.child.lock().map_err(|e| e.to_string())?;
         child_lock.as_ref().and_then(|c| c.id())
     };
-    Ok(GatewayStatus { running, port, pid, token: None })
+    Ok(GatewayStatus {
+        running,
+        port,
+        pid,
+        token: None,
+    })
 }
 
 /// Health-check loop with bounded retry. The result is either Ok
 /// (gateway is serving) or Err with a user-actionable message.
-pub async fn health_check_loop(
-    state: &GatewayProcess,
-) -> Result<(), String> {
+pub async fn health_check_loop(state: &GatewayProcess) -> Result<(), String> {
     let port = *state.port.lock().map_err(|e| e.to_string())?;
     for attempt in 1..=DEFAULT_HEALTH_RETRY_ATTEMPTS {
         if is_gateway_serving(port).await {
             crate::state::gateway_process::push_log(
-                &state.logs, LogSource::Lifecycle, LogLevel::Info,
-                format!("health_check: gateway up on port {} (attempt {})", port, attempt),
+                &state.logs,
+                LogSource::Lifecycle,
+                LogLevel::Info,
+                format!(
+                    "health_check: gateway up on port {} (attempt {})",
+                    port, attempt
+                ),
             );
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(
             DEFAULT_HEALTH_RETRY_INTERVAL_MS,
-        )).await;
+        ))
+        .await;
     }
-    Err(format!("health_check: gateway not serving on port {} after {} attempts", port, DEFAULT_HEALTH_RETRY_ATTEMPTS))
+    Err(format!(
+        "health_check: gateway not serving on port {} after {} attempts",
+        port, DEFAULT_HEALTH_RETRY_ATTEMPTS
+    ))
 }
 
 #[cfg(test)]

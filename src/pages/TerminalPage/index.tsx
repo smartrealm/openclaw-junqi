@@ -2,7 +2,7 @@
 // + optional right panel (agents overview)
 
 import { useTranslation } from "react-i18next";
-import { useTheme } from "@/theme";
+import { useTheme } from "@/theme/useTheme";
 import {
   ShellTerminalPanel,
   type ShellTerminalPanelHandle,

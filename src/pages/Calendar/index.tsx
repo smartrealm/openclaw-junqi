@@ -9,6 +9,7 @@ import { ChevronRight, ChevronLeft, Plus, AlertCircle, CalendarDays } from 'luci
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useCalendarStore } from '@/stores/calendarStore';
+import { ensureGroupFresh } from '@/stores/gatewayDataStore';
 import { getMonthName, toDateStr } from './calendarUtils';
 import { MonthView } from './MonthView';
 import { WeekView } from './WeekView';
@@ -42,6 +43,7 @@ export default function CalendarPage() {
   useEffect(() => {
     loadEvents();
     syncPendingReminders().catch(() => {});
+    void ensureGroupFresh('cron');
   }, []);
 
   // Event count for current month

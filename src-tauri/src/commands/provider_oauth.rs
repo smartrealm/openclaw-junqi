@@ -12,8 +12,8 @@
 //!   6. An `oauth:complete` event is emitted with the result.
 
 use crate::commands::secret_store::store_provider_secret;
-use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -38,24 +38,33 @@ struct OAuthConfig {
 
 fn oauth_configs() -> HashMap<&'static str, OAuthConfig> {
     let mut m = HashMap::new();
-    m.insert("openai", OAuthConfig {
-        authorize_url: "https://auth.openai.com/oauth/authorize",
-        token_url: "https://auth.openai.com/oauth/token",
-        client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
-        scope: "openid profile email offline_access",
-    });
-    m.insert("minimax-portal", OAuthConfig {
-        authorize_url: "https://api.minimax.io/oauth/authorize",
-        token_url: "https://api.minimax.io/oauth/token",
-        client_id: "minimax-app",
-        scope: "openid profile offline_access",
-    });
-    m.insert("minimax-portal-cn", OAuthConfig {
-        authorize_url: "https://api.minimaxi.com/oauth/authorize",
-        token_url: "https://api.minimaxi.com/oauth/token",
-        client_id: "minimax-cn-app",
-        scope: "openid profile offline_access",
-    });
+    m.insert(
+        "openai",
+        OAuthConfig {
+            authorize_url: "https://auth.openai.com/oauth/authorize",
+            token_url: "https://auth.openai.com/oauth/token",
+            client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+            scope: "openid profile email offline_access",
+        },
+    );
+    m.insert(
+        "minimax-portal",
+        OAuthConfig {
+            authorize_url: "https://api.minimax.io/oauth/authorize",
+            token_url: "https://api.minimax.io/oauth/token",
+            client_id: "minimax-app",
+            scope: "openid profile offline_access",
+        },
+    );
+    m.insert(
+        "minimax-portal-cn",
+        OAuthConfig {
+            authorize_url: "https://api.minimaxi.com/oauth/authorize",
+            token_url: "https://api.minimaxi.com/oauth/token",
+            client_id: "minimax-cn-app",
+            scope: "openid profile offline_access",
+        },
+    );
     m
 }
 
@@ -108,7 +117,11 @@ struct TokenResponse {
     expires_in: Option<u64>,
 }
 
-async fn exchange_code(cfg: &OAuthConfig, code: &str, verifier: &str) -> Result<TokenResponse, String> {
+async fn exchange_code(
+    cfg: &OAuthConfig,
+    code: &str,
+    verifier: &str,
+) -> Result<TokenResponse, String> {
     let redirect_uri = format!("http://localhost:{}{}", OAUTH_CALLBACK_PORT, CALLBACK_PATH);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
@@ -215,7 +228,9 @@ pub async fn start_provider_oauth(
     //    the State<T> lifetime issues in async Tauri commands.
     let code = wait_for_oauth_callback().await?;
     let tokens = exchange_code(cfg, &code, &verifier).await?;
-    let access = tokens.access_token.ok_or("no access_token in response".to_string())?;
+    let access = tokens
+        .access_token
+        .ok_or("no access_token in response".to_string())?;
 
     // 4. Persist to secret store.
     store_provider_secret(account_id.clone(), label.clone(), access).await?;

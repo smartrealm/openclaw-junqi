@@ -1,10 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type ComponentType } from 'react';
 import { Smile } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
-import data from '@emoji-mart/data';
-import Picker from '@emoji-mart/react';
 import clsx from 'clsx';
 
 // ═══════════════════════════════════════════════════════════
@@ -14,12 +12,15 @@ import clsx from 'clsx';
 interface EmojiPickerProps {
   onSelect: (emoji: string) => void;
   disabled?: boolean;
+  defaultOpen?: boolean;
 }
 
-export function EmojiPicker({ onSelect, disabled }: EmojiPickerProps) {
+export function EmojiPicker({ onSelect, disabled, defaultOpen = false }: EmojiPickerProps) {
   const { t } = useTranslation();
   const { language, theme } = useSettingsStore();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  const [pickerModule, setPickerModule] = useState<ComponentType<any> | null>(null);
+  const [emojiData, setEmojiData] = useState<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -33,6 +34,30 @@ export function EmojiPicker({ onSelect, disabled }: EmojiPickerProps) {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || (pickerModule && emojiData)) return;
+    let alive = true;
+    Promise.all([
+      import('@emoji-mart/react'),
+      import('@emoji-mart/data/sets/15/native.json'),
+    ])
+      .then(([picker, data]) => {
+        if (!alive) return;
+        setPickerModule(() => picker.default);
+        setEmojiData(data.default ?? data);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setPickerModule(null);
+        setEmojiData(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [emojiData, open, pickerModule]);
+
+  const Picker = pickerModule;
 
   // Close on Escape
   useEffect(() => {
@@ -69,21 +94,27 @@ export function EmojiPicker({ onSelect, disabled }: EmojiPickerProps) {
           getDirection(language) === 'rtl' ? 'right-0' : 'left-0'
         )}>
           <div className="rounded-2xl overflow-hidden shadow-2xl border border-aegis-menu-border bg-aegis-menu-bg">
-            <Picker
-              data={data}
-              onEmojiSelect={(emoji: any) => {
-                onSelect(emoji.native);
-                setOpen(false);
-              }}
-              theme={theme === 'aegis-light' ? 'light' : 'dark'}
-              locale={language}
-              previewPosition="none"
-              skinTonePosition="search"
-              maxFrequentRows={2}
-              perLine={8}
-              navPosition="bottom"
-              set="native"
-            />
+            {Picker && emojiData ? (
+              <Picker
+                data={emojiData}
+                onEmojiSelect={(emoji: any) => {
+                  onSelect(emoji.native);
+                  setOpen(false);
+                }}
+                theme={theme === 'aegis-light' ? 'light' : 'dark'}
+                locale={language}
+                previewPosition="none"
+                skinTonePosition="search"
+                maxFrequentRows={2}
+                perLine={8}
+                navPosition="bottom"
+                set="native"
+              />
+            ) : (
+              <div className="flex h-[320px] w-[352px] items-center justify-center text-aegis-text-dim">
+                <Smile size={18} className="animate-pulse" />
+              </div>
+            )}
           </div>
         </div>
       )}

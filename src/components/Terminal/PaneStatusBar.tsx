@@ -8,6 +8,7 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { APP_PLATFORM } from "./_nezha-platform";
 import { invoke } from "@tauri-apps/api/core";
+import { debugError } from "@/utils/debugLog";
 
 // ── Shared pill style (kooky StatusSegment / bracket-bordered pill) ───────
 const pillBase: React.CSSProperties = {
@@ -91,7 +92,7 @@ function GitBranchSlot({ projectPath }: { projectPath: string }) {
     setPopoverOpen(false);
     invoke("git_checkout_branch", { projectPath, branchName: b, isRemote: b.includes('/') })
       .then(() => setBranch(b))
-      .catch((err) => console.error("checkout failed:", err));
+      .catch((err) => debugError("terminal", "checkout failed:", err));
   }, [projectPath]);
 
   if (!branch) return null;

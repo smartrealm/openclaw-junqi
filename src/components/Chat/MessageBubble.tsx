@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { lazy, memo, Suspense, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -12,14 +12,55 @@ import { useTranslation } from 'react-i18next';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { getDirection } from '@/i18n';
-import { CodeBlock } from './CodeBlock';
-import { ChatImage } from './ChatImage';
-import { ChatVideo } from './ChatVideo';
-import { AudioPlayer } from './AudioPlayer';
-import { SystemNoteBubble } from './SystemNoteBubble';
 import type { MessageBlock, Artifact, MetaItem } from '@/types/RenderBlock';
 import { Icon } from '@/components/shared/icons';
 import clsx from 'clsx';
+import { debugError } from '@/utils/debugLog';
+
+const CodeBlock = lazy(() => import('./CodeBlock').then((m) => ({ default: m.CodeBlock })));
+const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
+const ChatVideo = lazy(() => import('./ChatVideo').then((m) => ({ default: m.ChatVideo })));
+const AudioPlayer = lazy(() => import('./AudioPlayer').then((m) => ({ default: m.AudioPlayer })));
+const SystemNoteBubble = lazy(() => import('./SystemNoteBubble').then((m) => ({ default: m.SystemNoteBubble })));
+
+function MediaFallback({ className }: { className?: string }) {
+  return (
+    <div
+      className={clsx(
+        'flex items-center justify-center rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] text-[11px] text-aegis-text-dim animate-pulse',
+        className,
+      )}
+    >
+      ...
+    </div>
+  );
+}
+
+function CodeBlockFallback({ language, code }: { language: string; code: string }) {
+  const displayLang = language || 'text';
+  return (
+    <div
+      className="my-2 rounded-xl overflow-hidden border border-[rgb(var(--aegis-overlay)/0.08)]"
+      dir="ltr"
+      style={{ background: 'var(--aegis-code-bg)' }}
+    >
+      <div
+        className="flex items-center justify-between px-3.5 py-1.5 border-b border-[rgb(var(--aegis-overlay)/0.06)]"
+        style={{ background: 'var(--aegis-code-header)' }}
+      >
+        <span className="text-[10px] font-mono font-medium text-aegis-text-muted uppercase tracking-widest">
+          {displayLang}
+        </span>
+      </div>
+      <pre
+        className="m-0 p-4 text-[0.87em] font-mono text-aegis-text whitespace-pre-wrap break-words overflow-x-auto"
+        style={{ background: 'var(--aegis-code-bg)' }}
+      >
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
 
 // ── Error Action Detection ──
 interface ErrorAction {
@@ -69,7 +110,7 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
   const handleOpen = async () => {
     setOpening(true);
     try { await window.aegis?.artifact?.open(artifact); } catch (err) {
-      console.error('[Artifact] Failed to open preview:', err);
+      debugError('media', '[Artifact] Failed to open preview:', err);
     } finally { setTimeout(() => setOpening(false), 500); }
   };
 
@@ -159,7 +200,9 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
       {systemItems.length > 0 && (
         <div className="space-y-1.5 mb-2">
           {systemItems.map((item, idx) => (
-            <SystemNoteBubble key={`system-${idx}`} content={item.content} />
+            <Suspense key={`system-${idx}`} fallback={<MediaFallback className="h-8 w-full" />}>
+              <SystemNoteBubble content={item.content} />
+            </Suspense>
           ))}
         </div>
       )}
@@ -238,7 +281,7 @@ function FileCard({ path, meta }: { path: string; meta?: string }) {
       if (openManagedPath) { await openManagedPath(path); return; }
       const url = path.startsWith('file://') ? path : `file://${path}`;
       window.open(url, '_blank');
-    } catch (err) { console.error('[MessageBubble] Failed to open file card path:', err); }
+    } catch (err) { debugError('media', '[MessageBubble] Failed to open file card path:', err); }
   };
 
   return (
@@ -297,7 +340,12 @@ const markdownComponents = {
     const match = /language-(\w+)/.exec(className || '');
     const codeString = String(children).replace(/\n$/, '');
     if (match || codeString.includes('\n')) {
-      return <CodeBlock language={match?.[1] || ''} code={codeString} />;
+      const language = match?.[1] || '';
+      return (
+        <Suspense fallback={<CodeBlockFallback language={language} code={codeString} />}>
+          <CodeBlock language={language} code={codeString} />
+        </Suspense>
+      );
     }
     return (
       <code className="text-[13px] font-mono px-1.5 py-0.5 rounded"
@@ -308,8 +356,18 @@ const markdownComponents = {
   img({ src, alt }: any) {
     if (!src) return null;
     const videoExtensions = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)(\?.*)?$/i;
-    if (videoExtensions.test(src)) return <ChatVideo src={src} alt={alt} maxWidth="100%" maxHeight="400px" />;
-    return <ChatImage src={src} alt={alt} maxWidth="100%" maxHeight="400px" />;
+    if (videoExtensions.test(src)) {
+      return (
+        <Suspense fallback={<MediaFallback className="h-[220px] w-full max-w-[400px]" />}>
+          <ChatVideo src={src} alt={alt} maxWidth="100%" maxHeight="400px" />
+        </Suspense>
+      );
+    }
+    return (
+      <Suspense fallback={<MediaFallback className="h-[220px] w-full max-w-[400px]" />}>
+        <ChatImage src={src} alt={alt} maxWidth="100%" maxHeight="400px" />
+      </Suspense>
+    );
   },
   p({ children }: any) {
     if (typeof children === 'string' || (Array.isArray(children) && children.length === 1 && typeof children[0] === 'string')) {
@@ -331,7 +389,13 @@ const markdownComponents = {
       return <FileCard path={href} meta={label || 'file'} />;
     }
     const videoExtensions = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)(\?.*)?$/i;
-    if (href && videoExtensions.test(href)) return <ChatVideo src={href} alt={String(children) || 'video'} maxWidth="100%" maxHeight="400px" />;
+    if (href && videoExtensions.test(href)) {
+      return (
+        <Suspense fallback={<MediaFallback className="h-[220px] w-full max-w-[400px]" />}>
+          <ChatVideo src={href} alt={String(children) || 'video'} maxWidth="100%" maxHeight="400px" />
+        </Suspense>
+      );
+    }
     return (
       <a href={href} onClick={async (e) => {
         e.preventDefault();
@@ -367,7 +431,6 @@ export const MessageBubble = memo(function MessageBubble({
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [errorActionDone, setErrorActionDone] = useState(false);
-  const [ctxOpen, setCtxOpen] = useState(false);
   const contextMeta = block.meta?.find(m => m.kind === 'context') ?? null;
   const contextContent = contextMeta?.content
     ? (() => { try { return JSON.parse(contextMeta.content) as { input?: number; inputTokens?: number; output?: number; outputTokens?: number; cacheRead?: number; cacheReadInputTokens?: number; cacheWrite?: number; cacheCreationInputTokens?: number; contextPercent?: number | null; model?: string; formatted?: string; duration?: number }; } catch { return null; } })()
@@ -388,7 +451,7 @@ export const MessageBubble = memo(function MessageBubble({
     contextOutputTokens ? `↓${ctxFmt(contextOutputTokens)}` : '',
     contextCacheRead ? `R${ctxFmt(contextCacheRead)}` : '',
     contextCacheWrite ? `W${ctxFmt(contextCacheWrite)}` : '',
-    contextContent?.contextPercent != null ? `${contextContent.contextPercent}% ctx` : '',
+    contextContent?.contextPercent != null ? `${contextContent.contextPercent}% ${t('chat.context', '上下文')}` : '',
   ].filter(Boolean);
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
@@ -543,7 +606,11 @@ function stripInlineCodeTicks(md: string): string {
 
           {/* Audio Player */}
           {block.audio && !block.isStreaming && (
-            <div className="mb-2"><AudioPlayer src={block.audio} /></div>
+            <div className="mb-2">
+              <Suspense fallback={<MediaFallback className="h-10 w-full" />}>
+                <AudioPlayer src={block.audio} />
+              </Suspense>
+            </div>
           )}
 
           {/* Images */}
@@ -554,9 +621,21 @@ function stripInlineCodeTicks(md: string): string {
               block.images.length === 3 ? 'grid grid-cols-2' :
               'grid grid-cols-2 sm:grid-cols-3')}>
               {block.images.map((img, i) => (
-                <ChatImage key={i} src={img.src} alt={img.alt || t('media.attachment')}
-                  maxWidth={block.images.length === 1 ? '360px' : '100%'}
-                  maxHeight={block.images.length === 1 ? '300px' : '180px'} />
+                <Suspense
+                  key={i}
+                  fallback={
+                    <MediaFallback
+                      className={block.images.length === 1 ? 'h-[220px] w-[360px] max-w-full' : 'h-[140px] w-full'}
+                    />
+                  }
+                >
+                  <ChatImage
+                    src={img.src}
+                    alt={img.alt || t('media.attachment')}
+                    maxWidth={block.images.length === 1 ? '360px' : '100%'}
+                    maxHeight={block.images.length === 1 ? '300px' : '180px'}
+                  />
+                </Suspense>
               ))}
             </div>
           )}
@@ -714,13 +793,50 @@ function stripInlineCodeTicks(md: string): string {
             <span className="text-[10px] text-aegis-text-dim italic">· {t('chat.edited', 'edited')}</span>
           )}
 
-          {/* Context / usage metadata — always visible for assistant messages */}
-          {!isUser && (
-            <button onClick={() => setCtxOpen(v => !v)}
-              className="inline-flex items-center gap-1 text-[10px] rounded-full px-1.5 py-0.5 transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-dim font-mono tabular-nums">
-              <ChevronRight size={10} className={clsx('shrink-0 transition-transform', ctxOpen && 'rotate-90')} style={{ strokeWidth: 2 }} />
-              {inlineUsageParts.length > 0 ? inlineUsageParts.map((part, idx) => <span key={part} className={idx >= 2 ? 'text-aegis-text-dim/80' : undefined}>{part}</span>) : <span>ctx</span>}
-            </button>
+          {/* Context / usage metadata — OpenClaw-style inline details. */}
+          {!isUser && (inlineUsageParts.length > 0 || contextModel || durationStr) && (
+            <details className="group/context inline-flex items-center gap-1.5 text-[10px] text-aegis-text-dim font-mono tabular-nums">
+              <summary
+                className={clsx(
+                  'inline-flex min-h-[22px] cursor-pointer list-none items-center gap-1 rounded-full border px-1.5 py-0.5 select-none',
+                  'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] transition-colors',
+                  'hover:border-aegis-primary/35 hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45',
+                  '[&::-webkit-details-marker]:hidden',
+                )}
+                title={t('chat.showContextDetails', '显示消息上下文详情')}
+              >
+                <ChevronRight
+                  size={10}
+                  className="shrink-0 transition-transform group-open/context:rotate-90"
+                  style={{ strokeWidth: 2 }}
+                />
+                <span>{t('chat.context', '上下文')}</span>
+              </summary>
+              <span className="inline-flex items-center gap-2 rounded-full border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] px-2 py-0.5">
+                {contextInputTokens > 0 && <span className="text-blue-400">↑{ctxFmt(contextInputTokens)}</span>}
+                {contextOutputTokens > 0 && <span className="text-emerald-400">↓{ctxFmt(contextOutputTokens)}</span>}
+                {contextCacheRead > 0 && <span className="text-aegis-text-dim/80">R{ctxFmt(contextCacheRead)}</span>}
+                {contextCacheWrite > 0 && <span className="text-aegis-text-dim/80">W{ctxFmt(contextCacheWrite)}</span>}
+                {contextContent?.contextPercent != null && (
+                  <span className={clsx(
+                    contextContent.contextPercent >= 90
+                      ? 'text-aegis-danger'
+                      : contextContent.contextPercent >= 75
+                        ? 'text-aegis-warning'
+                        : 'text-aegis-text-dim',
+                  )}>
+                    {contextContent.contextPercent}% {t('chat.context', '上下文')}
+                  </span>
+                )}
+                {durationStr && <span className="text-aegis-text-dim">{t('chat.contextDuration', '耗时')} <span className="text-aegis-text">{durationStr}</span></span>}
+                {contextModel && (
+                  <span className="rounded bg-[rgb(var(--aegis-overlay)/0.06)] px-1.5 py-px text-aegis-text">
+                    {contextModel.includes('/') ? contextModel.split('/').pop() : contextModel}
+                  </span>
+                )}
+              </span>
+            </details>
           )}
 
           {/* ── Action buttons (show on footer hover, independent of bubble) ── */}
@@ -756,21 +872,6 @@ function stripInlineCodeTicks(md: string): string {
           </span>
         </div>
 
-        {!isUser && ctxOpen && (
-          <div className="mt-1 w-full max-w-[min(900px,100%)] rounded-lg border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] px-2.5 py-1.5">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums">
-              <span className="text-aegis-text-dim">agent <span className="text-aegis-text">{activeAgentName}</span></span>
-              <span className="text-aegis-text-dim">model <span className="text-aegis-text">{contextModel || '—'}</span></span>
-              <span className="text-blue-400">input {contextInputTokens ? ctxFmt(contextInputTokens) : '—'}</span>
-              <span className="text-emerald-400">output {contextOutputTokens ? ctxFmt(contextOutputTokens) : '—'}</span>
-              <span className="text-aegis-text-dim">total <span className="text-aegis-text">{contextTotalTokens > 0 ? ctxFmt(contextTotalTokens) : '—'}</span></span>
-              <span className="text-aegis-text-dim">R {contextCacheRead ? ctxFmt(contextCacheRead) : '0'}</span>
-              <span className="text-aegis-text-dim">W {contextCacheWrite ? ctxFmt(contextCacheWrite) : '0'}</span>
-              <span className="text-aegis-text-dim">ctx <span className="text-aegis-text">{contextContent?.contextPercent != null ? `${contextContent.contextPercent}%` : '—'}</span></span>
-              {durationStr && <span className="text-aegis-text-dim">duration <span className="text-aegis-text">{durationStr}</span></span>}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -3,7 +3,9 @@
 // Each strategy tries to load; returns null to signal "try next".
 // ═══════════════════════════════════════════════════════════
 
-export interface ModelEntry { id: string; label: string; alias?: string }
+import { debugLog } from '@/utils/debugLog';
+
+export interface ModelEntry { id: string; label: string; alias?: string; supportsImage?: boolean }
 export interface ModelLoadContext {
   hasProviders: (config: any) => boolean;
   extractModels: (config: any) => ModelEntry[];
@@ -94,7 +96,7 @@ export class ModelLoaderChain {
     for (const s of this.strategies) {
       const result = await s.load(ctx);
       if (result && result.length > 0) {
-        console.log(`[Models] Loaded from ${s.name}:`, result.length);
+        debugLog('models', `[Models] Loaded from ${s.name}:`, result.length);
         return result;
       }
       // result === null means "couldn't try" → continue

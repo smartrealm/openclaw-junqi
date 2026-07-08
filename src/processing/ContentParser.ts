@@ -15,15 +15,20 @@ export {
   extractQuickReplies,
 } from './messageParsingShared';
 
+interface ParseOptions {
+  tokenUsage?: { percentage?: number | null } | null;
+  currentModel?: string | null;
+}
+
 // ─── Main Parsers ───
 
 /**
  * Parse a single raw history message into RenderBlock(s).
  * One message can produce multiple blocks (e.g., tool call arrays).
  */
-export function parseHistoryMessage(msg: any, toolIntentEnabled: boolean): RenderBlock[] {
+export function parseHistoryMessage(msg: any, toolIntentEnabled: boolean, options: ParseOptions = {}): RenderBlock[] {
   const normalized = normalizeGatewayMessage(msg);
-  const semanticBlocks = buildSemanticBlocks(normalized, { toolIntentEnabled });
+  const semanticBlocks = buildSemanticBlocks(normalized, { toolIntentEnabled, ...options });
   const grouped = buildResponseGroups(semanticBlocks);
   return grouped.flatMap(projectResponseGroupToRenderBlocks);
 }
@@ -32,9 +37,9 @@ export function parseHistoryMessage(msg: any, toolIntentEnabled: boolean): Rende
  * Convert a complete chat history response into RenderBlock[].
  * Single entry point for history → UI data.
  */
-export function parseHistory(messages: any[], toolIntentEnabled: boolean): RenderBlock[] {
+export function parseHistory(messages: any[], toolIntentEnabled: boolean, options: ParseOptions = {}): RenderBlock[] {
   const semanticBlocks = messages.flatMap((message) =>
-    buildSemanticBlocks(normalizeGatewayMessage(message), { toolIntentEnabled }),
+    buildSemanticBlocks(normalizeGatewayMessage(message), { toolIntentEnabled, ...options }),
   );
   const groups = buildResponseGroups(semanticBlocks);
   return groups.flatMap((group) => projectSemanticBlocksToRenderBlocks(group.blocks));

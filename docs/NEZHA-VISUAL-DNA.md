@@ -1,9 +1,9 @@
 # Nezha Visual DNA — Design System Port Plan
 
-> **Status**: design contract
-> **Source**: hanshuaikang/nezha (mirrored under `src/_nezha_root/`,
-> `src/components/nezha/`, `src/styles/nezha/`, `src/hooks/nezha/`,
-> `src-tauri/src/nezha/`)
+> **Status**: design contract; local mirror directories were removed after migration.
+> **Source**: hanshuaikang/nezha (local mirror directories were removed;
+> current implementations live in migrated `src/components/*`,
+> `src/styles/*`, and `src/utils/*` files.)
 > **Target**: openclaw-junqi (this repo)
 > **Branch**: `feat/port-nezha-fullsuite`
 >
@@ -360,13 +360,13 @@ Half-step sizes deployed to information-dense surfaces.
 1. **Tauri command**: port `get_system_fonts` from
    `src-tauri/src/nezha/system.rs` into our `src-tauri/src/commands/`
    tree. Cache result for the session. Return `Vec<String>`.
-2. **Frontend utils**: port `src/_nezha_root/utils.ts` font helpers
-   (`loadSystemFonts`, `parseFirstFontName`, `quoteFontName`,
-   `filterFonts`) into `src/utils/fonts.ts`.
-3. **FontSelector component**: port `components/nezha/app-settings/FontSelector.tsx`,
-   rewriting nezha tokens (`--text-primary` etc.) to our
-   `--aegis-*` tokens. Combobox with autocomplete over system fonts.
-4. **FontPanel component**: port `components/nezha/app-settings/FontPanel.tsx`.
+2. **Frontend utils**: keep font helpers in the current `src/utils/`
+   tree (`loadSystemFonts`, `parseFirstFontName`, `quoteFontName`,
+   `filterFonts`) instead of reviving deleted mirror utilities.
+3. **FontSelector component**: keep the migrated settings component in
+   `src/components/settings/`, rewriting legacy tokens (`--text-primary`
+   etc.) to our `--aegis-*` tokens.
+4. **FontPanel component**: keep the migrated panel in `src/components/settings/`.
    Two `FontSelector` (UI / Mono) + live preview block + "Reset to
    defaults" button.
 5. **Persistence layer**: extend `theme/` module:

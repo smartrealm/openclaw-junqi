@@ -12,6 +12,7 @@ import { FileExplorerContextMenu } from "./ContextMenu";
 import { CreateInputRow } from "./CreateInputRow";
 import { TreeItem } from "./TreeItem";
 import { writeClipboardText } from "./clipboard";
+import { debugError } from "@/utils/debugLog";
 import {
   AUTO_REFRESH_MS,
   ROW_HEIGHT,
@@ -70,11 +71,9 @@ export function FileExplorer({
     };
   }, []);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const safeInvoke = useCallback(
-    async (cmd: string, args?: Record<string, unknown>): Promise<any> => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await invoke<any>(cmd, args);
+    async <T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T | null> => {
+      const result = await invoke<T>(cmd, args);
       if (cancelledRef.current) return null;
       return result;
     },
@@ -122,7 +121,7 @@ export function FileExplorer({
       try {
         await invoke("open_in_system_file_manager", { path, projectPath });
       } catch (error) {
-        console.error("Failed to open file in system folder", error);
+        debugError("app", "Failed to open file in system folder", error);
         // Uses i18n key "file.failedOpenSystemFolder"
       }
     },
@@ -136,7 +135,7 @@ export function FileExplorer({
       try {
         await writeClipboardText(withAt ? `@${path}` : path);
       } catch (error) {
-        console.error("Failed to copy file path", error);
+        debugError("app", "Failed to copy file path", error);
       } finally {
         setCtxMenu(null);
       }
@@ -339,7 +338,7 @@ export function FileExplorer({
       }
     } catch (error) {
       if (!isCancelled()) {
-        console.error("Failed to create:", error);
+        debugError("app", "Failed to create:", error);
       }
     } finally {
       commitInFlightRef.current = false;
@@ -414,7 +413,7 @@ export function FileExplorer({
       await refresh();
     } catch (error) {
       if (!isCancelled()) {
-        console.error("Failed to delete:", error);
+        debugError("app", "Failed to delete:", error);
       }
     } finally {
       deleteInFlightRef.current = false;

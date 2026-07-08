@@ -23,6 +23,7 @@ import {
   type FileViewMode,
   type GitFileBrowserScrollContext,
   type GitDirectoryActionTarget,
+  type GitFileChange,
 } from "./types";
 
 // ── Constants ──
@@ -40,6 +41,10 @@ export interface GitFileEntry {
   onClick?: (entry: GitFileEntry) => void;
 }
 
+function isGitFileChangeEntry(entry: GitFileEntry): entry is GitFileChange {
+  return typeof entry.status === "string" && typeof entry.staged === "boolean";
+}
+
 // ── Props ──
 
 interface GitFileBrowserProps {
@@ -48,14 +53,12 @@ interface GitFileBrowserProps {
   scrollContext?: GitFileBrowserScrollContext;
   showStats?: boolean;
   onFileClick?: (entry: GitFileEntry) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onStageToggle?: (entry: any, e: React.MouseEvent) => void | Promise<void>;
+  onStageToggle?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
   onDirectoryStageToggle?: (
     dir: GitDirectoryActionTarget,
     e: React.MouseEvent,
   ) => void | Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onDiscard?: (entry: any, e: React.MouseEvent) => void | Promise<void>;
+  onDiscard?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
   onDirectoryDiscard?: (
     dir: GitDirectoryActionTarget,
     e: React.MouseEvent,
@@ -149,14 +152,12 @@ function DirectoryNode({
   depth: number;
   mode: FileViewMode;
   onFileClick?: (entry: GitFileEntry) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onStageToggle?: (entry: any, e: React.MouseEvent) => void | Promise<void>;
+  onStageToggle?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
   onDirectoryStageToggle?: (
     dir: GitDirectoryActionTarget,
     e: React.MouseEvent,
   ) => void | Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onDiscard?: (entry: any, e: React.MouseEvent) => void | Promise<void>;
+  onDiscard?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
   onDirectoryDiscard?: (
     dir: GitDirectoryActionTarget,
     e: React.MouseEvent,
@@ -304,10 +305,8 @@ function FileRow({
   mode: FileViewMode;
   showStats: boolean;
   onClick?: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onStageToggle?: (entry: any, e: React.MouseEvent) => void | Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onDiscard?: (entry: any, e: React.MouseEvent) => void | Promise<void>;
+  onStageToggle?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
+  onDiscard?: (entry: GitFileChange, e: React.MouseEvent) => void | Promise<void>;
 }) {
   const [hovered, setHovered] = useState(false);
   const statusColor = getGitStatusColor(entry.status ?? "M");
@@ -391,7 +390,7 @@ function FileRow({
           transition: "opacity 0.1s",
         }}
       >
-        {onStageToggle && (
+        {onStageToggle && isGitFileChangeEntry(entry) && (
           <button
             onClick={(e) => onStageToggle(entry, e)}
             title={entry.staged ? "Unstage" : "Stage"}
@@ -412,7 +411,7 @@ function FileRow({
             {entry.staged ? "-" : "+"}
           </button>
         )}
-        {onDiscard && (
+        {onDiscard && isGitFileChangeEntry(entry) && (
           <button
             onClick={(e) => onDiscard(entry, e)}
             title="Discard Changes"

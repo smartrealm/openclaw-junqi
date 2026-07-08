@@ -65,7 +65,9 @@ fn candidate_credential_paths() -> Vec<PathBuf> {
         home.join(".claude").join(".credentials.json"),
         home.join(".claude").join("credentials.json"),
         home.join(".config").join("claude").join("credentials.json"),
-        home.join(".config").join("manicode").join("credentials.json"),
+        home.join(".config")
+            .join("manicode")
+            .join("credentials.json"),
         home.join(".anthropic").join("credentials.json"),
     ]
 }
@@ -276,10 +278,7 @@ mod tests {
             r#"{"oauthAccount":{"accessToken":"test-token-abc","email":"a@b.c"}}"#,
         )
         .unwrap();
-        assert_eq!(
-            read_token_from(&path),
-            Some("test-token-abc".to_string())
-        );
+        assert_eq!(read_token_from(&path), Some("test-token-abc".to_string()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

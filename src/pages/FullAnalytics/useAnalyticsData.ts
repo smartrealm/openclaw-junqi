@@ -27,6 +27,7 @@ import {
 } from './types';
 import { getAgentColor } from './helpers';
 import { cacheGet, cacheSet, CACHE_KEY_FULL_COST, CACHE_KEY_FULL_USAGE } from './cache';
+import { debugError } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // Constants
@@ -209,21 +210,21 @@ export function useAnalyticsData(): AnalyticsData {
           setCostData(costResult.value as unknown as CostSummary);
           cacheSet(CACHE_KEY_FULL_COST, costResult.value);
         } else if (costResult.status === 'rejected') {
-          console.error('[Analytics] Cost fetch failed:', costResult.reason);
+          debugError('analytics', '[Analytics] Cost fetch failed:', costResult.reason);
         }
 
         if (usageResult.status === 'fulfilled' && usageResult.value) {
           setUsageData(usageResult.value as unknown as SessionsUsageResponse);
           cacheSet(CACHE_KEY_FULL_USAGE, usageResult.value);
         } else if (usageResult.status === 'rejected') {
-          console.error('[Analytics] Usage fetch failed:', usageResult.reason);
+          debugError('analytics', '[Analytics] Usage fetch failed:', usageResult.reason);
         }
 
         if (costResult.status === 'rejected' && usageResult.status === 'rejected') {
           throw new Error('Failed to load all analytics data');
         }
-      } catch (err: any) {
-        setError(err?.message || 'Failed to load analytics data');
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load analytics data');
       } finally {
         if (showLoading) setLoading(false);
       }
@@ -257,7 +258,7 @@ export function useAnalyticsData(): AnalyticsData {
       const { days, limit } = getFetchParams(saved);
       fetchData(days, limit, !hasCached);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchData, hydrateFromCache]);
 
   // ── Preset click: change view, fetch if needed, NO save ──
   const handlePresetSelect = useCallback(

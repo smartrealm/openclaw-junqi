@@ -2,7 +2,7 @@
 // SettingsPage — Full settings with Gateway, Theme, Model
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
@@ -15,7 +15,7 @@ import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
@@ -30,7 +30,7 @@ import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
-import { ACCENT_COLORS, type AccentColor } from '@/theme';
+import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 
@@ -60,6 +60,11 @@ export function SettingsPageFull() {
     wakeWord, setWakeWord,
     wakeSensitivity, setWakeSensitivity,
   } = useSettingsStore();
+  const costSummary = useGatewayDataStore((s) => s.costSummary);
+
+  useEffect(() => {
+    if (budgetLimit > 0) void ensureGroupFresh('cost');
+  }, [budgetLimit]);
   const { connected, connecting } = useChatStore();
   const prefersDark = usePrefersDark();
   const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled } = usePetStore();
@@ -154,7 +159,7 @@ export function SettingsPageFull() {
     window.aegis?.app?.platformInfo?.().then(setPlatformLabel).catch(() => {});
   }, []);
 
-  const refreshManagedIndexInfo = async (): Promise<{ success: boolean; error?: string }> => {
+  const refreshManagedIndexInfo = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     try {
       if (!window.aegis?.managedFiles?.list) {
         setManagedIndexInfo(null);
@@ -181,19 +186,18 @@ export function SettingsPageFull() {
         workspaceSample,
       });
       return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       setManagedIndexInfo(null);
-      return { success: false, error: error?.message || t('settings.managedFilesListFailed') };
+      const message = error instanceof Error ? error.message : '';
+      return { success: false, error: message || t('settings.managedFilesListFailed') };
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     refreshManagedIndexInfo().then((r) => {
       if (!r.success && r.error) setAttachmentsStatus(r.error);
     });
-    // Mount-only: avoid re-fetch loops when language/t changes (stats are language-agnostic).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshManagedIndexInfo]);
 
   const handleLanguageChange = (lang: AppLanguage) => {
     setLanguage(lang);
@@ -495,7 +499,7 @@ export function SettingsPageFull() {
           </span>
         </div>
         {budgetLimit > 0 && (() => {
-          const used = useGatewayDataStore.getState().costSummary?.totals?.totalCost ?? 0;
+          const used = costSummary?.totals?.totalCost ?? 0;
           const pct = Math.min(100, Math.round((used / budgetLimit) * 100));
           const over = used >= budgetLimit;
           return (

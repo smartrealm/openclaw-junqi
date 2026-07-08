@@ -5,6 +5,7 @@ import { Power, RefreshCw, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
+import { debugError } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // Title Bar — macOS traffic-light-aware context bar + gateway status
@@ -60,7 +61,7 @@ function GatewayControl() {
     setConfirming(false);
     setRestarting(true);
     try { await window.aegis?.config?.restart?.(); }
-    catch (err) { console.error('[GatewayControl] restart failed:', err); }
+    catch (err) { debugError('gateway', '[GatewayControl] restart failed:', err); }
     finally { setRestarting(false); }
   }, [setRestarting]);
 

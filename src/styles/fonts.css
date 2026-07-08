@@ -32,6 +32,39 @@
        local('Inter Variable');
 }
 
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Inter Regular'),
+       url('../../node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local('Inter Medium'),
+       url('../../node_modules/@fontsource/inter/files/inter-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local('Inter SemiBold'),
+       url('../../node_modules/@fontsource/inter/files/inter-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Inter Bold'),
+       url('../../node_modules/@fontsource/inter/files/inter-latin-700-normal.woff2') format('woff2');
+}
+
 /* ──────────────────────────────────────────────────────────
    HarmonyOS Sans SC — Windows CJK (local-only, no download).
    Ships on Huawei PCs and some Harmony-ecosystem packages.

@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, Maximize2, X, Play, Pause, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
+import { debugError, debugLog } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // ChatVideo — Video display with controls, save, and fullscreen
@@ -62,13 +63,13 @@ async function saveVideo(src: string, suggestedName: string): Promise<void> {
   try {
     const result = await (window.aegis as any)?.video?.save?.(src, suggestedName);
     if (result?.success) {
-      console.log('[ChatVideo] Saved to:', result.path);
+      debugLog('media', '[ChatVideo] Saved to:', result.path);
     } else {
       // Fallback: open in browser
       window.open(src, '_blank');
     }
   } catch (err) {
-    console.error('[ChatVideo] Save failed:', err);
+    debugError('media', '[ChatVideo] Save failed:', err);
     window.open(src, '_blank');
   }
 }

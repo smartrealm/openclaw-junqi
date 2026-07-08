@@ -3,6 +3,8 @@
 // connection config (token + ws_url). Each resolver tries one source.
 // ═══════════════════════════════════════════════════════════
 
+import { debugLog } from '@/utils/debugLog';
+
 export interface GwConfig { token: string; ws_url: string }
 export interface ConfigResolver { name: string; resolve(): Promise<GwConfig | null> }
 
@@ -48,7 +50,7 @@ export class ConfigResolverChain {
   async resolve(): Promise<GwConfig | null> {
     for (const r of this.resolvers) {
       const result = await r.resolve();
-      if (result) { console.log(`[GW Config] Resolved via ${r.name}`); return result; }
+      if (result) { debugLog('gateway', `[GW Config] Resolved via ${r.name}`); return result; }
     }
     return null;
   }

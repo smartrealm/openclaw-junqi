@@ -34,20 +34,15 @@ export function TypingIndicator() {
   // happens whenever isTyping flips false→true, since ChatView conditionally
   // renders this component). The interval ticks every second while
   // visible; cheap and avoids a global timer in the store.
-  const [startedAt, setStartedAt] = useState(() => Date.now());
   const [elapsedSec, setElapsedSec] = useState(0);
   useEffect(() => {
     if (!isTyping) return;
-    setStartedAt(Date.now());
+    const started = Date.now();
     setElapsedSec(0);
     const id = setInterval(() => {
-      setElapsedSec(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+      setElapsedSec(Math.max(0, Math.floor((Date.now() - started) / 1000)));
     }, 1000);
     return () => clearInterval(id);
-    // startedAt intentionally excluded — the interval is reset only when
-    // isTyping flips, not on every startedAt change. Adding it would
-    // restart the timer every second.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTyping]);
 
   // Adaptive format: under a minute reads as "Ns" (3s, 12s, 59s); at

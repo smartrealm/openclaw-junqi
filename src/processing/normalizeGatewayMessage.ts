@@ -17,6 +17,22 @@ function textFromUnknown(value: unknown): string {
   return '';
 }
 
+function numberFromUnknown(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function toolStatusFromUnknown(value: unknown): 'running' | 'done' | 'error' | undefined {
+  if (value === 'running' || value === 'done' || value === 'error') return value;
+  if (value === 'success' || value === 'completed' || value === 'complete') return 'done';
+  if (value === 'failed' || value === 'failure') return 'error';
+  return undefined;
+}
+
 function normalizeToolInput(value: unknown): Record<string, unknown> | undefined {
   const record = asRecord(value);
   return record ?? undefined;
@@ -196,6 +212,10 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
   const fallbackToolOutput =
     typeof message?.toolOutput === 'string'
       ? message.toolOutput
+      : typeof message?.output === 'string'
+        ? message.output
+      : typeof message?.result === 'string'
+        ? message.result
       : toolResults.map((item) => item.text).filter(Boolean).join('\n\n') || undefined;
 
   return {
@@ -215,8 +235,10 @@ export function normalizeGatewayMessage(message: any): NormalizedMessage {
     toolName: message?.toolName || message?.name,
     toolInput: message?.toolInput || message?.input,
     toolOutput: fallbackToolOutput,
-    toolStatus: message?.toolStatus,
-    toolDurationMs: message?.toolDurationMs,
+    toolStatus: toolStatusFromUnknown(message?.toolStatus ?? message?.status),
+    toolDurationMs: numberFromUnknown(
+      message?.toolDurationMs ?? message?.durationMs ?? message?.duration_ms ?? message?.tool_duration_ms,
+    ),
     thinkingContent: message?.thinkingContent || thinkingFromContent,
     fileRefs: Array.isArray(message?.fileRefs) ? message.fileRefs : undefined,
     decisionOptions: Array.isArray(message?.decisionOptions) ? message.decisionOptions : undefined,

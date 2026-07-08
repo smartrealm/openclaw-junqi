@@ -8,6 +8,8 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
+process.env.I18NEXT_NO_SUPPORT_NOTICE = '1';
+
 const here = dirname(fileURLToPath(import.meta.url));
 
 // Vite injects these from vite.config.ts. Mirror them here so module-level
@@ -82,5 +84,20 @@ if (!('navigator' in globalThis)) {
     value: { userAgent: 'node-test' },
     writable: true,
     configurable: true,
+  });
+}
+
+// Register a minimal i18next instance for SSR-style component tests that
+// call react-i18next's useTranslation without mounting the full app.
+const [{ default: i18n }, { initReactI18next }] = await Promise.all([
+  import('i18next'),
+  import('react-i18next'),
+]);
+if (!i18n.isInitialized) {
+  await i18n.use(initReactI18next).init({
+    lng: 'en',
+    fallbackLng: 'en',
+    resources: { en: { translation: {} } },
+    interpolation: { escapeValue: false },
   });
 }

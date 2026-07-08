@@ -26,7 +26,6 @@ import type {
 } from '@/types/SemanticBlock';
 import { stripDirectives, isNoise, stripUserMeta } from './TextCleaner';
 import { autoDetectCode } from '@/utils/autoDetectCode';
-import { useChatStore } from '@/stores/chatStore';
 import {
   parseArtifacts,
   extractFileRefs,
@@ -34,6 +33,12 @@ import {
   extractInlineButtonRows,
   extractQuickReplies,
 } from './messageParsingShared';
+
+interface BuildSemanticOptions {
+  toolIntentEnabled: boolean;
+  tokenUsage?: { percentage?: number | null } | null;
+  currentModel?: string | null;
+}
 
 function systemEventKindFromText(text: string): 'compaction' | 'fallback' | 'retry' | 'reset' | 'token-warning' | 'context-warning' | 'info' {
   if (/compact/i.test(text)) return 'compaction';
@@ -57,7 +62,7 @@ function createBlockBase(normalized: NormalizedMessage, id = normalized.id) {
   };
 }
 
-function buildAssistantMeta(markdown: string, normalized: NormalizedMessage): MetaItem[] {
+function buildAssistantMeta(markdown: string, normalized: NormalizedMessage, options: BuildSemanticOptions): MetaItem[] {
   const meta: MetaItem[] = [];
 
   const workshopResults = markdown.match(/✅\s+(Added|Moved|Deleted|Updated)\s+task[^\n]*/g);
@@ -74,8 +79,8 @@ function buildAssistantMeta(markdown: string, normalized: NormalizedMessage): Me
   // context % from global tokenUsage. Mirrors openclaw renderMessageMeta.
   try {
     const usage = normalized.usage;
-    const tu = useChatStore.getState().tokenUsage;
-    const model = normalized.model || useChatStore.getState().currentModel || '';
+    const tu = options.tokenUsage;
+    const model = normalized.model || options.currentModel || '';
     const input = usage?.input ?? usage?.inputTokens ?? usage?.prompt_tokens ?? usage?.promptTokens ?? 0;
     const output = usage?.output ?? usage?.outputTokens ?? usage?.completion_tokens ?? usage?.completionTokens ?? 0;
     const cacheRead = usage?.cacheRead ?? usage?.cache_read_input_tokens ?? usage?.cacheReadInputTokens ?? 0;
@@ -112,7 +117,7 @@ function buildAssistantMeta(markdown: string, normalized: NormalizedMessage): Me
 
 export function buildSemanticBlocks(
   normalized: NormalizedMessage,
-  options: { toolIntentEnabled: boolean },
+  options: BuildSemanticOptions,
 ): SemanticBlock[] {
   void options.toolIntentEnabled; // reserved for future gating; tool cards always render from gateway/tool rows
   const role = normalized.role;
@@ -209,7 +214,7 @@ export function buildSemanticBlocks(
 
   const images = extractAttachmentImages(normalized.attachments);
   const meta = role === 'assistant'
-    ? buildAssistantMeta(cleanText || markdown, normalized)
+    ? buildAssistantMeta(cleanText || markdown, normalized, options)
     : [];
 
   const blocks: SemanticBlock[] = [];

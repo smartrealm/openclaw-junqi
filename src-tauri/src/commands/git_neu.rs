@@ -657,7 +657,8 @@ pub async fn git_log(
         } else if let Some(v) = line.strip_prefix("SUBJECT:") {
             message = v.to_string();
         } else if let Some(v) = line.strip_prefix("REFS:") {
-            refs = v.split(", ")
+            refs = v
+                .split(", ")
                 .filter(|s| !s.is_empty())
                 .map(|s| s.trim().to_string())
                 .collect();
@@ -1402,10 +1403,7 @@ fn task_worktree_branch_name(task_id: &str) -> String {
 
 /// Reject any `worktree_path` that does not canonicalize under
 /// `<project>/.nezha/worktrees/`. Mirrors nezha's `ensure_path_under_worktrees_root`.
-fn ensure_path_under_worktrees_root(
-    project_path: &str,
-    worktree_path: &str,
-) -> Result<(), String> {
+fn ensure_path_under_worktrees_root(project_path: &str, worktree_path: &str) -> Result<(), String> {
     let canonical_project =
         std::fs::canonicalize(project_path).map_err(|e| format!("Bad project path: {}", e))?;
     let worktrees_root = canonical_project.join(".nezha").join("worktrees");
@@ -1422,8 +1420,12 @@ fn ensure_path_under_worktrees_root(
             // Worktree may not exist yet (we're about to create it). Resolve the
             // parent and re-attach the leaf.
             let p = std::path::Path::new(worktree_path);
-            let parent = p.parent().ok_or_else(|| "Worktree path has no parent".to_string())?;
-            let leaf = p.file_name().ok_or_else(|| "Worktree path has no leaf".to_string())?;
+            let parent = p
+                .parent()
+                .ok_or_else(|| "Worktree path has no parent".to_string())?;
+            let leaf = p
+                .file_name()
+                .ok_or_else(|| "Worktree path has no leaf".to_string())?;
             let canon_parent = std::fs::canonicalize(parent)
                 .map_err(|e| format!("Failed to canonicalize worktree parent: {}", e))?;
             canon_parent.join(leaf)
@@ -1719,11 +1721,23 @@ pub async fn git_diff_shortstat(project_path: String) -> Result<GitDiffSummary, 
     for tok in text.split(',') {
         let t = tok.trim();
         if t.contains("file") {
-            files = t.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            files = t
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
         } else if t.contains("insertion") {
-            ins = t.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            ins = t
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
         } else if t.contains("deletion") {
-            dels = t.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            dels = t
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
         }
     }
 

@@ -11,11 +11,11 @@
 // cpal streams are !Send, so all audio lives on one dedicated thread; the
 // Tauri side only touches channels + the AppHandle.
 
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use std::io::Cursor;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::io::Cursor;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 enum WakeCmd {
@@ -51,13 +51,23 @@ impl Default for VadConfig {
 }
 
 fn rms_i16(data: &[i16]) -> f32 {
-    if data.is_empty() { return 0.0; }
-    let sum: f64 = data.iter().map(|&s| { let f = s as f64 / i16::MAX as f64; f * f }).sum();
+    if data.is_empty() {
+        return 0.0;
+    }
+    let sum: f64 = data
+        .iter()
+        .map(|&s| {
+            let f = s as f64 / i16::MAX as f64;
+            f * f
+        })
+        .sum();
     (sum / data.len() as f64).sqrt() as f32
 }
 
 fn rms_f32(data: &[f32]) -> f32 {
-    if data.is_empty() { return 0.0; }
+    if data.is_empty() {
+        return 0.0;
+    }
     let sum: f64 = data.iter().map(|&s| (s as f64) * (s as f64)).sum();
     (sum / data.len() as f64).sqrt() as f32
 }
@@ -73,21 +83,38 @@ struct CaptureState {
 
 impl CaptureState {
     fn new() -> Self {
-        Self { rms_window: Vec::with_capacity(8), samples: Vec::new(), sample_rate: 16000, channels: 1, recording_flag: false }
+        Self {
+            rms_window: Vec::with_capacity(8),
+            samples: Vec::new(),
+            sample_rate: 16000,
+            channels: 1,
+            recording_flag: false,
+        }
     }
     fn push_rms(&mut self, rms: f32) {
         self.rms_window.push(rms);
-        if self.rms_window.len() > 8 { self.rms_window.remove(0); }
+        if self.rms_window.len() > 8 {
+            self.rms_window.remove(0);
+        }
     }
     fn smoothed_rms(&self) -> f32 {
-        if self.rms_window.is_empty() { 0.0 } else { self.rms_window.iter().sum::<f32>() / self.rms_window.len() as f32 }
+        if self.rms_window.is_empty() {
+            0.0
+        } else {
+            self.rms_window.iter().sum::<f32>() / self.rms_window.len() as f32
+        }
     }
     fn push_samples_i16(&mut self, data: &[i16]) {
-        if self.recording_flag { self.samples.extend_from_slice(data); }
+        if self.recording_flag {
+            self.samples.extend_from_slice(data);
+        }
     }
     fn push_samples_f32(&mut self, data: &[f32]) {
         if self.recording_flag {
-            for &s in data { self.samples.push((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16); }
+            for &s in data {
+                self.samples
+                    .push((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
+            }
         }
     }
 }
@@ -97,14 +124,19 @@ impl CaptureState {
 pub fn voice_wake_start(app: AppHandle) -> Result<serde_json::Value, String> {
     let mut guard = WAKE.lock().map_err(|e| format!("Lock: {}", e))?;
     if let Some(ref st) = *guard {
-        if st.running { return Ok(serde_json::json!({ "listening": true, "already": true })); }
+        if st.running {
+            return Ok(serde_json::json!({ "listening": true, "already": true }));
+        }
     }
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<WakeCmd>();
     let app_for_thread = app.clone();
     std::thread::spawn(move || run_vad_loop(app_for_thread, cmd_rx));
 
-    *guard = Some(WakeState { tx: Some(cmd_tx), running: true });
+    *guard = Some(WakeState {
+        tx: Some(cmd_tx),
+        running: true,
+    });
     let _ = app.emit("voice-wake", serde_json::json!({ "state": "listening" }));
     Ok(serde_json::json!({ "listening": true }))
 }
@@ -117,7 +149,10 @@ pub fn voice_wake_stop(app: AppHandle) -> Result<serde_json::Value, String> {
         let mut did = false;
         if let Some(ref mut st) = *guard {
             st.running = false;
-            if let Some(tx) = st.tx.take() { let _ = tx.send(WakeCmd::Stop); did = true; }
+            if let Some(tx) = st.tx.take() {
+                let _ = tx.send(WakeCmd::Stop);
+                did = true;
+            }
         }
         *guard = None;
         did
@@ -138,8 +173,12 @@ fn run_vad_loop(app: AppHandle, cmd_rx: mpsc::Receiver<WakeCmd>) {
     let cfg = VadConfig::default();
     let result: Result<(), String> = (|| {
         let host = cpal::default_host();
-        let device = host.default_input_device().ok_or_else(|| "未找到麦克风设备".to_string())?;
-        let config = device.default_input_config().map_err(|e| format!("麦克风配置失败: {}", e))?;
+        let device = host
+            .default_input_device()
+            .ok_or_else(|| "未找到麦克风设备".to_string())?;
+        let config = device
+            .default_input_config()
+            .map_err(|e| format!("麦克风配置失败: {}", e))?;
         let sample_rate = config.sample_rate().0;
         let channels = config.channels();
 
@@ -152,24 +191,34 @@ fn run_vad_loop(app: AppHandle, cmd_rx: mpsc::Receiver<WakeCmd>) {
 
         let state_cb = state.clone();
         let stream = match config.sample_format() {
-            cpal::SampleFormat::I16 => device.build_input_stream(
-                &config.into(),
-                move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                    let rms = rms_i16(data);
-                    if let Ok(mut s) = state_cb.lock() { s.push_rms(rms); s.push_samples_i16(data); }
-                },
-                |e| eprintln!("[VoiceWake] stream error: {}", e),
-                None,
-            ).map_err(|e| format!("启动采集流失败: {}", e))?,
-            cpal::SampleFormat::F32 => device.build_input_stream(
-                &config.into(),
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    let rms = rms_f32(data);
-                    if let Ok(mut s) = state_cb.lock() { s.push_rms(rms); s.push_samples_f32(data); }
-                },
-                |e| eprintln!("[VoiceWake] stream error: {}", e),
-                None,
-            ).map_err(|e| format!("启动采集流失败: {}", e))?,
+            cpal::SampleFormat::I16 => device
+                .build_input_stream(
+                    &config.into(),
+                    move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                        let rms = rms_i16(data);
+                        if let Ok(mut s) = state_cb.lock() {
+                            s.push_rms(rms);
+                            s.push_samples_i16(data);
+                        }
+                    },
+                    |e| eprintln!("[VoiceWake] stream error: {}", e),
+                    None,
+                )
+                .map_err(|e| format!("启动采集流失败: {}", e))?,
+            cpal::SampleFormat::F32 => device
+                .build_input_stream(
+                    &config.into(),
+                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                        let rms = rms_f32(data);
+                        if let Ok(mut s) = state_cb.lock() {
+                            s.push_rms(rms);
+                            s.push_samples_f32(data);
+                        }
+                    },
+                    |e| eprintln!("[VoiceWake] stream error: {}", e),
+                    None,
+                )
+                .map_err(|e| format!("启动采集流失败: {}", e))?,
             fmt => return Err(format!("不支持的音频格式: {:?}", fmt)),
         };
 
@@ -185,7 +234,9 @@ fn run_vad_loop(app: AppHandle, cmd_rx: mpsc::Receiver<WakeCmd>) {
         let mut utterance_start_ms: u128 = 0;
 
         loop {
-            if let Ok(WakeCmd::Stop) = cmd_rx.try_recv() { break; }
+            if let Ok(WakeCmd::Stop) = cmd_rx.try_recv() {
+                break;
+            }
 
             let rms = state.lock().map(|s| s.smoothed_rms()).unwrap_or(0.0);
             let is_speech = rms >= cfg.speech_rms;
@@ -193,18 +244,33 @@ fn run_vad_loop(app: AppHandle, cmd_rx: mpsc::Receiver<WakeCmd>) {
             let now_ms = thread_start.elapsed().as_millis();
 
             if !recording {
-                if is_speech { speech_ms += 20; silence_ms = 0; } else { speech_ms = 0; }
+                if is_speech {
+                    speech_ms += 20;
+                    silence_ms = 0;
+                } else {
+                    speech_ms = 0;
+                }
                 if speech_ms >= cfg.speech_trigger_ms {
                     recording = true;
                     speech_ms = 0;
                     silence_ms = 0;
                     utterance_start_ms = now_ms;
                     // Begin capturing samples.
-                    if let Ok(mut s) = state.lock() { s.recording_flag = true; s.samples.clear(); }
-                    let _ = app.emit("voice-wake", serde_json::json!({ "state": "wake_detected" }));
+                    if let Ok(mut s) = state.lock() {
+                        s.recording_flag = true;
+                        s.samples.clear();
+                    }
+                    let _ = app.emit(
+                        "voice-wake",
+                        serde_json::json!({ "state": "wake_detected" }),
+                    );
                 }
             } else {
-                if is_silence { silence_ms += 20; } else { silence_ms = 0; }
+                if is_silence {
+                    silence_ms += 20;
+                } else {
+                    silence_ms = 0;
+                }
                 let elapsed = (now_ms - utterance_start_ms) as u64;
                 if silence_ms >= cfg.silence_end_ms || elapsed >= cfg.max_utterance_ms {
                     recording = false;
@@ -218,13 +284,19 @@ fn run_vad_loop(app: AppHandle, cmd_rx: mpsc::Receiver<WakeCmd>) {
                     };
                     match wav_result {
                         Ok(b64) => {
-                            let _ = app.emit("voice-wake", serde_json::json!({
-                                "state": "captured",
-                                "data": format!("data:audio/wav;base64,{}", b64),
-                            }));
+                            let _ = app.emit(
+                                "voice-wake",
+                                serde_json::json!({
+                                    "state": "captured",
+                                    "data": format!("data:audio/wav;base64,{}", b64),
+                                }),
+                            );
                         }
                         Err(e) => {
-                            let _ = app.emit("voice-wake", serde_json::json!({ "state": "error", "error": e }));
+                            let _ = app.emit(
+                                "voice-wake",
+                                serde_json::json!({ "state": "error", "error": e }),
+                            );
                         }
                     }
                 }
@@ -238,20 +310,35 @@ fn run_vad_loop(app: AppHandle, cmd_rx: mpsc::Receiver<WakeCmd>) {
     })();
 
     if let Err(e) = result {
-        let _ = app.emit("voice-wake", serde_json::json!({ "state": "error", "error": e }));
+        let _ = app.emit(
+            "voice-wake",
+            serde_json::json!({ "state": "error", "error": e }),
+        );
     }
     if let Ok(mut guard) = WAKE.lock() {
-        if let Some(ref mut st) = *guard { st.running = false; }
+        if let Some(ref mut st) = *guard {
+            st.running = false;
+        }
     }
 }
 
 fn finalize_wav(samples: &[i16], sample_rate: u32, channels: u16) -> Result<String, String> {
-    let spec = hound::WavSpec { channels, sample_rate, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+    let spec = hound::WavSpec {
+        channels,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
     let mut buf: Vec<u8> = Vec::new();
     {
-        let mut writer = hound::WavWriter::new(Cursor::new(&mut buf), spec).map_err(|e| format!("WAV writer: {}", e))?;
-        for &s in samples { let _ = writer.write_sample(s); }
-        writer.finalize().map_err(|e| format!("WAV finalize: {}", e))?;
+        let mut writer = hound::WavWriter::new(Cursor::new(&mut buf), spec)
+            .map_err(|e| format!("WAV writer: {}", e))?;
+        for &s in samples {
+            let _ = writer.write_sample(s);
+        }
+        writer
+            .finalize()
+            .map_err(|e| format!("WAV finalize: {}", e))?;
     }
     Ok(STANDARD.encode(&buf))
 }

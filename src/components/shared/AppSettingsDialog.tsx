@@ -27,7 +27,7 @@ import { notifications } from '@/services/notifications';
 import { SKIN_REGISTRY, type PetSkin } from '@/pet/skins';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { changeLanguage } from '@/i18n';
-import type { AegisTheme } from '@/theme';
+import type { AegisTheme } from '@/theme/types';
 import { APP_LANGUAGE_OPTIONS, type SupportedLanguage } from '@/i18n/languages';
 import { StatusDot } from '@/components/shared/StatusDot';
 import clsx from 'clsx';

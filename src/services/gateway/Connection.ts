@@ -8,6 +8,7 @@
 import { startPolling, stopPolling } from '@/stores/gatewayDataStore';
 import { MessageRouter, isAuthError } from './messageRouter';
 import { APP_VERSION } from '@/hooks/useAppVersion';
+import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import i18n from '@/i18n';
 
 // OpenClaw 2026.5.x introduced a newer WS protocol while older installs still
@@ -169,7 +170,7 @@ export class GatewayConnection {
     }, this.HEARTBEAT_DEAD_MS / 2);
 
     this.heartbeatTimer = setTimeout(() => {
-      console.warn('[GW] ❌ No traffic for', this.HEARTBEAT_DEAD_MS / 1000, 's — connection dead');
+      debugWarn('gateway', '[GW] ❌ No traffic for', this.HEARTBEAT_DEAD_MS / 1000, 's — connection dead');
       this.ws?.close(4000, 'Heartbeat timeout');
     }, this.HEARTBEAT_DEAD_MS);
   }
@@ -185,16 +186,16 @@ export class GatewayConnection {
 
   enqueueMessage(message: string, attachments?: any[], sessionKey?: string) {
     if (this.messageQueue.length >= this.MAX_QUEUE_SIZE) {
-      console.warn('[GW] Queue full — dropping oldest message');
+      debugWarn('gateway', '[GW] Queue full — dropping oldest message');
       this.messageQueue.shift();
     }
     this.messageQueue.push({ message, attachments, sessionKey });
-    console.log('[GW] 📦 Queued message — queue size:', this.messageQueue.length);
+    debugLog('gateway', '[GW] 📦 Queued message — queue size:', this.messageQueue.length);
   }
 
   private async flushQueue() {
     if (this.messageQueue.length === 0) return;
-    console.log('[GW] 📤 Flushing', this.messageQueue.length, 'queued messages');
+    debugLog('gateway', '[GW] 📤 Flushing', this.messageQueue.length, 'queued messages');
     const queued = [...this.messageQueue];
     this.messageQueue = [];
     for (const item of queued) {
@@ -206,7 +207,7 @@ export class GatewayConnection {
           ...(item.attachments?.length ? { attachments: item.attachments } : {}),
         });
       } catch (err) {
-        console.error('[GW] Failed to flush queued message:', err);
+        debugError('gateway', '[GW] Failed to flush queued message:', err);
         this.messageQueue.unshift(item);
         break;
       }
@@ -255,7 +256,7 @@ export class GatewayConnection {
     this.contextSent = false; // Reset context injection for new connection
     this.emitStatus();
 
-    console.log('[GW] Connecting:', url);
+    debugLog('gateway', '[GW] Connecting:', url);
 
     // Capture the WS instance locally so all handlers can guard against stale
     // close/open events from a previous connection being replaced mid-flight.
@@ -268,14 +269,14 @@ export class GatewayConnection {
 
     ws.onopen = () => {
       if (this.ws !== ws) return; // stale — a newer connection replaced us
-      console.log('[GW] Open — waiting for connect.challenge...');
+      debugLog('gateway', '[GW] Open — waiting for connect.challenge...');
       this.challengeNonce = null;
       // Wait up to 2s for challenge nonce (v2 auth).
       // If it doesn't arrive, proceed with token-only auth.
       this.connectTimer = setTimeout(() => {
         if (this.ws !== ws) return; // stale
         if (this.connecting) {
-          console.log('[GW] No challenge received — proceeding with token-only auth');
+          debugLog('gateway', '[GW] No challenge received — proceeding with token-only auth');
           this.sendHandshake();
         }
       }, 2000);
@@ -287,13 +288,13 @@ export class GatewayConnection {
         const msg = JSON.parse(event.data);
         this.handleMessage(msg);
       } catch (e) {
-        console.error('[GW] Parse error:', e);
+        debugError('gateway', '[GW] Parse error:', e);
       }
     };
 
     ws.onclose = (event) => {
       if (this.ws !== ws) return; // stale — ignore close from a superseded WS
-      console.log('[GW] Closed:', event.code, event.reason);
+      debugLog('gateway', '[GW] Closed:', event.code, event.reason);
       this.stopHeartbeat();
       stopPolling();
       this.connected = false;
@@ -318,7 +319,7 @@ export class GatewayConnection {
     };
 
     ws.onerror = (event) => {
-      console.error('[GW] Error:', event);
+      debugError('gateway', '[GW] Error:', event);
       this.lastError = 'Connection error';
     };
   }
@@ -348,7 +349,7 @@ export class GatewayConnection {
     if (this.reconnectAttempt >= this.maxReconnects) return;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempt), 30000);
     this.reconnectAttempt++;
-    console.log(`[GW] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt})`);
+    debugLog('gateway', `[GW] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt})`);
     this.reconnectTimer = setTimeout(() => this.connect(this.url, this.token), delay);
   }
 
@@ -370,9 +371,9 @@ export class GatewayConnection {
       id,
       {
       resolve: (response: any) => {
-        console.log('[GW] Handshake response:', JSON.stringify(response).substring(0, 200));
+        debugLog('gateway', '[GW] Handshake response:', JSON.stringify(response).substring(0, 200));
         if (response.ok !== false && (response.payload?.type === 'hello-ok' || response.type === 'hello-ok')) {
-          console.log('[GW] ✅ Connected!');
+          debugLog('gateway', '[GW] ✅ Connected!');
           const auth = response.auth || response.payload?.auth;
           if (auth?.deviceToken && window.aegis?.pairing?.saveToken) {
             window.aegis.pairing.saveToken(auth.deviceToken).catch(() => {});
@@ -392,7 +393,7 @@ export class GatewayConnection {
           this.flushQueue();
         } else {
           const err = response.error?.message || JSON.stringify(response);
-          console.error('[GW] ❌ Handshake failed:', err);
+          debugError('gateway', '[GW] ❌ Handshake failed:', err);
           this.connected = false;
           this.connecting = false;
           this.emitStatus({ error: err });
@@ -400,7 +401,7 @@ export class GatewayConnection {
       },
       reject: (err: any) => {
         const errStr = String(err);
-        console.error('[GW] ❌ Handshake rejected:', errStr);
+        debugError('gateway', '[GW] ❌ Handshake rejected:', errStr);
         this.connecting = false;
         if (isAuthError({ message: errStr })) {
           this.pairingRequired = true;
@@ -433,15 +434,15 @@ export class GatewayConnection {
             signedAt: signed.signedAt,
             nonce: signed.nonce,
           };
-          console.log('[GW] 🔑 Device identity attached (v2):', signed.deviceId.substring(0, 16) + '...');
+          debugLog('gateway', '[GW] 🔑 Device identity attached (v2):', signed.deviceId.substring(0, 16) + '...');
         } else {
-          console.warn('[GW] Device signing returned no signature — skipping device auth');
+          debugWarn('gateway', '[GW] Device signing returned no signature — skipping device auth');
         }
       } else if (!this.challengeNonce) {
-        console.log('[GW] No challenge nonce — using token-only auth');
+        debugLog('gateway', '[GW] No challenge nonce — using token-only auth');
       }
     } catch (err) {
-      console.warn('[GW] Device identity unavailable:', err);
+      debugWarn('gateway', '[GW] Device identity unavailable:', err);
     }
 
     const platform = detectPlatform();
@@ -521,7 +522,7 @@ export class GatewayConnection {
       .on('event', (msg) => {
         const nonce = msg.payload?.nonce;
         if (nonce && typeof nonce === 'string') {
-          console.log('[GW] 🔑 Received connect.challenge with nonce');
+          debugLog('gateway', '[GW] 🔑 Received connect.challenge with nonce');
           this.challengeNonce = nonce;
           if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
           this.sendHandshake();
@@ -539,7 +540,7 @@ export class GatewayConnection {
           const error = msg.error || {};
           const errorMsg = error.message || 'Request failed';
           if (isAuthError(error)) {
-            console.warn('[GW] 🔑 Scope/auth error detected:', errorMsg);
+            debugWarn('gateway', '[GW] 🔑 Scope/auth error detected:', errorMsg);
             this.callbacks?.onScopeError?.(errorMsg);
           }
           pending.reject(errorMsg);
@@ -587,7 +588,7 @@ export class GatewayConnection {
     if (this.pairingRetryTimer) clearTimeout(this.pairingRetryTimer);
     this.pairingRetryTimer = setTimeout(() => {
       if (this.pairingRequired && !this.connected && !this.connecting) {
-        console.log('[GW] 🔑 Pairing retry...');
+        debugLog('gateway', '[GW] 🔑 Pairing retry...');
         this.connect(this.url, this.token);
       }
     }, this.PAIRING_RETRY_MS);
@@ -612,7 +613,7 @@ export class GatewayConnection {
 
   /** Reconnect with a new token (after pairing approval) */
   reconnectWithToken(newToken: string) {
-    console.log('[GW] 🔑 Reconnecting with new token');
+    debugLog('gateway', '[GW] 🔑 Reconnecting with new token');
     this.stopHeartbeat();
     this.stopPairingRetry();
     if (this.reconnectTimer) {
@@ -633,7 +634,7 @@ export class GatewayConnection {
   /** Request pairing via Gateway HTTP API */
   async requestPairing(): Promise<{ code: string; deviceId: string }> {
     const httpUrl = this.getHttpBaseUrl();
-    console.log('[GW] 🔑 Requesting pairing from:', httpUrl);
+    debugLog('gateway', '[GW] 🔑 Requesting pairing from:', httpUrl);
     const res = await fetch(`${httpUrl}/v1/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -664,9 +665,9 @@ export class GatewayConnection {
   async ensureReasoningStream(sessionKey = 'agent:main:main') {
     try {
       await this.request('sessions.patch', { key: sessionKey, reasoningLevel: 'on' }, { timeoutMs: 15_000 });
-      console.log('[GW] 🧠 Reasoning visibility enabled');
+      debugLog('gateway', '[GW] 🧠 Reasoning visibility enabled');
     } catch (err) {
-      console.warn('[GW] Could not enable reasoning:', err);
+      debugWarn('gateway', '[GW] Could not enable reasoning:', err);
     }
   }
 }

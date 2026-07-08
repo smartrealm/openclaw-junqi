@@ -72,48 +72,126 @@ struct AgentSpec {
 /// All known agent templates. Ordered by popularity / default preference.
 /// `resume_flag` + `reports_tool_calls` are stored for future resume / tool-call UI.
 static AGENTS: &[AgentSpec] = &[
-    AgentSpec { bin: "claude", label: "Claude Code",
-        perm_flags: Some(("--permission-mode default", "--permission-mode acceptEdits", "--dangerously-skip-permissions")),
-        prompt_flag: None, resume_flag: Some("--resume"), reports_tool_calls: true },
-    AgentSpec { bin: "codex", label: "Codex",
-        perm_flags: Some(("--permission-mode default", "--permission-mode auto", "--dangerously-bypass-approvals")),
-        prompt_flag: Some("--"), resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "gemini", label: "Gemini CLI",
+    AgentSpec {
+        bin: "claude",
+        label: "Claude Code",
+        perm_flags: Some((
+            "--permission-mode default",
+            "--permission-mode acceptEdits",
+            "--dangerously-skip-permissions",
+        )),
+        prompt_flag: None,
+        resume_flag: Some("--resume"),
+        reports_tool_calls: true,
+    },
+    AgentSpec {
+        bin: "codex",
+        label: "Codex",
+        perm_flags: Some((
+            "--permission-mode default",
+            "--permission-mode auto",
+            "--dangerously-bypass-approvals",
+        )),
+        prompt_flag: Some("--"),
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "gemini",
+        label: "Gemini CLI",
         perm_flags: None,
-        prompt_flag: None, resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "cursor-agent", label: "Cursor CLI",
+        prompt_flag: None,
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "cursor-agent",
+        label: "Cursor CLI",
         perm_flags: None,
-        prompt_flag: None, resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "amp", label: "Amp",
+        prompt_flag: None,
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "amp",
+        label: "Amp",
         perm_flags: None,
-        prompt_flag: Some("-x"), resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "copilot", label: "Copilot CLI",
+        prompt_flag: Some("-x"),
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "copilot",
+        label: "Copilot CLI",
         perm_flags: None,
-        prompt_flag: Some("-p"), resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "grok", label: "Grok Build",
+        prompt_flag: Some("-p"),
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "grok",
+        label: "Grok Build",
         perm_flags: None,
-        prompt_flag: None, resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "pi", label: "Pi",
+        prompt_flag: None,
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "pi",
+        label: "Pi",
         perm_flags: None,
-        prompt_flag: Some("-p"), resume_flag: Some("--session"), reports_tool_calls: true },
-    AgentSpec { bin: "kiro-cli", label: "Kiro CLI",
+        prompt_flag: Some("-p"),
+        resume_flag: Some("--session"),
+        reports_tool_calls: true,
+    },
+    AgentSpec {
+        bin: "kiro-cli",
+        label: "Kiro CLI",
         perm_flags: None,
-        prompt_flag: None, resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "agy", label: "Antigravity CLI",
+        prompt_flag: None,
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "agy",
+        label: "Antigravity CLI",
         perm_flags: None,
-        prompt_flag: Some("-i"), resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "kimi", label: "Kimi Code",
+        prompt_flag: Some("-i"),
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "kimi",
+        label: "Kimi Code",
         perm_flags: None,
-        prompt_flag: Some("-p"), resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "opencode", label: "OpenCode",
+        prompt_flag: Some("-p"),
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "opencode",
+        label: "OpenCode",
         perm_flags: None,
-        prompt_flag: None, resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "aider", label: "Aider",
+        prompt_flag: None,
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "aider",
+        label: "Aider",
         perm_flags: None,
-        prompt_flag: Some("--msg"), resume_flag: None, reports_tool_calls: false },
-    AgentSpec { bin: "qwen", label: "Qwen CLI",
+        prompt_flag: Some("--msg"),
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
+    AgentSpec {
+        bin: "qwen",
+        label: "Qwen CLI",
         perm_flags: None,
-        prompt_flag: None, resume_flag: None, reports_tool_calls: false },
+        prompt_flag: None,
+        resume_flag: None,
+        reports_tool_calls: false,
+    },
 ];
 
 fn find_agent(agent_id: &str) -> Option<&'static AgentSpec> {
@@ -126,8 +204,12 @@ fn list_agent_ids() -> Vec<&'static str> {
 
 /// Map `permission_mode` to the CLI flag the agent expects.
 fn permission_flag(agent: &str, mode: &str) -> Vec<String> {
-    let Some(spec) = find_agent(agent) else { return Vec::new() };
-    let Some((ask, auto, full)) = spec.perm_flags else { return Vec::new() };
+    let Some(spec) = find_agent(agent) else {
+        return Vec::new();
+    };
+    let Some((ask, auto, full)) = spec.perm_flags else {
+        return Vec::new();
+    };
     let flag = match mode {
         "ask" => ask,
         "auto_edit" => auto,
@@ -163,11 +245,13 @@ pub async fn run_task(
         .map_err(|e| e.to_string())?;
 
     // ── Build command from agent spec ──────────────────────────────────────
-    let spec = find_agent(&agent).ok_or_else(|| format!(
-        "Unknown agent '{}'. Supported: {}",
-        agent,
-        list_agent_ids().join(", ")
-    ))?;
+    let spec = find_agent(&agent).ok_or_else(|| {
+        format!(
+            "Unknown agent '{}'. Supported: {}",
+            agent,
+            list_agent_ids().join(", ")
+        )
+    })?;
 
     let mut cmd = CommandBuilder::new(spec.bin);
     cmd.cwd(&project_path);
@@ -218,7 +302,12 @@ pub async fn run_task(
     spawn_toolcall_watcher(app.clone(), task_id.clone());
 
     // ── Session watcher: discover JSONL in background ────────────────────────
-    spawn_session_watcher(app.clone(), task_id.clone(), project_path.clone(), agent.clone());
+    spawn_session_watcher(
+        app.clone(),
+        task_id.clone(),
+        project_path.clone(),
+        agent.clone(),
+    );
 
     // ── Background reader: batched flush via Channel ─────────────────────────
     let app_for_reader = app.clone();
@@ -245,8 +334,7 @@ pub async fn run_task(
 
             // Flush if batch is full or interval elapsed.
             let should_flush = buffer.len() >= PTY_EMIT_MAX_BATCH_BYTES
-                || (!buffer.is_empty()
-                    && last_flush.elapsed() >= PTY_EMIT_FLUSH_INTERVAL);
+                || (!buffer.is_empty() && last_flush.elapsed() >= PTY_EMIT_FLUSH_INTERVAL);
             if should_flush {
                 let payload = String::from_utf8_lossy(&buffer).into_owned();
                 buffer.clear();
@@ -269,14 +357,30 @@ pub async fn run_task(
             let registry = pty_registry().lock().unwrap();
             if let Some(handle) = registry.get(&task_id_for_reader) {
                 if let Some(handles) = handle.lock().unwrap().as_ref() {
-                    handles.child.lock().unwrap().try_wait().ok().flatten().map(|s| s.success()).unwrap_or(true)
-                } else { true }
-            } else { true }
+                    handles
+                        .child
+                        .lock()
+                        .unwrap()
+                        .try_wait()
+                        .ok()
+                        .flatten()
+                        .map(|s| s.success())
+                        .unwrap_or(true)
+                } else {
+                    true
+                }
+            } else {
+                true
+            }
         };
 
-        let final_status = if closed.load(Ordering::Relaxed) { "cancelled" }
-        else if child_exited_ok { "done" }
-        else { "failed" };
+        let final_status = if closed.load(Ordering::Relaxed) {
+            "cancelled"
+        } else if child_exited_ok {
+            "done"
+        } else {
+            "failed"
+        };
 
         // Cleanup on exit.
         pty_registry().lock().unwrap().remove(&task_id_for_reader);
@@ -298,7 +402,11 @@ pub async fn run_task(
         super::notification::push_local_notification(
             notif_level,
             notif_title,
-            &format!("Agent task {} ended with status: {}", &task_id_for_reader[..task_id_for_reader.len().min(16)], final_status),
+            &format!(
+                "Agent task {} ended with status: {}",
+                &task_id_for_reader[..task_id_for_reader.len().min(16)],
+                final_status
+            ),
             None,
         );
     });
@@ -316,12 +424,7 @@ pub async fn run_task(
 // This background task polls the expected directory for new files (by mtime
 // after task start time), and emits `task-session` when a match is found.
 
-fn spawn_session_watcher(
-    app: AppHandle,
-    task_id: String,
-    project_path: String,
-    agent: String,
-) {
+fn spawn_session_watcher(app: AppHandle, task_id: String, project_path: String, agent: String) {
     std::thread::spawn(move || {
         let start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -330,7 +433,9 @@ fn spawn_session_watcher(
 
         // Determine scan directory.
         let scan_dir = if agent == "codex" {
-            std::path::PathBuf::from(&project_path).join(".codex").join("sessions")
+            std::path::PathBuf::from(&project_path)
+                .join(".codex")
+                .join("sessions")
         } else {
             // Claude: resolve ~/.claude/projects/<hash> by scanning subdirs
             let home = dirs_next().unwrap_or_else(|| {
@@ -379,8 +484,15 @@ fn spawn_session_watcher(
                                     super::notification::push_local_notification(
                                         "info",
                                         "Session discovered",
-                                        &format!("Task {} session file found at {}", &task_id[..task_id.len().min(12)], session_path_str),
-                                        Some(&format!("/session?path={}", url_encode(&session_path_str))),
+                                        &format!(
+                                            "Task {} session file found at {}",
+                                            &task_id[..task_id.len().min(12)],
+                                            session_path_str
+                                        ),
+                                        Some(&format!(
+                                            "/session?path={}",
+                                            url_encode(&session_path_str)
+                                        )),
                                     );
                                     return;
                                 }
@@ -407,7 +519,10 @@ fn spawn_session_watcher(
                     super::notification::push_local_notification(
                         "info",
                         "Session discovered",
-                        &format!("Task {} session file found", &task_id[..task_id.len().min(12)]),
+                        &format!(
+                            "Task {} session file found",
+                            &task_id[..task_id.len().min(12)]
+                        ),
                         Some(&format!("/session?path={}", url_encode(&session_path_str))),
                     );
                     return;
@@ -449,23 +564,35 @@ fn spawn_toolcall_watcher(app: tauri::AppHandle, task_id: String) {
                 break;
             }
         }
-        let Some(path) = session_path else { return; };
+        let Some(path) = session_path else {
+            return;
+        };
 
         // Tail JSONL file: every line is a Claude / Codex session entry.
         // Count tool_use blocks by name.
         let mut last_size: u64 = 0;
         loop {
             std::thread::sleep(std::time::Duration::from_millis(500));
-            let Ok(text) = std::fs::read_to_string(&path) else { continue; };
-            if (text.len() as u64) <= last_size { continue; }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if (text.len() as u64) <= last_size {
+                continue;
+            }
             last_size = text.len() as u64;
 
             // Count tool names in the new portion.
-            let mut bash = 0u32; let mut edit = 0u32; let mut read = 0u32; let mut other = 0u32;
+            let mut bash = 0u32;
+            let mut edit = 0u32;
+            let mut read = 0u32;
+            let mut other = 0u32;
             let mut latest_tool = String::new();
             for line in text.lines() {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-                    if let Some(name) = v.pointer("/message/content/0/name").and_then(|n| n.as_str()) {
+                    if let Some(name) = v
+                        .pointer("/message/content/0/name")
+                        .and_then(|n| n.as_str())
+                    {
                         latest_tool = name.to_string();
                         match name.to_lowercase().as_str() {
                             "bash" => bash += 1,
@@ -593,7 +720,9 @@ pub async fn agent_send_input(task_id: String, data: String) -> Result<(), Strin
             return Ok(());
         };
         let mut writer = handles.writer.lock().unwrap();
-        writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        writer
+            .write_all(data.as_bytes())
+            .map_err(|e| e.to_string())?;
         writer.flush().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -612,7 +741,12 @@ pub async fn agent_resize_pty(task_id: String, cols: u16, rows: u16) -> Result<(
         if let Some(handles) = handle_guard.as_ref() {
             handles
                 .master
-                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
                 .map_err(|e| e.to_string())?;
         }
     }

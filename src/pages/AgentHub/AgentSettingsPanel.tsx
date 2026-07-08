@@ -10,7 +10,7 @@
 // to hydrate the form with real values.
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -325,13 +325,14 @@ export function AgentSettingsPanel({
 
   // ── Fetch config on open (or when agent changes) ──
   useEffect(() => {
-    if (!agent) {
+    const currentAgent = agentRef.current;
+    if (!currentAgent) {
       setInitializedForId(null);
       return;
     }
 
     // Skip if already initialized for this exact agent
-    if (agent.id === initializedForId) return;
+    if (currentAgent.id === initializedForId) return;
 
     let cancelled = false;
     setLoadingConfig(true);
@@ -348,7 +349,7 @@ export function AgentSettingsPanel({
 
         // Find this agent's entry in config.agents.list
         const agentConfig = snap?.config?.agents?.list?.find(
-          (a: ConfigAgent) => a.id === agent.id
+          (a: ConfigAgent) => a.id === currentAgent.id
         );
 
         // Resolve model: config first, then agentSessions fallback
@@ -365,10 +366,11 @@ export function AgentSettingsPanel({
           : (rawDefaultModel && typeof rawDefaultModel === 'object' && 'primary' in rawDefaultModel)
             ? String((rawDefaultModel as Record<string, unknown>).primary ?? '')
             : '';
-        const sessionModel = agentSessions.length > 0 ? agentSessions[0].model : '';
+        const currentAgentSessions = agentSessionsRef.current;
+        const sessionModel = currentAgentSessions.length > 0 ? currentAgentSessions[0].model : '';
         const resolvedModel = cfgModel || defaultModel || sessionModel || '';
-        const resolvedName = agentConfig?.name ?? agent.name ?? '';
-        const resolvedWorkspace = agentConfig?.workspace ?? agent.workspace ?? '';
+        const resolvedName = agentConfig?.name ?? currentAgent.name ?? '';
+        const resolvedWorkspace = agentConfig?.workspace ?? currentAgent.workspace ?? '';
 
         setAgentName(resolvedName);
         setOrigName(resolvedName);
@@ -377,24 +379,23 @@ export function AgentSettingsPanel({
         setSelectedModel(resolvedModel);
         setOrigModel(resolvedModel);
         setModelInherited(!cfgModel && !!defaultModel);
-        setInitializedForId(agent.id);
+        setInitializedForId(currentAgent.id);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
-        setConfigError(msg || t('agentSettings.failedToLoadConfig', 'Failed to load config'));
+        setConfigError(msg || tRef.current('agentSettings.failedToLoadConfig', 'Failed to load config'));
       })
       .finally(() => {
         if (!cancelled) setLoadingConfig(false);
       });
 
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent?.id]); // Only re-run when the agent ID changes
+  }, [agent?.id, initialShowWorkspaceFiles, initializedForId]); // Only re-run when the agent ID changes or initialization state resets
 
   // ── Fetch available models when panel opens ──
   useEffect(() => {
-    if (!agent) return;
+    if (!agentRef.current) return;
     let cancelled = false;
     setLoadingModels(true);
 
@@ -404,11 +405,12 @@ export function AgentSettingsPanel({
         const parsed = parseModelsResponse(res);
 
         // If current model isn't in the list, prepend it so it shows in the dropdown
-        if (selectedModel && !parsed.find(m => modelsMatch(m.id, selectedModel))) {
+        const currentSelectedModel = selectedModelRef.current;
+        if (currentSelectedModel && !parsed.find(m => modelsMatch(m.id, currentSelectedModel))) {
           parsed.unshift({
-            id: selectedModel,
+            id: currentSelectedModel,
             alias: undefined,
-            displayName: `${selectedModel.split('/').pop()} — ${selectedModel} (current)`,
+            displayName: `${currentSelectedModel.split('/').pop()} — ${currentSelectedModel} (current)`,
           });
         }
 
@@ -418,9 +420,6 @@ export function AgentSettingsPanel({
       .finally(() => { if (!cancelled) setLoadingModels(false); });
 
     return () => { cancelled = true; };
-  // We intentionally only re-run on agent change, not on selectedModel change,
-  // to avoid re-fetching whenever the user picks a different model.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent?.id]);
 
   // ── hasChanges: disable Save button when nothing is different ──
@@ -429,6 +428,14 @@ export function AgentSettingsPanel({
   const nameChanged = trimmedAgentName !== origName;
   const workspaceChanged = trimmedWorkspace !== origWorkspace;
   const modelChanged = !modelsMatch(selectedModel, origModel);
+  const agentRef = useRef(agent);
+  const agentSessionsRef = useRef(agentSessions);
+  const selectedModelRef = useRef(selectedModel);
+  const tRef = useRef(t);
+  agentRef.current = agent;
+  agentSessionsRef.current = agentSessions;
+  selectedModelRef.current = selectedModel;
+  tRef.current = t;
   const hasChanges = nameChanged || workspaceChanged || modelChanged;
   const canSave = hasChanges && !!trimmedAgentName && !saving && !loadingConfig && !configError;
 
@@ -1299,9 +1306,8 @@ export function AgentSettingsPanel({
                       className="rounded-xl border divide-y overflow-hidden"
                       style={{
                         borderColor: themeAlpha('overlay', 0.08),
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        ['--tw-divide-opacity' as any]: 1,
-                      }}
+                        '--tw-divide-opacity': 1,
+                      } as CSSProperties & { '--tw-divide-opacity': number }}
                     >
                       {/* Workspace path */}
                       {agent.workspace && (

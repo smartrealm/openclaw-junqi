@@ -83,8 +83,7 @@ export function AdvancedTab({ config, onChange }: AdvancedTabProps) {
       setJsonStr(JSON.stringify(config, null, 2));
       setJsonError(null);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config]);
+  }, [config, isEdited]);
 
   // ── Env-var add form ──
   const [newVarKey,   setNewVarKey]   = useState('');

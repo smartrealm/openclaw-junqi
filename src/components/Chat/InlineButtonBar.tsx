@@ -13,7 +13,6 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -47,12 +46,12 @@ export function InlineButtonBar({ buttons, onCallback }: InlineButtonBarProps) {
   if (!buttons || buttons.length === 0) return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="px-5 py-1"
+    <div
+      className="px-5 py-1 animate-[inline-button-bar-in_180ms_ease-out]"
     >
+      <style>
+        {'@keyframes inline-button-bar-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}'}
+      </style>
       <div className="space-y-1.5 max-w-[85%]">
         {buttons.map((row, rowIdx) => (
           <div key={rowIdx} className="flex flex-wrap gap-1.5">
@@ -86,28 +85,6 @@ export function InlineButtonBar({ buttons, onCallback }: InlineButtonBarProps) {
           </div>
         ))}
       </div>
-    </motion.div>
+    </div>
   );
-}
-
-/** @deprecated Replaced by extractInlineButtonRows in ContentParser.ts — will be removed in v6.1 */
-/**
- * Extract inline buttons from a message tool call input.
- * Returns null if no buttons found.
- */
-export function extractInlineButtons(toolName: string, toolInput?: Record<string, any>): InlineButton[][] | null {
-  if (toolName !== 'message') return null;
-  if (!toolInput?.buttons || !Array.isArray(toolInput.buttons)) return null;
-
-  // Validate structure: array of arrays of {text, callback_data}
-  const rows = toolInput.buttons
-    .filter((row: any) => Array.isArray(row))
-    .map((row: any) =>
-      row.filter((btn: any) =>
-        btn && typeof btn.text === 'string' && typeof btn.callback_data === 'string'
-      )
-    )
-    .filter((row: any[]) => row.length > 0);
-
-  return rows.length > 0 ? rows : null;
 }

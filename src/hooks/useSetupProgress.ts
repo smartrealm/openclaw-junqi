@@ -16,7 +16,7 @@
 // independent.
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -36,6 +36,7 @@ interface RawSetupProgressDetail extends SetupProgressDetail {
 
 export function useSetupProgress(filterStep?: string): SetupProgressDetail | null {
   const { t } = useTranslation();
+  const initialTRef = useRef(t);
   const [latest, setLatest] = useState<SetupProgressDetail | null>(null);
 
   useEffect(() => {
@@ -47,7 +48,7 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
       if (filterStep && d.step !== filterStep) return;
       const progress = typeof d.progress === 'number' ? d.progress : 0;
       const key = typeof d.key === 'string' ? d.key : undefined;
-      const display = key ? t(key, d.params ?? {}) : d.message;
+      const display = key ? initialTRef.current(key, d.params ?? {}) : d.message;
       // If t() returned the key unchanged (no translation registered),
       // gracefully fall back to the raw message string.
       const message = display === key ? d.message : display;
@@ -74,10 +75,6 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
       window.removeEventListener('aegis:gateway-progress', onLocal);
       unlisten?.();
     };
-  // We want the *initial* render's t() — re-subscribing on i18n change
-  // for an already-displayed message adds churn; the next event will pick
-  // up the new locale naturally anyway. eslint-disable is intentional.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterStep]);
 
   return latest;

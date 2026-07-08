@@ -6,7 +6,6 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, CheckCircle2, Info, AlertTriangle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNotificationStore, type Toast, type NotificationType } from '@/stores/notificationStore';
@@ -31,6 +30,7 @@ function ToastItem({ toast }: { toast: Toast }) {
   const { removeToast } = useNotificationStore();
   const { t } = useTranslation();
   const rtl = isRTL();
+  const [entered, setEntered] = useState(false);
 
   // Auto-expire: only count down while window is focused.
   // Pauses when minimized/background, resumes with fresh 5s on focus.
@@ -72,7 +72,12 @@ function ToastItem({ toast }: { toast: Toast }) {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('blur', onBlur);
     };
-  }, [toast.id, removeToast]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [remainingMs, removeToast, toast.id]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const cfg = TYPE_CONFIG[toast.type] ?? TYPE_CONFIG.info;
   const { Icon, colorKey } = cfg;
@@ -89,14 +94,8 @@ function ToastItem({ toast }: { toast: Toast }) {
   };
 
   return (
-    <motion.div
-      layout
+    <div
       key={toast.id}
-      // Slide in from the end side, fade out on exit
-      initial={{ opacity: 0, x: rtl ? -60 : 60, scale: 0.95 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, x: rtl ? -60 : 60, scale: 0.95, transition: { duration: 0.2 } }}
-      transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.8 }}
       onClick={handleClick}
       role="alert"
       aria-live="polite"
@@ -106,6 +105,9 @@ function ToastItem({ toast }: { toast: Toast }) {
         background: 'var(--aegis-bg-solid)',
         border: `1px solid ${themeAlpha('primary', 0.25)}`,
         boxShadow: `0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 ${themeAlpha('primary', 0.08)}`,
+        opacity: entered ? 1 : 0,
+        transform: entered ? 'translateX(0) scale(1)' : `translateX(${rtl ? -60 : 60}px) scale(0.96)`,
+        transition: 'opacity 160ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 150ms ease',
       }}
       className="
         relative flex items-start gap-3 rounded-xl p-4
@@ -155,7 +157,7 @@ function ToastItem({ toast }: { toast: Toast }) {
 
       {/* Bottom progress bar — drains while window is focused, pauses on blur */}
       <ProgressBar colorKey={colorKey} durationMs={remainingMs} rtl={rtl} />
-    </motion.div>
+    </div>
   );
 }
 
@@ -175,17 +177,16 @@ function ProgressBar({ colorKey, durationMs, rtl }: { colorKey: string; duration
   }, []);
 
   return (
-    <motion.div
+    <div
       className="absolute bottom-0 start-0 h-[2px] w-full rounded-b-xl"
-      initial={{ scaleX: 1 }}
-      animate={{ scaleX: paused ? undefined : 0 }}
-      transition={paused ? undefined : {
-        duration: Math.max(0, durationMs) / 1000,
-        ease: 'linear',
-      }}
       style={{
         background: themeAlpha(colorKey, 0.5),
         transformOrigin: rtl ? 'right' : 'left',
+        animationName: 'toast-progress-drain',
+        animationDuration: `${Math.max(0, durationMs)}ms`,
+        animationTimingFunction: 'linear',
+        animationFillMode: 'forwards',
+        animationPlayState: paused ? 'paused' : 'running',
       }}
     />
   );
@@ -206,13 +207,14 @@ export function ToastContainer() {
       style={{ zIndex: 2147483000 }}
       aria-label="Notifications"
     >
-      <AnimatePresence mode="sync">
-        {visible.map((toast) => (
-          <div key={toast.id} className="pointer-events-auto">
-            <ToastItem toast={toast} />
-          </div>
-        ))}
-      </AnimatePresence>
+      <style>
+        {'@keyframes toast-progress-drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}'}
+      </style>
+      {visible.map((toast) => (
+        <div key={toast.id} className="pointer-events-auto">
+          <ToastItem toast={toast} />
+        </div>
+      ))}
     </div>
   );
 

@@ -26,6 +26,7 @@ import {
   type HubSkill,
   type SkillDetail,
 } from './components';
+import { debugError, debugWarn } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // ClawHub API
@@ -505,7 +506,7 @@ async function fetchManagedInstalledSkills(): Promise<{ skills: MySkill[]; avail
       })),
     };
   } catch (err) {
-    console.warn('[Skills] Managed directory scan failed:', err);
+    debugWarn('skills', '[Skills] Managed directory scan failed:', err);
     return { skills: [], available: false };
   }
 }
@@ -606,7 +607,7 @@ async function fetchInstalledSkills(): Promise<MySkill[]> {
     });
     return mergeInstalledSkills(scannedSkills, gatewaySkills, managedScanAvailable);
   } catch (err) {
-    console.warn('[Skills] Gateway skills.status failed:', err);
+    debugWarn('skills', '[Skills] Gateway skills.status failed:', err);
     return scannedSkills;
   }
 }
@@ -731,7 +732,7 @@ export function SkillsPage() {
       }
       setShApiOk(true);
     } catch (err) {
-      console.error('[SkillHub] load failed:', err);
+      debugError('skills', '[SkillHub] load failed:', err);
       setShApiOk(false);
     } finally {
       setLoadingSh(false);
@@ -796,7 +797,7 @@ export function SkillsPage() {
       setChErrorKind(null);
       setChCooldownUntil(0);
     } catch (err) {
-      console.error('[ClawHub] load failed:', err);
+      debugError('skills', '[ClawHub] load failed:', err);
       if (err instanceof ClawHubRateLimitError) {
         setChErrorKind('rate_limit');
         setChCooldownUntil(Date.now() + err.retryAfterMs);
@@ -903,7 +904,19 @@ export function SkillsPage() {
       if (!loadingCh && chSkills.length === 0 && chApiOk !== true) loadClawHubRef.current();
       if (!chAuth && !checkingChAuth) void refreshClawHubAuth();
     }
-  }, [activeTab, chAuth, checkingChAuth, refreshClawHubAuth]); // eslint-disable-line
+  }, [
+    activeTab,
+    chApiOk,
+    chAuth,
+    checkingChAuth,
+    chSkills.length,
+    loadingCh,
+    loadingSh,
+    refreshClawHubAuth,
+    shApiOk,
+    shCliInstalled,
+    shSkills.length,
+  ]);
 
   useEffect(() => {
     if (activeTab !== 'clawhub') return;
@@ -935,7 +948,7 @@ export function SkillsPage() {
   // SkillHub: clear search → reload browse list
   useEffect(() => {
     if (!shSearch.trim() && activeTab === 'skillhub' && shView === 'browse') loadSkillHub('browse');
-  }, [shSearch]); // eslint-disable-line
+  }, [activeTab, loadSkillHub, shSearch, shView]);
 
   // ClawHub: search with debounce
   useEffect(() => {
@@ -960,7 +973,7 @@ export function SkillsPage() {
         setChErrorKind(null);
         setChCooldownUntil(0);
       } catch (err) {
-        console.error('[ClawHub] search failed:', err);
+        debugError('skills', '[ClawHub] search failed:', err);
         if (err instanceof ClawHubRateLimitError && chAuth?.loggedIn) {
           try {
             const skills = await searchHubSkillsViaCli(query);
@@ -970,7 +983,7 @@ export function SkillsPage() {
             setChCooldownUntil(0);
             return;
           } catch (fallbackErr) {
-            console.error('[ClawHub] CLI search fallback failed:', fallbackErr);
+            debugError('skills', '[ClawHub] CLI search fallback failed:', fallbackErr);
           }
         }
         if (err instanceof ClawHubRateLimitError) {
@@ -1046,7 +1059,7 @@ export function SkillsPage() {
     try {
       await gateway.call('skills.update', { skillKey: slug, enabled: nextEnabled });
     } catch (err) {
-      console.warn('[Skills] toggle failed, reverting:', err);
+      debugWarn('skills', '[Skills] toggle failed, reverting:', err);
       setMySkills(prev => prev.map(s => s.slug === slug ? { ...s, enabled: !nextEnabled } : s));
     }
   }, [mySkills]);
@@ -1142,14 +1155,14 @@ export function SkillsPage() {
             setShCliInstalled(true);
             cliReady = true;
           } else {
-            console.error('[SkillHub] CLI auto-install failed:', cliRes?.error);
+            debugError('skills', '[SkillHub] CLI auto-install failed:', cliRes?.error);
             setInstallState('error');
             return;
           }
         }
         const res = await window.aegis.skillshub?.install(slug);
         if (!res?.success) {
-          console.error('[SkillHub] install failed:', res?.error);
+          debugError('skills', '[SkillHub] install failed:', res?.error);
           setInstallState('error');
           setInstallErrorText(res?.error ?? t('skills.skillshubInstallError'));
           return;
@@ -1157,7 +1170,7 @@ export function SkillsPage() {
       } else {
         const res = await window.aegis.clawhub?.install(slug);
         if (!res?.success) {
-          console.error('[ClawHub] install failed:', res?.error);
+          debugError('skills', '[ClawHub] install failed:', res?.error);
           setInstallState('error');
           setInstallErrorText(res?.error ?? t('skills.clawhubInstallFailed'));
           setInstallNeedsLogin(Boolean(res?.needsLogin));
@@ -1184,7 +1197,7 @@ export function SkillsPage() {
         }
       }
     } catch (err) {
-      console.error('[Hub] install failed:', err);
+      debugError('skills', '[Hub] install failed:', err);
       setInstallState('error');
       setInstallErrorText(String(err));
     }

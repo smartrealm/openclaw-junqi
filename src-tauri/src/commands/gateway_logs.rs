@@ -10,7 +10,7 @@
 //! on-disk `~/.openclaw/openclaw.log` (if enabled) remains the authoritative
 //! long-term log; this buffer is the last-N-entries "what just happened" view.
 
-use crate::state::gateway_process::{LogEntry, GatewayProcess};
+use crate::state::gateway_process::{GatewayProcess, LogEntry};
 use tauri::State;
 
 /// Return up to `limit` most-recent log entries, newest last.

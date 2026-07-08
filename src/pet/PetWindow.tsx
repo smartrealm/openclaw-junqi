@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
@@ -13,7 +13,8 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { applyTheme } from '@/theme/apply';
 import { applyAccentColor, isAccentColor, readPersistedAccentColor } from '@/theme/accent';
 import { detectOSPreference, resolveTheme } from '@/theme/resolver';
-import { isThemeSetting, STORAGE_KEY as THEME_STORAGE_KEY, type ThemeSetting } from '@/theme';
+import { STORAGE_KEY as THEME_STORAGE_KEY } from '@/theme/constants';
+import { isThemeSetting, type ThemeSetting } from '@/theme/types';
 import { playPetSfx } from './petSounds';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 
@@ -58,6 +59,8 @@ export default function PetWindow() {
   const skin = usePetStore((s) => s.skin);
   const customAsset = usePetStore((s) => s.customAsset);
   const setCustomAsset = usePetStore((s) => s.setCustomAsset);
+  const positionRef = useRef(position);
+  positionRef.current = position;
 
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
@@ -88,11 +91,11 @@ export default function PetWindow() {
   // is required when the user toggles sound in settings.
   const dragActive = usePetStore((s) => s.dragActive);
   const snapCancelRef = useRef<(() => void) | null>(null);
-  const cancelSnap = () => {
+  const cancelSnap = useCallback(() => {
     snapCancelRef.current?.();
     snapCancelRef.current = null;
     setSnapping(false);
-  };
+  }, []);
   useLayoutEffect(() => {
     const applyResolved = (setting: ThemeSetting) => {
       applyTheme(resolveTheme(setting, detectOSPreference()));
@@ -130,8 +133,9 @@ export default function PetWindow() {
     document.body.style.overflow = 'hidden';
     invoke('set_pet_click_through', { ignore: false }).catch(() => undefined);
 
-    if (position && typeof position.x === 'number' && typeof position.y === 'number') {
-      invoke('set_pet_position', position).catch(() => undefined);
+    const initialPosition = positionRef.current;
+    if (initialPosition && typeof initialPosition.x === 'number' && typeof initialPosition.y === 'number') {
+      invoke('set_pet_position', initialPosition).catch(() => undefined);
     }
     // Load a user-uploaded custom skin from disk (not persisted in localStorage).
     invoke<string | null>('load_pet_asset')
@@ -182,8 +186,7 @@ export default function PetWindow() {
       }),
     );
     return combineUnlisteners(unlistens);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cancelSnap, setCustomAsset, setPosition]);
 
   // Global mouse listeners so dragging keeps tracking even after the cursor
   // leaves the small pet window.
@@ -419,8 +422,7 @@ export default function PetWindow() {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.emotion]);
+  }, [cancelSnap, state.emotion]);
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;

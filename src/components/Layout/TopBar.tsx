@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
@@ -9,9 +9,9 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { notifications } from '@/services/notifications';
-import { NotificationPanel } from '@/components/Layout/NotificationPanel';
 import { APP_PLATFORM } from '@/components/Terminal/_nezha-platform';
+
+const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPanel').then(m => ({ default: m.NotificationPanel })));
 
 type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
 
@@ -135,7 +135,7 @@ export function TopBar() {
   const toggleDnd = useCallback(() => {
     const next = !dndMode;
     setDndMode(next);
-    notifications.setDndMode(next);
+    void import('@/services/notifications').then((mod) => mod.notifications.setDndMode(next));
   }, [dndMode, setDndMode]);
 
   const [panelOpen, setPanelOpen] = useState(false);
@@ -258,14 +258,16 @@ export function TopBar() {
         </button>
 
         {panelOpen && (
-          <NotificationPanel
-            items={history}
-            dndMode={dndMode}
-            onToggleDnd={toggleDnd}
-            onMarkAllRead={markAllRead}
-            onClear={clearHistory}
-            onItemClick={(id) => markRead(id)}
-          />
+          <Suspense fallback={null}>
+            <NotificationPanel
+              items={history}
+              dndMode={dndMode}
+              onToggleDnd={toggleDnd}
+              onMarkAllRead={markAllRead}
+              onClear={clearHistory}
+              onItemClick={(id) => markRead(id)}
+            />
+          </Suspense>
         )}
       </div>
     </div>

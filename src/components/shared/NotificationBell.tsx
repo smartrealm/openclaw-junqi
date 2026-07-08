@@ -9,8 +9,7 @@
 //   - Calls `invoke()` directly instead of a useNotifications hook (junqi
 //     doesn't have an equivalent hook yet — would be a follow-up refactor).
 //   - Uses `react-i18next` (junqi's i18n) instead of nezha's useI18n.
-//   - Style uses inline JSX (Tailwind) instead of nezha's `s.xxx` CSS-in-JS,
-//     since junqi's styles/nezha/ is excluded by tsconfig.
+//   - Style uses inline JSX (Tailwind) instead of nezha's `s.xxx` CSS-in-JS.
 //
 // Source: nezha/src/components/nezha/NotificationBell.tsx
 

@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePetThemeName, petBubbleTextContainerStyle, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
+import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetCharacterPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
+import { DEFAULT_PET_SKIN } from '../stores/petStore';
+
+test('default pet skin is sky-blue jellyfish', () => {
+  assert.equal(DEFAULT_PET_SKIN, 'jellyfish');
+});
 
 test('pet dark mode follows explicit dark theme names', () => {
   assert.equal(resolvePetDarkMode('aegis-dark', false), true);
@@ -71,6 +76,12 @@ test('pet text style disables webkit outline-only rendering', () => {
   });
 });
 
+test('pet text style can apply dark-theme readability halo', () => {
+  const shadow = petTextShadowForTheme('aegis-dark');
+  assert.notEqual(shadow, 'none');
+  assert.equal(solidPetTextStyle('#fff', shadow).textShadow, shadow);
+});
+
 test('pet bubble text container has no visual chrome', () => {
   assert.deepEqual(petBubbleTextContainerStyle('#f8fafc'), {
     WebkitTextStroke: '0 transparent',
@@ -97,4 +108,30 @@ test('pet bubble text container has no visual chrome', () => {
     opacity: 1,
     pointerEvents: 'none',
   });
+});
+
+test('pet bubble text container adds readable halo in dark themes', () => {
+  const style = petBubbleTextContainerStyle('#f8fafc', 'aegis-midnight');
+  assert.equal(style.background, 'transparent');
+  assert.equal(style.boxShadow, 'none');
+  assert.notEqual(style.textShadow, 'none');
+});
+
+test('pet character palette changes body color by theme and skin', () => {
+  assert.equal(resolvePetCharacterPalette('aegis-dark', 'lobster').body, '#ff836f');
+  assert.equal(resolvePetCharacterPalette('aegis-midnight', 'lobster').body, '#f26f62');
+  assert.equal(resolvePetCharacterPalette('aegis-eyecare', 'lobster').body, '#c96842');
+});
+
+test('pet default jellyfish stays sky-blue across regular and dark themes', () => {
+  assert.equal(resolvePetCharacterPalette('aegis-light', 'jellyfish').body, '#23a6c8');
+  assert.equal(resolvePetCharacterPalette('aegis-dark', 'jellyfish').body, '#73e6ff');
+  assert.equal(resolvePetCharacterPalette('aegis-midnight', 'jellyfish').body, '#73e6ff');
+});
+
+test('pet character palette avoids pure white eye blocks in dark themes', () => {
+  assert.notEqual(resolvePetCharacterPalette('aegis-dark', 'cat').eye.toLowerCase(), '#fff');
+  assert.notEqual(resolvePetCharacterPalette('aegis-dark', 'cat').eye.toLowerCase(), '#ffffff');
+  assert.notEqual(resolvePetCharacterPalette('aegis-midnight', 'cat').eye.toLowerCase(), '#fff');
+  assert.notEqual(resolvePetCharacterPalette('aegis-midnight', 'cat').eye.toLowerCase(), '#ffffff');
 });

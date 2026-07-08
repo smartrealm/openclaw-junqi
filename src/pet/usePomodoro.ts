@@ -1,8 +1,13 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePetStore } from '@/stores/petStore';
-import { notifications } from '@/services/notifications';
 import { minutesToMs, todayStr } from './pomodoroDomain';
+
+function notifyPomodoro(title: string) {
+  void import('@/services/notifications').then((mod) => {
+    mod.notifications.notify({ type: 'task_complete', title, body: title });
+  });
+}
 
 /**
  * Pomodoro timer (runs in the MAIN window). One timer per phase, scheduled to
@@ -50,7 +55,7 @@ export function usePomodoro() {
         const title = isLong
           ? t('pet.pomodoro.workDoneLong', '4 轮专注完成，长休息一下！')
           : t('pet.pomodoro.workDone', '专注完成，休息一下！');
-        notifications.notify({ type: 'task_complete', title, body: title });
+        notifyPomodoro(title);
       } else {
         // break→work. If the break just ended was a long one (4th round done),
         // reset the 4-round cycle counter back to 0.
@@ -62,7 +67,7 @@ export function usePomodoro() {
           workRounds: resetCycle ? 0 : pomodoro.workRounds,
         });
         const title = t('pet.pomodoro.breakDone', '休息结束，继续专注！');
-        notifications.notify({ type: 'task_complete', title, body: title });
+        notifyPomodoro(title);
       }
     }, Math.max(ms, 0));
 

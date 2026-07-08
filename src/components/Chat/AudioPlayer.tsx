@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Play, Pause, Volume2, VolumeX, RotateCcw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // AudioPlayer — Custom audio player for TTS / voice messages
@@ -41,22 +42,22 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
         const fileName = filePath.split('/').pop();
         const ttsPort = localStorage.getItem('aegis-tts-port') || '5050';
         const httpUrl = `http://localhost:${ttsPort}/audio/${fileName}`;
-        console.log('[AudioPlayer] 🔊 Resolving sandbox path via HTTP:', httpUrl);
+        debugLog('media', '[AudioPlayer] 🔊 Resolving sandbox path via HTTP:', httpUrl);
 
         // Try HTTP fetch from Edge TTS server
         fetch(httpUrl, { method: 'HEAD' })
           .then(r => {
             if (r.ok) {
-              console.log('[AudioPlayer] ✅ HTTP audio available:', httpUrl);
+              debugLog('media', '[AudioPlayer] ✅ HTTP audio available:', httpUrl);
               setResolvedSrc(httpUrl);
             } else {
-              console.warn('[AudioPlayer] ⚠️ HTTP 404 — file not yet copied to shared folder');
+              debugWarn('media', '[AudioPlayer] ⚠️ HTTP 404 — file not yet copied to shared folder');
               setError(true);
               setLoading(false);
             }
           })
           .catch(() => {
-            console.warn('[AudioPlayer] ⚠️ Edge TTS server unreachable');
+            debugWarn('media', '[AudioPlayer] ⚠️ Edge TTS server unreachable');
             setError(true);
             setLoading(false);
           });
@@ -74,27 +75,27 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
         }
       }
 
-      console.log('[AudioPlayer] Loading media via IPC:', filePath);
+      debugLog('media', '[AudioPlayer] Loading media via IPC:', filePath);
 
       if (window.aegis?.voice?.read) {
         window.aegis.voice.read(filePath).then((base64: string | null) => {
           if (base64) {
             const ext = filePath.split('.').pop()?.toLowerCase() || 'mp3';
             const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'ogg' ? 'audio/ogg' : ext === 'wav' ? 'audio/wav' : 'audio/webm';
-            console.log('[AudioPlayer] ✅ Loaded via IPC, size:', Math.round(base64.length / 1024), 'KB');
+            debugLog('media', '[AudioPlayer] ✅ Loaded via IPC, size:', Math.round(base64.length / 1024), 'KB');
             setResolvedSrc(`data:${mime};base64,${base64}`);
           } else {
-            console.error('[AudioPlayer] ❌ No data returned for:', filePath);
+            debugError('media', '[AudioPlayer] ❌ No data returned for:', filePath);
             setError(true);
             setLoading(false);
           }
         }).catch((err: any) => {
-          console.error('[AudioPlayer] ❌ Read failed:', err);
+          debugError('media', '[AudioPlayer] ❌ Read failed:', err);
           setError(true);
           setLoading(false);
         });
       } else {
-        console.error('[AudioPlayer] No voice.read IPC available');
+        debugError('media', '[AudioPlayer] No voice.read IPC available');
         setError(true);
         setLoading(false);
       }
@@ -134,7 +135,7 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
     const onError = () => {
       setError(true);
       setLoading(false);
-      console.error('[AudioPlayer] Failed to load:', src);
+      debugError('media', '[AudioPlayer] Failed to load:', src);
     };
 
     const onCanPlay = () => {
@@ -170,7 +171,7 @@ export function AudioPlayer({ src, className }: AudioPlayerProps) {
       setPlaying(false);
     } else {
       audio.play().then(() => setPlaying(true)).catch((e) => {
-        console.error('[AudioPlayer] Play failed:', e);
+        debugError('media', '[AudioPlayer] Play failed:', e);
         setError(true);
       });
     }

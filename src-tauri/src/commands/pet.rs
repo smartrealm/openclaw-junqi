@@ -46,18 +46,19 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let mut builder = WebviewWindowBuilder::new(&app, PET_LABEL, WebviewUrl::App("index.html".into()))
-        .title("JunQi Pet")
-        .inner_size(108.0, 154.0)
-        .resizable(false)
-        .minimizable(false)
-        .maximizable(false)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .visible(true);
+    let mut builder =
+        WebviewWindowBuilder::new(&app, PET_LABEL, WebviewUrl::App("index.html".into()))
+            .title("JunQi Pet")
+            .inner_size(108.0, 154.0)
+            .resizable(false)
+            .minimizable(false)
+            .maximizable(false)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .visible(true);
 
     // Default to the bottom-right of the primary monitor (with a margin).
     if let Some(main) = app.get_webview_window("main") {
@@ -137,7 +138,8 @@ pub async fn toggle_pet_window(app: AppHandle) -> Result<bool, String> {
 #[tauri::command]
 pub async fn set_pet_click_through(app: AppHandle, ignore: bool) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(PET_LABEL) {
-        win.set_ignore_cursor_events(ignore).map_err(|e| e.to_string())?;
+        win.set_ignore_cursor_events(ignore)
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -204,7 +206,9 @@ pub async fn get_cursor_position(app: AppHandle) -> Result<serde_json::Value, St
 /// after a drag.
 #[tauri::command]
 pub async fn get_pet_bounds(app: AppHandle) -> Result<serde_json::Value, String> {
-    let win = app.get_webview_window(PET_LABEL).ok_or("pet window not found")?;
+    let win = app
+        .get_webview_window(PET_LABEL)
+        .ok_or("pet window not found")?;
     let mon = win
         .current_monitor()
         .map_err(|e| e.to_string())?
@@ -254,8 +258,14 @@ pub async fn pet_show_context_menu(app: AppHandle, items: Vec<PetMenuItem>) -> R
                 .map_err(|e| e.to_string())?;
         } else {
             menu.append(
-                &MenuItem::with_id(&app, item.kind.clone(), item.label, !item.disabled, None::<&str>)
-                    .map_err(|e| e.to_string())?,
+                &MenuItem::with_id(
+                    &app,
+                    item.kind.clone(),
+                    item.label,
+                    !item.disabled,
+                    None::<&str>,
+                )
+                .map_err(|e| e.to_string())?,
             )
             .map_err(|e| e.to_string())?;
         }
@@ -302,7 +312,10 @@ pub async fn save_pet_asset(app: AppHandle, src_path: String) -> Result<String, 
     }
     let meta = std::fs::metadata(path).map_err(|e| format!("Cannot read file: {e}"))?;
     if (meta.len() as usize) > MAX_PET_ASSET_BYTES {
-        return Err(format!("File too large — max is {} KB", MAX_PET_ASSET_BYTES / 1024));
+        return Err(format!(
+            "File too large — max is {} KB",
+            MAX_PET_ASSET_BYTES / 1024
+        ));
     }
     let data = std::fs::read(path).map_err(|e| format!("Read failed: {e}"))?;
 
@@ -316,7 +329,11 @@ pub async fn save_pet_asset(app: AppHandle, src_path: String) -> Result<String, 
     // Tell the pet window to reload its asset.
     let _ = app.emit("pet-asset-changed", ());
 
-    Ok(format!("data:{};base64,{}", image_mime(&ext), general_purpose::STANDARD.encode(&data)))
+    Ok(format!(
+        "data:{};base64,{}",
+        image_mime(&ext),
+        general_purpose::STANDARD.encode(&data)
+    ))
 }
 
 /// Load the current custom pet asset as a data URL (None if none is set).
@@ -330,7 +347,11 @@ pub async fn load_pet_asset(app: AppHandle) -> Result<Option<String>, String> {
             if p.file_stem().and_then(|s| s.to_str()) != Some("pet-asset") {
                 continue;
             }
-            let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+            let ext = p
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_lowercase();
             let data = std::fs::read(&p).map_err(|e| e.to_string())?;
             return Ok(Some(format!(
                 "data:{};base64,{}",

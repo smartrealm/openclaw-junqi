@@ -27,7 +27,7 @@ import '../../test-setup';
 // imported function's reference to useChatStore is bound to the same
 // store instance the test will inspect.
 import { useChatStore, type Session } from '../stores/chatStore';
-import { applySessionRename } from './sessionRename';
+import { __setSessionRenameDepsForTest, applySessionRename } from './sessionRename';
 
 const TEST_KEY = 'agent:test:rename-1';
 
@@ -49,9 +49,27 @@ function getSession(): Session | undefined {
 }
 
 describe('applySessionRename', () => {
+  let persisted: Array<{ key: string; label: string }>;
+  let synced: Array<{ key: string; label: string }>;
+  let warnings: unknown[][];
+
   beforeEach(() => {
     // Reset to a known state between tests.
     useChatStore.setState({ sessions: [] });
+    persisted = [];
+    synced = [];
+    warnings = [];
+    __setSessionRenameDepsForTest({
+      persistLabel: async (key, label) => {
+        persisted.push({ key, label });
+      },
+      syncGatewayLabel: async (key, label) => {
+        synced.push({ key, label });
+      },
+      warn: (...args) => {
+        warnings.push(args);
+      },
+    });
   });
 
   test('happy path: updates the local store label', async () => {
@@ -69,6 +87,9 @@ describe('applySessionRename', () => {
     assert.ok(after, 'session must still exist after rename');
     assert.equal(after?.label, 'After',
       'local store label must update unconditionally');
+    assert.deepEqual(persisted, [{ key: TEST_KEY, label: 'After' }]);
+    assert.deepEqual(synced, [{ key: TEST_KEY, label: 'After' }]);
+    assert.equal(warnings.length, 0);
   });
 
   test('trims whitespace before applying', async () => {
@@ -90,6 +111,8 @@ describe('applySessionRename', () => {
     const result = await applySessionRename(TEST_KEY, 'Same');
     assert.equal(result, true);
     assert.equal(getSession()?.label, 'Same');
+    assert.deepEqual(persisted, [], 'unchanged labels should not hit persistence');
+    assert.deepEqual(synced, [], 'unchanged labels should not hit gateway sync');
   });
 
   test('whitespace-trimmed label equal to current is a no-op', async () => {
@@ -98,6 +121,8 @@ describe('applySessionRename', () => {
     // After trim, 'Same' === 'Same', so applySessionRename short-circuits.
     assert.equal(result, true);
     assert.equal(getSession()?.label, 'Same');
+    assert.deepEqual(persisted, [], 'trim-equivalent labels should not hit persistence');
+    assert.deepEqual(synced, [], 'trim-equivalent labels should not hit gateway sync');
   });
 
   test('REGRESSION: label updates even if gateway sync throws', async () => {
@@ -107,15 +132,47 @@ describe('applySessionRename', () => {
     //   that bug — if local updates stop happening when the gateway
     //   throws, this test fails.
     //
-    // The Node test runner has no Tauri runtime, so gateway.setSessionLabel
-    //   is guaranteed to throw "Not connected" — exactly the failure mode
-    //   we want to survive.
+    __setSessionRenameDepsForTest({
+      persistLabel: async (key, label) => {
+        persisted.push({ key, label });
+      },
+      syncGatewayLabel: async () => {
+        throw new Error('Not connected');
+      },
+      warn: (...args) => {
+        warnings.push(args);
+      },
+    });
+
     seedSession('Original');
     const result = await applySessionRename(TEST_KEY, 'Survives Gateway Failure');
     assert.equal(result, true,
       'returns true even on gateway failure (local update is the contract)');
     assert.equal(getSession()?.label, 'Survives Gateway Failure',
       'local store MUST update even when the gateway sync throws');
+    assert.deepEqual(persisted, [{ key: TEST_KEY, label: 'Survives Gateway Failure' }]);
+    assert.equal(warnings.length, 1, 'gateway failure is logged through the injected logger');
+  });
+
+  test('label updates even if Tauri persistence throws', async () => {
+    __setSessionRenameDepsForTest({
+      persistLabel: async () => {
+        throw new Error('disk unavailable');
+      },
+      syncGatewayLabel: async (key, label) => {
+        synced.push({ key, label });
+      },
+      warn: (...args) => {
+        warnings.push(args);
+      },
+    });
+
+    seedSession('Original');
+    const result = await applySessionRename(TEST_KEY, 'Survives Persist Failure');
+    assert.equal(result, true);
+    assert.equal(getSession()?.label, 'Survives Persist Failure');
+    assert.deepEqual(synced, [{ key: TEST_KEY, label: 'Survives Persist Failure' }]);
+    assert.equal(warnings.length, 1, 'persistence failure is logged through the injected logger');
   });
 
   test('preserves other session fields (only label changes)', async () => {

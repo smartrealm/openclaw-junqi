@@ -1,4 +1,4 @@
-// ── StatusIcon — adopted from nezha (src/components/nezha/StatusIcon.tsx) ─────
+// ── StatusIcon — adapted from nezha's StatusIcon ──────────────────────────────
 //
 // Original nezha typing uses TaskStatus = 'todo' | 'pending' | 'running' |
 // 'input_required' | 'detached' | 'interrupted' | 'done' | 'failed' | 'cancelled'.
@@ -13,13 +13,6 @@
 // known statuses from every layer. Unrecognized statuses fall through to a
 // neutral outlined circle.
 //
-// ── MIGRATION NOTE ────────────────────────────────────────────────────────────
-// This file was copied out of src/components/nezha/StatusIcon.tsx during the
-// Option-A porting effort. The original mirror remains as a reference; once
-// every consumer imports from this shared/ location and the mirror is empty,
-// the nezha/exclude list in tsconfig.json can be tightened. See
-// docs/NEZHA-PORT-PLAN.md §PR-1.
-
 import {
   CheckCircle2,
   XCircle,

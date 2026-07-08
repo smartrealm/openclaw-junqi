@@ -216,7 +216,9 @@ pub fn push_local_notification(level: &str, title: &str, body: &str, url: Option
 
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!("{:x}-{:04x}", now.as_secs(), now.subsec_nanos() % 0x10000)
 }
 
@@ -228,7 +230,9 @@ fn local_notifications_path() -> Result<PathBuf, String> {
 }
 
 fn load_local_notifications(path: &Path) -> Vec<NotificationItem> {
-    if !path.exists() { return Vec::new(); }
+    if !path.exists() {
+        return Vec::new();
+    }
     fs::read_to_string(path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -259,7 +263,10 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
         }
 
         let unread_count = all.iter().filter(|n| !n.is_read).count();
-        Ok(NotificationResult { notifications: all, unread_count })
+        Ok(NotificationResult {
+            notifications: all,
+            unread_count,
+        })
     })
     .await
     .map_err(|e| e.to_string())?

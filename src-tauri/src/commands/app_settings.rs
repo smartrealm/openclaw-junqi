@@ -128,7 +128,9 @@ fn login_shell_path() -> String {
     let Some(shell) = shell else {
         return std::env::var("PATH").unwrap_or_default();
     };
-    let output = Command::new(&shell).args(["-l", "-c", "echo $PATH"]).output();
+    let output = Command::new(&shell)
+        .args(["-l", "-c", "echo $PATH"])
+        .output();
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => std::env::var("PATH").unwrap_or_default(),

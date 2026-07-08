@@ -2,7 +2,6 @@
 // AgentBreakdownSection — Per-agent cost cards grid
 // ═══════════════════════════════════════════════════════════
 
-import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { type ByAgentEntry } from '../types';
@@ -95,16 +94,9 @@ export function AgentBreakdownSection({ byAgent, totalCost }: AgentBreakdownSect
 
                 {/* Relative bar — width proportional to the top-cost agent */}
                 <div className="w-full h-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] mt-3 overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${barPct}%` }}
-                    transition={{
-                      duration: 1,
-                      delay: i * 0.05 + 0.3,
-                      ease: [0.22, 1, 0.36, 1],
-                    }}
+                  <div
                     className="h-full rounded-full"
-                    style={{ background: color }}
+                    style={{ width: `${barPct}%`, background: color }}
                   />
                 </div>
               </div>

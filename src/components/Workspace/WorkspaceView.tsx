@@ -6,14 +6,12 @@
 // flow through workspaceStore; this component is pure read.
 // ─────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import clsx from 'clsx';
 import { Plus, X, Terminal as TerminalIcon, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { PaneLeaf, PaneNode, PaneSplit } from '@/workspace/types';
-import { ShellTerminalPanel } from '@/components/Terminal/ShellTerminalPanel';
-import { AgentRunView } from '@/pages/AgentRunView';
-import { useTheme } from '@/theme';
+import { useTheme } from '@/theme/useTheme';
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   getDefaultMonoFont,
@@ -21,6 +19,22 @@ import {
   type TerminalFontSize,
   type FontFamily,
 } from '@/_nezha_root/types';
+
+const LazyShellTerminalPanel = lazy(() =>
+  import('@/components/Terminal/ShellTerminalPanel').then((m) => ({ default: m.ShellTerminalPanel })),
+);
+
+const LazyAgentRunView = lazy(() =>
+  import('@/pages/AgentRunView').then((m) => ({ default: m.AgentRunView })),
+);
+
+function PaneContentFallback() {
+  return (
+    <div className="flex h-full w-full items-center justify-center text-[11px] text-aegis-text-dim">
+      Loading pane...
+    </div>
+  );
+}
 
 export function WorkspaceView() {
   const workspace = useWorkspaceStore((s) => {
@@ -163,14 +177,16 @@ function ShellPaneHost({ leaf }: { leaf: PaneLeaf }) {
   const resolvedTheme = useTheme();
   const themeVariant: ThemeVariant = resolvedTheme.replace('aegis-', '') as ThemeVariant;
   return (
-    <ShellTerminalPanel
-      themeVariant={themeVariant}
-      terminalFontSize={DEFAULT_TERMINAL_FONT_SIZE as TerminalFontSize}
-      monoFontFamily={getDefaultMonoFont() as FontFamily}
-      projectPath={leaf.config.projectPath ?? ''}
-      projectId={leaf.id}
-      onClose={() => closePane(leaf.id)}
-    />
+    <Suspense fallback={<PaneContentFallback />}>
+      <LazyShellTerminalPanel
+        themeVariant={themeVariant}
+        terminalFontSize={DEFAULT_TERMINAL_FONT_SIZE as TerminalFontSize}
+        monoFontFamily={getDefaultMonoFont() as FontFamily}
+        projectPath={leaf.config.projectPath ?? ''}
+        projectId={leaf.id}
+        onClose={() => closePane(leaf.id)}
+      />
+    </Suspense>
   );
 }
 
@@ -242,7 +258,9 @@ function LeafPaneView({ leaf }: { leaf: PaneLeaf }) {
         {leaf.config.kind === 'shell' ? (
           <ShellPaneHost leaf={leaf} />
         ) : (
-          <AgentRunView />
+          <Suspense fallback={<PaneContentFallback />}>
+            <LazyAgentRunView />
+          </Suspense>
         )}
       </div>
     </div>

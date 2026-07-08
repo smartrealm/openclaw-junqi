@@ -93,7 +93,11 @@ pub async fn check_docker() -> Result<DockerStatus, String> {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
             Ok(DockerStatus {
                 available: true,
-                version: if version.is_empty() { None } else { Some(version) },
+                version: if version.is_empty() {
+                    None
+                } else {
+                    Some(version)
+                },
                 daemon_running: true,
             })
         }
@@ -256,7 +260,12 @@ pub async fn start_docker_gateway(
     if !healthy {
         // Check if container is still running
         let inspect = tokio::process::Command::new(&docker_bin)
-            .args(["inspect", "--format", "{{.State.Running}}", "maxauto-openclaw"])
+            .args([
+                "inspect",
+                "--format",
+                "{{.State.Running}}",
+                "maxauto-openclaw",
+            ])
             .output()
             .await;
 

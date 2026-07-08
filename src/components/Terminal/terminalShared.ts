@@ -7,6 +7,7 @@ import { IS_MAC_WEBKIT } from "./_nezha-platform";
 import type { ThemeVariant } from "./_nezha-types";
 // xterm 私有字段访问的显式契约——见 xterm-private.d.ts 头部说明。
 import type { XTermWithPrivates } from "./xterm-private.d";
+import { debugWarn } from "@/utils/debugLog";
 
 // xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
 // 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
@@ -348,7 +349,7 @@ function waitForFontReady(fontFamily: string, fontSize: number): Promise<void> {
   // 解析失败时 reject（开发者拼接 bug），warn 出来便于排查。
   const load = spec
     ? fonts.load(spec).catch((err) => {
-        console.warn(`[terminal] invalid font spec "${spec}"`, err);
+        debugWarn("terminal", `[terminal] invalid font spec "${spec}"`, err);
       })
     : Promise.resolve();
 
@@ -375,7 +376,7 @@ function whenFontEventuallyReady(fontFamily: string, fontSize: number): Promise<
   const spec = primary ? `${fontSize}px "${primary}"` : null;
   const load = spec
     ? fonts.load(spec).catch((err) => {
-        console.warn(`[terminal] invalid font spec "${spec}"`, err);
+        debugWarn("terminal", `[terminal] invalid font spec "${spec}"`, err);
       })
     : Promise.resolve();
   return load.then(() => fonts.ready).then(() => {});
@@ -438,7 +439,7 @@ export function applyDomCharSizeOverride(term: Terminal): () => void {
   const charSizeService = core?._charSizeService;
   const strategy = charSizeService?._measureStrategy;
   if (!charSizeService || !strategy || typeof strategy.measure !== "function") {
-    console.warn("[terminal] xterm char size strategy inaccessible; skip DOM width override");
+    debugWarn("terminal", "[terminal] xterm char size strategy inaccessible; skip DOM width override");
     return () => {};
   }
 
@@ -459,7 +460,8 @@ export function applyDomCharSizeOverride(term: Terminal): () => void {
 
     if (!warnedMismatch) {
       warnedMismatch = true;
-      console.warn(
+      debugWarn(
+        "terminal",
         `[terminal] xterm measured cell width=${result.width.toFixed(2)}, DOM width=${domWidth.toFixed(2)}; using DOM width`,
       );
     }
@@ -548,7 +550,7 @@ export function safeOpenTerminal(
       term.open(container);
     } catch (err) {
       // Defensive: some platforms throw inside open() even after size checks.
-      console.warn("[safeOpenTerminal] term.open failed:", err);
+      debugWarn("terminal", "[safeOpenTerminal] term.open failed:", err);
       return;
     }
     opened = true;
@@ -736,7 +738,7 @@ export function loadWebglAddon(term: Terminal): WebglAddonHandle {
     try {
       addon = new WebglAddon();
       addon.onContextLoss(() => {
-        console.warn("[terminal] WebGL context lost; falling back to xterm DOM renderer");
+        debugWarn("terminal", "[terminal] WebGL context lost; falling back to xterm DOM renderer");
         addon?.dispose();
         addon = null;
       });
@@ -749,7 +751,7 @@ export function loadWebglAddon(term: Terminal): WebglAddonHandle {
         }
       });
     } catch (err) {
-      console.warn("[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
+      debugWarn("terminal", "[terminal] WebGL addon unavailable; using xterm DOM renderer", err);
       /* 不支持 WebGL 时降级，不影响功能 */
     }
   });

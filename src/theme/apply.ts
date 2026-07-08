@@ -32,8 +32,7 @@ export function applyToDocument(theme: AegisTheme): void {
   // Force a synchronous reflow so the browser applies the new token
   // values BEFORE we remove .theme-switching. Reading offsetHeight is
   // the canonical "commit pending styles now" trick.
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-  html.offsetHeight;
+  void html.offsetHeight;
 
   // Defer un-marking to the next frame so the new styles paint without
   // animation, then transitions resume on subsequent user interactions.

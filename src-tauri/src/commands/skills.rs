@@ -182,10 +182,7 @@ pub async fn set_skill_hub_path(path: String) -> Result<SetHubResult, String> {
             return Err("Skill hub path is required".to_string());
         }
         if !Path::new(&trimmed).is_dir() {
-            return Err(format!(
-                "Skill hub path is not a directory: {}",
-                trimmed
-            ));
+            return Err(format!("Skill hub path is not a directory: {}", trimmed));
         }
         let cfg = SkillHubConfig {
             hub_path: Some(trimmed.clone()),
@@ -249,7 +246,13 @@ fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>, Option<S
     let stripped = content.strip_prefix("---");
     let body = match stripped {
         Some(s) => s,
-        None => return (None, None, Some("Missing frontmatter delimiter".to_string())),
+        None => {
+            return (
+                None,
+                None,
+                Some("Missing frontmatter delimiter".to_string()),
+            )
+        }
     };
     let end = body.find("\n---").or_else(|| body.find("\n..."));
     let head = match end {
@@ -280,8 +283,12 @@ fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>, Option<S
         let value = rest.trim();
 
         // Block scalar (literal `|` / folded `>`): consume subsequent indented lines.
-        if value == "|" || value == "|-" || value == ">" || value == ">-"
-            || value == "|+" || value == ">+"
+        if value == "|"
+            || value == "|-"
+            || value == ">"
+            || value == ">-"
+            || value == "|+"
+            || value == ">+"
         {
             let folded = value.starts_with('>');
             let tail: Vec<&str> = lines[i + 1..].to_vec();
@@ -296,10 +303,7 @@ fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>, Option<S
         }
 
         // Inline scalar (single-line).
-        let cleaned = value
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string();
+        let cleaned = value.trim_matches('"').trim_matches('\'').to_string();
         match key {
             "name" => name = Some(cleaned),
             "description" => description = Some(cleaned),
@@ -563,8 +567,7 @@ pub async fn install_skill(
         #[cfg(unix)]
         std::os::unix::fs::symlink(&skill_path, &link_path).map_err(|e| e.to_string())?;
         #[cfg(windows)]
-        std::os::windows::fs::symlink_dir(&skill_path, &link_path)
-            .map_err(|e| e.to_string())?;
+        std::os::windows::fs::symlink_dir(&skill_path, &link_path).map_err(|e| e.to_string())?;
 
         let installation = SkillInstallation {
             skill_name: skill_name.clone(),
@@ -628,8 +631,7 @@ pub async fn delete_skill(
         }
 
         // Drop the rows for this skill from installations.json.
-        file.installations
-            .retain(|i| i.skill_name != skill_name);
+        file.installations.retain(|i| i.skill_name != skill_name);
         save_installations(&file)?;
 
         Ok(DeleteResult {
@@ -716,7 +718,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let link = dir.join("missing.skill");
         let target = dir.join("never-existed");
-        assert_eq!(health_for(&link.to_string_lossy(), &target.to_string_lossy()), "broken");
+        assert_eq!(
+            health_for(&link.to_string_lossy(), &target.to_string_lossy()),
+            "broken"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

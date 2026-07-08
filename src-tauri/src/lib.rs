@@ -70,14 +70,13 @@ pub fn run() {
             commands::setup::prepare_gateway,
             commands::setup::install_winget_package,
             // Control UI (Console)
-           commands::console::open_control_ui,
-           commands::console::return_to_desktop,
+            commands::console::open_control_ui,
+            commands::console::return_to_desktop,
             commands::managed_files::managed_file_open,
             commands::managed_files::managed_file_reveal,
             commands::managed_files::managed_file_exists,
             commands::managed_files::list_directory,
             commands::managed_files::read_file_text,
-
             commands::console::write_models_log,
             // Config
             commands::config::read_config,
@@ -234,7 +233,9 @@ pub fn run() {
             // through instead of a flat solid color.
             #[cfg(target_os = "macos")]
             {
-                use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+                use window_vibrancy::{
+                    apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState,
+                };
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = apply_vibrancy(
                         &window,
@@ -259,8 +260,14 @@ pub fn run() {
                 let win_pos_y = win_pos.map(|p| p.y as f64).unwrap_or(0.0);
                 let scale = main_win.scale_factor().unwrap_or(1.0);
                 let size = main_win.outer_size().ok();
-                let win_w = size.as_ref().map(|s| s.width as f64 / scale).unwrap_or(1280.0);
-                let win_h = size.as_ref().map(|s| s.height as f64 / scale).unwrap_or(800.0);
+                let win_w = size
+                    .as_ref()
+                    .map(|s| s.width as f64 / scale)
+                    .unwrap_or(1280.0);
+                let win_h = size
+                    .as_ref()
+                    .map(|s| s.height as f64 / scale)
+                    .unwrap_or(800.0);
                 main_win.on_window_event(move |event| {
                     use tauri::WindowEvent;
                     if let WindowEvent::DragDrop(dd) = event {
@@ -333,7 +340,9 @@ pub fn run() {
             let first_run_marker = paths::desktop_dir().join(".junqi-window-initialized");
             if !first_run_marker.exists() {
                 if let Some(window) = app.get_webview_window("main") {
-                    if let (Ok(Some(monitor)), Ok(scale)) = (window.primary_monitor(), window.scale_factor()) {
+                    if let (Ok(Some(monitor)), Ok(scale)) =
+                        (window.primary_monitor(), window.scale_factor())
+                    {
                         let phys = monitor.size();
                         // Convert physical → logical; clamp between min (960×640)
                         // and max (1600×1000) so the window never gets absurdly large
@@ -342,7 +351,10 @@ pub fn run() {
                         let logical_h = phys.height as f64 / scale;
                         let w = (logical_w * 0.72).clamp(1100.0, 1600.0);
                         let h = (logical_h * 0.80).clamp(720.0, 1000.0);
-                        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: w, height: h }));
+                        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                            width: w,
+                            height: h,
+                        }));
                     }
                     let _ = window.center();
                 }
@@ -357,12 +369,15 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Ok(info) = commands::config::detect_gateway_config().await {
-                    let _ = handle.emit("gateway-config", serde_json::json!({
-                        "token": info.token,
-                        "ws_url": info.ws_url,
-                        "http_url": info.http_url,
-                        "port": info.port,
-                    }));
+                    let _ = handle.emit(
+                        "gateway-config",
+                        serde_json::json!({
+                            "token": info.token,
+                            "ws_url": info.ws_url,
+                            "http_url": info.http_url,
+                            "port": info.port,
+                        }),
+                    );
                 }
             });
             // Pet right-click menu items report their kind here; the main window
@@ -370,7 +385,10 @@ pub fn run() {
             // so this fires only for the pet's popup context menu.
             app.on_menu_event(move |app, event| {
                 let id = event.id().as_ref();
-                if matches!(id, "showMain" | "hide" | "nextSkin" | "pomoStart" | "pomoPause" | "pomoStop") {
+                if matches!(
+                    id,
+                    "showMain" | "hide" | "nextSkin" | "pomoStart" | "pomoPause" | "pomoStop"
+                ) {
                     let _ = app.emit("pet-action", serde_json::json!({ "kind": id }));
                 }
             });
@@ -399,7 +417,11 @@ pub fn run() {
         // have no visible windows. Fall through to handle the no-window case.
         #[cfg(target_os = "macos")]
         {
-            if let RunEvent::Reopen { has_visible_windows: false, .. } = event {
+            if let RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.unminimize();

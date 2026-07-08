@@ -1,7 +1,7 @@
 // System metrics background thread — Nezha-style state stream.
 // Collects CPU/memory/disk/network every second, emits via Tauri events.
 use std::thread;
-use sysinfo::{System, Networks, Disks};
+use sysinfo::{Disks, Networks, System};
 use tauri::{AppHandle, Emitter};
 
 #[derive(Clone, serde::Serialize)]
@@ -45,9 +45,7 @@ pub fn start_metrics_stream(app_handle: AppHandle) {
             sys.refresh_cpu_all();
             sys.refresh_memory();
 
-            let cpu: f32 = sys.cpus().iter()
-                .map(|c| c.cpu_usage())
-                .sum::<f32>() / cpu_count as f32;
+            let cpu: f32 = sys.cpus().iter().map(|c| c.cpu_usage()).sum::<f32>() / cpu_count as f32;
 
             let mem_used = sys.used_memory();
             let mem_total = sys.total_memory();
@@ -75,23 +73,26 @@ pub fn start_metrics_stream(app_handle: AppHandle) {
             let load = System::load_average();
             let uptime = System::uptime();
 
-            let _ = app_handle.emit("system-metrics", SystemMetrics {
-                cpu: (cpu * 10.0).round() / 10.0,
-                cpu_count,
-                mem_used,
-                mem_total,
-                disk_used,
-                disk_total,
-                net_up_speed,
-                net_down_speed,
-                uptime,
-                load1: load.one,
-                load5: load.five,
-                load15: load.fifteen,
-                platform: platform.clone(),
-                platform_version: platform_version.clone(),
-                arch: arch.clone(),
-            });
+            let _ = app_handle.emit(
+                "system-metrics",
+                SystemMetrics {
+                    cpu: (cpu * 10.0).round() / 10.0,
+                    cpu_count,
+                    mem_used,
+                    mem_total,
+                    disk_used,
+                    disk_total,
+                    net_up_speed,
+                    net_down_speed,
+                    uptime,
+                    load1: load.one,
+                    load5: load.five,
+                    load15: load.fifteen,
+                    platform: platform.clone(),
+                    platform_version: platform_version.clone(),
+                    arch: arch.clone(),
+                },
+            );
         }
     });
 }

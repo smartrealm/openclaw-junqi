@@ -3,25 +3,77 @@
 // + Ambient background glow (from conceptual design)
 // ═══════════════════════════════════════════════════════════
 
-import { Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { TopBar } from '@/components/Layout/TopBar';
-import { NavSidebar } from '@/components/Layout/NavSidebar';
 import { TabBar } from '@/components/Layout/TabBar';
-import { StatusBar } from '@/components/Layout/StatusBar';
-import { CommandPalette } from '@/components/CommandPalette';
-import { PetBreakOverlay } from '@/pet/PetBreakOverlay';
-import { OfflineOverlay } from '@/components/OfflineOverlay';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { useChatStore } from '@/stores/chatStore';
+import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { getDirection } from '@/i18n';
 
 /** Pages that work without Gateway connection */
 const OFFLINE_PAGES = ['/settings', '/terminal', '/config'];
+const CommandPalette = lazy(() => import('@/components/CommandPalette').then(m => ({ default: m.CommandPalette })));
+const PetBreakOverlay = lazy(() => import('@/pet/PetBreakOverlay').then(m => ({ default: m.PetBreakOverlay })));
+const OfflineOverlay = lazy(() => import('@/components/OfflineOverlay').then(m => ({ default: m.OfflineOverlay })));
+const NavSidebar = lazy(() => import('@/components/Layout/NavSidebar').then(m => ({ default: m.NavSidebar })));
+const StatusBar = lazy(() => import('@/components/Layout/StatusBar').then(m => ({ default: m.StatusBar })));
+
+function LazyCommandPaletteHost() {
+  const open = useSettingsStore((s) => s.commandPaletteOpen);
+  if (!open) return null;
+  return (
+    <Suspense fallback={null}>
+      <CommandPalette />
+    </Suspense>
+  );
+}
+
+function LazyPetBreakOverlayHost() {
+  const shouldShow = usePetStore((s) => (
+    s.enabled &&
+    s.pomodoro.enabled &&
+    s.pomodoro.running &&
+    s.pomodoro.phase === 'break'
+  ));
+  if (!shouldShow) return null;
+  return (
+    <Suspense fallback={null}>
+      <PetBreakOverlay />
+    </Suspense>
+  );
+}
+
+function SidebarFallback() {
+  const sidebarMode = useSettingsStore((s) => s.sidebarMode);
+  if (sidebarMode === 'hidden') return null;
+  const width = sidebarMode === 'mini'
+    ? 'var(--aegis-sidebar-mini)'
+    : 'var(--aegis-sidebar-expanded)';
+  return (
+    <aside
+      className="shrink-0 border-r border-aegis-border sidebar-width-anim"
+      style={{
+        width,
+        background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))',
+      }}
+      aria-hidden="true"
+    />
+  );
+}
+
+function StatusBarFallback() {
+  return (
+    <footer
+      className="h-[26px] shrink-0 border-t border-aegis-border bg-aegis-surface"
+      aria-hidden="true"
+    />
+  );
+}
 
 export function AppLayout() {
   const { language } = useSettingsStore();
@@ -45,7 +97,6 @@ export function AppLayout() {
   }, [wantsOffline]);
 
   return (
-    <TooltipProvider delayDuration={150}>
     <div className="h-screen flex flex-col overflow-hidden bg-aegis-bg relative">
       {/* ── Ambient Background Glow (from conceptual JSX) ── */}
       <div className="ambient-glow-teal" />
@@ -58,7 +109,9 @@ export function AppLayout() {
       <TabBar />
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
-        <NavSidebar />
+        <Suspense fallback={<SidebarFallback />}>
+          <NavSidebar />
+        </Suspense>
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
           <div className="flex-1 overflow-y-auto scrollbar-thin h-full">
             <ErrorBoundary>
@@ -75,16 +128,19 @@ export function AppLayout() {
       </div>
       {showOffline && (
         <div className="fixed inset-0 z-[9000] bg-aegis-bg/94 backdrop-blur-xl">
-          <OfflineOverlay />
+          <Suspense fallback={null}>
+            <OfflineOverlay />
+          </Suspense>
         </div>
       )}
       {/* Pomodoro break overlay — enlarged pet + countdown, only during break phase */}
-      <PetBreakOverlay />
+      <LazyPetBreakOverlayHost />
       {/* Bottom status bar — gateway / model / restart */}
-      <StatusBar />
+      <Suspense fallback={<StatusBarFallback />}>
+        <StatusBar />
+      </Suspense>
       {/* Command Palette overlay */}
-      <CommandPalette />
+      <LazyCommandPaletteHost />
     </div>
-    </TooltipProvider>
   );
 }

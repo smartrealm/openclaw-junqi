@@ -17,6 +17,7 @@ import {
   User, Sparkles, Bot, Download, Braces,
   MessageSquare, Clock, FileDown,
 } from 'lucide-react';
+import { debugError } from '@/utils/debugLog';
 
 interface SessionContent {
   type: 'text' | 'tool_use' | 'thinking';
@@ -328,7 +329,7 @@ export function SessionViewPage() {
         },
       });
     } catch (e) {
-      console.error('[SessionViewPage] Export failed:', e);
+      debugError('app', '[SessionViewPage] Export failed:', e);
     }
   };
 

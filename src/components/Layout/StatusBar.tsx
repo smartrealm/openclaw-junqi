@@ -1,5 +1,5 @@
 // StatusBar — 底部状态栏（参照 Hermes AppStatusBar）
-import { Wifi, WifiOff, RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause } from 'lucide-react';
+import { RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';

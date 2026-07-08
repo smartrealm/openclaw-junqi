@@ -60,11 +60,15 @@ fn parse_iso_timestamp(s: &str) -> Option<u64> {
     // Days in months (non-leap approximation, close enough for TTL checks)
     let days_before_month = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     let m = month.checked_sub(1)? as usize;
-    if m >= 12 { return None; }
+    if m >= 12 {
+        return None;
+    }
 
     let mut days = (year - 1970) * 365 + (year - 1969) / 4;
     days += days_before_month[m] + (day - 1);
-    if month > 2 && year % 4 == 0 { days += 1; }
+    if month > 2 && year % 4 == 0 {
+        days += 1;
+    }
 
     Some(days * 86400 + hour * 3600 + min * 60 + sec)
 }
@@ -79,8 +83,8 @@ pub async fn list_pairing_requests() -> Result<Vec<PairingRequest>, String> {
 
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read pairing file: {}", e))?;
-    let store: PairingStore = serde_json::from_str(&raw)
-        .map_err(|e| format!("Failed to parse pairing file: {}", e))?;
+    let store: PairingStore =
+        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse pairing file: {}", e))?;
 
     // Filter out expired requests (1 hour TTL)
     let now = now_secs();
@@ -110,8 +114,8 @@ pub async fn approve_pairing_request(code: String) -> Result<String, String> {
 
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read pairing file: {}", e))?;
-    let mut store: PairingStore = serde_json::from_str(&raw)
-        .map_err(|e| format!("Failed to parse pairing file: {}", e))?;
+    let mut store: PairingStore =
+        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse pairing file: {}", e))?;
 
     // Find the request by code (case-insensitive, matching OpenClaw behavior)
     let idx = store
@@ -190,8 +194,8 @@ pub async fn reject_pairing_request(code: String) -> Result<(), String> {
 
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read pairing file: {}", e))?;
-    let mut store: PairingStore = serde_json::from_str(&raw)
-        .map_err(|e| format!("Failed to parse pairing file: {}", e))?;
+    let mut store: PairingStore =
+        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse pairing file: {}", e))?;
 
     store.requests.retain(|r| r.code != code);
 

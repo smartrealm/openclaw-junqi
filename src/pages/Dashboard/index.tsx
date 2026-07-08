@@ -3,15 +3,9 @@
 // Sections: Top Bar → Hero Cards → Chart + Agents → Actions
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import i18n from '@/i18n';
-import { motion } from 'framer-motion';
-import {
-  AreaChart, Area, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid,
-} from 'recharts';
 import {
   RefreshCw, BarChart3,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
@@ -22,16 +16,19 @@ import { PageTransition } from '@/components/shared/PageTransition';
 import { DashboardIcon } from '@/components/shared/DashboardIcon';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore } from '@/stores/chatStore';
-import { useGatewayDataStore, refreshAll } from '@/stores/gatewayDataStore';
+import { useGatewayDataStore, refreshAll, ensureGroupFresh } from '@/stores/gatewayDataStore';
 import { sessionActivityTime, sortSessionsByActivity } from '@/components/Layout/sidebarUtils';
 import clsx from 'clsx';
-import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
+import { themeHex, themeAlpha } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
+import { formatTokens } from '@/utils/format';
 
 import {
   ContextRing, QuickAction, SessionItem, FeedItem, AgentItem,
-  fmtTokens, fmtCost, fmtCostShort, timeAgo, fmtUptime,
+  fmtCost, fmtCostShort, timeAgo, fmtUptime,
 } from './components';
+
+const CostChart = lazy(() => import('./CostChart').then((m) => ({ default: m.CostChart })));
 
 // ── Agent emoji + display name helpers ───────────────────────
 
@@ -66,49 +63,6 @@ const getAgentName = (id: string) => {
   return names[key] ?? id;
 };
 
-// ── Tooltip for recharts ─────────────────────────────────────
-
-function CostTooltip({ active, payload, label }: any) {
-  // NOTE: no React hooks here — recharts conditionally mounts the tooltip
-  // content, so a hook + early-return would change hook count between renders
-  // and crash with React #310. Use the global i18n instance instead.
-  if (!active || !payload?.length) return null;
-  const tr = (k: string, d: string) => i18n.t(k, { defaultValue: d }) as string;
-  const input  = payload.find((p: any) => p.dataKey === 'input')?.value  || 0;
-  const output = payload.find((p: any) => p.dataKey === 'output')?.value || 0;
-  const cache = payload.find((p: any) => p.dataKey === 'cache')?.value || 0;
-  const other = payload.find((p: any) => p.dataKey === 'other')?.value || 0;
-  const total = payload[0]?.payload?.total ?? input + output + cache + other;
-  return (
-    <div className="bg-aegis-card border border-aegis-border rounded-xl p-2.5 text-[11px] shadow-lg">
-      <div className="text-aegis-text-dim font-mono mb-1.5">{label}</div>
-      <div className="flex items-center gap-1.5 text-aegis-accent">
-        <span className="w-2 h-2 rounded-full bg-aegis-accent" />
-        {tr('dashboard.input', 'Input')}: {fmtCost(input)}
-      </div>
-      <div className="flex items-center gap-1.5 text-aegis-primary">
-        <span className="w-2 h-2 rounded-full bg-aegis-primary" />
-        {tr('dashboard.output', 'Output')}: {fmtCost(output)}
-      </div>
-      {cache > 0 && (
-        <div className="flex items-center gap-1.5 text-aegis-success">
-          <span className="w-2 h-2 rounded-full bg-aegis-success" />
-          {tr('dashboard.cacheCostLabel', 'Cache')}: {fmtCost(cache)}
-        </div>
-      )}
-      {other > 0 && (
-        <div className="flex items-center gap-1.5 text-aegis-text-muted">
-          <span className="w-2 h-2 rounded-full bg-aegis-text-muted" />
-          {tr('dashboard.otherCostLabel', 'Other')}: {fmtCost(other)}
-        </div>
-      )}
-      <div className="text-aegis-text font-semibold mt-1.5 pt-1.5 border-t border-[rgb(var(--aegis-overlay)/0.06)]">
-        {tr('dashboard.total', 'Total')}: {fmtCost(total)}
-      </div>
-    </div>
-  );
-}
-
 // ════════════════════════════════════════════════════════════
 // DashboardPage — Main component
 // ════════════════════════════════════════════════════════════
@@ -132,6 +86,13 @@ export function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   const connectedSince = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!connected) return;
+    void ensureGroupFresh('cost');
+    void ensureGroupFresh('usage');
+    void ensureGroupFresh('agents');
+  }, [connected]);
 
   // Track connection uptime
   useEffect(() => {
@@ -361,7 +322,7 @@ export function DashboardPage() {
       });
       items.push({
         color: isMain ? themeHex('primary') : themeHex('accent'),
-        text:  t('dashboard.feedTokens', { label, n: fmtTokens(s.totalTokens || 0) }),
+        text:  t('dashboard.feedTokens', { label, n: formatTokens(s.totalTokens || 0) }),
         time:  timeAgo(s.lastActive),
         sessionKey: key,
         agentName: agentNameFor(key),
@@ -381,17 +342,12 @@ export function DashboardPage() {
       {/* ════ SECTION 1: TOP BAR ════ */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <motion.div
-            animate={{ boxShadow: [
-              `0 0 10px ${themeAlpha('primary', 0.1)}`,
-              `0 0 22px ${themeAlpha('primary', 0.2)}`,
-              `0 0 10px ${themeAlpha('primary', 0.1)}`,
-            ]}}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+          <div
             className="w-10 h-10 rounded-xl bg-gradient-to-br from-aegis-primary/15 to-aegis-primary/5 border border-aegis-primary/20 flex items-center justify-center"
+            style={{ boxShadow: `0 0 18px ${themeAlpha('primary', 0.16)}` }}
           >
             <Shield size={20} className="text-aegis-primary" />
-          </motion.div>
+          </div>
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2.5">
               <h1 className="text-[18px] font-bold text-aegis-text tracking-tight">
@@ -473,10 +429,8 @@ export function DashboardPage() {
 
       {/* ════ SETUP BANNER: shown when no AI provider is configured ════ */}
       {connected && !hasProviders && !modelsLoading && (
-        <motion.div
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-aegis-warning/30 bg-aegis-warning/[0.06]"
+        <div
+          className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-aegis-warning/30 bg-aegis-warning/[0.06] animate-slide-down"
         >
           <div className="flex items-center gap-2.5 text-[13px] text-aegis-warning">
             <Zap size={15} className="shrink-0" />
@@ -488,7 +442,7 @@ export function DashboardPage() {
           >
             {t('dashboard.setupProviderAction', 'Go to Config →')}
           </button>
-        </motion.div>
+        </div>
       )}
 
       {/* ════ SECTION 2: HERO CARDS (4 columns) ════ */}
@@ -542,16 +496,16 @@ export function DashboardPage() {
             {t('dashboard.tokensToday')}
           </div>
           <div className="text-[22px] font-bold text-aegis-text leading-none tracking-tight">
-            {fmtTokens(tokensToday)}
+            {formatTokens(tokensToday)}
           </div>
           <div className="text-[10px] text-aegis-text-muted font-mono space-y-0.5">
             <div className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-accent" />
-              {t('dashboard.tokensIn')}:  {fmtTokens(tokensIn)}
+              {t('dashboard.tokensIn')}:  {formatTokens(tokensIn)}
             </div>
             <div className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary" />
-              {t('dashboard.tokensOut')}: {fmtTokens(tokensOut)}
+              {t('dashboard.tokensOut')}: {formatTokens(tokensOut)}
             </div>
           </div>
         </GlassCard>
@@ -565,8 +519,8 @@ export function DashboardPage() {
           <div className="flex items-center gap-3 mt-1">
             <ContextRing percentage={usagePct} />
             <div className="text-[10px] text-aegis-text-muted font-mono space-y-1">
-              <div>{t('dashboard.used', { n: fmtTokens(ctxUsed) })}</div>
-              <div className="text-aegis-text-dim">{t('dashboard.max', { n: fmtTokens(ctxMax) })}</div>
+              <div>{t('dashboard.used', { n: formatTokens(ctxUsed) })}</div>
+              <div className="text-aegis-text-dim">{t('dashboard.max', { n: formatTokens(ctxMax) })}</div>
             </div>
           </div>
         </GlassCard>
@@ -591,33 +545,9 @@ export function DashboardPage() {
             </div>
           </div>
           {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={160}>
-              <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gInput" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"   stopColor={themeHex('accent')} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={themeHex('accent')} stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gOutput" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"   stopColor={themeHex('primary')} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={themeHex('primary')} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--aegis-overlay) / 0.04)" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgb(var(--aegis-text-dim))' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: 'rgb(var(--aegis-text-dim))' }} axisLine={false} tickLine={false}
-                  tickFormatter={(v) => v === 0 ? '' : `$${v.toFixed(2)}`} />
-                <Tooltip content={<CostTooltip />} cursor={{ stroke: 'rgb(var(--aegis-overlay) / 0.06)' }} />
-                <Area type="monotone" dataKey="input"  stackId="1"
-                  stroke={themeHex('accent')} strokeWidth={1.5} fill="url(#gInput)" />
-                <Area type="monotone" dataKey="output" stackId="1"
-                  stroke={themeHex('primary')} strokeWidth={1.5} fill="url(#gOutput)" />
-                <Area type="monotone" dataKey="cache" stackId="1"
-                  stroke={themeHex('success')} strokeWidth={1.5} fillOpacity={0.18} fill={themeHex('success')} />
-                <Area type="monotone" dataKey="other" stackId="1"
-                  stroke={dataColor(9)} strokeWidth={1.5} fillOpacity={0.12} fill={dataColor(9)} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<div className="h-[160px]" />}>
+              <CostChart data={chartData} />
+            </Suspense>
           ) : !connected ? (
             <div className="h-[160px] flex items-center justify-center text-[12px] text-aegis-text-dim">
               {t('dashboard.notConnected')}
@@ -652,7 +582,7 @@ export function DashboardPage() {
               <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.activeAgents')}</span>
               {agentList.length > 0 && (
                 <span className="text-[10px] font-mono text-aegis-text-dim truncate">
-                  {fmtTokens(activeAgentTokenTotal)} tok · {activeAgentModelCount || 0} models
+                  {formatTokens(activeAgentTokenTotal)} tok · {activeAgentModelCount || 0} models
                 </span>
               )}
             </div>
@@ -677,7 +607,7 @@ export function DashboardPage() {
                     emoji={getAgentEmoji(id)}
                     name={t(getAgentName(id), { defaultValue: id })}
                     model={model}
-                    tokens={fmtTokens(tokenCount)}
+                    tokens={formatTokens(tokenCount)}
                     tokenCount={tokenCount}
                     maxTokens={maxAgentTokens}
                     sessions={a.activeSessions || 0}
@@ -766,7 +696,7 @@ export function DashboardPage() {
                   name={label}
                   model={sModel}
                   detail={isMain ? t('dashboard.compactCount', { n: s.compactions || s.compactionCount || 0 }) : timeAgo(lastActiveIso)}
-                  tokens={fmtTokens(s.totalTokens || 0)}
+                  tokens={formatTokens(s.totalTokens || 0)}
                   avatarBg={isMain ? themeAlpha('primary', 0.12) : themeAlpha('accent', 0.1)}
                   avatarColor={isMain ? themeHex('primary') : themeHex('accent')}
                   icon={isMain ? Shield : Bot}

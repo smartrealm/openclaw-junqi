@@ -1,10 +1,10 @@
 // Voice recording via macOS CoreAudio (cpal + hound).
 // Spawns a dedicated thread to avoid cpal Send issues.
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc;
-use std::fs;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use base64::{engine::general_purpose::STANDARD, Engine};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::fs;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 
 struct ActiveRecording {
     stop_tx: mpsc::Sender<()>,
@@ -33,9 +33,9 @@ pub fn voice_start_recording() -> Result<serde_json::Value, String> {
     std::thread::spawn(move || {
         let result: Result<(), String> = (|| {
             let host = cpal::default_host();
-            let device = host.default_input_device()
-                .ok_or("未找到麦克风设备")?;
-            let config = device.default_input_config()
+            let device = host.default_input_device().ok_or("未找到麦克风设备")?;
+            let config = device
+                .default_input_config()
                 .map_err(|e| format!("麦克风配置失败: {}", e))?;
 
             let spec = hound::WavSpec {
@@ -50,34 +50,38 @@ pub fn voice_start_recording() -> Result<serde_json::Value, String> {
 
             let writer_clone = writer.clone();
             let stream = match config.sample_format() {
-                cpal::SampleFormat::I16 => {
-                    device.build_input_stream(
+                cpal::SampleFormat::I16 => device
+                    .build_input_stream(
                         &config.into(),
                         move |data: &[i16], _: &cpal::InputCallbackInfo| {
                             if let Ok(mut w) = writer_clone.lock() {
                                 if let Some(ref mut w) = *w {
-                                    for &s in data { let _ = w.write_sample(s); }
+                                    for &s in data {
+                                        let _ = w.write_sample(s);
+                                    }
                                 }
                             }
                         },
                         |e| eprintln!("[Voice] error: {}", e),
                         None,
-                    ).map_err(|e| format!("启动流失败: {}", e))?
-                }
-                cpal::SampleFormat::F32 => {
-                    device.build_input_stream(
+                    )
+                    .map_err(|e| format!("启动流失败: {}", e))?,
+                cpal::SampleFormat::F32 => device
+                    .build_input_stream(
                         &config.into(),
                         move |data: &[f32], _: &cpal::InputCallbackInfo| {
                             if let Ok(mut w) = writer_clone.lock() {
                                 if let Some(ref mut w) = *w {
-                                    for &s in data { let _ = w.write_sample((s * i16::MAX as f32) as i16); }
+                                    for &s in data {
+                                        let _ = w.write_sample((s * i16::MAX as f32) as i16);
+                                    }
                                 }
                             }
                         },
                         |e| eprintln!("[Voice] error: {}", e),
                         None,
-                    ).map_err(|e| format!("启动流失败: {}", e))?
-                }
+                    )
+                    .map_err(|e| format!("启动流失败: {}", e))?,
                 _ => return Err("不支持的音频格式".to_string()),
             };
 
@@ -87,7 +91,9 @@ pub fn voice_start_recording() -> Result<serde_json::Value, String> {
             let _ = stop_rx.recv();
 
             drop(stream);
-            if let Ok(mut w) = writer.lock() { w.take(); }
+            if let Ok(mut w) = writer.lock() {
+                w.take();
+            }
             Ok(())
         })();
 
@@ -96,7 +102,11 @@ pub fn voice_start_recording() -> Result<serde_json::Value, String> {
         }
     });
 
-    let rec = ActiveRecording { stop_tx, path: path.clone(), start: std::time::Instant::now() };
+    let rec = ActiveRecording {
+        stop_tx,
+        path: path.clone(),
+        start: std::time::Instant::now(),
+    };
     let mut guard = RECORDER.lock().map_err(|e| format!("Lock: {}", e))?;
     *guard = Some(rec);
 

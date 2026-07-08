@@ -22,18 +22,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "src/types/global.d.ts"],
-  "exclude": [
-    // Pristine 1:1 mirrors of hanshuaikang/nezha source kept as a
-    // reference layer during the porting effort. They reference
-    // nezha-only types/styles/imports that the host app does not
-    // ship, so tsc would flood with errors. Components migrate
-    // OUT of these directories (under new paths and with their
-    // imports rewritten) as they get adopted; an empty directory
-    // here = porting is complete.
-    "src/_nezha_root",
-    "src/components/nezha",
-    "src/hooks/nezha",
-    "src/styles/nezha"
-  ]
+  "include": ["src", "src/types/global.d.ts"]
 }

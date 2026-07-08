@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { ArrowDown, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -9,17 +9,18 @@ import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 import { projectResponseGroupToRenderBlocks } from '@/processing/projectResponseGroup';
-import { MessageBubble } from './MessageBubble';
-import { ToolCallBubble } from './ToolCallBubble';
-import { ThinkingBubble } from './ThinkingBubble';
-import { DecisionCard, FileResultCard, SessionEventCard, WorkshopEventCard } from './ResultCards';
-import { MessageInput } from './MessageInput';
-import { TypingIndicator } from './TypingIndicator';
-import { InlineButtonBar } from './InlineButtonBar';
-import { QuickReplyBar } from './QuickReplyBar';
-import type { RenderBlock } from '@/types/RenderBlock';
+import type {
+  DecisionBlock,
+  MessageBlock,
+  RenderBlock,
+  SessionEventBlock,
+  ThinkingBlock,
+  ToolBlock,
+  WorkshopEventBlock,
+} from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import clsx from 'clsx';
+import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -28,6 +29,97 @@ const HISTORY_BACKGROUND_RETRY_MAX_MS = 120_000;
 const HISTORY_STARTUP_RETRY_BASE_MS = 3_000;
 const HISTORY_STARTUP_RETRY_MAX_MS = 12_000;
 const DEFAULT_GATEWAY_WS_URL = 'ws://127.0.0.1:18789';
+
+const InlineButtonBar = lazy(() => import('./InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
+const DecisionCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.DecisionCard })));
+const FileResultCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.FileResultCard })));
+const MessageBubble = lazy(() => import('./MessageBubble').then((m) => ({ default: m.MessageBubble })));
+const MessageInput = lazy(() => import('./MessageInput').then((m) => ({ default: m.MessageInput })));
+const SessionEventCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.SessionEventCard })));
+const ThinkingBubble = lazy(() => import('./ThinkingBubble').then((m) => ({ default: m.ThinkingBubble })));
+const ToolCallBubble = lazy(() => import('./ToolCallBubble').then((m) => ({ default: m.ToolCallBubble })));
+const TypingIndicator = lazy(() => import('./TypingIndicator').then((m) => ({ default: m.TypingIndicator })));
+const QuickReplyBar = lazy(() => import('./QuickReplyBar').then((m) => ({ default: m.QuickReplyBar })));
+const WorkshopEventCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.WorkshopEventCard })));
+
+function MessageBubbleFallback({ block }: { block: MessageBlock }) {
+  const isUser = block.role === 'user';
+  return (
+    <div className={clsx('flex px-5 py-2.5', isUser ? 'justify-end' : 'justify-start')}>
+      <div
+        className={clsx(
+          'max-w-[82%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
+          isUser
+            ? 'bg-aegis-primary/15 text-aegis-text border border-aegis-primary/20'
+            : 'bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-muted border border-[rgb(var(--aegis-overlay)/0.08)]',
+        )}
+      >
+        {block.markdown || '...'}
+      </div>
+    </div>
+  );
+}
+
+function ToolCallFallback({ block }: { block: ToolBlock }) {
+  return (
+    <div className="ml-[46px] mr-4 py-[2px]">
+      <div className="inline-flex max-w-[min(640px,72%)] items-center gap-2 rounded-lg px-0 py-1 text-[11px] text-aegis-text-dim">
+        <span className={clsx('h-1.5 w-1.5 rounded-full', block.status === 'error' ? 'bg-aegis-danger' : 'bg-aegis-success/60')} />
+        <span className="font-medium">{block.toolName}</span>
+      </div>
+    </div>
+  );
+}
+
+function ThinkingFallback({ block }: { block: ThinkingBlock | { content: string } }) {
+  const lineCount = block.content ? block.content.split('\n').length : 0;
+  return (
+    <div className="pl-[46px] py-[2px] min-w-0">
+      <div className="inline-flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] rounded-full border border-aegis-primary/15 bg-aegis-primary/[0.04]">
+        <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/55" />
+        <span className="text-[11px] font-medium text-aegis-primary/85">Thinking</span>
+        {lineCount > 0 && <span className="text-[9px] text-aegis-text-dim/55 font-mono">{lineCount}L</span>}
+      </div>
+    </div>
+  );
+}
+
+function ResultCardFallback({ block }: { block: DecisionBlock | SessionEventBlock | WorkshopEventBlock | { type: 'file-output'; files: unknown[] } }) {
+  const label =
+    block.type === 'decision'
+      ? 'Decision'
+      : block.type === 'session-event'
+        ? block.event.text
+        : block.type === 'workshop-event'
+          ? 'Workshop update'
+          : `${block.files.length} file${block.files.length === 1 ? '' : 's'}`;
+  return (
+    <div className="pl-[42px] py-[2px]">
+      <div className="inline-flex rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text-muted">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function numberFromHistory(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function textFromHistory(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (value == null) return undefined;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
 
 interface HistoryMeta {
   loaded: boolean;
@@ -311,6 +403,11 @@ export function ChatView() {
             attachments: msg.attachments,
             toolName: msg.toolName || msg.name,
             toolInput: msg.toolInput || msg.input,
+            toolOutput: textFromHistory(msg.toolOutput ?? msg.output ?? msg.result),
+            toolStatus: msg.toolStatus || msg.status,
+            toolDurationMs: numberFromHistory(
+              msg.toolDurationMs ?? msg.durationMs ?? msg.duration_ms ?? msg.tool_duration_ms,
+            ),
             toolCallId: msg.toolCallId || msg.tool_call_id,
             thinkingContent: msg.thinkingContent,
             fileRefs: Array.isArray(msg.fileRefs) ? msg.fileRefs : undefined,
@@ -358,7 +455,8 @@ export function ChatView() {
             }));
           }
 
-          console.info(
+          debugLog(
+            'app',
             `[ChatView] History metrics session=${sessionKey} requestMs=${requestMs} normalizeMs=${normalizeMs} totalMessages=${messages.length}`,
           );
           if (shouldTrackConversationStage && !options?.background) {
@@ -383,7 +481,7 @@ export function ChatView() {
                 'Recent conversation is syncing in the background — you can chat now.',
               );
             }
-            console.info('[ChatView] History not ready yet during startup, scheduling quick retry');
+            debugLog('app', '[ChatView] History not ready yet during startup, scheduling quick retry');
             const startupRetryCount = (historyStartupRetryCountBySession.current[sessionKey] ?? 0) + 1;
             historyStartupRetryCountBySession.current[sessionKey] = startupRetryCount;
             const retryDelay = Math.min(
@@ -398,7 +496,7 @@ export function ChatView() {
             }
             return;
           }
-          console.error('[ChatView] History load failed:', err);
+          debugError('app', '[ChatView] History load failed:', err);
           if (errText.includes('Request timeout')) {
             if (shouldTrackConversationStage) {
               boot.markStageCompleted(
@@ -498,7 +596,7 @@ export function ChatView() {
         },
       }));
     } catch (err) {
-      console.warn('[ChatView] loadOlderMessages failed', err);
+      debugWarn('app', '[ChatView] loadOlderMessages failed', err);
     } finally {
       isLoadingOlderRef.current = false;
     }
@@ -590,7 +688,7 @@ export function ChatView() {
     try {
       await gateway.sendMessage(text, undefined, activeSessionKey);
     } catch (err) {
-      console.error('[Resend] Send error:', err);
+      debugError('app', '[Resend] Send error:', err);
     }
   }, [activeSessionKey, addMessage, revealConversationTail]);
 
@@ -633,7 +731,7 @@ export function ChatView() {
     try {
       await gateway.sendMessage(text, undefined, activeSessionKey);
     } catch (err) {
-      console.error('[InlineButtons] Send error:', err);
+      debugError('app', '[InlineButtons] Send error:', err);
     }
   }, [addMessage, activeSessionKey]);
 
@@ -652,7 +750,7 @@ export function ChatView() {
     try {
       await gateway.sendMessage(text, undefined, activeSessionKey);
     } catch (err) {
-      console.error('[DecisionCard] Send error:', err);
+      debugError('app', '[DecisionCard] Send error:', err);
     }
   }, [activeSessionKey, addMessage, setQuickReplies]);
 
@@ -664,53 +762,79 @@ export function ChatView() {
 
       case 'inline-buttons':
         return (
-          <InlineButtonBar
-            buttons={block.rows.map(r => r.buttons.map(b => ({ text: b.text, callback_data: b.callback_data })))}
-            onCallback={handleInlineButtonClick}
-          />
+          <Suspense fallback={null}>
+            <InlineButtonBar
+              buttons={block.rows.map(r => r.buttons.map(b => ({ text: b.text, callback_data: b.callback_data })))}
+              onCallback={handleInlineButtonClick}
+            />
+          </Suspense>
         );
 
       case 'tool':
         return (
-          <ToolCallBubble
-            tool={{
-              toolName: block.toolName,
-              input: block.input,
-              output: block.output,
-              status: block.status,
-              durationMs: block.durationMs,
-            }}
-          />
+          <Suspense fallback={<ToolCallFallback block={block} />}>
+            <ToolCallBubble
+              tool={{
+                toolName: block.toolName,
+                input: block.input,
+                output: block.output,
+                status: block.status,
+                durationMs: block.durationMs,
+              }}
+            />
+          </Suspense>
         );
 
       case 'thinking':
-        return <ThinkingBubble content={block.content} />;
+        return (
+          <Suspense fallback={<ThinkingFallback block={block} />}>
+            <ThinkingBubble content={block.content} />
+          </Suspense>
+        );
 
       case 'file-output':
-        return <FileResultCard files={block.files} />;
+        return (
+          <Suspense fallback={<ResultCardFallback block={block} />}>
+            <FileResultCard files={block.files} />
+          </Suspense>
+        );
 
       case 'decision':
-        return <DecisionCard options={block.options} onSelect={handleDecisionSelect} />;
+        return (
+          <Suspense fallback={<ResultCardFallback block={block} />}>
+            <DecisionCard options={block.options} onSelect={handleDecisionSelect} />
+          </Suspense>
+        );
 
       case 'workshop-event':
-        return <WorkshopEventCard events={block.events} />;
+        return (
+          <Suspense fallback={<ResultCardFallback block={block} />}>
+            <WorkshopEventCard events={block.events} />
+          </Suspense>
+        );
 
       case 'session-event':
-        return <SessionEventCard event={block.event} />;
+        return (
+          <Suspense fallback={<ResultCardFallback block={block} />}>
+            <SessionEventCard event={block.event} />
+          </Suspense>
+        );
 
       case 'message':
         return (
-          <MessageBubble
-            block={block}
-            onResend={block.role === 'user' ? handleResend : undefined}
-            onRegenerate={block.role === 'assistant' ? handleRegenerate : undefined}
-            onErrorAction={block.role === 'assistant' ? handleErrorAction : undefined}
-            onDelete={() => {
-              const st = useChatStore.getState();
-              const key = st.activeSessionKey;
-              st.setMessages((st.messagesPerSession[key] || []).filter((m) => m.id !== block.id), key);
-            }}
-          />
+          <Suspense fallback={<MessageBubbleFallback block={block} />}>
+            <MessageBubble
+              block={block}
+              onResend={block.role === 'user' ? handleResend : undefined}
+              onRegenerate={block.role === 'assistant' ? handleRegenerate : undefined}
+              onErrorAction={block.role === 'assistant' ? handleErrorAction : undefined}
+              onDelete={() => {
+                const st = useChatStore.getState();
+                const key = st.activeSessionKey;
+                st.setMessages((st.messagesPerSession[key] || []).filter((m) => m.id !== block.id), key);
+              }}
+            />
+          </Suspense>
         );
 
       default:
@@ -767,9 +891,15 @@ export function ChatView() {
   const Footer = useCallback(() => (
     <div className="pb-1">
       {thinkingText && (
-        <ThinkingBubble content={thinkingText} isStreaming />
+        <Suspense fallback={<ThinkingFallback block={{ content: thinkingText }} />}>
+          <ThinkingBubble content={thinkingText} isStreaming />
+        </Suspense>
       )}
-      {isTyping && !tailIsStreamingMessage && <TypingIndicator />}
+      {isTyping && !tailIsStreamingMessage && (
+        <Suspense fallback={null}>
+          <TypingIndicator />
+        </Suspense>
+      )}
     </div>
   ), [thinkingText, isTyping, tailIsStreamingMessage]);
 
@@ -925,30 +1055,34 @@ export function ChatView() {
 
       {/* Quick Reply buttons */}
       {quickReplies.length > 0 && !isTyping && !latestGroupHasDecision && (
-        <QuickReplyBar
-          buttons={quickReplies}
-          onSend={async (text) => {
-            setQuickReplies([], activeSessionKey);
-            const userMsg: ChatMessage = {
-              id: `user-${Date.now()}`,
-              role: 'user',
-              content: text,
-              timestamp: new Date().toISOString(),
-            };
-            addMessage(userMsg, activeSessionKey);
-            const { setIsTyping } = useChatStore.getState();
-            setIsTyping(true, activeSessionKey);
-            try {
-              await gateway.sendMessage(text, undefined, activeSessionKey);
-            } catch (err) {
-              console.error('[QuickReplyBar] Send error:', err);
-            }
-          }}
-          onDismiss={() => setQuickReplies([], activeSessionKey)}
-        />
+        <Suspense fallback={null}>
+          <QuickReplyBar
+            buttons={quickReplies}
+            onSend={async (text) => {
+              setQuickReplies([], activeSessionKey);
+              const userMsg: ChatMessage = {
+                id: `user-${Date.now()}`,
+                role: 'user',
+                content: text,
+                timestamp: new Date().toISOString(),
+              };
+              addMessage(userMsg, activeSessionKey);
+              const { setIsTyping } = useChatStore.getState();
+              setIsTyping(true, activeSessionKey);
+              try {
+                await gateway.sendMessage(text, undefined, activeSessionKey);
+              } catch (err) {
+                debugError('app', '[QuickReplyBar] Send error:', err);
+              }
+            }}
+            onDismiss={() => setQuickReplies([], activeSessionKey)}
+          />
+        </Suspense>
       )}
 
-      <MessageInput />
+      <Suspense fallback={<div className="h-[76px] border-t border-aegis-border/20" />}>
+        <MessageInput />
+      </Suspense>
     </div>
   </div>
   );

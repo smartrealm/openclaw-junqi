@@ -1,5 +1,4 @@
 import { Check, Loader2, Circle, AlertTriangle, RotateCw, RefreshCw, FileText } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { getBootProgressSummary, useBootSequenceStore, type BootStage } from '@/stores/bootSequenceStore';
@@ -31,13 +30,16 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
   const pct = Math.round((summary.completed / summary.total) * 100);
 
   return (
-    <motion.div
+    <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-aegis-bg/95 backdrop-blur-xl"
-      initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-      animate={{ opacity: 1, backdropFilter: 'blur(18px)' }}
-      exit={{ opacity: 0, scale: 0.985, backdropFilter: 'blur(0px)' }}
-      transition={{ duration: 0.85, ease: [0.22, 1, 0.36, 1] }}
+      style={{ animation: 'boot-overlay-enter 0.85s cubic-bezier(0.22, 1, 0.36, 1)' }}
     >
+      <style>{`
+        @keyframes boot-overlay-enter {
+          from { opacity: 0; backdrop-filter: blur(0px); }
+          to { opacity: 1; backdrop-filter: blur(18px); }
+        }
+      `}</style>
       <div className="w-[440px] max-w-[calc(100vw-48px)] rounded-2xl border border-aegis-border bg-aegis-elevated shadow-2xl overflow-hidden">
         <div className="p-5 border-b border-aegis-border">
           <div className="flex items-center gap-3">
@@ -127,6 +129,6 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
         )}
 
       </div>
-    </motion.div>
+    </div>
   );
 }

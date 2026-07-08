@@ -2,7 +2,6 @@
 // ByModelSection — Per-model usage table with mini bars
 // ═══════════════════════════════════════════════════════════
 
-import { motion } from 'framer-motion';
 import { Cpu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -94,12 +93,9 @@ export function ByModelSection({ byModel }: ByModelSectionProps) {
                   </td>
                   <td className="py-2.5 pe-1">
                     <div className="w-16 h-[3px] rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] overflow-hidden inline-block align-middle">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${barPct}%` }}
-                        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+                      <div
                         className="h-full rounded-full"
-                        style={{ background: color }}
+                        style={{ width: `${barPct}%`, background: color }}
                       />
                     </div>
                   </td>

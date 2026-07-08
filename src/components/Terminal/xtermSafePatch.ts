@@ -11,6 +11,8 @@
 // Call `installXtermSafePatch()` once at app boot. Returns a disposer.
 // ─────────────────────────────────────────────────────────────────
 
+import { debugLog } from "@/utils/debugLog";
+
 let installed = false;
 let origHandler: ((event: ErrorEvent) => void) | null = null;
 
@@ -36,9 +38,7 @@ export function installXtermSafePatch(): () => void {
       // on window.error that replaces the entire app with red text.
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (import.meta.env.DEV) {
-        console.debug('[xtermSafePatch] suppressed dimensions/syncScrollArea error');
-      }
+      debugLog('terminal', '[xtermSafePatch] suppressed dimensions/syncScrollArea error');
       return;
     }
   };

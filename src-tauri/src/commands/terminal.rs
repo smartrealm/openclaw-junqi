@@ -132,7 +132,9 @@ fn pty_reader_thread(id: String, mut reader: Box<dyn Read + Send>, app: AppHandl
                 }
                 Err(e) => {
                     let valid = consumed + e.valid_up_to();
-                    out.push_str(unsafe { std::str::from_utf8_unchecked(&pending[consumed..valid]) });
+                    out.push_str(unsafe {
+                        std::str::from_utf8_unchecked(&pending[consumed..valid])
+                    });
                     match e.error_len() {
                         Some(err_len) => {
                             out.push('\u{FFFD}');
@@ -149,7 +151,13 @@ fn pty_reader_thread(id: String, mut reader: Box<dyn Read + Send>, app: AppHandl
         pending.drain(..consumed);
 
         if !out.is_empty() {
-            let _ = app.emit("terminal-data", DataEvent { id: id.clone(), data: out });
+            let _ = app.emit(
+                "terminal-data",
+                DataEvent {
+                    id: id.clone(),
+                    data: out,
+                },
+            );
         }
     }
 
@@ -157,7 +165,10 @@ fn pty_reader_thread(id: String, mut reader: Box<dyn Read + Send>, app: AppHandl
     if !pending.is_empty() {
         let _ = app.emit(
             "terminal-data",
-            DataEvent { id: id.clone(), data: String::from_utf8_lossy(&pending).into_owned() },
+            DataEvent {
+                id: id.clone(),
+                data: String::from_utf8_lossy(&pending).into_owned(),
+            },
         );
     }
 
@@ -171,10 +182,7 @@ fn pty_reader_thread(id: String, mut reader: Box<dyn Read + Send>, app: AppHandl
 // Blocks on flume recv(). Runs until:
 //   - user_input_rx.recv() returns Disconnected (sender dropped on Kill/Close)
 //   - write returns an error (broken pipe / PTY closed)
-fn pty_writer_thread(
-    writer: Box<dyn IoWrite + Send>,
-    user_input_rx: Receiver<Vec<u8>>,
-) {
+fn pty_writer_thread(writer: Box<dyn IoWrite + Send>, user_input_rx: Receiver<Vec<u8>>) {
     let mut writer = writer;
 
     while let Ok(data) = user_input_rx.recv() {
@@ -196,7 +204,12 @@ pub async fn terminal_create(
 ) -> Result<CreateResult, String> {
     let cols = cols.unwrap_or(80).max(1);
     let rows = rows.unwrap_or(24).max(1);
-    let size = PtySize { rows, cols, pixel_width: 0, pixel_height: 0 };
+    let size = PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    };
 
     let system = native_pty_system();
     let pair = system.openpty(size).map_err(|e| format!("openpty: {e}"))?;
@@ -311,7 +324,9 @@ pub async fn terminal_resize(id: String, cols: u16, rows: u16) -> Result<(), Str
     let guard = handle.lock().unwrap();
     let ctx = guard.as_ref().ok_or_else(|| "stream closed".to_string())?;
     let master_guard = ctx.pty_master.lock().unwrap();
-    let master = master_guard.as_ref().ok_or_else(|| "stream closed".to_string())?;
+    let master = master_guard
+        .as_ref()
+        .ok_or_else(|| "stream closed".to_string())?;
     master
         .resize(PtySize {
             rows: rows.max(1),

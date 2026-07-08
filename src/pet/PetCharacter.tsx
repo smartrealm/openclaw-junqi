@@ -12,16 +12,37 @@ import type { PetEmotion } from './pet-states';
 import { EMOTION_CFG } from './emotion-config';
 import { SKIN_REGISTRY, type PetSkin } from './skins';
 import { EFFECT_REGISTRY } from './effects';
+import { normalizePetThemeName, resolvePetCharacterPalette, type PetThemeName } from './petTheme';
 
 export type { PetSkin };
 
 const EASE = [0.22, 1, 0.36, 1] as const;
-const INK = '#1b1b2f';
-const PET_PRIMARY = 'rgb(var(--aegis-primary))';
-const PET_PRIMARY_AURA = 'rgb(var(--aegis-primary) / 0.68)';
-const PET_PRIMARY_AURA_SOFT = 'rgb(var(--aegis-primary) / 0.52)';
-const PET_SPARKLE = 'rgb(var(--aegis-text) / 0.92)';
 const BOX = { transformBox: 'fill-box' as const, transformOrigin: 'center' };
+
+function readPetThemeName(): PetThemeName {
+  if (typeof document === 'undefined') return 'aegis-dark';
+  const theme = document.documentElement.getAttribute('data-theme');
+  const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+  return normalizePetThemeName(theme, systemDark);
+}
+
+function usePetCharacterTheme(): PetThemeName {
+  const [themeName, setThemeName] = useState(readPetThemeName);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const refresh = () => setThemeName(readPetThemeName());
+    const observer = new MutationObserver(refresh);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    media?.addEventListener('change', refresh);
+    refresh();
+    return () => {
+      observer.disconnect();
+      media?.removeEventListener('change', refresh);
+    };
+  }, []);
+  return themeName;
+}
 
 export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', customAsset, dragging = false, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
   emotion?: PetEmotion;
@@ -40,7 +61,9 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
   dragRotation?: number;
 }) {
   const cfg = EMOTION_CFG[emotion] ?? EMOTION_CFG.idle;
-  const bodyColor = PET_PRIMARY;
+  const themeName = usePetCharacterTheme();
+  const palette = resolvePetCharacterPalette(themeName, skin);
+  const bodyColor = palette.body;
   const Effect = EFFECT_REGISTRY[cfg.effect];
 
   const [blink, setBlink] = useState(false);
@@ -124,11 +147,11 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
             inset: 0,
             borderRadius: '50%',
             background: 'transparent',
-            border: `3px solid ${PET_PRIMARY_AURA}`,
+            border: `3px solid ${bodyColor}`,
             transform: 'translateY(10px)',
           }}
-          initial={{ scale: 0.4, opacity: 0.9 }}
-          animate={{ scale: [0.4, 1.6, 2.2], opacity: [0.9, 0.4, 0] }}
+          initial={{ scale: 0.4, opacity: 0.72 }}
+          animate={{ scale: [0.4, 1.6, 2.2], opacity: [0.72, 0.32, 0] }}
           transition={{ duration: 0.7, ease: 'easeOut' }}
         />
       )}
@@ -139,15 +162,15 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
           <svg width="96" height="110" viewBox="0 0 120 140" style={{ overflow: 'visible' }}>
             <motion.circle cx={60} cy={70} r={20}
-              fill="none" stroke={PET_PRIMARY_AURA} strokeWidth={2}
+              fill="none" stroke={bodyColor} strokeWidth={2}
               initial={{ scale: 0.4, opacity: 0.9 }}
               animate={{ scale: [0.4, 1.6, 2.4], opacity: [0.9, 0.4, 0] }}
               transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut', delay: 0 }}
             />
             <motion.circle cx={60} cy={70} r={20}
-              fill="none" stroke={PET_PRIMARY_AURA_SOFT} strokeWidth={1.5}
+              fill="none" stroke={bodyColor} strokeWidth={1.5}
               initial={{ scale: 0.4, opacity: 0.8 }}
-              animate={{ scale: [0.4, 1.6, 2.4], opacity: [0.8, 0.3, 0] }}
+              animate={{ scale: [0.4, 1.6, 2.4], opacity: [0.58, 0.22, 0] }}
               transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut', delay: 0.35 }}
             />
             {[0, 1, 2, 3, 4, 5].map((i) => {
@@ -156,7 +179,7 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
               const y = 70 + Math.sin(angle) * 32;
               return (
                 <motion.circle key={i} cx={x} cy={y} r={2.5}
-                  fill={PET_SPARKLE}
+                  fill={palette.sparkle}
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{ scale: [0, 1, 0], opacity: [0, 1, 0] }}
                   transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15, ease: 'easeOut' }}
@@ -168,8 +191,8 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
       )}
       <svg width="96" height="110" viewBox="0 0 120 140" style={{ overflow: 'visible' }}>
         {/* ground shadow */}
-        <motion.ellipse cx={60} cy={128} rx={30} ry={6} fill="#000" opacity={0.18} style={BOX}
-          animate={{ scaleX: [1, 0.92, 1], opacity: [0.18, 0.14, 0.18] }}
+        <motion.ellipse cx={60} cy={128} rx={30} ry={6} fill="#000" opacity={palette.groundShadowOpacity} style={BOX}
+          animate={{ scaleX: [1, 0.92, 1], opacity: [palette.groundShadowOpacity, palette.groundShadowOpacity * 0.75, palette.groundShadowOpacity] }}
           transition={{ duration: 3.6, repeat: Infinity, ease: EASE }} />
 
         {/* pose (spring) */}
@@ -187,16 +210,16 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
           <motion.g style={BOX}
             animate={{ scale: [1, 1.035, 1] }}
             transition={{ duration: 3 / Math.max(cfg.breath, 0.1), repeat: Infinity, ease: EASE }}>
-            <Skin color={bodyColor} />
+            <Skin color={bodyColor} highlight={palette.highlight} />
             {cfg.cheeks && (
               <>
                 <ellipse cx={38} cy={80} rx={6} ry={4} fill="#ff8fab" opacity={0.5} />
                 <ellipse cx={82} cy={80} rx={6} ry={4} fill="#ff8fab" opacity={0.5} />
               </>
             )}
-            <Eye cx={47} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} />
-            <Eye cx={73} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} />
-            <motion.path d={cfg.mouth} fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"
+            <Eye cx={47} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} ink={palette.ink} eye={palette.eye} highlight={palette.eyeHighlight} />
+            <Eye cx={73} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} ink={palette.ink} eye={palette.eye} highlight={palette.eyeHighlight} />
+            <motion.path d={cfg.mouth} fill="none" stroke={palette.ink} strokeWidth={2.4} strokeLinecap="round"
               animate={{ d: cfg.mouth }} transition={{ type: 'spring', stiffness: 300, damping: 26 }} />
           </motion.g>
         </motion.g>
@@ -208,13 +231,13 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
   );
 }
 
-function Eye({ cx, blink, open, dx }: { cx: number; blink: boolean; open: number; dx: number }) {
+function Eye({ cx, blink, open, dx, ink, eye, highlight }: { cx: number; blink: boolean; open: number; dx: number; ink: string; eye: string; highlight: string }) {
   const sy = blink ? 0.08 : Math.max(open, 0.05);
   return (
     <motion.g style={BOX} animate={{ scaleY: sy }} transition={{ duration: 0.12, ease: EASE }}>
-      <ellipse cx={cx} cy={70} rx={9.5} ry={12} fill="#fff" />
-      <motion.circle cx={cx} cy={72} r={6} fill={INK} animate={{ cx: cx + dx }} transition={{ duration: 0.6, ease: EASE }} />
-      <circle cx={cx - 2} cy={69} r={2} fill="#fff" />
+      <ellipse cx={cx} cy={70} rx={9.5} ry={12} fill={eye} />
+      <motion.circle cx={cx} cy={72} r={6} fill={ink} animate={{ cx: cx + dx }} transition={{ duration: 0.6, ease: EASE }} />
+      <circle cx={cx - 2} cy={69} r={2} fill={highlight} opacity={0.86} />
     </motion.g>
   );
 }

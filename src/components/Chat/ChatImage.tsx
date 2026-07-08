@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, Maximize2, X, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import clsx from 'clsx';
+import { debugError, debugLog } from '@/utils/debugLog';
 
 // ═══════════════════════════════════════════════════════════
 // ChatImage — Image display with save, zoom, and lightbox
@@ -67,16 +68,11 @@ function useResolvedImageSrc(src: string): string {
         }
       })
       .catch((err: unknown) => {
-        console.error('[ChatImage] IPC file read failed:', filePath, err);
+        debugError('media', '[ChatImage] IPC file read failed:', filePath, err);
       });
   }, [src, syncResolved]);
 
   return syncResolved !== null ? syncResolved : asyncSrc;
-}
-
-// Keep backward-compatible alias for Lightbox (which doesn't need async)
-function resolveImageSrc(src: string): string {
-  return resolveImageSrcSync(src) ?? src;
 }
 
 // ── Extract filename from src ──
@@ -104,10 +100,10 @@ async function saveImage(src: string, suggestedName: string): Promise<void> {
     // Use Electron IPC to save
     const result = await window.aegis?.image?.save(src, suggestedName);
     if (result?.success) {
-      console.log('[ChatImage] Saved to:', result.path);
+      debugLog('media', '[ChatImage] Saved to:', result.path);
     }
   } catch (err) {
-    console.error('[ChatImage] Save failed:', err);
+    debugError('media', '[ChatImage] Save failed:', err);
     // Fallback: open in browser to allow right-click save
     window.open(src, '_blank');
   }
@@ -172,7 +168,7 @@ function Lightbox({ src, alt, onClose }: LightboxProps) {
 
   const handleSave = () => {
     const filename = extractFilename(src, alt);
-    saveImage(resolveImageSrc(src), filename);
+    saveImage(resolveImageSrcSync(src) ?? src, filename);
   };
 
   return (
@@ -216,7 +212,7 @@ function Lightbox({ src, alt, onClose }: LightboxProps) {
 
       {/* Image */}
       <img
-        src={resolveImageSrc(src)}
+        src={resolveImageSrcSync(src) ?? src}
         alt={alt || ''}
         draggable={false}
         className="select-none transition-transform"

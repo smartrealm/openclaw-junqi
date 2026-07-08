@@ -16,10 +16,8 @@ import { useTranslation } from 'react-i18next';
 import { Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { Terminal as XTerm } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { Unicode11Addon } from '@xterm/addon-unicode11';
-import '@xterm/xterm/css/xterm.css';
+import type { Terminal as XTerm } from '@xterm/xterm';
+import type { FitAddon } from '@xterm/addon-fit';
 import {
   Play, Square, RotateCcw, ChevronDown, ChevronRight, AlertCircle,
   ExternalLink, GitBranch, GitMerge, Trash2, Clock,
@@ -50,6 +48,17 @@ import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon
 import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
 import { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from '@/components/shared/ToolCallHistoryPopover';
 import { useSessionHistoryStore } from '@/stores/sessionHistoryStore';
+import { debugError, debugWarn } from '@/utils/debugLog';
+
+async function loadTerminalDeps() {
+  const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
+    import('@xterm/xterm'),
+    import('@xterm/addon-fit'),
+    import('@xterm/addon-unicode11'),
+    import('@xterm/xterm/css/xterm.css'),
+  ]);
+  return { Terminal, FitAddon, Unicode11Addon };
+}
 
 // ── Types (matching nezha's types.ts) ──────────────────────────────────────
 
@@ -484,18 +493,26 @@ export function AgentRunView() {
     let fit: FitAddon | null = null;
     let sizeRo: ResizeObserver | null = null;
     let dataDisp: { dispose(): void } | null = null;
+    let bootstrapping = false;
 
-    const bootstrap = () => {
-      if (cancelled || term) return;
+    const bootstrap = async () => {
+      if (cancelled || term || bootstrapping) return;
       const r = container.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
+      bootstrapping = true;
+
+      const deps = await loadTerminalDeps();
+      if (cancelled || term) {
+        bootstrapping = false;
+        return;
+      }
 
       // Container is live — disconnect sizing observer, build xterm.
       sizeRo?.disconnect();
       sizeRo = null;
 
       try {
-        term = new XTerm({
+        term = new deps.Terminal({
           cursorBlink: true,
           fontSize: 13,
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -509,9 +526,9 @@ export function AgentRunView() {
           rows: 30,
           cols: 120,
         });
-        fit = new FitAddon();
+        fit = new deps.FitAddon();
         term.loadAddon(fit);
-        const unicode11 = new Unicode11Addon();
+        const unicode11 = new deps.Unicode11Addon();
         term.loadAddon(unicode11);
         unicode11.activate(term);
         term.open(container);
@@ -521,7 +538,7 @@ export function AgentRunView() {
           if (!runningRef.current) return;
           if (data.length <= 3 && /^[\x00-\x7F]$/.test(data)) return;
           invoke('agent_send_input', { taskId, data }).catch((err) => {
-            console.warn('[AgentRunView] paste-forward failed:', err);
+            debugWarn('terminal', '[AgentRunView] paste-forward failed:', err);
           });
         });
 
@@ -569,17 +586,19 @@ export function AgentRunView() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setTerminalError(`Terminal init failed: ${msg}`);
-        console.error('[AgentRunView] Terminal init failed:', err);
+        debugError('terminal', '[AgentRunView] Terminal init failed:', err);
+      } finally {
+        bootstrapping = false;
       }
     }; // bootstrap
 
     // Try synchronously — container might already have size (e.g. remount).
-    bootstrap();
+    void bootstrap();
 
     // If xterm wasn't opened (container had 0 dimensions), wait for the
     // next non-zero paint via ResizeObserver.
     if (!term) {
-      sizeRo = new ResizeObserver(() => bootstrap());
+      sizeRo = new ResizeObserver(() => { void bootstrap(); });
       sizeRo.observe(container);
     }
 
@@ -891,7 +910,7 @@ export function AgentRunView() {
               onSend={(text) => {
                 if (!text.trim()) return;
                 invoke('agent_send_input', { taskId, data: text + '\n' }).catch((err) => {
-                  console.warn('[AgentRunView] follow-up send failed:', err);
+                  debugWarn('terminal', '[AgentRunView] follow-up send failed:', err);
                 });
               }}
               disabled={false}

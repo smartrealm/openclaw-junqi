@@ -3,7 +3,7 @@
 // Full config state management + Diff Preview + Export/Import
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
@@ -12,25 +12,27 @@ import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
-import { ProvidersTab, testProviderConnection } from './ProvidersTab';
-import type { ConnectionPrecheckProbe } from './ProvidersTab';
+import { testProviderConnection, type ConnectionPrecheckProbe } from './providerConnectionTest';
 import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
 } from './runtimeNormalization';
 import { preserveProviderSecretsFromDisk } from './providerSecretResolver';
 import { normalizeProviderAuthMode } from '@/types/providerAuthMode';
-// ModelsTab removed — models are now fetched per-provider from the ProvidersTab
-import { AgentsTab } from './AgentsTab';
-import { ChannelsTab } from './ChannelsTab';
-import { ToolsTab } from './ToolsTab';
-import { AdvancedTab } from './AdvancedTab';
-import { SecretsTab } from './SecretsTab';
 import { FloatingSaveButton, ChangesPill } from './components';
+import { debugLog, debugWarn } from '@/utils/debugLog';
+import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 
 type Tab = 'providers' | 'agents' | 'channels' | 'tools' | 'advanced' | 'secrets';
 const VALID_TABS: ReadonlySet<Tab> = new Set(['providers', 'agents', 'channels', 'tools', 'advanced', 'secrets']);
 const isValidTab = (s: string): s is Tab => VALID_TABS.has(s as Tab);
+
+const ProvidersTab = lazy(() => import('./ProvidersTab').then((module) => ({ default: module.ProvidersTab })));
+const AgentsTab = lazy(() => import('./AgentsTab').then((module) => ({ default: module.AgentsTab })));
+const ChannelsTab = lazy(() => import('./ChannelsTab').then((module) => ({ default: module.ChannelsTab })));
+const ToolsTab = lazy(() => import('./ToolsTab').then((module) => ({ default: module.ToolsTab })));
+const AdvancedTab = lazy(() => import('./AdvancedTab').then((module) => ({ default: module.AdvancedTab })));
+const SecretsTab = lazy(() => import('./SecretsTab').then((module) => ({ default: module.SecretsTab })));
 
 // ─────────────────────────────────────────────────────────────
 // smartMerge — applies only the user's changes (diff between
@@ -365,13 +367,13 @@ export function ConfigManagerPage() {
         while (backups.length > 5) backups.shift();
         localStorage.setItem('aegis-config-backups', JSON.stringify(backups));
       } catch (backupErr) {
-        console.warn('[Config] Backup failed:', backupErr);
+        debugWarn('app', '[Config] Backup failed:', backupErr);
       }
 
       // 3. Apply save-time provider preference for web tools, then write
       const mergedWithPreferredProviders = applyPreferredWebProviders(merged);
       const toWrite = normalizeConfigForDisk(mergedWithPreferredProviders);
-      const savedPrimaryModel = mergedWithPreferredProviders.agents?.defaults?.model?.primary ?? null;
+      const savedPrimaryModel = toWrite.agents?.defaults?.model?.primary ?? null;
       await window.aegis.config.write(configPath, toWrite);
 
       // 3.5 Keep main agent runtime state clean:
@@ -379,7 +381,7 @@ export function ConfigManagerPage() {
       try {
         await window.aegis.agentAuth?.rehydrateMainRuntime?.();
       } catch (rehydrateErr) {
-        console.warn('[Config] Failed to rehydrate main runtime state:', rehydrateErr);
+        debugWarn('app', '[Config] Failed to rehydrate main runtime state:', rehydrateErr);
       }
 
       // 4. Sync UI state from the actual saved config so in-memory state matches disk.
@@ -409,14 +411,14 @@ export function ConfigManagerPage() {
           window.dispatchEvent(new CustomEvent('aegis:config-saved', {
             detail: { primaryModel: savedPrimaryModel, providerChanged },
           }));
-          console.log('[Config] Apply method:', restartResult.method, restartResult.changedPaths);
+          debugLog('app', '[Config] Apply method:', restartResult.method, restartResult.changedPaths);
         } else {
           // Save succeeded but restart failed — show warning with instructions
           setSaveSuccess(true);
           window.dispatchEvent(new CustomEvent('aegis:config-saved', {
             detail: { primaryModel: savedPrimaryModel, providerChanged },
           }));
-          console.warn('[Config] Restart failed:', restartResult.error);
+          debugWarn('app', '[Config] Restart failed:', restartResult.error);
           setError(`Config saved, but gateway restart failed: ${restartResult.error || 'Unknown error'}`);
         }
       } catch {
@@ -425,7 +427,7 @@ export function ConfigManagerPage() {
         window.dispatchEvent(new CustomEvent('aegis:config-saved', {
           detail: { primaryModel: savedPrimaryModel },
         }));
-        console.warn('[Config] Restart IPC unavailable');
+        debugWarn('app', '[Config] Restart IPC unavailable');
       }
 
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -569,18 +571,6 @@ export function ConfigManagerPage() {
       .replace(/[^A-Z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '');
     return normalized ? `${normalized}_API_KEY` : 'OPENCLAW_CUSTOM_API_KEY';
-  };
-
-  const resolveModelSupportsImage = (value: any): boolean | undefined => {
-    if (!value || typeof value !== 'object') return undefined;
-    if (typeof value.supportsImage === 'boolean') return value.supportsImage;
-    if (typeof value.supports_image === 'boolean') return value.supports_image;
-    if (Array.isArray(value.input)) {
-      const modalities = value.input.map((m: any) => String(m).toLowerCase());
-      if (modalities.includes('image')) return true;
-      if (modalities.includes('text')) return false;
-    }
-    return undefined;
   };
 
   const hydrateAgentModelCapabilitiesForUi = (data: GatewayRuntimeConfig): GatewayRuntimeConfig => {
@@ -1298,24 +1288,34 @@ export function ConfigManagerPage() {
             <AlertCircle size={32} className="text-aegis-text-muted" />
             <p className="text-sm text-aegis-text-secondary">{t('config.noFile')}</p>
           </div>
-        ) : activeTab === 'providers' ? (
-          <ProvidersTab
-            config={config}
-            onChange={handleChange}
-            onApplyAndSave={handleApplyAndSave}
-            saving={saving}
-          />
-        ) : activeTab === 'agents' ? (
-          <AgentsTab config={config} onChange={handleChange} />
-        ) : activeTab === 'channels' ? (
-          <ChannelsTab config={config} onChange={handleChange} />
-        ) : activeTab === 'tools' ? (
-          <ToolsTab config={config} onChange={handleChange} />
-        ) : activeTab === 'advanced' ? (
-          <AdvancedTab config={config} onChange={handleChange} />
-        ) : activeTab === 'secrets' ? (
-          <SecretsTab config={config} />
-        ) : null}
+        ) : (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-20 text-aegis-text-muted text-sm animate-pulse">
+                {t('common.loading', 'Loading...')}
+              </div>
+            }
+          >
+            {activeTab === 'providers' ? (
+              <ProvidersTab
+                config={config}
+                onChange={handleChange}
+                onApplyAndSave={handleApplyAndSave}
+                saving={saving}
+              />
+            ) : activeTab === 'agents' ? (
+              <AgentsTab config={config} onChange={handleChange} />
+            ) : activeTab === 'channels' ? (
+              <ChannelsTab config={config} onChange={handleChange} />
+            ) : activeTab === 'tools' ? (
+              <ToolsTab config={config} onChange={handleChange} />
+            ) : activeTab === 'advanced' ? (
+              <AdvancedTab config={config} onChange={handleChange} />
+            ) : activeTab === 'secrets' ? (
+              <SecretsTab config={config} />
+            ) : null}
+          </Suspense>
+        )}
 
         {/* Error display */}
         {error && (

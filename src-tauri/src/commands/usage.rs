@@ -180,8 +180,14 @@ async fn try_real_claude_snapshot() -> Result<UsageSnapshot, String> {
     Ok(UsageSnapshot {
         claude: UsageSource::Available {
             data: ClaudeUsageData {
-                five_hour: fetched.claude_five_hour.as_ref().map(|w| map_window(w.clone())),
-                seven_day: fetched.claude_seven_day.as_ref().map(|w| map_window(w.clone())),
+                five_hour: fetched
+                    .claude_five_hour
+                    .as_ref()
+                    .map(|w| map_window(w.clone())),
+                seven_day: fetched
+                    .claude_seven_day
+                    .as_ref()
+                    .map(|w| map_window(w.clone())),
             },
         },
         codex: mock.codex,

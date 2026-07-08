@@ -34,7 +34,7 @@ export function useAgentScopedSession(): void {
       label: '新会话',
       agentId,
       createdAt: Date.now(),
-    } as any;
+    };
 
     useChatStore.getState().addLocalSession(placeholder);
 
@@ -48,6 +48,5 @@ export function useAgentScopedSession(): void {
     window.history.replaceState({}, '', url.toString());
   // Re-runs only when the querystring changes; we re-trigger this from
   // the sidebar's "+ New Session" button by adding ?new=1 each click.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, wantNew]);
 }
