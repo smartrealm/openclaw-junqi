@@ -1743,6 +1743,7 @@
   "setup.openclaw.useSystemNpm": "استخدام npm النظامي",
   "setup.openclaw.userNpmPrefix": "تم اكتشاف بادئة npm {{path}} (تطابق `npm i -g`)؛ سيتم تثبيت openclaw هنا",
   "setup.openclaw.localNpmPrefix": "بادئة npm للمستخدم غير قابلة للكتابة؛ استخدام XDG {{path}} (أضف {{binPath}} إلى PATH لاستخدام openclaw من الطرفية)",
+  "setup.openclaw.sandboxNpmPrefix": "بادئة npm للمستخدم و ~/.local غير قابلتين للكتابة؛ استخدام صندوق رمل JunQi {{path}}",
   "setup.openclaw.prepareDir": "جارٍ تحضير دليل التثبيت {{path}}…",
   "setup.openclaw.npmInstall": "تفضيل npmmirror.com (CN) لتثبيت openclaw؛ الرجوع إلى npmjs.org (الرسمي)…",
   "setup.openclaw.verify": "جارٍ التحقق من تثبيت openclaw…",
@@ -1821,5 +1822,11 @@
   "channelsCenter.focusedAgent": "الوكيل المحدد",
   "channelsCenter.clearAgentFocus": "مسح تركيز الوكيل",
   "skills.disable": "تعطيل",
-  "skills.enable": "تمكين"
+  "skills.enable": "تمكين",
+  "setup.installTarget.sandbox.tier": "صندوق رمل JunQi",
+  "setup.installTarget.sandbox.note": "بادئة npm للمستخدم و ~/.local غير قابلتين للكتابة؛ يعيش openclaw في صندوق رمل JunQi. لن تجده في PATH من الطرفية — شغّله من تطبيق JunQi أو اعمل symlink يدوياً",
+  "setup.installTarget.existing.tier": "مُثبَّت بالفعل",
+  "setup.installTarget.existing.note": "تم اكتشاف OpenClaw {{version}} في {{path}}؛ تم تخطي التثبيت",
+  "setup.installTarget.existing.noteNoVersion": "تم اكتشاف OpenClaw في {{path}}؛ تم تخطي التثبيت",
+  "setup.installTarget.existing.noteNoPath": "تم اكتشاف تثبيت OpenClaw موجود، لكن لم يتم إرجاع المسار/الإصدار"
 }

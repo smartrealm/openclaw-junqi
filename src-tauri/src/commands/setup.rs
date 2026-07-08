@@ -950,7 +950,7 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
 async fn pick_install_target(
     app: &tauri::AppHandle,
     step: &str,
-) -> Result<PathBuf, String> {
+) -> PathBuf {
     let node_bin = paths::local_node_path();
     let npm_cli = paths::local_npm_cli_path();
     let mut cmd = if node_bin.exists() && npm_cli.exists() {
@@ -991,7 +991,7 @@ async fn pick_install_target(
                 "setup.openclaw.userNpmPrefix",
                 0.075,
             );
-            return Ok(prefix);
+            return prefix;
         }
         // User's npm prefix exists but isn't writable (typical case:
         // default `prefix=/usr/local` from a Homebrew/apt/Stock-Windows
@@ -1015,14 +1015,28 @@ async fn pick_install_target(
             "setup.openclaw.localNpmPrefix",
             0.075,
         );
-        return Ok(local);
+        return local;
     }
 
     // Tier 3: JunQi-managed sandbox. Always reachable because it
     // lives under `~/.openclaw/` which is owned by whoever runs the
     // app. Caller will surface the path so the user can still run
     // `openclaw` from JunQi even if their terminal can't find it.
-    Err("Neither user npm prefix nor ~/.local is writable; falling back to JunQi sandbox".into())
+    // We announce the resolved sandbox path through
+    // `setup.openclaw.sandboxNpmPrefix` so the frontend can surface a
+    // dedicated install-location card just like tiers 1/2.
+    let sandbox = paths::openclaw_global_dir();
+    emit_keyed(
+        app,
+        step,
+        &format!(
+            "User npm prefix and ~/.local both unwritable; using JunQi sandbox {}",
+            sandbox.display()
+        ),
+        "setup.openclaw.sandboxNpmPrefix",
+        0.075,
+    );
+    sandbox
 }
 
 /// Decide whether `path` is a usable install target. Returns true when
@@ -1143,19 +1157,7 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     // `npm i -g openclaw` 时拿到的同一个 bin，JunQi 不再搞自己的一套
     // sandbox。如果读不到 `prefix=` 或者目录不可写，就退回到 JunQi 管理的
     // `~/.openclaw/global/`，保证装得上。
-    let openclaw_prefix = match pick_install_target(&app, step).await {
-        Ok(target) => target,
-        Err(msg) => {
-            emit_keyed(
-                &app,
-                step,
-                &msg,
-                "setup.openclaw.fallbackNpmPrefix",
-                0.08,
-            );
-            paths::openclaw_global_dir()
-        }
-    };
+    let openclaw_prefix = pick_install_target(&app, step).await;
     emit_keyed(
         &app,
         step,

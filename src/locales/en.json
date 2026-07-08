@@ -2316,6 +2316,7 @@
   "setup.openclaw.useSystemNpm": "Using system npm",
   "setup.openclaw.userNpmPrefix": "Detected npm prefix {{path}} (matches your `npm i -g`); installing openclaw there",
   "setup.openclaw.localNpmPrefix": "User npm prefix not writable; using XDG fallback {{path}} (add {{binPath}} to your PATH to use openclaw from terminal)",
+  "setup.openclaw.sandboxNpmPrefix": "User npm prefix and ~/.local both unwritable; using JunQi sandbox {{path}}",
   "setup.openclaw.prepareDir": "Preparing install directory {{path}}…",
   "setup.openclaw.npmInstall": "Preferring npmmirror.com (CN) for openclaw install; falls back to npmjs.org (official)…",
   "setup.openclaw.verify": "Verifying openclaw installation…",
@@ -2387,5 +2388,11 @@
   "channelsCenter.focusedAgent": "Focused agent",
   "channelsCenter.clearAgentFocus": "Clear agent focus",
   "skills.disable": "Disable",
-  "skills.enable": "Enable"
+  "skills.enable": "Enable",
+  "setup.installTarget.sandbox.tier": "JunQi sandbox",
+  "setup.installTarget.sandbox.note": "User npm prefix and ~/.local are both unwritable; openclaw lives in JunQi's sandbox. Your terminal won't find it on PATH — launch it from the JunQi app or symlink it yourself.",
+  "setup.installTarget.existing.tier": "Already installed",
+  "setup.installTarget.existing.note": "Detected OpenClaw {{version}} at {{path}}; install skipped",
+  "setup.installTarget.existing.noteNoVersion": "Detected OpenClaw at {{path}}; install skipped",
+  "setup.installTarget.existing.noteNoPath": "Detected an existing OpenClaw install, but path/version were not returned"
 }

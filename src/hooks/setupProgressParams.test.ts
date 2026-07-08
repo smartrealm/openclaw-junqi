@@ -92,6 +92,33 @@ const CASES: Record<string, Case> = {
       binPath: "/Users/wei/.local/bin",
     },
   },
+  ".sandboxNpmPrefix": {
+    key: "setup.openclaw.sandboxNpmPrefix",
+    message:
+      "User npm prefix and ~/.local both unwritable; using JunQi sandbox /Users/wei/.openclaw/global",
+    expected: { path: "/Users/wei/.openclaw/global" },
+  },
+  ".useExisting (version + path)": {
+    key: "setup.openclaw.useExisting",
+    message:
+      "Using existing OpenClaw v2026.6.11 at /Users/wei/.local/bin/openclaw",
+    expected: {
+      version: "v2026.6.11",
+      path: "/Users/wei/.local/bin/openclaw",
+    },
+  },
+  ".useExisting (path only, no version)": {
+    key: "setup.openclaw.useExisting",
+    message: "Using existing OpenClaw at /Users/wei/.local/bin/openclaw",
+    expected: { path: "/Users/wei/.local/bin/openclaw" },
+  },
+  ".useExisting (no path, no version → fallthrough)": {
+    key: "setup.openclaw.useExisting",
+    message: "Using existing local OpenClaw",
+    // Both patterns fail → extractor returns null → next rule tried,
+    // none match `.useExisting`, so we end up with {}.
+    expected: {},
+  },
   ".prepareDir": {
     key: "setup.openclaw.prepareDir",
     message: "Preparing install directory /Users/wei/.openclaw/global…",

@@ -27,7 +27,7 @@ export interface StepState {
   detail?: string;
 }
 
-export type InstallTargetTier = "user" | "xdg";
+export type InstallTargetTier = "user" | "xdg" | "sandbox" | "existing";
 
 export interface InstallTarget {
   /**
@@ -38,23 +38,39 @@ export interface InstallTarget {
    *  - "xdg": fell back to `~/.local` because the user prefix was
    *    not writable. User must add `binPath` to PATH to use
    *    `openclaw` from terminal.
+   *  - "sandbox": both the user prefix AND `~/.local` were
+   *    unwritable, so the install lands in JunQi's managed
+   *    `~/.openclaw/global/`. `openclaw` will not be on PATH; user
+   *    must run it via JunQi or symlink it.
+   *  - "existing": an `openclaw` install was already on disk before
+   *    setup ran, so we skipped the install. The card surfaces the
+   *    detected path and version.
    */
   tier: InstallTargetTier;
   path: string;
   /** Only set for the `xdg` tier. */
   binPath?: string;
+  /** Only set for the `existing` tier, when a version string was returned. */
+  version?: string;
 }
 
 const INSTALL_TARGET_KEYS = {
   user: "setup.openclaw.userNpmPrefix",
   xdg: "setup.openclaw.localNpmPrefix",
+  sandbox: "setup.openclaw.sandboxNpmPrefix",
+  existing: "setup.openclaw.useExisting",
 } as const;
 
 function pickInstallTargetFromProgress(
   key: string,
   message: string,
 ): InstallTarget | null {
-  if (key !== INSTALL_TARGET_KEYS.user && key !== INSTALL_TARGET_KEYS.xdg) {
+  if (
+    key !== INSTALL_TARGET_KEYS.user &&
+    key !== INSTALL_TARGET_KEYS.xdg &&
+    key !== INSTALL_TARGET_KEYS.sandbox &&
+    key !== INSTALL_TARGET_KEYS.existing
+  ) {
     return null;
   }
   // Reuse the same rule table that drives i18next substitution so
@@ -63,6 +79,12 @@ function pickInstallTargetFromProgress(
   if (!params.path) return null;
   if (key === INSTALL_TARGET_KEYS.xdg) {
     return { tier: "xdg", path: params.path, binPath: params.binPath };
+  }
+  if (key === INSTALL_TARGET_KEYS.sandbox) {
+    return { tier: "sandbox", path: params.path };
+  }
+  if (key === INSTALL_TARGET_KEYS.existing) {
+    return { tier: "existing", path: params.path, version: params.version };
   }
   return { tier: "user", path: params.path };
 }

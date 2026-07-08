@@ -27,6 +27,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/app-store";
 import type { SetupStep } from "@/stores/app-store";
@@ -488,6 +489,66 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
   );
 }
 
+type TierBadgeStyles = {
+  border: string;
+  bg: string;
+  text: string;
+};
+
+const TIER_BADGE: Record<InstallTarget["tier"], TierBadgeStyles> = {
+  // "user" is the best outcome — same dir as the user's terminal
+  // `npm i -g`, so `openclaw` lands on PATH automatically.
+  user: { border: "border-aegis-success/45", bg: "bg-aegis-success/10", text: "text-aegis-success" },
+  // "xdg" is fine but the user must add `binPath` to PATH.
+  xdg: { border: "border-amber-500/45", bg: "bg-amber-500/10", text: "text-amber-200" },
+  // "sandbox" is the worst outcome — `openclaw` won't be on PATH at
+  // all. Rose palette makes the warning unmissable.
+  sandbox: { border: "border-rose-500/45", bg: "bg-rose-500/10", text: "text-rose-200" },
+  // "existing" means no install happened at all. Cool blue.
+  existing: { border: "border-sky-500/45", bg: "bg-sky-500/10", text: "text-sky-200" },
+};
+
+function resolveInstallNote(
+  target: InstallTarget,
+  t: TFunction,
+): string {
+  switch (target.tier) {
+    case "user":
+      return t(
+        "setup.installTarget.user.note",
+        "Same place as `npm i -g` — `openclaw` will be on your PATH",
+      );
+    case "xdg":
+      return t("setup.installTarget.xdg.note", {
+        binPath: target.binPath ?? "",
+        defaultValue: "Add {{binPath}} to your PATH to use `openclaw` from the terminal",
+      });
+    case "sandbox":
+      return t(
+        "setup.installTarget.sandbox.note",
+        "User npm prefix and `~/.local` are both unwritable; openclaw lives in JunQi's sandbox. It will NOT be on PATH — launch it from JunQi or symlink it yourself.",
+      );
+    case "existing":
+      if (target.path && target.version) {
+        return t("setup.installTarget.existing.note", {
+          version: target.version,
+          path: target.path,
+          defaultValue: "Detected OpenClaw {{version}} at {{path}}; install skipped",
+        });
+      }
+      if (target.path) {
+        return t("setup.installTarget.existing.noteNoVersion", {
+          path: target.path,
+          defaultValue: "Detected OpenClaw at {{path}}; install skipped",
+        });
+      }
+      return t(
+        "setup.installTarget.existing.noteNoPath",
+        "Detected an existing OpenClaw install, but path/version were not returned",
+      );
+  }
+}
+
 /**
  * Dedicated card for the resolved install location. Surfaces the
  * install tier (user npm prefix / XDG fallback) and the actual path
@@ -498,14 +559,18 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
  */
 function InstallTargetCard({ target }: { target: InstallTarget }) {
   const { t } = useTranslation();
-  const isXdg = target.tier === "xdg";
+  const styles = TIER_BADGE[target.tier];
   const tierLabel = t(
-    isXdg ? "setup.installTarget.xdg.tier" : "setup.installTarget.user.tier",
-    isXdg ? "XDG fallback" : "User npm prefix",
+    `setup.installTarget.${target.tier}.tier`,
+    target.tier === "user"
+      ? "User npm prefix"
+      : target.tier === "xdg"
+        ? "XDG fallback"
+        : target.tier === "sandbox"
+          ? "JunQi sandbox"
+          : "Already installed",
   );
-  const note = isXdg && target.binPath
-    ? t("setup.installTarget.xdg.note", { binPath: target.binPath, defaultValue: "Add {{binPath}} to your PATH to use `openclaw` from the terminal." })
-    : t("setup.installTarget.user.note", "Same place as `npm i -g` — `openclaw` will be on your PATH.");
+  const note = resolveInstallNote(target, t);
   return (
     <div className="mt-3 rounded-md border border-aegis-border bg-aegis-bg/55 px-3 py-2">
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-aegis-text-dim">
@@ -513,14 +578,12 @@ function InstallTargetCard({ target }: { target: InstallTarget }) {
         {t("setup.installTarget.title", "安装位置")}
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        <span
-          className={clsx(
-            "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
-            isXdg
-              ? "border border-amber-500/45 bg-amber-500/10 text-amber-200"
-              : "border border-aegis-success/45 bg-aegis-success/10 text-aegis-success",
-          )}
-        >
+        <span className={clsx(
+          "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+          styles.border,
+          styles.bg,
+          styles.text,
+        )}>
           {tierLabel}
         </span>
         <code
@@ -529,6 +592,14 @@ function InstallTargetCard({ target }: { target: InstallTarget }) {
         >
           {target.path}
         </code>
+        {target.version && (
+          <span
+            data-testid="install-target-version"
+            className="rounded bg-aegis-bg/70 px-1.5 py-0.5 font-mono text-[11px] text-aegis-text-muted"
+          >
+            v{target.version}
+          </span>
+        )}
       </div>
       {note && (
         <p className="mt-1.5 text-[11px] leading-4 text-aegis-text-muted" dir="auto">
