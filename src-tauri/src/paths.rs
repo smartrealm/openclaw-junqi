@@ -68,6 +68,30 @@ pub fn npm_cache_dir() -> PathBuf {
     desktop_dir().join("npm-cache")
 }
 
+/// Returns the directory we hand to `npm install -g` as the global prefix
+/// when JunQi itself needs to install OpenClaw. We intentionally avoid
+/// `desktop_dir().join("openclaw")` here — that path is what `--prefix` used
+/// to write to, and it created a parallel copy that shadowed the user's own
+/// `npm i -g openclaw`. Now we install into a true global prefix layout:
+/// `~/.openclaw/global/lib/node_modules/openclaw` with a `bin/openclaw`
+/// symlink, exactly like a normal `npm i -g openclaw` would.
+pub fn openclaw_global_dir() -> PathBuf {
+    desktop_dir().join("global")
+}
+
+/// Returns `<openclaw_global_dir>/bin` — where the openclaw launcher lives
+/// after `npm install -g` writes to the global prefix.
+pub fn openclaw_global_bin_dir() -> PathBuf {
+    openclaw_global_dir().join("bin")
+}
+
+/// Stores the OpenClaw binary selected during setup/detection.
+/// Subsequent gateway starts prefer this exact binary so the app does not
+/// drift between global npm, bundled wrappers, and JunQi-managed installs.
+pub fn openclaw_binary_selection_path() -> PathBuf {
+    desktop_dir().join("runtime").join("openclaw-binary.json")
+}
+
 // ── Git ────────────────────────────────────────────────────────
 
 /// Returns the path to our locally installed Git binary (Windows MinGit).
