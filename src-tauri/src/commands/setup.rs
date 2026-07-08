@@ -936,6 +936,82 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
+/// Pick the directory we hand to `npm install -g` for the openclaw install.
+///
+/// Order of preference:
+/// 1. The user's `npm config get prefix` from the local node's npm. This
+///    matches what `npm i -g openclaw` from the user's terminal would
+///    resolve to — same bin, same `package.json`, same place the user
+///    can then manage with `npm i -g openclaw@latest`.
+/// 2. Whatever is hard-coded in `~/.npmrc` (`prefix=...`).
+/// 3. Fall back to the JunQi-managed sandbox at
+///    `paths::openclaw_global_dir()` if neither is writable, so the
+///    install never silently fails.
+async fn pick_install_target(
+    app: &tauri::AppHandle,
+    step: &str,
+) -> Result<PathBuf, String> {
+    let node_bin = paths::local_node_path();
+    let npm_cli = paths::local_npm_cli_path();
+    let mut cmd = if node_bin.exists() && npm_cli.exists() {
+        let mut c = tokio::process::Command::new(&node_bin);
+        c.arg(&npm_cli);
+        c
+    } else {
+        tokio::process::Command::new(platform::bin_name("npm"))
+    };
+    cmd.args(["config", "get", "prefix"])
+        .env(
+            "PATH",
+            platform::build_path(&paths::node_bin_dir().to_string_lossy(), None),
+        )
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let prefix_from_npm = match cmd.output().await {
+        Ok(out) if out.status.success() => {
+            let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if raw.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(raw))
+            }
+        }
+        _ => None,
+    };
+    let user_prefix = prefix_from_npm.or_else(paths::user_npm_prefix);
+    if let Some(prefix) = user_prefix {
+        if is_dir_writable(&prefix) {
+            emit_keyed(
+                app,
+                step,
+                &format!(
+                    "Detected npm prefix {} (matches your `npm i -g`); installing openclaw there",
+                    prefix.display()
+                ),
+                "setup.openclaw.userNpmPrefix",
+                0.075,
+            );
+            return Ok(prefix);
+        }
+        return Err(format!(
+            "npm prefix {} is not writable; falling back to JunQi sandbox",
+            prefix.display()
+        ));
+    }
+    Err("Could not determine your npm prefix; falling back to JunQi sandbox".into())
+}
+
+fn is_dir_writable(path: &std::path::Path) -> bool {
+    let probe = path.join(format!(".junqi-write-probe-{}", std::process::id()));
+    match std::fs::write(&probe, b"ok") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 #[tauri::command]
 pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     let step = "openclaw";
@@ -1020,15 +1096,29 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         None
     };
 
-    // ② 准备安装目录 — 用 `npm install -g` + `npm_config_prefix` 写到
-    // `~/.openclaw/global/`，跟用户已有的 `npm i -g openclaw` 走同一条
-    // 路径，不再多开一份副本。
-    let openclaw_prefix = paths::openclaw_global_dir();
+    // ② 准备安装目录 — 装到用户 `~/.npmrc` 里的 npm prefix，这样
+    // `~/.npm-global/bin/openclaw` 就是用户从 terminal 跑
+    // `npm i -g openclaw` 时拿到的同一个 bin，JunQi 不再搞自己的一套
+    // sandbox。如果读不到 `prefix=` 或者目录不可写，就退回到 JunQi 管理的
+    // `~/.openclaw/global/`，保证装得上。
+    let openclaw_prefix = match pick_install_target(&app, step).await {
+        Ok(target) => target,
+        Err(msg) => {
+            emit_keyed(
+                &app,
+                step,
+                &msg,
+                "setup.openclaw.fallbackNpmPrefix",
+                0.08,
+            );
+            paths::openclaw_global_dir()
+        }
+    };
     emit_keyed(
         &app,
         step,
         &format!(
-            "Preparing global prefix {}...",
+            "Preparing install target {}...",
             openclaw_prefix.display()
         ),
         "setup.openclaw.prepareDir",
@@ -1067,9 +1157,16 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     );
     // `npm i -g <prefix>` 写出来的 bin 在 `<prefix>/bin/<name>`，部分
     // 环境下也可能落在 `<prefix>/node_modules/.bin/<name>`，优先前者
-    // 后者兜底。
-    let mut openclaw_bin = paths::openclaw_global_bin_dir()
-        .join(platform::bin_name("openclaw"));
+    // 后者兜底。`openclaw_prefix` 已经是 `pick_install_target` 选出来的
+    // 真实落点（用户 npm prefix 或 JunQi sandbox），不要再回退到硬编码
+    // 的 global 目录。
+    let mut openclaw_bin = if cfg!(windows) {
+        openclaw_prefix.join("openclaw.cmd")
+    } else {
+        openclaw_prefix
+            .join("bin")
+            .join(platform::bin_name("openclaw"))
+    };
     if !openclaw_bin.exists() {
         let alt_bin = openclaw_prefix
             .join("node_modules")

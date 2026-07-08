@@ -85,6 +85,50 @@ pub fn openclaw_global_bin_dir() -> PathBuf {
     openclaw_global_dir().join("bin")
 }
 
+/// Reads the user's npm global prefix out of `~/.npmrc`.
+///
+/// We use this instead of JunQi's own `openclaw_global_dir()` so the
+/// install lands exactly where the user's terminal `npm i -g openclaw`
+/// would put it — same prefix, same bin location, same `package.json`
+/// they would see in `npm ls -g`. The user can then manage the install
+/// with their own npm commands without JunQi shadowing it.
+///
+/// Returns `None` when `~/.npmrc` is missing, unreadable, or doesn't
+/// define a `prefix`. Callers should fall back to a JunQi-managed
+/// location in that case.
+pub fn user_npm_prefix() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let npmrc = home.join(".npmrc");
+    let content = std::fs::read_to_string(&npmrc).ok()?;
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let value = line
+            .strip_prefix("prefix=")
+            .or_else(|| line.strip_prefix("prefix ="))?;
+        let value = value.trim().trim_matches(|c| c == '"' || c == '\'');
+        if value.is_empty() {
+            return None;
+        }
+        return Some(PathBuf::from(value));
+    }
+    None
+}
+
+/// Returns the bin directory the user's `npm i -g` would write to:
+/// `<prefix>/bin` on Unix, the prefix itself on Windows where the
+/// `openclaw.cmd` shim lives beside the prefix.
+pub fn user_npm_bin_dir() -> Option<PathBuf> {
+    let prefix = user_npm_prefix()?;
+    if cfg!(windows) {
+        Some(prefix)
+    } else {
+        Some(prefix.join("bin"))
+    }
+}
+
 /// Stores the OpenClaw binary selected during setup/detection.
 /// Subsequent gateway starts prefer this exact binary so the app does not
 /// drift between global npm, bundled wrappers, and JunQi-managed installs.

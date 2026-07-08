@@ -143,6 +143,12 @@ pub(crate) fn openclaw_search_path() -> String {
         // JunQi install doesn't shadow a user-owned copy, and so the
         // leftover legacy dir (if any) is still picked up.
         paths::openclaw_global_bin_dir().to_string_lossy().to_string(),
+        // User's actual npm prefix (read from `~/.npmrc`). When the
+        // user already has `npm i -g openclaw` we resolve to the same
+        // bin directory the user would find on their PATH.
+        paths::user_npm_bin_dir()
+            .map(|d| d.to_string_lossy().to_string())
+            .unwrap_or_default(),
         paths::desktop_dir()
             .join("openclaw")
             .join("bin")
@@ -297,6 +303,20 @@ fn openclaw_binary_names() -> &'static [&'static str] {
 
 fn managed_openclaw_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+    // User's actual npm prefix (read from `~/.npmrc`). Listed first so a
+    // pre-existing user install of `npm i -g openclaw` wins over the
+    // JunQi-managed sandbox.
+    if let Some(bin_dir) = paths::user_npm_bin_dir() {
+        for name in openclaw_binary_names() {
+            candidates.push(bin_dir.join(name));
+            candidates.push(
+                bin_dir
+                    .join("node_modules")
+                    .join(".bin")
+                    .join(name),
+            );
+        }
+    }
     // New `npm i -g` layout: `<prefix>/bin/<name>`.
     for name in openclaw_binary_names() {
         candidates.push(paths::openclaw_global_bin_dir().join(name));
