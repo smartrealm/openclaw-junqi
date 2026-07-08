@@ -980,7 +980,7 @@ async fn pick_install_target(
     };
     let user_prefix = prefix_from_npm.or_else(paths::user_npm_prefix);
     if let Some(prefix) = user_prefix {
-        if is_dir_writable(&prefix) {
+        if try_use_prefix(&prefix) {
             emit_keyed(
                 app,
                 step,
@@ -993,16 +993,58 @@ async fn pick_install_target(
             );
             return Ok(prefix);
         }
-        return Err(format!(
-            "npm prefix {} is not writable; falling back to JunQi sandbox",
-            prefix.display()
-        ));
+        // User's npm prefix exists but isn't writable (typical case:
+        // default `prefix=/usr/local` from a Homebrew/apt/Stock-Windows
+        // install). Fall through to the XDG tier.
     }
-    Err("Could not determine your npm prefix; falling back to JunQi sandbox".into())
+
+    // Tier 2: XDG Base Directory fallback at `~/.local`. User-owned on
+    // every platform we ship to, so `npm install -g` always lands and
+    // the bin ends up in a place the user can put on PATH.
+    let local = paths::local_npm_prefix();
+    if try_use_prefix(&local) {
+        let bin = paths::local_npm_bin_dir();
+        emit_keyed(
+            app,
+            step,
+            &format!(
+                "User npm prefix not writable; using XDG fallback {} (add {} to your PATH to use openclaw from terminal)",
+                local.display(),
+                bin.display()
+            ),
+            "setup.openclaw.localNpmPrefix",
+            0.075,
+        );
+        return Ok(local);
+    }
+
+    // Tier 3: JunQi-managed sandbox. Always reachable because it
+    // lives under `~/.openclaw/` which is owned by whoever runs the
+    // app. Caller will surface the path so the user can still run
+    // `openclaw` from JunQi even if their terminal can't find it.
+    Err("Neither user npm prefix nor ~/.local is writable; falling back to JunQi sandbox".into())
 }
 
-fn is_dir_writable(path: &std::path::Path) -> bool {
-    let probe = path.join(format!(".junqi-write-probe-{}", std::process::id()));
+/// Decide whether `path` is a usable install target. Returns true when
+/// the directory exists (or can be created) AND we can write a probe
+/// file into it. `false` means the caller should fall through to the
+/// next fallback tier.
+fn try_use_prefix(path: &std::path::Path) -> bool {
+    if !path.exists() {
+        if std::fs::create_dir_all(path).is_err() {
+            return false;
+        }
+    }
+    // Probe-write into the dir itself. Use a per-process unique name
+    // so concurrent installs can't collide on the probe file.
+    let probe = path.join(format!(
+        ".junqi-write-probe-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
     match std::fs::write(&probe, b"ok") {
         Ok(()) => {
             let _ = std::fs::remove_file(&probe);

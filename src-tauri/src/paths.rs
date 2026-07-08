@@ -85,6 +85,29 @@ pub fn openclaw_global_bin_dir() -> PathBuf {
     openclaw_global_dir().join("bin")
 }
 
+/// XDG Base Directory fallback for when the user's `npmrc` points at a
+/// non-writable location (e.g. the default `/usr/local` on macOS
+/// Homebrew or apt, `C:\Program Files\nodejs` on a stock Windows
+/// install). `~/.local` is user-owned on every platform we ship to,
+/// so `npm install -g` lands there and the bin ends up in
+/// `~/.local/bin/openclaw` (or `~/.local/openclaw.cmd` on Windows).
+pub fn local_npm_prefix() -> PathBuf {
+    dirs::home_dir()
+        .expect("Could not determine home directory")
+        .join(".local")
+}
+
+/// Returns the bin directory under `local_npm_prefix()`:
+/// `<prefix>/bin` on Unix, the prefix itself on Windows where the
+/// `openclaw.cmd` shim lives beside the prefix.
+pub fn local_npm_bin_dir() -> PathBuf {
+    if cfg!(windows) {
+        local_npm_prefix()
+    } else {
+        local_npm_prefix().join("bin")
+    }
+}
+
 /// Reads the user's npm global prefix out of `~/.npmrc`.
 ///
 /// We use this instead of JunQi's own `openclaw_global_dir()` so the

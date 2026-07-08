@@ -149,6 +149,10 @@ pub(crate) fn openclaw_search_path() -> String {
         paths::user_npm_bin_dir()
             .map(|d| d.to_string_lossy().to_string())
             .unwrap_or_default(),
+        // XDG fallback bin (`~/.local/bin` on Unix, `~/.local` on
+        // Windows). When the user's npm prefix isn't writable we land
+        // there instead, so this is the next place to look.
+        paths::local_npm_bin_dir().to_string_lossy().to_string(),
         paths::desktop_dir()
             .join("openclaw")
             .join("bin")
@@ -322,6 +326,19 @@ fn managed_openclaw_candidates() -> Vec<PathBuf> {
         candidates.push(paths::openclaw_global_bin_dir().join(name));
         candidates.push(
             paths::openclaw_global_dir()
+                .join("node_modules")
+                .join(".bin")
+                .join(name),
+        );
+    }
+    // XDG fallback (`~/.local`) — searched after the sandbox so an
+    // existing user install there still wins over a JunQi-managed
+    // sandbox, but before the legacy `--prefix` dir.
+    for name in openclaw_binary_names() {
+        candidates.push(paths::local_npm_bin_dir().join(name));
+        candidates.push(
+            paths::local_npm_prefix()
+                .join("lib")
                 .join("node_modules")
                 .join(".bin")
                 .join(name),
