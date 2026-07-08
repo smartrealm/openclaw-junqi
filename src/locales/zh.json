@@ -2358,6 +2358,8 @@
   "setup.openclaw.useSystemNode": "使用系统 Node.js",
   "setup.openclaw.useLocalNpm": "使用本地 npm：{{path}}",
   "setup.openclaw.useSystemNpm": "使用系统 npm",
+  "setup.openclaw.userNpmPrefix": "检测到 npm 前缀 {{path}}（与你的 `npm i -g` 落点一致），将在此安装 openclaw",
+  "setup.openclaw.localNpmPrefix": "用户 npm 前缀不可写，回退到 XDG 目录 {{path}}（请将 {{binPath}} 加入 PATH，以便在终端使用 openclaw）",
   "setup.openclaw.prepareDir": "准备安装目录 {{path}}…",
   "setup.openclaw.npmInstall": "优先使用 npmmirror.com（国内）安装 openclaw，失败自动切换 npmjs.org（官方）…",
   "setup.openclaw.verify": "正在验证 openclaw 安装…",

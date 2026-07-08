@@ -1,0 +1,137 @@
+
+/**
+ * Setup progress → i18n param extraction.
+ *
+ * The backend emits setup progress as `{ message, key }` pairs. When the
+ * key matches an i18n string that contains placeholders (e.g. `{{path}}`),
+ * we need to extract the actual values from the raw `message` so
+ * `i18next.t(key, { ...params })` can substitute them.
+ *
+ * Design: a single declarative table of `ParamRule`s. Each rule says
+ * "for these key suffixes, this is how to pull params out of the
+ * message". The function walks the table and returns the first match.
+ * Adding a new i18n key that needs substitution = adding one row.
+ * The same table is the test fixture in setupProgressParams.test.ts,
+ * so the table cannot drift away from the test cases.
+ */
+
+export type ParamExtractor = (
+  message: string,
+) => Record<string, string> | null;
+
+export interface ParamRule {
+  /** Key suffix(es) this rule applies to. */
+  readonly suffix: string | readonly string[];
+  /**
+   * Extract i18n params from the raw backend message. Return `null` to
+   * fall through to the next rule (e.g. when the key matched but the
+   * message has no version/path to extract).
+   */
+  readonly extract: ParamExtractor;
+}
+
+/**
+ * Build a single-capture extractor. Returns a function that, when
+ * applied to a message, emits `{ [name]: capture[1] }` on match, or
+ * `null` on miss.
+ */
+function capture(pattern: RegExp, name: string): ParamExtractor {
+  return (message) => {
+    const value = message.match(pattern)?.[1];
+    return value ? { [name]: value } : null;
+  };
+}
+
+/**
+ * Full table of setup progress param rules. Order matters: first match
+ * wins. Keep this in sync with `setup.*` keys in
+ * `src/locales/{zh,en,ar}.json` that have placeholders.
+ */
+export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
+  // Generic version rule — covers a family of `.skip` / `.upgrade` /
+  // `.done` keys whose message embeds a `vX.Y.Z` version number.
+  {
+    suffix: [".skip", ".upgrade", ".done"],
+    extract: capture(
+      /(?:Node\.js\s+|Detected\s+)(v?\d+\.\d+\.\d+)/,
+      "version",
+    ),
+  },
+  {
+    suffix: ".prepareDownload",
+    extract: capture(/Node\.js\s+(v?\d+\.\d+\.\d+)/, "version"),
+  },
+  {
+    suffix: ".extract",
+    extract: capture(/Extracting to\s+(.+?)(?:\.\.\.|…)?$/, "path"),
+  },
+  {
+    suffix: [".waitingWizard", ".macPolling"],
+    extract: capture(/elapsed\s+([0-9:]+)/, "elapsed"),
+  },
+  {
+    suffix: ".useLocalNode",
+    extract: capture(/Using local Node\.js:\s+(.+)$/, "path"),
+  },
+  {
+    suffix: ".useLocalNpm",
+    extract: capture(/Using local npm:\s+(.+)$/, "path"),
+  },
+  {
+    suffix: ".userNpmPrefix",
+    extract: capture(/Detected npm prefix\s+(.+?)\s+\(matches/, "path"),
+  },
+  {
+    // Two captures — inline arrow is clearer than a 2-arg factory.
+    suffix: ".localNpmPrefix",
+    extract: (message) => {
+      const m = message.match(
+        /using XDG fallback\s+(.+?)\s+\(add\s+(.+?)\s+to your PATH/,
+      );
+      return m ? { path: m[1]!, binPath: m[2]! } : null;
+    },
+  },
+  {
+    suffix: ".prepareDir",
+    extract: capture(/Preparing install directory\s+(.+?)(?:\.\.\.|…)?$/, "path"),
+  },
+  {
+    suffix: ".runtimeSummary",
+    extract: capture(/Runtime check done:\s+(.+)$/, "summary"),
+  },
+  {
+    suffix: [".portResolved", ".alreadyUp"],
+    extract: capture(/(?:Target port =|Port)\s+(\d+)/, "port"),
+  },
+  {
+    suffix: ".probe",
+    extract: capture(/127\.0\.0\.1:(\d+)/, "port"),
+  },
+];
+
+function endsWithAny(
+  key: string,
+  suffix: string | readonly string[],
+): boolean {
+  if (typeof suffix === "string") return key.endsWith(suffix);
+  return suffix.some((s) => key.endsWith(s));
+}
+
+/**
+ * Resolve i18n params for a setup progress event. Walks
+ * `SETUP_PROGRESS_PARAM_RULES` in declaration order; the first rule
+ * whose suffix matches the key AND whose extractor returns a value
+ * wins. Returns `{}` when nothing matches.
+ */
+export function setupProgressI18nParams(
+  key: string,
+  message: string,
+): Record<string, string> {
+  for (const rule of SETUP_PROGRESS_PARAM_RULES) {
+    if (endsWithAny(key, rule.suffix)) {
+      const params = rule.extract(message);
+      if (params) return params;
+    }
+  }
+  return {};
+}

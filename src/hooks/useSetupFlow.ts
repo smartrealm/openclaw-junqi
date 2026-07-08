@@ -16,6 +16,7 @@ import {
   type DockerStatus,
 } from "@/api/tauri-commands";
 import { debugWarn } from "@/utils/debugLog";
+import { setupProgressI18nParams } from "./setupProgressParams";
 
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
@@ -74,50 +75,6 @@ function cacheGatewayTarget(port?: number | null, token?: string | null): void {
 
 function markSetupReady(): void {
   localStorage.setItem("junqi-setup-done", "1");
-}
-
-function setupProgressI18nParams(key: string, message: string): Record<string, string> {
-  if (key.includes(".skip") || key.includes(".upgrade") || key.includes(".done")) {
-    const version = message.match(/(?:Node\.js\s+|Detected\s+)(v?\d+\.\d+\.\d+)/)?.[1];
-    if (version) return { version };
-  }
-  if (key.endsWith(".prepareDownload")) {
-    const version = message.match(/Node\.js\s+(v?\d+\.\d+\.\d+)/)?.[1];
-    if (version) return { version };
-  }
-  if (key.endsWith(".extract")) {
-    const path = message.match(/Extracting to\s+(.+?)(?:\.\.\.|…)?$/)?.[1];
-    if (path) return { path };
-  }
-  if (key.endsWith(".waitingWizard") || key.endsWith(".macPolling")) {
-    const elapsed = message.match(/elapsed\s+([0-9:]+)/)?.[1];
-    if (elapsed) return { elapsed };
-  }
-  if (key.endsWith(".useLocalNode")) {
-    const path = message.match(/Using local Node\.js:\s+(.+)$/)?.[1];
-    if (path) return { path };
-  }
-  if (key.endsWith(".useLocalNpm")) {
-    const path = message.match(/Using local npm:\s+(.+)$/)?.[1];
-    if (path) return { path };
-  }
-  if (key.endsWith(".prepareDir")) {
-    const path = message.match(/Preparing install directory\s+(.+?)(?:\.\.\.|…)?$/)?.[1];
-    if (path) return { path };
-  }
-  if (key.endsWith(".runtimeSummary")) {
-    const summary = message.match(/Runtime check done:\s+(.+)$/)?.[1];
-    if (summary) return { summary };
-  }
-  if (key.endsWith(".portResolved") || key.endsWith(".alreadyUp")) {
-    const port = message.match(/(?:Target port =|Port)\s+(\d+)/)?.[1];
-    if (port) return { port };
-  }
-  if (key.endsWith(".probe")) {
-    const port = message.match(/127\.0\.0\.1:(\d+)/)?.[1];
-    if (port) return { port };
-  }
-  return {};
 }
 
 export function useSetupFlow(

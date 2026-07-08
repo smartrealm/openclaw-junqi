@@ -2314,6 +2314,8 @@
   "setup.openclaw.useSystemNode": "Using system Node.js",
   "setup.openclaw.useLocalNpm": "Using local npm: {{path}}",
   "setup.openclaw.useSystemNpm": "Using system npm",
+  "setup.openclaw.userNpmPrefix": "Detected npm prefix {{path}} (matches your `npm i -g`); installing openclaw there",
+  "setup.openclaw.localNpmPrefix": "User npm prefix not writable; using XDG fallback {{path}} (add {{binPath}} to your PATH to use openclaw from terminal)",
   "setup.openclaw.prepareDir": "Preparing install directory {{path}}…",
   "setup.openclaw.npmInstall": "Preferring npmmirror.com (CN) for openclaw install; falls back to npmjs.org (official)…",
   "setup.openclaw.verify": "Verifying openclaw installation…",
