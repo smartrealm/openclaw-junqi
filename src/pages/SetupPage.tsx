@@ -35,7 +35,7 @@ import { changeLanguage } from "@/i18n";
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from "@/i18n/languages";
 import { GatewayLifecyclePanel } from "@/components/settings/GatewayLifecyclePanel";
 import { useSetupFlow } from "@/hooks/useSetupFlow";
-import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
+import type { SetupFlow, StepState, InstallTarget } from "@/hooks/useSetupFlow";
 import type { DockerStatus } from "@/api/tauri-commands";
 import type { ThemeSetting } from "@/theme/types";
 import clsx from "clsx";
@@ -488,6 +488,57 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
   );
 }
 
+/**
+ * Dedicated card for the resolved install location. Surfaces the
+ * install tier (user npm prefix / XDG fallback) and the actual path
+ * picked by the installer, so the user can see where `openclaw` will
+ * live without having to parse the raw backend message. The XDG tier
+ * also surfaces the `binPath` the user must add to PATH to use
+ * `openclaw` from the terminal.
+ */
+function InstallTargetCard({ target }: { target: InstallTarget }) {
+  const { t } = useTranslation();
+  const isXdg = target.tier === "xdg";
+  const tierLabel = t(
+    isXdg ? "setup.installTarget.xdg.tier" : "setup.installTarget.user.tier",
+    isXdg ? "XDG fallback" : "User npm prefix",
+  );
+  const note = isXdg && target.binPath
+    ? t("setup.installTarget.xdg.note", { binPath: target.binPath, defaultValue: "Add {{binPath}} to your PATH to use `openclaw` from the terminal." })
+    : t("setup.installTarget.user.note", "Same place as `npm i -g` — `openclaw` will be on your PATH.");
+  return (
+    <div className="mt-3 rounded-md border border-aegis-border bg-aegis-bg/55 px-3 py-2">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-aegis-text-dim">
+        <Package size={12} />
+        {t("setup.installTarget.title", "安装位置")}
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <span
+          className={clsx(
+            "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+            isXdg
+              ? "border border-amber-500/45 bg-amber-500/10 text-amber-200"
+              : "border border-aegis-success/45 bg-aegis-success/10 text-aegis-success",
+          )}
+        >
+          {tierLabel}
+        </span>
+        <code
+          data-testid="install-target-path"
+          className="break-all rounded bg-aegis-bg/70 px-1.5 py-0.5 font-mono text-[11px] text-aegis-text"
+        >
+          {target.path}
+        </code>
+      </div>
+      {note && (
+        <p className="mt-1.5 text-[11px] leading-4 text-aegis-text-muted" dir="auto">
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function DetectingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const navigateSetup = useSetupNavigation();
@@ -769,6 +820,9 @@ function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs:
             <div className="mt-3 rounded-md border border-aegis-border bg-aegis-bg/55 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-secondary">
               {flow.statusMessage}
             </div>
+          )}
+          {flow.installTarget && (
+            <InstallTargetCard target={flow.installTarget} />
           )}
           {current?.id === "gateway" && !isReady && !isAwaitingGatewayStart && (
             <GatewayLifecyclePanel variant="compact" className="mt-3" />

@@ -3,7 +3,7 @@
 // Pure logic hook, no UI. Drives app-store state transitions.
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -27,6 +27,46 @@ export interface StepState {
   detail?: string;
 }
 
+export type InstallTargetTier = "user" | "xdg";
+
+export interface InstallTarget {
+  /**
+   * Where the installer decided to put `openclaw`.
+   *  - "user": same dir as the user's terminal `npm i -g` (their
+   *    actual `npm config get prefix`). `openclaw` will be on PATH
+   *    without further action.
+   *  - "xdg": fell back to `~/.local` because the user prefix was
+   *    not writable. User must add `binPath` to PATH to use
+   *    `openclaw` from terminal.
+   */
+  tier: InstallTargetTier;
+  path: string;
+  /** Only set for the `xdg` tier. */
+  binPath?: string;
+}
+
+const INSTALL_TARGET_KEYS = {
+  user: "setup.openclaw.userNpmPrefix",
+  xdg: "setup.openclaw.localNpmPrefix",
+} as const;
+
+function pickInstallTargetFromProgress(
+  key: string,
+  message: string,
+): InstallTarget | null {
+  if (key !== INSTALL_TARGET_KEYS.user && key !== INSTALL_TARGET_KEYS.xdg) {
+    return null;
+  }
+  // Reuse the same rule table that drives i18next substitution so
+  // the UI path stays in lockstep with the message formatting.
+  const params = setupProgressI18nParams(key, message);
+  if (!params.path) return null;
+  if (key === INSTALL_TARGET_KEYS.xdg) {
+    return { tier: "xdg", path: params.path, binPath: params.binPath };
+  }
+  return { tier: "user", path: params.path };
+}
+
 export interface SetupFlow {
   progress: number;
   statusMessage: string;
@@ -34,6 +74,7 @@ export interface SetupFlow {
   checkingDocker: boolean;
   needsGit: boolean;
   steps: StepState[];
+  installTarget: InstallTarget | null;
   startGateway: () => Promise<void>;
   runNativeSetup: () => Promise<void>;
   runDockerSetup: () => Promise<void>;
@@ -91,11 +132,13 @@ export function useSetupFlow(
     setGatewayRunning, setInstallMode, setSetupStatus,
   } = useAppStore();
   const { t } = useTranslation();
+  const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
   const activeRunRef = useRef(0);
   const beginRun = useCallback(() => {
     activeRunRef.current += 1;
+    setInstallTarget(null);
     return activeRunRef.current;
-  }, []);
+  }, [setInstallTarget]);
   const cancelActiveRun = useCallback(() => {
     activeRunRef.current += 1;
   }, []);
@@ -207,6 +250,12 @@ export function useSetupFlow(
           ? String(t(key as string, { defaultValue: message, ...setupProgressI18nParams(key, message) }))
           : "";
         const display = key && translated !== key && !translated.includes("{{") ? translated : message;
+        // Capture the resolved install target so the UI can surface
+        // a dedicated "Install location" card. Reuses the same rule
+        // table that drives i18next substitution, so the displayed
+        // path is byte-identical to what's in the progress message.
+        const resolvedTarget = pickInstallTargetFromProgress(String(key ?? ""), message);
+        if (resolvedTarget) setInstallTarget(resolvedTarget);
         const nextProgress = p != null ? Math.round(p * 100) : undefined;
 
         // ClawX-style setup keeps the primary onboarding copy coarse and calm.
@@ -464,6 +513,7 @@ export function useSetupFlow(
 
   return {
     progress, statusMessage, dockerStatus, checkingDocker, needsGit, steps,
+    installTarget,
     startGateway: startGatewayAction,
     runNativeSetup,
     runDockerSetup,
