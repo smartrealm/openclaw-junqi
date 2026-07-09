@@ -1686,9 +1686,7 @@
       "coding": "💻 Coding / Agent",
       "local": "🖥 Local / Custom"
     },
-    "providersHealth": "Provider health",
-    "providersHealthSummary": "Visible {{ok}} · Runtime/System {{unknown}}",
-    "providerBrokenNeedSecret": "Desktop cannot see this secret. It may be supplied by Gateway runtime or system environment. If OpenClaw Web UI can answer, no action is required."
+    "providersRuntimeSuppliedNote": "{{count}} providers get their keys from the Gateway runtime or system env. Desktop can't see them — usually no action needed."
   },
   "calendar": {
     "title": "Calendar",

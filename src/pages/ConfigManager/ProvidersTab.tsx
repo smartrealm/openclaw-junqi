@@ -2697,7 +2697,6 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
 export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: ProvidersTabProps) {
   const providerHealth = useMemo(() => diagnoseProviders(config, PROVIDER_TEMPLATES as any), [config]);
   const unknownProviders = providerHealth.filter((p) => p.status === 'unknown');
-  const okProviders = providerHealth.filter((p) => p.status === 'ok');
   const { t } = useTranslation();
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
@@ -2827,36 +2826,32 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
 
 
 
-        {(unknownProviders.length > 0 || okProviders.length > 0) && (
-          <div className="mt-3 rounded-xl border border-aegis-border bg-aegis-elevated/60 p-4">
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <div className="flex items-center gap-2">
-                <StatusDot tone={unknownProviders.length > 0 ? 'info' : 'ok'} size="md" live={unknownProviders.length === 0} />
-                <span className="text-sm font-semibold text-aegis-text">{t('config.providersHealth', 'Provider health')}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Badge tone="ok" size="sm" variant="soft">Visible {okProviders.length}</Badge>
-                <Badge tone={unknownProviders.length > 0 ? 'info' : 'neutral'} size="sm" variant="soft">Runtime/System {unknownProviders.length}</Badge>
+        {/* Runtime/system-supplied secrets — a calm one-liner instead of a
+            per-provider alarm. Only shown when some keys live outside the
+            config the desktop can read (env vars / gateway runtime). */}
+        {unknownProviders.length > 0 && (
+          <div className="mt-3 rounded-xl border border-aegis-border bg-aegis-surface/40 px-4 py-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle size={14} strokeWidth={1.75} className="mt-0.5 text-aegis-text-muted flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-aegis-text-secondary">
+                  {t('config.providersRuntimeSuppliedNote', {
+                    count: unknownProviders.length,
+                    defaultValue: '{{count}} 个提供方的密钥由 Gateway 运行时或系统环境变量提供，桌面端看不到（通常无需处理）。',
+                  })}
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {unknownProviders.map((item: any) => (
+                    <span
+                      key={item.providerId}
+                      className="text-[11px] font-mono text-aegis-text-muted bg-aegis-elevated border border-aegis-border rounded-full px-2 py-0.5"
+                    >
+                      {item.providerId}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
-            <p className="text-xs text-aegis-text-muted">
-              {t('config.providersHealthSummary', { ok: okProviders.length, unknown: unknownProviders.length, defaultValue: `Visible ${okProviders.length} · Runtime/System ${unknownProviders.length}` })}
-            </p>
-            {unknownProviders.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {unknownProviders.map((item: any) => (
-                  <div key={item.providerId} className="rounded-lg border border-[color-mix(in_srgb,rgb(var(--aegis-primary))_28%,rgb(var(--aegis-border)))] bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_7%,transparent)] px-3 py-2">
-                    <div className="flex items-center gap-2 text-xs font-medium text-aegis-primary">
-                      <StatusDot tone="info" size="sm" />
-                      {item.providerId}
-                    </div>
-                    <div className="mt-1 text-[11px] text-aegis-text-muted">
-                      {t('config.providerBrokenNeedSecret', 'Desktop cannot see this secret. It may be supplied by Gateway runtime or system environment. If OpenClaw Web UI can answer, no action is required.')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
