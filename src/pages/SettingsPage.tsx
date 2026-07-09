@@ -22,6 +22,7 @@ import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { SKIN_REGISTRY, type PetSkin } from '@/pet/skins';
+import { SkinPreview } from '@/pet/SkinPreview';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
@@ -639,15 +640,19 @@ export function SettingsPageFull() {
           </button>
         </div>
 
-        {/* Skin picker */}
-        <div className="flex items-center justify-between mt-4">
-          <div className="text-[13px] text-aegis-text">{t('pet.settings.skin', '皮肤')}</div>
-          <div className="flex gap-1 flex-wrap justify-end">
+        {/* Skin picker — live thumbnails so the choice is visual, not just a word. */}
+        <div className="mt-4">
+          <div className="text-[13px] text-aegis-text mb-2">{t('pet.settings.skin', '皮肤')}</div>
+          <div className="grid grid-cols-5 gap-2">
             {(Object.keys(SKIN_REGISTRY) as PetSkin[]).map((s) => (
               <button key={s} onClick={() => setPetSkin(s)}
-                className={clsx('text-[12px] px-3 py-1.5 rounded-lg border transition-colors',
-                  petSkin === s ? 'border-aegis-primary/50 text-aegis-text bg-aegis-primary/10' : 'border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text')}>
-                {t(`pet.settings.${s}`, SKIN_FALLBACK[s])}
+                aria-pressed={petSkin === s}
+                className={clsx('flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors',
+                  petSkin === s ? 'border-aegis-primary/60 bg-aegis-primary/10' : 'border-aegis-border/20 hover:border-aegis-border/50')}>
+                <SkinPreview skin={s} size={44} />
+                <span className={clsx('text-[11px] leading-none', petSkin === s ? 'text-aegis-text' : 'text-aegis-text-dim')}>
+                  {t(`pet.settings.${s}`, SKIN_FALLBACK[s])}
+                </span>
               </button>
             ))}
           </div>
