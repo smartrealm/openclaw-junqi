@@ -136,34 +136,23 @@ pub async fn check_openclaw() -> Result<OpenclawStatus, String> {
 }
 
 pub(crate) fn openclaw_search_path() -> String {
+    // These three entries mirror the three write tiers of
+    // `setup::pick_install_target`, in the same priority order, so the
+    // probe surface is exactly the set of places a canonical
+    // `npm i -g openclaw` (or its XDG/sandbox fallback) can land.
     let mut path_parts = vec![
         paths::node_bin_dir().to_string_lossy().to_string(),
-        // JunQi-managed `npm i -g` install lands here. Listed ahead of the
-        // legacy `--prefix` location and the user's home bins so a fresh
-        // JunQi install doesn't shadow a user-owned copy, and so the
-        // leftover legacy dir (if any) is still picked up.
-        paths::openclaw_global_bin_dir().to_string_lossy().to_string(),
-        // User's actual npm prefix (read from `~/.npmrc`). When the
-        // user already has `npm i -g openclaw` we resolve to the same
-        // bin directory the user would find on their PATH.
+        // Tier 1: user's actual npm prefix (read from `~/.npmrc`). This is
+        // the canonical `npm i -g openclaw` bin dir the user finds on PATH.
         paths::user_npm_bin_dir()
             .map(|d| d.to_string_lossy().to_string())
             .unwrap_or_default(),
-        // XDG fallback bin (`~/.local/bin` on Unix, `~/.local` on
-        // Windows). When the user's npm prefix isn't writable we land
-        // there instead, so this is the next place to look.
+        // Tier 2: XDG fallback bin (`~/.local/bin` on Unix, `~/.local` on
+        // Windows) — where we land when the user's npm prefix isn't writable.
         paths::local_npm_bin_dir().to_string_lossy().to_string(),
-        paths::desktop_dir()
-            .join("openclaw")
-            .join("bin")
-            .to_string_lossy()
-            .to_string(),
-        paths::desktop_dir()
-            .join("openclaw")
-            .join("node_modules")
-            .join(".bin")
-            .to_string_lossy()
-            .to_string(),
+        // Tier 3: JunQi-managed sandbox prefix, the last-resort target when
+        // neither the user prefix nor `~/.local` is writable.
+        paths::openclaw_global_bin_dir().to_string_lossy().to_string(),
     ];
     if let Some(home) = dirs::home_dir() {
         path_parts.push(
@@ -307,54 +296,26 @@ fn openclaw_binary_names() -> &'static [&'static str] {
 
 fn managed_openclaw_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
-    // User's actual npm prefix (read from `~/.npmrc`). Listed first so a
-    // pre-existing user install of `npm i -g openclaw` wins over the
-    // JunQi-managed sandbox.
+    // The three tiers below mirror `setup::pick_install_target` in the same
+    // priority order (user prefix > XDG > sandbox), so detection resolves
+    // whichever canonical `npm i -g openclaw` layout actually got written.
+    //
+    // Tier 1: user's actual npm prefix (read from `~/.npmrc`). Listed first
+    // so a pre-existing user install of `npm i -g openclaw` wins.
     if let Some(bin_dir) = paths::user_npm_bin_dir() {
         for name in openclaw_binary_names() {
             candidates.push(bin_dir.join(name));
-            candidates.push(
-                bin_dir
-                    .join("node_modules")
-                    .join(".bin")
-                    .join(name),
-            );
         }
     }
-    // New `npm i -g` layout: `<prefix>/bin/<name>`.
-    for name in openclaw_binary_names() {
-        candidates.push(paths::openclaw_global_bin_dir().join(name));
-        candidates.push(
-            paths::openclaw_global_dir()
-                .join("node_modules")
-                .join(".bin")
-                .join(name),
-        );
-    }
-    // XDG fallback (`~/.local`) — searched after the sandbox so an
-    // existing user install there still wins over a JunQi-managed
-    // sandbox, but before the legacy `--prefix` dir.
+    // Tier 2: XDG fallback (`~/.local`) — where we install when the user's
+    // npm prefix isn't writable.
     for name in openclaw_binary_names() {
         candidates.push(paths::local_npm_bin_dir().join(name));
-        candidates.push(
-            paths::local_npm_prefix()
-                .join("lib")
-                .join("node_modules")
-                .join(".bin")
-                .join(name),
-        );
     }
-    // Legacy `--prefix` layout, kept so existing user installs still
-    // resolve before the user reruns setup.
+    // Tier 3: JunQi-managed sandbox — the last-resort `<prefix>/bin/<name>`
+    // target when neither of the above is writable.
     for name in openclaw_binary_names() {
-        candidates.push(paths::desktop_dir().join("openclaw").join("bin").join(name));
-        candidates.push(
-            paths::desktop_dir()
-                .join("openclaw")
-                .join("node_modules")
-                .join(".bin")
-                .join(name),
-        );
+        candidates.push(paths::openclaw_global_bin_dir().join(name));
     }
     candidates
 }
