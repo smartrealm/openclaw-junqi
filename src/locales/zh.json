@@ -1680,7 +1680,10 @@
       "coding": "💻 Coding / Agent",
       "local": "🖥 本地 / 自定义"
     },
-    "providersRuntimeSuppliedNote": "{{count}} 个提供方的密钥由 Gateway 运行时或系统环境变量提供，桌面端看不到（通常无需处理）。"
+    "providerCredentialMissing": "需要 API Key",
+    "providerCredentialReference": "凭据引用已配置",
+    "providerCredentialRuntime": "运行时凭据已配置",
+    "providersRuntimeSuppliedNote": "{{count}} 个提供方使用运行时托管凭据。"
   },
   "calendar": {
     "title": "日历",

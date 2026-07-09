@@ -6,7 +6,8 @@
 
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertCircle, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film } from 'lucide-react';
+import type { TFunction } from 'i18next';
+import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -34,7 +35,7 @@ import {
   GENERATED_IMAGE_GENERATION_MODELS,
   GENERATED_VIDEO_GENERATION_MODELS,
 } from '@/generated/mediaCatalog.generated';
-import { resolveProviderSecret, buildProviderSecretPatch, diagnoseProviders } from './providerSecretResolver';
+import { resolveProviderSecret, buildProviderSecretPatch, type ProviderSecretSource } from './providerSecretResolver';
 import {
   applyFetchedModelAdditionsToDefaults,
   buildDefaultsWithResolvedModels,
@@ -90,6 +91,7 @@ interface UnifiedProvider {
   // Env key detected
   envKeyFound?: boolean;
   envKeyValue?: string;
+  credentialSource?: ProviderSecretSource;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -383,6 +385,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
       template,
       envKeyFound,
       envKeyValue: envKeyValue || undefined,
+      credentialSource: secretState.source,
     });
   }
 
@@ -397,15 +400,24 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
       // Merge modelsProvider info into all matching auth profiles
       for (const p of existingAuthProfiles) {
         p.modelsProvider = modelsProvider;
+        const secretState = resolveProviderSecret(config, p.provider, p.template, p.profileKey);
+        p.envKeyFound = p.envKeyFound || secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey);
+        p.envKeyValue = p.envKeyValue || secretState.value || undefined;
+        p.credentialSource = secretState.source !== 'none' ? secretState.source : p.credentialSource;
       }
     } else {
       const existingIndex = findExistingIndex(providerId);
       if (existingIndex !== -1) {
         result[existingIndex].modelsProvider = modelsProvider;
+        const secretState = resolveProviderSecret(config, result[existingIndex].provider, result[existingIndex].template);
+        result[existingIndex].envKeyFound = result[existingIndex].envKeyFound || secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey);
+        result[existingIndex].envKeyValue = result[existingIndex].envKeyValue || secretState.value || undefined;
+        result[existingIndex].credentialSource = secretState.source !== 'none' ? secretState.source : result[existingIndex].credentialSource;
       } else {
         const template = getTemplateById(providerId);
         const models   = getModelsForProvider(providerId, allModels);
         const normalizedProvider = template?.id ?? providerId;
+        const secretState = resolveProviderSecret(config, normalizedProvider, template);
         result.push({
           key:           providerId,
           provider:      normalizedProvider,
@@ -415,6 +427,9 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
           models,
           modelCount:    Object.keys(models).length,
           template,
+          envKeyFound:   secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey),
+          envKeyValue:   secretState.value || undefined,
+          credentialSource: secretState.source,
         });
       }
     }
@@ -436,6 +451,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
 
     if (existingIndex !== -1) {
       result[existingIndex].envKeyFound = true;
+      result[existingIndex].credentialSource = result[existingIndex].credentialSource ?? 'template-env';
     } else {
       const models = getModelsForProvider(template.id, allModels);
 
@@ -450,6 +466,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
         template,
         envKeyFound: true,
         envKeyValue: envOnlyValue || undefined,
+        credentialSource: 'template-env',
       });
     }
   }
@@ -776,6 +793,19 @@ const PROVIDER_BADGE_CLS: Record<ProviderStatusTone, string> = {
   info: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
 };
 
+function providerCredentialStatusLabel(t: TFunction, configured: boolean, source?: ProviderSecretSource) {
+  if (!configured) {
+    return t('config.providerCredentialMissing', '需要 API Key');
+  }
+  if (source === 'provider-apiKey-env-ref') {
+    return t('config.providerCredentialReference', '凭据引用已配置');
+  }
+  if (source === 'template-env' || source === 'template-env-alt') {
+    return t('config.providerCredentialRuntime', '运行时凭据已配置');
+  }
+  return t('config.apiKeyConfigured', 'API Key configured');
+}
+
 interface ProviderCardShellProps {
   providerId: string;
   title: ReactNode;
@@ -880,6 +910,7 @@ interface ProfileRowProps {
   imageSupportMap: Map<string, boolean>;
   /** True when key is stored in env.vars (so profile has no key but it is configured) */
   apiKeyConfigured?: boolean;
+  apiKeySource?: ProviderSecretSource;
   /** Actual key value from env.vars, passed through so fetch can use it */
   envKeyValue?: string;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
@@ -998,6 +1029,7 @@ function ProfileRow({
   imagePrimaryModel,
   imageSupportMap,
   apiKeyConfigured,
+  apiKeySource,
   envKeyValue,
   onChange,
   onApplyAndSave,
@@ -1011,6 +1043,12 @@ function ProfileRow({
   const modelCount    = Object.keys(providerModels).length;
   const hasStoredSecret = Boolean(
     profile.token ?? profile.apiKey ?? (profile as any).key ?? apiKeyConfigured
+  );
+  const hasInlineSecret = Boolean(profile.token ?? profile.apiKey ?? (profile as any).key);
+  const statusLabel = providerCredentialStatusLabel(
+    t,
+    hasStoredSecret,
+    hasInlineSecret ? undefined : apiKeySource,
   );
 
   // ── Inline edit state ──
@@ -1176,7 +1214,7 @@ function ProfileRow({
       title={tmpl?.name ?? providerId}
       subtitle={<span className="font-mono">{profileKey}</span>}
       statusTone={hasStoredSecret ? 'ok' : 'warn'}
-      statusLabel={hasStoredSecret ? t('config.apiKeyConfigured', 'API Key configured') : t('config.apiKeyPlaceholder', '输入 API Key')}
+      statusLabel={statusLabel}
       modelCount={modelCount}
       open={open}
       onToggle={() => setOpen((o) => !o)}
@@ -1331,7 +1369,7 @@ interface ModelsProviderRowProps {
 
 function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: ModelsProviderRowProps) {
   const [open, setOpen] = useState(false);
-  const { provider, modelsProvider, modelCount, template, envKeyFound } = unifiedProvider;
+  const { provider, modelsProvider, modelCount, template, envKeyFound, credentialSource } = unifiedProvider;
   const { t } = useTranslation();
 
   const [localBaseUrl, setLocalBaseUrl] = useState(modelsProvider?.baseUrl ?? '');
@@ -1389,7 +1427,7 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
       subtitle={<span className="font-mono">{modelsProvider?.baseUrl ?? provider}</span>}
       badge={{ label: <>⚡ {t('config.customProvider', 'Custom Provider')}</>, tone: 'info' }}
       statusTone={envKeyFound ? 'ok' : 'info'}
-      statusLabel={envKeyFound ? t('config.apiKeyConfigured', 'API Key configured') : undefined}
+      statusLabel={providerCredentialStatusLabel(t, Boolean(envKeyFound), credentialSource)}
       modelCount={modelCount}
       open={open}
       onToggle={() => setOpen((o) => !o)}
@@ -1510,7 +1548,7 @@ interface EnvOnlyRowProps {
 
 function EnvOnlyRow({ unifiedProvider, onConfigure }: EnvOnlyRowProps) {
   const { t } = useTranslation();
-  const { provider, template, modelCount } = unifiedProvider;
+  const { provider, template, modelCount, credentialSource } = unifiedProvider;
   const envKeyName = template?.envKey;
 
   return (
@@ -1533,7 +1571,8 @@ function EnvOnlyRow({ unifiedProvider, onConfigure }: EnvOnlyRowProps) {
         ),
         tone: 'warn',
       }}
-      statusTone="warn"
+      statusTone="info"
+      statusLabel={providerCredentialStatusLabel(t, true, credentialSource)}
       modelCount={modelCount}
       expandable={false}
       rightAction={template ? (
@@ -2695,8 +2734,6 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: ProvidersTabProps) {
-  const providerHealth = useMemo(() => diagnoseProviders(config, PROVIDER_TEMPLATES as any), [config]);
-  const unknownProviders = providerHealth.filter((p) => p.status === 'unknown');
   const { t } = useTranslation();
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
@@ -2824,36 +2861,6 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
           <StatCard value={aliasCount} label={t('config.aliases')} colorClass="text-purple-400" />
         </div>
 
-
-
-        {/* Runtime/system-supplied secrets — a calm one-liner instead of a
-            per-provider alarm. Only shown when some keys live outside the
-            config the desktop can read (env vars / gateway runtime). */}
-        {unknownProviders.length > 0 && (
-          <div className="mt-3 rounded-xl border border-aegis-border bg-aegis-surface/40 px-4 py-3">
-            <div className="flex items-start gap-2.5">
-              <AlertCircle size={14} strokeWidth={1.75} className="mt-0.5 text-aegis-text-muted flex-shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs text-aegis-text-secondary">
-                  {t('config.providersRuntimeSuppliedNote', {
-                    count: unknownProviders.length,
-                    defaultValue: '{{count}} 个提供方的密钥由 Gateway 运行时或系统环境变量提供，桌面端看不到（通常无需处理）。',
-                  })}
-                </p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {unknownProviders.map((item: any) => (
-                    <span
-                      key={item.providerId}
-                      className="text-[11px] font-mono text-aegis-text-muted bg-aegis-elevated border border-aegis-border rounded-full px-2 py-0.5"
-                    >
-                      {item.providerId}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
           <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-aegis-primary/20 rounded-xl">
             <div
@@ -2990,6 +2997,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                       imagePrimaryModel={imagePrimaryModel}
                       imageSupportMap={allModelImageSupportMap}
                       apiKeyConfigured={up.envKeyFound}
+                      apiKeySource={up.credentialSource}
                       envKeyValue={up.envKeyValue}
                       onChange={onChange}
                       onApplyAndSave={onApplyAndSave}

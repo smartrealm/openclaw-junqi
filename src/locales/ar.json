@@ -1245,7 +1245,10 @@
     "configSaved": "تم حفظ الكونفق بنجاح",
     "pressCtrlS": "Ctrl+S للحفظ",
     "secrets": "الأسرار",
-    "providersRuntimeSuppliedNote": "يتم توفير مفاتيح {{count}} من المزوّدين عبر Gateway وقت التشغيل أو متغيرات بيئة النظام؛ لا يستطيع سطح المكتب رؤيتها (عادةً لا حاجة لأي إجراء)."
+    "providerCredentialMissing": "مفتاح API مطلوب",
+    "providerCredentialReference": "تم تكوين مرجع بيانات الاعتماد",
+    "providerCredentialRuntime": "تم تكوين بيانات اعتماد وقت التشغيل",
+    "providersRuntimeSuppliedNote": "{{count}} مزودون يستخدمون بيانات اعتماد يديرها وقت التشغيل."
   },
   "calendar": {
     "title": "التقويم",

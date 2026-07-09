@@ -1686,7 +1686,10 @@
       "coding": "💻 Coding / Agent",
       "local": "🖥 Local / Custom"
     },
-    "providersRuntimeSuppliedNote": "{{count}} providers get their keys from the Gateway runtime or system env. Desktop can't see them — usually no action needed."
+    "providerCredentialMissing": "API key required",
+    "providerCredentialReference": "Credential reference configured",
+    "providerCredentialRuntime": "Runtime credential configured",
+    "providersRuntimeSuppliedNote": "{{count}} providers use runtime-managed credentials."
   },
   "calendar": {
     "title": "Calendar",
