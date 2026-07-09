@@ -26,7 +26,7 @@
     "agents": "智能体",
     "memory": "记忆",
     "skills": "技能",
-    "config": "配置管理",
+    "config": "提供方配置",
     "settings": "设置",
     "terminal": "终端",
     "agentRun": "AI 工作台",
@@ -48,7 +48,7 @@
     "gitRepo": "Git 仓库",
     "timeline": "时间线",
     "generalSettings": "通用设置",
-    "agentConfig": "智能体配置",
+    "agentConfig": "提供方配置",
     "logs": "日志",
     "perf": "性能",
     "usage": "用量",
@@ -1307,7 +1307,7 @@
     "close": "❌ 退出"
   },
   "config": {
-    "title": "配置管理器",
+    "title": "提供方配置",
     "detecting": "正在检测配置…",
     "notFound": "未找到配置文件",
     "configPath": "配置文件路径",

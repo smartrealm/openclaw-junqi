@@ -495,7 +495,7 @@ function miniItemsFor(tab: SidebarTab): ReadonlyArray<{ to: string; icon: React.
     ];
     case 'settings': return [
       { to: '/settings', icon: <Settings size={20} />, label: '设置' },
-      { to: '/config', icon: <Bot size={20} />, label: '配置' },
+      { to: '/config', icon: <Bot size={20} />, label: '提供方配置' },
       { to: '/logs', icon: <FileText size={20} />, label: '日志' },
     ];
     case 'workbench':

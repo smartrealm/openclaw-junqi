@@ -26,7 +26,7 @@
     "agents": "Agents",
     "memory": "Memory",
     "skills": "Skills",
-    "config": "Config Manager",
+    "config": "Provider Config",
     "settings": "Settings",
     "terminal": "Terminal",
     "agentRun": "AI Console",
@@ -48,7 +48,7 @@
     "gitRepo": "Git Repo",
     "timeline": "Timeline",
     "generalSettings": "General Settings",
-    "agentConfig": "Agent Config",
+    "agentConfig": "Provider Config",
     "logs": "Logs",
     "perf": "Performance",
     "usage": "Usage",
@@ -1309,7 +1309,7 @@
     "close": "❌ Close"
   },
   "config": {
-    "title": "Config Manager",
+    "title": "Provider Config",
     "detecting": "Detecting configuration...",
     "notFound": "Configuration file not found",
     "configPath": "Config Path",
