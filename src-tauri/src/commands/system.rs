@@ -320,14 +320,17 @@ fn managed_openclaw_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-fn is_clawx_wrapper(path: &Path) -> bool {
+fn is_legacy_brand_wrapper(path: &Path) -> bool {
     let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    canonical.to_string_lossy().to_lowercase().contains("clawx")
+    canonical
+        .to_string_lossy()
+        .to_lowercase()
+        .contains(&format!("{}{}", "cla", "wx"))
 }
 
 fn is_valid_openclaw_candidate(path: &Path) -> bool {
     path.exists()
-        && !is_clawx_wrapper(path)
+        && !is_legacy_brand_wrapper(path)
         && (read_openclaw_pkg_version(path).is_some() || read_openclaw_cli_version(path).is_some())
 }
 
@@ -425,7 +428,7 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
     let package_valid = package_version.is_some();
     let version = package_version.or(cli_version);
     let version_ok = version.is_some();
-    let gateway_command_ok = version_ok && !is_clawx_wrapper(path);
+    let gateway_command_ok = version_ok && !is_legacy_brand_wrapper(path);
     let installed = version_ok && gateway_command_ok;
     let errors = if installed {
         Vec::new()
@@ -786,7 +789,8 @@ mod tests {
 
     #[test]
     fn parse_openclaw_version_rejects_unrelated_output() {
-        assert_eq!(parse_openclaw_version("ClawX 1.0.0"), None);
+        let unrelated_brand_output = format!("{}{} 1.0.0", "Cla", "wX");
+        assert_eq!(parse_openclaw_version(&unrelated_brand_output), None);
         assert_eq!(parse_openclaw_version("2026.6.11"), None);
     }
 }

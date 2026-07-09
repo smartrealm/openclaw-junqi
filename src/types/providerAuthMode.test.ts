@@ -106,7 +106,7 @@ describe('authModesFor', () => {
 });
 
 describe('normalizeProviderAuthMode', () => {
-  test('migrates legacy ClawX/OpenClaw mode names', () => {
+  test('migrates legacy provider auth mode names', () => {
     assert.equal(normalizeProviderAuthMode('token'), 'api_key');
     assert.equal(normalizeProviderAuthMode('oauth'), 'oauth_browser');
   });

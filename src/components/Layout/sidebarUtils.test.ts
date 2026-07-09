@@ -29,7 +29,7 @@ test('sortSessionsByActivity puts running sessions first, then newest activity',
   ]);
 });
 
-test('getSessionBucketKey follows ClawX-style time buckets', () => {
+test('getSessionBucketKey follows relative time buckets', () => {
   const now = new Date('2026-07-06T12:00:00.000Z').getTime();
   const today = new Date('2026-07-06T01:00:00.000Z').getTime();
   const week = new Date('2026-07-01T01:00:00.000Z').getTime();

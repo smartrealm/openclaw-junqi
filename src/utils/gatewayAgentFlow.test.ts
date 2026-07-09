@@ -13,7 +13,7 @@ test('normalizeGatewayAgentId lowercases and hyphenates whitespace', () => {
   assert.equal(normalizeGatewayAgentId('Ops\tBot'), 'ops-bot');
 });
 
-test('isValidGatewayAgentId follows ClawX gateway id constraints', () => {
+test('isValidGatewayAgentId follows gateway id constraints', () => {
   assert.equal(isValidGatewayAgentId('research-assistant'), true);
   assert.equal(isValidGatewayAgentId('ops_bot'), true);
   assert.equal(isValidGatewayAgentId('-bad'), false);

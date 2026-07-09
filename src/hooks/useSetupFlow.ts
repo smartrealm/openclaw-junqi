@@ -280,7 +280,7 @@ export function useSetupFlow(
         if (resolvedTarget) setInstallTarget(resolvedTarget);
         const nextProgress = p != null ? Math.round(p * 100) : undefined;
 
-        // ClawX-style setup keeps the primary onboarding copy coarse and calm.
+        // Keep the primary onboarding copy coarse and calm.
         // Gateway preparation emits useful diagnostics, but those belong in the
         // activity log / current step detail rather than replacing the main
         // guide text with internal phrases like "detect/connect/sync runtime".
