@@ -7,7 +7,7 @@
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film } from 'lucide-react';
+import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -43,6 +43,7 @@ import {
 } from './providerDefaults';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthMode';
+import { OPENCLAW_API_PROTOCOLS, normalizeOpenClawApiProtocol } from '@/types/openclawApiProtocol';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import {
   buildTestHeaders,
@@ -345,6 +346,85 @@ function getModelsForProvider(
 ): Record<string, ModelEntry> {
   return Object.fromEntries(
     Object.entries(models).filter(([id]) => providerNamespaceMatches(getProviderFromModelId(id), provider))
+  );
+}
+
+function modelDisplayLabel(id: string, entry?: ModelEntry): string {
+  return entry?.alias && entry.alias !== id ? `${entry.alias} · ${id}` : id;
+}
+
+interface DefaultModelControlsProps {
+  models: Record<string, ModelEntry>;
+  primaryModel?: string;
+  imageModel?: string;
+  imageSupportMap?: Map<string, boolean>;
+  onSetPrimary: (id: string) => void;
+  onSetImageModel: (id: string) => void;
+  disabled?: boolean;
+  compact?: boolean;
+}
+
+function DefaultModelControls({
+  models,
+  primaryModel,
+  imageModel,
+  imageSupportMap,
+  onSetPrimary,
+  onSetImageModel,
+  disabled = false,
+  compact = false,
+}: DefaultModelControlsProps) {
+  const { t } = useTranslation();
+  const entries = Object.entries(models);
+  const imageEntries = entries.filter(([id]) => imageSupportMap?.get(id) === true);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className={clsx(
+      'grid gap-3',
+      compact ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'
+    )}>
+      <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted mb-1.5">
+          <Star size={11} className="text-aegis-primary" />
+          {t('config.defaultTextModel', 'Default Text Model')}
+        </div>
+        <select
+          value={primaryModel && models[primaryModel] ? primaryModel : ''}
+          disabled={disabled}
+          onChange={(e) => e.target.value && onSetPrimary(e.target.value)}
+          className="w-full rounded-lg border border-aegis-border bg-aegis-elevated px-2 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary"
+        >
+          {!primaryModel && <option value="">{t('config.notSet', 'Not set')}</option>}
+          {entries.map(([id, entry]) => (
+            <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
+          ))}
+        </select>
+      </div>
+      <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted mb-1.5">
+          <Image size={11} className="text-blue-400" />
+          {t('config.defaultImageModel', 'Default Image Model')}
+        </div>
+        <select
+          value={imageModel && imageSupportMap?.get(imageModel) === true ? imageModel : ''}
+          disabled={disabled || imageEntries.length === 0}
+          onChange={(e) => e.target.value && onSetImageModel(e.target.value)}
+          className="w-full rounded-lg border border-aegis-border bg-aegis-elevated px-2 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary disabled:opacity-50"
+        >
+          <option value="">{t('config.notSet', 'Not set')}</option>
+          {imageEntries.map(([id, entry]) => (
+            <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
+          ))}
+        </select>
+        {imageEntries.length === 0 && (
+          <p className="mt-1.5 text-[10px] text-aegis-text-muted">
+            {t('config.imageModelStrictHint', 'No image-capable models detected in current selection')}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1068,7 +1148,7 @@ function ProfileRow({
 }: ProfileRowProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const providerId    = getProviderFromProfileKey(profileKey);
+  const providerId    = profile.provider || getProviderFromProfileKey(profileKey);
   const tmpl          = getTemplateById(providerId);
   const providerModels = getModelsForProvider(providerId, allModels ?? {});
   const modelCount    = Object.keys(providerModels).length;
@@ -1086,12 +1166,16 @@ function ProfileRow({
   // ── Inline edit state ──
   const [localProfile, setLocalProfile] = useState<string>(profile.profileName ?? profileKey);
   const [localMode, setLocalMode]       = useState<string>(normalizeProviderAuthMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode));
+  const [localBaseUrl, setLocalBaseUrl] = useState<string>(modelsProvider?.baseUrl ?? tmpl?.baseUrl ?? '');
+  const [localApi, setLocalApi] = useState<string>(modelsProvider?.api ?? tmpl?.api ?? '');
   const [apiKeyInput, setApiKeyInput]   = useState('');
   const [apiKeySaved, setApiKeySaved]   = useState(false);
 
   // Sync local state when prop changes (e.g. after backup restore)
   useEffect(() => { setLocalProfile(profile.profileName ?? profileKey); }, [profile.profileName, profileKey]);
   useEffect(() => { setLocalMode(normalizeProviderAuthMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode)); }, [profile.mode, (profile as any).type, tmpl?.defaultAuthMode]);
+  useEffect(() => { setLocalBaseUrl(modelsProvider?.baseUrl ?? tmpl?.baseUrl ?? ''); }, [modelsProvider?.baseUrl, tmpl?.baseUrl]);
+  useEffect(() => { setLocalApi(modelsProvider?.api ?? tmpl?.api ?? ''); }, [modelsProvider?.api, tmpl?.api]);
 
   const updateProfile = (patch: Partial<AuthProfile>) => {
     onChange((prev) => {
@@ -1124,6 +1208,30 @@ function ProfileRow({
         },
       };
       return next;
+    });
+  };
+
+  const updateProviderConnection = (patch: Partial<ModelProviderConfig>) => {
+    onChange((prev) => {
+      const providerKey = profile.provider || getProviderFromProfileKey(profileKey);
+      const currentProviderCfg = prev.models?.providers?.[providerKey] ?? {};
+      const nextPatch = { ...patch };
+      if (nextPatch.api) {
+        nextPatch.api = normalizeOpenClawApiProtocol(nextPatch.api) ?? currentProviderCfg.api ?? tmpl?.api;
+      }
+      return {
+        ...prev,
+        models: {
+          ...prev.models,
+          providers: {
+            ...(prev.models?.providers ?? {}),
+            [providerKey]: {
+              ...currentProviderCfg,
+              ...nextPatch,
+            },
+          },
+        },
+      };
     });
   };
 
@@ -1342,11 +1450,64 @@ function ProfileRow({
             </div>
           </div>
 
+          {/* Connection config */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                {t('config.baseUrl', 'API Endpoint')}
+              </label>
+              <input
+                value={localBaseUrl}
+                disabled={saving}
+                onChange={(e) => setLocalBaseUrl(e.target.value)}
+                onBlur={() => updateProviderConnection({ baseUrl: localBaseUrl.trim() || undefined })}
+                placeholder={tmpl?.baseUrl || t('config.baseUrlPlaceholder')}
+                className={clsx(
+                  'bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2',
+                  'text-aegis-text text-sm font-mono outline-none focus:border-aegis-primary',
+                  'transition-colors duration-200 disabled:opacity-50'
+                )}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                {t('config.apiProtocol', 'API Protocol')}
+              </label>
+              <select
+                value={localApi}
+                disabled={saving}
+                onChange={(e) => {
+                  setLocalApi(e.target.value);
+                  updateProviderConnection({ api: e.target.value || undefined });
+                }}
+                className={clsx(
+                  'bg-aegis-menu-bg border border-aegis-menu-border rounded-lg px-3 py-2',
+                  'text-aegis-text text-sm font-mono outline-none focus:border-aegis-primary',
+                  'transition-colors duration-200 disabled:opacity-50'
+                )}
+              >
+                <option value="">{t('config.notSet', 'Not set')}</option>
+                {OPENCLAW_API_PROTOCOLS.map((protocol) => (
+                  <option key={protocol} value={protocol}>{protocol}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {/* Models */}
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
               {t('config.modelsAndAliases')}
             </label>
+            <DefaultModelControls
+              models={providerModels}
+              primaryModel={primaryModel}
+              imageModel={imagePrimaryModel}
+              imageSupportMap={imageSupportMap}
+              onSetPrimary={setModelPrimary}
+              onSetImageModel={setImageModelPrimary}
+              disabled={saving}
+            />
             <ChipList
               models={providerModels}
               primaryModel={primaryModel}
@@ -1405,8 +1566,10 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
   const { t } = useTranslation();
 
   const [localBaseUrl, setLocalBaseUrl] = useState(modelsProvider?.baseUrl ?? '');
+  const [localApi, setLocalApi] = useState(modelsProvider?.api ?? template?.api ?? '');
   // Sync when prop changes after backup restore
   useEffect(() => { setLocalBaseUrl(modelsProvider?.baseUrl ?? ''); }, [modelsProvider?.baseUrl]);
+  useEffect(() => { setLocalApi(modelsProvider?.api ?? template?.api ?? ''); }, [modelsProvider?.api, template?.api]);
 
   const updateModelsProvider = (patch: Partial<ModelProviderConfig>) => {
     onChange((prev) => ({
@@ -1483,21 +1646,29 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
           </div>
 
           {/* API Type */}
-          {modelsProvider?.api && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
-                {t('config.api', 'API')}
-              </label>
-              <div
-                className={clsx(
-                  'text-sm text-aegis-text-secondary font-mono',
-                  'bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2'
-                )}
-              >
-                {modelsProvider.api}
-              </div>
-            </div>
-          )}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+              {t('config.apiProtocol', 'API Protocol')}
+            </label>
+            <select
+              value={localApi}
+              disabled={saving}
+              onChange={(e) => {
+                setLocalApi(e.target.value);
+                updateModelsProvider({ api: e.target.value || undefined });
+              }}
+              className={clsx(
+                'bg-aegis-menu-bg border border-aegis-menu-border rounded-lg px-3 py-2',
+                'text-aegis-text text-sm font-mono outline-none focus:border-aegis-primary',
+                'transition-colors duration-200 disabled:opacity-50'
+              )}
+            >
+              <option value="">{t('config.notSet', 'Not set')}</option>
+              {OPENCLAW_API_PROTOCOLS.map((protocol) => (
+                <option key={protocol} value={protocol}>{protocol}</option>
+              ))}
+            </select>
+          </div>
 
           {/* Models list */}
           {modelsProvider?.models && modelsProvider.models.length > 0 && (
@@ -2549,48 +2720,58 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
       )}
 
       {normalizedModelOptions.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
-              {t('config.primaryModel')}
-            </label>
-            <select
-              value={resolvedTextPrimaryModel}
-              onChange={(e) => setTextPrimaryModel(e.target.value)}
-              className={clsx(
-                'bg-aegis-menu-bg border border-aegis-menu-border rounded-lg px-3 py-2',
-                'text-aegis-text text-sm outline-none focus:border-aegis-primary',
-                'transition-colors duration-200 cursor-pointer'
-              )}
-            >
-              {normalizedModelOptions.map((id) => (
-                <option key={id} value={id}>{id}</option>
-              ))}
-            </select>
+        <div className="rounded-xl border border-aegis-border bg-aegis-surface p-3 space-y-3">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
+              {t('config.defaultModelSettings', 'Default Model Settings')}
+            </div>
+            <p className="mt-1 text-[10px] text-aegis-text-muted leading-tight">
+              {t('config.defaultModelSettingsHint', 'Choose which enabled model should handle normal text requests and image-capable requests.')}
+            </p>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
-              {t('config.imageModel', 'Image Model')}
-            </label>
-            <select
-              value={resolvedImagePrimaryModel}
-              onChange={(e) => setImagePrimaryModel(e.target.value)}
-              className={clsx(
-                'bg-aegis-menu-bg border border-aegis-menu-border rounded-lg px-3 py-2',
-                'text-aegis-text text-sm outline-none focus:border-aegis-primary',
-                'transition-colors duration-200 cursor-pointer'
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                {t('config.defaultTextModel', 'Default Text Model')}
+              </label>
+              <select
+                value={resolvedTextPrimaryModel}
+                onChange={(e) => setTextPrimaryModel(e.target.value)}
+                className={clsx(
+                  'bg-aegis-menu-bg border border-aegis-menu-border rounded-lg px-3 py-2',
+                  'text-aegis-text text-sm outline-none focus:border-aegis-primary',
+                  'transition-colors duration-200 cursor-pointer'
+                )}
+              >
+                {normalizedModelOptions.map((id) => (
+                  <option key={id} value={id}>{id}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                {t('config.defaultImageModel', 'Default Image Model')}
+              </label>
+              <select
+                value={resolvedImagePrimaryModel}
+                onChange={(e) => setImagePrimaryModel(e.target.value)}
+                className={clsx(
+                  'bg-aegis-menu-bg border border-aegis-menu-border rounded-lg px-3 py-2',
+                  'text-aegis-text text-sm outline-none focus:border-aegis-primary',
+                  'transition-colors duration-200 cursor-pointer'
+                )}
+              >
+                <option value="">{t('config.notSet', 'Not set')}</option>
+                {imageModelOptions.map((id) => (
+                  <option key={id} value={id}>{id}</option>
+                ))}
+              </select>
+              {imageModelOptions.length === 0 && (
+                <p className="text-[10px] text-aegis-text-muted">
+                  {t('config.imageModelStrictHint', 'No image-capable models detected in current selection')}
+                </p>
               )}
-            >
-              <option value="">{t('config.notSet', 'Not set')}</option>
-              {imageModelOptions.map((id) => (
-                <option key={id} value={id}>{id}</option>
-              ))}
-            </select>
-            {imageModelOptions.length === 0 && (
-              <p className="text-[10px] text-aegis-text-muted">
-                {t('config.imageModelStrictHint', 'No image-capable models detected in current selection')}
-              </p>
-            )}
+            </div>
           </div>
         </div>
       )}
@@ -3085,7 +3266,40 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
             </h3>
           </div>
           <div className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <DefaultModelControls
+              models={allModels}
+              primaryModel={primaryModel}
+              imageModel={imagePrimaryModel}
+              imageSupportMap={allModelImageSupportMap}
+              disabled={saving}
+              onSetPrimary={(id) => {
+                void onApplyAndSave((prev) => ({
+                  ...prev,
+                  agents: {
+                    ...prev.agents,
+                    defaults: buildDefaultsWithResolvedModels({
+                      defaults: prev.agents?.defaults,
+                      models: prev.agents?.defaults?.models ?? {},
+                      primary: id,
+                    }),
+                  },
+                }));
+              }}
+              onSetImageModel={(id) => {
+                void onApplyAndSave((prev) => ({
+                  ...prev,
+                  agents: {
+                    ...prev.agents,
+                    defaults: buildDefaultsWithResolvedModels({
+                      defaults: prev.agents?.defaults,
+                      models: prev.agents?.defaults?.models ?? {},
+                      imagePrimary: id,
+                    }),
+                  },
+                }));
+              }}
+            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 my-4">
               <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted mb-1.5">
                   {t('config.imageGenerationModel', 'Image Generation Model')}
