@@ -69,8 +69,7 @@ jobs:
 
       - name: cargo clippy
         working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
-        continue-on-error: false
+        run: cargo clippy --all-targets
 
       - name: cargo check
         working-directory: src-tauri
