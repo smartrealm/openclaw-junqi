@@ -13,9 +13,14 @@ export type ProviderTemplateLike = {
 
 export type ProviderSecretSource =
   | 'profile-apiKey'
+  | 'profile-key'
+  | 'profile-key-ref'
   | 'profile-token'
+  | 'profile-token-ref'
+  | 'profile-oauth'
   | 'provider-apiKey-raw'
   | 'provider-apiKey-env-ref'
+  | 'provider-apiKey-secret-ref'
   | 'template-env'
   | 'template-env-alt'
   | 'none';
@@ -45,13 +50,28 @@ function readProfileSecret(profile: Record<string, any> | undefined): ResolvedPr
   if (!profile) return null;
   const apiKey = String(profile.apiKey ?? '').trim();
   if (apiKey) return { configured: true, source: 'profile-apiKey', value: apiKey, providerId: String(profile.provider ?? '') };
+  const key = String(profile.key ?? '').trim();
+  if (key) return { configured: true, source: 'profile-key', value: key, providerId: String(profile.provider ?? '') };
+  if (profile.keyRef && typeof profile.keyRef === 'object') {
+    return { configured: true, source: 'profile-key-ref', providerId: String(profile.provider ?? '') };
+  }
   const token = String(profile.token ?? '').trim();
   if (token) return { configured: true, source: 'profile-token', value: token, providerId: String(profile.provider ?? '') };
+  if (profile.tokenRef && typeof profile.tokenRef === 'object') {
+    return { configured: true, source: 'profile-token-ref', providerId: String(profile.provider ?? '') };
+  }
+  const oauthAccess = String(profile.access ?? '').trim();
+  if (profile.type === 'oauth' && oauthAccess) {
+    return { configured: true, source: 'profile-oauth', value: oauthAccess, providerId: String(profile.provider ?? '') };
+  }
   return null;
 }
 
 function readProviderConfigSecret(config: GatewayRuntimeConfig, providerId: string): ResolvedProviderSecret | null {
   const providerCfg = config.models?.providers?.[providerId] as Record<string, any> | undefined;
+  if (providerCfg?.apiKey && typeof providerCfg.apiKey === 'object') {
+    return { configured: true, source: 'provider-apiKey-secret-ref', providerId };
+  }
   const raw = typeof providerCfg?.apiKey === 'string' ? providerCfg.apiKey.trim() : '';
   if (!raw) return null;
 

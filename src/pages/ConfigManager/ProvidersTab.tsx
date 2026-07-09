@@ -92,6 +92,7 @@ interface UnifiedProvider {
   envKeyFound?: boolean;
   envKeyValue?: string;
   credentialSource?: ProviderSecretSource;
+  credentialUnverified?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -372,6 +373,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     const secretState = resolveProviderSecret(config, provider, template, profileKey);
     const envKeyValue = secretState.value;
     const envKeyFound = secretState.configured || hasProviderConfigApiKey(providerConfigEntry?.apiKey);
+    const credentialUnverified = !envKeyFound && Boolean(providerConfigEntry);
 
     result.push({
       key:         profileKey,
@@ -386,6 +388,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
       envKeyFound,
       envKeyValue: envKeyValue || undefined,
       credentialSource: secretState.source,
+      credentialUnverified,
     });
   }
 
@@ -404,6 +407,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
         p.envKeyFound = p.envKeyFound || secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey);
         p.envKeyValue = p.envKeyValue || secretState.value || undefined;
         p.credentialSource = secretState.source !== 'none' ? secretState.source : p.credentialSource;
+        p.credentialUnverified = !p.envKeyFound && Boolean(modelsProvider);
       }
     } else {
       const existingIndex = findExistingIndex(providerId);
@@ -413,11 +417,13 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
         result[existingIndex].envKeyFound = result[existingIndex].envKeyFound || secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey);
         result[existingIndex].envKeyValue = result[existingIndex].envKeyValue || secretState.value || undefined;
         result[existingIndex].credentialSource = secretState.source !== 'none' ? secretState.source : result[existingIndex].credentialSource;
+        result[existingIndex].credentialUnverified = !result[existingIndex].envKeyFound && Boolean(modelsProvider);
       } else {
         const template = getTemplateById(providerId);
         const models   = getModelsForProvider(providerId, allModels);
         const normalizedProvider = template?.id ?? providerId;
         const secretState = resolveProviderSecret(config, normalizedProvider, template);
+        const envKeyFound = secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey);
         result.push({
           key:           providerId,
           provider:      normalizedProvider,
@@ -427,9 +433,10 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
           models,
           modelCount:    Object.keys(models).length,
           template,
-          envKeyFound:   secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey),
+          envKeyFound,
           envKeyValue:   secretState.value || undefined,
           credentialSource: secretState.source,
+          credentialUnverified: !envKeyFound,
         });
       }
     }
@@ -452,6 +459,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     if (existingIndex !== -1) {
       result[existingIndex].envKeyFound = true;
       result[existingIndex].credentialSource = result[existingIndex].credentialSource ?? 'template-env';
+      result[existingIndex].credentialUnverified = false;
     } else {
       const models = getModelsForProvider(template.id, allModels);
 
@@ -467,6 +475,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
         envKeyFound: true,
         envKeyValue: envOnlyValue || undefined,
         credentialSource: 'template-env',
+        credentialUnverified: false,
       });
     }
   }
@@ -793,11 +802,19 @@ const PROVIDER_BADGE_CLS: Record<ProviderStatusTone, string> = {
   info: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
 };
 
-function providerCredentialStatusLabel(t: TFunction, configured: boolean, source?: ProviderSecretSource) {
+function providerCredentialStatusLabel(
+  t: TFunction,
+  configured: boolean,
+  source?: ProviderSecretSource,
+  unverified = false,
+) {
   if (!configured) {
+    if (unverified) {
+      return t('config.providerCredentialUnverified', '凭据未确认');
+    }
     return t('config.providerCredentialMissing', '需要 API Key');
   }
-  if (source === 'provider-apiKey-env-ref') {
+  if (source === 'provider-apiKey-env-ref' || source === 'provider-apiKey-secret-ref' || source === 'profile-key-ref' || source === 'profile-token-ref') {
     return t('config.providerCredentialReference', '凭据引用已配置');
   }
   if (source === 'template-env' || source === 'template-env-alt') {
@@ -923,6 +940,7 @@ interface ProfileRowProps {
   /** True when key is stored in env.vars (so profile has no key but it is configured) */
   apiKeyConfigured?: boolean;
   apiKeySource?: ProviderSecretSource;
+  credentialUnverified?: boolean;
   /** Actual key value from env.vars, passed through so fetch can use it */
   envKeyValue?: string;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
@@ -1042,6 +1060,7 @@ function ProfileRow({
   imageSupportMap,
   apiKeyConfigured,
   apiKeySource,
+  credentialUnverified = false,
   envKeyValue,
   onChange,
   onApplyAndSave,
@@ -1061,6 +1080,7 @@ function ProfileRow({
     t,
     hasStoredSecret,
     hasInlineSecret ? undefined : apiKeySource,
+    credentialUnverified,
   );
 
   // ── Inline edit state ──
@@ -1225,7 +1245,7 @@ function ProfileRow({
       providerId={providerId}
       title={tmpl?.name ?? providerId}
       subtitle={<span className="font-mono">{profileKey}</span>}
-      statusTone={hasStoredSecret ? 'ok' : 'warn'}
+      statusTone={hasStoredSecret ? 'ok' : credentialUnverified ? 'info' : 'warn'}
       statusLabel={statusLabel}
       modelCount={modelCount}
       open={open}
@@ -1381,7 +1401,7 @@ interface ModelsProviderRowProps {
 
 function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: ModelsProviderRowProps) {
   const [open, setOpen] = useState(false);
-  const { provider, modelsProvider, modelCount, template, envKeyFound, credentialSource } = unifiedProvider;
+  const { provider, modelsProvider, modelCount, template, envKeyFound, credentialSource, credentialUnverified } = unifiedProvider;
   const { t } = useTranslation();
 
   const [localBaseUrl, setLocalBaseUrl] = useState(modelsProvider?.baseUrl ?? '');
@@ -1438,8 +1458,8 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
       title={template?.name ?? provider}
       subtitle={<span className="font-mono">{modelsProvider?.baseUrl ?? provider}</span>}
       badge={{ label: <>⚡ {t('config.customProvider', 'Custom Provider')}</>, tone: 'info' }}
-      statusTone={envKeyFound ? 'ok' : 'info'}
-      statusLabel={providerCredentialStatusLabel(t, Boolean(envKeyFound), credentialSource)}
+      statusTone={envKeyFound ? 'ok' : credentialUnverified ? 'info' : 'warn'}
+      statusLabel={providerCredentialStatusLabel(t, Boolean(envKeyFound), credentialSource, credentialUnverified)}
       modelCount={modelCount}
       open={open}
       onToggle={() => setOpen((o) => !o)}
@@ -3010,6 +3030,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                       imageSupportMap={allModelImageSupportMap}
                       apiKeyConfigured={up.envKeyFound}
                       apiKeySource={up.credentialSource}
+                      credentialUnverified={up.credentialUnverified}
                       envKeyValue={up.envKeyValue}
                       onChange={onChange}
                       onApplyAndSave={onApplyAndSave}

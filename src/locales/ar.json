@@ -1246,6 +1246,7 @@
     "pressCtrlS": "Ctrl+S للحفظ",
     "secrets": "الأسرار",
     "providerCredentialMissing": "مفتاح API مطلوب",
+    "providerCredentialUnverified": "بيانات الاعتماد غير مؤكدة",
     "providerCredentialReference": "تم تكوين مرجع بيانات الاعتماد",
     "providerCredentialRuntime": "تم تكوين بيانات اعتماد وقت التشغيل",
     "providersRuntimeSuppliedNote": "{{count}} مزودون يستخدمون بيانات اعتماد يديرها وقت التشغيل."

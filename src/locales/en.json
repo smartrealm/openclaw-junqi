@@ -1687,6 +1687,7 @@
       "local": "🖥 Local / Custom"
     },
     "providerCredentialMissing": "API key required",
+    "providerCredentialUnverified": "Credential not verified",
     "providerCredentialReference": "Credential reference configured",
     "providerCredentialRuntime": "Runtime credential configured",
     "providersRuntimeSuppliedNote": "{{count}} providers use runtime-managed credentials."

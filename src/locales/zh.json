@@ -1681,6 +1681,7 @@
       "local": "🖥 本地 / 自定义"
     },
     "providerCredentialMissing": "需要 API Key",
+    "providerCredentialUnverified": "凭据未确认",
     "providerCredentialReference": "凭据引用已配置",
     "providerCredentialRuntime": "运行时凭据已配置",
     "providersRuntimeSuppliedNote": "{{count}} 个提供方使用运行时托管凭据。"
