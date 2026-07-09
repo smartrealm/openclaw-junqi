@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { PetSkin } from '@/pet/skins';
 export type { PetSkin };
 
-export const DEFAULT_PET_SKIN: PetSkin = 'jellyfish';
+export const DEFAULT_PET_SKIN: PetSkin = 'lobster';
 
 /** Coarse classification of a drag payload — drives the bubble icon + accent
  *  colour so the user can tell at a glance whether they dragged an image, an
@@ -166,7 +166,7 @@ export const usePetStore = create<PetSettings>()(
     }),
     {
       name: 'aegis-pet-settings',
-      version: 2,
+      version: 3,
       migrate: (persisted) => {
         const p = (persisted as Partial<PetSettings>) || {};
         const pomodoro: Partial<PomodoroState> = p.pomodoro || {};

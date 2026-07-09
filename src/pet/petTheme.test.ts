@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetCharacterPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
 import { DEFAULT_PET_SKIN } from '../stores/petStore';
 
-test('default pet skin is sky-blue jellyfish', () => {
-  assert.equal(DEFAULT_PET_SKIN, 'jellyfish');
+test('default pet skin is the coral lobster', () => {
+  assert.equal(DEFAULT_PET_SKIN, 'lobster');
+  assert.equal(resolvePetCharacterPalette('aegis-light', 'lobster').body, '#ef6f5e');
+  assert.equal(resolvePetCharacterPalette('aegis-dark', 'lobster').body, '#ff836f');
 });
 
 test('pet dark mode follows explicit dark theme names', () => {
@@ -123,7 +125,7 @@ test('pet character palette changes body color by theme and skin', () => {
   assert.equal(resolvePetCharacterPalette('aegis-eyecare', 'lobster').body, '#c96842');
 });
 
-test('pet default jellyfish stays sky-blue across regular and dark themes', () => {
+test('jellyfish skin stays sky-blue across regular and dark themes', () => {
   assert.equal(resolvePetCharacterPalette('aegis-light', 'jellyfish').body, '#23a6c8');
   assert.equal(resolvePetCharacterPalette('aegis-dark', 'jellyfish').body, '#73e6ff');
   assert.equal(resolvePetCharacterPalette('aegis-midnight', 'jellyfish').body, '#73e6ff');

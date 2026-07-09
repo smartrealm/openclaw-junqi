@@ -54,6 +54,11 @@ export default function PetWindow() {
   // under a still cursor makes hovered flicker (mouseenter/leave), which would
   // make the tip bubble strobe — so we suppress hover-driven tips while snapping.
   const [snapping, setSnapping] = useState(false);
+  // Horizontal hand-drag direction (-1 left / +1 right / 0 idle), driven off
+  // the raw mousemove so the lobster's legs stride the way it's being carried.
+  const [walkDir, setWalkDir] = useState(0);
+  const walkDirRef = useRef(0);
+  const lastMoveXRef = useRef<number | null>(null);
   const position = usePetStore((s) => s.position);
   const setPosition = usePetStore((s) => s.setPosition);
   const skin = usePetStore((s) => s.skin);
@@ -201,7 +206,23 @@ export default function PetWindow() {
         d.moved = true;
         setDragging(true);
       }
-      if (d.moved) invoke('set_pet_position', { x: d.bx + dx, y: d.by + dy });
+      if (d.moved) {
+        invoke('set_pet_position', { x: d.bx + dx, y: d.by + dy });
+        // Track instantaneous horizontal direction; only re-render when the
+        // sign flips so a fast drag doesn't thrash React.
+        const lastX = lastMoveXRef.current;
+        if (lastX != null) {
+          const vx = e.screenX - lastX;
+          if (Math.abs(vx) > 0.75) {
+            const nd = vx > 0 ? 1 : -1;
+            if (nd !== walkDirRef.current) {
+              walkDirRef.current = nd;
+              setWalkDir(nd);
+            }
+          }
+        }
+        lastMoveXRef.current = e.screenX;
+      }
     };
     // Magnetic snap: if the pet is released close to a screen edge, glide it to
     // that edge. Releases in the middle of the screen are left untouched.
@@ -250,6 +271,10 @@ export default function PetWindow() {
       }
       drag.current = null;
       setDragging(false);
+      // Feet come to rest.
+      walkDirRef.current = 0;
+      lastMoveXRef.current = null;
+      setWalkDir(0);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -535,6 +560,8 @@ export default function PetWindow() {
           skin={state.skin ?? skin}
           customAsset={customAsset}
           dragging={dragging}
+          hovered={hovered && !snapping && !dragging}
+          walkDir={walkDir}
           celebrating={state.emotion === 'celebrate'}
           dragDx={dragOffset.dx}
           dragDy={dragOffset.dy}

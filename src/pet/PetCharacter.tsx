@@ -44,12 +44,18 @@ function usePetCharacterTheme(): PetThemeName {
   return themeName;
 }
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', customAsset, dragging = false, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', customAsset, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;
   customAsset?: string | null;
   dragging?: boolean;
+  /** Cursor is over the pet — skins play a "notice you" reaction and the
+   *  eyes widen. */
+  hovered?: boolean;
+  /** Horizontal hand-drag direction (-1 left / +1 right / 0). Fed to the
+   *  skin so its legs stride the way the pet is being carried. */
+  walkDir?: number;
   /** True when the pet just completed a pomodoro or task — triggers a bounce + glow. */
   celebrating?: boolean;
   /** Magnetic pull offset (px) during an OS drag — PetWindow feeds the
@@ -101,10 +107,12 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
           animate={{
             // Stack the magnetic pull on top of the emotion pose so the pet
             // can both "lean back" (cfg.bodyY) AND "tilt toward the cursor".
-            x: dragDx,
-            y: cfg.bodyY + dragDy * 0.6,
-            scale: cfg.bodyScale + pullMag * 0.04,
-            rotate: cfg.bodyRotate + cappedRot,
+            // Hand-dragging adds a lean toward the walk direction; hover adds
+            // a small perk so even an uploaded pet reacts.
+            x: dragDx + (dragging ? walkDir * 2 : 0),
+            y: cfg.bodyY + dragDy * 0.6 + (hovered ? -3 : 0),
+            scale: cfg.bodyScale + pullMag * 0.04 + (hovered ? 0.03 : 0),
+            rotate: cfg.bodyRotate + cappedRot + (dragging ? walkDir * 5 : 0),
           }}
           transition={{ type: 'spring', stiffness: 260, damping: 20 }}>
           <motion.div style={BOX}
@@ -200,25 +208,25 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
           animate={{
             // Stack the magnetic pull on top of the emotion pose so the pet
             // can both lean forward (cfg.bodyY) AND tilt toward the cursor.
-            x: dragDx,
-            y: cfg.bodyY + dragDy * 0.6,
-            scale: cfg.bodyScale + pullMag * 0.04,
-            rotate: cfg.bodyRotate + cappedRot,
+            x: dragDx + (dragging ? walkDir * 2 : 0),
+            y: cfg.bodyY + dragDy * 0.6 + (hovered ? -3 : 0),
+            scale: cfg.bodyScale + pullMag * 0.04 + (hovered ? 0.03 : 0),
+            rotate: cfg.bodyRotate + cappedRot + (dragging ? walkDir * 5 : 0),
           }}
           transition={{ type: 'spring', stiffness: 260, damping: 20 }}>
           {/* breathing */}
           <motion.g style={BOX}
             animate={{ scale: [1, 1.035, 1] }}
             transition={{ duration: 3 / Math.max(cfg.breath, 0.1), repeat: Infinity, ease: EASE }}>
-            <Skin color={bodyColor} highlight={palette.highlight} />
+            <Skin color={bodyColor} highlight={palette.highlight} hovered={hovered} walking={dragging} walkDir={walkDir} />
             {cfg.cheeks && (
               <>
                 <ellipse cx={38} cy={80} rx={6} ry={4} fill="#ff8fab" opacity={0.5} />
                 <ellipse cx={82} cy={80} rx={6} ry={4} fill="#ff8fab" opacity={0.5} />
               </>
             )}
-            <Eye cx={47} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} ink={palette.ink} eye={palette.eye} highlight={palette.eyeHighlight} />
-            <Eye cx={73} blink={blink} open={dragging ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} ink={palette.ink} eye={palette.eye} highlight={palette.eyeHighlight} />
+            <Eye cx={47} blink={blink} open={dragging || hovered ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} ink={palette.ink} eye={palette.eye} highlight={palette.eyeHighlight} />
+            <Eye cx={73} blink={blink} open={dragging || hovered ? 1 : cfg.eyeOpen} dx={cfg.pupilDx + gaze + dragGaze} ink={palette.ink} eye={palette.eye} highlight={palette.eyeHighlight} />
             <motion.path d={cfg.mouth} fill="none" stroke={palette.ink} strokeWidth={2.4} strokeLinecap="round"
               animate={{ d: cfg.mouth }} transition={{ type: 'spring', stiffness: 300, damping: 26 }} />
           </motion.g>
