@@ -869,6 +869,18 @@ function ProviderCardShell({
               {t('config.modelCount', { count: modelCount })}
             </span>
           )}
+          {statusLabel && (
+            <span
+              className={clsx(
+                'hidden sm:inline-flex max-w-[150px] truncate rounded-full border px-2 py-0.5',
+                'text-[10px] font-semibold leading-4',
+                PROVIDER_BADGE_CLS[statusTone],
+              )}
+              title={statusLabel}
+            >
+              {statusLabel}
+            </span>
+          )}
           <span className={clsx('w-2 h-2 rounded-full', PROVIDER_STATUS_DOT[statusTone])} title={statusLabel} />
           {rightAction}
           {expandable && (
