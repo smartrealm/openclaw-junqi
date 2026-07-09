@@ -1,50 +1,45 @@
 // ═══════════════════════════════════════════════════════════
-// SetupPage — guided OpenClaw startup flow
-// Brand/preferences → runtime check → install/start → ready.
+// SetupPage — OpenClaw 首次启动向导
+// 品牌偏好 → 运行时检测 → 安装/启动 → 就绪确认。
 // ═══════════════════════════════════════════════════════════
 
 import {
   Check,
   CheckCircle2,
-  ChevronLeft,
   ChevronRight,
   Container,
   Copy,
   Circle,
-  CircleDot,
-  Eye,
-  EyeOff,
   Globe2,
   Monitor,
   Moon,
   Package,
   Palette,
   RefreshCw,
-  TerminalSquare,
   Sun,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/app-store";
-import type { SetupStep } from "@/stores/app-store";
+import type { SetupLog, SetupStep } from "@/stores/app-store";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changeLanguage } from "@/i18n";
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from "@/i18n/languages";
-import { GatewayLifecyclePanel } from "@/components/settings/GatewayLifecyclePanel";
 import { useSetupFlow } from "@/hooks/useSetupFlow";
-import type { SetupFlow, StepState, InstallTarget } from "@/hooks/useSetupFlow";
+import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
 import type { DockerStatus } from "@/api/tauri-commands";
 import type { ThemeSetting } from "@/theme/types";
+import {
+  InstallationConsole,
+  OpenClawRuntimeDetails,
+  SetupShell,
+  StatusPanel,
+  STEP_META,
+} from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
-
-type SetupStepId = "identity" | "runtime" | "install" | "ready";
-type SetupLog = { source: "setup" | "gateway"; message: string };
-
-const SETUP_STEPS: SetupStepId[] = ["identity", "runtime", "install", "ready"];
 
 function setupStepMessageKey(step: SetupStep): string {
   switch (step) {
@@ -115,254 +110,6 @@ function payloadMessage(payload: unknown): string | null {
     return typeof message === "string" ? message : null;
   }
   return null;
-}
-
-function Stepper({ active }: { active: number }) {
-  const { t } = useTranslation();
-  return (
-    <div className="px-6 pt-6" dir="ltr">
-      <div className="mx-auto flex w-fit max-w-full items-start justify-center gap-2 overflow-x-auto rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
-        {SETUP_STEPS.map((id, i) => {
-          const done = i < active;
-          const current = i === active;
-          return (
-            <div key={id} className="flex items-start">
-              <div className="flex min-w-[94px] flex-col items-center gap-2 text-center">
-                <div
-                  className={clsx(
-                    "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-black transition-colors",
-                    done && "border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary",
-                    current && "border-aegis-primary bg-aegis-bg text-aegis-primary shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.12)]",
-                    !done && !current && "border-aegis-border bg-aegis-surface text-aegis-text-dim",
-                  )}
-                >
-                  {done ? <Check size={15} strokeWidth={3} /> : i + 1}
-                </div>
-                <div>
-                  <div
-                    className={clsx(
-                      "text-xs font-bold",
-                      current && "text-aegis-text",
-                      done && !current && "text-aegis-text-secondary",
-                      !done && !current && "text-aegis-text-dim",
-                    )}
-                    dir="auto"
-                  >
-                    {t(`setup.steps.${id}.title`)}
-                  </div>
-                  <div
-                    className={clsx("mt-0.5 hidden text-[11px] font-medium sm:block", current ? "text-aegis-text-secondary" : "text-aegis-text-dim")}
-                    dir="auto"
-                  >
-                    {t(`setup.steps.${id}.description`)}
-                  </div>
-                </div>
-              </div>
-              {i < SETUP_STEPS.length - 1 && (
-                <div
-                  className={clsx("mt-4 h-[2px] w-10 rounded-full transition-colors", i < active ? "bg-aegis-primary/35" : "bg-aegis-border")}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function LogPanel({ logs }: { logs: SetupLog[] }) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const logText = logs
-    .slice(-160)
-    .map((log) => `[${log.source}] ${log.message}`)
-    .join("\n");
-  const copyLogs = () => {
-    if (!logText) return;
-    void navigator.clipboard?.writeText(logText).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    });
-  };
-
-  return (
-    <div className="mt-5 overflow-hidden rounded-lg border border-aegis-border bg-black/20">
-      <div className="flex items-center justify-between border-b border-aegis-border px-3 py-2">
-        <span className="text-xs font-medium text-aegis-text-secondary">{t("setup.debugLog")}</span>
-        <button
-          type="button"
-          onClick={copyLogs}
-          disabled={!logText}
-          className="inline-flex items-center gap-1.5 rounded-md border border-aegis-border px-2.5 py-1.5 text-[11px] text-aegis-text-secondary hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Copy size={12} />
-          {copied ? t("setup.copiedLogs") : t("setup.copyLogs")}
-        </button>
-      </div>
-      <div className="max-h-[220px] overflow-auto p-3 font-mono text-[11px] leading-relaxed">
-        {logs.length === 0 ? (
-          <div className="text-aegis-text-dim">{t("setup.logsEmpty")}</div>
-        ) : (
-          logs.slice(-160).map((log, i) => (
-            <div
-              key={`${log.source}-${i}`}
-              className={clsx(log.message.toLowerCase().includes("error") ? "text-red-300" : "text-aegis-text-secondary")}
-            >
-              <span className="text-aegis-text-dim">[{log.source}]</span> {log.message}
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SetupShell({
-  active,
-  title,
-  subtitle,
-  children,
-  logs,
-  previousAction,
-  nextAction,
-  wide = false,
-}: {
-  active: number;
-  title: string;
-  subtitle: string;
-  children: ReactNode;
-  logs: SetupLog[];
-  previousAction?: { label?: string; onClick?: () => void; disabled?: boolean };
-  nextAction?: { label: string; onClick?: () => void; disabled?: boolean; loading?: boolean; icon?: "next" | "none" };
-  wide?: boolean;
-}) {
-  const { t } = useTranslation();
-  const [showLogs, setShowLogs] = useState(false);
-  const isRuntime = active > 0 && active < 3;
-  const showActions = previousAction || nextAction;
-
-  return (
-    <div className="flex h-screen flex-col overflow-hidden bg-aegis-bg text-aegis-text" dir="ltr">
-      <div
-        data-tauri-drag-region
-        className="h-[32px] shrink-0 chrome-bg border-b border-aegis-border/30"
-      />
-      <Stepper active={active} />
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-6 py-8">
-        <section className={clsx("my-auto w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
-          <div className="mb-6 text-center">
-            <h1 className="text-[30px] font-semibold tracking-normal text-aegis-text" dir="auto">{title}</h1>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
-          </div>
-          <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-6 shadow-sm")}>
-            {children}
-            {isRuntime && (
-              <div className="mt-5 border-t border-aegis-border pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowLogs((v) => !v)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary hover:bg-aegis-surface"
-                >
-                  {showLogs ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {showLogs ? t("setup.hideLogs") : t("setup.viewLogs")}
-                </button>
-                {showLogs && <LogPanel logs={logs} />}
-              </div>
-            )}
-          </div>
-        </section>
-      </main>
-      {showActions && (
-        <footer className="shrink-0 border-t border-aegis-border/60 bg-aegis-bg/95 px-6 py-3 backdrop-blur">
-          <div className={clsx("mx-auto flex w-full items-center justify-between gap-3", wide ? "max-w-5xl" : "max-w-3xl")}>
-            <div className="flex min-w-[112px] justify-start">
-              {previousAction && (
-              <button
-                type="button"
-                onClick={previousAction.onClick}
-                disabled={previousAction.disabled}
-                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 px-4 py-2.5 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45"
-                style={{
-                  background: "#ffffff",
-                  borderColor: "#94a3b8",
-                  color: "#0f172a",
-                  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.12)",
-                }}
-              >
-                <ChevronLeft size={15} />
-                {previousAction.label ?? t("setup.previousStep")}
-              </button>
-              )}
-            </div>
-            <div className="flex min-w-[122px] justify-end">
-              {nextAction ? (
-              <button
-                type="button"
-                onClick={nextAction.onClick}
-                disabled={nextAction.disabled || nextAction.loading}
-                className="inline-flex min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 px-4 py-2.5 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-55"
-                style={{
-                  background: "#0f172a",
-                  borderColor: "#0f172a",
-                  color: "#ffffff",
-                  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.28)",
-                }}
-              >
-                {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
-                {nextAction.label}
-                {!nextAction.loading && nextAction.icon !== "none" && <ChevronRight size={15} />}
-              </button>
-              ) : null}
-            </div>
-          </div>
-        </footer>
-      )}
-    </div>
-  );
-}
-
-function StatusPanel({
-  icon,
-  tone = "primary",
-  eyebrow,
-  title,
-  message,
-  footer,
-}: {
-  icon: ReactNode;
-  tone?: "primary" | "success" | "warning" | "danger";
-  eyebrow?: string;
-  title: string;
-  message: string;
-  footer?: ReactNode;
-}) {
-  const toneClass = {
-    primary: "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-primary",
-    success: "border-aegis-success/25 bg-aegis-success/5 text-aegis-success",
-    warning: "border-yellow-500/25 bg-yellow-500/5 text-yellow-300",
-    danger: "border-red-500/25 bg-red-500/5 text-red-300",
-  }[tone];
-
-  return (
-    <div className={clsx("rounded-xl border p-5", toneClass)}>
-      <div className="grid gap-4 sm:grid-cols-[48px_1fr] sm:items-start">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-current/20 bg-current/10">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          {eyebrow && (
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] opacity-80" dir="auto">
-              {eyebrow}
-            </div>
-          )}
-          <div className="text-base font-semibold text-aegis-text" dir="auto">{title}</div>
-          <p className="mt-2 max-w-[68ch] break-words text-sm leading-6 text-aegis-text-muted" dir="auto">{message}</p>
-          {footer && <div className="mt-4">{footer}</div>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function LanguageThemeControls() {
@@ -489,127 +236,6 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
   );
 }
 
-type TierBadgeStyles = {
-  border: string;
-  bg: string;
-  text: string;
-};
-
-const TIER_BADGE: Record<InstallTarget["tier"], TierBadgeStyles> = {
-  // "user" is the best outcome — same dir as the user's terminal
-  // `npm i -g`, so `openclaw` lands on PATH automatically.
-  user: { border: "border-aegis-success/45", bg: "bg-aegis-success/10", text: "text-aegis-success" },
-  // "xdg" is fine but the user must add `binPath` to PATH.
-  xdg: { border: "border-amber-500/45", bg: "bg-amber-500/10", text: "text-amber-200" },
-  // "sandbox" is the worst outcome — `openclaw` won't be on PATH at
-  // all. Rose palette makes the warning unmissable.
-  sandbox: { border: "border-rose-500/45", bg: "bg-rose-500/10", text: "text-rose-200" },
-  // "existing" means no install happened at all. Cool blue.
-  existing: { border: "border-sky-500/45", bg: "bg-sky-500/10", text: "text-sky-200" },
-};
-
-function resolveInstallNote(
-  target: InstallTarget,
-  t: TFunction,
-): string {
-  switch (target.tier) {
-    case "user":
-      return t(
-        "setup.installTarget.user.note",
-        "Same place as `npm i -g` — `openclaw` will be on your PATH",
-      );
-    case "xdg":
-      return t("setup.installTarget.xdg.note", {
-        binPath: target.binPath ?? "",
-        defaultValue: "Add {{binPath}} to your PATH to use `openclaw` from the terminal",
-      });
-    case "sandbox":
-      return t(
-        "setup.installTarget.sandbox.note",
-        "User npm prefix and `~/.local` are both unwritable; openclaw lives in JunQi's sandbox. It will NOT be on PATH — launch it from JunQi or symlink it yourself.",
-      );
-    case "existing":
-      if (target.path && target.version) {
-        return t("setup.installTarget.existing.note", {
-          version: target.version,
-          path: target.path,
-          defaultValue: "Detected OpenClaw {{version}} at {{path}}; install skipped",
-        });
-      }
-      if (target.path) {
-        return t("setup.installTarget.existing.noteNoVersion", {
-          path: target.path,
-          defaultValue: "Detected OpenClaw at {{path}}; install skipped",
-        });
-      }
-      return t(
-        "setup.installTarget.existing.noteNoPath",
-        "Detected an existing OpenClaw install, but path/version were not returned",
-      );
-  }
-}
-
-/**
- * Dedicated card for the resolved install location. Surfaces the
- * install tier (user npm prefix / XDG fallback) and the actual path
- * picked by the installer, so the user can see where `openclaw` will
- * live without having to parse the raw backend message. The XDG tier
- * also surfaces the `binPath` the user must add to PATH to use
- * `openclaw` from the terminal.
- */
-function InstallTargetCard({ target }: { target: InstallTarget }) {
-  const { t } = useTranslation();
-  const styles = TIER_BADGE[target.tier];
-  const tierLabel = t(
-    `setup.installTarget.${target.tier}.tier`,
-    target.tier === "user"
-      ? "User npm prefix"
-      : target.tier === "xdg"
-        ? "XDG fallback"
-        : target.tier === "sandbox"
-          ? "JunQi sandbox"
-          : "Already installed",
-  );
-  const note = resolveInstallNote(target, t);
-  return (
-    <div className="mt-3 rounded-md border border-aegis-border bg-aegis-bg/55 px-3 py-2">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-aegis-text-dim">
-        <Package size={12} />
-        {t("setup.installTarget.title", "安装位置")}
-      </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        <span className={clsx(
-          "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
-          styles.border,
-          styles.bg,
-          styles.text,
-        )}>
-          {tierLabel}
-        </span>
-        <code
-          data-testid="install-target-path"
-          className="break-all rounded bg-aegis-bg/70 px-1.5 py-0.5 font-mono text-[11px] text-aegis-text"
-        >
-          {target.path}
-        </code>
-        {target.version && (
-          <span
-            data-testid="install-target-version"
-            className="rounded bg-aegis-bg/70 px-1.5 py-0.5 font-mono text-[11px] text-aegis-text-muted"
-          >
-            v{target.version}
-          </span>
-        )}
-      </div>
-      {note && (
-        <p className="mt-1.5 text-[11px] leading-4 text-aegis-text-muted" dir="auto">
-          {note}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function DetectingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const navigateSetup = useSetupNavigation();
@@ -643,18 +269,26 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
       logs={logs}
       previousAction={{ onClick: () => navigateSetup("welcome") }}
       nextAction={{ label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }}
+      wide
     >
-      <StatusPanel
-        icon={<Monitor size={22} />}
-        eyebrow={t("setup.steps.runtime.title")}
-        title={t("setup.gatewayStoppedTitle")}
-        message={flow.statusMessage || t("setup.gatewayNotRunning")}
-        footer={
-          <button onClick={() => navigateSetup("choosing-mode")} className="text-xs font-medium text-aegis-text-dim hover:text-aegis-text">
-            {t("setup.reinstallBtn")}
-          </button>
-        }
-      />
+      <div className="grid gap-4">
+        <StatusPanel
+          icon={<Monitor size={22} />}
+          eyebrow={t("setup.steps.runtime.title")}
+          title={t("setup.gatewayStoppedTitle")}
+          message={flow.statusMessage || t("setup.gatewayNotRunning")}
+          footer={
+            <button onClick={() => navigateSetup("choosing-mode")} className="text-xs font-medium text-aegis-text-dim hover:text-aegis-text">
+              {t("setup.reinstallBtn")}
+            </button>
+          }
+        />
+        <OpenClawRuntimeDetails
+          status={flow.openclawStatus}
+          installTarget={flow.installTarget}
+          gatewayState="stopped"
+        />
+      </div>
     </SetupShell>
   );
 }
@@ -726,223 +360,6 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
   );
 }
 
-const STEP_META: Record<string, { titleKey: string; titleFallback: string; descriptionKey: string; descriptionFallback: string }> = {
-  git: {
-    titleKey: "setup.installSteps.git.title",
-    titleFallback: "Git",
-    descriptionKey: "setup.installSteps.git.description",
-    descriptionFallback: "验证源码与包管理所需的基础工具",
-  },
-  node: {
-    titleKey: "setup.installSteps.node.title",
-    titleFallback: "Node.js",
-    descriptionKey: "setup.installSteps.node.description",
-    descriptionFallback: "确认本地运行时版本，缺失时安装内置版本",
-  },
-  openclaw: {
-    titleKey: "setup.installSteps.openclaw.title",
-    titleFallback: "OpenClaw",
-    descriptionKey: "setup.installSteps.openclaw.description",
-    descriptionFallback: "检查 CLI 包与 Gateway 能力，必要时执行安装",
-  },
-  gateway: {
-    titleKey: "setup.installSteps.gateway.title",
-    titleFallback: "Gateway",
-    descriptionKey: "setup.installSteps.gateway.description",
-    descriptionFallback: "写入本地配置并启动控制通道",
-  },
-  pull: {
-    titleKey: "setup.installSteps.pull.title",
-    titleFallback: "Docker 镜像",
-    descriptionKey: "setup.installSteps.pull.description",
-    descriptionFallback: "拉取 OpenClaw 容器运行镜像",
-  },
-  container: {
-    titleKey: "setup.installSteps.container.title",
-    titleFallback: "容器运行",
-    descriptionKey: "setup.installSteps.container.description",
-    descriptionFallback: "创建容器并暴露本地 Gateway 端口",
-  },
-};
-
-function stepStatusText(status: StepState["status"], t: ReturnType<typeof useTranslation>["t"]) {
-  switch (status) {
-    case "done": return t("setup.stepStatus.done", "完成");
-    case "running": return t("setup.stepStatus.running", "进行中");
-    case "error": return t("setup.stepStatus.error", "需要处理");
-    case "skipped": return t("setup.stepStatus.skipped", "已跳过");
-    default: return t("setup.stepStatus.pending", "等待中");
-  }
-}
-
-function stepStatusIcon(status: StepState["status"]) {
-  if (status === "done") return <CheckCircle2 size={16} strokeWidth={2.4} />;
-  if (status === "running") return <RefreshCw size={15} className="animate-spin" />;
-  if (status === "error") return <X size={15} strokeWidth={2.5} />;
-  return <Circle size={14} />;
-}
-
-function currentStepOf(steps: StepState[]): StepState | null {
-  return steps.find((s) => s.status === "running")
-    ?? steps.find((s) => s.status === "error")
-    ?? steps.find((s) => s.status === "pending")
-    ?? steps[steps.length - 1]
-    ?? null;
-}
-
-function InstallationTimeline({ steps }: { steps: StepState[] }) {
-  const { t } = useTranslation();
-  const visibleSteps = steps.length > 0 ? steps : [{ id: "gateway", label: "Gateway", status: "pending" as const }];
-  return (
-    <div className="min-h-[260px] rounded-xl border border-aegis-border bg-aegis-elevated">
-      <div className="border-b border-aegis-border px-4 py-3">
-        <div className="text-sm font-semibold text-aegis-text">{t("setup.installPanel.timeline", "执行步骤")}</div>
-      </div>
-      <div className="px-4 py-2">
-      {visibleSteps.map((s, index) => (
-        <div
-          key={s.id}
-          className={clsx(
-            "relative grid grid-cols-[34px_1fr] gap-3 py-3",
-            index < visibleSteps.length - 1 && "after:absolute after:left-[16px] after:top-11 after:h-[calc(100%-34px)] after:w-px after:bg-aegis-border",
-          )}
-        >
-          <div className={clsx(
-            "relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border bg-aegis-elevated",
-            s.status === "done" && "border-aegis-success bg-aegis-success/15 text-aegis-success",
-            s.status === "running" && "border-aegis-primary bg-aegis-primary/15 text-aegis-primary",
-            s.status === "error" && "border-red-500 bg-red-500/15 text-red-400",
-            (s.status === "pending" || s.status === "skipped") && "border-aegis-border text-aegis-text-dim",
-          )}>
-            {stepStatusIcon(s.status)}
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0">
-              <div className={clsx("text-sm font-semibold", s.status === "running" ? "text-aegis-primary" : "text-aegis-text")} dir="auto">
-                {STEP_META[s.id] ? t(STEP_META[s.id].titleKey, STEP_META[s.id].titleFallback) : s.label}
-              </div>
-              {STEP_META[s.id] && s.status === "running" && (
-                <div className="mt-1 text-xs leading-5 text-aegis-text-dim" dir="auto">
-                  {t(STEP_META[s.id].descriptionKey, STEP_META[s.id].descriptionFallback)}
-                </div>
-              )}
-              </div>
-              <span className={clsx(
-                "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold",
-                s.status === "done" && "bg-aegis-success/10 text-aegis-success",
-                s.status === "running" && "bg-aegis-primary/10 text-aegis-primary",
-                s.status === "error" && "bg-red-500/10 text-red-300",
-                (s.status === "pending" || s.status === "skipped") && "bg-aegis-surface text-aegis-text-dim",
-              )}>
-                {stepStatusText(s.status, t)}
-              </span>
-            </div>
-            {s.detail && <div className="mt-2 break-words rounded-lg bg-aegis-surface/55 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-secondary">{s.detail}</div>}
-            {s.status === "running" && (
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-aegis-surface">
-                <div className="h-full w-1/2 animate-pulse rounded-full bg-aegis-primary" />
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-      </div>
-    </div>
-  );
-}
-
-function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs: SetupLog[]; setupStep: string }) {
-  const { t } = useTranslation();
-  const current = currentStepOf(flow.steps);
-  const completed = flow.steps.filter((s) => s.status === "done").length;
-  const total = flow.steps.length || 1;
-  const percent = Math.max(0, Math.min(100, Math.round(flow.progress)));
-  const recentLogs = logs.slice(-3);
-  const isReady = setupStep === "ready";
-  const isError = setupStep === "error";
-  const isAwaitingGatewayStart = setupStep === "install-complete";
-  const currentMeta = current ? STEP_META[current.id] : null;
-  const currentTitle = current
-    ? currentMeta ? t(currentMeta.titleKey, currentMeta.titleFallback) : current.label
-    : t("setup.preparingGateway", "正在准备 Gateway...");
-  const currentDescription = currentMeta ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback) : t("setup.subtitle");
-
-  return (
-    <div className="space-y-4">
-      <div className={clsx(
-        "grid gap-3 rounded-xl border p-4 md:grid-cols-[1fr_168px]",
-        isError ? "border-red-500/35 bg-red-500/5" : isReady ? "border-aegis-success/35 bg-aegis-success/5" : "border-aegis-primary/30 bg-aegis-primary/5",
-      )}>
-        <div className="min-w-0">
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-            {isReady || isAwaitingGatewayStart ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
-            {isReady
-              ? t("setup.ready", "就绪")
-              : isAwaitingGatewayStart
-                ? t("setup.installComplete", "必需组件已安装完成")
-                : isError
-                  ? t("setup.error", "安装遇到问题")
-                  : t("setup.installPanel.current", "当前执行")}
-          </div>
-          <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
-          <p className="mt-1 max-w-[62ch] text-sm leading-6 text-aegis-text-muted">{currentDescription}</p>
-          {flow.statusMessage && (
-            <div className="mt-3 rounded-md border border-aegis-border bg-aegis-bg/55 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-secondary">
-              {flow.statusMessage}
-            </div>
-          )}
-          {flow.installTarget && (
-            <InstallTargetCard target={flow.installTarget} />
-          )}
-          {current?.id === "gateway" && !isReady && !isAwaitingGatewayStart && (
-            <GatewayLifecyclePanel variant="compact" className="mt-3" />
-          )}
-        </div>
-        <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">
-          <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-aegis-surface">
-            <div className="h-full rounded-full bg-aegis-primary transition-all duration-500" style={{ width: `${percent}%` }} />
-          </div>
-          <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤完成")}</div>
-        </div>
-      </div>
-
-      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
-        <InstallationTimeline steps={flow.steps} />
-        <aside className="min-h-[260px] rounded-xl border border-aegis-border bg-aegis-elevated p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-aegis-text">
-            <TerminalSquare size={16} />
-            {t("setup.installPanel.activity", "执行记录")}
-          </div>
-          <div className="space-y-2">
-            {recentLogs.length === 0 ? (
-              <div className="rounded-md border border-dashed border-aegis-border px-3 py-4 text-center text-xs text-aegis-text-dim">
-                {t("setup.logsEmpty")}
-              </div>
-            ) : recentLogs.map((log, index) => (
-              <div key={`${log.source}-${index}-${log.message}`} className="rounded-md bg-aegis-bg/55 px-3 py-2">
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-aegis-text-dim">{log.source}</div>
-                <div className="break-words text-xs leading-5 text-aegis-text-secondary">{log.message}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 border-t border-aegis-border pt-3 text-[11px] leading-5 text-aegis-text-dim">
-            {isError
-              ? t("setup.installPanel.errorHint", "请复制错误信息或返回上一步重新选择安装方式。")
-              : isReady
-                ? t("setup.installPanel.readyHint", "Gateway 已就绪。点击进入工作台继续。")
-                : isAwaitingGatewayStart
-                  ? t("setup.installPanel.gatewayPendingHint", "必需组件已完成。点击启动 Gateway 进入下一步。")
-                  : t("setup.installPanel.keepOpen", "安装过程中请保持窗口打开。完成后点击进入工作台。")}
-          </div>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
 function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const { setupStep, setupError } = useAppStore();
@@ -988,6 +405,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
 function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
+  const navigateSetup = useSetupNavigation();
   const doneCount = flow.steps.filter((s) => s.status === "done").length;
   const total = flow.steps.length || doneCount || 1;
 
@@ -997,7 +415,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}
-      previousAction={{ onClick: () => flow.goBack() }}
+      previousAction={{ onClick: () => navigateSetup("install-complete") }}
       nextAction={{ label: t("setup.enterWorkspace"), onClick: () => flow.enterWorkspace() }}
     >
       <div className="flex flex-col items-center gap-6 py-5 text-center">
@@ -1058,14 +476,15 @@ function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
 }
 
 export function SetupPage() {
-  const { setupStep } = useAppStore();
+  const setupStep = useAppStore((s) => s.setupStep);
+  const logs = useAppStore((s) => s.setupLogs);
+  const appendSetupLog = useAppStore((s) => s.appendSetupLog);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
   const [checkingDocker, setCheckingDocker] = useState(false);
   const [needsGit, setNeedsGit] = useState(false);
   const [steps, setSteps] = useState<StepState[]>([]);
-  const [logs, setLogs] = useState<SetupLog[]>([]);
 
   const flow = useSetupFlow(
     progress, setProgress, statusMessage, setStatusMessage,
@@ -1080,18 +499,18 @@ export function SetupPage() {
 
     listen("setup-progress", (event) => {
       const message = payloadMessage(event.payload);
-      if (message) setLogs((prev) => [...prev.slice(-220), { source: "setup", message }]);
+      if (message) appendSetupLog({ source: "setup", message });
     }).then((fn) => { unlistenSetup = fn; }).catch(() => {});
 
     listen<string>("gateway-log", (event) => {
-      if (event.payload) setLogs((prev) => [...prev.slice(-220), { source: "gateway", message: event.payload }]);
+      if (event.payload) appendSetupLog({ source: "gateway", message: event.payload });
     }).then((fn) => { unlistenGateway = fn; }).catch(() => {});
 
     return () => {
       unlistenSetup?.();
       unlistenGateway?.();
     };
-  }, []);
+  }, [appendSetupLog]);
 
   const sharedLogs = useMemo(() => logs, [logs]);
 

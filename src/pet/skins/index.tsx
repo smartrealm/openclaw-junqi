@@ -20,7 +20,12 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const BOTTOM = { transformBox: 'fill-box' as const, transformOrigin: 'bottom' };
 const SHADOW = 'rgb(var(--aegis-primary) / 0.38)';
 
-export type PetSkin = 'robot' | 'lobster' | 'cat' | 'jellyfish' | 'ghost';
+export type PetSkin = 'robot' | 'lobster' | 'cat' | 'jellyfish' | 'ghost' | 'blue-mascot';
+export interface PetSkinOption {
+  id: PetSkin;
+  label: string;
+}
+
 export interface SkinProps {
   color: string;
   highlight?: string;
@@ -237,6 +242,128 @@ export function JellyfishSkin({ color, highlight = '#fff', hovered = false, walk
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Blue mascot — 天蓝主体、伪 3D 高光、软阴影、悬浮弹跳
+// ═══════════════════════════════════════════════════════════════════════
+
+export function BlueMascotSkin({ color, highlight = '#fff', hovered = false, walking = false, walkDir = 0 }: SkinProps) {
+  const id = 'blue-mascot';
+  const dir = Math.max(-1, Math.min(1, walkDir));
+  return (
+    <>
+      <defs>
+        <radialGradient id={`${id}-body`} cx="38%" cy="24%" r="72%">
+          <stop offset="0%" stopColor={highlight} stopOpacity={0.9} />
+          <stop offset="18%" stopColor="#bff3ff" stopOpacity={0.98} />
+          <stop offset="52%" stopColor={color} stopOpacity={0.92} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.58} />
+        </radialGradient>
+        <radialGradient id={`${id}-belly`} cx="45%" cy="20%" r="72%">
+          <stop offset="0%" stopColor={highlight} stopOpacity={0.7} />
+          <stop offset="58%" stopColor="#d8fbff" stopOpacity={0.32} />
+          <stop offset="100%" stopColor="#78ddff" stopOpacity={0.06} />
+        </radialGradient>
+        <linearGradient id={`${id}-rim`} x1="18" y1="22" x2="102" y2="118" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor={highlight} stopOpacity={0.62} />
+          <stop offset="42%" stopColor="#7be9ff" stopOpacity={0.24} />
+          <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.42} />
+        </linearGradient>
+        {shadowFilter(id, color)}
+      </defs>
+
+      {/* 软阴影随悬浮弹跳收放，让主体更像漂在桌面上。 */}
+      <motion.ellipse
+        cx={60}
+        cy={126}
+        rx={hovered ? 30 : 26}
+        ry={6}
+        fill="#0f6f9f"
+        opacity={0.18}
+        animate={{
+          scaleX: hovered ? [1, 0.82, 1] : [1, 0.9, 1],
+          opacity: hovered ? [0.2, 0.1, 0.2] : [0.16, 0.1, 0.16],
+        }}
+        transition={{ duration: hovered ? 0.86 : 2.8, repeat: Infinity, ease: EASE }}
+      />
+
+      {/* 小触角在 hover 时点头，拖拽时朝运动方向偏移。 */}
+      <motion.g
+        style={{ transformBox: 'fill-box', transformOrigin: 'center bottom' }}
+        animate={{ x: walking ? dir * 3 : 0, rotate: hovered ? [-4, 8, -4] : [-2, 2, -2] }}
+        transition={{ duration: hovered ? 0.62 : 2.5, repeat: Infinity, ease: EASE }}
+      >
+        <path d="M50,37 Q46,20 35,15" stroke={color} strokeWidth={5} fill="none" strokeLinecap="round" opacity={0.72} />
+        <path d="M70,37 Q74,20 85,15" stroke={color} strokeWidth={5} fill="none" strokeLinecap="round" opacity={0.72} />
+        <circle cx={35} cy={15} r={5} fill={`url(#${id}-body)`} stroke={`url(#${id}-rim)`} strokeWidth={1} />
+        <circle cx={85} cy={15} r={5} fill={`url(#${id}-body)`} stroke={`url(#${id}-rim)`} strokeWidth={1} />
+      </motion.g>
+
+      {/* 两侧小鳍提供可交互反馈：hover 摆手，拖拽时反向压缩。 */}
+      <motion.g
+        style={{ transformBox: 'fill-box', transformOrigin: 'right center' }}
+        animate={hovered ? { rotate: [-7, 18, -7], y: [0, -3, 0] } : walking ? { rotate: -14 - dir * 8, x: -dir * 2 } : { rotate: [-4, 4, -4] }}
+        transition={{ duration: hovered ? 0.58 : 2.4, repeat: Infinity, ease: EASE }}
+      >
+        <path d="M28,74 Q9,80 16,99 Q30,96 39,86" fill={`url(#${id}-body)`} stroke={`url(#${id}-rim)`} strokeWidth={1.2} filter={`url(#${id}-shadow)`} />
+        <ellipse cx={24} cy={84} rx={7} ry={3.5} fill={highlight} opacity={0.2} transform="rotate(-22 24 84)" />
+      </motion.g>
+      <motion.g
+        style={{ transformBox: 'fill-box', transformOrigin: 'left center' }}
+        animate={hovered ? { rotate: [7, -18, 7], y: [0, -3, 0] } : walking ? { rotate: 14 - dir * 8, x: -dir * 2 } : { rotate: [4, -4, 4] }}
+        transition={{ duration: hovered ? 0.58 : 2.4, repeat: Infinity, ease: EASE, delay: 0.08 }}
+      >
+        <path d="M92,74 Q111,80 104,99 Q90,96 81,86" fill={`url(#${id}-body)`} stroke={`url(#${id}-rim)`} strokeWidth={1.2} filter={`url(#${id}-shadow)`} />
+        <ellipse cx={96} cy={84} rx={7} ry={3.5} fill={highlight} opacity={0.2} transform="rotate(22 96 84)" />
+      </motion.g>
+
+      {/* 主体用圆润胶囊形，hover 时轻微 squash/stretch，形成伪 3D 弹跳。 */}
+      <motion.g
+        style={{ transformBox: 'fill-box', transformOrigin: 'center bottom' }}
+        animate={hovered ? { y: [0, -5, 0], scaleX: [1, 1.04, 0.98, 1], scaleY: [1, 0.98, 1.04, 1] } : { y: [0, -2, 0], scaleX: 1, scaleY: 1 }}
+        transition={{ duration: hovered ? 0.86 : 3.1, repeat: Infinity, ease: EASE }}
+      >
+        <path
+          d="M60,31 C82,31 98,51 98,78 C98,108 82,125 60,125 C38,125 22,108 22,78 C22,51 38,31 60,31 Z"
+          fill={`url(#${id}-body)`}
+          stroke={`url(#${id}-rim)`}
+          strokeWidth={1.4}
+          filter={`url(#${id}-shadow)`}
+        />
+        <ellipse cx={60} cy={91} rx={25} ry={27} fill={`url(#${id}-belly)`} opacity={0.9} />
+        <path d="M39,47 C48,35 66,33 78,41" stroke={highlight} strokeWidth={5} strokeLinecap="round" opacity={0.24} />
+        <ellipse cx={48} cy={52} rx={9} ry={5} fill={highlight} opacity={0.18} transform="rotate(-28 48 52)" />
+        <path d="M88,58 C93,70 93,90 87,105" stroke="#0676a8" strokeWidth={2.2} strokeLinecap="round" opacity={0.2} />
+      </motion.g>
+
+      {/* 小脚拖拽时交替弹跳，静止时像悬浮尾鳍。 */}
+      <motion.ellipse
+        cx={46}
+        cy={123}
+        rx={9}
+        ry={5}
+        fill={color}
+        opacity={0.72}
+        stroke={`url(#${id}-rim)`}
+        strokeWidth={1}
+        animate={walking ? { y: [0, -5, 0], x: dir * 2 } : { y: [0, -2, 0], x: 0 }}
+        transition={{ duration: walking ? 0.34 : 2.8, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.ellipse
+        cx={74}
+        cy={123}
+        rx={9}
+        ry={5}
+        fill={color}
+        opacity={0.72}
+        stroke={`url(#${id}-rim)`}
+        strokeWidth={1}
+        animate={walking ? { y: [0, -5, 0], x: dir * 2 } : { y: [0, -2, 0], x: 0 }}
+        transition={{ duration: walking ? 0.34 : 2.8, repeat: Infinity, ease: 'easeInOut', delay: walking ? 0.17 : 0.16 }}
+      />
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Ghost — cute floating spirit with raised nub arms and big round eyes
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -409,4 +536,20 @@ export const SKIN_REGISTRY: Record<PetSkin, FC<SkinProps>> = {
   cat: CatSkin,
   jellyfish: JellyfishSkin,
   ghost: GhostSkin,
+  'blue-mascot': BlueMascotSkin,
 };
+
+export const PET_SKIN_OPTIONS: PetSkinOption[] = [
+  { id: 'jellyfish', label: '水母' },
+  { id: 'blue-mascot', label: '蓝色萌宠' },
+  { id: 'lobster', label: '龙虾' },
+  { id: 'robot', label: '机器人' },
+  { id: 'cat', label: '猫咪' },
+  { id: 'ghost', label: '幽灵' },
+];
+
+export const PET_SKIN_IDS = PET_SKIN_OPTIONS.map((option) => option.id);
+
+export function isPetSkin(value: unknown): value is PetSkin {
+  return typeof value === 'string' && PET_SKIN_IDS.includes(value as PetSkin);
+}

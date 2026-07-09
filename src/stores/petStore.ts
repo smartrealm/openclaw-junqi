@@ -1,9 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { PetSkin } from '@/pet/skins';
+import { isPetSkin, type PetSkin } from '@/pet/skins';
 export type { PetSkin };
 
 export const DEFAULT_PET_SKIN: PetSkin = 'lobster';
+
+function normalizePersistedPetSkin(skin: unknown): PetSkin {
+  // 保留用户已选择的合法皮肤；只有缺失或旧版非法值才回落到当前默认龙虾。
+  return isPetSkin(skin) ? skin : DEFAULT_PET_SKIN;
+}
 
 /** Coarse classification of a drag payload — drives the bubble icon + accent
  *  colour so the user can tell at a glance whether they dragged an image, an
@@ -166,7 +171,7 @@ export const usePetStore = create<PetSettings>()(
     }),
     {
       name: 'aegis-pet-settings',
-      version: 3,
+      version: 4,
       migrate: (persisted) => {
         const p = (persisted as Partial<PetSettings>) || {};
         const pomodoro: Partial<PomodoroState> = p.pomodoro || {};
@@ -174,7 +179,7 @@ export const usePetStore = create<PetSettings>()(
           enabled: p.enabled ?? true,
           position: p.position ?? null,
           clickThrough: p.clickThrough ?? true,
-          skin: DEFAULT_PET_SKIN,
+          skin: normalizePersistedPetSkin(p.skin),
           pomodoro: {
             enabled: pomodoro.enabled ?? false,
             workMin: pomodoro.workMin ?? 30,

@@ -40,3 +40,14 @@ test('non-custom-like providers keep selected and extra model IDs', () => {
 
   assert.deepEqual(result, ['openai/gpt-4o', 'openai/gpt-4.1']);
 });
+
+test('model selection trims ids before de-duplicating', () => {
+  const result = buildProviderSubmissionModelIds({
+    isCustomLike: true,
+    selectedModels: [' custom/model-a ', 'custom/model-a'],
+    customModelIds: [' ', 'custom/model-b ', ' custom/model-b'],
+    extraModelIds: [],
+  });
+
+  assert.deepEqual(result, ['custom/model-a', 'custom/model-b']);
+});

@@ -21,7 +21,7 @@ import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
-import { SKIN_REGISTRY, type PetSkin } from '@/pet/skins';
+import { PET_SKIN_OPTIONS } from '@/pet/skins';
 import { SkinPreview } from '@/pet/SkinPreview';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -34,15 +34,6 @@ import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
-
-/** Chinese fallback labels for the skin picker (i18n key: pet.settings.<skin>). */
-const SKIN_FALLBACK: Record<PetSkin, string> = {
-  lobster: '龙虾',
-  robot: '机器人',
-  cat: '猫咪',
-  jellyfish: '水母',
-  ghost: '幽灵',
-};
 
 export function SettingsPageFull() {
   const { t } = useTranslation();
@@ -643,15 +634,15 @@ export function SettingsPageFull() {
         {/* Skin picker — live thumbnails so the choice is visual, not just a word. */}
         <div className="mt-4">
           <div className="text-[13px] text-aegis-text mb-2">{t('pet.settings.skin', '皮肤')}</div>
-          <div className="grid grid-cols-5 gap-2">
-            {(Object.keys(SKIN_REGISTRY) as PetSkin[]).map((s) => (
-              <button key={s} onClick={() => setPetSkin(s)}
-                aria-pressed={petSkin === s}
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {PET_SKIN_OPTIONS.map(({ id, label }) => (
+              <button key={id} onClick={() => setPetSkin(id)}
+                aria-pressed={petSkin === id}
                 className={clsx('flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors',
-                  petSkin === s ? 'border-aegis-primary/60 bg-aegis-primary/10' : 'border-aegis-border/20 hover:border-aegis-border/50')}>
-                <SkinPreview skin={s} size={44} />
-                <span className={clsx('text-[11px] leading-none', petSkin === s ? 'text-aegis-text' : 'text-aegis-text-dim')}>
-                  {t(`pet.settings.${s}`, SKIN_FALLBACK[s])}
+                  petSkin === id ? 'border-aegis-primary/60 bg-aegis-primary/10' : 'border-aegis-border/20 hover:border-aegis-border/50')}>
+                <SkinPreview skin={id} size={44} />
+                <span className={clsx('text-[11px] leading-none', petSkin === id ? 'text-aegis-text' : 'text-aegis-text-dim')}>
+                  {t(`pet.settings.${id}`, label)}
                 </span>
               </button>
             ))}

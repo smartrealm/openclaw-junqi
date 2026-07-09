@@ -253,7 +253,8 @@ pub async fn run_task(
         )
     })?;
 
-    let mut cmd = CommandBuilder::new(spec.bin);
+    let program = crate::platform::resolve_spawn_program(spec.bin);
+    let mut cmd = CommandBuilder::new(&program);
     cmd.cwd(&project_path);
     for arg in permission_flag(&agent, &permission_mode) {
         cmd.arg(arg);

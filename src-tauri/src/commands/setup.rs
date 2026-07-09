@@ -516,7 +516,7 @@ async fn npm_install_with_fallback(
         ])
         .env("PATH", &path_env)
         .env("npm_config_prefix", &npm_prefix_str)
-        .env("npm_config_cache", npm_cache.to_str().unwrap())
+        .env("npm_config_cache", &npm_cache)
         .env("npm_config_registry", *registry)
         .env("GIT_CONFIG_COUNT", "1")
         .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
@@ -947,10 +947,7 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
 /// 3. Fall back to the JunQi-managed sandbox at
 ///    `paths::openclaw_global_dir()` if neither is writable, so the
 ///    install never silently fails.
-async fn pick_install_target(
-    app: &tauri::AppHandle,
-    step: &str,
-) -> PathBuf {
+async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> PathBuf {
     let node_bin = paths::local_node_path();
     let npm_cli = paths::local_npm_cli_path();
     let mut cmd = if node_bin.exists() && npm_cli.exists() {
@@ -1161,10 +1158,7 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     emit_keyed(
         &app,
         step,
-        &format!(
-            "Preparing install target {}...",
-            openclaw_prefix.display()
-        ),
+        &format!("Preparing install target {}...", openclaw_prefix.display()),
         "setup.openclaw.prepareDir",
         0.08,
     );

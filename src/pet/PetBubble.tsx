@@ -2,11 +2,10 @@ import { useEffect, useState, useMemo, type CSSProperties, type ReactNode } from
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image, FileArchive, FileCode2, FileText, FolderOpen, type LucideIcon } from 'lucide-react';
-import { themeHex } from '@/utils/theme-colors';
 import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
-import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
+import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
 const STATUS_LABEL: Record<PetEmotion, string> = {
@@ -31,29 +30,31 @@ const STATUS_LABEL: Record<PetEmotion, string> = {
  *  calls always read the current `--aegis-*` CSS variables. themeHex
  *  internally uses getComputedStyle so calling it during render is correct
  *  and inexpensive (a few getPropertyValue reads per emotion). */
-function useEmotionColor(): Record<PetEmotion, string> {
+function useEmotionColor(themeName: PetThemeName): Record<PetEmotion, string> {
+  const petAccent = resolvePetAccentPalette(themeName);
   return {
     idle: 'rgb(var(--aegis-text-dim))',
-    thinking: themeHex('accent'),
-    typing: themeHex('primary'),
-    tool: themeHex('accent'),
-    working: themeHex('warning'),
-    happy: themeHex('success'),
-    celebrate: themeHex('success'),
-    error: themeHex('danger'),
+    thinking: petAccent.primary,
+    typing: petAccent.secondary,
+    tool: petAccent.primary,
+    working: petAccent.warning,
+    happy: petAccent.success,
+    celebrate: petAccent.success,
+    error: '#ef4444',
     sleepy: 'rgb(var(--aegis-text-dim))',
     sleep: 'rgb(var(--aegis-text-muted))',
-    memory: themeHex('warning'),
-    drag: themeHex('accent'),
-    overdrag: themeHex('primary'),
-    swallow: themeHex('primary'),
-    rapidSwallow: themeHex('warning'),
+    memory: petAccent.warm,
+    drag: petAccent.primary,
+    overdrag: petAccent.secondary,
+    swallow: petAccent.secondary,
+    rapidSwallow: petAccent.warning,
   };
 }
 
 /** Map a drag payload kind to the icon + colour used in the drag bubble.
  *  Falls back to a generic file icon when classification is ambiguous. */
-function useDragKindMeta() {
+function useDragKindMeta(themeName: PetThemeName) {
+  const petAccent = resolvePetAccentPalette(themeName);
   return {
     icon: (k: DragKind): LucideIcon => {
       switch (k) {
@@ -67,11 +68,11 @@ function useDragKindMeta() {
     },
     color: (k: DragKind): string => {
       switch (k) {
-        case 'image': return themeHex('accent');
-        case 'archive': return themeHex('warning');
-        case 'code': return themeHex('primary');
+        case 'image': return petAccent.secondary;
+        case 'archive': return petAccent.warning;
+        case 'code': return petAccent.primary;
         case 'text': return 'rgb(var(--aegis-text-dim))';
-        case 'folder': return themeHex('success');
+        case 'folder': return petAccent.success;
         default: return 'rgb(var(--aegis-text-dim))';
       }
     },
@@ -157,8 +158,8 @@ function useResolvedPetTheme(): { themeName: PetThemeName; isDark: boolean } {
 export function PetBubble({ state, dragging, hovered }: { state: PetState; dragging?: boolean; hovered?: boolean }) {
   const { t } = useTranslation();
   const { themeName, isDark } = useResolvedPetTheme();
-  const emotionColor = useEmotionColor();
-  const dragMeta = useDragKindMeta();
+  const emotionColor = useEmotionColor(themeName);
+  const dragMeta = useDragKindMeta(themeName);
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
   const textPalette = resolvePetTextPalette(themeName);

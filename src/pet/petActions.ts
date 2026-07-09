@@ -1,5 +1,5 @@
 import { usePetStore, type PetSkin } from '@/stores/petStore';
-import { SKIN_REGISTRY } from './skins';
+import { PET_SKIN_IDS } from './skins';
 import { minutesToMs, remainingMsFromPause } from './pomodoroDomain';
 
 /**
@@ -8,8 +8,8 @@ import { minutesToMs, remainingMsFromPause } from './pomodoroDomain';
  * intents here via the "pet-action" event (see usePetActions).
  */
 
-/** Skin cycle order — derived from the registry so it never drifts from it. */
-const SKIN_ORDER = Object.keys(SKIN_REGISTRY) as PetSkin[];
+/** 皮肤切换顺序来自统一元数据，避免设置页和右键菜单各自维护。 */
+const SKIN_ORDER: PetSkin[] = [...PET_SKIN_IDS];
 
 /** Advance to the next skin in the cycle. */
 export function cycleSkin(): void {

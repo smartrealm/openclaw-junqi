@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetCharacterPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
+import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetCharacterPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
 import { DEFAULT_PET_SKIN } from '../stores/petStore';
 
 test('default pet skin is the coral lobster', () => {
@@ -125,10 +125,28 @@ test('pet character palette changes body color by theme and skin', () => {
   assert.equal(resolvePetCharacterPalette('aegis-eyecare', 'lobster').body, '#c96842');
 });
 
+test('pet accent palette uses warm pet colors instead of app blue primary', () => {
+  assert.deepEqual(resolvePetAccentPalette('aegis-dark'), {
+    primary: '#ff836f',
+    secondary: '#ffad83',
+    warm: '#f6c177',
+    success: '#8bd98b',
+    warning: '#f0b45d',
+  });
+  assert.equal(resolvePetAccentPalette('aegis-light').primary, '#ef6f5e');
+});
+
 test('jellyfish skin stays sky-blue across regular and dark themes', () => {
   assert.equal(resolvePetCharacterPalette('aegis-light', 'jellyfish').body, '#23a6c8');
   assert.equal(resolvePetCharacterPalette('aegis-dark', 'jellyfish').body, '#73e6ff');
   assert.equal(resolvePetCharacterPalette('aegis-midnight', 'jellyfish').body, '#73e6ff');
+});
+
+test('blue mascot skin uses the dedicated sky-blue palette', () => {
+  assert.equal(resolvePetCharacterPalette('aegis-light', 'blue-mascot').body, '#38bdf8');
+  assert.equal(resolvePetCharacterPalette('aegis-dark', 'blue-mascot').body, '#7dd3fc');
+  assert.equal(resolvePetCharacterPalette('aegis-midnight', 'blue-mascot').body, '#67e8f9');
+  assert.equal(resolvePetCharacterPalette('aegis-eyecare', 'blue-mascot').body, '#4f9dba');
 });
 
 test('pet character palette avoids pure white eye blocks in dark themes', () => {

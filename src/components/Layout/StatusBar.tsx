@@ -1,6 +1,7 @@
 // StatusBar — 底部状态栏（参照 Hermes AppStatusBar）
-import { RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { RotateCcw, HardDrive, Zap, Moon, Sun, PawPrint, Timer, Play, Pause, ChevronUp } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -11,6 +12,7 @@ import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useSetupProgress } from '@/hooks/useSetupProgress';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
+import { GatewaySelfRescuePanel } from '@/components/GatewaySelfRescuePanel';
 import type { AegisTheme } from '@/theme/types';
 
 const THEME_CYCLE: AegisTheme[] = ['aegis-dark', 'aegis-light', 'aegis-eyecare', 'aegis-midnight'];
@@ -59,10 +61,28 @@ export function StatusBar() {
   // aegis:gateway-progress window events). We only care about step="gateway"
   // — install steps have their own progress surface in the Setup page.
   const [reconnecting, setReconnecting] = useState(false);
+  const [gatewayPanelOpen, setGatewayPanelOpen] = useState(false);
+  const gatewayPanelRef = useRef<HTMLDivElement>(null);
+  const gatewayButtonRef = useRef<HTMLButtonElement>(null);
   const gatewayProgress = useSetupProgress('gateway');
   const showGatewayProgress = !!gatewayProgress && (!connected || reconnecting);
   const gatewayMsg = showGatewayProgress ? gatewayProgress?.message ?? null : null;
   const gatewayProg = showGatewayProgress ? gatewayProgress?.progress ?? null : null;
+
+  useEffect(() => {
+    if (!gatewayPanelOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (gatewayPanelRef.current?.contains(target) || gatewayButtonRef.current?.contains(target)) return;
+      setGatewayPanelOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [gatewayPanelOpen]);
+
+  useEffect(() => {
+    if (connected && !gatewayMsg) setReconnecting(false);
+  }, [connected, gatewayMsg]);
 
   const handleRestart = () => {
     if (reconnecting) return;
@@ -84,8 +104,11 @@ export function StatusBar() {
     ? Math.round(Math.max(0, Math.min(1, gatewayProg)) * 100)
     : (reconnecting ? null : 0);
   const gatewayActionLabel = connected
-    ? t('statusBar.restartGateway', '重启')
-    : t('statusBar.reconnect', '重连');
+    ? t('statusBar.restartGateway', '重启 Gateway')
+    : t('statusBar.reconnect', '重新连接');
+  const gatewayPanelTitle = connected
+    ? t('statusBar.gatewayPanelRestartHint', '重启会重新拉起本地 Gateway，并刷新模型、会话和运行时状态。')
+    : t('statusBar.gatewayPanelReconnectHint', '重新连接会先检测本地 Gateway，必要时自动启动或重启。');
 
   const resolvedTheme: AegisTheme = theme.startsWith('aegis-') ? (theme as AegisTheme) : 'aegis-dark';
   const isDarkish = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
@@ -98,28 +121,69 @@ export function StatusBar() {
 
   return (
     <footer className="flex items-center gap-0 h-[26px] min-w-0 border-t border-aegis-border bg-aegis-surface text-[11px] shrink-0 select-none overflow-hidden whitespace-nowrap" role="status">
-      {/* 网关 + 端口 */}
-      <span className="flex items-center gap-1.5 px-3 h-full border-r border-aegis-border/50">
-        <StatusDot tone={connected ? 'ok' : 'err'} size="sm" live={connected} />
-        <span className="text-aegis-text-secondary">{t('statusBar.gateway', '网关')}</span>
-        <span className="text-aegis-text font-mono">:{port}</span>
-      </span>
+      {/* 网关状态与操作：左下角需要像控制入口，而不是普通状态文字。 */}
+      <div className="flex h-full items-center border-r border-aegis-border/50">
+        <button
+          ref={gatewayButtonRef}
+          onClick={() => setGatewayPanelOpen((open) => !open)}
+          className={clsx(
+            'flex h-full items-center gap-1.5 px-2.5 transition-colors',
+            gatewayPanelOpen
+              ? 'bg-aegis-hover/40 text-aegis-text'
+              : 'text-aegis-text-secondary hover:bg-aegis-hover/30 hover:text-aegis-text',
+          )}
+          title={t('statusBar.gatewayPanelTitle', 'Gateway 控制')}
+          aria-label={t('statusBar.gatewayPanelTitle', 'Gateway 控制')}
+        >
+          <StatusDot tone={connected ? 'ok' : reconnectBusy ? 'warn' : 'err'} size="sm" live={connected || reconnectBusy} />
+          <span className="font-medium">{t('statusBar.gateway', '网关')}</span>
+          <span className="font-mono text-aegis-text">:{port}</span>
+          <ChevronUp size={10} className={clsx('transition-transform', !gatewayPanelOpen && 'rotate-180')} />
+        </button>
 
-      {/* 网关操作按钮（已连接=重启，未连接=重连；带进度 / 自旋 / 本地 loading 状态） */}
-      <button onClick={() => void handleRestart()} disabled={reconnectBusy}
-        className={clsx('flex items-center gap-1 px-2 h-full border-r border-aegis-border/50 transition-colors',
-          reconnectBusy
-            ? 'text-aegis-warning'
-            : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
-          reconnectBusy && 'animate-pulse')}
-        title={gatewayMsg || gatewayActionLabel}>
-        <RotateCcw size={10} className={reconnectBusy ? 'animate-spin' : ''} />
-        <span>
-          {gatewayMsg
-            ? (reconnectPct != null ? `${reconnectPct}%` : '…')
-            : (isBooting ? `${bootPct}%` : gatewayActionLabel)}
-        </span>
-      </button>
+        <button
+          onClick={() => void handleRestart()}
+          disabled={reconnectBusy}
+          className={clsx(
+            'flex h-full items-center gap-1.5 px-2.5 border-l border-aegis-border/50 font-medium transition-colors',
+            reconnectBusy
+              ? 'text-aegis-warning bg-aegis-warning/5'
+              : connected
+                ? 'text-aegis-text-secondary hover:text-aegis-primary hover:bg-aegis-primary/8'
+                : 'text-aegis-warning hover:bg-aegis-warning/8',
+            reconnectBusy && 'animate-pulse',
+          )}
+          title={gatewayMsg || gatewayPanelTitle}
+          aria-label={gatewayActionLabel}
+        >
+          <RotateCcw size={11} className={reconnectBusy ? 'animate-spin' : ''} />
+          <span>
+            {gatewayMsg
+              ? (reconnectPct != null ? `${reconnectPct}%` : t('statusBar.gatewayBusy', '处理中'))
+              : (isBooting ? `${bootPct}%` : gatewayActionLabel)}
+          </span>
+        </button>
+      </div>
+
+      {gatewayPanelOpen && createPortal(
+        <div
+          ref={gatewayPanelRef}
+          className="fixed left-2 bottom-[30px] z-[2147482000] w-[380px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-48px)] overflow-y-auto rounded-xl bg-aegis-menu-bg shadow-[0_12px_36px_rgba(0,0,0,0.42)]"
+        >
+          <GatewaySelfRescuePanel
+            variant="popover"
+            connected={connected}
+            busy={reconnectBusy}
+            port={port}
+            progressMessage={gatewayMsg || gatewayPanelTitle}
+            progressPercent={reconnectPct ?? bootPct ?? null}
+            primaryActionLabel={gatewayActionLabel}
+            onPrimaryAction={() => void handleRestart()}
+            error={gatewayMsg || gatewayPanelTitle}
+          />
+        </div>,
+        document.body,
+      )}
 
       {/* 重连步骤详情（与 install 步骤 statusMessage 同一信息源） */}
       {gatewayMsg && (

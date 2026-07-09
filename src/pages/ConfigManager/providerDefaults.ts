@@ -15,7 +15,7 @@ function normalizeProviderModelRef(providerId: string, modelId: string | undefin
   if (!trimmed) return undefined;
   if (trimmed.startsWith(`${providerId}/`)) return trimmed;
   const head = trimmed.split('/')[0] || '';
-  if (normalizeProviderIdForCatalog(head) === normalizeProviderIdForCatalog(providerId)) return trimmed;
+  if (normalizeProviderIdForCatalog(head) === normalizeProviderIdForCatalog(providerId)) return `${providerId}/${trimmed.slice(head.length + 1)}`;
   return `${providerId}/${trimmed}`;
 }
 

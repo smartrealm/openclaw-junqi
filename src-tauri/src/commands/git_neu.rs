@@ -29,31 +29,7 @@ fn configure_background_tokio_command(_cmd: &mut tokio::process::Command) {}
 
 /// Returns the login shell environment variables for agent subprocesses.
 fn get_login_shell_env() -> Vec<(String, String)> {
-    // On macOS/Linux, respect the user's login shell environment.
-    // For simplicity, we return an empty vec (subprocess config lives in nezha's
-    // app_settings.rs which has a complex dependency chain).
-    #[cfg(target_os = "macos")]
-    {
-        // macOS: read the user's default shell environment
-        if let Ok(output) = std::process::Command::new("/usr/bin/env")
-            .arg("-i")
-            .arg("/bin/zsh")
-            .arg("-lc")
-            .arg("env")
-            .output()
-        {
-            if output.status.success() {
-                return String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .filter_map(|line| {
-                        let (key, value) = line.split_once('=')?;
-                        Some((key.to_string(), value.to_string()))
-                    })
-                    .collect();
-            }
-        }
-    }
-    Vec::new()
+    crate::platform::login_shell_env().to_vec()
 }
 
 /// Minimal agent launch spec for commit message generation.
@@ -65,15 +41,15 @@ struct AgentLaunchSpec {
 fn get_agent_launch_spec_helper(agent: &str) -> AgentLaunchSpec {
     match agent {
         "codex" => AgentLaunchSpec {
-            program: "codex".to_string(),
+            program: crate::platform::resolve_spawn_program("codex"),
             extra_env: Vec::new(),
         },
         "claude" => AgentLaunchSpec {
-            program: "claude".to_string(),
+            program: crate::platform::resolve_spawn_program("claude"),
             extra_env: Vec::new(),
         },
         _ => AgentLaunchSpec {
-            program: "claude".to_string(),
+            program: crate::platform::resolve_spawn_program("claude"),
             extra_env: Vec::new(),
         },
     }
@@ -140,8 +116,9 @@ fn run_git<S: AsRef<std::ffi::OsStr>>(
 ) -> Result<std::process::Output, String> {
     validate_project_path(project_path)?;
 
-    let mut cmd = std::process::Command::new("git");
+    let mut cmd = std::process::Command::new(crate::platform::resolve_spawn_program("git"));
     configure_background_command(&mut cmd);
+    apply_login_shell_env(&mut cmd);
     cmd.args(args)
         .current_dir(project_path)
         .output()
@@ -168,8 +145,11 @@ async fn run_git_with_timeout(
 ) -> Result<Output, String> {
     validate_project_path(&project_path)?;
 
-    let mut cmd = tokio::process::Command::new("git");
+    let mut cmd = tokio::process::Command::new(crate::platform::resolve_spawn_program("git"));
     configure_background_tokio_command(&mut cmd);
+    for (key, value) in get_login_shell_env() {
+        cmd.env(key, value);
+    }
     let mut child = cmd
         .args(&args)
         .current_dir(&project_path)

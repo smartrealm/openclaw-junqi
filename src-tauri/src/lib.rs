@@ -28,6 +28,7 @@ pub fn run() {
             commands::gateway::probe_gateway_port,
             commands::gateway_logs::get_gateway_logs,
             commands::gateway_logs::clear_gateway_logs,
+            commands::gateway_rescue::gateway_rescue_chat,
             commands::ensure::ensure_gateway_running,
             commands::gateway_supervisor::openclaw_doctor_repair,
             commands::gateway_supervisor::get_gateway_lifecycle,

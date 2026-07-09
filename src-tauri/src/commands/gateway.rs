@@ -5,6 +5,19 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::net::TcpStream;
 
+fn write_json_atomic(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
+    let raw = serde_json::to_string_pretty(value)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    crate::commands::config::atomic_write_text(path, &raw)
+}
+
+fn write_openclaw_config_safely(
+    path: &std::path::Path,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    crate::commands::config::write_openclaw_config_value(path, value)
+}
+
 #[derive(Debug, Serialize)]
 pub struct GatewayStatus {
     pub running: bool,
@@ -120,9 +133,9 @@ pub(crate) fn ensure_config_with_token(
         "dangerouslyDisableDeviceAuth": true
     });
 
-    // Default workspace under maxauto dir for environment isolation
+    // 默认工作区落在 JunQi 管理目录下，避免首次启动时依赖用户 shell 环境。
     let default_workspace = paths::default_workspace_dir();
-    let default_workspace_str = default_workspace.to_str().unwrap();
+    let default_workspace_str = default_workspace.to_string_lossy().to_string();
 
     if config_path.exists() {
         // Read existing config and extract token
@@ -157,8 +170,7 @@ pub(crate) fn ensure_config_with_token(
                 gw.insert("controlUi".into(), control_ui.clone());
             }
 
-            std::fs::write(config_path, serde_json::to_string_pretty(&config).unwrap())
-                .map_err(|e| format!("Failed to write config: {}", e))?;
+            write_openclaw_config_safely(config_path, &config)?;
 
             return Ok(token);
         }
@@ -192,8 +204,7 @@ pub(crate) fn ensure_config_with_token(
         auth_obj.insert("mode".into(), serde_json::json!("token"));
         auth_obj.insert("token".into(), serde_json::json!(token));
 
-        std::fs::write(config_path, serde_json::to_string_pretty(&config).unwrap())
-            .map_err(|e| format!("Failed to write config: {}", e))?;
+        write_openclaw_config_safely(config_path, &config)?;
 
         return Ok(token);
     }
@@ -222,11 +233,7 @@ pub(crate) fn ensure_config_with_token(
             "controlUi": control_ui
         }
     });
-    std::fs::write(
-        config_path,
-        serde_json::to_string_pretty(&default_config).unwrap(),
-    )
-    .map_err(|e| format!("Failed to write default config: {}", e))?;
+    write_openclaw_config_safely(config_path, &default_config)?;
 
     Ok(token)
 }
@@ -296,8 +303,8 @@ fn ensure_paired_devices_full_scopes(base_dir: &std::path::Path) {
     if changed {
         // Also clear pending requests since they may reference stale scope state
         let pending_path = base_dir.join("devices").join("pending.json");
-        let _ = std::fs::write(&pending_path, "{}");
-        let _ = std::fs::write(&paired_path, serde_json::to_string_pretty(&doc).unwrap());
+        let _ = crate::commands::config::atomic_write_text(&pending_path, "{}");
+        let _ = write_json_atomic(&paired_path, &doc);
     }
 }
 
@@ -615,8 +622,8 @@ pub async fn start_gateway(
         &port.to_string(),
     ])
     .env("PATH", &gw_path)
-    .env("OPENCLAW_STATE_DIR", base_dir.to_str().unwrap())
-    .env("OPENCLAW_CONFIG_PATH", config_path.to_str().unwrap());
+    .env("OPENCLAW_STATE_DIR", &base_dir)
+    .env("OPENCLAW_CONFIG_PATH", &config_path);
     for (k, v) in &extra_env_vars {
         cmd.env(k, v);
     }
@@ -844,8 +851,8 @@ pub async fn run_doctor() -> Result<String, String> {
     let mut cmd = tokio::process::Command::new(&openclaw);
     cmd.arg("doctor")
         .env("PATH", &augmented_path())
-        .env("OPENCLAW_STATE_DIR", base_dir.to_str().unwrap())
-        .env("OPENCLAW_CONFIG_PATH", config_path.to_str().unwrap());
+        .env("OPENCLAW_STATE_DIR", &base_dir)
+        .env("OPENCLAW_CONFIG_PATH", &config_path);
 
     #[cfg(windows)]
     {

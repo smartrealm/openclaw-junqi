@@ -19,6 +19,7 @@ import {
   Terminal,
   FolderOpen,
 } from 'lucide-react';
+import { GatewaySelfRescuePanel } from './GatewaySelfRescuePanel';
 
 interface GatewayErrorScreenProps {
   error: string;
@@ -188,11 +189,11 @@ export function GatewayErrorScreen({
         }} />
       </div>
 
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl bg-aegis-card-solid border border-aegis-border shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-2xl mx-4 max-h-[92vh] rounded-2xl bg-aegis-card-solid border border-aegis-border shadow-2xl overflow-hidden">
         {/* Top accent bar */}
         <div className="h-1 bg-gradient-to-r from-red-500 via-orange-400 to-yellow-400" />
 
-        <div className="p-6">
+        <div className="max-h-[calc(92vh-4px)] overflow-y-auto p-6">
           {/* Header */}
           <div className="flex items-start gap-4 mb-5">
             <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
@@ -278,7 +279,21 @@ export function GatewayErrorScreen({
               <FolderOpen className="w-4 h-4" />
               {t('gatewayError.actions.openLogFile')}
             </button>
+
           </div>
+
+          <GatewaySelfRescuePanel
+            className="mb-4"
+            variant="full"
+            connected={false}
+            busy={retrying}
+            progressMessage={retrying ? t('gatewayError.actions.retrying') : null}
+            progressPercent={retrying ? 35 : null}
+            primaryActionLabel={retrying ? t('gatewayError.actions.retrying') : t('gatewayError.actions.retryGateway')}
+            onPrimaryAction={onRetry}
+            error={error}
+            logs={combinedLogs}
+          />
 
           {/* Collapsible gateway logs */}
           {combinedLogs && (

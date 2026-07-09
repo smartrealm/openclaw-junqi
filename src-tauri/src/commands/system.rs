@@ -34,6 +34,7 @@ pub struct OpenclawStatus {
     pub installed: bool,
     pub version: Option<String>,
     pub path: Option<String>,
+    pub source: Option<String>,
     pub binary_found: bool,
     pub version_ok: bool,
     pub package_valid: bool,
@@ -152,7 +153,9 @@ pub(crate) fn openclaw_search_path() -> String {
         paths::local_npm_bin_dir().to_string_lossy().to_string(),
         // Tier 3: JunQi-managed sandbox prefix, the last-resort target when
         // neither the user prefix nor `~/.local` is writable.
-        paths::openclaw_global_bin_dir().to_string_lossy().to_string(),
+        paths::openclaw_global_bin_dir()
+            .to_string_lossy()
+            .to_string(),
     ];
     if let Some(home) = dirs::home_dir() {
         path_parts.push(
@@ -167,17 +170,8 @@ pub(crate) fn openclaw_search_path() -> String {
                 .to_string_lossy()
                 .to_string(),
         );
-        path_parts.push(
-            home.join(".pnpm")
-                .to_string_lossy()
-                .to_string(),
-        );
-        path_parts.push(
-            home.join(".bun")
-                .join("bin")
-                .to_string_lossy()
-                .to_string(),
-        );
+        path_parts.push(home.join(".pnpm").to_string_lossy().to_string());
+        path_parts.push(home.join(".bun").join("bin").to_string_lossy().to_string());
         path_parts.push(
             home.join(".volta")
                 .join("bin")
@@ -231,7 +225,13 @@ pub(crate) fn openclaw_search_path() -> String {
             );
         }
     }
-    for env_key in ["OPENCLAW_HOME", "PNPM_HOME", "BUN_INSTALL", "VOLTA_HOME", "CARGO_HOME"] {
+    for env_key in [
+        "OPENCLAW_HOME",
+        "PNPM_HOME",
+        "BUN_INSTALL",
+        "VOLTA_HOME",
+        "CARGO_HOME",
+    ] {
         if let Ok(value) = std::env::var(env_key) {
             let base = std::path::PathBuf::from(value);
             path_parts.push(base.to_string_lossy().to_string());
@@ -243,7 +243,12 @@ pub(crate) fn openclaw_search_path() -> String {
         if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
             let base = std::path::PathBuf::from(localappdata);
             path_parts.push(base.join("pnpm").to_string_lossy().to_string());
-            path_parts.push(base.join("Programs").join("OpenClaw").to_string_lossy().to_string());
+            path_parts.push(
+                base.join("Programs")
+                    .join("OpenClaw")
+                    .to_string_lossy()
+                    .to_string(),
+            );
             path_parts.push(
                 base.join("Programs")
                     .join("OpenClaw")
@@ -251,17 +256,32 @@ pub(crate) fn openclaw_search_path() -> String {
                     .to_string_lossy()
                     .to_string(),
             );
-            path_parts.push(base.join("OpenClaw").join("bin").to_string_lossy().to_string());
+            path_parts.push(
+                base.join("OpenClaw")
+                    .join("bin")
+                    .to_string_lossy()
+                    .to_string(),
+            );
         }
         if let Ok(program_files) = std::env::var("ProgramFiles") {
             let base = std::path::PathBuf::from(program_files);
             path_parts.push(base.join("OpenClaw").to_string_lossy().to_string());
-            path_parts.push(base.join("OpenClaw").join("bin").to_string_lossy().to_string());
+            path_parts.push(
+                base.join("OpenClaw")
+                    .join("bin")
+                    .to_string_lossy()
+                    .to_string(),
+            );
         }
         if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
             let base = std::path::PathBuf::from(program_files_x86);
             path_parts.push(base.join("OpenClaw").to_string_lossy().to_string());
-            path_parts.push(base.join("OpenClaw").join("bin").to_string_lossy().to_string());
+            path_parts.push(
+                base.join("OpenClaw")
+                    .join("bin")
+                    .to_string_lossy()
+                    .to_string(),
+            );
         }
         if let Ok(chocolatey) = std::env::var("ChocolateyInstall") {
             path_parts.push(
@@ -294,32 +314,6 @@ fn openclaw_binary_names() -> &'static [&'static str] {
     }
 }
 
-fn managed_openclaw_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    // The three tiers below mirror `setup::pick_install_target` in the same
-    // priority order (user prefix > XDG > sandbox), so detection resolves
-    // whichever canonical `npm i -g openclaw` layout actually got written.
-    //
-    // Tier 1: user's actual npm prefix (read from `~/.npmrc`). Listed first
-    // so a pre-existing user install of `npm i -g openclaw` wins.
-    if let Some(bin_dir) = paths::user_npm_bin_dir() {
-        for name in openclaw_binary_names() {
-            candidates.push(bin_dir.join(name));
-        }
-    }
-    // Tier 2: XDG fallback (`~/.local`) — where we install when the user's
-    // npm prefix isn't writable.
-    for name in openclaw_binary_names() {
-        candidates.push(paths::local_npm_bin_dir().join(name));
-    }
-    // Tier 3: JunQi-managed sandbox — the last-resort `<prefix>/bin/<name>`
-    // target when neither of the above is writable.
-    for name in openclaw_binary_names() {
-        candidates.push(paths::openclaw_global_bin_dir().join(name));
-    }
-    candidates
-}
-
 fn is_legacy_brand_wrapper(path: &Path) -> bool {
     let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     canonical
@@ -339,6 +333,36 @@ fn read_selected_openclaw_binary() -> Option<PathBuf> {
     let selection: OpenclawBinarySelection = serde_json::from_str(&raw).ok()?;
     let path = PathBuf::from(selection.path);
     is_valid_openclaw_candidate(&path).then_some(path)
+}
+
+fn openclaw_candidate_matches(candidate: &Path, selected: &Path) -> bool {
+    let candidate = std::fs::canonicalize(candidate).unwrap_or_else(|_| candidate.to_path_buf());
+    let selected = std::fs::canonicalize(selected).unwrap_or_else(|_| selected.to_path_buf());
+    candidate == selected
+}
+
+fn classify_openclaw_binary_path(path: &Path) -> Option<&'static str> {
+    if let Some(bin_dir) = paths::user_npm_bin_dir() {
+        for name in openclaw_binary_names() {
+            if openclaw_candidate_matches(&bin_dir.join(name), path) {
+                return Some("user-npm-prefix");
+            }
+        }
+    }
+
+    for name in openclaw_binary_names() {
+        if openclaw_candidate_matches(&paths::local_npm_bin_dir().join(name), path) {
+            return Some("xdg-fallback");
+        }
+    }
+
+    for name in openclaw_binary_names() {
+        if openclaw_candidate_matches(&paths::openclaw_global_bin_dir().join(name), path) {
+            return Some("junqi-sandbox");
+        }
+    }
+
+    None
 }
 
 pub(crate) fn persist_selected_openclaw_binary(path: &Path) -> Result<(), String> {
@@ -364,20 +388,44 @@ pub(crate) fn persist_selected_openclaw_binary(path: &Path) -> Result<(), String
 }
 
 pub(crate) fn resolve_openclaw_binary() -> Option<PathBuf> {
+    resolve_openclaw_binary_with_source().map(|(path, _source)| path)
+}
+
+pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)> {
     if let Ok(explicit) = std::env::var("OPENCLAW_BIN") {
         let explicit = PathBuf::from(explicit);
         if is_valid_openclaw_candidate(&explicit) {
-            return Some(explicit);
+            return Some((explicit, "OPENCLAW_BIN".into()));
         }
     }
 
     if let Some(selected) = read_selected_openclaw_binary() {
-        return Some(selected);
+        let source = classify_openclaw_binary_path(&selected)
+            .map(|tier| format!("saved-selection:{}", tier))
+            .unwrap_or_else(|| "saved-selection".into());
+        return Some((selected, source));
     }
 
-    for candidate in managed_openclaw_candidates() {
+    if let Some(bin_dir) = paths::user_npm_bin_dir() {
+        for name in openclaw_binary_names() {
+            let candidate = bin_dir.join(name);
+            if is_valid_openclaw_candidate(&candidate) {
+                return Some((candidate, "user-npm-prefix".into()));
+            }
+        }
+    }
+
+    for name in openclaw_binary_names() {
+        let candidate = paths::local_npm_bin_dir().join(name);
         if is_valid_openclaw_candidate(&candidate) {
-            return Some(candidate);
+            return Some((candidate, "xdg-fallback".into()));
+        }
+    }
+
+    for name in openclaw_binary_names() {
+        let candidate = paths::openclaw_global_bin_dir().join(name);
+        if is_valid_openclaw_candidate(&candidate) {
+            return Some((candidate, "junqi-sandbox".into()));
         }
     }
 
@@ -396,20 +444,21 @@ pub(crate) fn resolve_openclaw_binary() -> Option<PathBuf> {
         .collect::<Vec<_>>();
 
     let mut seen = HashSet::new();
-    candidates.into_iter().find(|path| {
-        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+    candidates.into_iter().find_map(|path| {
+        let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
         let marker = canonical.to_string_lossy().to_lowercase();
-        seen.insert(marker) && is_valid_openclaw_candidate(path)
+        (seen.insert(marker) && is_valid_openclaw_candidate(&path)).then_some((path, "PATH".into()))
     })
 }
 
 pub(crate) async fn detect_openclaw() -> OpenclawStatus {
     let search_path = openclaw_search_path();
-    let Some(path) = resolve_openclaw_binary() else {
+    let Some((path, source)) = resolve_openclaw_binary_with_source() else {
         return OpenclawStatus {
             installed: false,
             version: None,
             path: None,
+            source: None,
             binary_found: false,
             version_ok: false,
             package_valid: false,
@@ -418,7 +467,9 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
         };
     };
     let _ = persist_selected_openclaw_binary(&path);
-    validate_openclaw_binary(&path, &search_path).await
+    let mut status = validate_openclaw_binary(&path, &search_path).await;
+    status.source = Some(source);
+    status
 }
 
 pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) -> OpenclawStatus {
@@ -439,6 +490,7 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
         installed,
         version,
         path: Some(path_string),
+        source: None,
         binary_found: true,
         version_ok,
         package_valid,
@@ -510,10 +562,7 @@ fn read_openclaw_pkg_version(bin: &Path) -> Option<String> {
         if let Some(version) = read_openclaw_pkg_version_file(&d.join("package.json")) {
             return Some(version);
         }
-        let nested_package_json = d
-            .join("node_modules")
-            .join("openclaw")
-            .join("package.json");
+        let nested_package_json = d.join("node_modules").join("openclaw").join("package.json");
         if let Some(version) = read_openclaw_pkg_version_file(&nested_package_json) {
             return Some(version);
         }
@@ -631,7 +680,12 @@ pub async fn check_git() -> Result<GitStatus, String> {
     #[cfg(not(target_os = "macos"))]
     {
         // Check system git
-        let system_git = platform::bin_name("git");
+        let detected_git = platform::detect_path("git");
+        let system_git = if detected_git.is_empty() {
+            platform::bin_name("git")
+        } else {
+            detected_git
+        };
         if let Some(version) = get_git_version(&system_git).await {
             return Ok(GitStatus {
                 available: true,

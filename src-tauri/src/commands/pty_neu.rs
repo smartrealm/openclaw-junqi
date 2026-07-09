@@ -71,17 +71,13 @@ fn setup_env(cmd: &mut CommandBuilder) {
     cmd.env("COLORTERM", "truecolor");
 }
 
-/// Build a shell CommandBuilder for the current platform.
-/// Uses the user's $SHELL on Unix; falls back to zsh (macOS) or bash (Linux).
+/// 按当前平台构造 shell 命令。
 fn build_shell_cmd(project_path: &str) -> CommandBuilder {
-    let fallback = if cfg!(target_os = "macos") {
-        "/bin/zsh"
-    } else {
-        "/bin/bash"
-    };
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| fallback.to_string());
-    let mut cmd = CommandBuilder::new(&shell);
-    cmd.arg("-l");
+    let shell = crate::platform::default_shell_command();
+    let mut cmd = CommandBuilder::new(&shell.program);
+    for arg in &shell.args {
+        cmd.arg(arg);
+    }
     cmd.cwd(project_path);
     cmd
 }

@@ -6,6 +6,7 @@ export interface OpenclawStatus {
   installed: boolean;
   version: string | null;
   path: string | null;
+  source: string | null;
   binary_found: boolean;
   version_ok: boolean;
   package_valid: boolean;

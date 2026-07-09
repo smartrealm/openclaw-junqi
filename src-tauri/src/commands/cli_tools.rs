@@ -1,15 +1,11 @@
-/// Detect AI CLI tools by scanning the user's PATH for known binary names.
-///
-/// Uses `which` to check each candidate. Runs in ~5ms (all candidates
-/// checked in parallel via spawn_blocking).
-use std::process::Command;
+/// 扫描用户 PATH，检测常见 AI CLI 和开发工具。
 
 type Label = &'static str;
 type Icon = &'static str;
 
 const CANDIDATES: &[(&str, Label, Icon)] = &[
-    // AI assistants (keep in sync with agent_task_pty::AGENTS)
-    // icons resolved in frontend (WelcomePage) via icons.tsx agent registry
+    // AI 助手：需要和 agent_task_pty::AGENTS 保持同步。
+    // 图标由前端 icons.tsx 的 agent registry 解析。
     ("claude", "Claude Code", ""),
     ("codex", "Codex", ""),
     ("gemini", "Gemini CLI", ""),
@@ -30,7 +26,7 @@ const CANDIDATES: &[(&str, Label, Icon)] = &[
     ("shell-gpt", "sgpt", ""),
     ("gptme", "GPT Me", ""),
     ("devbox", "Devbox", ""),
-    // Dev tools
+    // 开发工具
     ("gh", "GitHub CLI", ""),
     ("docker", "Docker", ""),
     ("kubectl", "kubectl", ""),
@@ -55,30 +51,17 @@ pub struct CLIToolInfo {
     pub label: String,
     pub icon: String,
     pub cmd: String,
-    /// The command without newline — for tools where user wants to type args after
+    /// 不带换行的命令，供用户继续补参数。
     pub cmd_no_nl: String,
 }
 
 fn which(bin: &str) -> bool {
-    // Platform-aware binary detection: `which` on Unix, `where` on Windows.
-    #[cfg(target_os = "windows")]
-    let (cmd, arg) = ("where", bin);
-    #[cfg(not(target_os = "windows"))]
-    let (cmd, arg) = ("which", bin);
-
-    Command::new(cmd)
-        .arg(arg)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    !crate::platform::detect_path(bin).is_empty()
 }
 
 #[tauri::command]
 pub async fn detect_cli_tools() -> Vec<CLIToolInfo> {
-    // Run in a blocking thread so slow `which` calls don't starve the
-    // Tauri event loop. Tauri automatically spawns async commands on a
-    // thread pool — no explicit spawn_blocking needed for pure CPU work,
-    // but `Command::output()` is I/O-bound so this ensures responsiveness.
+    // 放到阻塞线程中执行，避免 PATH 检测拖慢 Tauri 事件循环。
     tokio::task::spawn_blocking(move || {
         CANDIDATES
             .iter()

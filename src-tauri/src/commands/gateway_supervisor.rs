@@ -115,11 +115,8 @@ pub async fn openclaw_doctor_repair(
 
     let mut cmd = tokio::process::Command::new(&openclaw);
     cmd.args(["doctor", "--fix", "--yes", "--non-interactive"])
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir().to_str().unwrap())
-        .env(
-            "OPENCLAW_CONFIG_PATH",
-            paths::config_path().to_str().unwrap(),
-        )
+        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
+        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
         .env("OPENCLAW_NO_RESPAWN", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

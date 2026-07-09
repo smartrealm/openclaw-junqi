@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { usePetStore } from '@/stores/petStore';
 import { PetCharacter } from './PetCharacter';
 import { minutesToMs } from './pomodoroDomain';
+import { normalizePetThemeName, resolvePetAccentPalette, resolvePetDarkMode, type PetThemeName } from './petTheme';
 
 function fmtClock(ms: number): string {
   const clamped = Math.max(0, ms);
@@ -30,8 +31,37 @@ const PARTICLES: Array<{ Icon: LucideIcon; left: string; delay: number; dur: num
   { Icon: Coffee,   left: '44%', delay: 2.2,  dur: 3.6, size: 13, opacity: 0.23 },
 ];
 
+function readPetTheme(): { themeName: PetThemeName; isDark: boolean } {
+  if (typeof document === 'undefined') return { themeName: 'aegis-dark', isDark: true };
+  const theme = document.documentElement.getAttribute('data-theme');
+  const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+  return {
+    themeName: normalizePetThemeName(theme, systemDark),
+    isDark: resolvePetDarkMode(theme, systemDark),
+  };
+}
+
+function usePetOverlayTheme(): { themeName: PetThemeName; isDark: boolean } {
+  const [resolved, setResolved] = useState(readPetTheme);
+  useEffect(() => {
+    const refresh = () => setResolved(readPetTheme());
+    const observer = new MutationObserver(refresh);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    mq?.addEventListener('change', refresh);
+    refresh();
+    return () => {
+      observer.disconnect();
+      mq?.removeEventListener('change', refresh);
+    };
+  }, []);
+  return resolved;
+}
+
 export function PetBreakOverlay() {
   const { t } = useTranslation();
+  const { themeName } = usePetOverlayTheme();
+  const petAccent = resolvePetAccentPalette(themeName);
   const petEnabled = usePetStore(s => s.enabled);
   const pomodoro   = usePetStore(s => s.pomodoro);
   const setPomodoro = usePetStore(s => s.setPomodoro);
@@ -107,7 +137,7 @@ export function PetBreakOverlay() {
                 animate={{ y: [0, -1300] }}
                 transition={{ duration: p.dur, delay: p.delay, repeat: Infinity, ease: 'linear', repeatDelay: 0.3 }}
               >
-                <Icon size={p.size} style={{ color: 'rgb(var(--aegis-primary))', opacity: p.opacity }} />
+                <Icon size={p.size} style={{ color: petAccent.primary, opacity: p.opacity }} />
               </motion.div>
             );
           })}
@@ -148,7 +178,7 @@ export function PetBreakOverlay() {
               </p>
               <motion.div
                 className="text-[44px] font-mono font-bold tabular-nums leading-none"
-                style={{ color: 'rgb(var(--aegis-primary))' }}
+                style={{ color: petAccent.primary }}
                 animate={{ opacity: pomodoro.paused ? [1, 0.45, 1] : 1 }}
                 transition={{ duration: 1.1, repeat: pomodoro.paused ? Infinity : 0 }}
               >
@@ -174,7 +204,7 @@ export function PetBreakOverlay() {
                     top: -8,
                     fontSize: 10 + i * 3,
                     fontWeight: 700,
-                    color: 'rgb(var(--aegis-primary))',
+                    color: petAccent.secondary,
                     opacity: 0,
                     pointerEvents: 'none',
                     userSelect: 'none',
@@ -193,7 +223,7 @@ export function PetBreakOverlay() {
                 style={{ background: 'rgba(var(--aegis-overlay),0.1)' }}>
                 <motion.div
                   className="h-full rounded-full"
-                  style={{ background: 'rgb(var(--aegis-primary))' }}
+                  style={{ background: petAccent.primary }}
                   animate={{ width: `${progressPct}%` }}
                   transition={{ duration: 0.5, ease: 'linear' }}
                 />

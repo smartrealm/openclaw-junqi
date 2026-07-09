@@ -14,6 +14,7 @@ import {
   prepareGateway,
   startGateway, checkDocker, pullOpenclawImage, startDockerGateway,
   type DockerStatus,
+  type OpenclawStatus,
 } from "@/api/tauri-commands";
 import { debugWarn } from "@/utils/debugLog";
 import { setupProgressI18nParams } from "./setupProgressParams";
@@ -93,6 +94,7 @@ export interface SetupFlow {
   progress: number;
   statusMessage: string;
   dockerStatus: DockerStatus | null;
+  openclawStatus: OpenclawStatus | null;
   checkingDocker: boolean;
   needsGit: boolean;
   steps: StepState[];
@@ -136,10 +138,6 @@ function cacheGatewayTarget(port?: number | null, token?: string | null): void {
   }
 }
 
-function markSetupReady(): void {
-  localStorage.setItem("junqi-setup-done", "1");
-}
-
 export function useSetupFlow(
   progress: number, setProgress: (v: number) => void,
   statusMessage: string, setStatusMessage: (v: string) => void,
@@ -151,10 +149,11 @@ export function useSetupFlow(
   const {
     setupStep, installMode,
     setSetupStep, setSetupError, setSetupComplete,
-    setGatewayRunning, setInstallMode, setSetupStatus,
+    setGatewayRunning, setInstallMode, setSetupStatus, clearSetupLogs,
   } = useAppStore();
   const { t } = useTranslation();
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
+  const [openclawStatus, setOpenclawStatus] = useState<OpenclawStatus | null>(null);
   const activeRunRef = useRef(0);
   const beginRun = useCallback(() => {
     activeRunRef.current += 1;
@@ -196,34 +195,37 @@ export function useSetupFlow(
     throw new Error(t("setup.gatewayReadyTimeout", "Gateway did not become ready in time."));
   }, [isRunActive, t]);
 
-  // ── Auto-detect on mount ──
-  // Probe order: check_openclaw → probe_gateway_port (reads config port
-  // from openclaw.json on the Rust side). If OpenClaw is installed, remember
-  // that fact so later launches skip first-install preferences and setup mode.
+  // ── 挂载后自动检测 ──
+  // 探测顺序：check_openclaw → probe_gateway_port（Rust 侧从
+  // openclaw.json 读取实际端口）。检测只能推进向导步骤，不能写入
+  // “已完成”标记；该标记必须由用户点击“进入工作台”后写入。
   useEffect(() => {
     if (setupStep !== "detecting") return;
     (async () => {
       report(t("setup.detecting"), 0);
       try {
         const oclaw = await checkOpenclaw();
+        setOpenclawStatus(oclaw);
         if (!oclaw.installed) {
-          // Never installed — go straight to mode selection
+          // 从未安装过，直接进入安装方式选择。
           localStorage.removeItem("junqi-setup-done");
           report(t("setup.chooseMode"), 18);
           setSetupStep("choosing-mode");
           return;
         }
-        localStorage.setItem("junqi-setup-done", "1");
-
-        // OpenClaw is installed — probe if its gateway is already
-        // listening. Rust reads the actual configured port from
-        // openclaw.json (not a hardcoded 18789).
+        if (oclaw.path) {
+          setInstallTarget({ tier: "existing", path: oclaw.path, version: oclaw.version ?? undefined });
+        }
+        // OpenClaw 已安装，继续探测 Gateway 是否已监听。这里不直接
+        // 进入工作台，避免用户在向导中前后切换时被跳过确认步骤。
         try {
-          // No port argument → Rust reads config. If that fails it
-          // falls back to 18789.
+          // 不传端口时由 Rust 读取配置；读取失败才回退到 18789。
           const reachable: boolean = await invoke("probe_gateway_port", {});
           if (reachable) {
-            setSetupComplete(true);
+            setGatewayRunning(true);
+            setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
+            report(t("setup.ready"), 100);
+            setSetupStep("ready");
             return;
           }
         } catch {}
@@ -232,11 +234,12 @@ export function useSetupFlow(
         report(t("setup.gatewayNotRunning"), 20);
         setSetupStep("gateway-stopped");
       } catch {
+        setOpenclawStatus(null);
         report(t("setup.chooseMode"), 18);
         setSetupStep("choosing-mode");
       }
     })();
-  }, [setupStep, report, t, setSetupComplete, setSetupStep]);
+  }, [setupStep, report, t, setGatewayRunning, setSetupStep, setSteps]);
 
   // ── Docker detect after the welcome step ──
   useEffect(() => {
@@ -344,7 +347,6 @@ export function useSetupFlow(
       report(t("setup.ready"), 100);
       await new Promise((r) => setTimeout(r, 600));
       if (!isRunActive(runId)) return;
-      markSetupReady();
       setSetupStep("ready");
     } catch (e: any) {
       if (!isRunActive(runId)) return;
@@ -361,6 +363,7 @@ export function useSetupFlow(
 
   const runNativeSetup = useCallback(async () => {
     const runId = beginRun();
+    clearSetupLogs();
     const s = [...INITIAL_NATIVE_STEPS];
     setSteps(s);
     try {
@@ -401,15 +404,25 @@ export function useSetupFlow(
       patchStep("openclaw", "running", t("setup.checkingOpenclaw"));
       report(t("setup.checkingOpenclaw"), 40);
       const oclawStatus = await checkOpenclaw();
+      setOpenclawStatus(oclawStatus);
       if (!isRunActive(runId)) return;
       if (!oclawStatus.installed) {
         patchStep("openclaw", "running", t("setup.installingOpenclaw"));
         setSetupStep("install-openclaw");
         report(t("setup.installingOpenclaw"), 50);
         await installOpenclaw();
+        try {
+          const installedStatus = await checkOpenclaw();
+          setOpenclawStatus(installedStatus);
+        } catch {
+          // install_openclaw already validates and reports failures; this refresh is best effort.
+        }
         if (!isRunActive(runId)) return;
         patchStep("openclaw", "done");
       } else {
+        if (oclawStatus.path) {
+          setInstallTarget({ tier: "existing", path: oclawStatus.path, version: oclawStatus.version ?? undefined });
+        }
         patchStep("openclaw", "done", oclawStatus.version ?? undefined);
       }
 
@@ -437,10 +450,11 @@ export function useSetupFlow(
       setSetupStep("error");
     }
   }, [beginRun, isRunActive, setSetupStep, t, report, setNeedsGit, setSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError]);
+      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
+    clearSetupLogs();
     setSteps([...INITIAL_DOCKER_STEPS]);
     try {
       setSetupStep("checking");
@@ -466,7 +480,6 @@ export function useSetupFlow(
       patchStep("gateway", "done");
 
       report(t("setup.ready"), 100);
-      markSetupReady();
       setSetupStep("ready");
     } catch (err: any) {
       if (!isRunActive(runId)) return;
@@ -475,7 +488,7 @@ export function useSetupFlow(
       setSetupStep("error");
     }
   }, [beginRun, isRunActive, setSetupStep, t, report, setSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError]);
+      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs]);
 
   const selectMode = useCallback((mode: "native" | "docker") => {
     setInstallMode(mode);
@@ -534,7 +547,7 @@ export function useSetupFlow(
   }, [setCheckingDocker, setDockerStatus]);
 
   return {
-    progress, statusMessage, dockerStatus, checkingDocker, needsGit, steps,
+    progress, statusMessage, dockerStatus, openclawStatus, checkingDocker, needsGit, steps,
     installTarget,
     startGateway: startGatewayAction,
     runNativeSetup,

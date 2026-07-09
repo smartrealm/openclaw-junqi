@@ -10,6 +10,7 @@ pub mod ensure;
 pub mod fs_neu;
 pub mod gateway;
 pub mod gateway_logs;
+pub mod gateway_rescue;
 pub mod gateway_supervisor;
 pub mod git_neu;
 pub mod hooks;

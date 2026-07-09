@@ -15,6 +15,18 @@ pub struct DockerStatus {
 }
 
 async fn resolve_docker_bin() -> Result<String, String> {
+    let detected = platform::detect_path("docker");
+    if !detected.is_empty()
+        && tokio::process::Command::new(&detected)
+            .arg("--version")
+            .output()
+            .await
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    {
+        return Ok(detected);
+    }
+
     let configured = platform::bin_name("docker");
     if tokio::process::Command::new(&configured)
         .arg("--version")
@@ -35,6 +47,30 @@ async fn resolve_docker_bin() -> Result<String, String> {
 
     if let Some(home) = dirs::home_dir() {
         candidates.push(home.join(".docker").join("bin").join("docker"));
+    }
+
+    #[cfg(windows)]
+    {
+        if let Ok(program_files) = std::env::var("ProgramFiles") {
+            candidates.push(
+                PathBuf::from(program_files)
+                    .join("Docker")
+                    .join("Docker")
+                    .join("resources")
+                    .join("bin")
+                    .join("docker.exe"),
+            );
+        }
+        if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
+            candidates.push(
+                PathBuf::from(program_files_x86)
+                    .join("Docker")
+                    .join("Docker")
+                    .join("resources")
+                    .join("bin")
+                    .join("docker.exe"),
+            );
+        }
     }
 
     for candidate in candidates {

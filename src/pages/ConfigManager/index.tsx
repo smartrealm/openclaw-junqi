@@ -17,7 +17,7 @@ import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
 } from './runtimeNormalization';
-import { preserveProviderSecretsFromDisk } from './providerSecretResolver';
+import { deriveProviderApiKeyEnvKey, preserveProviderSecretsFromDisk } from './providerSecretResolver';
 import { normalizeProviderAuthMode } from '@/types/providerAuthMode';
 import { FloatingSaveButton, ChangesPill } from './components';
 import { debugLog, debugWarn } from '@/utils/debugLog';
@@ -26,6 +26,38 @@ import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 type Tab = 'providers' | 'agents' | 'channels' | 'tools' | 'advanced' | 'secrets';
 const VALID_TABS: ReadonlySet<Tab> = new Set(['providers', 'agents', 'channels', 'tools', 'advanced', 'secrets']);
 const isValidTab = (s: string): s is Tab => VALID_TABS.has(s as Tab);
+
+type ConfigBackup = {
+  key: string;
+  data: any;
+  ts: number;
+};
+
+function readLocalConfigBackups(): ConfigBackup[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('aegis-config-backups') || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is ConfigBackup => (
+        item &&
+        typeof item === 'object' &&
+        typeof item.key === 'string' &&
+        typeof item.ts === 'number' &&
+        'data' in item
+      ))
+      .sort((a, b) => a.ts - b.ts);
+  } catch (err) {
+    debugWarn('app', '[Config] Failed to read local backups:', err);
+    return [];
+  }
+}
+
+function summarizeBackupConfig(config: GatewayRuntimeConfig) {
+  const providers = Object.keys(config.models?.providers ?? {}).length;
+  const agents = config.agents?.list?.length ?? 0;
+  const envVars = Object.keys(config.env?.vars ?? {}).length;
+  return { providers, agents, envVars };
+}
 
 const ProvidersTab = lazy(() => import('./ProvidersTab').then((module) => ({ default: module.ProvidersTab })));
 const AgentsTab = lazy(() => import('./AgentsTab').then((module) => ({ default: module.AgentsTab })));
@@ -327,6 +359,18 @@ export function ConfigManagerPage() {
     []
   );
 
+  const handleRestoreBackup = useCallback((backup: ConfigBackup) => {
+    try {
+      const restoredNormalized = normalizeConfig(structuredClone(backup.data));
+      setConfig(restoredNormalized);
+      // 恢复只载入编辑区，不覆盖 originalConfig。这样浮动保存条会出现，用户确认后才写盘。
+      setShowBackups(false);
+      setError('');
+    } catch (err: any) {
+      setError(err?.message || t('config.restoreBackupFailed', '备份恢复失败'));
+    }
+  }, [t]);
+
   // ── Save ──
   async function persistConfig(
     targetConfig?: GatewayRuntimeConfig | null,
@@ -561,16 +605,6 @@ export function ConfigManagerPage() {
     if (!value || typeof value !== 'object') return false;
     const record = value as Record<string, unknown>;
     return typeof record.source === 'string' || typeof record.id === 'string';
-  };
-
-  const deriveProviderApiKeyEnvKey = (providerId: string, template?: ReturnType<typeof getTemplateById>): string => {
-    if (template?.id === 'custom' && template.envKey) return template.envKey;
-    const normalized = String(providerId ?? '')
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '');
-    return normalized ? `${normalized}_API_KEY` : 'OPENCLAW_CUSTOM_API_KEY';
   };
 
   const hydrateAgentModelCapabilitiesForUi = (data: GatewayRuntimeConfig): GatewayRuntimeConfig => {
@@ -1407,12 +1441,13 @@ export function ConfigManagerPage() {
             <span className="text-[10px] font-bold uppercase tracking-wider text-aegis-text-muted">
               {t('config.recentBackups')}
             </span>
+            <p className="mt-1 text-[11px] leading-relaxed text-aegis-text-muted">
+              {t('config.restoreBackupHint')}
+            </p>
           </div>
           <div className="p-1">
             {(() => {
-              const backups: { key: string; data: any; ts: number }[] = JSON.parse(
-                localStorage.getItem('aegis-config-backups') || '[]'
-              );
+              const backups = readLocalConfigBackups();
               if (backups.length === 0) {
                 return (
                   <div className="px-3 py-4 text-xs text-aegis-text-muted text-center">
@@ -1420,32 +1455,54 @@ export function ConfigManagerPage() {
                   </div>
                 );
               }
-              return backups.slice().reverse().map((b, i) => (
-                <button
-                  key={b.key}
-                  onClick={() => {
-                    const restoredNormalized = normalizeConfig(structuredClone(b.data));
-                    setConfig(restoredNormalized);
-                    setOriginalConfig(structuredClone(restoredNormalized));
-                    setShowBackups(false);
-                  }}
-                  className={clsx(
-                    'w-full flex items-center justify-between px-3 py-2 rounded-lg',
-                    'text-left transition-colors duration-150',
-                    'hover:bg-white/[0.05]'
-                  )}
-                >
-                  <div>
-                    <div className="text-xs font-medium text-aegis-text">
+              return backups.slice().reverse().map((b, i) => {
+                let summary: ReturnType<typeof summarizeBackupConfig> | null = null;
+                try {
+                  summary = summarizeBackupConfig(normalizeConfig(structuredClone(b.data)));
+                } catch (err) {
+                  debugWarn('app', '[Config] Invalid backup skipped in menu:', err);
+                }
+
+                return summary ? (
+                  <button
+                    key={b.key}
+                    onClick={() => handleRestoreBackup(b)}
+                    className={clsx(
+                      'w-full flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg',
+                      'text-left transition-colors duration-150',
+                      'hover:bg-white/[0.05]'
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-aegis-text">
+                        {new Date(b.ts).toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-aegis-text-muted mt-0.5">
+                        {i === 0 ? t('config.latestBackup') : t('config.savesAgo', { count: i + 1 })}
+                      </div>
+                      <div className="mt-1 text-[10px] text-aegis-text-secondary">
+                        {t('config.backupSummary', summary)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold text-aegis-primary shrink-0 pt-0.5">
+                      <History size={12} className="shrink-0" />
+                      <span>{t('config.restoreToEditor')}</span>
+                    </div>
+                  </button>
+                ) : (
+                  <div
+                    key={b.key}
+                    className="w-full px-3 py-2.5 rounded-lg text-left opacity-60"
+                  >
+                    <div className="text-xs font-medium text-aegis-text-muted">
                       {new Date(b.ts).toLocaleString()}
                     </div>
-                    <div className="text-[10px] text-aegis-text-muted mt-0.5">
-                      {i === 0 ? t('config.latestBackup') : t('config.savesAgo', { count: i + 1 })}
+                    <div className="text-[10px] text-red-300/80 mt-0.5">
+                      {t('config.invalidBackup')}
                     </div>
                   </div>
-                  <History size={12} className="text-aegis-text-muted flex-shrink-0 ml-2" />
-                </button>
-              ));
+                );
+              });
             })()}
           </div>
         </div>,

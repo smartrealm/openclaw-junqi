@@ -1,15 +1,25 @@
-//! Platform abstraction layer — every OS conditional lives here.
+//! 平台抽象层：操作系统差异尽量集中在这里。
 //!
-//! No other module should use `cfg!(windows)`, `cfg!(target_os)`,
-//! or `#[cfg(windows)]` directly for behavioral differences.
+//! 其他模块不应直接散落使用 `cfg!(windows)`、`cfg!(target_os)` 或
+//! `#[cfg(windows)]` 来处理行为差异。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-/// Append `.exe` on Windows, leave unchanged otherwise.
+#[derive(Debug, Clone)]
+pub struct ShellCommand {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+static LOGIN_ENV: OnceLock<Vec<(String, String)>> = OnceLock::new();
+static LOGIN_PATH: OnceLock<String> = OnceLock::new();
+
+/// Windows 下补充可执行文件后缀，其他平台保持原样。
 ///
 /// ```ignore
-/// let node = bin_name("node");   // "node.exe" on Windows, "node" elsewhere
-/// let npm  = bin_name("npm");    // "npm.cmd" on Windows, "npm" elsewhere
+/// let node = bin_name("node");   // Windows: "node.exe"，其他平台: "node"
+/// let npm  = bin_name("npm");    // Windows: "npm.cmd"，其他平台: "npm"
 /// ```
 pub fn bin_name(base: &str) -> String {
     if cfg!(windows) {
@@ -23,7 +33,183 @@ pub fn bin_name(base: &str) -> String {
     }
 }
 
-/// Open a file path in the system file explorer.
+pub fn home_dir() -> Option<PathBuf> {
+    if cfg!(windows) {
+        std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .or_else(
+                || match (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
+                    (Some(drive), Some(path)) => {
+                        let mut full = PathBuf::from(drive);
+                        full.push(PathBuf::from(path));
+                        Some(full)
+                    }
+                    _ => dirs::home_dir(),
+                },
+            )
+    } else {
+        dirs::home_dir()
+    }
+}
+
+pub fn login_shell_env() -> &'static [(String, String)] {
+    LOGIN_ENV.get_or_init(resolve_login_shell_env).as_slice()
+}
+
+pub fn login_shell_path() -> &'static str {
+    LOGIN_PATH.get_or_init(|| {
+        login_shell_env()
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+            .map(|(_, value)| value.clone())
+            .unwrap_or_default()
+    })
+}
+
+pub fn default_shell_command() -> ShellCommand {
+    if cfg!(windows) {
+        if !detect_path("pwsh").is_empty() {
+            return ShellCommand {
+                program: detect_path("pwsh"),
+                args: vec!["-NoLogo".to_string()],
+            };
+        }
+        if !detect_path("powershell").is_empty() {
+            return ShellCommand {
+                program: detect_path("powershell"),
+                args: vec!["-NoLogo".to_string()],
+            };
+        }
+        return ShellCommand {
+            program: std::env::var("ComSpec")
+                .unwrap_or_else(|_| "C:\\Windows\\System32\\cmd.exe".to_string()),
+            args: Vec::new(),
+        };
+    }
+
+    let fallback = if cfg!(target_os = "macos") {
+        "/bin/zsh"
+    } else {
+        "/bin/bash"
+    };
+    ShellCommand {
+        program: std::env::var("SHELL").unwrap_or_else(|_| fallback.to_string()),
+        args: vec!["-l".to_string()],
+    }
+}
+
+pub fn detect_path(binary: &str) -> String {
+    if binary.contains('\\') || binary.contains('/') {
+        let candidate = PathBuf::from(binary);
+        return if candidate.exists() {
+            candidate.to_string_lossy().into_owned()
+        } else {
+            String::new()
+        };
+    }
+
+    if cfg!(windows) {
+        return find_on_windows_path(binary, login_shell_path()).unwrap_or_default();
+    }
+
+    std::process::Command::new("which")
+        .arg(binary)
+        .env("PATH", login_shell_path())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|path| !path.is_empty())
+        .unwrap_or_default()
+}
+
+/// 在传给 `portable-pty` 前先解析命令路径。
+///
+/// Windows 上 npm 安装的 CLI 通常是 `claude.cmd`、`codex.cmd`、
+/// `openclaw.cmd` 这类 shim。并非所有 PTY 后端都会像交互式 shell 一样
+/// 完整执行 PATHEXT 搜索，所以这里尽量传入明确路径。
+pub fn resolve_spawn_program(binary: &str) -> String {
+    let detected = detect_path(binary);
+    if !detected.is_empty() {
+        return detected;
+    }
+    if cfg!(windows) && Path::new(binary).extension().is_none() {
+        for ext in [".cmd", ".exe", ".bat", ".com"] {
+            let candidate = format!("{binary}{ext}");
+            let detected = detect_path(&candidate);
+            if !detected.is_empty() {
+                return detected;
+            }
+        }
+    }
+    binary.to_string()
+}
+
+fn resolve_login_shell_env() -> Vec<(String, String)> {
+    if cfg!(windows) {
+        let mut env: Vec<(String, String)> = std::env::vars().collect();
+        if !env.iter().any(|(key, _)| key.eq_ignore_ascii_case("HOME")) {
+            if let Some(home) = home_dir() {
+                env.push(("HOME".to_string(), home.to_string_lossy().into_owned()));
+            }
+        }
+        return env;
+    }
+
+    let shell = default_shell_command();
+    let output = std::process::Command::new(&shell.program)
+        .args(&shell.args)
+        .arg("-c")
+        .arg("env")
+        .output();
+    match output {
+        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                let (key, value) = line.split_once('=')?;
+                Some((key.to_string(), value.to_string()))
+            })
+            .collect(),
+        _ => std::env::vars().collect(),
+    }
+}
+
+fn find_on_windows_path(binary: &str, path_value: &str) -> Option<String> {
+    let has_extension = Path::new(binary).extension().is_some();
+    let path_exts = if has_extension {
+        vec![String::new()]
+    } else {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string())
+            .split(';')
+            .filter(|ext| !ext.is_empty())
+            .map(|ext| ext.to_string())
+            .collect::<Vec<_>>()
+    };
+
+    for dir in path_value
+        .split(';')
+        .filter(|segment| !segment.trim().is_empty())
+    {
+        if has_extension {
+            let candidate = Path::new(dir).join(binary);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+            continue;
+        }
+        for ext in &path_exts {
+            let candidate = Path::new(dir).join(format!("{binary}{ext}"));
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
+
+    None
+}
+
+/// 用系统文件管理器打开路径。
 pub fn open_in_explorer(path: &Path) -> std::io::Result<std::process::Output> {
     #[cfg(target_os = "windows")]
     {
@@ -39,8 +225,7 @@ pub fn open_in_explorer(path: &Path) -> std::io::Result<std::process::Output> {
     }
 }
 
-/// Apply platform-specific flags to suppress console windows on Windows.
-/// No-op on other platforms.
+/// 应用平台特定参数：Windows 下隐藏子进程控制台窗口，其他平台无操作。
 #[allow(dead_code)]
 pub fn suppress_console_window(cmd: &mut std::process::Command) {
     #[cfg(windows)]
@@ -49,19 +234,19 @@ pub fn suppress_console_window(cmd: &mut std::process::Command) {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    let _ = cmd; // suppress unused warning on non-Windows
+    let _ = cmd; // 非 Windows 平台避免未使用告警
 }
 
-/// Build a PATH string that prepends the bundled Node and Git bin dirs
-/// so post-install scripts can find them.
+/// 构造 PATH：优先放入内置 Node/Git 目录，确保安装脚本能找到依赖。
 pub fn build_path(node_bin: &str, git_bin: Option<&str>) -> String {
     let sep = if cfg!(windows) { ";" } else { ":" };
     let mut parts = vec![node_bin.to_string()];
     if let Some(gb) = git_bin {
         parts.push(gb.to_string());
     }
-    if let Ok(existing) = std::env::var("PATH") {
-        parts.push(existing);
+    let existing = login_shell_path();
+    if !existing.is_empty() {
+        parts.push(existing.to_string());
     }
     parts.join(sep)
 }

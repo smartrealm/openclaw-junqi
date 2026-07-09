@@ -319,10 +319,11 @@ export default function App() {
     try { window.location.hash = '#/logs'; } catch {}
   }, []);
 
-  // If the gateway process is running but the WS handshake is slow during boot,
-  // use the cheap process status probe first. `ensureRunning()` can escalate into
-  // Docker fallback and take tens of seconds, which is too heavy for the normal
-  // non-first-launch path.
+  // During boot, separate two different failures:
+  // 1. Gateway process is running, but the WebSocket handshake is late.
+  // 2. Gateway process is not running, so WebSocket retries cannot succeed.
+  // The second case starts recovery immediately instead of waiting through
+  // handshake retry timers.
   useEffect(() => {
     if (setupComplete !== true) return;
     if (connected) {
@@ -346,7 +347,7 @@ export default function App() {
     };
     const scheduleReconnectRetries = () => {
       clearRecoveryTimers();
-      const delays = [3_000, 6_000, 10_000];
+      const delays = [1_000, 2_000, 4_000];
       bootRecoveryTimersRef.current = delays.map((delay, idx) => setTimeout(() => {
         if (cancelled || useChatStore.getState().connected) return;
         const attempt = idx + 1;
@@ -359,6 +360,44 @@ export default function App() {
           addBootRecoveryLog('Connection retries did not finish. Manual restart is available.');
         }
       }, delay));
+    };
+    const startGatewayRecovery = async (reason: string) => {
+      clearRecoveryTimers();
+      setBootRecoveryAttempt(0);
+      setBootRecoveryReady(false);
+      setBootRecoveryRestarting(true);
+      addBootRecoveryLog(`Starting Gateway recovery immediately (${reason})…`);
+      emitGatewayProgress('Starting OpenClaw Gateway…', 0.20, 'gateway.progress.starting');
+      try {
+        const result = await window.aegis?.gateway?.ensureRunning?.();
+        if (cancelled || useChatStore.getState().connected) return;
+        if (result?.healthy) {
+          addBootRecoveryLog(`Gateway healthy (${result.mode ?? 'native'}); reconnecting WebSocket`);
+          emitGatewayProgress(
+            `Gateway healthy (${result.mode ?? 'native'}), reconnecting…`,
+            0.75,
+            'gateway.progress.gatewayHealthy',
+          );
+          try { gateway.disconnect(); } catch {}
+          try { gatewayManager.reconnect(); } catch {}
+          scheduleReconnectRetries();
+          return;
+        }
+        addBootRecoveryLog(`ensure_gateway_running returned unhealthy: ${result?.error ?? 'unknown error'}`);
+        emitGatewayProgress(
+          'Gateway did not become healthy, attempting restart…',
+          0.45,
+          'gateway.progress.ensureUnhealthy',
+        );
+        await restartGatewayFromBoot();
+      } catch (err) {
+        if (cancelled || useChatStore.getState().connected) return;
+        addBootRecoveryLog(`ensure_gateway_running exception: ${String(err)}`);
+        emitGatewayProgress('Gateway recovery failed, attempting restart…', 0.45, 'gateway.progress.ensureFailed');
+        await restartGatewayFromBoot();
+      } finally {
+        if (!cancelled) setBootRecoveryRestarting(false);
+      }
     };
 
     void (async () => {
@@ -379,18 +418,20 @@ export default function App() {
           return;
         }
         addBootRecoveryLog(`Gateway status is not ready: ${status?.error ?? 'not running'}`);
+        await startGatewayRecovery(status?.error ?? 'not running');
+        return;
       } catch (err) {
         if (cancelled || useChatStore.getState().connected) return;
         addBootRecoveryLog(`Gateway status check failed: ${String(err)}`);
       }
-      scheduleReconnectRetries();
+      await startGatewayRecovery('status check failed');
     })();
 
     return () => {
       cancelled = true;
       clearRecoveryTimers();
     };
-  }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog, emitGatewayProgress]);
+  }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform

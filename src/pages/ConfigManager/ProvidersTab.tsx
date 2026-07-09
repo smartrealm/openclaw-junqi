@@ -35,7 +35,14 @@ import {
   GENERATED_IMAGE_GENERATION_MODELS,
   GENERATED_VIDEO_GENERATION_MODELS,
 } from '@/generated/mediaCatalog.generated';
-import { resolveProviderSecret, buildProviderSecretPatch, type ProviderSecretSource } from './providerSecretResolver';
+import {
+  resolveProviderSecret,
+  buildProviderSecretPatch,
+  deriveProviderApiKeyEnvKey,
+  getProviderSecretEnvKeysForRemoval,
+  isProviderSecretEnvKeyInUse,
+  type ProviderSecretSource,
+} from './providerSecretResolver';
 import {
   applyFetchedModelAdditionsToDefaults,
   buildDefaultsWithResolvedModels,
@@ -120,6 +127,24 @@ function normalizeProviderIdForCatalog(providerId: string): string {
   return normalized;
 }
 
+function normalizeProviderIdForWrite(providerId: string | undefined): string {
+  return String(providerId ?? '').trim().toLowerCase();
+}
+
+function normalizeProfileKeyForProvider(providerId: string, profileKey: string | undefined): string {
+  const provider = normalizeProviderIdForWrite(providerId) || 'custom';
+  const raw = String(profileKey ?? '').trim();
+  const suffix = raw.includes(':')
+    ? raw.split(':').slice(1).join(':').trim()
+    : raw;
+  return `${provider}:${suffix || 'main'}`;
+}
+
+function trimmedOptionalString(value: unknown): string | undefined {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || undefined;
+}
+
 function providerNamespaceMatches(modelProviderId: string, expectedProviderId: string): boolean {
   return normalizeProviderIdForCatalog(modelProviderId) === normalizeProviderIdForCatalog(expectedProviderId);
 }
@@ -133,7 +158,7 @@ function normalizeProviderModelRef(providerId: string, modelId: string | undefin
   if (!trimmed) return undefined;
   if (trimmed.startsWith(`${providerId}/`)) return trimmed;
   const head = trimmed.split('/')[0] || '';
-  if (providerNamespaceMatches(head, providerId)) return trimmed;
+  if (providerNamespaceMatches(head, providerId)) return `${providerId}/${trimmed.slice(head.length + 1)}`;
   return `${providerId}/${trimmed}`;
 }
 
@@ -163,16 +188,6 @@ function firstNonEmptyString(...values: unknown[]): string | undefined {
     if (trimmed) return trimmed;
   }
   return undefined;
-}
-
-function deriveProviderApiKeyEnvKey(providerId: string, tmpl?: ProviderTemplate): string {
-  if (tmpl?.id === 'custom' && tmpl.envKey) return tmpl.envKey;
-  const normalized = String(providerId ?? '')
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return normalized ? `${normalized}_API_KEY` : 'OPENCLAW_CUSTOM_API_KEY';
 }
 
 type GatewayModelOption = {
@@ -563,7 +578,7 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
   return result;
 }
 
-function applyProviderAddition(
+export function applyProviderAddition(
   prev: GatewayRuntimeConfig,
   profileKey: string,
   profile: AuthProfile,
@@ -571,7 +586,12 @@ function applyProviderAddition(
   providerConfig?: ProviderConfigOverride
 ): GatewayRuntimeConfig {
   const providerIdFromKey = getProviderFromProfileKey(profileKey);
-  const providerId = profile.provider || providerIdFromKey;
+  const providerId = normalizeProviderIdForWrite(profile.provider || providerIdFromKey) || 'custom';
+  const normalizedProfileKey = normalizeProfileKeyForProvider(providerId, profileKey);
+  const normalizedProfile: AuthProfile = {
+    ...profile,
+    provider: providerId,
+  };
   const tmpl = getTemplateById(providerId);
   const storeSecretInProviderConfig = !tmpl || tmpl.id === 'custom';
   const providerApiKeyEnvKey = deriveProviderApiKeyEnvKey(providerId, tmpl);
@@ -692,24 +712,29 @@ function applyProviderAddition(
     return [...updatedExistingModels, ...addedModels];
   };
 
-  const key = (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key;
+  const key = (normalizedProfile as any).token ?? (normalizedProfile as any).apiKey ?? (normalizedProfile as any).key;
   const nextProviderModels = buildNextProviderModels();
-  const effectiveBaseUrl = providerConfig?.baseUrl ?? tmpl?.baseUrl ?? currentProviderCfg.baseUrl;
-  const effectiveApi = providerConfig?.api ?? tmpl?.api ?? currentProviderCfg.api;
+  const effectiveBaseUrl = trimmedOptionalString(providerConfig?.baseUrl)
+    ?? trimmedOptionalString(tmpl?.baseUrl)
+    ?? trimmedOptionalString(currentProviderCfg.baseUrl);
+  const effectiveApi = normalizeOpenClawApiProtocol(providerConfig?.api)
+    ?? normalizeOpenClawApiProtocol(tmpl?.api)
+    ?? normalizeOpenClawApiProtocol(currentProviderCfg.api);
 
   next = buildProviderSecretPatch({
     prev: next,
     providerId,
-    profileKey,
-    profile,
+    profileKey: normalizedProfileKey,
+    profile: normalizedProfile,
     secret: key,
     template: tmpl,
+    providerEnvKey: providerApiKeyEnvKey,
     preferProviderConfig: storeSecretInProviderConfig,
   });
 
   if (key && tmpl?.envKey && !storeSecretInProviderConfig) {
     window.aegis?.agentAuth?.syncMain?.([
-      { provider: providerId, profileKey, apiKey: key, mode: profile.mode ?? (profile as any).type ?? 'api_key' },
+      { provider: providerId, profileKey: normalizedProfileKey, apiKey: key, mode: normalizedProfile.mode ?? (normalizedProfile as any).type ?? 'api_key' },
     ]);
   }
 
@@ -1191,6 +1216,10 @@ function ProfileRow({
         profile: { ...existing, ...restPatch },
         secret: key,
         template: tmpl,
+        providerEnvKey: deriveProviderApiKeyEnvKey(
+          profile.provider || getProviderFromProfileKey(profileKey),
+          tmpl,
+        ),
         preferProviderConfig: !tmpl?.envKey,
       });
 
@@ -1244,20 +1273,39 @@ function ProfileRow({
       const profiles = { ...prev.auth?.profiles };
       delete profiles[profileKey];
 
-      // 2) Remove env.vars[envKey] for this provider
-      let nextEnv = prev.env;
-      if (tmplForEnv?.envKey && prev.env?.vars) {
-        const vars = { ...prev.env.vars };
-        delete vars[tmplForEnv.envKey];
-        nextEnv = { ...prev.env, vars };
-      }
-
-      // 3) Remove models.providers[providerId]
+      // 2) Remove models.providers[providerId]
       let nextModels = prev.models;
       if (prev.models?.providers && prev.models.providers[providerId]) {
         const providers = { ...prev.models.providers };
         delete providers[providerId];
         nextModels = { ...prev.models, providers };
+      }
+
+      const withoutProvider: GatewayRuntimeConfig = {
+        ...prev,
+        auth: { ...prev.auth, profiles },
+        models: nextModels,
+      };
+
+      // 3) Remove env vars used only by this provider credential
+      let nextEnv = prev.env;
+      if (prev.env?.vars) {
+        const vars = { ...prev.env.vars };
+        const envKeys = getProviderSecretEnvKeysForRemoval({
+          config: prev,
+          providerId,
+          template: tmplForEnv,
+          providerEnvKey: deriveProviderApiKeyEnvKey(providerId, tmplForEnv),
+        });
+        for (const envKey of envKeys) {
+          const stillUsed = isProviderSecretEnvKeyInUse({
+            config: withoutProvider,
+            envKey,
+            resolveTemplate: getTemplateById,
+          });
+          if (!stillUsed) delete vars[envKey];
+        }
+        nextEnv = { ...prev.env, vars };
       }
 
       // 4) Remove from agents.defaults.models all entries for this provider
@@ -2103,7 +2151,9 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
   // - vllm template: "vllm"
   // - all others: tmpl.id
   const effectiveProviderId =
-    tmpl.id === 'custom' ? (customProviderId.trim() || 'custom') : runtimeProviderId;
+    tmpl.id === 'custom'
+      ? normalizeProviderIdForWrite(customProviderId) || 'custom'
+      : normalizeProviderIdForWrite(runtimeProviderId);
 
   const resolvedBaseUrl = baseUrl.trim() || catalogEntry?.baseUrlOverride || tmpl.baseUrl;
   const modelsToAdd = buildProviderSubmissionModelIds({
@@ -2246,11 +2296,11 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
       : modelsToAdd.length > 0
   );
   const submission = canSubmit ? {
-    profileKey: profileName,
+    profileKey: normalizeProfileKeyForProvider(effectiveProviderId, profileName),
     profile: {
       provider: effectiveProviderId,
       mode: authMode,
-      ...(authModeNeedsApiKey(authMode) && apiKey.trim() ? { apiKey } : {}),
+      ...(authModeNeedsApiKey(authMode) && apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
     } satisfies AuthProfile,
     providerConfig: (
       isCustomLike ||
@@ -2505,8 +2555,9 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
           <input
             value={customProviderId}
             onChange={(e) => {
+              const nextProviderId = normalizeProviderIdForWrite(e.target.value) || 'custom';
               setCustomProviderId(e.target.value);
-              setProfileName(`${e.target.value.trim() || 'custom'}:main`);
+              setProfileName(`${nextProviderId}:main`);
             }}
             placeholder={t('config.providerIdPlaceholder')}
             className={clsx(

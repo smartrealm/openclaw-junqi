@@ -15,15 +15,17 @@ export type SetupStep =
   | "error";
 
 type InstallMode = "native" | "docker";
+export type SetupLog = { source: "setup" | "gateway"; message: string; ts: number };
 
 interface AppState {
-  setupComplete: boolean | null; // null = detecting
+  setupComplete: boolean | null; // null = 尚未完成首次向导判定
   setupStep: SetupStep;
   setupError: string | null;
   setupStatusMessage: string;
   setupProgress: number;
   installMode: InstallMode;
   gatewayRunning: boolean;
+  setupLogs: SetupLog[];
 
   setSetupComplete: (v: boolean | null) => void;
   setSetupStep: (step: SetupStep) => void;
@@ -31,15 +33,17 @@ interface AppState {
   setSetupStatus: (message: string, progress?: number) => void;
   setInstallMode: (mode: InstallMode) => void;
   setGatewayRunning: (v: boolean) => void;
+  appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
+  clearSetupLogs: () => void;
 }
 
 const savedMode = (localStorage.getItem("junqi-install-mode") as InstallMode) || "native";
-const setupPreviouslyDone = localStorage.getItem("junqi-setup-done") === "1";
+const SETUP_DONE_MARKER = "3";
+const setupPreviouslyDone = localStorage.getItem("junqi-setup-done") === SETUP_DONE_MARKER;
 
 export const useAppStore = create<AppState>((set) => ({
-  // First install starts with brand/language/theme selection. Once the guided
-  // setup has completed, future launches enter the workspace directly; the
-  // workspace Gateway manager owns runtime health checks from that point on.
+  // 首次安装从品牌/语言/主题选择开始；只有用户明确进入工作台后，
+  // 后续启动才跳过向导，运行时健康检查交给工作台 Gateway 管理。
   setupComplete: setupPreviouslyDone ? true : null,
   setupStep: (setupPreviouslyDone ? "ready" : "welcome") as SetupStep,
   setupError: null,
@@ -47,10 +51,11 @@ export const useAppStore = create<AppState>((set) => ({
   setupProgress: 0,
   installMode: savedMode,
   gatewayRunning: false,
+  setupLogs: [],
 
   setSetupComplete: (v) => {
     if (v === true) {
-      localStorage.setItem("junqi-setup-done", "1");
+      localStorage.setItem("junqi-setup-done", SETUP_DONE_MARKER);
     } else if (v === false) {
       localStorage.removeItem("junqi-setup-done");
     }
@@ -67,4 +72,8 @@ export const useAppStore = create<AppState>((set) => ({
     set({ installMode: mode });
   },
   setGatewayRunning: (v) => set({ gatewayRunning: v }),
+  appendSetupLog: (log) => set((s) => ({
+    setupLogs: [...s.setupLogs.slice(-219), { ...log, ts: log.ts ?? Date.now() }],
+  })),
+  clearSetupLogs: () => set({ setupLogs: [] }),
 }));

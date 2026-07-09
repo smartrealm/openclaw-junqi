@@ -19,6 +19,14 @@ export interface PetCharacterPalette {
   groundShadowOpacity: number;
 }
 
+export interface PetAccentPalette {
+  primary: string;
+  secondary: string;
+  warm: string;
+  success: string;
+  warning: string;
+}
+
 const DARK_THEMES = new Set<string>(['aegis-dark', 'aegis-midnight']);
 const LIGHT_THEMES = new Set<string>(['aegis-light', 'aegis-eyecare']);
 
@@ -60,6 +68,44 @@ export function resolvePetTextPalette(themeName: PetThemeName): PetTextPalette {
   }
 }
 
+export function resolvePetAccentPalette(themeName: PetThemeName): PetAccentPalette {
+  switch (themeName) {
+    case 'aegis-light':
+      return {
+        primary: '#ef6f5e',
+        secondary: '#c96842',
+        warm: '#d97706',
+        success: '#16825d',
+        warning: '#b45309',
+      };
+    case 'aegis-eyecare':
+      return {
+        primary: '#c96842',
+        secondary: '#9d6a42',
+        warm: '#9a5a1f',
+        success: '#3d7c59',
+        warning: '#8a5a12',
+      };
+    case 'aegis-midnight':
+      return {
+        primary: '#f26f62',
+        secondary: '#ff9a72',
+        warm: '#f6c177',
+        success: '#9bd88f',
+        warning: '#e8b066',
+      };
+    case 'aegis-dark':
+    default:
+      return {
+        primary: '#ff836f',
+        secondary: '#ffad83',
+        warm: '#f6c177',
+        success: '#8bd98b',
+        warning: '#f0b45d',
+      };
+  }
+}
+
 const BODY_BY_THEME: Record<PetThemeName, Record<PetSkin, string>> = {
   'aegis-light': {
     robot: '#5d7cff',
@@ -67,6 +113,7 @@ const BODY_BY_THEME: Record<PetThemeName, Record<PetSkin, string>> = {
     cat: '#8b6ff6',
     jellyfish: '#23a6c8',
     ghost: '#8da2c7',
+    'blue-mascot': '#38bdf8',
   },
   'aegis-dark': {
     robot: '#8fa2ff',
@@ -74,6 +121,7 @@ const BODY_BY_THEME: Record<PetThemeName, Record<PetSkin, string>> = {
     cat: '#b49cff',
     jellyfish: '#73e6ff',
     ghost: '#c9d5e8',
+    'blue-mascot': '#7dd3fc',
   },
   'aegis-midnight': {
     robot: '#7f92ee',
@@ -81,6 +129,7 @@ const BODY_BY_THEME: Record<PetThemeName, Record<PetSkin, string>> = {
     cat: '#9d86ee',
     jellyfish: '#73e6ff',
     ghost: '#aebbd0',
+    'blue-mascot': '#67e8f9',
   },
   'aegis-eyecare': {
     robot: '#7d6bca',
@@ -88,6 +137,7 @@ const BODY_BY_THEME: Record<PetThemeName, Record<PetSkin, string>> = {
     cat: '#9d6a42',
     jellyfish: '#4f9d91',
     ghost: '#c7b891',
+    'blue-mascot': '#4f9dba',
   },
 };
 

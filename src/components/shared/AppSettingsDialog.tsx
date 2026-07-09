@@ -24,7 +24,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
 import { notifications } from '@/services/notifications';
-import { SKIN_REGISTRY, type PetSkin } from '@/pet/skins';
+import { PET_SKIN_OPTIONS } from '@/pet/skins';
 import { SkinPreview } from '@/pet/SkinPreview';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { changeLanguage } from '@/i18n';
@@ -321,8 +321,6 @@ function PetPanel() {
   const { enabled:petEnabled,setEnabled:setPetEnabled,skin:petSkin,setSkin:setPetSkin,customAsset:petCustomAsset,setCustomAsset:setPetCustomAsset,pomodoro:petPomodoro,setPomodoro:setPetPomodoro,petVisible,setPetVisible } = usePetStore();
   const [uploadErr,setUploadErr]=useState<string|null>(null);
   const [now,setNow]=useState(Date.now());
-  const skins=['lobster','robot','cat','jellyfish','ghost'] as PetSkin[];
-  const names:Record<PetSkin,string>={lobster:'龙虾',robot:'机器人',cat:'猫咪',jellyfish:'水母',ghost:'幽灵'};
   useEffect(()=>{if(!petPomodoro.running||petPomodoro.paused)return;const id=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(id);},[petPomodoro.running,petPomodoro.paused]);
   return (
     <div className="p-6">
@@ -333,7 +331,7 @@ function PetPanel() {
         <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{petVisible?t('pet.settings.hidePet'):t('pet.settings.showPet')}</div></div>
           <button disabled={!petEnabled} onClick={()=>invoke(petVisible?'close_pet_window':'open_pet_window').catch(()=>undefined)}
             className={clsx('text-[12px] px-3 py-1.5 rounded-xl border transition-colors',petEnabled?'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10':'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed')}>{petVisible?t('pet.settings.hide'):t('pet.settings.show')}</button></div>
-        <div><div className="text-[13px] text-aegis-text mb-2">{t('pet.settings.skin')}</div><div className="grid grid-cols-5 gap-2">{skins.map(s=><button key={s} onClick={()=>setPetSkin(s)} aria-pressed={petSkin===s} className={clsx('flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors',petSkin===s?'border-aegis-primary/60 bg-aegis-primary/10':'border-aegis-border/20 hover:border-aegis-border/50')}><SkinPreview skin={s} size={44}/><span className={clsx('text-[11px] leading-none',petSkin===s?'text-aegis-text':'text-aegis-text-dim')}>{t(`pet.settings.${s}`,names[s])}</span></button>)}</div></div>
+        <div><div className="text-[13px] text-aegis-text mb-2">{t('pet.settings.skin')}</div><div className="grid grid-cols-3 sm:grid-cols-6 gap-2">{PET_SKIN_OPTIONS.map(({id,label})=><button key={id} onClick={()=>setPetSkin(id)} aria-pressed={petSkin===id} className={clsx('flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors',petSkin===id?'border-aegis-primary/60 bg-aegis-primary/10':'border-aegis-border/20 hover:border-aegis-border/50')}><SkinPreview skin={id} size={44}/><span className={clsx('text-[11px] leading-none',petSkin===id?'text-aegis-text':'text-aegis-text-dim')}>{t(`pet.settings.${id}`,label)}</span></button>)}</div></div>
         <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{t('pet.settings.custom')}</div></div>
           <div className="flex gap-2">
             <button onClick={async()=>{setUploadErr(null);try{const s=await openDialog({multiple:false,filters:[{name:'Image',extensions:['png','jpg','jpeg','gif','webp']}]});if(s&&!Array.isArray(s)){const url=await invoke<string>('save_pet_asset',{srcPath:s});setPetCustomAsset(url);}}catch(e){setUploadErr(e instanceof Error?e.message:String(e));}}}

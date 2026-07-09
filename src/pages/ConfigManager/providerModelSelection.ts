@@ -4,9 +4,12 @@ export function buildProviderSubmissionModelIds(params: {
   customModelIds: string[];
   extraModelIds: string[];
 }): string[] {
-  const normalizedSelected = params.selectedModels.filter((id) => id.trim());
-  const normalizedCustom = params.customModelIds.filter((id) => id.trim());
-  const normalizedExtra = params.extraModelIds.filter((id) => id.trim());
+  const normalize = (ids: string[]) => ids
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const normalizedSelected = normalize(params.selectedModels);
+  const normalizedCustom = normalize(params.customModelIds);
+  const normalizedExtra = normalize(params.extraModelIds);
 
   if (params.isCustomLike) {
     return Array.from(new Set([
