@@ -50,8 +50,9 @@ jobs:
       fail-fast: false              # keep all platforms building even if one fails
       matrix:
         include:
-          # macOS — universal (both arm64 and x86_64 in one .app/.dmg)
-          - platform: macos-latest
+          # macOS — universal (both arm64 and x86_64 in one .app/.dmg).
+          # Pin the image to avoid macos-latest migration drift.
+          - platform: macos-15
             os: 'macos'
             arch: 'universal'
             target: 'universal-apple-darwin'
