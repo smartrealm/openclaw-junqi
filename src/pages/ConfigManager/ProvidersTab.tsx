@@ -149,6 +149,15 @@ function providerNamespaceMatches(modelProviderId: string, expectedProviderId: s
   return normalizeProviderIdForCatalog(modelProviderId) === normalizeProviderIdForCatalog(expectedProviderId);
 }
 
+function findProviderConfigKey(
+  providers: Record<string, ModelProviderConfig> | undefined,
+  providerId: string,
+): string | undefined {
+  if (!providers) return undefined;
+  if (providers[providerId]) return providerId;
+  return Object.keys(providers).find((key) => providerNamespaceMatches(key, providerId));
+}
+
 function getGeneratedCatalogRows(providerId: string) {
   return GENERATED_PROVIDER_CATALOG[normalizeProviderIdForCatalog(providerId)] ?? [];
 }
@@ -625,7 +634,10 @@ export function applyProviderAddition(
 
   const prevModels = prev.agents?.defaults?.models ?? {};
   const generatedRows = getGeneratedCatalogRows(providerId);
-  const currentProviderCfg = prev.models?.providers?.[providerId] ?? {};
+  const currentProviderKey = findProviderConfigKey(prev.models?.providers, providerId);
+  const currentProviderCfg = currentProviderKey
+    ? prev.models?.providers?.[currentProviderKey] ?? {}
+    : {};
   const existingProviderModels = Array.isArray(currentProviderCfg.models)
     ? currentProviderCfg.models
     : [];
@@ -740,12 +752,16 @@ export function applyProviderAddition(
 
   if (storeSecretInProviderConfig) {
     const providerApiKeyRef = key ? `\${${providerApiKeyEnvKey}}` : currentProviderCfg.apiKey;
+    const providers = { ...(next.models?.providers ?? {}) };
+    if (currentProviderKey && currentProviderKey !== providerId) {
+      delete providers[currentProviderKey];
+    }
     next = {
       ...next,
       models: {
         ...next.models,
         providers: {
-          ...(next.models?.providers ?? {}),
+          ...providers,
           [providerId]: {
             ...currentProviderCfg,
             ...(providerApiKeyRef ? { apiKey: providerApiKeyRef } : {}),
@@ -757,12 +773,16 @@ export function applyProviderAddition(
       },
     };
   } else if (normalizedModels.length > 0 || effectiveBaseUrl || effectiveApi) {
+    const providers = { ...(next.models?.providers ?? {}) };
+    if (currentProviderKey && currentProviderKey !== providerId) {
+      delete providers[currentProviderKey];
+    }
     next = {
       ...next,
       models: {
         ...next.models,
         providers: {
-          ...(next.models?.providers ?? {}),
+          ...providers,
           [providerId]: {
             ...currentProviderCfg,
             baseUrl: effectiveBaseUrl,
@@ -811,6 +831,84 @@ export function applyProviderAddition(
     agents: {
       ...next.agents,
       defaults: nextDefaults,
+    },
+  };
+}
+
+export function applyProviderRemoval(
+  prev: GatewayRuntimeConfig,
+  providerIdRaw: string,
+  profileKey?: string,
+): GatewayRuntimeConfig {
+  const providerId = normalizeProviderIdForWrite(providerIdRaw) || getProviderFromProfileKey(profileKey ?? providerIdRaw);
+  const tmplForEnv = getTemplateById(providerId);
+
+  const profiles = { ...(prev.auth?.profiles ?? {}) };
+  if (profileKey) {
+    delete profiles[profileKey];
+  }
+  const hasRemainingProfileForProvider = Object.entries(profiles).some(([key, profile]) => {
+    const profileProvider = (profile as AuthProfile).provider || getProviderFromProfileKey(key);
+    return providerNamespaceMatches(profileProvider, providerId);
+  });
+  const shouldRemoveProviderResources = !profileKey || !hasRemainingProfileForProvider;
+
+  const providers = { ...(prev.models?.providers ?? {}) };
+  if (shouldRemoveProviderResources) {
+    for (const key of Object.keys(providers)) {
+      if (providerNamespaceMatches(key, providerId)) {
+        delete providers[key];
+      }
+    }
+  }
+
+  const withoutProvider: GatewayRuntimeConfig = {
+    ...prev,
+    auth: { ...prev.auth, profiles },
+    models: { ...prev.models, providers },
+  };
+
+  let nextEnv = prev.env;
+  if (shouldRemoveProviderResources && prev.env?.vars) {
+    const vars = { ...prev.env.vars };
+    const envKeys = getProviderSecretEnvKeysForRemoval({
+      config: prev,
+      providerId,
+      template: tmplForEnv,
+      providerEnvKey: deriveProviderApiKeyEnvKey(providerId, tmplForEnv),
+    });
+    for (const envKey of envKeys) {
+      const stillUsed = isProviderSecretEnvKeyInUse({
+        config: withoutProvider,
+        envKey,
+        resolveTemplate: getTemplateById,
+      });
+      if (!stillUsed) delete vars[envKey];
+    }
+    nextEnv = { ...prev.env, vars };
+  }
+
+  const existingModels = prev.agents?.defaults?.models ?? {};
+  const nextDefaultsModels = { ...existingModels };
+  if (shouldRemoveProviderResources) {
+    for (const id of Object.keys(existingModels)) {
+      if (providerNamespaceMatches(getProviderFromModelId(id), providerId)) {
+        delete nextDefaultsModels[id];
+      }
+    }
+  }
+
+  return {
+    ...prev,
+    auth: { ...prev.auth, profiles },
+    env: nextEnv,
+    models: { ...prev.models, providers },
+    agents: {
+      ...prev.agents,
+      defaults: buildDefaultsWithResolvedModels({
+        defaults: prev.agents?.defaults,
+        models: nextDefaultsModels,
+      }),
     },
   };
 }
@@ -1243,17 +1341,24 @@ function ProfileRow({
   const updateProviderConnection = (patch: Partial<ModelProviderConfig>) => {
     onChange((prev) => {
       const providerKey = profile.provider || getProviderFromProfileKey(profileKey);
-      const currentProviderCfg = prev.models?.providers?.[providerKey] ?? {};
+      const existingProviderKey = findProviderConfigKey(prev.models?.providers, providerKey);
+      const currentProviderCfg = existingProviderKey
+        ? prev.models?.providers?.[existingProviderKey] ?? {}
+        : {};
       const nextPatch = { ...patch };
       if (nextPatch.api) {
         nextPatch.api = normalizeOpenClawApiProtocol(nextPatch.api) ?? currentProviderCfg.api ?? tmpl?.api;
+      }
+      const providers = { ...(prev.models?.providers ?? {}) };
+      if (existingProviderKey && existingProviderKey !== providerKey) {
+        delete providers[existingProviderKey];
       }
       return {
         ...prev,
         models: {
           ...prev.models,
           providers: {
-            ...(prev.models?.providers ?? {}),
+            ...providers,
             [providerKey]: {
               ...currentProviderCfg,
               ...nextPatch,
@@ -1265,71 +1370,7 @@ function ProfileRow({
   };
 
   const removeProfile = () => {
-    onChange((prev) => {
-      const providerId = profile.provider || getProviderFromProfileKey(profileKey);
-      const tmplForEnv = getTemplateById(providerId);
-
-      // 1) Remove auth profile
-      const profiles = { ...prev.auth?.profiles };
-      delete profiles[profileKey];
-
-      // 2) Remove models.providers[providerId]
-      let nextModels = prev.models;
-      if (prev.models?.providers && prev.models.providers[providerId]) {
-        const providers = { ...prev.models.providers };
-        delete providers[providerId];
-        nextModels = { ...prev.models, providers };
-      }
-
-      const withoutProvider: GatewayRuntimeConfig = {
-        ...prev,
-        auth: { ...prev.auth, profiles },
-        models: nextModels,
-      };
-
-      // 3) Remove env vars used only by this provider credential
-      let nextEnv = prev.env;
-      if (prev.env?.vars) {
-        const vars = { ...prev.env.vars };
-        const envKeys = getProviderSecretEnvKeysForRemoval({
-          config: prev,
-          providerId,
-          template: tmplForEnv,
-          providerEnvKey: deriveProviderApiKeyEnvKey(providerId, tmplForEnv),
-        });
-        for (const envKey of envKeys) {
-          const stillUsed = isProviderSecretEnvKeyInUse({
-            config: withoutProvider,
-            envKey,
-            resolveTemplate: getTemplateById,
-          });
-          if (!stillUsed) delete vars[envKey];
-        }
-        nextEnv = { ...prev.env, vars };
-      }
-
-      // 4) Remove from agents.defaults.models all entries for this provider
-      const existingModels = prev.agents?.defaults?.models ?? {};
-      const modelsToRemove = Object.keys(existingModels).filter(
-        (id) => providerNamespaceMatches(getProviderFromModelId(id), providerId)
-      );
-      const nextDefaultsModels = { ...existingModels };
-      for (const id of modelsToRemove) delete nextDefaultsModels[id];
-
-      return {
-        ...prev,
-        auth: { ...prev.auth, profiles },
-        env: nextEnv,
-        models: nextModels,
-        agents: {
-          ...prev.agents,
-          defaults: buildDefaultsWithResolvedModels({
-            defaults: prev.agents?.defaults,
-            models: nextDefaultsModels,
-          }),
-        },
-      };
-    });
+    onChange((prev) => applyProviderRemoval(prev, profile.provider || getProviderFromProfileKey(profileKey), profileKey));
   };
 
   const setModelPrimary = (modelId: string) => {
@@ -1620,45 +1661,33 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
   useEffect(() => { setLocalApi(modelsProvider?.api ?? template?.api ?? ''); }, [modelsProvider?.api, template?.api]);
 
   const updateModelsProvider = (patch: Partial<ModelProviderConfig>) => {
-    onChange((prev) => ({
-      ...prev,
-      models: {
-        ...prev.models,
-        providers: {
-          ...prev.models?.providers,
-          [provider]: {
-            ...prev.models?.providers?.[provider],
-            ...patch,
-          },
-        },
-      },
-    }));
-  };
-
-  const removeModelsProvider = () => {
     onChange((prev) => {
-      const providers = { ...prev.models?.providers };
-      delete providers[provider];
-
-      const existingModels = prev.agents?.defaults?.models ?? {};
-      const modelsToRemove = Object.keys(existingModels).filter(
-        (id) => providerNamespaceMatches(getProviderFromModelId(id), provider)
-      );
-      const nextDefaultsModels = { ...existingModels };
-      for (const id of modelsToRemove) delete nextDefaultsModels[id];
-
+      const existingProviderKey = findProviderConfigKey(prev.models?.providers, provider);
+      const currentProviderCfg = existingProviderKey
+        ? prev.models?.providers?.[existingProviderKey] ?? {}
+        : {};
+      const providers = { ...(prev.models?.providers ?? {}) };
+      if (existingProviderKey && existingProviderKey !== provider) {
+        delete providers[existingProviderKey];
+      }
       return {
         ...prev,
-        models: { ...prev.models, providers },
-        agents: {
-          ...prev.agents,
-          defaults: buildDefaultsWithResolvedModels({
-            defaults: prev.agents?.defaults,
-            models: nextDefaultsModels,
-          }),
+        models: {
+          ...prev.models,
+          providers: {
+            ...providers,
+            [provider]: {
+              ...currentProviderCfg,
+              ...patch,
+            },
+          },
         },
       };
     });
+  };
+
+  const removeModelsProvider = () => {
+    onChange((prev) => applyProviderRemoval(prev, provider));
   };
 
   const envKeyName = template?.envKey;

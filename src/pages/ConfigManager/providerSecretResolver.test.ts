@@ -132,6 +132,31 @@ test('resolveProviderSecret treats provider-level raw apiKey as configured for a
   assert.equal(secret.value, 'raw-provider-key');
 });
 
+test('resolveProviderSecret reads provider apiKey despite provider key case drift', () => {
+  const secret = resolveProviderSecret(
+    {
+      models: {
+        providers: {
+          'Provider-Gamma': {
+            apiKey: '${PROVIDER_GAMMA_API_KEY}',
+          },
+        },
+      },
+      env: {
+        vars: {
+          PROVIDER_GAMMA_API_KEY: 'drift-secret',
+        },
+      },
+    } as any,
+    'provider-gamma',
+  );
+
+  assert.equal(secret.configured, true);
+  assert.equal(secret.source, 'provider-apiKey-env-ref');
+  assert.equal(secret.envKey, 'PROVIDER_GAMMA_API_KEY');
+  assert.equal(secret.value, 'drift-secret');
+});
+
 test('resolveProviderSecret reports none only when no supported credential source exists', () => {
   const secret = resolveProviderSecret(
     {
@@ -253,6 +278,23 @@ test('getProviderSecretEnvKeysForRemoval includes provider apiKey env refs and e
   });
 
   assert.deepEqual(keys, ['MY_VLLM_API_KEY']);
+});
+
+test('getProviderSecretEnvKeysForRemoval reads env refs from case-drifted provider keys', () => {
+  const keys = getProviderSecretEnvKeysForRemoval({
+    config: {
+      models: {
+        providers: {
+          'My-VLLM': {
+            apiKey: '${CUSTOM_VLLM_SECRET}',
+          },
+        },
+      },
+    } as any,
+    providerId: 'my-vllm',
+  });
+
+  assert.deepEqual(keys, ['CUSTOM_VLLM_SECRET']);
 });
 
 test('getProviderSecretEnvKeysForRemoval includes template primary and alternate env keys', () => {

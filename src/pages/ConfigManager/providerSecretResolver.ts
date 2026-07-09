@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
-// ProviderSecretResolver — unified provider secret read/write/preserve layer
-// for openclaw.json. Centralizes all secret-source rules.
+// ProviderSecretResolver — openclaw.json 供应商凭据读写/保留的统一层。
+// 所有凭据来源规则都集中在这里，避免各 UI 分支各自判断。
 // ═══════════════════════════════════════════════════════════
 
 import type { GatewayRuntimeConfig, AuthProfile } from './types';
@@ -35,6 +35,18 @@ export interface ResolvedProviderSecret {
 }
 
 const ENV_REF_RE = /^\$\{([^}]+)\}$/;
+
+function normalizeProviderIdForCompare(providerId: string): string {
+  const normalized = String(providerId ?? '').trim().toLowerCase();
+  if (normalized === 'modelstudio' || normalized === 'qwencloud' || normalized === 'qwen-dashscope') return 'qwen';
+  if (normalized === 'kimi-coding' || normalized === 'kimi-code' || normalized === 'kimi') return 'kimi-coding';
+  if (normalized === 'z.ai' || normalized === 'z-ai') return 'zai';
+  return normalized;
+}
+
+function providerIdsMatch(left: string, right: string): boolean {
+  return normalizeProviderIdForCompare(left) === normalizeProviderIdForCompare(right);
+}
 
 export function extractEnvRefKey(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -78,7 +90,10 @@ function readProfileSecret(profile: Record<string, any> | undefined): ResolvedPr
 }
 
 function readProviderConfigSecret(config: GatewayRuntimeConfig, providerId: string): ResolvedProviderSecret | null {
-  const providerCfg = config.models?.providers?.[providerId] as Record<string, any> | undefined;
+  const providerEntry = Object.entries(config.models?.providers ?? {}).find(([key]) =>
+    providerIdsMatch(key, providerId)
+  );
+  const providerCfg = providerEntry?.[1] as Record<string, any> | undefined;
   if (providerCfg?.apiKey && typeof providerCfg.apiKey === 'object') {
     return { configured: true, source: 'provider-apiKey-secret-ref', providerId };
   }
@@ -226,7 +241,11 @@ export function getProviderSecretEnvKeysForRemoval(params: {
   add(params.template?.envKey);
   for (const key of params.template?.envKeyAlt ?? []) add(key);
   add(params.providerEnvKey);
-  add(extractEnvRefKey((params.config.models?.providers?.[params.providerId] as any)?.apiKey));
+  for (const [providerId, providerConfig] of Object.entries(params.config.models?.providers ?? {})) {
+    if (providerIdsMatch(providerId, params.providerId)) {
+      add(extractEnvRefKey((providerConfig as any)?.apiKey));
+    }
+  }
 
   return [...keys];
 }
