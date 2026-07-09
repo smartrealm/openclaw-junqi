@@ -4,7 +4,7 @@
 // Design: theme Tailwind classes only (no hardcoded colors)
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, AlertCircle, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film } from 'lucide-react';
 import clsx from 'clsx';
@@ -748,6 +748,125 @@ function ProviderIcon({ providerId, size = 'md' }: { providerId: string; size?: 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ProviderCardShell — one consistent frame for all three provider sources.
+// Renders the summary header (icon · name · type badge · subtitle · model count
+// · semantic status dot · chevron/action) plus a collapsible body. This is what
+// makes every provider read the same in the list regardless of whether it came
+// from auth.profiles, models.providers, or env.vars — the per-source editor
+// still lives in each row's `children`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Semantic provider status: ready (key configured) / needs a key / custom or
+ *  runtime-supplied. Drives the dot, the type badge, and the open-accent. */
+type ProviderStatusTone = 'ok' | 'warn' | 'info';
+
+const PROVIDER_STATUS_DOT: Record<ProviderStatusTone, string> = {
+  ok:   'bg-emerald-400 shadow-[0_0_6px_rgb(var(--aegis-success)/0.5)]',
+  warn: 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.5)]',
+  info: 'bg-blue-400 shadow-[0_0_6px_rgba(96,165,250,0.5)]',
+};
+const PROVIDER_ACCENT_BORDER: Record<ProviderStatusTone, string> = {
+  ok:   'border-aegis-primary/20',
+  warn: 'border-amber-500/25',
+  info: 'border-blue-500/20',
+};
+const PROVIDER_BADGE_CLS: Record<ProviderStatusTone, string> = {
+  ok:   'bg-aegis-success/12 text-aegis-success border-aegis-success/25',
+  warn: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
+  info: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+};
+
+interface ProviderCardShellProps {
+  providerId: string;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  /** Small type chip next to the title (e.g. "Custom", "ENV Key Only"). */
+  badge?: { label: ReactNode; tone: ProviderStatusTone };
+  statusTone: ProviderStatusTone;
+  /** Tooltip on the status dot, e.g. "API Key configured". */
+  statusLabel?: string;
+  modelCount: number;
+  /** Expandable cards show a chevron and body; env-only cards don't. */
+  expandable?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
+  /** Inline action rendered on the right (e.g. env-only "Configure"). */
+  rightAction?: ReactNode;
+  children?: ReactNode;
+}
+
+function ProviderCardShell({
+  providerId, title, subtitle, badge, statusTone, statusLabel,
+  modelCount, expandable = true, open = false, onToggle, rightAction, children,
+}: ProviderCardShellProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="mb-2">
+      {/* ── Summary header ── */}
+      <div
+        onClick={expandable ? onToggle : undefined}
+        className={clsx(
+          'flex items-center justify-between px-3.5 py-3',
+          'bg-aegis-elevated border border-aegis-border rounded-xl',
+          'transition-all duration-200',
+          expandable && 'cursor-pointer hover:border-aegis-border-hover hover:bg-white/[0.02]',
+          open && clsx('rounded-b-none', PROVIDER_ACCENT_BORDER[statusTone]),
+        )}
+      >
+        {/* left */}
+        <div className="flex items-center gap-3 min-w-0">
+          <ProviderIcon providerId={providerId} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm text-aegis-text truncate">{title}</span>
+              {badge && (
+                <span className={clsx(
+                  'text-[10px] font-semibold px-1.5 py-0.5 rounded-full border flex-shrink-0',
+                  PROVIDER_BADGE_CLS[badge.tone],
+                )}>
+                  {badge.label}
+                </span>
+              )}
+            </div>
+            {subtitle && <div className="text-[11px] text-aegis-text-muted truncate">{subtitle}</div>}
+          </div>
+        </div>
+
+        {/* right */}
+        <div className="flex items-center gap-2.5 flex-shrink-0">
+          {modelCount > 0 && (
+            <span className="text-[11px] text-aegis-text-muted bg-aegis-surface border border-aegis-border rounded-full px-2.5 py-0.5">
+              {t('config.modelCount', { count: modelCount })}
+            </span>
+          )}
+          <span className={clsx('w-2 h-2 rounded-full', PROVIDER_STATUS_DOT[statusTone])} title={statusLabel} />
+          {rightAction}
+          {expandable && (
+            <ChevronRight
+              size={14}
+              className={clsx(
+                'text-aegis-text-muted transition-transform duration-200',
+                open && 'rotate-90',
+              )}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* ── Expanded body ── */}
+      {expandable && open && (
+        <div className={clsx(
+          'border border-t-0 rounded-b-xl bg-white/[0.01] p-4 space-y-4',
+          PROVIDER_ACCENT_BORDER[statusTone],
+        )}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Profile Row (auth source, expandable)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1052,53 +1171,16 @@ function ProfileRow({
 
 
   return (
-    <div className="mb-2">
-      {/* ── Row header ── */}
-      <div
-        onClick={() => setOpen((o) => !o)}
-        className={clsx(
-          'flex items-center justify-between px-3.5 py-3',
-          'bg-aegis-elevated border border-aegis-border rounded-xl',
-          'cursor-pointer transition-all duration-200',
-          'hover:border-aegis-border-hover hover:bg-white/[0.02]',
-          open && 'rounded-b-none border-aegis-primary/20'
-        )}
-      >
-        {/* left */}
-        <div className="flex items-center gap-3 min-w-0">
-          <ProviderIcon providerId={providerId} />
-          <div className="min-w-0">
-            <div className="font-semibold text-sm text-aegis-text truncate">
-              {tmpl?.name ?? providerId}
-            </div>
-            <div className="text-[11px] text-aegis-text-muted font-mono truncate">{profileKey}</div>
-          </div>
-        </div>
-
-        {/* right */}
-        <div className="flex items-center gap-2.5 flex-shrink-0">
-          <span className="text-[11px] text-aegis-text-muted bg-aegis-surface border border-aegis-border rounded-full px-2.5 py-0.5">
-            {t('config.modelCount', { count: modelCount })}
-          </span>
-          <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgb(var(--aegis-success)/0.5)]" />
-          <ChevronRight
-            size={14}
-            className={clsx(
-              'text-aegis-text-muted transition-transform duration-200',
-              open && 'rotate-90'
-            )}
-          />
-        </div>
-      </div>
-
-      {/* ── Expanded detail ── */}
-      {open && (
-        <div
-          className={clsx(
-            'border border-aegis-primary/20 border-t-0',
-            'rounded-b-xl bg-white/[0.01] p-4 space-y-4'
-          )}
-        >
+    <ProviderCardShell
+      providerId={providerId}
+      title={tmpl?.name ?? providerId}
+      subtitle={<span className="font-mono">{profileKey}</span>}
+      statusTone={hasStoredSecret ? 'ok' : 'warn'}
+      statusLabel={hasStoredSecret ? t('config.apiKeyConfigured', 'API Key configured') : t('config.apiKeyPlaceholder', '输入 API Key')}
+      modelCount={modelCount}
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+    >
           {/* Profile name + Auth mode */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
@@ -1233,9 +1315,7 @@ function ProfileRow({
               <Trash2 size={12} />{t('config.remove')}
             </button>
           </div>
-        </div>
-      )}
-    </div>
+    </ProviderCardShell>
   );
 }
 
@@ -1303,64 +1383,17 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
   const envKeyName = template?.envKey;
 
   return (
-    <div className="mb-2">
-      {/* ── Row header ── */}
-      <div
-        onClick={() => setOpen((o) => !o)}
-        className={clsx(
-          'flex items-center justify-between px-3.5 py-3',
-          'bg-aegis-elevated border border-aegis-border rounded-xl',
-          'cursor-pointer transition-all duration-200',
-          'hover:border-aegis-border-hover hover:bg-white/[0.02]',
-          open && 'rounded-b-none border-blue-500/20'
-        )}
-      >
-        {/* left */}
-        <div className="flex items-center gap-3 min-w-0">
-          <ProviderIcon providerId={provider} />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-sm text-aegis-text">
-                {template?.name ?? provider}
-              </span>
-              <span
-                className={clsx(
-                  'text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0',
-                  'bg-blue-500/15 text-blue-400 border border-blue-500/25'
-                )}
-              >
-                ⚡ {t('config.customProvider', 'Custom Provider')}
-              </span>
-            </div>
-            <div className="text-[11px] text-aegis-text-muted font-mono truncate">
-              {modelsProvider?.baseUrl ?? provider}
-            </div>
-          </div>
-        </div>
-
-        {/* right */}
-        <div className="flex items-center gap-2.5 flex-shrink-0">
-          <span className="text-[11px] text-aegis-text-muted bg-aegis-surface border border-aegis-border rounded-full px-2.5 py-0.5">
-            {t('config.modelCount', { count: modelCount })}
-          </span>
-          <ChevronRight
-            size={14}
-            className={clsx(
-              'text-aegis-text-muted transition-transform duration-200',
-              open && 'rotate-90'
-            )}
-          />
-        </div>
-      </div>
-
-      {/* ── Expanded detail ── */}
-      {open && (
-        <div
-          className={clsx(
-            'border border-blue-500/20 border-t-0',
-            'rounded-b-xl bg-white/[0.01] p-4 space-y-4'
-          )}
-        >
+    <ProviderCardShell
+      providerId={provider}
+      title={template?.name ?? provider}
+      subtitle={<span className="font-mono">{modelsProvider?.baseUrl ?? provider}</span>}
+      badge={{ label: <>⚡ {t('config.customProvider', 'Custom Provider')}</>, tone: 'info' }}
+      statusTone={envKeyFound ? 'ok' : 'info'}
+      statusLabel={envKeyFound ? t('config.apiKeyConfigured', 'API Key configured') : undefined}
+      modelCount={modelCount}
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+    >
           {/* Base URL */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
@@ -1462,9 +1495,7 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
               <Trash2 size={12} /> {t('common.remove', 'Remove')}
             </button>
           </div>
-        </div>
-      )}
-    </div>
+    </ProviderCardShell>
   );
 }
 
@@ -1483,65 +1514,42 @@ function EnvOnlyRow({ unifiedProvider, onConfigure }: EnvOnlyRowProps) {
   const envKeyName = template?.envKey;
 
   return (
-    <div className="mb-2">
-      <div
-        className={clsx(
-          'flex items-center justify-between px-3.5 py-3',
-          'bg-aegis-elevated border border-amber-500/20 rounded-xl',
-          'transition-all duration-200'
-        )}
-      >
-        {/* left */}
-        <div className="flex items-center gap-3 min-w-0">
-          <ProviderIcon providerId={provider} />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-sm text-aegis-text">
-                {template?.name ?? provider}
-              </span>
-              <span
-                className={clsx(
-                  'text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0',
-                  'bg-amber-500/15 text-amber-400 border border-amber-500/25'
-                )}
-              >
-                <span className="flex items-center gap-1">
-                  <Key size={11} strokeWidth={1.75} className="inline" />
-                  {t('config.envKeyOnly', 'ENV Key Only')}
-                </span>
-              </span>
-            </div>
-            <div className="text-[11px] text-aegis-text-muted truncate">
-              {envKeyName && <span className="font-mono">{envKeyName}</span>}
-              {envKeyName && ' · '}
-              <span>{t('config.addAuthProfileHint', 'Add an auth profile for full configuration')}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* right */}
-        <div className="flex items-center gap-2.5 flex-shrink-0">
-          {modelCount > 0 && (
-            <span className="text-[11px] text-aegis-text-muted bg-aegis-surface border border-aegis-border rounded-full px-2.5 py-0.5">
-              {t('config.modelCount', { count: modelCount })}
-            </span>
+    <ProviderCardShell
+      providerId={provider}
+      title={template?.name ?? provider}
+      subtitle={
+        <>
+          {envKeyName && <span className="font-mono">{envKeyName}</span>}
+          {envKeyName && ' · '}
+          <span>{t('config.addAuthProfileHint', 'Add an auth profile for full configuration')}</span>
+        </>
+      }
+      badge={{
+        label: (
+          <span className="flex items-center gap-1">
+            <Key size={11} strokeWidth={1.75} className="inline" />
+            {t('config.envKeyOnly', 'ENV Key Only')}
+          </span>
+        ),
+        tone: 'warn',
+      }}
+      statusTone="warn"
+      modelCount={modelCount}
+      expandable={false}
+      rightAction={template ? (
+        <button
+          onClick={() => onConfigure(template)}
+          className={clsx(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold',
+            'border border-aegis-primary/30 text-aegis-primary bg-aegis-primary/5',
+            'hover:bg-aegis-primary/10 hover:border-aegis-primary/50',
+            'transition-all duration-200'
           )}
-          {template && (
-            <button
-              onClick={() => onConfigure(template)}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold',
-                'border border-aegis-primary/30 text-aegis-primary bg-aegis-primary/5',
-                'hover:bg-aegis-primary/10 hover:border-aegis-primary/50',
-                'transition-all duration-200'
-              )}
-            >
-              <Plus size={11} /> {t('config.configure', 'Configure')}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+        >
+          <Plus size={11} /> {t('config.configure', 'Configure')}
+        </button>
+      ) : undefined}
+    />
   );
 }
 
