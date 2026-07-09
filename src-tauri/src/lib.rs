@@ -402,27 +402,11 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        // ── Dock click (macOS) / taskbar click — re-show the main window
-        // ── if it was hidden via Cmd+H or window close. Tauri 2 doesn't
-        // ── do this automatically; without it the app stays in the dock
-        // ── but clicking the icon does nothing.
-        if let RunEvent::Reopen { .. } = event {
-            if let Some(window) = app_handle.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
-        }
-        // ── macOS: handle dock click for the activation policy case too.
-        // This fires when the dock icon is clicked and the app might
-        // have no visible windows. Fall through to handle the no-window case.
+        // macOS: clicking the Dock icon should re-show a hidden main window.
+        // RunEvent::Reopen is only available on macOS in Tauri.
         #[cfg(target_os = "macos")]
         {
-            if let RunEvent::Reopen {
-                has_visible_windows: false,
-                ..
-            } = event
-            {
+            if let RunEvent::Reopen { .. } = event {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.unminimize();
