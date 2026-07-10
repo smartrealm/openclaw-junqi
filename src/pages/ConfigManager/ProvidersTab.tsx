@@ -44,7 +44,6 @@ import {
   type ProviderSecretSource,
 } from './providerSecretResolver';
 import {
-  applyFetchedModelAdditionsToDefaults,
   buildDefaultsWithResolvedModels,
   buildFetchedModelAdditions,
 } from './providerDefaults';
@@ -52,6 +51,13 @@ import { Badge, StatusDot } from '@/components/shared/badge';
 import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthMode';
 import { OPENCLAW_API_PROTOCOLS, normalizeOpenClawApiProtocol } from '@/types/openclawApiProtocol';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
+import { ProviderModelEditor } from './ProviderModelEditor';
+import {
+  addProviderModel,
+  buildEditableProviderModels,
+  removeProviderModel,
+  updateProviderModel,
+} from './providerModelMutations';
 import {
   buildTestHeaders,
   modelsEndpointUrl,
@@ -373,6 +379,22 @@ function getModelsForProvider(
   );
 }
 
+function ensureProviderModelEnabled(
+  config: GatewayRuntimeConfig,
+  providerId: string,
+  modelRef: string,
+  editableModels: Record<string, ModelEntry>,
+): GatewayRuntimeConfig {
+  const entry = editableModels[modelRef] ?? {};
+  return addProviderModel({
+    config,
+    providerId,
+    modelId: modelRef,
+    alias: entry.alias,
+    supportsImage: resolveModelSupportsImage(entry),
+  });
+}
+
 function modelDisplayLabel(id: string, entry?: ModelEntry): string {
   return entry?.alias && entry.alias !== id ? `${entry.alias} · ${id}` : id;
 }
@@ -400,7 +422,9 @@ function DefaultModelControls({
 }: DefaultModelControlsProps) {
   const { t } = useTranslation();
   const entries = Object.entries(models);
-  const imageEntries = entries.filter(([id]) => imageSupportMap?.get(id) === true);
+  const imageEntries = entries.filter(([id, entry]) => (
+    imageSupportMap?.get(id) ?? resolveModelSupportsImage(entry) ?? false
+  ));
 
   if (entries.length === 0) return null;
 
@@ -420,7 +444,9 @@ function DefaultModelControls({
           onChange={(e) => e.target.value && onSetPrimary(e.target.value)}
           className="w-full rounded-lg border border-aegis-border bg-aegis-elevated px-2 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary"
         >
-          {!primaryModel && <option value="">{t('config.notSet', 'Not set')}</option>}
+          {(!primaryModel || !models[primaryModel]) && (
+            <option value="">{t('config.notSet', 'Not set')}</option>
+          )}
           {entries.map(([id, entry]) => (
             <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
           ))}
@@ -432,7 +458,7 @@ function DefaultModelControls({
           {t('config.defaultImageModel', 'Default Image Model')}
         </div>
         <select
-          value={imageModel && imageSupportMap?.get(imageModel) === true ? imageModel : ''}
+          value={imageModel && imageEntries.some(([id]) => id === imageModel) ? imageModel : ''}
           disabled={disabled || imageEntries.length === 0}
           onChange={(e) => e.target.value && onSetImageModel(e.target.value)}
           className="w-full rounded-lg border border-aegis-border bg-aegis-elevated px-2 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary disabled:opacity-50"
@@ -1055,6 +1081,15 @@ function ProviderCardShell({
       {/* ── Summary header ── */}
       <div
         onClick={expandable ? onToggle : undefined}
+        role={expandable ? 'button' : undefined}
+        tabIndex={expandable ? 0 : undefined}
+        aria-expanded={expandable ? open : undefined}
+        onKeyDown={expandable ? (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggle?.();
+          }
+        } : undefined}
         className={clsx(
           'flex items-center justify-between px-3.5 py-3',
           'bg-aegis-elevated border border-aegis-border rounded-xl',
@@ -1147,10 +1182,6 @@ interface ProfileRowProps {
   /** Actual key value from env.vars, passed through so fetch can use it */
   envKeyValue?: string;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
-  onApplyAndSave: (
-    updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig,
-    options?: { connectionProbe?: ConnectionPrecheckProbe }
-  ) => Promise<boolean>;
   saving?: boolean;
 }
 
@@ -1201,16 +1232,13 @@ function FetchModelsButton({ providerId, tmpl, profile, allModels, modelsProvide
       const addedCount = toAdd.length;
       if (addedCount > 0) {
         onChange((prev) => {
-          return {
-            ...prev,
-            agents: {
-              ...prev.agents,
-              defaults: applyFetchedModelAdditionsToDefaults({
-                defaults: prev.agents?.defaults,
-                additions: toAdd,
-              }),
-            },
-          };
+          return toAdd.reduce((next, addition) => addProviderModel({
+            config: next,
+            providerId,
+            modelId: addition.fullRef,
+            alias: addition.alias,
+            supportsImage: addition.supportsImage,
+          }), prev);
         });
       }
       setFetchSuccess(addedCount > 0);
@@ -1266,14 +1294,13 @@ function ProfileRow({
   credentialUnverified = false,
   envKeyValue,
   onChange,
-  onApplyAndSave,
   saving = false,
 }: ProfileRowProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const providerId    = profile.provider || getProviderFromProfileKey(profileKey);
   const tmpl          = getTemplateById(providerId);
-  const providerModels = getModelsForProvider(providerId, allModels ?? {});
+  const providerModels = buildEditableProviderModels(providerId, allModels ?? {}, modelsProvider);
   const modelCount    = Object.keys(providerModels).length;
   const hasStoredSecret = Boolean(
     profile.token ?? profile.apiKey ?? (profile as any).key ?? apiKeyConfigured
@@ -1374,24 +1401,15 @@ function ProfileRow({
   };
 
   const setModelPrimary = (modelId: string) => {
-    void onApplyAndSave((prev) => {
-      // The model must exist in agents.defaults.models for the gateway to
-      // recognize it — setting only `primary` causes the model to resolve
-      // to undefined and the gateway falls back to its built-in default.
-      // We seed a minimal entry if the user picks a model that hasn't been
-      // added to the configured models map yet (e.g. selecting from a
-      // provider template's popular-models list).
-      const existingModels = prev.agents?.defaults?.models ?? {};
-      const nextModels = modelId in existingModels
-        ? existingModels
-        : { ...existingModels, [modelId]: {} };
+    onChange((prev) => {
+      const next = ensureProviderModelEnabled(prev, providerId, modelId, providerModels);
       return {
-        ...prev,
+        ...next,
         agents: {
-          ...prev.agents,
+          ...next.agents,
           defaults: buildDefaultsWithResolvedModels({
-            defaults: prev.agents?.defaults,
-            models: nextModels,
+            defaults: next.agents?.defaults,
+            models: next.agents?.defaults?.models ?? {},
             primary: modelId,
           }),
         },
@@ -1400,18 +1418,15 @@ function ProfileRow({
   };
 
   const setImageModelPrimary = (modelId: string) => {
-    void onApplyAndSave((prev) => {
-      const existingModels = prev.agents?.defaults?.models ?? {};
-      const nextModels = modelId in existingModels
-        ? existingModels
-        : { ...existingModels, [modelId]: {} };
+    onChange((prev) => {
+      const next = ensureProviderModelEnabled(prev, providerId, modelId, providerModels);
       return {
-        ...prev,
+        ...next,
         agents: {
-          ...prev.agents,
+          ...next.agents,
           defaults: buildDefaultsWithResolvedModels({
-            defaults: prev.agents?.defaults,
-            models: nextModels,
+            defaults: next.agents?.defaults,
+            models: next.agents?.defaults?.models ?? {},
             imagePrimary: modelId,
           }),
         },
@@ -1420,20 +1435,7 @@ function ProfileRow({
   };
 
   const removeModel = (modelId: string) => {
-    onChange((prev) => {
-      const models = { ...prev.agents?.defaults?.models };
-      delete models[modelId];
-      return {
-        ...prev,
-        agents: {
-          ...prev.agents,
-          defaults: buildDefaultsWithResolvedModels({
-            defaults: prev.agents?.defaults,
-            models,
-          }),
-        },
-      };
-    });
+    onChange((prev) => removeProviderModel({ config: prev, providerId, modelRef: modelId }));
   };
 
 
@@ -1456,8 +1458,11 @@ function ProfileRow({
               </label>
               <input
                 value={localProfile}
+                disabled={saving}
                 onChange={(e) => setLocalProfile(e.target.value)}
-                onBlur={() => updateProfile({ profileName: localProfile })}
+                onBlur={() => {
+                  if (!saving) updateProfile({ profileName: localProfile });
+                }}
                 className={clsx(
                   'bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2',
                   'text-aegis-text text-sm outline-none focus:border-aegis-primary',
@@ -1476,6 +1481,7 @@ function ProfileRow({
                     <button
                       key={m}
                       type="button"
+                      disabled={saving}
                       onClick={() => {
                         setLocalMode(m);
                         updateProfile({ mode: m });
@@ -1510,6 +1516,7 @@ function ProfileRow({
               <input
                 type="password"
                 value={apiKeyInput}
+                disabled={saving}
                 placeholder={hasStoredSecret ? '••••••••' : t('config.apiKeyPlaceholder', '输入 API Key')}
                 className={clsx(
                   'flex-1 rounded-lg border px-3 py-2 text-sm font-mono outline-none transition-colors',
@@ -1524,6 +1531,7 @@ function ProfileRow({
               />
               {apiKeyInput && !apiKeySaved && (
                 <button
+                  disabled={saving}
                   onClick={() => {
                     updateProfile(tmpl?.id === 'custom'
                       ? { token: apiKeyInput.trim() }
@@ -1597,7 +1605,8 @@ function ProfileRow({
               onSetImageModel={setImageModelPrimary}
               disabled={saving}
             />
-            <ChipList
+            <ProviderModelEditor
+              providerId={providerId}
               models={providerModels}
               primaryModel={primaryModel}
               imageModel={imagePrimaryModel}
@@ -1605,6 +1614,19 @@ function ProfileRow({
               onSetPrimary={setModelPrimary}
               onSetImageModel={setImageModelPrimary}
               onRemove={removeModel}
+              onAdd={(modelId, modelAlias, supportsImage) => onChange((prev) => addProviderModel({
+                config: prev,
+                providerId,
+                modelId,
+                alias: modelAlias,
+                supportsImage,
+              }))}
+              onUpdate={(modelRef, patch) => onChange((prev) => updateProviderModel({
+                config: prev,
+                providerId,
+                modelRef,
+                ...patch,
+              }))}
               disabled={saving}
             />
           </div>
@@ -1625,11 +1647,13 @@ function ProfileRow({
             />
             <button
               onClick={removeProfile}
+              disabled={saving}
               className={clsx(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold',
                 'border border-red-500/20 text-red-400 bg-red-400/5',
                 'hover:bg-red-400/10 hover:border-red-500/40',
-                'transition-all duration-200'
+                'transition-all duration-200',
+                saving && 'cursor-not-allowed opacity-50'
               )}
             >
               <Trash2 size={12} />{t('config.remove')}
@@ -1646,13 +1670,20 @@ function ProfileRow({
 interface ModelsProviderRowProps {
   unifiedProvider: UnifiedProvider;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
+  primaryModel?: string;
+  imagePrimaryModel?: string;
+  imageSupportMap?: Map<string, boolean>;
   saving?: boolean;
 }
 
-function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: ModelsProviderRowProps) {
+function ModelsProviderRow({ unifiedProvider, onChange, primaryModel, imagePrimaryModel, imageSupportMap, saving = false }: ModelsProviderRowProps) {
   const [open, setOpen] = useState(false);
-  const { provider, modelsProvider, modelCount, template, envKeyFound, credentialSource, credentialUnverified } = unifiedProvider;
+  const { provider, modelsProvider, template, envKeyFound, credentialSource, credentialUnverified } = unifiedProvider;
   const { t } = useTranslation();
+  const editableModels = useMemo(
+    () => buildEditableProviderModels(provider, unifiedProvider.models, modelsProvider),
+    [modelsProvider, provider, unifiedProvider.models],
+  );
 
   const [localBaseUrl, setLocalBaseUrl] = useState(modelsProvider?.baseUrl ?? '');
   const [localApi, setLocalApi] = useState(modelsProvider?.api ?? template?.api ?? '');
@@ -1700,7 +1731,7 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
       badge={{ label: <>⚡ {t('config.customProvider', 'Custom Provider')}</>, tone: 'info' }}
       statusTone={envKeyFound ? 'ok' : credentialUnverified ? 'info' : 'warn'}
       statusLabel={providerCredentialStatusLabel(t, Boolean(envKeyFound), credentialSource, credentialUnverified)}
-      modelCount={modelCount}
+      modelCount={Object.keys(editableModels).length}
       open={open}
       onToggle={() => setOpen((o) => !o)}
     >
@@ -1748,29 +1779,45 @@ function ModelsProviderRow({ unifiedProvider, onChange, saving = false }: Models
           </div>
 
           {/* Models list */}
-          {modelsProvider?.models && modelsProvider.models.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
-                {t('config.models', 'Models')}
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {modelsProvider.models.map((m) => (
-                  <span
-                    key={m.id}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium',
-                      'border border-aegis-border bg-aegis-elevated text-aegis-text-secondary'
-                    )}
-                  >
-                    {m.name ?? m.id}
-                    {m.name && m.name !== m.id && (
-                      <span className="text-[9px] opacity-50 font-mono">{m.id}</span>
-                    )}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <ProviderModelEditor
+            providerId={provider}
+            models={editableModels}
+            primaryModel={primaryModel}
+            imageModel={imagePrimaryModel}
+            imageSupportMap={imageSupportMap}
+            disabled={saving}
+            onAdd={(modelId, modelAlias, supportsImage) => onChange((prev) => addProviderModel({ config: prev, providerId: provider, modelId, alias: modelAlias, supportsImage }))}
+            onUpdate={(modelRef, patch) => onChange((prev) => updateProviderModel({ config: prev, providerId: provider, modelRef, ...patch }))}
+            onRemove={(modelRef) => onChange((prev) => removeProviderModel({ config: prev, providerId: provider, modelRef }))}
+            onSetPrimary={(modelRef) => onChange((prev) => {
+              const next = ensureProviderModelEnabled(prev, provider, modelRef, editableModels);
+              return {
+                ...next,
+                agents: {
+                  ...next.agents,
+                  defaults: buildDefaultsWithResolvedModels({
+                    defaults: next.agents?.defaults,
+                    models: next.agents?.defaults?.models ?? {},
+                    primary: modelRef,
+                  }),
+                },
+              };
+            })}
+            onSetImageModel={(modelRef) => onChange((prev) => {
+              const next = ensureProviderModelEnabled(prev, provider, modelRef, editableModels);
+              return {
+                ...next,
+                agents: {
+                  ...next.agents,
+                  defaults: buildDefaultsWithResolvedModels({
+                    defaults: next.agents?.defaults,
+                    models: next.agents?.defaults?.models ?? {},
+                    imagePrimary: modelRef,
+                  }),
+                },
+              };
+            })}
+          />
 
           {/* Env Key status */}
           {envKeyName && (
@@ -3294,7 +3341,6 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                       credentialUnverified={up.credentialUnverified}
                       envKeyValue={up.envKeyValue}
                       onChange={onChange}
-                      onApplyAndSave={onApplyAndSave}
                       saving={saving}
                     />
                   );
@@ -3305,6 +3351,9 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                       key={up.key}
                       unifiedProvider={up}
                       onChange={onChange}
+                      primaryModel={primaryModel}
+                      imagePrimaryModel={imagePrimaryModel}
+                      imageSupportMap={allModelImageSupportMap}
                       saving={saving}
                     />
                   );
@@ -3353,7 +3402,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
               imageSupportMap={allModelImageSupportMap}
               disabled={saving}
               onSetPrimary={(id) => {
-                void onApplyAndSave((prev) => ({
+                onChange((prev) => ({
                   ...prev,
                   agents: {
                     ...prev.agents,
@@ -3366,7 +3415,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                 }));
               }}
               onSetImageModel={(id) => {
-                void onApplyAndSave((prev) => ({
+                onChange((prev) => ({
                   ...prev,
                   agents: {
                     ...prev.agents,
@@ -3448,7 +3497,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
               imageSupportMap={allModelImageSupportMap}
               disabled={saving}
               onSetPrimary={(id) => {
-                void onApplyAndSave((prev) => ({
+                onChange((prev) => ({
                   ...prev,
                   agents: {
                     ...prev.agents,
@@ -3461,7 +3510,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                 }));
               }}
               onSetImageModel={(id) => {
-                void onApplyAndSave((prev) => ({
+                onChange((prev) => ({
                   ...prev,
                   agents: {
                     ...prev.agents,
@@ -3474,20 +3523,11 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
                 }));
               }}
               onRemove={(id) => {
-                onChange((prev) => {
-                  const models = { ...prev.agents?.defaults?.models };
-                  delete models[id];
-                  return {
-                    ...prev,
-                    agents: {
-                      ...prev.agents,
-                      defaults: buildDefaultsWithResolvedModels({
-                        defaults: prev.agents?.defaults,
-                        models,
-                      }),
-                    },
-                  };
-                });
+                onChange((prev) => removeProviderModel({
+                  config: prev,
+                  providerId: getProviderFromModelId(id),
+                  modelRef: id,
+                }));
               }}
             />
           </div>

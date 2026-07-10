@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react';
 import clsx from 'clsx';
-import emblemUrl from '@/assets/brand/junqi-emblem.svg';
-import fullLogoUrl from '@/assets/brand/junqi-logo-full.png';
+import emblemUrl from '@/assets/brand/daxia-group-emblem.png';
+import lightLogoUrl from '@/assets/brand/daxia-group-light.png';
+import darkLogoUrl from '@/assets/brand/daxia-group-dark.png';
 
 type JunQiLogoVariant = 'full' | 'emblem' | 'lockup';
 
@@ -12,41 +13,52 @@ interface JunQiLogoProps {
   title?: string;
 }
 
-const BRAND_TITLE = '陕西浚启智境科技有限公司 JunQi';
+const BRAND_TITLE = '大夏集团 DAXIA GROUP';
 
 export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TITLE }: JunQiLogoProps) {
-  if (variant === 'lockup') {
+  if (variant === 'emblem') {
     return (
-      <div
-        role="img"
-        aria-label={title}
-        className={clsx('flex min-w-0 items-center gap-2', className)}
+      <img
+        src={emblemUrl}
+        alt={title}
+        className={clsx('block object-contain', className)}
         style={style}
-      >
-        <span className="flex h-8 w-11 shrink-0 items-center justify-center rounded-md">
-          <img
-            src={emblemUrl}
-            alt=""
-            aria-hidden="true"
-            className="block h-7 w-10 object-contain"
-            draggable={false}
-          />
-        </span>
-        <span className="min-w-0 leading-none">
-          <span className="block truncate text-[14px] font-extrabold text-aegis-text">JunQi</span>
-          <span className="mt-1 block truncate text-[10px] font-semibold text-aegis-text-dim">Desktop</span>
-        </span>
-      </div>
+        draggable={false}
+      />
     );
   }
 
   return (
-    <img
-      src={variant === 'emblem' ? emblemUrl : fullLogoUrl}
-      alt={title}
-      className={clsx('block object-contain', className)}
+    <span
+      role="img"
+      aria-label={title}
+      className={clsx(
+        'relative block min-w-0',
+        variant === 'lockup' ? 'h-8 w-full' : 'aspect-[4001/1151] w-full',
+        className,
+      )}
       style={style}
-      draggable={false}
-    />
+    >
+      <img
+        src={lightLogoUrl}
+        alt=""
+        aria-hidden="true"
+        className={clsx(
+          'absolute inset-0 block h-full w-full object-contain dark:hidden',
+          variant === 'lockup' ? 'object-left' : 'object-center',
+        )}
+        draggable={false}
+      />
+      <img
+        src={darkLogoUrl}
+        alt=""
+        aria-hidden="true"
+        className={clsx(
+          'absolute inset-0 hidden h-full w-full object-contain dark:block',
+          variant === 'lockup' ? 'object-left' : 'object-center',
+        )}
+        draggable={false}
+      />
+    </span>
   );
 }

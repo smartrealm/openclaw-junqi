@@ -14,6 +14,15 @@ export type ProviderAuthMode =
   | 'oauth_browser'  // Browser-OAuth (OpenAI ChatGPT login)
   | 'local';         // Local server (Ollama, no key)
 
+export type OpenClawAuthProfileMode = 'api_key' | 'aws-sdk' | 'oauth' | 'token';
+
+const OPENCLAW_AUTH_PROFILE_MODES = new Set<OpenClawAuthProfileMode>([
+  'api_key',
+  'aws-sdk',
+  'oauth',
+  'token',
+]);
+
 const LEGACY_PROVIDER_AUTH_MODE_MIGRATIONS = {
   token: 'api_key',
   oauth: 'oauth_browser',
@@ -69,6 +78,19 @@ export function normalizeProviderAuthMode(mode: unknown): ProviderAuthMode {
     return mode as ProviderAuthMode;
   }
   return (LEGACY_PROVIDER_AUTH_MODE_MIGRATIONS as Record<string, ProviderAuthMode>)[mode] ?? 'api_key';
+}
+
+/** Map JunQi interaction modes to the strict auth profile modes OpenClaw persists. */
+export function toOpenClawAuthProfileMode(
+  mode: unknown,
+): OpenClawAuthProfileMode | undefined {
+  if (typeof mode === 'string' && OPENCLAW_AUTH_PROFILE_MODES.has(mode as OpenClawAuthProfileMode)) {
+    return mode as OpenClawAuthProfileMode;
+  }
+  const normalized = normalizeProviderAuthMode(mode);
+  if (normalized === 'local') return undefined;
+  if (normalized === 'oauth_browser' || normalized === 'oauth_device') return 'oauth';
+  return 'api_key';
 }
 
 /**

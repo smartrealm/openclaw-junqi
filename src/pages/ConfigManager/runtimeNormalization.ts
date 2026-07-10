@@ -22,15 +22,64 @@ function sanitizeAgentModelEntry(value: any): Record<string, any> {
   if (value.params && typeof value.params === 'object' && !Array.isArray(value.params)) {
     next.params = value.params;
   }
+  if (value.agentRuntime && typeof value.agentRuntime === 'object' && !Array.isArray(value.agentRuntime)) {
+    next.agentRuntime = value.agentRuntime;
+  }
   if (typeof value.streaming === 'boolean') next.streaming = value.streaming;
   return next;
 }
 
-function sanitizeProviderModelEntry(value: any, strippedId: string, supportsImage: boolean): Record<string, any> {
+const PROVIDER_MODEL_RUNTIME_FIELDS = [
+  'api',
+  'baseUrl',
+  'reasoning',
+  'cost',
+  'contextWindow',
+  'contextTokens',
+  'maxTokens',
+  'thinkingLevelMap',
+  'params',
+  'agentRuntime',
+  'headers',
+  'compat',
+  'mediaInput',
+  'metadataSource',
+] as const;
+
+function sanitizeProviderModelEntry(
+  value: any,
+  strippedId: string,
+  supportsImage: boolean,
+): Record<string, any> | undefined {
+  const id = String(strippedId ?? '').trim();
+  if (!id) return undefined;
+
+  const source = value && typeof value === 'object' ? value as Record<string, any> : {};
   const next: Record<string, any> = {};
-  if (typeof strippedId === 'string' && strippedId.trim()) next.id = strippedId;
-  if (typeof value?.name === 'string' && value.name.trim()) next.name = value.name;
-  next.input = supportsImage ? ['text', 'image'] : ['text'];
+  for (const field of PROVIDER_MODEL_RUNTIME_FIELDS) {
+    if (source[field] !== undefined) next[field] = source[field];
+  }
+
+  const validModalities = new Set(['text', 'image', 'video', 'audio']);
+  const rawModalities = Array.isArray(source.input)
+    ? source.input
+    : Array.isArray(source.modalities?.input)
+      ? source.modalities.input
+      : Array.isArray(source.architecture?.input_modalities)
+        ? source.architecture.input_modalities
+        : ['text'];
+  const modalities = rawModalities
+    .map((item: unknown) => String(item).trim().toLowerCase())
+    .filter((item: string) => validModalities.has(item));
+  const input = new Set(modalities.length > 0 ? modalities : ['text']);
+  if (supportsImage) input.add('image');
+  else input.delete('image');
+
+  next.id = id;
+  next.name = typeof source.name === 'string' && source.name.trim()
+    ? source.name.trim()
+    : id;
+  next.input = [...input];
   return next;
 }
 
@@ -46,55 +95,82 @@ export function normalizeModelsProvidersForRuntime(params: {
   const { providers } = params;
   if (!providers) return providers;
 
-  const out: Record<string, any> = {};
+  const groups = new Map<string, Array<[string, any]>>();
   for (const [providerId, providerConfig] of Object.entries(providers)) {
     const canonicalId = params.canonicalProviderId(providerId) || providerId;
+    const group = groups.get(canonicalId) ?? [];
+    group.push([providerId, providerConfig]);
+    groups.set(canonicalId, group);
+  }
+
+  const out: Record<string, any> = {};
+  for (const [canonicalId, entries] of groups) {
     const template = params.getTemplateById(canonicalId);
     const generatedRows = params.generatedProviderCatalog[canonicalId] ?? [];
     const knownModelIds = new Set(
       generatedRows.map((model) => params.stripProviderPrefix(canonicalId, model.id))
     );
-    const existing = out[canonicalId] ?? {};
-    const next = {
-      ...existing,
-      ...(providerConfig ?? {}),
-    } as Record<string, any>;
-    const models = Array.isArray(providerConfig?.models) ? providerConfig.models : undefined;
-    const shouldAlwaysKeepExplicitModels =
-      !template || canonicalId === 'custom' || canonicalId === 'vllm' || canonicalId === 'ollama';
+    const orderedEntries = [
+      ...entries.filter(([providerId]) => providerId.trim().toLowerCase() !== canonicalId),
+      ...entries.filter(([providerId]) => providerId.trim().toLowerCase() === canonicalId),
+    ];
+    const normalizedModels = new Map<string, Record<string, any>>();
+    let hasExplicitModels = false;
+    let next: Record<string, any> = {};
 
-    if (models) {
-      if (template && !shouldAlwaysKeepExplicitModels) {
-        const allKnown = models.every((model: any) =>
-          knownModelIds.has(params.stripProviderPrefix(canonicalId, String(model?.id ?? '')))
-        );
-        if (allKnown) {
-          // Keep template providers schema-safe while still letting OpenClaw
-          // derive capabilities from the bundled catalog instead of half-written
-          // explicit model entries.
-          next.models = [];
-        } else {
-          next.models = models.map((model: any) => {
-            const strippedId = params.stripProviderPrefix(canonicalId, String(model?.id ?? ''));
-            const generatedSupport = generatedRows.find(
-              (row) => params.stripProviderPrefix(canonicalId, row.id) === strippedId
-            )?.supportsImage;
-            const supportsImage =
-              resolveModelSupportsImage(model)
-              ?? generatedSupport
-              ?? false;
-            return sanitizeProviderModelEntry(model, strippedId, supportsImage);
-          });
-        }
-      } else {
-        next.models = models.map((model: any) => {
+    for (const [, providerConfig] of orderedEntries) {
+      const { models, ...providerFields } = providerConfig ?? {};
+      next = { ...next, ...providerFields };
+      if (!Array.isArray(models)) continue;
+      hasExplicitModels = true;
+      for (const model of models) {
           const strippedId = params.stripProviderPrefix(canonicalId, String(model?.id ?? ''));
-          const supportsImage =
-            resolveModelSupportsImage(model)
-            ?? false;
-          return sanitizeProviderModelEntry(model, strippedId, supportsImage);
-        });
+          const generatedSupport = knownModelIds.has(strippedId)
+            ? generatedRows.find(
+              (row) => params.stripProviderPrefix(canonicalId, row.id) === strippedId
+            )?.supportsImage
+            : undefined;
+          const supportsImage = resolveModelSupportsImage(model) ?? generatedSupport ?? false;
+          const sanitized = sanitizeProviderModelEntry(model, strippedId, supportsImage);
+          if (!sanitized) continue;
+          normalizedModels.set(strippedId, {
+            ...(normalizedModels.get(strippedId) ?? {}),
+            ...sanitized,
+          });
       }
+    }
+
+    // `agents.defaults.models` is the enabled-model set exposed by the UI.
+    // When a provider has an explicit models array, OpenClaw treats that array
+    // as the provider catalog. Fill only missing rows so a partial provider
+    // declaration cannot make an enabled/default model unresolvable.
+    for (const [modelRef, agentEntry] of Object.entries(params.agents?.defaults?.models ?? {})) {
+      const normalizedRef = params.canonicalizeModelRef?.(modelRef) ?? modelRef;
+      const slashIndex = normalizedRef.indexOf('/');
+      if (slashIndex <= 0) continue;
+      const modelProvider = params.canonicalProviderId(normalizedRef.slice(0, slashIndex));
+      if (modelProvider !== canonicalId) continue;
+
+      const strippedId = params.stripProviderPrefix(canonicalId, normalizedRef);
+      if (!strippedId || normalizedModels.has(strippedId)) continue;
+      const generatedSupport = generatedRows.find(
+        (row) => params.stripProviderPrefix(canonicalId, row.id) === strippedId
+      )?.supportsImage;
+      const supportsImage = resolveModelSupportsImage(agentEntry) ?? generatedSupport ?? false;
+      const alias = typeof agentEntry?.alias === 'string' ? agentEntry.alias.trim() : '';
+      const sanitized = sanitizeProviderModelEntry(
+        {
+          name: alias || strippedId,
+          input: Array.isArray(agentEntry?.input) ? agentEntry.input : undefined,
+        },
+        strippedId,
+        supportsImage,
+      );
+      if (sanitized) normalizedModels.set(strippedId, sanitized);
+    }
+
+    if (hasExplicitModels || normalizedModels.size > 0) {
+      next.models = Array.from(normalizedModels.values());
     } else if (template) {
       next.models = [];
     }
@@ -115,12 +191,24 @@ export function normalizeAgentsForRuntime(params: {
   if (!agents?.defaults) return agents;
 
   const nextModels = agents.defaults.models
-    ? Object.fromEntries(
-      Object.entries(agents.defaults.models).map(([id, value]) => [
-        params.canonicalizeModelRef(id) ?? id,
-        sanitizeAgentModelEntry(value),
-      ])
-    )
+    ? (() => {
+      const entries = Object.entries(agents.defaults.models).map(([id, value]) => ({
+        id,
+        normalizedId: params.canonicalizeModelRef(id) ?? id,
+        value,
+      }));
+      const orderedEntries = [
+        ...entries.filter((entry) => entry.id !== entry.normalizedId),
+        ...entries.filter((entry) => entry.id === entry.normalizedId),
+      ];
+      return orderedEntries.reduce<Record<string, Record<string, any>>>((out, entry) => {
+        out[entry.normalizedId] = {
+          ...(out[entry.normalizedId] ?? {}),
+          ...sanitizeAgentModelEntry(entry.value),
+        };
+        return out;
+      }, {});
+    })()
     : agents.defaults.models;
 
   const modelSupportMap = new Map<string, boolean>();

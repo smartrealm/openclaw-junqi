@@ -37,6 +37,7 @@ import {
   EventPayloadResolver,
   FileReadResolver,
 } from "../services/gateway/configResolvers";
+import { formatGatewayLogs } from '../services/gateway/gatewayLogFormatting';
 
 let _deviceIdentity: any = null;
 async function deviceIdentity() {
@@ -123,6 +124,15 @@ function invalidateGatewayPortCache(): void {
   _cachedGatewayToken = null;
 }
 
+async function readRecentGatewayLogs(): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const entries = await invoke<LogEntry[]>('get_gateway_logs', { limit: 80 });
+    return formatGatewayLogs(entries);
+  } catch {
+    return { stdout: '', stderr: '' };
+  }
+}
+
 async function restartLocalGateway(): Promise<{ success: boolean; method?: string; error?: string }> {
   invalidateGatewayPortCache();
   const port = await readGatewayPort();
@@ -189,9 +199,10 @@ async function restartLocalGateway(): Promise<{ success: boolean; method?: strin
     getStatus: async () => {
       try {
         const s: any = await invoke("gateway_status");
-        return { running: Boolean(s.running), ready: Boolean(s.running), error: null, logs: { stdout: "", stderr: "" } };
+        const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
+        return { running: ready, ready, error: null, logs: await readRecentGatewayLogs() };
       } catch (e: any) {
-        return { running: false, ready: false, error: String(e), logs: { stdout: "", stderr: "" } };
+        return { running: false, ready: false, error: String(e), logs: await readRecentGatewayLogs() };
       }
     },
     start: async () => {
@@ -239,14 +250,19 @@ async function restartLocalGateway(): Promise<{ success: boolean; method?: strin
       let unlistenFn: (() => void) | null = null;
       let lastLogs = { stdout: "", stderr: "" };
       let stopped = false;
+      let restartActive = false;
 
       const emitRealStatus = async () => {
         if (stopped) return;
         try {
           const s: any = await invoke("gateway_status");
+          const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
+          lastLogs = await readRecentGatewayLogs();
+          if (ready) restartActive = false;
           cb({
-            running: Boolean(s.running),
-            ready: Boolean(s.running),
+            running: ready,
+            ready,
+            retrying: restartActive && !ready,
             error: null,
             logs: lastLogs,
           });
@@ -262,9 +278,10 @@ async function restartLocalGateway(): Promise<{ success: boolean; method?: strin
 
       const handleProgress = (event: any) => {
         const line = String(event.payload ?? '');
-        lastLogs = { stdout: line, stderr: "" };
+        restartActive = true;
+        const lines = [...lastLogs.stdout.split('\n').filter(Boolean), line].slice(-80);
+        lastLogs = { stdout: lines.join('\n'), stderr: lastLogs.stderr };
         cb({ running: false, ready: false, retrying: true, error: null, logs: lastLogs });
-        void emitRealStatus();
       };
 
       listen("gateway-log", handleProgress).then((fn: any) => { unlistenFn = fn; }).catch(() => {});

@@ -1017,11 +1017,11 @@ export function SettingsPageFull() {
       <GlassCard delay={0.3}>
         <div className="text-center py-4 mb-4">
           <div className="mb-4 flex justify-center">
-            <div className="rounded-xl border border-aegis-border/50 bg-white px-5 py-3 shadow-sm">
+            <div className="rounded-xl border border-aegis-border/50 bg-aegis-elevated px-5 py-3 shadow-sm">
               <JunQiLogo
                 variant="full"
                 className="h-[64px] w-[320px] max-w-full"
-                title="陕西浚启智境科技有限公司 JunQi"
+                title="大夏集团 DAXIA GROUP"
               />
             </div>
           </div>

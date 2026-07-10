@@ -44,7 +44,7 @@ function canonicalizeModelRef(modelRef: string | undefined): string | undefined 
   return provider && model ? `${provider}/${model}` : trimmed;
 }
 
-test('normalizeModelsProvidersForRuntime clears explicit models to an empty array for known template provider models', () => {
+test('normalizeModelsProvidersForRuntime preserves explicit known template provider models', () => {
   const providers = {
     qwen: {
       apiKey: 'secret',
@@ -67,7 +67,13 @@ test('normalizeModelsProvidersForRuntime clears explicit models to an empty arra
   assert.deepEqual(normalized, {
     qwen: {
       apiKey: 'secret',
-      models: [],
+      models: [
+        {
+          id: 'qwen3.6-plus',
+          name: 'Qwen 3.6 Plus',
+          input: ['text', 'image'],
+        },
+      ],
     },
   });
 });
@@ -156,7 +162,7 @@ test('normalizeModelsProvidersForRuntime preserves explicit models for custom-li
   });
 });
 
-test('normalizeModelsProvidersForRuntime resolves Kimi Coding runtime alias to generated catalog key', () => {
+test('normalizeModelsProvidersForRuntime resolves Kimi Coding runtime alias and preserves its models', () => {
   const providers = {
     kimi: {
       apiKey: 'secret',
@@ -179,7 +185,13 @@ test('normalizeModelsProvidersForRuntime resolves Kimi Coding runtime alias to g
   assert.deepEqual(normalized, {
     'kimi-coding': {
       apiKey: 'secret',
-      models: [],
+      models: [
+        {
+          id: 'k2p5',
+          name: 'Kimi Coding K2.5',
+          input: ['text'],
+        },
+      ],
     },
   });
 });
@@ -212,6 +224,91 @@ test('normalizeModelsProvidersForRuntime preserves explicit image capability for
       ],
     },
   });
+});
+
+test('normalizeModelsProvidersForRuntime preserves schema fields and strips legacy capability metadata', () => {
+  const normalized = normalizeModelsProvidersForRuntime({
+    providers: {
+      custom: {
+        models: [
+          {
+            id: 'media-model',
+            name: 'Media Model',
+            input: ['audio', 'video'],
+            contextWindow: 128_000,
+            maxTokens: 8_192,
+            compat: { supportsTools: true },
+            supportsImage: false,
+            modalities: { input: ['audio', 'video'] },
+            architecture: { input_modalities: ['audio', 'video'] },
+          },
+        ],
+      },
+    },
+    agents: undefined,
+    generatedProviderCatalog,
+    canonicalProviderId,
+    stripProviderPrefix,
+    canonicalizeModelRef,
+    getTemplateById: (providerId) => (providerId === 'custom' ? { id: 'custom' } : undefined),
+  });
+
+  assert.deepEqual(normalized?.custom?.models, [
+    {
+      id: 'media-model',
+      name: 'Media Model',
+      input: ['audio', 'video'],
+      contextWindow: 128_000,
+      maxTokens: 8_192,
+      compat: { supportsTools: true },
+    },
+  ]);
+});
+
+test('normalizeModelsProvidersForRuntime fills provider rows missing from enabled agent models', () => {
+  const normalized = normalizeModelsProvidersForRuntime({
+    providers: {
+      qwen: {
+        baseUrl: 'https://example.test/v1',
+        models: [
+          {
+            id: 'qwen3.6-plus',
+            name: 'Provider Name',
+            contextWindow: 128_000,
+            input: ['text', 'image'],
+          },
+        ],
+      },
+    },
+    agents: {
+      defaults: {
+        models: {
+          'qwen/qwen3.6-plus': { alias: 'Agent Alias' },
+          'qwen/qwen3-coder-plus': { alias: 'Coder' },
+          'openai/gpt-4o': { alias: 'Unrelated' },
+        },
+      },
+    },
+    generatedProviderCatalog,
+    canonicalProviderId,
+    stripProviderPrefix,
+    canonicalizeModelRef,
+    getTemplateById: (providerId) => (providerId === 'qwen' ? { id: 'qwen' } : undefined),
+  });
+
+  assert.deepEqual(normalized?.qwen?.models, [
+    {
+      id: 'qwen3.6-plus',
+      name: 'Provider Name',
+      input: ['text', 'image'],
+      contextWindow: 128_000,
+    },
+    {
+      id: 'qwen3-coder-plus',
+      name: 'Coder',
+      input: ['text'],
+    },
+  ]);
 });
 
 test('normalizeAgentsForRuntime preserves explicit image model only when catalog marks it image-capable', () => {

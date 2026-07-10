@@ -15,6 +15,7 @@ import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import { changeLanguage } from '@/i18n';
 import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
@@ -304,12 +305,21 @@ export default function App() {
     emitGatewayProgress('Restarting OpenClaw Gateway…', 0.15, 'gateway.progress.restart');
     try {
       const result = await window.aegis.gateway.retry();
-      addBootRecoveryLog(result?.success === false ? `Gateway restart failed: ${result.error || 'unknown error'}` : 'Gateway restart command completed');
+      if (result?.success === false) {
+        throw new Error(result.error || 'Gateway restart failed');
+      }
+      addBootRecoveryLog('Gateway restart command completed');
       emitGatewayProgress('Gateway service restarted, reconnecting…', 0.60, 'gateway.progress.restartDone');
       triggerGatewayReconnect('after-restart');
     } catch (err) {
-      addBootRecoveryLog(`Gateway restart exception: ${String(err)}`);
-      emitGatewayProgress(`Restart failed: ${String(err)}`, 1.0, 'gateway.progress.restartFailed');
+      const message = err instanceof Error ? err.message : String(err);
+      addBootRecoveryLog(`Gateway restart failed: ${message}`);
+      emitGatewayProgress(`Restart failed: ${message}`, 1.0, 'gateway.progress.restartFailed');
+      setGatewayBootError(message);
+      const logs = await window.aegis.gateway.getLogs?.(80);
+      if (logs) {
+        setGatewayBootLogs(formatGatewayLogs(logs));
+      }
     } finally {
       setBootRecoveryRestarting(false);
     }

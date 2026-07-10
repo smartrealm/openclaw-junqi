@@ -42,6 +42,7 @@ export interface AuthProfile {
   token?: string;
   apiKey?: string;
   profileName?: string;
+  displayName?: string;
   [key: string]: any;
 }
 
@@ -62,6 +63,7 @@ export interface ModelEntry {
   input?: string[];
   streaming?: boolean;
   params?: Record<string, any>;
+  [key: string]: any;
 }
 
 // ── Agents ──
@@ -328,6 +330,7 @@ export interface ModelProviderModelEntry {
       range?: [number, number];
     }>;
   };
+  [key: string]: any;
 }
 
 export interface ModelProviderConfig {

@@ -17,8 +17,11 @@ import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
 } from './runtimeNormalization';
+import {
+  authProfilesForRuntime,
+  normalizeAuthProfilesFromDisk,
+} from './configUtils';
 import { deriveProviderApiKeyEnvKey, preserveProviderSecretsFromDisk } from './providerSecretResolver';
-import { normalizeProviderAuthMode } from '@/types/providerAuthMode';
 import { FloatingSaveButton, ChangesPill } from './components';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
@@ -560,42 +563,6 @@ export function ConfigManagerPage() {
     return provider && model ? `${provider}/${model}` : trimmed;
   };
 
-  const authProfilesForRuntime = (profiles: Record<string, any> | undefined): Record<string, any> | undefined => {
-    if (!profiles || Object.keys(profiles).length === 0) return profiles;
-    const out: Record<string, any> = {};
-    for (const [k, p] of Object.entries(profiles)) {
-      const mode = normalizeProviderAuthMode(p?.mode ?? p?.type);
-      const secret = p?.apiKey ?? p?.token ?? p?.key;
-      const { type: _type, key: _key, ...rest } = (p ?? {}) as Record<string, any>;
-      const keyParts = k.split(':');
-      const profileName = keyParts.length > 1 ? keyParts.slice(1).join(':') : 'main';
-      const provider = canonicalProviderId(p?.provider ?? keyParts[0]);
-      out[`${provider}:${profileName}`] = {
-        ...rest,
-        provider,
-        mode,
-        ...(secret && mode === 'api_key' ? { apiKey: secret } : {}),
-      };
-    }
-    return out;
-  };
-
-  // On read: ensure profiles have apiKey/mode for UI (from key/type if present)
-  const normalizeAuthProfilesFromDisk = (profiles: Record<string, any> | undefined): Record<string, any> | undefined => {
-    if (!profiles) return profiles;
-    const out: Record<string, any> = {};
-    for (const [k, p] of Object.entries(profiles)) {
-      const mode = normalizeProviderAuthMode(p?.mode ?? p?.type);
-      out[k] = {
-        ...p,
-        mode,
-        apiKey: mode === 'api_key' ? (p?.apiKey ?? p?.key ?? p?.token) : undefined,
-        token: undefined,
-      };
-    }
-    return out;
-  };
-
   const PROVIDER_API_KEY_REF_RE = /^\$\{[^}]+\}$/;
 
   const isProviderApiKeyReference = (value: unknown): boolean => {
@@ -983,7 +950,7 @@ export function ConfigManagerPage() {
         : data.models,
       auth: !auth?.profiles ? auth : {
         ...auth,
-        profiles: authProfilesForRuntime(auth.profiles),
+        profiles: authProfilesForRuntime(auth.profiles, canonicalProviderId),
       },
     };
     return normalized;

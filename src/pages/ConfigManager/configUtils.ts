@@ -3,7 +3,7 @@
 // ConfigManager/index.tsx for testability and design pattern compliance).
 // ═══════════════════════════════════════════════════════════
 
-import { normalizeProviderAuthMode } from '@/types/providerAuthMode';
+import { normalizeProviderAuthMode, toOpenClawAuthProfileMode } from '@/types/providerAuthMode';
 
 // ── 1. Provider ID canonicalization (lookup table, not if-else) ──
 const PROVIDER_ALIASES: Record<string, string> = {
@@ -153,17 +153,17 @@ export function authProfilesForRuntime(
 
   const out: Record<string, any> = {};
   for (const [k, p] of Object.entries(profiles)) {
-    const mode = normalizeProviderAuthMode(p?.mode ?? p?.type);
-    const secret = p?.apiKey ?? p?.token ?? p?.key;
-    const { type: _type, key: _key, ...rest } = (p ?? {}) as Record<string, any>;
+    const mode = toOpenClawAuthProfileMode(p?.mode ?? p?.type);
     const keyParts = k.split(':');
     const profileName = keyParts.length > 1 ? keyParts.slice(1).join(':') : 'main';
     const provider = canonicalize(p?.provider ?? keyParts[0]);
+    if (!provider || !mode) continue;
+    const displayName = String(p?.displayName ?? p?.profileName ?? '').trim();
     out[`${provider}:${profileName}`] = {
-      ...rest,
       provider,
       mode,
-      ...(secret && mode === 'api_key' ? { apiKey: secret } : {}),
+      ...(typeof p?.email === 'string' && p.email.trim() ? { email: p.email.trim() } : {}),
+      ...(displayName ? { displayName } : {}),
     };
   }
   return out;
@@ -175,14 +175,22 @@ export function normalizeAuthProfilesFromDisk(
   if (!profiles) return profiles;
   const out: Record<string, any> = {};
   for (const [k, p] of Object.entries(profiles)) {
-    const mode = normalizeProviderAuthMode(p?.mode ?? p?.type);
+    const rawMode = p?.mode ?? p?.type;
+    const secret = p?.apiKey ?? p?.key ?? p?.token;
+    // Preserve native OpenClaw modes on a read/write round trip. A token field
+    // alongside mode=token is the legacy JunQi shape and still migrates to the
+    // API-key flow so its secret can be moved into env/provider storage.
+    const runtimeMode = toOpenClawAuthProfileMode(rawMode);
+    const mode = rawMode === 'token' && secret
+      ? 'api_key'
+      : runtimeMode ?? normalizeProviderAuthMode(rawMode);
     out[k] = {
       ...p,
       mode,
+      profileName: p?.profileName ?? p?.displayName,
       apiKey: mode === 'api_key' ? (p?.apiKey ?? p?.key ?? p?.token) : undefined,
       token: undefined,
     };
   }
   return out;
 }
-

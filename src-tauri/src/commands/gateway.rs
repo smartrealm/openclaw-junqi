@@ -353,6 +353,53 @@ fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
     let _ = app.emit("gateway-log", &line);
 }
 
+async fn wait_for_gateway_reachable(port: u16, timeout_secs: u64) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    while std::time::Instant::now() < deadline {
+        if is_gateway_serving(port).await {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    false
+}
+
+async fn start_managed_gateway_fallback(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+    port: u16,
+    reason: impl AsRef<str>,
+) -> Result<GatewayStatus, String> {
+    let reason = reason.as_ref();
+    emit_restart_progress(
+        &app,
+        format!(
+            "Gateway service restart unavailable ({}); starting desktop-managed Gateway...",
+            reason
+        ),
+    );
+    crate::state::gateway_process::push_log(
+        &state.logs,
+        crate::state::gateway_process::LogSource::Lifecycle,
+        crate::state::gateway_process::LogLevel::Warn,
+        format!("service restart fallback: {}", reason),
+    );
+
+    let status = start_gateway(app.clone(), state, Some(port))
+        .await
+        .map_err(|error| format!("{}; managed Gateway fallback failed: {}", reason, error))?;
+    emit_restart_progress(&app, "Waiting for desktop-managed Gateway to become reachable...");
+    if wait_for_gateway_reachable(port, 45).await {
+        emit_restart_progress(&app, "Desktop-managed Gateway health check passed.");
+        return Ok(status);
+    }
+
+    Err(format!(
+        "{}; desktop-managed Gateway did not become reachable on port {}",
+        reason, port
+    ))
+}
+
 /// Stream process output line-by-line, emitting each line as `gateway-log`
 /// and pushing to the in-memory ring buffer.
 fn spawn_log_reader(
@@ -456,9 +503,14 @@ pub async fn restart_gateway(
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to restart gateway service: {}", e))?;
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let reason = format!("Failed to restart gateway service: {}", error);
+            drop(_restart_guard);
+            return start_managed_gateway_fallback(app, state, port, reason).await;
+        }
+    };
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -478,14 +530,24 @@ pub async fn restart_gateway(
         );
     }
 
-    let status = tokio::time::timeout(std::time::Duration::from_secs(45), child.wait())
-        .await
-        .map_err(|_| "Timed out while restarting gateway service".to_string())?
-        .map_err(|e| format!("Failed waiting for gateway restart: {}", e))?;
+    let status = match tokio::time::timeout(std::time::Duration::from_secs(45), child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            let reason = format!("Failed waiting for gateway restart: {}", error);
+            drop(_restart_guard);
+            return start_managed_gateway_fallback(app, state, port, reason).await;
+        }
+        Err(_) => {
+            let reason = "Timed out while restarting gateway service".to_string();
+            drop(_restart_guard);
+            return start_managed_gateway_fallback(app, state, port, reason).await;
+        }
+    };
     if !status.success() {
         let msg = format!("openclaw gateway restart exited with {}", status);
         emit_restart_progress(&app, &msg);
-        return Err(msg);
+        drop(_restart_guard);
+        return start_managed_gateway_fallback(app, state, port, msg).await;
     }
 
     emit_restart_progress(
@@ -494,22 +556,20 @@ pub async fn restart_gateway(
     );
 
     emit_restart_progress(&app, "Waiting for Gateway to become reachable...");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
-    while std::time::Instant::now() < deadline {
-        if is_gateway_serving(port).await {
-            let token = read_gateway_token(&config_path);
-            emit_restart_progress(&app, "Gateway health check passed.");
-            return Ok(GatewayStatus {
-                running: true,
-                port,
-                pid: None,
-                token,
-            });
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    if wait_for_gateway_reachable(port, 45).await {
+        let token = read_gateway_token(&config_path);
+        emit_restart_progress(&app, "Gateway health check passed.");
+        return Ok(GatewayStatus {
+            running: true,
+            port,
+            pid: None,
+            token,
+        });
     }
 
-    Err("Gateway restart completed but health check did not pass in time".to_string())
+    let reason = "Gateway service restart completed but health check did not pass in time";
+    drop(_restart_guard);
+    start_managed_gateway_fallback(app, state, port, reason).await
 }
 
 /// Front-end bridge (`aegis-adapter.ts → gateway.retry()`) invokes the command

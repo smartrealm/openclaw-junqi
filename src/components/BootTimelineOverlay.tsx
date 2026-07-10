@@ -79,7 +79,12 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
           ))}
         </div>
 
-        {recovery && (recovery.attempt > 0 || recovery.showRestart) && (
+        {recovery && (
+          recovery.attempt > 0
+          || recovery.showRestart
+          || recovery.restarting
+          || recovery.logs.length > 0
+        ) && (
           <div className="mx-5 mb-5 rounded-xl border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.035)] overflow-hidden">
             <div className="px-4 py-3 border-b border-aegis-border flex items-center justify-between gap-3">
               <div>

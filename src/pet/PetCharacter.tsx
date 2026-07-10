@@ -44,7 +44,7 @@ function usePetCharacterTheme(): PetThemeName {
   return themeName;
 }
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', customAsset, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'lobster', customAsset, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;
@@ -131,7 +131,7 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'cat', cus
     );
   }
 
-  const Skin = SKIN_REGISTRY[skin] ?? SKIN_REGISTRY.cat;
+  const Skin = SKIN_REGISTRY[skin] ?? SKIN_REGISTRY.lobster;
 
   return (
     <motion.div

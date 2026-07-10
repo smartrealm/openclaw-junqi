@@ -179,7 +179,10 @@ export class GatewayConnectionManager {
   }
 
   private snapshot(): GatewayStateSnapshot {
-    return this.fsm.snapshot(this.error, this.retrying);
+    return {
+      ...this.fsm.snapshot(this.error, this.retrying),
+      logs: this.logs,
+    };
   }
 
   private emit(): void {

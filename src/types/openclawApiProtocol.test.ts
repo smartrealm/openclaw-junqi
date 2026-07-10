@@ -2,7 +2,7 @@
  * Unit tests for openclawApiProtocol — ported wholesale from JunQi.
  * Covers the contract: any value written into
  * `~/.openclaw/openclaw.json → models.providers.*.api` must be one of
- * the 9 whitelisted values, OR auto-migrate from a legacy name.
+ * the 10 whitelisted values, OR auto-migrate from a legacy name.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,13 +15,14 @@ import {
 } from './openclawApiProtocol';
 
 describe('OPENCLAW_API_PROTOCOLS whitelist', () => {
-  test('has the 9 protocols openclaw accepts', () => {
-    assert.equal(OPENCLAW_API_PROTOCOLS.length, 9);
+  test('has the 10 protocols openclaw accepts', () => {
+    assert.equal(OPENCLAW_API_PROTOCOLS.length, 10);
     assert.ok(OPENCLAW_API_PROTOCOLS.includes('openai-completions'));
     assert.ok(OPENCLAW_API_PROTOCOLS.includes('openai-responses'));
     assert.ok(OPENCLAW_API_PROTOCOLS.includes('openai-chatgpt-responses'));
     assert.ok(OPENCLAW_API_PROTOCOLS.includes('anthropic-messages'));
     assert.ok(OPENCLAW_API_PROTOCOLS.includes('google-generative-ai'));
+    assert.ok(OPENCLAW_API_PROTOCOLS.includes('google-vertex'));
     assert.ok(OPENCLAW_API_PROTOCOLS.includes('github-copilot'));
     assert.ok(OPENCLAW_API_PROTOCOLS.includes('bedrock-converse-stream'));
     assert.ok(OPENCLAW_API_PROTOCOLS.includes('ollama'));

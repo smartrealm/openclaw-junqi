@@ -1,6 +1,6 @@
 //! Gateway 启动兜底编排器。
 //!
-//! 统一入口：先探测本机 Gateway，再检查托管子进程，最后尝试 Docker 兜底。
+//! 统一入口：先探测本机 Gateway，再启动托管原生进程，最后尝试 Docker 兜底。
 //! 这里只防止并发重复执行，不做失败后的长时间冷却；用户刚修复配置或
 //! 启动 Docker 后，应能立刻再次自救。
 //!
@@ -115,9 +115,9 @@ fn read_gateway_port() -> u16 {
 ///
 /// 规则：
 /// 1. 配置端口已可连接，直接返回 Native/healthy。
-/// 2. 托管子进程还活着但端口未就绪，记录诊断日志。
-/// 3. Docker 可用时尝试容器兜底，并等待端口就绪。
-/// 4. 失败时返回明确错误，但不设置冷却，用户修复后可立即重试。
+/// 2. 启动桌面托管的原生 Gateway，并等待端口就绪。
+/// 3. 原生启动失败后，Docker 可用时尝试容器兜底。
+/// 4. 所有路径失败时返回明确错误，但不设置冷却。
 #[tauri::command]
 pub async fn ensure_gateway_running(
     app: AppHandle,
@@ -188,12 +188,65 @@ pub async fn ensure_gateway_running(
                  format!("ensure_gateway_running: managed native child alive but gateway port was not reachable on {}", port));
     }
 
-    // 3. Docker 兜底。
+    // 3. 优先启动桌面托管的原生 Gateway。系统服务可能未安装或已经
+    // 指向旧的 OpenClaw 路径，托管进程使用当前运行时解析出的 CLI。
+    push_log(
+        &state.logs,
+        LogSource::Lifecycle,
+        LogLevel::Info,
+        "ensure_gateway_running: starting desktop-managed native gateway",
+    );
+    let native_error = match crate::commands::gateway::start_gateway(
+        app.clone(),
+        app.state::<GatewayProcess>(),
+        Some(port),
+    )
+    .await
+    {
+        Ok(status) => {
+            for _ in 0..45 {
+                if probe_gateway_port(port).await {
+                    let token = status.token.or_else(read_gateway_token);
+                    push_log(
+                        &state.logs,
+                        LogSource::Lifecycle,
+                        LogLevel::Info,
+                        "ensure_gateway_running: desktop-managed native gateway healthy",
+                    );
+                    return Ok(EnsureResult {
+                        mode: GatewayMode::Native,
+                        healthy: true,
+                        port,
+                        token,
+                        attempted_fallback: false,
+                        error: None,
+                    });
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            format!(
+                "desktop-managed native gateway did not become reachable on port {}",
+                port
+            )
+        }
+        Err(error) => format!("desktop-managed native gateway failed: {}", error),
+    };
+    push_log(
+        &state.logs,
+        LogSource::Lifecycle,
+        LogLevel::Error,
+        &native_error,
+    );
+
+    // 4. 原生启动失败后再尝试 Docker 兜底。
     push_log(
         &state.logs,
         LogSource::Lifecycle,
         LogLevel::Warn,
-        "ensure_gateway_running: native unhealthy, attempting Docker fallback",
+        format!(
+            "ensure_gateway_running: {}; attempting Docker fallback",
+            native_error
+        ),
     );
     match check_docker().await {
         Ok(ds) if ds.daemon_running => {
@@ -209,7 +262,7 @@ pub async fn ensure_gateway_running(
                         docker_token = status.token.or_else(read_docker_gateway_token);
                     }
                     Err(e) => {
-                        let err = format!("docker fallback failed: {}", e);
+                        let err = format!("{}; docker fallback failed: {}", native_error, e);
                         push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
                         return Ok(EnsureResult {
                             mode: GatewayMode::Unavailable,
@@ -256,8 +309,7 @@ pub async fn ensure_gateway_running(
             });
         }
         Ok(_) => {
-            let err =
-                "Docker unavailable — install Docker Desktop or run openclaw natively".to_string();
+            let err = format!("{}; Docker is unavailable", native_error);
             push_log(&state.logs, LogSource::Lifecycle, LogLevel::Warn, &err);
             Ok(EnsureResult {
                 mode: GatewayMode::Unavailable,
@@ -269,7 +321,7 @@ pub async fn ensure_gateway_running(
             })
         }
         Err(e) => {
-            let err = format!("Docker check failed: {}", e);
+            let err = format!("{}; Docker check failed: {}", native_error, e);
             push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
             Ok(EnsureResult {
                 mode: GatewayMode::Unavailable,

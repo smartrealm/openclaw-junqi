@@ -8,6 +8,7 @@ import {
   defaultAuthModeFor,
   authModesFor,
   normalizeProviderAuthMode,
+  toOpenClawAuthProfileMode,
   type ProviderAuthMode,
 } from './providerAuthMode';
 
@@ -114,5 +115,26 @@ describe('normalizeProviderAuthMode', () => {
   test('keeps current JunQi mode names', () => {
     assert.equal(normalizeProviderAuthMode('api_key'), 'api_key');
     assert.equal(normalizeProviderAuthMode('local'), 'local');
+  });
+});
+
+describe('toOpenClawAuthProfileMode', () => {
+  test('maps JunQi OAuth interaction variants to the OpenClaw oauth mode', () => {
+    assert.equal(toOpenClawAuthProfileMode('oauth_browser'), 'oauth');
+    assert.equal(toOpenClawAuthProfileMode('oauth_device'), 'oauth');
+  });
+
+  test('omits local-only providers from auth.profiles', () => {
+    assert.equal(toOpenClawAuthProfileMode('local'), undefined);
+  });
+
+  test('keeps API-key profiles schema-compatible', () => {
+    assert.equal(toOpenClawAuthProfileMode('api_key'), 'api_key');
+  });
+
+  test('preserves native OpenClaw token and AWS SDK modes', () => {
+    assert.equal(toOpenClawAuthProfileMode('token'), 'token');
+    assert.equal(toOpenClawAuthProfileMode('aws-sdk'), 'aws-sdk');
+    assert.equal(toOpenClawAuthProfileMode('oauth'), 'oauth');
   });
 });

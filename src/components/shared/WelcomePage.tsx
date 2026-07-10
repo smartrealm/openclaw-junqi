@@ -202,7 +202,7 @@ export function WelcomePage({ onLaunchTool }: WelcomePageProps) {
         }}
       >
         <div className="px-3 py-4 border-b" style={{ borderColor: 'rgb(var(--aegis-border))' }}>
-          <JunQiLogo variant="lockup" title="JunQi Desktop" />
+          <JunQiLogo variant="lockup" title="大夏集团 DAXIA GROUP" />
         </div>
 
         <nav className="flex-1 px-2 py-3 flex flex-col gap-0.5">
