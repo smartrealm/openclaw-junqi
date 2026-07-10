@@ -7,6 +7,7 @@
 
 import { startPolling, stopPolling } from '@/stores/gatewayDataStore';
 import { MessageRouter, isAuthError } from './messageRouter';
+import { ConnectionRetryPolicy } from './ConnectionRetryPolicy';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import i18n from '@/i18n';
@@ -71,10 +72,19 @@ export interface GatewayCallbacks {
   onStreamChunk: (sessionKey: string, messageId: string, content: string, media?: MediaInfo, runId?: string | null) => void;
   onStreamEnd: (sessionKey: string, messageId: string, content: string, media?: MediaInfo, meta?: StreamEndMeta) => void;
   onStatusChange: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
+  onRetryState?: (state: GatewayRetryState) => void;
   /** Fired when Gateway rejects with missing scope / invalid token */
   onScopeError?: (error: string) => void;
   /** Fired after successful re-pairing (token received) */
   onPairingComplete?: (token: string) => void;
+}
+
+export interface GatewayRetryState {
+  phase: 'attempting' | 'backoff' | 'connected' | 'exhausted' | 'idle';
+  attempt: number;
+  maxAttempts: number;
+  delayMs?: number;
+  error?: string;
 }
 
 interface PendingRequest {
@@ -102,8 +112,10 @@ export class GatewayConnection {
   private pendingRequests = new Map<string, PendingRequest>();
   private msgCounter = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectAttempt = 0;
-  private maxReconnects = 10;
+  private readonly retryPolicy = new ConnectionRetryPolicy(3);
+  private readonly CONNECTION_ATTEMPT_TIMEOUT_MS = 8_000;
+  private attemptTimer: ReturnType<typeof setTimeout> | null = null;
+  private handshakeRequestId: string | null = null;
 
   // ── Pairing detection (gentle retry instead of exponential backoff) ──
   private pairingRequired = false;
@@ -236,10 +248,10 @@ export class GatewayConnection {
   // Connect / Disconnect
   // ══════════════════════════════════════════════════════
 
-  connect(url: string, token: string) {
+  connect(url: string, token: string, resetReconnectAttempts = true) {
     this.url = url;
     this.token = token;
-    this.reconnectAttempt = 0;
+    resetReconnectAttempts ? this.retryPolicy.begin() : this.retryPolicy.beginRetry();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -266,6 +278,8 @@ export class GatewayConnection {
     // token-only handshake timer.
     const ws = new WebSocket(url);
     this.ws = ws;
+    this.startAttemptDeadline(ws);
+    this.emitRetryState('attempting');
 
     ws.onopen = () => {
       if (this.ws !== ws) return; // stale — a newer connection replaced us
@@ -296,10 +310,12 @@ export class GatewayConnection {
       if (this.ws !== ws) return; // stale — ignore close from a superseded WS
       debugLog('gateway', '[GW] Closed:', event.code, event.reason);
       this.stopHeartbeat();
+      this.clearAttemptTimers();
       stopPolling();
       this.connected = false;
       this.connecting = false;
       this.ws = null;
+      this.rejectAllPending(event.reason || 'Gateway connection closed');
       this.emitStatus();
 
       // Close code 1008 = pairing required (Gateway scope rejection)
@@ -327,30 +343,74 @@ export class GatewayConnection {
   disconnect() {
     this.stopHeartbeat();
     this.stopPairingRetry();
-    if (this.connectTimer) {
-      clearTimeout(this.connectTimer);
-      this.connectTimer = null;
-    }
+    this.clearAttemptTimers();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.reconnectAttempt = this.maxReconnects;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
+    this.rejectAllPending('Gateway connection closed');
     this.connected = false;
     this.connecting = false;
+    this.emitRetryState('idle');
     this.emitStatus();
   }
 
   private scheduleReconnect() {
-    if (this.reconnectAttempt >= this.maxReconnects) return;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempt), 30000);
-    this.reconnectAttempt++;
-    debugLog('gateway', `[GW] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt})`);
-    this.reconnectTimer = setTimeout(() => this.connect(this.url, this.token), delay);
+    const decision = this.retryPolicy.next();
+    if (decision.exhausted) {
+      const error = this.lastError || 'Gateway connection attempts exhausted';
+      this.emitRetryState('exhausted', { error });
+      this.emitStatus({ error });
+      return;
+    }
+    const { nextAttempt, delayMs } = decision;
+    debugLog('gateway', `[GW] Reconnecting in ${delayMs}ms (attempt ${nextAttempt}/${decision.maxAttempts})`);
+    this.emitRetryState('backoff', { attempt: nextAttempt, delayMs });
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect(this.url, this.token, false);
+    }, delayMs);
+  }
+
+  private startAttemptDeadline(ws: WebSocket) {
+    this.clearAttemptTimers();
+    this.attemptTimer = setTimeout(() => {
+      if (this.ws !== ws || this.connected) return;
+      this.lastError = `Gateway handshake timed out after ${this.CONNECTION_ATTEMPT_TIMEOUT_MS}ms`;
+      debugWarn('gateway', `[GW] ${this.lastError}`);
+      ws.close(4000, 'Gateway handshake timeout');
+    }, this.CONNECTION_ATTEMPT_TIMEOUT_MS);
+  }
+
+  private clearAttemptTimers() {
+    if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
+    if (this.attemptTimer) { clearTimeout(this.attemptTimer); this.attemptTimer = null; }
+    this.handshakeRequestId = null;
+  }
+
+  private emitRetryState(
+    phase: GatewayRetryState['phase'],
+    extra: Partial<GatewayRetryState> = {},
+  ) {
+    this.callbacks?.onRetryState?.({
+      phase,
+      attempt: extra.attempt ?? this.retryPolicy.attempt,
+      maxAttempts: this.retryPolicy.maxAttempts,
+      ...extra,
+    });
+  }
+
+  private rejectAllPending(reason: string) {
+    const pending = [...this.pendingRequests.values()];
+    this.pendingRequests.clear();
+    for (const request of pending) {
+      clearTimeout(request.timer);
+      request.reject(reason);
+    }
   }
 
   private isTryingToConnect(): boolean {
@@ -362,7 +422,10 @@ export class GatewayConnection {
   // ══════════════════════════════════════════════════════
 
   private async sendHandshake() {
+    if (this.handshakeRequestId) return;
     const id = this.nextId();
+    this.handshakeRequestId = id;
+    const handshakeSocket = this.ws;
     const scopes = ['operator.read', 'operator.write', 'operator.admin'];
     const clientId = 'openclaw-control-ui';
     const clientMode = 'ui';
@@ -381,13 +444,14 @@ export class GatewayConnection {
           this.connected = true;
           this.connecting = false;
           this.lastError = null;
-          this.reconnectAttempt = 0;
+          this.clearAttemptTimers();
           this.pairingRequired = false;
           if (this.pairingRetryTimer) {
             clearTimeout(this.pairingRetryTimer);
             this.pairingRetryTimer = null;
           }
           this.startHeartbeat();
+          this.emitRetryState('connected');
           this.emitStatus();
           startPolling(this);
           this.flushQueue();
@@ -397,6 +461,9 @@ export class GatewayConnection {
           this.connected = false;
           this.connecting = false;
           this.emitStatus({ error: err });
+          if (handshakeSocket && this.ws === handshakeSocket) {
+            handshakeSocket.close(4001, 'Gateway handshake failed');
+          }
         }
       },
       reject: (err: any) => {
@@ -407,9 +474,15 @@ export class GatewayConnection {
           this.pairingRequired = true;
         }
         this.emitStatus({ error: errStr });
+        if (handshakeSocket && this.ws === handshakeSocket) {
+          handshakeSocket.close(
+            this.pairingRequired ? 1008 : 4001,
+            this.pairingRequired ? 'Gateway authorization required' : 'Gateway handshake rejected',
+          );
+        }
       },
     },
-      { timeoutMs: 120_000 },
+      { timeoutMs: this.CONNECTION_ATTEMPT_TIMEOUT_MS },
     );
 
     // Build device identity if available (Electron IPC)
@@ -616,6 +689,7 @@ export class GatewayConnection {
     debugLog('gateway', '[GW] 🔑 Reconnecting with new token');
     this.stopHeartbeat();
     this.stopPairingRetry();
+    this.clearAttemptTimers();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -626,7 +700,8 @@ export class GatewayConnection {
     }
     this.connected = false;
     this.connecting = false;
-    this.reconnectAttempt = 0;
+    this.retryPolicy.reset();
+    this.rejectAllPending('Gateway credentials changed');
     this.token = newToken;
     setTimeout(() => this.connect(this.url, newToken), 300);
   }

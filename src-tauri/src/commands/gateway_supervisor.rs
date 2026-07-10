@@ -13,7 +13,9 @@
 
 use crate::commands::gateway::resolve_openclaw_binary;
 use crate::paths;
-use crate::state::gateway_process::{push_log, GatewayLifecycle, LogLevel, LogSource};
+use crate::state::gateway_process::{
+    push_log, GatewayLifecycle, GatewayRuntimeMode, LogLevel, LogSource,
+};
 use crate::state::GatewayProcess;
 use tauri::{AppHandle, Manager};
 use tokio::net::TcpListener;
@@ -222,6 +224,36 @@ pub async fn get_gateway_lifecycle(
         .map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+pub struct GatewayRuntimeSnapshot {
+    lifecycle: GatewayLifecycle,
+    mode: GatewayRuntimeMode,
+    port: u16,
+    managed_pid: Option<u32>,
+}
+
+/// Return the canonical supervisor snapshot used by diagnostics UI.
+#[tauri::command]
+pub async fn get_gateway_runtime_snapshot(
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<GatewayRuntimeSnapshot, String> {
+    let lifecycle = *state.lifecycle.lock().map_err(|e| e.to_string())?;
+    let mode = *state.runtime_mode.lock().map_err(|e| e.to_string())?;
+    let port = *state.port.lock().map_err(|e| e.to_string())?;
+    let managed_pid = state
+        .child
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .and_then(|child| child.id());
+    Ok(GatewayRuntimeSnapshot {
+        lifecycle,
+        mode,
+        port,
+        managed_pid,
+    })
+}
+
 /// Transition the lifecycle state and push a log entry.
 pub fn transition_lifecycle(state: &GatewayProcess, next: GatewayLifecycle, reason: &str) {
     if let Ok(mut lc) = state.lifecycle.lock() {
@@ -233,6 +265,19 @@ pub fn transition_lifecycle(state: &GatewayProcess, next: GatewayLifecycle, reas
         LogLevel::Info,
         format!("lifecycle → {:?} ({})", next, reason),
     );
+}
+
+/// Update lifecycle and runtime ownership as one supervisor-level transition.
+pub fn transition_runtime(
+    state: &GatewayProcess,
+    next: GatewayLifecycle,
+    mode: GatewayRuntimeMode,
+    reason: &str,
+) {
+    if let Ok(mut current_mode) = state.runtime_mode.lock() {
+        *current_mode = mode;
+    }
+    transition_lifecycle(state, next, reason);
 }
 
 #[cfg(test)]

@@ -32,14 +32,17 @@ export async function resolveConnectionTarget(): Promise<ConnectionTarget> {
 /** Execute a CONNECT action: resolve target + open WebSocket. */
 export async function executeConnect(
   onHttpUrl: (url: string) => void,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   const wsStatus = gateway.getStatus();
   if (wsStatus.connected || wsStatus.connecting) return;
 
   const target = await resolveConnectionTarget();
+  if (!isCurrent()) return;
   onHttpUrl(target.httpUrl);
   localStorage.setItem('aegis-gateway-http', target.httpUrl);
 
+  if (!isCurrent()) return;
   gateway.connect(target.wsUrl, target.token);
 }
 

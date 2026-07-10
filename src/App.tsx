@@ -109,7 +109,6 @@ export default function App() {
   const lastGatewayToastKeyRef = useRef<string | null>(null);
   const lastGatewayErrorToastRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
-  const bootRecoveryTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [bootRecoveryAttempt, setBootRecoveryAttempt] = useState(0);
   const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
   const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
@@ -286,6 +285,8 @@ export default function App() {
 
   const triggerGatewayReconnect = useCallback((label = 'manual') => {
     addBootRecoveryLog(`Reconnect requested (${label})`);
+    setBootRecoveryAttempt(0);
+    setBootRecoveryReady(false);
     emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.30, 'gateway.progress.reconnect');
     // Allow the auto-recovery effect to re-arm if the user clicks "reconnect"
     // stays true after the first recovery attempt and blocks all subsequent retries.
@@ -337,8 +338,6 @@ export default function App() {
   useEffect(() => {
     if (setupComplete !== true) return;
     if (connected) {
-      bootRecoveryTimersRef.current.forEach(clearTimeout);
-      bootRecoveryTimersRef.current = [];
       bootRecoveryStartedRef.current = false;
       setBootRecoveryAttempt(0);
       setBootRecoveryReady(false);
@@ -351,28 +350,7 @@ export default function App() {
     setBootRecoveryLogs([]);
 
     let cancelled = false;
-    const clearRecoveryTimers = () => {
-      bootRecoveryTimersRef.current.forEach(clearTimeout);
-      bootRecoveryTimersRef.current = [];
-    };
-    const scheduleReconnectRetries = () => {
-      clearRecoveryTimers();
-      const delays = [1_000, 2_000, 4_000];
-      bootRecoveryTimersRef.current = delays.map((delay, idx) => setTimeout(() => {
-        if (cancelled || useChatStore.getState().connected) return;
-        const attempt = idx + 1;
-        setBootRecoveryAttempt(attempt);
-        addBootRecoveryLog(`WebSocket handshake still pending; reconnect attempt ${attempt}/3`);
-        try { gateway.disconnect(); } catch {}
-        try { gatewayManager.reconnect(); } catch {}
-        if (attempt === 3) {
-          setBootRecoveryReady(true);
-          addBootRecoveryLog('Connection retries did not finish. Manual restart is available.');
-        }
-      }, delay));
-    };
     const startGatewayRecovery = async (reason: string) => {
-      clearRecoveryTimers();
       setBootRecoveryAttempt(0);
       setBootRecoveryReady(false);
       setBootRecoveryRestarting(true);
@@ -390,7 +368,6 @@ export default function App() {
           );
           try { gateway.disconnect(); } catch {}
           try { gatewayManager.reconnect(); } catch {}
-          scheduleReconnectRetries();
           return;
         }
         addBootRecoveryLog(`ensure_gateway_running returned unhealthy: ${result?.error ?? 'unknown error'}`);
@@ -424,7 +401,6 @@ export default function App() {
             'gateway.progress.gatewayHealthy',
           );
           try { gatewayManager.reconnect(); } catch {}
-          scheduleReconnectRetries();
           return;
         }
         addBootRecoveryLog(`Gateway status is not ready: ${status?.error ?? 'not running'}`);
@@ -439,7 +415,6 @@ export default function App() {
 
     return () => {
       cancelled = true;
-      clearRecoveryTimers();
     };
   }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot]);
 
@@ -551,6 +526,25 @@ export default function App() {
           });
         }
       },
+      onRetryState: (retry) => {
+        if (bootOverlayDismissedRef.current) return;
+        if (retry.phase === 'attempting') {
+          setBootRecoveryAttempt(retry.attempt);
+          addBootRecoveryLog(`WebSocket connection attempt ${retry.attempt}/${retry.maxAttempts} started`);
+          return;
+        }
+        if (retry.phase === 'backoff') {
+          addBootRecoveryLog(
+            `Connection attempt failed; retry ${retry.attempt}/${retry.maxAttempts} in ${retry.delayMs ?? 0}ms`,
+          );
+          return;
+        }
+        if (retry.phase === 'exhausted') {
+          setBootRecoveryAttempt(retry.maxAttempts);
+          setBootRecoveryReady(true);
+          addBootRecoveryLog(`All ${retry.maxAttempts} connection attempts failed; self-rescue is ready`);
+        }
+      },
       onStatusChange: (status) => {
         setConnectionStatus(status);
         // Feed WS lifecycle events into the state machine
@@ -651,8 +645,16 @@ export default function App() {
       setConnectionStatus({ connected: snap.connected, connecting: snap.connecting, error: snap.error ?? undefined });
       setGatewayBootError(snap.error);
       setGatewayBootLogs(snap.logs);
-      if (snap.logs?.stdout) setBootRecoveryLogs((prev) => [...prev.slice(-24), snap.logs!.stdout]);
-      if (snap.logs?.stderr) setBootRecoveryLogs((prev) => [...prev.slice(-24), snap.logs!.stderr]);
+      if (snap.logs?.stdout || snap.logs?.stderr) {
+        const incoming = [snap.logs.stdout, snap.logs.stderr]
+          .filter(Boolean)
+          .flatMap((block) => block.split('\n'))
+          .filter(Boolean);
+        setBootRecoveryLogs((prev) => {
+          const seen = new Set(prev);
+          return [...prev, ...incoming.filter((line) => !seen.has(line))].slice(-80);
+        });
+      }
       setGatewayRetrying(snap.retrying);
 
       const toastKey = `${snap.state}|${snap.connected}|${snap.connecting}|${snap.retrying}|${snap.error ?? ''}`;
@@ -788,7 +790,7 @@ export default function App() {
       window.removeEventListener('aegis:session-reset', handleSessionReset);
       window.removeEventListener('aegis:sessions-changed', handleSessionsChanged);
       window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
-      gateway.disconnect();
+      gatewayManager.destroy();
     };
   }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog]);
 

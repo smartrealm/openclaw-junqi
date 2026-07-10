@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { AlertCircle, Bot, CheckCircle2, HeartPulse, Loader2, RotateCcw, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, FileText, HeartPulse, Loader2, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { GatewayRescueChat } from './GatewayRescueChat';
 
@@ -13,6 +13,8 @@ export interface GatewaySelfRescuePanelProps {
   progressPercent?: number | null;
   primaryActionLabel: string;
   onPrimaryAction: () => void;
+  onReconnect?: () => void;
+  onOpenLogs?: () => void;
   error?: string;
   logs?: string;
   variant?: 'popover' | 'full';
@@ -29,6 +31,8 @@ export function GatewaySelfRescuePanel({
   progressPercent,
   primaryActionLabel,
   onPrimaryAction,
+  onReconnect,
+  onOpenLogs,
   error,
   logs,
   variant = 'full',
@@ -139,6 +143,30 @@ export function GatewaySelfRescuePanel({
           {busy ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
           {primaryActionLabel}
         </button>
+
+        {(onReconnect || onOpenLogs) && (
+          <div className="grid grid-cols-2 gap-2">
+            {onReconnect && (
+              <button
+                onClick={onReconnect}
+                disabled={actionDisabled}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-aegis-border bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-aegis-text-secondary transition-colors hover:border-aegis-primary/30 hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw size={12} />
+                {t('offline.retryGateway', '重新连接')}
+              </button>
+            )}
+            {onOpenLogs && (
+              <button
+                onClick={onOpenLogs}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-aegis-border bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-aegis-text-secondary transition-colors hover:border-aegis-primary/30 hover:text-aegis-primary"
+              >
+                <FileText size={12} />
+                {t('offline.viewLogs', '查看日志')}
+              </button>
+            )}
+          </div>
+        )}
 
         <button
           onClick={() => void runDoctorFix()}

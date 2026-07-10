@@ -7,11 +7,12 @@
 //! 前端在冷启动、手动重连、自救入口里都应调用这里，而不是各自拼接
 //! 多套恢复流程。
 
-use crate::commands::docker::{check_docker, docker_gateway_status, start_docker_gateway};
-use crate::state::gateway_process::{push_log, LogLevel, LogSource};
+use crate::commands::docker::{check_docker, docker_gateway_status, start_docker_gateway_locked};
+use crate::state::gateway_process::{
+    push_log, GatewayLifecycle, GatewayRuntimeMode, LogLevel, LogSource,
+};
 use crate::state::GatewayProcess;
 use serde::Serialize;
-use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
@@ -37,29 +38,6 @@ pub struct EnsureResult {
     /// 本次是否尝试过兜底路径。UI 用它决定是否提示“已切换/尝试恢复”。
     pub attempted_fallback: bool,
     pub error: Option<String>,
-}
-
-static ENSURE_IN_FLIGHT: Mutex<bool> = Mutex::new(false);
-
-struct EnsureRunGuard;
-
-impl EnsureRunGuard {
-    fn try_enter() -> Result<Option<Self>, String> {
-        let mut in_flight = ENSURE_IN_FLIGHT.lock().map_err(|e| e.to_string())?;
-        if *in_flight {
-            return Ok(None);
-        }
-        *in_flight = true;
-        Ok(Some(Self))
-    }
-}
-
-impl Drop for EnsureRunGuard {
-    fn drop(&mut self) {
-        if let Ok(mut in_flight) = ENSURE_IN_FLIGHT.lock() {
-            *in_flight = false;
-        }
-    }
 }
 
 /// 确认指定端口是否能接受 Gateway TCP 连接。
@@ -123,34 +101,10 @@ pub async fn ensure_gateway_running(
     app: AppHandle,
     state: State<'_, GatewayProcess>,
 ) -> Result<EnsureResult, String> {
-    let Some(_ensure_guard) = EnsureRunGuard::try_enter()? else {
-        let configured_port = read_gateway_port();
-        let state_port = *state.port.lock().map_err(|e| e.to_string())?;
-        let port = if configured_port > 0 {
-            configured_port
-        } else {
-            state_port
-        };
-        if probe_gateway_port(port).await {
-            let token = read_gateway_token();
-            return Ok(EnsureResult {
-                mode: GatewayMode::Native,
-                healthy: true,
-                port,
-                token,
-                attempted_fallback: false,
-                error: None,
-            });
-        }
-        return Ok(EnsureResult {
-            mode: GatewayMode::Unavailable,
-            healthy: false,
-            port,
-            token: None,
-            attempted_fallback: false,
-            error: Some("Gateway recovery is already running".to_string()),
-        });
-    };
+    // All lifecycle mutations share this gate. A concurrent ensure waits for
+    // the active operation, then re-probes and reuses its result.
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
 
     let port = read_gateway_port();
     *state.port.lock().map_err(|e| e.to_string())? = port;
@@ -158,6 +112,12 @@ pub async fn ensure_gateway_running(
     // 1. 本机配置端口已经可用，直接复用。
     if probe_gateway_port(port).await {
         let token = read_gateway_token();
+        crate::commands::gateway_supervisor::transition_runtime(
+            &state,
+            GatewayLifecycle::Running,
+            GatewayRuntimeMode::External,
+            "ensure_gateway_running: existing endpoint is healthy",
+        );
         push_log(
             &state.logs,
             LogSource::Lifecycle,
@@ -196,7 +156,7 @@ pub async fn ensure_gateway_running(
         LogLevel::Info,
         "ensure_gateway_running: starting desktop-managed native gateway",
     );
-    let native_error = match crate::commands::gateway::start_gateway(
+    let native_error = match crate::commands::gateway::start_gateway_locked(
         app.clone(),
         app.state::<GatewayProcess>(),
         Some(port),
@@ -257,9 +217,24 @@ pub async fn ensure_gateway_running(
                 .unwrap_or(false);
             let mut docker_token = read_docker_gateway_token();
             if !present {
-                match start_docker_gateway(app.clone(), Some(port), None).await {
+                // A managed child that stayed alive without becoming healthy
+                // must not coexist with the Docker fallback.
+                let old_child = {
+                    let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
+                    child_lock.take()
+                };
+                if let Some(mut child) = old_child {
+                    crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+                }
+                match start_docker_gateway_locked(app.clone(), Some(port), None).await {
                     Ok(status) => {
                         docker_token = status.token.or_else(read_docker_gateway_token);
+                        crate::commands::gateway_supervisor::transition_runtime(
+                            &state,
+                            GatewayLifecycle::Running,
+                            GatewayRuntimeMode::Docker,
+                            "ensure_gateway_running: Docker fallback started",
+                        );
                     }
                     Err(e) => {
                         let err = format!("{}; docker fallback failed: {}", native_error, e);

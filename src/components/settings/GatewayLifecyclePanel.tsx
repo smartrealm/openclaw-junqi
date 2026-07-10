@@ -16,7 +16,15 @@ import { getGatewayLogs, type LogEntry } from '@/api/tauri-commands';
 import clsx from 'clsx';
 
 type GatewayLifecycle = 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
+type GatewayRuntimeMode = 'none' | 'external' | 'system_service' | 'managed_child' | 'docker';
 type PanelVariant = 'compact' | 'full';
+
+interface GatewayRuntimeSnapshot {
+  lifecycle: GatewayLifecycle;
+  mode: GatewayRuntimeMode;
+  port: number;
+  managed_pid: number | null;
+}
 
 interface ProgressEvent {
   step?: string;
@@ -67,6 +75,18 @@ function lifecycleLabel(t: ReturnType<typeof useTranslation>['t'], lifecycle: Ga
   });
 }
 
+function runtimeModeLabel(t: ReturnType<typeof useTranslation>['t'], mode: GatewayRuntimeMode): string {
+  return t(`gateway.runtimeMode.${mode}`, {
+    defaultValue: ({
+      none: '未运行',
+      external: '外部实例',
+      system_service: '系统服务',
+      managed_child: 'JunQi 托管',
+      docker: 'Docker',
+    } as Record<GatewayRuntimeMode, string>)[mode],
+  });
+}
+
 function resolveProgressMessage(t: ReturnType<typeof useTranslation>['t'], detail: ProgressEvent): string | null {
   if (typeof detail.message !== 'string') return null;
   if (typeof detail.key !== 'string') return detail.message;
@@ -93,6 +113,8 @@ function statusDotClass(tone: ReturnType<typeof lifecycleTone>): string {
 export function GatewayLifecyclePanel({ variant = 'compact', className }: GatewayLifecyclePanelProps) {
   const { t } = useTranslation();
   const [lifecycle, setLifecycle] = useState<GatewayLifecycle>('stopped');
+  const [runtimeMode, setRuntimeMode] = useState<GatewayRuntimeMode>('none');
+  const [runtimePort, setRuntimePort] = useState(18789);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [latestProgress, setLatestProgress] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -101,11 +123,15 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextLifecycle, nextLogs] = await Promise.all([
-        invoke<GatewayLifecycle>('get_gateway_lifecycle').catch(() => null),
+      const [snapshot, nextLogs] = await Promise.all([
+        invoke<GatewayRuntimeSnapshot>('get_gateway_runtime_snapshot').catch(() => null),
         getGatewayLogs(variant === 'full' ? 12 : 4).catch(() => []),
       ]);
-      if (nextLifecycle) setLifecycle(nextLifecycle);
+      if (snapshot) {
+        setLifecycle(snapshot.lifecycle);
+        setRuntimeMode(snapshot.mode);
+        setRuntimePort(snapshot.port);
+      }
       setLogs(nextLogs);
     } finally {
       setLoading(false);
@@ -200,6 +226,9 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
             )}>
               <Icon size={12} className={tone === 'run' ? 'animate-spin' : ''} />
               {lifecycleLabel(t, lifecycle)}
+            </span>
+            <span className="inline-flex items-center rounded-md border border-aegis-border bg-aegis-bg/50 px-2 py-1 font-mono text-[11px] text-aegis-text-muted">
+              {runtimeModeLabel(t, runtimeMode)} · :{runtimePort}
             </span>
             {percent != null && tone === 'run' && (
               <span className="font-mono text-aegis-text-muted">{percent}%</span>

@@ -32,11 +32,13 @@ interface TransitionRule {
 const RULES: TransitionRule[] = [
   // ── DETECTING ──
   { from: GatewayState.DETECTING, event: 'STATUS_RECEIVED', to: GatewayState.CONNECTING,  actions: ['CONNECT'] },
+  { from: GatewayState.DETECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },
   // Note: running=false or error handled dynamically in transition()
 
   // ── STARTING ──
   { from: GatewayState.STARTING,  event: 'START_SUCCESS',   to: GatewayState.CONNECTING,  actions: ['CONNECT'] },
   { from: GatewayState.STARTING,  event: 'START_FAILED',    to: GatewayState.ERROR,       actions: ['SHOW_ERROR'] },
+  { from: GatewayState.STARTING,  event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },
 
   // ── CONNECTING ──
   { from: GatewayState.CONNECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },

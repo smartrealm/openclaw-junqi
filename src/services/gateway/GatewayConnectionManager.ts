@@ -7,6 +7,7 @@
 import { gateway } from './index';
 import { GatewayStateMachine, type GatewayAction } from './GatewayStateMachine';
 import { executeConnect, executeStart } from './GatewayActionExecutor';
+import { LifecycleEpoch } from './LifecycleEpoch';
 import {
   GatewayState,
   type GatewayEvent,
@@ -24,6 +25,7 @@ export class GatewayConnectionManager {
   private logs: { stdout: string; stderr: string } | undefined;
   private statusUnsub: (() => void) | undefined;
   private startAttempted = false;
+  private readonly lifecycleEpoch = new LifecycleEpoch();
 
   /** Subscribe to state changes. Returns unsubscribe function. */
   onStateChange(listener: StateListener): () => void {
@@ -34,6 +36,11 @@ export class GatewayConnectionManager {
 
   /** Initialize: subscribe to gateway status events + probe. */
   init(): void {
+    const generation = this.lifecycleEpoch.activate();
+    this.fsm = new GatewayStateMachine();
+    this.startAttempted = false;
+    this.retrying = false;
+    this.error = null;
     this.statusUnsub?.();
     this.statusUnsub = undefined;
 
@@ -44,6 +51,7 @@ export class GatewayConnectionManager {
 
     // Subscribe to real-time status updates
     this.statusUnsub = window.aegis.gateway.onStatusChanged((status: any) => {
+      if (!this.isCurrent(generation)) return;
       if (status.logs) this.logs = status.logs;
       if (status.retrying) { this.retrying = true; this.emit(); return; }
       this.retrying = false;
@@ -56,16 +64,8 @@ export class GatewayConnectionManager {
       });
     });
 
-    // Initial probe
-    void window.aegis.gateway.getStatus().then((status: any) => {
-      if (status.logs) this.logs = status.logs;
-      this.handleEvent({
-        type: 'STATUS_RECEIVED',
-        running: Boolean(status.running),
-        error: status.error ?? null,
-        retrying: false,
-      });
-    });
+    // onStatusChanged owns the initial probe as well as periodic updates. A
+    // second getStatus() here used to race it and submit stale process state.
   }
 
   /** Notify that WebSocket has opened (called from App onStatusChange). */
@@ -86,6 +86,7 @@ export class GatewayConnectionManager {
 
   /** Reset to DETECTING (e.g. after config change). */
   reset(): void {
+    this.lifecycleEpoch.invalidate();
     this.startAttempted = false;
     this.retrying = false;
     this.error = null;
@@ -101,7 +102,9 @@ export class GatewayConnectionManager {
       this.handleEvent({ type: 'STATUS_RECEIVED', running: true, error: null, retrying: false });
       return;
     }
+    const generation = this.lifecycleEpoch.capture();
     void window.aegis.gateway.getStatus().then((status: any) => {
+      if (!this.isCurrent(generation)) return;
       if (status.logs) this.logs = status.logs;
       this.handleEvent({
         type: 'STATUS_RECEIVED',
@@ -114,6 +117,7 @@ export class GatewayConnectionManager {
 
   /** Reset FSM to DETECTING and immediately probe — active reconnect. */
   reconnect(): void {
+    this.lifecycleEpoch.invalidate();
     this.startAttempted = false;
     this.retrying = false;
     this.error = null;
@@ -123,6 +127,7 @@ export class GatewayConnectionManager {
 
   /** Cleanup — call on unmount. */
   destroy(): void {
+    this.lifecycleEpoch.deactivate();
     this.statusUnsub?.();
     this.statusUnsub = undefined;
     this.listeners.clear();
@@ -131,6 +136,7 @@ export class GatewayConnectionManager {
 
   // ── Core: process event through FSM, execute actions ──
   private handleEvent(event: GatewayEvent): void {
+    if (!this.lifecycleEpoch.isActive()) return;
     // Special handling: STATUS_RECEIVED with error updates error state
     if (event.type === 'STATUS_RECEIVED' && event.error) {
       this.error = event.error;
@@ -140,24 +146,26 @@ export class GatewayConnectionManager {
 
     // Execute actions returned by the FSM
     for (const action of result.actions) {
-      this.executeAction(action);
+      this.executeAction(action, this.lifecycleEpoch.capture());
     }
 
     this.emit();
   }
 
-  private executeAction(action: GatewayAction): void {
+  private executeAction(action: GatewayAction, generation: number): void {
     switch (action) {
       case 'CONNECT':
         void executeConnect((httpUrl) => {
+          if (!this.isCurrent(generation)) return;
           // App.tsx uses this for media resolution / pairing
           window.dispatchEvent(new CustomEvent('aegis:gateway-http-url', { detail: httpUrl }));
-        });
+        }, () => this.isCurrent(generation));
         break;
       case 'START':
         if (!this.startAttempted) {
           this.startAttempted = true;
           void executeStart().then((result) => {
+            if (!this.isCurrent(generation)) return;
             if (result.success) {
               this.handleEvent({ type: 'START_SUCCESS' });
             } else {
@@ -188,6 +196,10 @@ export class GatewayConnectionManager {
   private emit(): void {
     const snap = this.snapshot();
     this.listeners.forEach(l => l(snap));
+  }
+
+  private isCurrent(generation: number): boolean {
+    return this.lifecycleEpoch.isCurrent(generation);
   }
 }
 

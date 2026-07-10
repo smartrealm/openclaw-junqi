@@ -1,4 +1,5 @@
 use crate::paths;
+use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode};
 use crate::state::GatewayProcess;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -385,15 +386,34 @@ async fn start_managed_gateway_fallback(
         format!("service restart fallback: {}", reason),
     );
 
-    let status = start_gateway(app.clone(), state, Some(port))
-        .await
-        .map_err(|error| format!("{}; managed Gateway fallback failed: {}", reason, error))?;
-    emit_restart_progress(&app, "Waiting for desktop-managed Gateway to become reachable...");
+    let status = match start_gateway_locked(app.clone(), state, Some(port)).await {
+        Ok(status) => status,
+        Err(error) => {
+            crate::commands::gateway_supervisor::transition_lifecycle(
+                &app.state::<GatewayProcess>(),
+                GatewayLifecycle::Error,
+                "restart fallback: managed Gateway failed",
+            );
+            return Err(format!(
+                "{}; managed Gateway fallback failed: {}",
+                reason, error
+            ));
+        }
+    };
+    emit_restart_progress(
+        &app,
+        "Waiting for desktop-managed Gateway to become reachable...",
+    );
     if wait_for_gateway_reachable(port, 45).await {
         emit_restart_progress(&app, "Desktop-managed Gateway health check passed.");
         return Ok(status);
     }
 
+    crate::commands::gateway_supervisor::transition_lifecycle(
+        &app.state::<GatewayProcess>(),
+        GatewayLifecycle::Error,
+        "restart fallback: health check timed out",
+    );
     Err(format!(
         "{}; desktop-managed Gateway did not become reachable on port {}",
         reason, port
@@ -450,6 +470,52 @@ pub async fn restart_gateway(
     let port = port.unwrap_or(meta.port);
     *state.port.lock().map_err(|e| e.to_string())? = port;
 
+    use std::sync::atomic::Ordering;
+
+    let observed_restart_generation = state
+        .restart_completed_generation
+        .load(Ordering::Acquire);
+    let operation_gate = state.operation_gate.clone();
+    let _global_operation_guard = match operation_gate.clone().try_lock_owned() {
+        Ok(guard) => guard,
+        Err(_) => {
+            let _ = app.emit(
+                "gateway-log",
+                "Gateway lifecycle operation in progress; waiting for ownership...",
+            );
+            operation_gate.lock_owned().await
+        }
+    };
+    if state
+        .restart_completed_generation
+        .load(Ordering::Acquire)
+        != observed_restart_generation
+    {
+        let _ = app.emit(
+            "gateway-log",
+            "Concurrent Gateway restart finished; reusing its final status.",
+        );
+        return gateway_status(state).await;
+    }
+
+    struct RestartCompletionGuard<'a> {
+        generation: &'a std::sync::atomic::AtomicU64,
+    }
+    impl Drop for RestartCompletionGuard<'_> {
+        fn drop(&mut self) {
+            self.generation.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+    let _restart_completion_guard = RestartCompletionGuard {
+        generation: &state.restart_completed_generation,
+    };
+
+    crate::commands::gateway_supervisor::transition_lifecycle(
+        &state,
+        GatewayLifecycle::Reconnecting,
+        "restart_gateway: restarting system service",
+    );
+
     // Mark restarting so the status poller / start_gateway don't race us:
     // gateway_status returns running=true, start_gateway refuses to spawn.
     *state.restarting.lock().map_err(|e| e.to_string())? = true;
@@ -495,8 +561,11 @@ pub async fn restart_gateway(
     let mut cmd = tokio::process::Command::new(&openclaw);
     cmd.args(["gateway", "--port", &port.to_string(), "restart"])
         .env("PATH", &gw_path)
+        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
+        .env("OPENCLAW_CONFIG_PATH", &config_path)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
 
     #[cfg(windows)]
     {
@@ -508,7 +577,7 @@ pub async fn restart_gateway(
         Err(error) => {
             let reason = format!("Failed to restart gateway service: {}", error);
             drop(_restart_guard);
-            return start_managed_gateway_fallback(app, state, port, reason).await;
+            return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
         }
     };
 
@@ -530,24 +599,27 @@ pub async fn restart_gateway(
         );
     }
 
-    let status = match tokio::time::timeout(std::time::Duration::from_secs(45), child.wait()).await {
+    let status = match tokio::time::timeout(std::time::Duration::from_secs(45), child.wait()).await
+    {
         Ok(Ok(status)) => status,
         Ok(Err(error)) => {
             let reason = format!("Failed waiting for gateway restart: {}", error);
+            crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
             drop(_restart_guard);
-            return start_managed_gateway_fallback(app, state, port, reason).await;
+            return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
         }
         Err(_) => {
             let reason = "Timed out while restarting gateway service".to_string();
+            crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
             drop(_restart_guard);
-            return start_managed_gateway_fallback(app, state, port, reason).await;
+            return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
         }
     };
     if !status.success() {
         let msg = format!("openclaw gateway restart exited with {}", status);
         emit_restart_progress(&app, &msg);
         drop(_restart_guard);
-        return start_managed_gateway_fallback(app, state, port, msg).await;
+        return start_managed_gateway_fallback(app, state.clone(), port, msg).await;
     }
 
     emit_restart_progress(
@@ -559,6 +631,12 @@ pub async fn restart_gateway(
     if wait_for_gateway_reachable(port, 45).await {
         let token = read_gateway_token(&config_path);
         emit_restart_progress(&app, "Gateway health check passed.");
+        crate::commands::gateway_supervisor::transition_runtime(
+            &state,
+            GatewayLifecycle::Running,
+            GatewayRuntimeMode::SystemService,
+            "restart_gateway: service health check passed",
+        );
         return Ok(GatewayStatus {
             running: true,
             port,
@@ -569,7 +647,7 @@ pub async fn restart_gateway(
 
     let reason = "Gateway service restart completed but health check did not pass in time";
     drop(_restart_guard);
-    start_managed_gateway_fallback(app, state, port, reason).await
+    start_managed_gateway_fallback(app, state.clone(), port, reason).await
 }
 
 /// Front-end bridge (`aegis-adapter.ts → gateway.retry()`) invokes the command
@@ -585,6 +663,17 @@ pub async fn restart_local_gateway(
 
 #[tauri::command]
 pub async fn start_gateway(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+    port: Option<u16>,
+) -> Result<GatewayStatus, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
+    start_gateway_locked(app, state, port).await
+}
+
+/// Start implementation for callers that already own `operation_gate`.
+pub(crate) async fn start_gateway_locked(
     app: AppHandle,
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
@@ -612,6 +701,12 @@ pub async fn start_gateway(
     // Do not probe unrelated desktop ports; those may belong to another app.
     if is_gateway_serving(port).await {
         *state.port.lock().map_err(|e| e.to_string())? = port;
+        crate::commands::gateway_supervisor::transition_runtime(
+            &state,
+            GatewayLifecycle::Running,
+            GatewayRuntimeMode::External,
+            "start_gateway: existing endpoint is healthy",
+        );
         // Gateway already running — read the token from config so the frontend
         // can connect without an extra round-trip.
         let existing_token = read_gateway_token(&config_path);
@@ -630,6 +725,25 @@ pub async fn start_gateway(
         crate::state::gateway_process::GatewayLifecycle::Starting,
         "start_gateway: beginning spawn sequence",
     );
+    struct StartFailureGuard<'a> {
+        state: &'a GatewayProcess,
+        armed: bool,
+    }
+    impl Drop for StartFailureGuard<'_> {
+        fn drop(&mut self) {
+            if self.armed {
+                crate::commands::gateway_supervisor::transition_lifecycle(
+                    self.state,
+                    GatewayLifecycle::Error,
+                    "start_gateway: spawn sequence failed",
+                );
+            }
+        }
+    }
+    let mut start_failure_guard = StartFailureGuard {
+        state: &state,
+        armed: true,
+    };
     let old_child = {
         let mut lock = state.child.lock().map_err(|e| e.to_string())?;
         lock.take()
@@ -765,9 +879,13 @@ pub async fn start_gateway(
     *state.port.lock().map_err(|e| e.to_string())? = port;
     crate::commands::gateway_supervisor::transition_lifecycle(
         &state,
-        crate::state::gateway_process::GatewayLifecycle::Running,
+        GatewayLifecycle::Running,
         "start_gateway: child spawned",
     );
+    if let Ok(mut mode) = state.runtime_mode.lock() {
+        *mode = GatewayRuntimeMode::ManagedChild;
+    }
+    start_failure_guard.armed = false;
 
     // Re-read the token that ensure_config_with_token just wrote/read
     // so we return it in a single IPC round-trip.
@@ -782,6 +900,8 @@ pub async fn start_gateway(
 
 #[tauri::command]
 pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
     let child = {
         let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
         child_lock.take()
@@ -792,8 +912,20 @@ pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, St
             .kill()
             .await
             .map_err(|e| format!("Failed to kill gateway: {}", e))?;
+        crate::commands::gateway_supervisor::transition_runtime(
+            &state,
+            GatewayLifecycle::Stopped,
+            GatewayRuntimeMode::None,
+            "stop_gateway: managed child stopped",
+        );
         Ok("Gateway stopped".into())
     } else {
+        crate::commands::gateway_supervisor::transition_runtime(
+            &state,
+            GatewayLifecycle::Stopped,
+            GatewayRuntimeMode::None,
+            "stop_gateway: no managed child",
+        );
         Ok("Gateway not running — nothing to stop".into())
     }
 }
@@ -832,6 +964,12 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
                 Ok(Some(_status)) => {
                     // Process exited — clear it and fall through to external probe.
                     *child_lock = None;
+                    if let Ok(mut mode) = state.runtime_mode.lock() {
+                        *mode = GatewayRuntimeMode::None;
+                    }
+                    if let Ok(mut lifecycle) = state.lifecycle.lock() {
+                        *lifecycle = GatewayLifecycle::Stopped;
+                    }
                     (false, None)
                 }
                 Ok(None) => {
@@ -869,6 +1007,14 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
     // 2. No managed child: probe JunQi's configured OpenClaw port only.
     if is_gateway_serving(port).await {
         *state.port.lock().map_err(|e| e.to_string())? = port;
+        if let Ok(mut lifecycle) = state.lifecycle.lock() {
+            *lifecycle = GatewayLifecycle::Running;
+        }
+        if let Ok(mut mode) = state.runtime_mode.lock() {
+            if *mode == GatewayRuntimeMode::None {
+                *mode = GatewayRuntimeMode::External;
+            }
+        }
         let probe_token = read_gateway_token(&config_path);
         return Ok(GatewayStatus {
             running: true,

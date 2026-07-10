@@ -3,7 +3,7 @@
 // Transparent overlay with centered status — no blocking, no errors
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, WifiOff, FileText, MonitorDot, RotateCw } from 'lucide-react';
 import { gateway } from '@/services/gateway';
@@ -15,14 +15,19 @@ export function OfflineOverlay() {
   const connecting = useChatStore((s) => s.connecting);
   const lastError = gateway.getLastError?.();
   const [restartInfo, setRestartInfo] = useState({ retrying: false, logs: [] as string[] });
+  const logsRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => gatewayManager.onStateChange((snap) => {
-    const latest = snap.logs?.stdout || snap.logs?.stderr;
+    const latest = [snap.logs?.stdout, snap.logs?.stderr].filter(Boolean).join('\n');
     setRestartInfo((prev) => ({
       retrying: snap.retrying,
-      logs: latest ? [...prev.logs.slice(-7), latest] : prev.logs,
+      logs: latest ? latest.split('\n').filter(Boolean).slice(-80) : prev.logs,
     }));
   }), []);
+
+  useEffect(() => {
+    if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight;
+  }, [restartInfo.logs]);
 
   const openLogsPage = () => {
     try { window.location.hash = '#/logs'; } catch {}
@@ -51,7 +56,7 @@ export function OfflineOverlay() {
 
   return (
     <div className="h-full flex items-center justify-center">
-      <div className="text-center max-w-[360px]">
+      <div className="w-full max-w-[680px] px-5 text-center">
         <div className="w-16 h-16 rounded-2xl mx-auto mb-5
           bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)]
           flex items-center justify-center">
@@ -89,8 +94,8 @@ export function OfflineOverlay() {
                 {restartInfo.retrying ? t('offline.restartInProgress', 'Restarting local OpenClaw Gateway…') : t('offline.restartProgress', 'Gateway restart progress')}
               </div>
               {restartInfo.logs.length > 0 && (
-                <pre className="max-h-24 overflow-y-auto text-[10px] leading-relaxed font-mono text-aegis-text-dim whitespace-pre-wrap">
-                  {restartInfo.logs.slice(-6).join('\n')}
+                <pre ref={logsRef} className="max-h-64 min-h-28 overflow-y-auto text-[10px] leading-relaxed font-mono text-aegis-text-dim whitespace-pre-wrap">
+                  {restartInfo.logs.slice(-40).join('\n')}
                 </pre>
               )}
             </div>

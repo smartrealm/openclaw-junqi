@@ -1,7 +1,7 @@
-use crate::state::restart_governor::RestartGovernor;
 use serde::Serialize;
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicU64;
 use tokio::process::Child;
 
 /// Maximum number of log entries kept in the circular buffer.
@@ -18,6 +18,17 @@ pub enum GatewayLifecycle {
     Running,
     Error,
     Reconnecting,
+}
+
+/// The runtime currently serving the configured Gateway endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GatewayRuntimeMode {
+    None,
+    External,
+    SystemService,
+    ManagedChild,
+    Docker,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -62,13 +73,20 @@ pub struct GatewayProcess {
     /// status poller does not see the service flap down→up and trigger a
     /// competing `start_gateway`), and `start_gateway` refuses to spawn.
     pub restarting: Mutex<bool>,
+    /// Process-wide lifecycle gate. Every mutating operation (ensure, start,
+    /// restart, stop, Docker switch and storage migration) must own this gate.
+    pub operation_gate: Arc<tokio::sync::Mutex<()>>,
+    /// Increments after every complete restart workflow, including its managed
+    /// fallback. Contending restart callers use this to distinguish another
+    /// restart from an unrelated lifecycle operation holding `operation_gate`.
+    pub restart_completed_generation: AtomicU64,
     /// Circular buffer of recent log entries (SPEC §2.4, M6).
     /// Push path evicts the oldest entry once length exceeds LOG_BUFFER_CAP.
     pub logs: Mutex<VecDeque<LogEntry>>,
-    /// Rate-limit restarts to once per cooldown window.
-    pub restart_governor: Mutex<RestartGovernor>,
     /// Canonical lifecycle state machine.
     pub lifecycle: Mutex<GatewayLifecycle>,
+    /// Canonical owner/runtime mode for the configured endpoint.
+    pub runtime_mode: Mutex<GatewayRuntimeMode>,
 }
 
 impl GatewayProcess {
@@ -77,20 +95,27 @@ impl GatewayProcess {
             child: Mutex::new(None),
             port: Mutex::new(18789),
             restarting: Mutex::new(false),
+            operation_gate: Arc::new(tokio::sync::Mutex::new(())),
+            restart_completed_generation: AtomicU64::new(0),
             logs: Mutex::new(VecDeque::with_capacity(LOG_BUFFER_CAP)),
-            restart_governor: Mutex::new(RestartGovernor::new(None)),
             lifecycle: Mutex::new(GatewayLifecycle::Stopped),
+            runtime_mode: Mutex::new(GatewayRuntimeMode::None),
         }
     }
 }
 
-/// Restart requests should not interrupt an in-flight startup or reconnect
-/// flow — doing so can kill a just-spawned process and leave the manager
-/// stuck in a phantom "running" state with no real process behind it.
-pub fn should_defer_restart(lifecycle: GatewayLifecycle, start_lock: bool) -> bool {
-    start_lock
-        || lifecycle == GatewayLifecycle::Starting
-        || lifecycle == GatewayLifecycle::Reconnecting
+#[cfg(test)]
+mod operation_gate_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn bug_gl01_operation_gate_has_one_global_owner() {
+        let state = GatewayProcess::new();
+        let owner = state.operation_gate.clone().try_lock_owned().unwrap();
+        assert!(state.operation_gate.clone().try_lock_owned().is_err());
+        drop(owner);
+        assert!(state.operation_gate.clone().try_lock_owned().is_ok());
+    }
 }
 
 /// Push a log entry into the buffer. Evicts the oldest entry if the buffer

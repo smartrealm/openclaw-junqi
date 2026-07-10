@@ -1,7 +1,9 @@
-import { Check, Loader2, Circle, AlertTriangle, RotateCw, RefreshCw, FileText } from 'lucide-react';
+import { Check, Loader2, Circle, AlertTriangle, RotateCw, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { getBootProgressSummary, useBootSequenceStore, type BootStage } from '@/stores/bootSequenceStore';
+import { useEffect, useRef } from 'react';
+import { GatewaySelfRescuePanel } from './GatewaySelfRescuePanel';
 
 function StageIcon({ stage }: { stage: BootStage }) {
   if (stage.status === 'completed') return <Check size={13} className="text-aegis-success" />;
@@ -28,6 +30,11 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
   const summary = getBootProgressSummary(stages);
   const list = Object.values(stages);
   const pct = Math.round((summary.completed / summary.total) * 100);
+  const logsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight;
+  }, [recovery?.logs]);
 
   return (
     <div
@@ -40,7 +47,7 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
           to { opacity: 1; backdrop-filter: blur(18px); }
         }
       `}</style>
-      <div className="w-[440px] max-w-[calc(100vw-48px)] rounded-2xl border border-aegis-border bg-aegis-elevated shadow-2xl overflow-hidden">
+      <div className="w-[680px] max-w-[calc(100vw-48px)] max-h-[calc(100vh-48px)] overflow-y-auto rounded-2xl border border-aegis-border bg-aegis-elevated shadow-2xl">
         <div className="p-5 border-b border-aegis-border">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-aegis-primary/10 border border-aegis-primary/20 flex items-center justify-center">
@@ -79,9 +86,27 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
           ))}
         </div>
 
-        {recovery && (
+        {recovery?.showRestart ? (
+          <GatewaySelfRescuePanel
+            className="mx-5 mb-5"
+            variant="full"
+            connected={false}
+            busy={recovery.restarting}
+            progressMessage={recovery.restarting
+              ? t('gatewayError.actions.retrying', '正在重启…')
+              : t('boot.gatewayRecoveryManual', '连接重试仍未完成握手。可以进入自救流程。')}
+            progressPercent={recovery.restarting ? 35 : null}
+            primaryActionLabel={recovery.restarting
+              ? t('gatewayError.actions.retrying', '正在重启…')
+              : t('boot.restartGateway', '重启 Gateway')}
+            onPrimaryAction={recovery.onRestart}
+            onReconnect={recovery.onReconnect}
+            onOpenLogs={recovery.onOpenLogs}
+            error={t('boot.gatewayRecoveryManual', '连接重试仍未完成握手。可以进入自救流程。')}
+            logs={recovery.logs.slice(-40).join('\n')}
+          />
+        ) : recovery && (
           recovery.attempt > 0
-          || recovery.showRestart
           || recovery.restarting
           || recovery.logs.length > 0
         ) && (
@@ -90,9 +115,7 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
               <div>
                 <div className="text-xs font-semibold text-aegis-text">{t('boot.gatewayRecoveryTitle', 'Gateway connection recovery')}</div>
                 <div className="text-[11px] text-aegis-text-muted mt-0.5">
-                  {recovery.showRestart
-                    ? t('boot.gatewayRecoveryManual', 'Connection retries did not finish the handshake. Try restarting Gateway manually.')
-                    : t('boot.gatewayRecoveryRetrying', { attempt: recovery.attempt, defaultValue: `Retrying WebSocket connection (${recovery.attempt}/3)` })}
+                  {t('boot.gatewayRecoveryRetrying', { attempt: recovery.attempt, defaultValue: `Retrying WebSocket connection (${recovery.attempt}/3)` })}
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -102,16 +125,6 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
                 >
                   <RotateCw size={12} /> {t('offline.retryGateway', 'Reconnect')}
                 </button>
-                {recovery.showRestart && (
-                  <button
-                    onClick={recovery.onRestart}
-                    disabled={recovery.restarting}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] bg-aegis-primary text-white hover:bg-aegis-primary/90 disabled:opacity-60 transition-colors"
-                  >
-                    {recovery.restarting ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    {recovery.restarting ? t('gatewayError.actions.retrying', 'Restarting…') : t('boot.restartGateway', 'Restart Gateway')}
-                  </button>
-                )}
                 <button
                   onClick={recovery.onOpenLogs}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/30 hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
@@ -124,9 +137,9 @@ export function BootTimelineOverlay({ recovery }: BootTimelineOverlayProps) {
               <div className="h-full bg-aegis-primary transition-all duration-700" style={{ width: `${Math.min(100, recovery.attempt * 33 + (recovery.restarting ? 20 : 0))}%` }} />
             </div>
             {recovery.logs.length > 0 && (
-              <div className="max-h-28 overflow-y-auto px-4 py-2 bg-black/20">
+              <div ref={logsRef} className="max-h-64 min-h-28 overflow-y-auto px-4 py-2 bg-black/20">
                 <pre className="text-[10px] leading-relaxed font-mono text-aegis-text-dim whitespace-pre-wrap">
-                  {recovery.logs.slice(-8).join('\\n')}
+                  {recovery.logs.slice(-40).join('\n')}
                 </pre>
               </div>
             )}

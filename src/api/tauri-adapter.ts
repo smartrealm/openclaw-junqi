@@ -38,6 +38,10 @@ import {
   FileReadResolver,
 } from "../services/gateway/configResolvers";
 import { formatGatewayLogs } from '../services/gateway/gatewayLogFormatting';
+import { gatewayRestartSingleFlight } from '../services/gateway/SingleFlight';
+
+const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
+const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
 
 let _deviceIdentity: any = null;
 async function deviceIdentity() {
@@ -133,16 +137,29 @@ async function readRecentGatewayLogs(): Promise<{ stdout: string; stderr: string
   }
 }
 
-async function restartLocalGateway(): Promise<{ success: boolean; method?: string; error?: string }> {
-  invalidateGatewayPortCache();
-  const port = await readGatewayPort();
-  try {
-    const result: any = await invoke("restart_gateway", { port });
-    if (result?.token) _cachedGatewayToken = result.token;
-    return { success: true, method: "gateway-restart" };
-  } catch (e: any) {
-    return { success: false, error: String(e) };
-  }
+function restartLocalGateway(): Promise<{ success: boolean; method?: string; error?: string }> {
+  return gatewayRestartSingleFlight.run(async () => {
+    window.dispatchEvent(new CustomEvent(GATEWAY_RESTART_STARTED_EVENT));
+    window.dispatchEvent(new CustomEvent('aegis:gateway-progress', {
+      detail: {
+        step: 'gateway',
+        message: '正在重启 OpenClaw Gateway…',
+        progress: 0.15,
+        key: 'gateway.progress.restart',
+      },
+    }));
+    invalidateGatewayPortCache();
+    try {
+      const port = await readGatewayPort();
+      const result: any = await invoke("restart_gateway", { port });
+      if (result?.token) _cachedGatewayToken = result.token;
+      return { success: true, method: "gateway-restart" };
+    } catch (e: any) {
+      return { success: false, error: String(e) };
+    } finally {
+      window.dispatchEvent(new CustomEvent(GATEWAY_RESTART_FINISHED_EVENT));
+    }
+  });
 }
 
 (window as any).aegis = {
@@ -251,13 +268,30 @@ async function restartLocalGateway(): Promise<{ success: boolean; method?: strin
       let lastLogs = { stdout: "", stderr: "" };
       let stopped = false;
       let restartActive = false;
+      let pollGeneration = 0;
+      let pollTimer: ReturnType<typeof setTimeout> | null = null;
+      let pollInFlight = false;
+      let immediatePollRequested = false;
+
+      const appendLogLine = (line: string) => {
+        if (!line) return;
+        const lines = lastLogs.stdout.split('\n').filter(Boolean);
+        if (lines.at(-1) !== line) lines.push(line);
+        lastLogs = { stdout: lines.slice(-80).join('\n'), stderr: lastLogs.stderr };
+      };
 
       const emitRealStatus = async () => {
-        if (stopped) return;
+        const generation = pollGeneration;
+        const isCurrent = () => !stopped && generation === pollGeneration;
+        if (!isCurrent()) return;
         try {
           const s: any = await invoke("gateway_status");
+          if (!isCurrent()) return;
           const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
-          lastLogs = await readRecentGatewayLogs();
+          if (!isCurrent()) return;
+          const logs = await readRecentGatewayLogs();
+          if (!isCurrent()) return;
+          lastLogs = logs;
           if (ready) restartActive = false;
           cb({
             running: ready,
@@ -267,6 +301,7 @@ async function restartLocalGateway(): Promise<{ success: boolean; method?: strin
             logs: lastLogs,
           });
         } catch (e: any) {
+          if (!isCurrent()) return;
           cb({
             running: false,
             ready: false,
@@ -276,27 +311,82 @@ async function restartLocalGateway(): Promise<{ success: boolean; method?: strin
         }
       };
 
-      const handleProgress = (event: any) => {
+      const schedulePoll = (delayMs: number) => {
+        if (stopped) return;
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = setTimeout(() => {
+          pollTimer = null;
+          if (stopped || pollInFlight) {
+            immediatePollRequested = true;
+            return;
+          }
+          pollInFlight = true;
+          void emitRealStatus().finally(() => {
+            pollInFlight = false;
+            if (stopped) return;
+            if (immediatePollRequested) {
+              immediatePollRequested = false;
+              schedulePoll(0);
+            } else {
+              schedulePoll(2_000);
+            }
+          });
+        }, delayMs);
+      };
+
+      const requestImmediatePoll = () => {
+        if (pollInFlight) {
+          immediatePollRequested = true;
+          return;
+        }
+        schedulePoll(0);
+      };
+
+      const handleGatewayLog = (event: any) => {
+        const line = String(event.payload ?? '');
+        appendLogLine(line);
+      };
+
+      const handleRestartProgress = (event: any) => {
         const line = String(event.payload ?? '');
         restartActive = true;
-        const lines = [...lastLogs.stdout.split('\n').filter(Boolean), line].slice(-80);
-        lastLogs = { stdout: lines.join('\n'), stderr: lastLogs.stderr };
+        appendLogLine(line);
         cb({ running: false, ready: false, retrying: true, error: null, logs: lastLogs });
       };
 
-      listen("gateway-log", handleProgress).then((fn: any) => { unlistenFn = fn; }).catch(() => {});
+      const handleRestartStarted = () => {
+        restartActive = true;
+        cb({ running: false, ready: false, retrying: true, error: null, logs: lastLogs });
+      };
+      const handleRestartFinished = () => {
+        restartActive = false;
+        requestImmediatePoll();
+      };
+
+      listen("gateway-log", handleGatewayLog).then((fn: any) => {
+        if (stopped) fn();
+        else unlistenFn = fn;
+      }).catch(() => {});
       let unlistenRestartFn: (() => void) | null = null;
-      listen("gateway-restart-progress", handleProgress).then((fn: any) => { unlistenRestartFn = fn; }).catch(() => {});
+      listen("gateway-restart-progress", handleRestartProgress).then((fn: any) => {
+        if (stopped) fn();
+        else unlistenRestartFn = fn;
+      }).catch(() => {});
+      window.addEventListener(GATEWAY_RESTART_STARTED_EVENT, handleRestartStarted);
+      window.addEventListener(GATEWAY_RESTART_FINISHED_EVENT, handleRestartFinished);
 
       // Initial poll + periodic real status check (covers external gateway with no fresh logs)
-      void emitRealStatus();
-      const timer = setInterval(() => { void emitRealStatus(); }, 2000);
+      schedulePoll(0);
 
       return () => {
         stopped = true;
-        clearInterval(timer);
+        pollGeneration += 1;
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = null;
         unlistenFn?.();
         unlistenRestartFn?.();
+        window.removeEventListener(GATEWAY_RESTART_STARTED_EVENT, handleRestartStarted);
+        window.removeEventListener(GATEWAY_RESTART_FINISHED_EVENT, handleRestartFinished);
       };
     },
   },

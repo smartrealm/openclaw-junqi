@@ -3,7 +3,7 @@ use crate::paths;
 use crate::platform;
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const OPENCLAW_IMAGE: &str = "ghcr.io/openclaw/openclaw";
 
@@ -200,6 +200,38 @@ pub async fn pull_openclaw_image(app: AppHandle, tag: Option<String>) -> Result<
 /// Start OpenClaw in a Docker container with bind-mounted config and workspace.
 #[tauri::command]
 pub async fn start_docker_gateway(
+    app: AppHandle,
+    state: State<'_, crate::state::GatewayProcess>,
+    port: Option<u16>,
+    tag: Option<String>,
+) -> Result<GatewayStatus, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
+    crate::commands::gateway_supervisor::transition_lifecycle(
+        &state,
+        crate::state::gateway_process::GatewayLifecycle::Starting,
+        "start_docker_gateway: starting container",
+    );
+    let result = start_docker_gateway_locked(app, port, tag).await;
+    match &result {
+        Ok(_) => crate::commands::gateway_supervisor::transition_runtime(
+            &state,
+            crate::state::gateway_process::GatewayLifecycle::Running,
+            crate::state::gateway_process::GatewayRuntimeMode::Docker,
+            "start_docker_gateway: container healthy",
+        ),
+        Err(_) => crate::commands::gateway_supervisor::transition_runtime(
+            &state,
+            crate::state::gateway_process::GatewayLifecycle::Error,
+            crate::state::gateway_process::GatewayRuntimeMode::None,
+            "start_docker_gateway: container failed",
+        ),
+    }
+    result
+}
+
+/// Docker start implementation for callers that already own `operation_gate`.
+pub(crate) async fn start_docker_gateway_locked(
     app: AppHandle,
     port: Option<u16>,
     tag: Option<String>,
@@ -406,7 +438,24 @@ fn spawn_docker_log_tailer(app: AppHandle) {
 
 /// Stop the OpenClaw Docker container (without removing it).
 #[tauri::command]
-pub async fn stop_docker_gateway() -> Result<String, String> {
+pub async fn stop_docker_gateway(
+    state: State<'_, crate::state::GatewayProcess>,
+) -> Result<String, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
+    let result = stop_docker_gateway_locked().await;
+    if result.is_ok() {
+        crate::commands::gateway_supervisor::transition_runtime(
+            &state,
+            crate::state::gateway_process::GatewayLifecycle::Stopped,
+            crate::state::gateway_process::GatewayRuntimeMode::None,
+            "stop_docker_gateway: container stopped",
+        );
+    }
+    result
+}
+
+pub(crate) async fn stop_docker_gateway_locked() -> Result<String, String> {
     let docker_bin = resolve_docker_bin().await?;
 
     let output = tokio::process::Command::new(&docker_bin)
