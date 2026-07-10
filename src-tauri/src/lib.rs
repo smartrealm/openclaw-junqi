@@ -10,6 +10,13 @@ use tauri::{Emitter, Manager, RunEvent};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
@@ -30,8 +37,11 @@ pub fn run() {
             commands::gateway_logs::clear_gateway_logs,
             commands::gateway_rescue::gateway_rescue_chat,
             commands::ensure::ensure_gateway_running,
+            commands::storage::get_storage_setup_status,
+            commands::storage::configure_storage,
             commands::gateway_supervisor::openclaw_doctor_repair,
             commands::gateway_supervisor::get_gateway_lifecycle,
+            commands::gateway_supervisor::get_gateway_runtime_snapshot,
             commands::secret_store::store_provider_secret,
             commands::secret_store::get_provider_secret,
             commands::secret_store::delete_provider_secret,
@@ -103,8 +113,10 @@ pub fn run() {
             commands::quickchat::open_quickchat_with_files,
             commands::quickchat::close_quickchat,
             commands::quickchat::get_quickchat_visible,
+            commands::quickchat::get_quickchat_seed,
             commands::pet::set_pet_click_through,
             commands::pet::set_pet_position,
+            commands::pet::start_pet_dragging,
             commands::pet::get_pet_position,
             commands::pet::get_cursor_position,
             commands::pet::get_pet_bounds,
@@ -113,6 +125,10 @@ pub fn run() {
             commands::pet::save_pet_asset,
             commands::pet::load_pet_asset,
             commands::pet::clear_pet_asset,
+            commands::pet::import_pet_package,
+            commands::pet::load_pet_package,
+            commands::pet::clear_pet_package,
+            commands::pet::list_codex_pet_packages,
             commands::pet::pet_show_context_menu,
             // Integrated terminal (portable-pty)
             commands::terminal::terminal_create,
@@ -275,12 +291,11 @@ pub fn run() {
                         eprintln!("[dragdrop] event: {:?}", dd);
                         match dd {
                             tauri::DragDropEvent::Enter { paths, .. } => {
-                                let strs: Vec<String> = paths
-                                    .iter()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .collect();
-                                eprintln!("[dragdrop] Enter paths={:?}", strs);
-                                let _ = app_for_dd.emit("aegis:drag-active", &strs);
+                                eprintln!("[dragdrop] Enter paths={:?}", paths);
+                                commands::quickchat::ResourceDropCoordinator::enter(
+                                    &app_for_dd,
+                                    paths,
+                                );
                             }
                             tauri::DragDropEvent::Over { position, .. } => {
                                 // Global → logical → window-local
@@ -316,18 +331,19 @@ pub fn run() {
                                         Some(gx >= px && gx <= px + pw && gy >= py && gy <= py + ph)
                                     })
                                     .unwrap_or(false);
-                                let _ = app_for_dd.emit("aegis:drag-over-main", over_pet);
+                                commands::quickchat::ResourceDropCoordinator::set_over_pet(
+                                    &app_for_dd,
+                                    over_pet,
+                                );
                             }
                             tauri::DragDropEvent::Leave => {
-                                let _ = app_for_dd.emit("aegis:drag-inactive", ());
+                                commands::quickchat::ResourceDropCoordinator::leave(&app_for_dd);
                             }
                             tauri::DragDropEvent::Drop { paths, .. } => {
-                                let strs: Vec<String> = paths
-                                    .iter()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .collect();
-                                let _ = app_for_dd.emit("aegis:file-dropped", strs);
-                                let _ = app_for_dd.emit("aegis:drag-inactive", ());
+                                commands::quickchat::ResourceDropCoordinator::drop(
+                                    &app_for_dd,
+                                    paths,
+                                );
                             }
                             _ => {}
                         }

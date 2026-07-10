@@ -20,6 +20,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { setThemeWithTransition } from '@/motion/themeTransition';
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gateway } from '@/services/gateway';
@@ -165,7 +166,6 @@ function GeneralPanel() {
 function ThemePanel() {
   const { t } = useTranslation();
   const theme = useSettingsStore((s) => s.theme);
-  const setTheme = useSettingsStore((s) => s.setTheme);
   const followSystem = theme === 'system';
   const THEME_PRESETS: AegisTheme[] = ['aegis-dark', 'aegis-midnight', 'aegis-light', 'aegis-eyecare'];
   const icons: Record<string, React.ReactNode> = { 'aegis-dark': <Moon size={14} />, 'aegis-light': <Sun size={14} />, 'aegis-eyecare': <Eye size={14} />, 'aegis-midnight': <Moon size={14} /> };
@@ -175,13 +175,13 @@ function ThemePanel() {
       <p className="text-[12px] text-aegis-text-dim mb-5">{t('appSettings.themeDesc', 'Choose how JunQi looks.')}</p>
       <label className="flex items-center gap-3 mb-5 p-3 rounded-xl cursor-pointer transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.03)]"
         style={{ background: followSystem ? 'rgb(var(--aegis-primary) / 0.06)' : 'transparent', border: followSystem ? '1px solid rgb(var(--aegis-primary) / 0.2)' : '1px solid transparent' }}>
-        <input type="checkbox" checked={followSystem} onChange={() => setTheme(followSystem ? 'aegis-dark' : 'system')} className="w-4 h-4 rounded accent-aegis-primary" />
+        <input type="checkbox" checked={followSystem} onChange={(event) => setThemeWithTransition(followSystem ? 'aegis-dark' : 'system', event.currentTarget)} className="w-4 h-4 rounded accent-aegis-primary" />
         <div><div className="text-[12px] font-semibold text-aegis-text">{t('theme.followSystem', 'Follow System')}</div><div className="text-[11px] text-aegis-text-dim">{t('theme.followSystemDesc', 'Match your OS light/dark preference.')}</div></div>
       </label>
       <div className="grid grid-cols-2 gap-3">
         {THEME_PRESETS.map((key) => {
           const active = theme === key;
-          return <button key={key} type="button" onClick={() => setTheme(key)}
+          return <button key={key} type="button" onClick={(event) => setThemeWithTransition(key, event.currentTarget)}
             className="flex flex-col gap-2 p-3 rounded-xl text-start transition-all relative overflow-hidden"
             style={{ border: active ? '2px solid rgb(var(--aegis-primary))' : '1px solid rgb(var(--aegis-border))', background: 'rgb(var(--aegis-surface))', boxShadow: active ? '0 0 0 1px rgb(var(--aegis-primary) / 0.3)' : 'none' }}>
             <div className="w-full h-10 rounded-md" style={{ background: key === 'aegis-dark' ? 'linear-gradient(135deg, #0c1015, #1a2332)' : key === 'aegis-midnight' ? 'linear-gradient(135deg, #050510, #0d1b2a)' : key === 'aegis-light' ? 'linear-gradient(135deg, #f8fafc, #e2e8f0)' : 'linear-gradient(135deg, #f5f0e8, #e8dcc8)' }} />
@@ -317,8 +317,8 @@ function NotifyPanel() {
 }
 
 function PetPanel() {
-  const { t } = useTranslation();
-  const { enabled:petEnabled,setEnabled:setPetEnabled,skin:petSkin,setSkin:setPetSkin,customAsset:petCustomAsset,setCustomAsset:setPetCustomAsset,pomodoro:petPomodoro,setPomodoro:setPetPomodoro,petVisible,setPetVisible } = usePetStore();
+  const { t, i18n } = useTranslation();
+  const { enabled:petEnabled,setEnabled:setPetEnabled,skin:petSkin,setSkin:setPetSkin,customAsset:petCustomAsset,setCustomAsset:setPetCustomAsset,customPet,setCustomPet,pomodoro:petPomodoro,setPomodoro:setPetPomodoro,petVisible } = usePetStore();
   const [uploadErr,setUploadErr]=useState<string|null>(null);
   const [now,setNow]=useState(Date.now());
   useEffect(()=>{if(!petPomodoro.running||petPomodoro.paused)return;const id=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(id);},[petPomodoro.running,petPomodoro.paused]);
@@ -334,9 +334,11 @@ function PetPanel() {
         <div><div className="text-[13px] text-aegis-text mb-2">{t('pet.settings.skin')}</div><div className="grid grid-cols-3 sm:grid-cols-6 gap-2">{PET_SKIN_OPTIONS.map(({id,label})=><button key={id} onClick={()=>setPetSkin(id)} aria-pressed={petSkin===id} className={clsx('flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors',petSkin===id?'border-aegis-primary/60 bg-aegis-primary/10':'border-aegis-border/20 hover:border-aegis-border/50')}><SkinPreview skin={id} size={44}/><span className={clsx('text-[11px] leading-none',petSkin===id?'text-aegis-text':'text-aegis-text-dim')}>{t(`pet.settings.${id}`,label)}</span></button>)}</div></div>
         <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{t('pet.settings.custom')}</div></div>
           <div className="flex gap-2">
-            <button onClick={async()=>{setUploadErr(null);try{const s=await openDialog({multiple:false,filters:[{name:'Image',extensions:['png','jpg','jpeg','gif','webp']}]});if(s&&!Array.isArray(s)){const url=await invoke<string>('save_pet_asset',{srcPath:s});setPetCustomAsset(url);}}catch(e){setUploadErr(e instanceof Error?e.message:String(e));}}}
+            <button onClick={async()=>{setUploadErr(null);try{const s=await openDialog({multiple:false,filters:[{name:'Image',extensions:['png','jpg','jpeg','gif','webp']}]});if(s&&!Array.isArray(s)){const url=await invoke<string>('save_pet_asset',{srcPath:s});setPetCustomAsset(url);setCustomPet(null);}}catch(e){setUploadErr(e instanceof Error?e.message:String(e));}}}
               className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text">{petCustomAsset?t('pet.settings.replace'):t('pet.settings.upload')}</button>
-            {petCustomAsset&&<button onClick={async()=>{setUploadErr(null);await invoke('clear_pet_asset').catch(()=>undefined);setPetCustomAsset(null);}} className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-danger">{t('pet.settings.clear')}</button>}</div></div>
+            <button onClick={async()=>{setUploadErr(null);try{const s=await openDialog({multiple:false,filters:[{name:'Codex Pet',extensions:['json']}]});if(s&&!Array.isArray(s)){const pet=await invoke<import('@/stores/petStore').CustomPetPackage>('import_pet_package',{manifestPath:s,locale:i18n.resolvedLanguage??i18n.language});setCustomPet(pet);setPetCustomAsset(null);}}catch(e){setUploadErr(e instanceof Error?e.message:String(e));}}}
+              className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text">{t('pet.settings.animatedPackage')}</button>
+            {(petCustomAsset||customPet)&&<button onClick={async()=>{setUploadErr(null);await Promise.all([invoke('clear_pet_asset').catch(()=>undefined),invoke('clear_pet_package').catch(()=>undefined)]);setPetCustomAsset(null);setCustomPet(null);}} className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-danger">{t('pet.settings.clear')}</button>}</div></div>
         {uploadErr&&<div className="text-[11px] text-aegis-danger">{uploadErr}</div>}
         <div className="border-t pt-4" style={{borderColor:'rgb(var(--aegis-border))'}}><div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">🍅 {t('pet.pomodoro.title')}</div></div><Toggle enabled={petPomodoro.enabled} onChange={v=>setPetPomodoro({enabled:v})}/></div>
           <div className="flex items-center gap-2 mt-3"><input type="number" min={1} max={120} value={petPomodoro.workMin} disabled={petPomodoro.running} onChange={e=>setPetPomodoro({workMin:Math.max(1,Math.min(120,Number(e.target.value)||30))})} className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center"/><span className="text-[11px] text-aegis-text-dim">min work</span>
