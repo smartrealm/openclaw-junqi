@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
 use tokio::process::Child;
 
 /// Maximum number of log entries kept in the circular buffer.

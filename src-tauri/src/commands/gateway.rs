@@ -472,9 +472,7 @@ pub async fn restart_gateway(
 
     use std::sync::atomic::Ordering;
 
-    let observed_restart_generation = state
-        .restart_completed_generation
-        .load(Ordering::Acquire);
+    let observed_restart_generation = state.restart_completed_generation.load(Ordering::Acquire);
     let operation_gate = state.operation_gate.clone();
     let _global_operation_guard = match operation_gate.clone().try_lock_owned() {
         Ok(guard) => guard,
@@ -486,11 +484,7 @@ pub async fn restart_gateway(
             operation_gate.lock_owned().await
         }
     };
-    if state
-        .restart_completed_generation
-        .load(Ordering::Acquire)
-        != observed_restart_generation
-    {
+    if state.restart_completed_generation.load(Ordering::Acquire) != observed_restart_generation {
         let _ = app.emit(
             "gateway-log",
             "Concurrent Gateway restart finished; reusing its final status.",
