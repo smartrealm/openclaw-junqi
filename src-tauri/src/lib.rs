@@ -56,6 +56,8 @@ pub fn run() {
             commands::system::check_node,
             commands::system::check_git,
             commands::system::check_openclaw,
+            commands::openclaw_update::check_openclaw_update,
+            commands::openclaw_update::update_openclaw,
             commands::system::open_folder,
             commands::system::get_terminal_env,
             // Fonts

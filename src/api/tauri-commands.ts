@@ -15,10 +15,36 @@ export interface OpenclawStatus {
 }
 export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; }
 export interface GatewayStatus { running: boolean; port: number; pid: number | null; token: string | null; }
+export interface OpenclawUpdateStatus {
+  currentVersion: string | null;
+  latestVersion: string | null;
+  available: boolean;
+  hasGitUpdate: boolean;
+  hasRegistryUpdate: boolean;
+  gitBehind: number | null;
+  channel: string | null;
+  channelLabel: string | null;
+  installKind: string | null;
+  packageManager: string | null;
+  error: string | null;
+}
+export interface OpenclawUpdateResult {
+  success: boolean;
+  status: string;
+  mode: string | null;
+  reason: string | null;
+  beforeVersion: string | null;
+  afterVersion: string | null;
+  gatewayRestarted: boolean;
+  gatewayError: string | null;
+  error: string | null;
+}
 
 export const checkNode = () => invoke<NodeStatus>("check_node");
 export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
+export const checkOpenclawUpdate = () => invoke<OpenclawUpdateStatus>("check_openclaw_update");
+export const updateOpenclaw = () => invoke<OpenclawUpdateResult>("update_openclaw");
 export const installNode = () => invoke<string>("install_node");
 export const installGit = () => invoke<string>("install_git");
 export const installOpenclaw = () => invoke<string>("install_openclaw");

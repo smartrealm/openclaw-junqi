@@ -14,6 +14,7 @@ import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { OpenClawUpdatePanel } from '@/components/shared/OpenClawUpdatePanel';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -159,8 +160,6 @@ export function SettingsPageFull() {
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
   const [editUrl, setEditUrl] = useState(gatewayUrl);
   const [editToken, setEditToken] = useState(gatewayToken);
-  const [checkingVersion, setCheckingVersion] = useState(false);
-  const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
   const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
 
@@ -192,21 +191,6 @@ export function SettingsPageFull() {
       setDoctorOutput(`Error: ${err?.message || err || 'unknown'}`);
     } finally {
       setDoctorRunning(null);
-    }
-  };
-
-  const handleCheckVersion = async () => {
-    if (checkingVersion) return;
-    setCheckingVersion(true);
-    try {
-      const [v, latest] = await Promise.all([
-        window.aegis?.app?.versions(),
-        fetch('https://registry.npmjs.org/openclaw/latest').then(r => r.json()).catch(() => null),
-      ]);
-      setOpenclawVersion(v?.openclaw ?? (v as any)?.runtime ?? null);
-      if (latest?.version) setLatestVersion(latest.version);
-    } catch {} finally {
-      setCheckingVersion(false);
     }
   };
 
@@ -1160,22 +1144,18 @@ export function SettingsPageFull() {
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between">
               <span className="text-[11px] text-aegis-text-dim">{label}</span>
-              {label === 'OpenClaw' ? (
-                <button onClick={handleCheckVersion} disabled={checkingVersion} className="flex items-center gap-1.5 text-[10px] font-mono truncate max-w-[250px] disabled:opacity-50 transition-colors" title="Click to check for updates">
-                  <span className={latestVersion && openclawVersion && latestVersion !== openclawVersion ? 'text-aegis-warning' : 'text-aegis-text-muted hover:text-aegis-primary'}>
-                    {checkingVersion ? 'Checking…' : value}
-                  </span>
-                  {latestVersion && openclawVersion && latestVersion !== openclawVersion && (
-                    <span className="text-[9px] px-1 py-px rounded bg-aegis-warning/15 text-aegis-warning border border-aegis-warning/30">
-                      v{latestVersion} available
-                    </span>
-                  )}
-                </button>
-              ) : (
-                <span className="text-[10px] font-mono text-aegis-text-muted truncate max-w-[250px]">{value}</span>
-              )}
+              <span className="text-[10px] font-mono text-aegis-text-muted truncate max-w-[250px]">{value}</span>
             </div>
           ))}
+        </div>
+        <div className="mt-4">
+          <OpenClawUpdatePanel
+            compact
+            currentVersion={openclawVersion}
+            onUpdated={(version) => {
+              if (version) setOpenclawVersion(version);
+            }}
+          />
         </div>
         <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
           <button

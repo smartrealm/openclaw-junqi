@@ -106,6 +106,7 @@ export interface SetupFlow {
   retrySetup: () => Promise<void>;
   selectMode: (mode: "native" | "docker") => void;
   detectDocker: () => Promise<void>;
+  refreshRuntime: () => Promise<{ status: OpenclawStatus; gatewayRunning: boolean }>;
   goBack: () => void;
   retryGit: () => void;
   enterWorkspace: (origin?: Element | null) => void;
@@ -551,6 +552,28 @@ export function useSetupFlow(
     }
   }, [setCheckingDocker, setDockerStatus]);
 
+  const refreshRuntime = useCallback(async () => {
+    const status = await checkOpenclaw();
+    setOpenclawStatus(status);
+    if (status.path) {
+      setInstallTarget((current) => current
+        ? { ...current, path: status.path!, version: status.version ?? undefined }
+        : { tier: "existing", path: status.path!, version: status.version ?? undefined });
+    }
+
+    const gatewayRunning = await invoke<boolean>("probe_gateway_port", {}).catch(() => false);
+    setGatewayRunning(gatewayRunning);
+    const currentSteps = stepsRef.current;
+    if (currentSteps.some((step) => step.id === "gateway")) {
+      setSteps(currentSteps.map((step) => step.id === "gateway"
+        ? { ...step, status: gatewayRunning ? "done" : "pending" }
+        : step));
+    } else if (gatewayRunning) {
+      setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
+    }
+    return { status, gatewayRunning };
+  }, [setGatewayRunning, setSteps]);
+
   return {
     progress, statusMessage, dockerStatus, openclawStatus, checkingDocker, needsGit, steps,
     installTarget,
@@ -560,6 +583,7 @@ export function useSetupFlow(
     retrySetup,
     selectMode,
     detectDocker,
+    refreshRuntime,
     goBack,
     retryGit,
     enterWorkspace,

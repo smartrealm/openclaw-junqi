@@ -42,6 +42,7 @@ import {
 } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
+import { OpenClawUpdatePanel } from "@/components/shared/OpenClawUpdatePanel";
 
 function setupStepMessageKey(step: SetupStep): string {
   switch (step) {
@@ -293,6 +294,15 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
           installTarget={flow.installTarget}
           gatewayState="stopped"
         />
+        {flow.openclawStatus?.installed && (
+          <OpenClawUpdatePanel
+            currentVersion={flow.openclawStatus.version}
+            onUpdated={async () => {
+              const refreshed = await flow.refreshRuntime();
+              if (refreshed.gatewayRunning) navigateSetup("ready");
+            }}
+          />
+        )}
       </div>
     </SetupShell>
   );
@@ -453,6 +463,14 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         <div className="text-xs text-aegis-text-dim">
           {doneCount}/{total} {t("setup.installPanel.stepsDone", "个步骤完成")}
         </div>
+        {flow.openclawStatus?.installed && (
+          <div className="w-full text-left">
+            <OpenClawUpdatePanel
+              currentVersion={flow.openclawStatus.version}
+              onUpdated={async () => { await flow.refreshRuntime(); }}
+            />
+          </div>
+        )}
       </div>
     </SetupShell>
   );

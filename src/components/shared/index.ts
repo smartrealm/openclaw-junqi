@@ -12,6 +12,7 @@ export { PromptEditor, type PromptEditorProps, type ImageAttach } from './Prompt
 export { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from './ToolCallHistoryPopover';
 export { GlassCard } from './GlassCard';
 export { PageTransition } from './PageTransition';
+export { OpenClawUpdatePanel, type OpenClawUpdatePanelProps } from './OpenClawUpdatePanel';
 export { AegisIcon } from './AegisIcon';
 export { DashboardIcon } from './DashboardIcon';
 

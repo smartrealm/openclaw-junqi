@@ -18,6 +18,7 @@ pub mod hooks;
 pub mod managed_files;
 pub mod notification;
 pub mod oauth;
+pub mod openclaw_update;
 pub mod pairing;
 pub mod pet;
 pub mod project_config;
