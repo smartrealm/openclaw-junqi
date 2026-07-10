@@ -52,6 +52,8 @@ test('new pet and QuickChat strings exist in both visible languages', async () =
   const paths = [
     ['pet', 'settings', 'animatedTitle'],
     ['pet', 'settings', 'createWithCodex'],
+    ['pet', 'settings', 'preparingBuiltinSkill'],
+    ['pet', 'settings', 'builtinSkillError'],
     ['pet', 'quickChat', 'dropTitle'],
     ['pet', 'quickChat', 'defaultQuestionSingle'],
     ['pet', 'quickChat', 'questionPlaceholder'],
@@ -62,4 +64,21 @@ test('new pet and QuickChat strings exist in both visible languages', async () =
     assert.equal(typeof resolve(zh), 'string', `missing zh ${path.join('.')}`);
     assert.equal(typeof resolve(en), 'string', `missing en ${path.join('.')}`);
   }
+});
+
+test('pet creation uses the JunQi-bundled hatch-pet skill', async () => {
+  const [settings, tauriConfig, backend, skill] = await Promise.all([
+    read('../pages/SettingsPage.tsx'),
+    read('../../src-tauri/tauri.conf.json').then(JSON.parse),
+    read('../../src-tauri/src/commands/builtin_skills.rs'),
+    read('../../src-tauri/resources/skills/hatch-pet/SKILL.md'),
+  ]);
+  assert.match(settings, /prepare_builtin_skill/);
+  assert.doesNotMatch(settings, /`\$hatch-pet/);
+  assert.equal(
+    tauriConfig.bundle.resources['resources/skills/hatch-pet'],
+    'skills/hatch-pet',
+  );
+  assert.match(backend, /HATCH_PET_REQUIRED_FILES/);
+  assert.match(skill, /## JunQi Deployment/);
 });

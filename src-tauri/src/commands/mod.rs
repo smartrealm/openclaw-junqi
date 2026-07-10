@@ -3,6 +3,7 @@ pub mod font;
 
 pub mod agent_task_pty;
 pub mod app_settings;
+pub mod builtin_skills;
 pub mod config;
 pub mod console;
 pub mod docker;

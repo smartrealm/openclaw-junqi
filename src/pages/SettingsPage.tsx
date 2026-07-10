@@ -64,6 +64,7 @@ export function SettingsPageFull() {
   const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petIdea, setPetIdea] = useState('');
+  const [preparingPetSkill, setPreparingPetSkill] = useState(false);
   const [availablePets, setAvailablePets] = useState<Array<{ id: string; displayName: string; description: string; manifestPath: string }>>([]);
   const [selectedPetManifest, setSelectedPetManifest] = useState('');
   const [petNow, setPetNow] = useState(Date.now());
@@ -121,15 +122,28 @@ export function SettingsPageFull() {
       setPetUploadError(e instanceof Error ? e.message : String(e));
     }
   };
-  const createAnimatedPet = () => {
+  const createAnimatedPet = async () => {
     const idea = petIdea.trim();
     if (!idea) {
       setPetUploadError(t('pet.settings.describeFirst'));
       return;
     }
-    const prompt = `$hatch-pet create a pet based on what you know about me. My additional request: ${idea}. Complete the full v2 workflow and install the validated package under ~/.codex/pets/. Return the final pet.json path.`;
-    const params = new URLSearchParams({ agent: 'codex', prompt });
-    navigate(`/agent-run?${params.toString()}`);
+    setPetUploadError(null);
+    setPreparingPetSkill(true);
+    try {
+      const skill = await invoke<{ skillPath: string; rootPath: string }>('prepare_builtin_skill', {
+        skillId: 'hatch-pet',
+      });
+      const prompt = `Use JunQi's built-in hatch-pet skill. Read and follow this exact skill file: ${skill.skillPath}\nDo not discover or use a hatch-pet skill from ~/.codex/skills or the current project. Treat ${skill.rootPath} as SKILL_DIR for every bundled script and reference. Create a pet based on what you know about me. My additional request: ${idea}. Complete the full v2 workflow, install the validated package under ~/.codex/pets/, and return the final pet.json path.`;
+      const params = new URLSearchParams({ agent: 'codex', prompt });
+      navigate(`/agent-run?${params.toString()}`);
+    } catch (error) {
+      setPetUploadError(t('pet.settings.builtinSkillError', {
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setPreparingPetSkill(false);
+    }
   };
   const handlePetClear = async () => {
     setPetUploadError(null);
@@ -773,9 +787,10 @@ export function SettingsPageFull() {
             <input value={petIdea} onChange={(event) => setPetIdea(event.target.value)}
               placeholder={t('pet.settings.ideaPlaceholder')}
               className="min-w-0 flex-1 px-3 py-2 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text placeholder:text-aegis-text-dim" />
-            <button onClick={createAnimatedPet}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] bg-aegis-primary text-white hover:opacity-90 transition-opacity">
-              <Sparkles size={13} />{t('pet.settings.createWithCodex')}
+            <button onClick={() => void createAnimatedPet()} disabled={preparingPetSkill}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] bg-aegis-primary text-white hover:opacity-90 transition-opacity disabled:cursor-wait disabled:opacity-60">
+              {preparingPetSkill ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              {preparingPetSkill ? t('pet.settings.preparingBuiltinSkill') : t('pet.settings.createWithCodex')}
             </button>
           </div>
           <div className="flex gap-2">

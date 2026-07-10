@@ -129,6 +129,7 @@ pub fn run() {
             commands::pet::load_pet_package,
             commands::pet::clear_pet_package,
             commands::pet::list_codex_pet_packages,
+            commands::builtin_skills::prepare_builtin_skill,
             commands::pet::pet_show_context_menu,
             // Integrated terminal (portable-pty)
             commands::terminal::terminal_create,
