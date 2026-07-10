@@ -18,6 +18,7 @@ import {
 } from "@/api/tauri-commands";
 import { debugWarn } from "@/utils/debugLog";
 import { setupProgressI18nParams } from "./setupProgressParams";
+import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
@@ -107,7 +108,7 @@ export interface SetupFlow {
   detectDocker: () => Promise<void>;
   goBack: () => void;
   retryGit: () => void;
-  enterWorkspace: () => void;
+  enterWorkspace: (origin?: Element | null) => void;
 }
 
 const INITIAL_NATIVE_STEPS: StepState[] = [
@@ -148,7 +149,7 @@ export function useSetupFlow(
 ): SetupFlow {
   const {
     setupStep, installMode,
-    setSetupStep, setSetupError, setSetupComplete,
+    setSetupStep, setSetupError, setSetupComplete, setPostStorageStep,
     setGatewayRunning, setInstallMode, setSetupStatus, clearSetupLogs,
   } = useAppStore();
   const { t } = useTranslation();
@@ -207,10 +208,11 @@ export function useSetupFlow(
         const oclaw = await checkOpenclaw();
         setOpenclawStatus(oclaw);
         if (!oclaw.installed) {
-          // 从未安装过，直接进入安装方式选择。
+          // 从未安装过，先确定存储位置，再进入安装方式选择。
           localStorage.removeItem("junqi-setup-done");
-          report(t("setup.chooseMode"), 18);
-          setSetupStep("choosing-mode");
+          setPostStorageStep("choosing-mode");
+          report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
+          setSetupStep("storage");
           return;
         }
         if (oclaw.path) {
@@ -224,22 +226,25 @@ export function useSetupFlow(
           if (reachable) {
             setGatewayRunning(true);
             setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
-            report(t("setup.ready"), 100);
-            setSetupStep("ready");
+            setPostStorageStep("ready");
+            report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
+            setSetupStep("storage");
             return;
           }
         } catch {}
 
         // Installed but gateway not responding → ask the user to start it.
-        report(t("setup.gatewayNotRunning"), 20);
-        setSetupStep("gateway-stopped");
+        setPostStorageStep("gateway-stopped");
+        report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
+        setSetupStep("storage");
       } catch {
         setOpenclawStatus(null);
-        report(t("setup.chooseMode"), 18);
-        setSetupStep("choosing-mode");
+        setPostStorageStep("choosing-mode");
+        report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
+        setSetupStep("storage");
       }
     })();
-  }, [setupStep, report, t, setGatewayRunning, setSetupStep, setSteps]);
+  }, [setupStep, report, t, setGatewayRunning, setPostStorageStep, setSetupStep, setSteps]);
 
   // ── Docker detect after the welcome step ──
   useEffect(() => {
@@ -529,9 +534,9 @@ export function useSetupFlow(
     runNativeSetup();
   }, [setNeedsGit, setSetupError, setProgress, runNativeSetup]);
 
-  const enterWorkspace = useCallback(() => {
+  const enterWorkspace = useCallback((origin?: Element | null) => {
     cancelActiveRun();
-    setSetupComplete(true);
+    enterWorkspaceWithTransition(() => setSetupComplete(true), origin);
   }, [cancelActiveRun, setSetupComplete]);
 
   const detectDocker = useCallback(async () => {

@@ -32,6 +32,7 @@ import { useSetupFlow } from "@/hooks/useSetupFlow";
 import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
 import type { DockerStatus } from "@/api/tauri-commands";
 import type { ThemeSetting } from "@/theme/types";
+import { setThemeWithTransition } from "@/motion/themeTransition";
 import {
   InstallationConsole,
   OpenClawRuntimeDetails,
@@ -40,6 +41,7 @@ import {
   STEP_META,
 } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
+import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
 
 function setupStepMessageKey(step: SetupStep): string {
   switch (step) {
@@ -47,6 +49,8 @@ function setupStepMessageKey(step: SetupStep): string {
       return "setup.petWelcome";
     case "detecting":
       return "setup.detecting";
+    case "storage":
+      return "storage.title";
     case "gateway-stopped":
       return "setup.gatewayNotRunning";
     case "choosing-mode":
@@ -76,6 +80,8 @@ function setupStepProgress(step: SetupStep): number {
     case "gateway-stopped":
     case "choosing-mode":
       return 18;
+    case "storage":
+      return 24;
     case "git-missing":
     case "checking":
     case "install-git":
@@ -117,7 +123,6 @@ function LanguageThemeControls() {
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const theme = useSettingsStore((s) => s.theme);
-  const setTheme = useSettingsStore((s) => s.setTheme);
 
   const setLang = (lang: AppLanguage) => {
     setLanguage(lang);
@@ -180,7 +185,7 @@ function LanguageThemeControls() {
             <button
               key={item.value}
               type="button"
-              onClick={() => setTheme(item.value)}
+              onClick={(event) => setThemeWithTransition(item.value, event.currentTarget)}
               className={clsx(
                 "group relative min-h-[92px] rounded-lg border p-2 text-left transition-colors",
                 theme === item.value
@@ -376,7 +381,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       previousAction={setupStep === "ready" ? undefined : { onClick: () => flow.goBack() }}
       nextAction={
         setupStep === "ready"
-          ? { label: t("setup.enterWorkspace"), onClick: () => flow.enterWorkspace() }
+          ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
           : isInstallComplete
             ? { label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }
           : setupStep === "error"
@@ -416,7 +421,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       subtitle={t("setup.readySubtitle")}
       logs={logs}
       previousAction={{ onClick: () => navigateSetup("install-complete") }}
-      nextAction={{ label: t("setup.enterWorkspace"), onClick: () => flow.enterWorkspace() }}
+      nextAction={{ label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }}
     >
       <div className="flex flex-col items-center gap-6 py-5 text-center">
         <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-aegis-success/10 text-aegis-success ring-4 ring-aegis-success/10">
@@ -476,9 +481,13 @@ function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
 }
 
 export function SetupPage() {
+  const { t } = useTranslation();
   const setupStep = useAppStore((s) => s.setupStep);
   const logs = useAppStore((s) => s.setupLogs);
   const appendSetupLog = useAppStore((s) => s.appendSetupLog);
+  const postStorageStep = useAppStore((s) => s.postStorageStep);
+  const setSetupStep = useAppStore((s) => s.setSetupStep);
+  const setSetupStatus = useAppStore((s) => s.setSetupStatus);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
@@ -513,10 +522,24 @@ export function SetupPage() {
   }, [appendSetupLog]);
 
   const sharedLogs = useMemo(() => logs, [logs]);
+  const finishStorage = (result?: { createdFresh: boolean }) => {
+    const nextStep = postStorageStep === "ready" && result?.createdFresh
+      ? "gateway-stopped"
+      : postStorageStep;
+    if (nextStep === "ready") {
+      setSetupStatus(t("setup.ready"), 100);
+    } else if (nextStep === "gateway-stopped") {
+      setSetupStatus(t("setup.gatewayNotRunning"), 30);
+    } else {
+      setSetupStatus(t("setup.chooseMode"), 30);
+    }
+    setSetupStep(nextStep);
+  };
 
   switch (setupStep) {
     case "welcome": return <WelcomeScreen logs={sharedLogs} />;
     case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
+    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={finishStorage} onBack={() => setSetupStep("welcome")} />;
     case "gateway-stopped": return <GatewayStoppedScreen flow={flow} logs={sharedLogs} />;
     case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
     case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;

@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import clsx from "clsx";
@@ -68,7 +68,7 @@ export const STEP_META: Record<string, { titleKey: string; titleFallback: string
 
 type SetupAction = {
   label?: string;
-  onClick?: () => void;
+  onClick?: MouseEventHandler<HTMLButtonElement>;
   disabled?: boolean;
 };
 

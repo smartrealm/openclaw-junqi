@@ -25,6 +25,8 @@ function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): st
       return i18n.t('setup.petWelcome', { defaultValue: 'Choose language and theme' });
     case 'detecting':
       return i18n.t('setup.detecting', { defaultValue: 'Detecting OpenClaw installation...' });
+    case 'storage':
+      return i18n.t('storage.title', { defaultValue: 'Choose OpenClaw data location' });
     case 'choosing-mode':
       return i18n.t('setup.chooseMode', { defaultValue: 'Choose how you want to set up the OpenClaw Gateway.' });
     case 'gateway-stopped':
@@ -67,6 +69,7 @@ function setupStepTitleKey(step: ReturnType<typeof useAppStore.getState>['setupS
     case 'welcome':
       return 'setup.steps.identity.title';
     case 'detecting':
+    case 'storage':
     case 'gateway-stopped':
     case 'choosing-mode':
       return 'setup.steps.runtime.title';

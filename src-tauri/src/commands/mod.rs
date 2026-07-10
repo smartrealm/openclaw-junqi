@@ -29,7 +29,7 @@ pub mod session_analytics;
 pub mod session_labels;
 pub mod setup;
 pub mod skills;
-pub mod startup;
+pub mod storage;
 pub mod system;
 pub mod system_metrics;
 pub mod terminal;

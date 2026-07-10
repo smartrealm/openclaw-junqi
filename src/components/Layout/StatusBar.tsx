@@ -14,6 +14,7 @@ import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { GatewaySelfRescuePanel } from '@/components/GatewaySelfRescuePanel';
 import type { AegisTheme } from '@/theme/types';
+import { setThemeWithTransition } from '@/motion/themeTransition';
 
 const THEME_CYCLE: AegisTheme[] = ['aegis-dark', 'aegis-light', 'aegis-eyecare', 'aegis-midnight'];
 
@@ -31,7 +32,6 @@ export function StatusBar() {
   const sessions = useChatStore((st) => st.sessions);
   const uiScale = useSettingsStore((st) => st.uiScale);
   const theme = useSettingsStore((st) => st.theme);
-  const setTheme = useSettingsStore((st) => st.setTheme);
   const petEnabled = usePetStore((st) => st.enabled);
   const setPetEnabled = usePetStore((st) => st.setEnabled);
   const pomoEnabled = usePetStore((st) => st.pomodoro.enabled);
@@ -114,9 +114,9 @@ export function StatusBar() {
   const isDarkish = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
   const themeLabel = t(`theme.${resolvedTheme.replace('aegis-', '')}`, resolvedTheme.replace('aegis-', ''));
 
-  const handleThemeCycle = () => {
+  const handleThemeCycle = (origin: HTMLButtonElement) => {
     const next = nextTheme(resolvedTheme);
-    setTheme(next);
+    setThemeWithTransition(next, origin);
   };
 
   return (
@@ -234,7 +234,7 @@ export function StatusBar() {
        *  The pet/pomodoro buttons reflect state via color (primary when on,
        *  warning when running, dim when off). */}
       <button
-        onClick={handleThemeCycle}
+        onClick={(event) => handleThemeCycle(event.currentTarget)}
         title={t('theme.cycle', 'Cycle theme') + `: ${themeLabel}`}
         aria-label={t('theme.cycle', 'Cycle theme')}
         className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"

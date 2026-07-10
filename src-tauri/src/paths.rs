@@ -2,7 +2,31 @@
 //!
 //! 任何模块需要路径时都应从这里导入，不要在业务代码里临时拼路径。
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+const STORAGE_BOOTSTRAP_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StorageBootstrap {
+    pub version: u32,
+    pub state_dir: PathBuf,
+    pub config_path: PathBuf,
+    pub workspace_dir: PathBuf,
+}
+
+impl StorageBootstrap {
+    pub fn for_state_dir(state_dir: PathBuf, workspace_dir: Option<PathBuf>) -> Self {
+        let config_path = state_dir.join("openclaw.json");
+        let workspace_dir = workspace_dir.unwrap_or_else(|| state_dir.join("workspace"));
+        Self {
+            version: STORAGE_BOOTSTRAP_VERSION,
+            state_dir,
+            config_path,
+            workspace_dir,
+        }
+    }
+}
 
 // ── 应用状态根目录 ────────────────────────────────────────────
 
@@ -12,17 +36,72 @@ fn home_dir_or_fallback() -> PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("junqi"))
 }
 
-/// 返回 `~/.openclaw`，也就是隔离的应用状态目录。
-/// 配置、Node、工作区、设备、缓存等运行时数据都放在这里。
-pub fn desktop_dir() -> PathBuf {
+/// Stable location that is never stored inside the movable OpenClaw state dir.
+pub fn storage_bootstrap_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| home_dir_or_fallback().join(".config"))
+        .join("com.junqi.junqidesktop")
+        .join("bootstrap.json")
+}
+
+pub fn legacy_default_state_dir() -> PathBuf {
     home_dir_or_fallback().join(".openclaw")
+}
+
+pub fn load_storage_bootstrap() -> Option<StorageBootstrap> {
+    let raw = std::fs::read_to_string(storage_bootstrap_path()).ok()?;
+    let bootstrap: StorageBootstrap = serde_json::from_str(&raw).ok()?;
+    if bootstrap.version != STORAGE_BOOTSTRAP_VERSION || !bootstrap.state_dir.is_absolute() {
+        return None;
+    }
+    Some(bootstrap)
+}
+
+pub fn save_storage_bootstrap(bootstrap: &StorageBootstrap) -> Result<(), String> {
+    if !bootstrap.state_dir.is_absolute()
+        || !bootstrap.config_path.is_absolute()
+        || !bootstrap.workspace_dir.is_absolute()
+    {
+        return Err("Storage paths must be absolute".to_string());
+    }
+    let path = storage_bootstrap_path();
+    let parent = path.parent().ok_or("Invalid bootstrap path")?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create bootstrap directory: {}", e))?;
+    let tmp = parent.join(format!(".bootstrap-{}.tmp", std::process::id()));
+    let raw = serde_json::to_string_pretty(bootstrap)
+        .map_err(|e| format!("Failed to serialize bootstrap: {}", e))?;
+    std::fs::write(&tmp, raw).map_err(|e| format!("Failed to write bootstrap: {}", e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("Failed to activate bootstrap: {}", e))
+}
+
+pub fn remove_storage_bootstrap() -> Result<(), String> {
+    let path = storage_bootstrap_path();
+    if path.exists() {
+        std::fs::remove_file(path).map_err(|e| format!("Failed to remove bootstrap: {}", e))?;
+    }
+    Ok(())
+}
+
+/// Return the selected OpenClaw state root. Explicit environment overrides
+/// win, followed by JunQi's stable bootstrap, then the legacy default.
+pub fn desktop_dir() -> PathBuf {
+    std::env::var_os("OPENCLAW_STATE_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| load_storage_bootstrap().map(|b| b.state_dir))
+        .unwrap_or_else(legacy_default_state_dir)
 }
 
 // ── 配置 ───────────────────────────────────────────────────────
 
 /// 返回标准 OpenClaw 配置路径：`~/.openclaw/openclaw.json`。
 pub fn config_path() -> PathBuf {
-    desktop_dir().join("openclaw.json")
+    std::env::var_os("OPENCLAW_CONFIG_PATH")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| load_storage_bootstrap().map(|b| b.config_path))
+        .unwrap_or_else(|| desktop_dir().join("openclaw.json"))
 }
 
 // ── Node.js ────────────────────────────────────────────────────
@@ -184,7 +263,28 @@ pub fn git_bin_dir() -> PathBuf {
 
 /// 默认工作区目录；用户未配置工作区时使用。
 pub fn default_workspace_dir() -> PathBuf {
-    desktop_dir().join("workspace")
+    load_storage_bootstrap()
+        .map(|b| b.workspace_dir)
+        .unwrap_or_else(|| desktop_dir().join("workspace"))
+}
+
+#[cfg(test)]
+mod storage_bootstrap_tests {
+    use super::*;
+
+    #[test]
+    fn bug_st01_layout_keeps_bootstrap_outside_state_dir() {
+        let state = legacy_default_state_dir();
+        assert!(!storage_bootstrap_path().starts_with(&state));
+    }
+
+    #[test]
+    fn bug_st01_layout_derives_config_and_workspace() {
+        let state = PathBuf::from("/tmp/junqi-storage-test");
+        let layout = StorageBootstrap::for_state_dir(state.clone(), None);
+        assert_eq!(layout.config_path, state.join("openclaw.json"));
+        assert_eq!(layout.workspace_dir, state.join("workspace"));
+    }
 }
 
 /// 从 openclaw.json 读取用户配置的工作区路径。

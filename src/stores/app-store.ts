@@ -3,6 +3,7 @@ import { create } from "zustand";
 export type SetupStep =
   | "welcome"
   | "detecting"
+  | "storage"
   | "gateway-stopped"
   | "choosing-mode"
   | "checking"
@@ -15,6 +16,7 @@ export type SetupStep =
   | "error";
 
 type InstallMode = "native" | "docker";
+export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "ready";
 export type SetupLog = { source: "setup" | "gateway"; message: string; ts: number };
 
 interface AppState {
@@ -26,6 +28,7 @@ interface AppState {
   installMode: InstallMode;
   gatewayRunning: boolean;
   setupLogs: SetupLog[];
+  postStorageStep: PostStorageStep;
 
   setSetupComplete: (v: boolean | null) => void;
   setSetupStep: (step: SetupStep) => void;
@@ -35,6 +38,7 @@ interface AppState {
   setGatewayRunning: (v: boolean) => void;
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
   clearSetupLogs: () => void;
+  setPostStorageStep: (step: PostStorageStep) => void;
 }
 
 const savedMode = (localStorage.getItem("junqi-install-mode") as InstallMode) || "native";
@@ -52,6 +56,7 @@ export const useAppStore = create<AppState>((set) => ({
   installMode: savedMode,
   gatewayRunning: false,
   setupLogs: [],
+  postStorageStep: "choosing-mode",
 
   setSetupComplete: (v) => {
     if (v === true) {
@@ -76,4 +81,5 @@ export const useAppStore = create<AppState>((set) => ({
     setupLogs: [...s.setupLogs.slice(-219), { ...log, ts: log.ts ?? Date.now() }],
   })),
   clearSetupLogs: () => set({ setupLogs: [] }),
+  setPostStorageStep: (step) => set({ postStorageStep: step }),
 }));
