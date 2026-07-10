@@ -2,13 +2,12 @@
 # JunQi Desktop — Release Build (macOS + Windows)
 #
 # Builds the Tauri desktop app on macOS and Windows in parallel and
-# uploads the signed(ish) installers as workflow artifacts. Designed
+# uploads installers as workflow artifacts. A version tag additionally
+# creates a public GitHub Release with those installers attached. Designed
 # to be triggered by either:
-#   - push to main (always — gives you fresh binaries to download
-#     from the Actions tab after each merge)
-#   - workflow_dispatch (manual button in the Actions UI for ad-hoc
-#     builds without pushing)
-#   - tag push v*.*.* (future — wire up release-please or similar)
+#   - push to main (fresh, short-lived binaries in the Actions tab)
+#   - workflow_dispatch (manual ad-hoc builds)
+#   - tag push v* (a permanent GitHub Release)
 #
 # Why both platforms in one workflow rather than two separate files:
 #   - one place to read the matrix, cache strategy, artifact naming
@@ -21,8 +20,8 @@
 #   - uses the beforeBuildCommand/bundleConfig from tauri.conf.json
 #     so this file stays in sync with the app's own configuration
 #
-# Artifact retention: 14 days. Long enough for a release cycle, short
-# enough to avoid stale-binary confusion.
+# Artifact retention: 14 days. GitHub Releases are permanent; main-branch
+# artifacts remain intentionally short-lived.
 # ═══════════════════════════════════════════════════════════
 
 name: Release Build
@@ -30,6 +29,7 @@ name: Release Build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       ref:
@@ -56,21 +56,22 @@ jobs:
             os: 'macos'
             arch: 'universal'
             target: 'universal-apple-darwin'
-            artifact_glob: |
-              **/*.dmg
-              **/*.app
+            installer_paths: |
+              src-tauri/target/**/release/bundle/**/*.dmg
           # Windows — MSVC, single arch
           - platform: windows-latest
             os: 'windows'
             arch: 'x64'
             target: 'x86_64-pc-windows-msvc'
-            artifact_glob: |
-              **/*.msi
-              **/*.exe
+            installer_paths: |
+              src-tauri/target/**/release/bundle/**/*.msi
+              src-tauri/target/**/release/bundle/**/*-setup.exe
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -118,9 +119,63 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: junqi-desktop-${{ matrix.os }}-${{ matrix.target }}
-          path: src-tauri/target/**/release/bundle/**
+          path: ${{ matrix.installer_paths }}
           retention-days: 14
           if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    # Main builds remain Actions artifacts. A v* tag is the explicit signal
+    # that a tested build should be public and permanent.
+    if: needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify tag matches the desktop version
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package version $version"
+            exit 1
+          fi
+
+      - name: Download installers
+        uses: actions/download-artifact@v7
+        with:
+          pattern: junqi-desktop-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          assets=()
+          while IFS= read -r -d '' asset; do
+            assets+=("$asset")
+          done < <(find release-assets -type f -print0 | sort -z)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "::error::No installer assets were downloaded"
+            exit 1
+          fi
+
+          tag="$GITHUB_REF_NAME"
+          title="JunQi Desktop ${tag#v}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --generate-notes
+          fi
 
   release:
     name: ✅ Release Summary
