@@ -39,25 +39,28 @@
     </mask>
   </defs>
 
-  <!-- Layer 1: gradient border ring (the outside of the icon) -->
-  <g mask="url(#cardMask)">
-    <rect width="1024" height="1024" rx="220" ry="220" fill="url(#borderGrad)"/>
+  <!-- macOS Dock icons need optical breathing room around the artwork. -->
+  <g transform="translate(92 92) scale(0.82)">
+    <!-- Layer 1: gradient border ring (the outside of the icon) -->
+    <g mask="url(#cardMask)">
+      <rect width="1024" height="1024" rx="220" ry="220" fill="url(#borderGrad)"/>
+    </g>
+
+    <!-- Layer 2: inner dark navy card (matches aegis-bg #1d212a) -->
+    <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="#1d212a"/>
+
+    <!-- Layer 3: top-edge highlight (paper-stack depth, very subtle) -->
+    <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="url(#topHighlight)"/>
+
+    <!-- Layer 4: JQ wordmark (white, bold, matches in-app brand) -->
+    <text
+      x="512" y="512"
+      font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
+      font-size="460"
+      font-weight="800"
+      letter-spacing="-12"
+      text-anchor="middle"
+      dominant-baseline="central"
+      fill="#ffffff">JQ</text>
   </g>
-
-  <!-- Layer 2: inner dark navy card (matches aegis-bg #1d212a) -->
-  <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="#1d212a"/>
-
-  <!-- Layer 3: top-edge highlight (paper-stack depth, very subtle) -->
-  <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="url(#topHighlight)"/>
-
-  <!-- Layer 4: JQ wordmark (white, bold, matches in-app brand) -->
-  <text
-    x="512" y="512"
-    font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
-    font-size="460"
-    font-weight="800"
-    letter-spacing="-12"
-    text-anchor="middle"
-    dominant-baseline="central"
-    fill="#ffffff">JQ</text>
 </svg>
