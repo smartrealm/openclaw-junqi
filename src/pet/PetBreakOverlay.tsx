@@ -67,6 +67,7 @@ export function PetBreakOverlay() {
   const setPomodoro = usePetStore(s => s.setPomodoro);
   const skin       = usePetStore(s => s.skin);
   const customAsset = usePetStore(s => s.customAsset);
+  const customPet = usePetStore(s => s.customPet);
 
   const isBreak = petEnabled && pomodoro.enabled && pomodoro.running && pomodoro.phase === 'break';
 
@@ -193,7 +194,7 @@ export function PetBreakOverlay() {
 
             {/* Enlarged pet — 2.2× scale, sleep pose */}
             <div style={{ position: 'relative', width: 96, height: 110, transform: 'scale(2.2)', transformOrigin: 'center', margin: '16px 0 60px' }}>
-              <PetCharacter emotion="sleep" progress={0} skin={skin} customAsset={customAsset} />
+              <PetCharacter emotion="sleep" progress={0} skin={skin} customAsset={customAsset} customPet={customPet} />
               {/* Zzz floats upward from above the pet's head */}
               {[0, 1, 2].map((i) => (
                 <motion.span

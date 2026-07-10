@@ -24,6 +24,7 @@ import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
+import { useTranslation } from 'react-i18next';
 
 interface SeedFile {
   path: string;
@@ -44,6 +45,10 @@ function parseName(p: string): SeedFile {
 }
 
 export function QuickChatPage() {
+  const { t } = useTranslation();
+  const connected = useChatStore((state) => state.connected);
+  const connecting = useChatStore((state) => state.connecting);
+  const connectionError = useChatStore((state) => state.connectionError);
   const [files, setFiles] = useState<SeedFile[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -71,32 +76,37 @@ export function QuickChatPage() {
   // has its own event bus, separate from the main window — that's exactly
   // what we want, so per-window fresh sessions don't pollute the main
   // store's seed key.
+  const applySeed = useCallback((paths: string[]) => {
+    const parsed = paths.map(parseName);
+    setFiles(parsed);
+    setText((current) => {
+      if (current) return current;
+      const dirCount = parsed.filter(file => file.isDir).length;
+      const fileCount = parsed.length - dirCount;
+      if (parsed.length === 1) {
+        return t('pet.quickChat.defaultQuestionSingle', { name: parsed[0].name });
+      }
+      return t('pet.quickChat.defaultQuestionMany', {
+        count: parsed.length,
+        detail: dirCount > 0 && fileCount > 0
+          ? t('pet.quickChat.mixedResources', { dirCount, fileCount })
+          : '',
+      });
+    });
+    inputRef.current?.focus();
+  }, [t]);
+
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
       unlisten = await listen<string[]>('quickchat:seed', (e) => {
-        const parsed = e.payload.map(parseName);
-        setFiles(parsed);
-        // Auto-place a polite opener question — user can edit/delete.
-        if (!text) {
-          const dirCount = parsed.filter(f => f.isDir).length;
-          const fileCount = parsed.length - dirCount;
-          const label = parsed.length === 1
-            ? parsed[0].name
-            : `${parsed.length} 个项目`;
-          setText(
-            `请帮我分析${label}的内容${
-              dirCount > 0 && fileCount > 0
-                ? `（含 ${dirCount} 个目录、${fileCount} 个文件）`
-                : ''
-            }。`
-          );
-        }
-        inputRef.current?.focus();
+        applySeed(e.payload);
       });
+      const initial = await invoke<string[]>('get_quickchat_seed').catch(() => []);
+      if (initial.length > 0) applySeed(initial);
     })();
     return () => { unlisten?.(); };
-  }, []);
+  }, [applySeed]);
 
   // Drag-region for the frameless title bar.
   const titleDragRegion = 'data-tauri-drag-region';
@@ -107,8 +117,8 @@ export function QuickChatPage() {
     setSending(true);
 
     // Build a context-rich initial message: attachment list + the user text.
-    const attachmentLines = files.map(f => `- ${f.isDir ? '📁' : '📄'} ${f.name} (${f.path})`).join('\n');
-    const fullMessage = `已拖入以下文件/目录：\n${attachmentLines}\n\n${trimmed}`;
+    const attachmentLines = files.map(f => `- ${f.isDir ? 'DIR' : 'FILE'} ${f.name} (${f.path})`).join('\n');
+    const fullMessage = `${t('pet.quickChat.attachmentIntro')}\n${attachmentLines}\n\n${trimmed}`;
 
     // Resolve or create a dedicated session for this quick chat window.
     const key = sessionKey ?? (() => {
@@ -134,7 +144,7 @@ export function QuickChatPage() {
       try {
         await gateway.sendMessage(fullMessage, undefined, key);
       } catch (err: any) {
-        setStreamedReply(`❌ 错误：${err?.message ?? err}`);
+        setStreamedReply(t('pet.quickChat.sendError', { error: err?.message ?? String(err) }));
       }
 
       setText('');
@@ -142,7 +152,7 @@ export function QuickChatPage() {
       setSending(false);
       setTimeout(() => messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }), 30);
     }
-  }, [text, sending, files, sessionKey]);
+  }, [text, sending, files, sessionKey, t]);
 
   const handleKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -163,13 +173,24 @@ export function QuickChatPage() {
         <Sparkles size={12} className="text-aegis-primary" />
         <span className="text-[12px] font-semibold tracking-wide">JunQi Quick Chat</span>
         <span className="text-[10px] text-aegis-text-dim ml-1">
-          {files.length > 0 ? `· ${files.length} 项` : ''}
+          {files.length > 0 ? `· ${t('pet.quickChat.itemCount', { count: files.length })}` : ''}
         </span>
+        <span
+          className={clsx(
+            'ml-1 h-1.5 w-1.5 rounded-full',
+            connected ? 'bg-emerald-400' : connecting ? 'bg-amber-400 animate-pulse' : 'bg-red-400',
+          )}
+          title={connected
+            ? t('connection.connected')
+            : connecting
+              ? t('gateway.connectingLabel')
+              : connectionError || t('gateway.disconnectedLabel')}
+        />
         <div className="ml-auto flex items-center gap-0.5" {...{ 'data-tauri-drag-region': false } as any}>
           <button
             onClick={handleClose}
             className="w-6 h-6 rounded flex items-center justify-center text-aegis-text-dim hover:text-aegis-text hover:bg-white/10 transition-colors"
-            title="关闭"
+            title={t('pet.quickChat.close')}
           >
             <X size={12} />
           </button>
@@ -200,8 +221,8 @@ export function QuickChatPage() {
         {!lastAssistant && files.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-aegis-text-dim gap-1.5">
             <Sparkles size={24} className="opacity-30" />
-            <div className="text-[12px]">把任何文件或文件夹拖入主窗口或萌宠</div>
-            <div className="text-[11px] opacity-70">这里会单独开一个会话</div>
+            <div className="text-[12px]">{t('pet.quickChat.emptyTitle')}</div>
+            <div className="text-[11px] opacity-70">{t('pet.quickChat.emptyHint')}</div>
           </div>
         )}
         {(lastAssistant || streamedReply) && (
@@ -220,7 +241,7 @@ export function QuickChatPage() {
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKey}
           rows={3}
-          placeholder={files.length ? '补充你的问题…（Enter 发送，Shift+Enter 换行）' : '拖入文件后输入问题…'}
+          placeholder={files.length ? t('pet.quickChat.questionPlaceholder') : t('pet.quickChat.dropPlaceholder')}
           className={clsx(
             'w-full bg-black/30 border border-white/15 rounded-md px-2.5 py-2 text-[13px] resize-none outline-none',
             'focus:border-aegis-primary/50 transition-colors placeholder:text-aegis-text-dim/60'
@@ -228,7 +249,7 @@ export function QuickChatPage() {
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <div className="text-[10px] text-aegis-text-dim opacity-60">
-            {text.length > 0 && `${text.length} 字`}
+            {text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
           </div>
           <button
             onClick={handleSend}
@@ -240,7 +261,7 @@ export function QuickChatPage() {
                 : 'bg-aegis-primary text-white hover:brightness-110'
             )}
           >
-            {sending ? '发送中…' : '发送 ⏎'}
+            {sending ? t('pet.quickChat.sending') : t('pet.quickChat.send')}
           </button>
         </div>
       </div>

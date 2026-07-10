@@ -17,6 +17,7 @@ import { STORAGE_KEY as THEME_STORAGE_KEY } from '@/theme/constants';
 import { isThemeSetting, type ThemeSetting } from '@/theme/types';
 import { playPetSfx } from './petSounds';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
+import { PetPositionScheduler } from './petPositionScheduler';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
@@ -64,10 +65,18 @@ export default function PetWindow() {
   const skin = usePetStore((s) => s.skin);
   const customAsset = usePetStore((s) => s.customAsset);
   const setCustomAsset = usePetStore((s) => s.setCustomAsset);
+  const customPet = usePetStore((s) => s.customPet);
+  const setCustomPet = usePetStore((s) => s.setCustomPet);
   const positionRef = useRef(position);
   positionRef.current = position;
+  const positionSchedulerRef = useRef<PetPositionScheduler | null>(null);
+  if (!positionSchedulerRef.current) {
+    positionSchedulerRef.current = new PetPositionScheduler((point) =>
+      invoke('set_pet_position', { x: point.x, y: point.y }),
+    );
+  }
 
-  const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean } | null>(null);
+  const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean; native: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
   const justDragged = useRef(false);
   // Latest cursor + main-window bounds, written by the `aegis:drag-move`
@@ -142,16 +151,36 @@ export default function PetWindow() {
     if (initialPosition && typeof initialPosition.x === 'number' && typeof initialPosition.y === 'number') {
       invoke('set_pet_position', initialPosition).catch(() => undefined);
     }
-    // Load a user-uploaded custom skin from disk (not persisted in localStorage).
+    // Animated v2 packages take precedence over legacy single-image skins.
+    invoke<import('@/stores/petStore').CustomPetPackage | null>('load_pet_package')
+      .then((pet) => {
+        setCustomPet(pet);
+        if (pet) setCustomAsset(null);
+      })
+      .catch(() => undefined);
     invoke<string | null>('load_pet_asset')
       .then((url) => {
-        if (url) setCustomAsset(url);
+        if (url && !usePetStore.getState().customPet) setCustomAsset(url);
       })
       .catch(() => undefined);
 
     const unlistens = [
       subscribeTauriEvent<PetState>('pet-state', (e) => setState(e.payload)),
-      subscribeTauriEvent<{ x: number; y: number }>('pet-moved', (e) => setPosition(e.payload)),
+      subscribeTauriEvent<{ x: number; y: number }>('pet-moved', (e) => {
+        const previous = petPosRef.current;
+        if (drag.current?.native && previous) {
+          const deltaX = e.payload.x - previous.x;
+          if (Math.abs(deltaX) > 0.5) {
+            const direction = deltaX > 0 ? 1 : -1;
+            if (direction !== walkDirRef.current) {
+              walkDirRef.current = direction;
+              setWalkDir(direction);
+            }
+          }
+        }
+        positionRef.current = e.payload;
+        petPosRef.current = e.payload;
+      }),
     ];
     // CRITICAL: PetWindow is a SEPARATE webview from the main window — its
     // Zustand store is a fresh instance with its own state. The main
@@ -175,6 +204,7 @@ export default function PetWindow() {
         dragCursorRef.current = null;
         petStore.setDragActive(false);
         petStore.setDragOver(false);
+        if (petPosRef.current) petStore.setPosition(petPosRef.current);
       }),
     );
     // NB: we deliberately do NOT listen for `aegis:file-dropped` here. The
@@ -186,12 +216,23 @@ export default function PetWindow() {
     unlistens.push(
       subscribeTauriEvent('pet-asset-changed', () => {
         invoke<string | null>('load_pet_asset')
-          .then((url) => setCustomAsset(url ?? null))
+          .then((url) => {
+            setCustomAsset(url ?? null);
+            if (url) setCustomPet(null);
+          })
+          .catch(() => undefined);
+      }),
+      subscribeTauriEvent('pet-package-changed', () => {
+        invoke<import('@/stores/petStore').CustomPetPackage | null>('load_pet_package')
+          .then((pet) => {
+            setCustomPet(pet);
+            if (pet) setCustomAsset(null);
+          })
           .catch(() => undefined);
       }),
     );
     return combineUnlisteners(unlistens);
-  }, [cancelSnap, setCustomAsset, setPosition]);
+  }, [cancelSnap, setCustomAsset, setCustomPet]);
 
   // Global mouse listeners so dragging keeps tracking even after the cursor
   // leaves the small pet window.
@@ -204,10 +245,16 @@ export default function PetWindow() {
       if (!d.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
         cancelSnap();
         d.moved = true;
+        d.native = true;
         setDragging(true);
+        invoke('start_pet_dragging').catch(() => {
+          if (drag.current === d) d.native = false;
+        });
       }
-      if (d.moved) {
-        invoke('set_pet_position', { x: d.bx + dx, y: d.by + dy });
+      if (d.moved && !d.native) {
+        const next = { x: d.bx + dx, y: d.by + dy };
+        petPosRef.current = next;
+        positionSchedulerRef.current?.enqueue(next);
         // Track instantaneous horizontal direction; only re-render when the
         // sign flips so a fast drag doesn't thrash React.
         const lastX = lastMoveXRef.current;
@@ -234,19 +281,25 @@ export default function PetWindow() {
       const step = (now: number) => {
         const t = Math.min(1, (now - start) / dur);
         const e = easeOutCubic(t);
-        invoke('set_pet_position', { x: fromX + (toX - fromX) * e, y: fromY + (toY - fromY) * e });
+        const next = { x: fromX + (toX - fromX) * e, y: fromY + (toY - fromY) * e };
+        petPosRef.current = next;
+        positionSchedulerRef.current?.enqueue(next);
         if (t < 1) raf = requestAnimationFrame(step);
-        else onDone?.();
+        else {
+          positionSchedulerRef.current?.flush();
+          onDone?.();
+        }
       };
       raf = requestAnimationFrame(step);
       return () => cancelAnimationFrame(raf);
     };
     const snapToEdge = () => {
       setSnapping(true);
-      Promise.all([
-        invoke<{ x: number; y: number }>('get_pet_position'),
-        invoke<PetBounds>('get_pet_bounds'),
-      ])
+      const cachedPosition = petPosRef.current;
+      const positionPromise = cachedPosition
+        ? Promise.resolve(cachedPosition)
+        : invoke<{ x: number; y: number }>('get_pet_position');
+      Promise.all([positionPromise, invoke<PetBounds>('get_pet_bounds')])
         .then(([pos, b]) => {
           const target = computeSnapTarget({ x: pos.x, y: pos.y, w: PET_W, h: PET_H }, b, SNAP_THRESHOLD, SNAP_MARGIN);
           if (!target || (Math.abs(target.x - pos.x) < 1 && Math.abs(target.y - pos.y) < 1)) {
@@ -256,6 +309,7 @@ export default function PetWindow() {
           snapCancelRef.current = glideTo(pos.x, pos.y, target.x, target.y, () => {
             snapCancelRef.current = null;
             setSnapping(false);
+            setPosition(target);
           });
         })
         .catch(() => setSnapping(false));
@@ -263,6 +317,8 @@ export default function PetWindow() {
     const onUp = () => {
       const d = drag.current;
       if (d?.moved) {
+        positionSchedulerRef.current?.flush();
+        if (petPosRef.current) setPosition(petPosRef.current);
         justDragged.current = true;
         defer(() => {
           justDragged.current = false;
@@ -285,7 +341,7 @@ export default function PetWindow() {
       for (const id of timeoutsRef.current) window.clearTimeout(id);
       timeoutsRef.current = [];
     };
-  }, []);
+  }, [cancelSnap, setPosition]);
 
   // Edge: pet just entered swallow → play the chew sound. Re-uses the same
   // logic as the main window's drop handler so the audio lines up regardless
@@ -391,7 +447,7 @@ export default function PetWindow() {
             y: pos.y + (dy / len) * step + perpY * wobble,
           };
           petPosRef.current = next;
-          invoke('set_pet_position', next).catch(() => undefined);
+          positionSchedulerRef.current?.enqueue(next);
           // Tilt toward chase direction — cap ±10°.
           const targetRot = Math.max(-10, Math.min(10, dx / 28));
           const cur2 = dragOffsetRef.current;
@@ -442,7 +498,7 @@ export default function PetWindow() {
         x: startX + (targetX - startX) * e,
         y: startY + (targetY - startY) * e,
       };
-      invoke('set_pet_position', petPosRef.current).catch(() => undefined);
+      positionSchedulerRef.current?.enqueue(petPosRef.current);
       if (t < 1) raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
@@ -456,7 +512,16 @@ export default function PetWindow() {
     // base. We seed `bx/by` with the current pet position lazily — the
     // async result below refines it once we have the authoritative Rust
     // answer. The first few events may drift by ≤ a frame; negligible.
-    drag.current = { sx: e.screenX, sy: e.screenY, bx: e.screenX, by: e.screenY, moved: false, ready: true };
+    const cached = petPosRef.current ?? positionRef.current;
+    drag.current = {
+      sx: e.screenX,
+      sy: e.screenY,
+      bx: cached?.x ?? 0,
+      by: cached?.y ?? 0,
+      moved: false,
+      ready: Boolean(cached),
+      native: false,
+    };
     cancelSnap();
     // Keep click-through OFF for the duration of the press so the OS keeps
     // dispatching events to this window even if the cursor briefly leaves
@@ -471,6 +536,8 @@ export default function PetWindow() {
           drag.current.bx = base.x;
           drag.current.by = base.y;
         }
+        drag.current.ready = true;
+        petPosRef.current = base;
       })
       .catch(() => undefined);
   };
@@ -559,6 +626,7 @@ export default function PetWindow() {
           progress={state.progress ?? 0}
           skin={state.skin ?? skin}
           customAsset={customAsset}
+          customPet={customPet}
           dragging={dragging}
           hovered={hovered && !snapping && !dragging}
           walkDir={walkDir}

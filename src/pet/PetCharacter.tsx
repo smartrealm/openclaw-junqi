@@ -13,6 +13,8 @@ import { EMOTION_CFG } from './emotion-config';
 import { SKIN_REGISTRY, type PetSkin } from './skins';
 import { EFFECT_REGISTRY } from './effects';
 import { normalizePetThemeName, resolvePetCharacterPalette, type PetThemeName } from './petTheme';
+import type { CustomPetPackage } from '@/stores/petStore';
+import { CustomPetSprite } from './CustomPetSprite';
 
 export type { PetSkin };
 
@@ -44,11 +46,12 @@ function usePetCharacterTheme(): PetThemeName {
   return themeName;
 }
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'lobster', customAsset, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'lobster', customAsset, customPet, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;
   customAsset?: string | null;
+  customPet?: CustomPetPackage | null;
   dragging?: boolean;
   /** Cursor is over the pet — skins play a "notice you" reaction and the
    *  eyes widen. */
@@ -95,6 +98,20 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'lobster',
   const pullMag = Math.min(1, Math.hypot(dragDx, dragDy) / 28);
   // Cap rotation so the pet never tilts past 10° either way.
   const cappedRot = Math.max(-10, Math.min(10, dragRotation));
+
+  if (customPet) {
+    return (
+      <CustomPetSprite
+        pet={customPet}
+        emotion={emotion}
+        dragging={dragging}
+        hovered={hovered}
+        walkDir={walkDir}
+        dragDx={dragDx}
+        dragDy={dragDy}
+      />
+    );
+  }
 
   // Uploaded skin: the image is the "body", wrapped in the same emotion pose +
   // breathing, with the head effect overlaid — so a custom pet still reacts.

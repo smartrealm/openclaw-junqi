@@ -4,10 +4,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X, Sparkles, FolderOpen,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -36,7 +37,8 @@ import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 
 export function SettingsPageFull() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const {
     theme, setTheme,
     uiScale, setUiScale,
@@ -59,8 +61,11 @@ export function SettingsPageFull() {
   }, [budgetLimit]);
   const { connected, connecting } = useChatStore();
   const prefersDark = usePrefersDark();
-  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
+  const [petIdea, setPetIdea] = useState('');
+  const [availablePets, setAvailablePets] = useState<Array<{ id: string; displayName: string; description: string; manifestPath: string }>>([]);
+  const [selectedPetManifest, setSelectedPetManifest] = useState('');
   const [petNow, setPetNow] = useState(Date.now());
   useEffect(() => {
     // Pause freezes the countdown (shows pausedRemainingMs), so skip the tick.
@@ -79,14 +84,59 @@ export function SettingsPageFull() {
       if (!selected || Array.isArray(selected)) return;
       const url = await invoke<string>('save_pet_asset', { srcPath: selected });
       setPetCustomAsset(url);
+      setCustomPet(null);
     } catch (e) {
       setPetUploadError(e instanceof Error ? e.message : String(e));
     }
   };
+  const importAnimatedPet = async (manifestPath?: string) => {
+    setPetUploadError(null);
+    try {
+      let selected = manifestPath;
+      if (!selected) {
+        const picked = await openDialog({
+          multiple: false,
+          filters: [{ name: 'Codex Pet', extensions: ['json'] }],
+        });
+        if (!picked || Array.isArray(picked)) return;
+        selected = picked;
+      }
+      const pet = await invoke<import('@/stores/petStore').CustomPetPackage>('import_pet_package', {
+        manifestPath: selected,
+        locale: i18n.resolvedLanguage ?? i18n.language,
+      });
+      setCustomPet(pet);
+      setPetCustomAsset(null);
+    } catch (e) {
+      setPetUploadError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const refreshCodexPets = async () => {
+    setPetUploadError(null);
+    try {
+      const pets = await invoke<typeof availablePets>('list_codex_pet_packages');
+      setAvailablePets(pets);
+      setSelectedPetManifest((current) => current || pets[0]?.manifestPath || '');
+    } catch (e) {
+      setPetUploadError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const createAnimatedPet = () => {
+    const idea = petIdea.trim();
+    if (!idea) {
+      setPetUploadError(t('pet.settings.describeFirst'));
+      return;
+    }
+    const prompt = `$hatch-pet create a pet based on what you know about me. My additional request: ${idea}. Complete the full v2 workflow and install the validated package under ~/.codex/pets/. Return the final pet.json path.`;
+    const params = new URLSearchParams({ agent: 'codex', prompt });
+    navigate(`/agent-run?${params.toString()}`);
+  };
   const handlePetClear = async () => {
     setPetUploadError(null);
     await invoke('clear_pet_asset').catch(() => undefined);
+    await invoke('clear_pet_package').catch(() => undefined);
     setPetCustomAsset(null);
+    setCustomPet(null);
   };
 
   const [openclawVersion, setOpenclawVersion] = useState<string | null>(null);
@@ -99,6 +149,19 @@ export function SettingsPageFull() {
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [connectionDirty, setConnectionDirty] = useState(false);
   const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
+
+  useEffect(() => {
+    if (activeTab !== 'pet') return;
+    void invoke<import('@/stores/petStore').CustomPetPackage | null>('load_pet_package')
+      .then((pet) => {
+        setCustomPet(pet);
+        if (pet) setPetCustomAsset(null);
+      })
+      .catch(() => undefined);
+    void refreshCodexPets();
+  // The pet tab is the ownership boundary for loading package metadata.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // Doctor output modal — runs `openclaw doctor [--fix]` and shows the result.
   const [doctorOutput, setDoctorOutput] = useState<string | null>(null);
@@ -672,8 +735,8 @@ export function SettingsPageFull() {
           </button>
         </div>
 
-        {/* Custom upload */}
-        <div className="flex items-center justify-between mt-4">
+        {/* Custom static upload */}
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-aegis-border/20">
           <div>
             <div className="text-[13px] text-aegis-text">{t('pet.settings.custom', '自定义素材')}</div>
             <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.customHint', '上传 PNG/JPG/GIF/WebP，≤2MB')}</div>
@@ -683,11 +746,54 @@ export function SettingsPageFull() {
               className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors">
               {petCustomAsset ? t('pet.settings.replace', '更换') : t('pet.settings.upload', '上传')}
             </button>
-            {petCustomAsset && (
+            {(petCustomAsset || customPet) && (
               <button onClick={handlePetClear}
                 className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-danger transition-colors">
                 {t('pet.settings.clear', '清除')}
               </button>
+            )}
+          </div>
+        </div>
+        <div className="mt-4 space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('pet.settings.animatedTitle')}</div>
+              <div className="text-[11px] text-aegis-text-dim">
+                {customPet
+                  ? t('pet.settings.animatedUsing', { name: customPet.displayName })
+                  : t('pet.settings.animatedHint')}
+              </div>
+            </div>
+            <button onClick={() => void importAnimatedPet()}
+              className="inline-flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-lg border border-aegis-border/30 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/60 transition-colors">
+              <FolderOpen size={13} />{t('pet.settings.importManifest')}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <input value={petIdea} onChange={(event) => setPetIdea(event.target.value)}
+              placeholder={t('pet.settings.ideaPlaceholder')}
+              className="min-w-0 flex-1 px-3 py-2 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text placeholder:text-aegis-text-dim" />
+            <button onClick={createAnimatedPet}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] bg-aegis-primary text-white hover:opacity-90 transition-opacity">
+              <Sparkles size={13} />{t('pet.settings.createWithCodex')}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => void refreshCodexPets()}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] border border-aegis-border/30 text-aegis-text-dim hover:text-aegis-text">
+              <RefreshCw size={12} />{t('pet.settings.refreshLibrary')}
+            </button>
+            {availablePets.length > 0 && (
+              <>
+                <select value={selectedPetManifest} onChange={(event) => setSelectedPetManifest(event.target.value)}
+                  className="min-w-0 flex-1 px-2.5 py-1.5 rounded-lg text-[11px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text">
+                  {availablePets.map((pet) => <option key={pet.manifestPath} value={pet.manifestPath}>{pet.displayName}</option>)}
+                </select>
+                <button onClick={() => void importAnimatedPet(selectedPetManifest)} disabled={!selectedPetManifest}
+                  className="px-3 py-1.5 rounded-lg text-[11px] border border-aegis-primary/40 text-aegis-primary hover:bg-aegis-primary/10 disabled:opacity-40">
+                  {t('pet.settings.useAnimatedPet')}
+                </button>
+              </>
             )}
           </div>
         </div>

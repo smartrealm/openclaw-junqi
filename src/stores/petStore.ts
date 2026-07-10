@@ -3,6 +3,14 @@ import { persist } from 'zustand/middleware';
 import { isPetSkin, type PetSkin } from '@/pet/skins';
 export type { PetSkin };
 
+export interface CustomPetPackage {
+  id: string;
+  displayName: string;
+  description: string;
+  spriteVersionNumber: 2;
+  spritesheetDataUrl: string;
+}
+
 export const DEFAULT_PET_SKIN: PetSkin = 'lobster';
 
 function normalizePersistedPetSkin(skin: unknown): PetSkin {
@@ -78,6 +86,7 @@ interface PetSettings {
   clickThrough: boolean;
   skin: PetSkin;
   customAsset: string | null;
+  customPet: CustomPetPackage | null;
   pomodoro: PomodoroState;
   petVisible: boolean;
   /** Bumped on every file-drop event so the pet window reruns the
@@ -106,6 +115,7 @@ interface PetSettings {
   setClickThrough: (v: boolean) => void;
   setSkin: (v: PetSkin) => void;
   setCustomAsset: (v: string | null) => void;
+  setCustomPet: (v: CustomPetPackage | null) => void;
   setPomodoro: (p: Partial<PomodoroState>) => void;
   bumpSwallowTick: () => void;
   setDragActive: (v: boolean, paths?: string[]) => void;
@@ -121,6 +131,7 @@ export const usePetStore = create<PetSettings>()(
       clickThrough: true,
       skin: DEFAULT_PET_SKIN,
       customAsset: null,
+      customPet: null,
       pomodoro: {
         enabled: false,
         workMin: 30,
@@ -149,6 +160,7 @@ export const usePetStore = create<PetSettings>()(
       setClickThrough: (clickThrough) => set({ clickThrough }),
       setSkin: (skin) => set({ skin }),
       setCustomAsset: (customAsset) => set({ customAsset }),
+      setCustomPet: (customPet) => set({ customPet }),
       setPomodoro: (p) => set((s) => ({ pomodoro: { ...s.pomodoro, ...p } })),
       setPetVisible: (petVisible: boolean) => set({ petVisible }),
       bumpSwallowTick: () =>

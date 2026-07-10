@@ -72,24 +72,24 @@ export function resolvePetAccentPalette(themeName: PetThemeName): PetAccentPalet
   switch (themeName) {
     case 'aegis-light':
       return {
-        primary: '#ef6f5e',
-        secondary: '#c96842',
+        primary: '#3b82f6',
+        secondary: '#0891b2',
         warm: '#d97706',
         success: '#16825d',
         warning: '#b45309',
       };
     case 'aegis-eyecare':
       return {
-        primary: '#c96842',
-        secondary: '#9d6a42',
+        primary: '#4f7fa8',
+        secondary: '#4f9dba',
         warm: '#9a5a1f',
         success: '#3d7c59',
         warning: '#8a5a12',
       };
     case 'aegis-midnight':
       return {
-        primary: '#f26f62',
-        secondary: '#ff9a72',
+        primary: '#7f9aff',
+        secondary: '#67e8f9',
         warm: '#f6c177',
         success: '#9bd88f',
         warning: '#e8b066',
@@ -97,8 +97,8 @@ export function resolvePetAccentPalette(themeName: PetThemeName): PetAccentPalet
     case 'aegis-dark':
     default:
       return {
-        primary: '#ff836f',
-        secondary: '#ffad83',
+        primary: '#6c9fff',
+        secondary: '#73e6ff',
         warm: '#f6c177',
         success: '#8bd98b',
         warning: '#f0b45d',

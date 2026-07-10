@@ -18,19 +18,55 @@
 //! without ever touching the full workbench.
 
 use std::path::PathBuf;
-use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
-    WindowEvent,
-};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 const LABEL: &str = "quickchat";
 const W: f64 = 460.0;
 const H: f64 = 620.0;
 const MARGIN: f64 = 24.0;
+static QUICKCHAT_SEED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Facade for every OS resource-drop entry point. Main and pet windows must
+/// delegate here so QuickChat creation, pet feedback, and drag cleanup remain
+/// one atomic product action.
+pub struct ResourceDropCoordinator;
+
+impl ResourceDropCoordinator {
+    fn stringify(paths: &[PathBuf]) -> Vec<String> {
+        paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    pub fn enter(app: &AppHandle, paths: &[PathBuf]) {
+        let paths = Self::stringify(paths);
+        let _ = app.emit("aegis:drag-active", paths);
+    }
+
+    pub fn set_over_pet(app: &AppHandle, over_pet: bool) {
+        let _ = app.emit("aegis:drag-over-main", over_pet);
+    }
+
+    pub fn leave(app: &AppHandle) {
+        Self::set_over_pet(app, false);
+        let _ = app.emit("aegis:drag-inactive", ());
+    }
+
+    pub fn drop(app: &AppHandle, paths: &[PathBuf]) {
+        let paths = Self::stringify(paths);
+        let _ = app.emit("aegis:file-dropped", &paths);
+        spawn_quickchat_for_paths(app, paths);
+        let _ = app.emit("aegis:drag-inactive", ());
+    }
+}
 
 /// Open (or refocus) the QuickChatWindow, optionally seeding it with file paths.
 #[tauri::command]
 pub async fn open_quickchat_with_files(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    if !paths.is_empty() {
+        *QUICKCHAT_SEED.lock().unwrap() = paths.clone();
+    }
     // If the window already exists, just send the new paths + refocus.
     if let Some(win) = app.get_webview_window(LABEL) {
         if !paths.is_empty() {
@@ -102,11 +138,19 @@ pub async fn open_quickchat_with_files(app: AppHandle, paths: Vec<String>) -> Re
     Ok(())
 }
 
+/// Read the latest dropped resources so a newly-created webview cannot miss
+/// the seed while its React tree is still booting.
+#[tauri::command]
+pub async fn get_quickchat_seed() -> Vec<String> {
+    QUICKCHAT_SEED.lock().unwrap().clone()
+}
+
 #[tauri::command]
 pub async fn close_quickchat(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(LABEL) {
         let _ = win.close();
     }
+    QUICKCHAT_SEED.lock().unwrap().clear();
     let _ = app.emit(
         "quickchat-visibility",
         serde_json::json!({ "visible": false }),

@@ -77,6 +77,39 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| format!("Failed to open pet window: {}", e))?;
 
+    // The pet is a real drop target, not just a visual follower. Route drops
+    // through the same QuickChat pipeline as the main window.
+    let app_for_drop = app.clone();
+    win.on_window_event(move |event| {
+        if let WindowEvent::DragDrop(drop_event) = event {
+            match drop_event {
+                tauri::DragDropEvent::Enter { paths, .. } => {
+                    crate::commands::quickchat::ResourceDropCoordinator::enter(
+                        &app_for_drop,
+                        paths,
+                    );
+                    crate::commands::quickchat::ResourceDropCoordinator::set_over_pet(
+                        &app_for_drop,
+                        true,
+                    );
+                }
+                tauri::DragDropEvent::Over { .. } => {
+                    crate::commands::quickchat::ResourceDropCoordinator::set_over_pet(
+                        &app_for_drop,
+                        true,
+                    );
+                }
+                tauri::DragDropEvent::Leave => {
+                    crate::commands::quickchat::ResourceDropCoordinator::leave(&app_for_drop);
+                }
+                tauri::DragDropEvent::Drop { paths, .. } => {
+                    crate::commands::quickchat::ResourceDropCoordinator::drop(&app_for_drop, paths);
+                }
+                _ => {}
+            }
+        }
+    });
+
     // Persist drag position: when the user moves the pet, broadcast the new
     // logical position so the pet webview (an independent window) can store it
     // for restore on the next launch.
@@ -152,6 +185,16 @@ pub async fn set_pet_position(app: AppHandle, x: f64, y: f64) -> Result<(), Stri
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Hand window movement over to the OS compositor. This is substantially
+/// smoother than issuing one IPC set_position call for every pointer event.
+#[tauri::command]
+pub async fn start_pet_dragging(app: AppHandle) -> Result<(), String> {
+    let win = app
+        .get_webview_window(PET_LABEL)
+        .ok_or("pet window not found")?;
+    win.start_dragging().map_err(|e| e.to_string())
 }
 
 /// Read the pet window's current logical (x, y) — used by the JS drag handler
@@ -282,6 +325,367 @@ pub async fn pet_show_context_menu(app: AppHandle, items: Vec<PetMenuItem>) -> R
 
 /// Max size for an uploaded pet asset. Keeps localStorage / IPC payloads sane.
 const MAX_PET_ASSET_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+const MAX_PET_SPRITESHEET_BYTES: u64 = 20 * 1024 * 1024;
+const PET_PACKAGE_DIR: &str = "pet-package";
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetPackageManifest {
+    id: String,
+    display_name: String,
+    description: String,
+    sprite_version_number: u8,
+    spritesheet_path: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadedPetPackage {
+    id: String,
+    display_name: String,
+    description: String,
+    sprite_version_number: u8,
+    spritesheet_data_url: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailablePetPackage {
+    id: String,
+    display_name: String,
+    description: String,
+    manifest_path: String,
+}
+
+#[derive(Debug)]
+enum PetPackageValidationError {
+    ManifestUnreadable,
+    ManifestInvalid,
+    UnsupportedVersion,
+    MissingIdentity,
+    UnsafeSpritesheetPath,
+    UnsupportedSpritesheetFormat,
+    SpritesheetUnavailable,
+    SpritesheetTooLarge,
+    SpritesheetUndecodable,
+    WrongDimensions { width: u32, height: u32 },
+    EmptyCell { row: usize, column: usize },
+    ReservedCellVisible { row: usize, column: usize },
+}
+
+impl PetPackageValidationError {
+    fn localized(&self, locale: Option<&str>) -> String {
+        let english = locale.unwrap_or("zh").starts_with("en");
+        match (self, english) {
+            (Self::ManifestUnreadable, true) => "Unable to read pet.json".into(),
+            (Self::ManifestUnreadable, false) => "无法读取 pet.json".into(),
+            (Self::ManifestInvalid, true) => "pet.json is invalid".into(),
+            (Self::ManifestInvalid, false) => "pet.json 格式错误".into(),
+            (Self::UnsupportedVersion, true) => {
+                "Only spriteVersionNumber: 2 animated pet packages are supported".into()
+            }
+            (Self::UnsupportedVersion, false) => {
+                "仅支持 spriteVersionNumber: 2 的动画萌宠包".into()
+            }
+            (Self::MissingIdentity, true) => "pet.json must include id and displayName".into(),
+            (Self::MissingIdentity, false) => "pet.json 必须包含 id 和 displayName".into(),
+            (Self::UnsafeSpritesheetPath, true) => {
+                "spritesheetPath must be relative to the pet package directory".into()
+            }
+            (Self::UnsafeSpritesheetPath, false) => {
+                "spritesheetPath 必须是萌宠目录内的相对路径".into()
+            }
+            (Self::UnsupportedSpritesheetFormat, true) => {
+                "The spritesheet must be PNG or WebP".into()
+            }
+            (Self::UnsupportedSpritesheetFormat, false) => "动画图集必须是 PNG 或 WebP".into(),
+            (Self::SpritesheetUnavailable, true) => "Unable to read the spritesheet".into(),
+            (Self::SpritesheetUnavailable, false) => "无法读取动画图集".into(),
+            (Self::SpritesheetTooLarge, true) => "The spritesheet is empty or exceeds 20MB".into(),
+            (Self::SpritesheetTooLarge, false) => "动画图集为空或超过 20MB".into(),
+            (Self::SpritesheetUndecodable, true) => "Unable to decode the spritesheet".into(),
+            (Self::SpritesheetUndecodable, false) => "无法解码动画图集".into(),
+            (Self::WrongDimensions { width, height }, true) => {
+                format!("A v2 spritesheet must be 1536x2288; received {width}x{height}")
+            }
+            (Self::WrongDimensions { width, height }, false) => {
+                format!("v2 动画图集尺寸必须是 1536x2288，当前为 {width}x{height}")
+            }
+            (Self::EmptyCell { row, column }, true) => {
+                format!("Required atlas cell row {row}, column {column} is empty")
+            }
+            (Self::EmptyCell { row, column }, false) => {
+                format!("动画图集第 {row} 行第 {column} 格为空")
+            }
+            (Self::ReservedCellVisible { row, column }, true) => {
+                format!("Reserved atlas cell row {row}, column {column} must be transparent")
+            }
+            (Self::ReservedCellVisible { row, column }, false) => {
+                format!("动画图集第 {row} 行第 {column} 个保留格必须透明")
+            }
+        }
+    }
+}
+
+fn pet_package_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join(PET_PACKAGE_DIR))
+}
+
+/// Transactional directory swap used by pet-package installation. An existing
+/// package is first moved aside and restored if committing the staged package
+/// fails, so a failed import never destroys the currently working pet.
+struct DirectorySwap;
+
+impl DirectorySwap {
+    fn commit(staging: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+        let backup = target.with_extension(format!("backup-{}", uuid::Uuid::new_v4()));
+        let had_target = target.exists();
+        if had_target {
+            std::fs::rename(target, &backup)?;
+        }
+
+        if let Err(error) = std::fs::rename(staging, target) {
+            if had_target {
+                let _ = std::fs::rename(&backup, target);
+            }
+            return Err(error);
+        }
+
+        if had_target {
+            let _ = std::fs::remove_dir_all(backup);
+        }
+        Ok(())
+    }
+}
+
+fn pet_install_error(
+    locale: Option<&str>,
+    zh: &str,
+    en: &str,
+    error: impl std::fmt::Display,
+) -> String {
+    if locale.unwrap_or("zh").starts_with("en") {
+        format!("{en}: {error}")
+    } else {
+        format!("{zh}：{error}")
+    }
+}
+
+fn validate_pet_manifest(
+    manifest_path: &std::path::Path,
+) -> Result<(PetPackageManifest, std::path::PathBuf, &'static str), PetPackageValidationError> {
+    let raw = std::fs::read_to_string(manifest_path)
+        .map_err(|_| PetPackageValidationError::ManifestUnreadable)?;
+    let manifest: PetPackageManifest =
+        serde_json::from_str(&raw).map_err(|_| PetPackageValidationError::ManifestInvalid)?;
+    if manifest.sprite_version_number != 2 {
+        return Err(PetPackageValidationError::UnsupportedVersion);
+    }
+    if manifest.id.trim().is_empty() || manifest.display_name.trim().is_empty() {
+        return Err(PetPackageValidationError::MissingIdentity);
+    }
+    let relative = std::path::Path::new(&manifest.spritesheet_path);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err(PetPackageValidationError::UnsafeSpritesheetPath);
+    }
+    let parent = manifest_path
+        .parent()
+        .ok_or(PetPackageValidationError::ManifestUnreadable)?;
+    let spritesheet = parent.join(relative);
+    let extension = spritesheet
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let mime = match extension.as_str() {
+        "png" => "image/png",
+        "webp" => "image/webp",
+        _ => return Err(PetPackageValidationError::UnsupportedSpritesheetFormat),
+    };
+    let metadata = std::fs::metadata(&spritesheet)
+        .map_err(|_| PetPackageValidationError::SpritesheetUnavailable)?;
+    if metadata.len() == 0 || metadata.len() > MAX_PET_SPRITESHEET_BYTES {
+        return Err(PetPackageValidationError::SpritesheetTooLarge);
+    }
+    let decoded = image::ImageReader::open(&spritesheet)
+        .map_err(|_| PetPackageValidationError::SpritesheetUnavailable)?
+        .with_guessed_format()
+        .map_err(|_| PetPackageValidationError::SpritesheetUndecodable)?
+        .decode()
+        .map_err(|_| PetPackageValidationError::SpritesheetUndecodable)?;
+    let (width, height) = (decoded.width(), decoded.height());
+    if (width, height) != (1536, 2288) {
+        return Err(PetPackageValidationError::WrongDimensions { width, height });
+    }
+    let rgba = decoded.to_rgba8();
+    const USED_COLUMNS: [usize; 11] = [6, 8, 8, 4, 5, 8, 6, 6, 6, 8, 8];
+    for (row, used_columns) in USED_COLUMNS.into_iter().enumerate() {
+        for column in 0..8 {
+            let mut has_visible_pixel = false;
+            for y in (row * 208)..((row + 1) * 208) {
+                for x in (column * 192)..((column + 1) * 192) {
+                    if rgba.get_pixel(x as u32, y as u32).0[3] != 0 {
+                        has_visible_pixel = true;
+                        break;
+                    }
+                }
+                if has_visible_pixel {
+                    break;
+                }
+            }
+            if column < used_columns && !has_visible_pixel {
+                return Err(PetPackageValidationError::EmptyCell { row, column });
+            }
+            if column >= used_columns && has_visible_pixel {
+                return Err(PetPackageValidationError::ReservedCellVisible { row, column });
+            }
+        }
+    }
+    Ok((manifest, spritesheet, mime))
+}
+
+fn loaded_pet_package(
+    manifest: PetPackageManifest,
+    spritesheet: &std::path::Path,
+    mime: &str,
+) -> Result<LoadedPetPackage, String> {
+    use base64::{engine::general_purpose, Engine};
+    let data = std::fs::read(spritesheet).map_err(|e| format!("读取动画图集失败：{e}"))?;
+    Ok(LoadedPetPackage {
+        id: manifest.id,
+        display_name: manifest.display_name,
+        description: manifest.description,
+        sprite_version_number: 2,
+        spritesheet_data_url: format!(
+            "data:{mime};base64,{}",
+            general_purpose::STANDARD.encode(data)
+        ),
+    })
+}
+
+/// Import a validated Codex-compatible v2 pet package. The selected path must
+/// be the package's pet.json; its sibling spritesheet is copied atomically.
+#[tauri::command]
+pub async fn import_pet_package(
+    app: AppHandle,
+    manifest_path: String,
+    locale: Option<String>,
+) -> Result<LoadedPetPackage, String> {
+    let source_manifest = std::path::Path::new(&manifest_path);
+    let (mut manifest, source_spritesheet, mime) = validate_pet_manifest(source_manifest)
+        .map_err(|error| error.localized(locale.as_deref()))?;
+    let locale = locale.as_deref();
+    let target = pet_package_dir(&app)?;
+    let staging = target.with_extension(format!("staging-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&staging).map_err(|e| {
+        pet_install_error(
+            locale,
+            "创建萌宠目录失败",
+            "Unable to create pet directory",
+            e,
+        )
+    })?;
+    let extension = source_spritesheet
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("webp");
+    let target_sheet_name = format!("spritesheet.{extension}");
+    let staged_sheet = staging.join(&target_sheet_name);
+    if let Err(error) = std::fs::copy(&source_spritesheet, &staged_sheet) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(pet_install_error(
+            locale,
+            "复制动画图集失败",
+            "Unable to copy spritesheet",
+            error,
+        ));
+    }
+    manifest.spritesheet_path = target_sheet_name;
+    let staged_manifest = staging.join("pet.json");
+    if let Err(error) = std::fs::write(
+        &staged_manifest,
+        serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?,
+    ) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(pet_install_error(
+            locale,
+            "写入 pet.json 失败",
+            "Unable to write pet.json",
+            error,
+        ));
+    }
+
+    // Validate the copied package, not only the source selected by the user.
+    if let Err(error) = validate_pet_manifest(&staged_manifest) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(error.localized(locale));
+    }
+    DirectorySwap::commit(&staging, &target)
+        .map_err(|e| pet_install_error(locale, "安装萌宠失败", "Unable to install pet", e))?;
+    let _ = clear_pet_asset(app.clone()).await;
+    let installed_sheet = target.join(&manifest.spritesheet_path);
+    let loaded = loaded_pet_package(manifest, &installed_sheet, mime)?;
+    let _ = app.emit("pet-package-changed", ());
+    Ok(loaded)
+}
+
+#[tauri::command]
+pub async fn load_pet_package(app: AppHandle) -> Result<Option<LoadedPetPackage>, String> {
+    let manifest_path = pet_package_dir(&app)?.join("pet.json");
+    if !manifest_path.exists() {
+        return Ok(None);
+    }
+    let (manifest, spritesheet, mime) =
+        validate_pet_manifest(&manifest_path).map_err(|error| error.localized(None))?;
+    loaded_pet_package(manifest, &spritesheet, mime).map(Some)
+}
+
+#[tauri::command]
+pub async fn clear_pet_package(app: AppHandle) -> Result<(), String> {
+    let target = pet_package_dir(&app)?;
+    if target.exists() {
+        std::fs::remove_dir_all(target).map_err(|e| format!("清除动画萌宠失败：{e}"))?;
+    }
+    let _ = app.emit("pet-package-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_codex_pet_packages() -> Result<Vec<AvailablePetPackage>, String> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(Vec::new());
+    };
+    let root = home.join(".codex").join("pets");
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Ok(Vec::new());
+    };
+    let mut packages = Vec::new();
+    for entry in entries.flatten() {
+        let manifest_path = entry.path().join("pet.json");
+        if !manifest_path.is_file() {
+            continue;
+        }
+        let Ok((manifest, _, _)) = validate_pet_manifest(&manifest_path) else {
+            continue;
+        };
+        packages.push(AvailablePetPackage {
+            id: manifest.id,
+            display_name: manifest.display_name,
+            description: manifest.description,
+            manifest_path: manifest_path.to_string_lossy().into_owned(),
+        });
+    }
+    packages.sort_by(|left, right| left.display_name.cmp(&right.display_name));
+    Ok(packages)
+}
 
 fn image_mime(ext: &str) -> &'static str {
     match ext {
@@ -319,6 +723,8 @@ pub async fn save_pet_asset(app: AppHandle, src_path: String) -> Result<String, 
     }
     let data = std::fs::read(path).map_err(|e| format!("Read failed: {e}"))?;
 
+    // A legacy single image and a v2 package are mutually exclusive.
+    clear_pet_package(app.clone()).await?;
     // Clear any previous asset first (may have a different extension).
     let _ = clear_pet_asset(app.clone()).await;
 
@@ -377,4 +783,108 @@ pub async fn clear_pet_asset(app: AppHandle) -> Result<(), String> {
     }
     let _ = app.emit("pet-asset-changed", ());
     Ok(())
+}
+
+#[cfg(test)]
+mod pet_package_tests {
+    use super::*;
+
+    fn write_package(width: u32, height: u32, version: u8) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("junqi-pet-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sheet = dir.join("spritesheet.png");
+        let mut atlas = image::RgbaImage::new(width, height);
+        if (width, height) == (1536, 2288) {
+            const USED_COLUMNS: [usize; 11] = [6, 8, 8, 4, 5, 8, 6, 6, 6, 8, 8];
+            for (row, count) in USED_COLUMNS.into_iter().enumerate() {
+                for column in 0..count {
+                    atlas.put_pixel(
+                        (column * 192 + 96) as u32,
+                        (row * 208 + 104) as u32,
+                        image::Rgba([255, 255, 255, 255]),
+                    );
+                }
+            }
+        }
+        atlas.save(&sheet).unwrap();
+        let manifest = serde_json::json!({
+            "id": "test-pet",
+            "displayName": "Test Pet",
+            "description": "test",
+            "spriteVersionNumber": version,
+            "spritesheetPath": "spritesheet.png"
+        });
+        let manifest_path = dir.join("pet.json");
+        std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        manifest_path
+    }
+
+    #[test]
+    fn accepts_codex_v2_atlas_dimensions() {
+        let manifest = write_package(1536, 2288, 2);
+        let result = validate_pet_manifest(&manifest);
+        assert!(result.is_ok());
+        let _ = std::fs::remove_dir_all(manifest.parent().unwrap());
+    }
+
+    #[test]
+    fn rejects_wrong_version_or_dimensions() {
+        let v1 = write_package(1536, 2288, 1);
+        assert!(matches!(
+            validate_pet_manifest(&v1).unwrap_err(),
+            PetPackageValidationError::UnsupportedVersion
+        ));
+        let _ = std::fs::remove_dir_all(v1.parent().unwrap());
+
+        let wrong_size = write_package(1536, 1872, 2);
+        assert!(matches!(
+            validate_pet_manifest(&wrong_size).unwrap_err(),
+            PetPackageValidationError::WrongDimensions { .. }
+        ));
+        let _ = std::fs::remove_dir_all(wrong_size.parent().unwrap());
+    }
+
+    #[test]
+    fn rejects_visible_pixels_in_reserved_cells() {
+        let manifest = write_package(1536, 2288, 2);
+        let sheet = manifest.parent().unwrap().join("spritesheet.png");
+        let mut atlas = image::open(&sheet).unwrap().to_rgba8();
+        atlas.put_pixel(7 * 192 + 96, 104, image::Rgba([255, 0, 0, 255]));
+        atlas.save(&sheet).unwrap();
+        assert!(matches!(
+            validate_pet_manifest(&manifest).unwrap_err(),
+            PetPackageValidationError::ReservedCellVisible { .. }
+        ));
+        let _ = std::fs::remove_dir_all(manifest.parent().unwrap());
+    }
+
+    #[test]
+    fn validation_errors_are_localized_without_string_matching() {
+        let error = PetPackageValidationError::WrongDimensions {
+            width: 100,
+            height: 200,
+        };
+        assert!(error.localized(Some("zh-CN")).contains("当前为 100x200"));
+        assert!(error.localized(Some("en")).contains("received 100x200"));
+    }
+
+    #[test]
+    fn directory_swap_replaces_an_existing_package() {
+        let root = std::env::temp_dir().join(format!("junqi-pet-swap-{}", uuid::Uuid::new_v4()));
+        let target = root.join("pet-package");
+        let staging = root.join("pet-package-staging");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(target.join("version"), "old").unwrap();
+        std::fs::write(staging.join("version"), "new").unwrap();
+
+        DirectorySwap::commit(&staging, &target).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(target.join("version")).unwrap(),
+            "new"
+        );
+        assert!(!staging.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

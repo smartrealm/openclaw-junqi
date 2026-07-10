@@ -73,8 +73,8 @@ earlyBootstrap();
     import('@/components/shared/ErrorBoundary'),
   ]);
 
-  // The "pet" window is a lightweight companion: it shares this SPA entry but
-  // renders a different root — it must NOT mount the full app / gateway client.
+  // Auxiliary windows share the SPA entry but use deliberately lightweight
+  // roots. Only the main window owns Gateway process lifecycle management.
   let windowLabel = '';
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -85,6 +85,8 @@ earlyBootstrap();
   const Root =
     windowLabel === 'pet'
       ? (await import('./pet/PetWindow')).default
+      : windowLabel === 'quickchat'
+        ? (await import('./pages/QuickChatRoot')).default
       : (await import('./App')).default;
 
   ReactDOM.createRoot(document.getElementById('app-root')!).render(

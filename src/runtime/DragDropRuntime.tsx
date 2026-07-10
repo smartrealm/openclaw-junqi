@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { debugLog } from '@/utils/debugLog';
+import { useTranslation } from 'react-i18next';
 
 async function playPetSfxLazy(name: 'drag' | 'drop' | 'munch', enabled: boolean) {
   const mod = await import('@/pet/petSounds');
@@ -11,6 +11,7 @@ async function playPetSfxLazy(name: 'drag' | 'drop' | 'munch', enabled: boolean)
 }
 
 export default function DragDropRuntime() {
+  const { t } = useTranslation();
   const [draggingOver, setDraggingOver] = useState(false);
   const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
   const dragSfxStop = useRef<null | (() => void)>(null);
@@ -22,25 +23,6 @@ export default function DragDropRuntime() {
         debugLog('app', '[aegis] file-dropped', e.payload);
         const paths = e.payload ?? [];
         if (paths.length === 0) return;
-
-        const cs = useChatStore.getState();
-        const newKey = `agent:main:s-${Date.now().toString(36).slice(-5)}`;
-        cs.addLocalSession({
-          key: newKey,
-          label: paths.length === 1
-            ? `📎 ${paths[0].split(/[\\/]/).pop()}`
-            : `📎 ${paths.length} 个文件`,
-          agentId: 'main',
-          createdAt: Date.now(),
-        } as any);
-        cs.setActiveSession(newKey);
-        cs.setPendingFiles(paths);
-        window.dispatchEvent(new CustomEvent('aegis:files-dropped', { detail: { paths, sessionKey: newKey } }));
-
-        const url = new URL(window.location.href);
-        url.hash = `#/chat?session=${encodeURIComponent(newKey)}`;
-        window.history.replaceState({}, '', url.toString());
-        window.dispatchEvent(new PopStateEvent('popstate'));
 
         dragSfxToken.current += 1;
         dragSfxStop.current?.();
@@ -106,10 +88,10 @@ export default function DragDropRuntime() {
       <div className="absolute inset-3 rounded-2xl border-2 border-dashed border-aegis-primary/60 bg-aegis-primary/[0.06] backdrop-blur-sm" />
       <div className="relative flex flex-col items-center gap-2 px-6 py-4 rounded-xl bg-black/40 border border-aegis-primary/30">
         <div className="text-aegis-primary text-[14px] font-semibold tracking-wide">
-          拖入到 JunQi Quick Chat
+          {t('pet.quickChat.dropTitle')}
         </div>
         <div className="text-aegis-text-dim text-[11px]">
-          {draggedPaths.length} 项，松开会单独打开会话
+          {t('pet.quickChat.dropHint', { count: draggedPaths.length })}
         </div>
         <div className="flex flex-wrap gap-1.5 max-w-[420px] mt-1 justify-center">
           {draggedPaths.slice(0, 6).map((p, i) => (

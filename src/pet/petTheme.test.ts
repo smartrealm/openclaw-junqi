@@ -125,15 +125,16 @@ test('pet character palette changes body color by theme and skin', () => {
   assert.equal(resolvePetCharacterPalette('aegis-eyecare', 'lobster').body, '#c96842');
 });
 
-test('pet accent palette uses warm pet colors instead of app blue primary', () => {
+test('pet accent palette uses blue UI colors without changing the lobster body', () => {
   assert.deepEqual(resolvePetAccentPalette('aegis-dark'), {
-    primary: '#ff836f',
-    secondary: '#ffad83',
+    primary: '#6c9fff',
+    secondary: '#73e6ff',
     warm: '#f6c177',
     success: '#8bd98b',
     warning: '#f0b45d',
   });
-  assert.equal(resolvePetAccentPalette('aegis-light').primary, '#ef6f5e');
+  assert.equal(resolvePetAccentPalette('aegis-light').primary, '#3b82f6');
+  assert.equal(resolvePetCharacterPalette('aegis-dark', 'lobster').body, '#ff836f');
 });
 
 test('jellyfish skin stays sky-blue across regular and dark themes', () => {
