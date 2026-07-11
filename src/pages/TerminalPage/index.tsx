@@ -7,13 +7,14 @@ import {
   ShellTerminalPanel,
 } from "@/components/Terminal";
 import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
+import { TerminalWorkspaceFiles } from "@/components/Terminal/TerminalWorkspaceFiles";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { homeDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, Clock3, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
+import { Check, Clock3, FolderOpen, FolderTree, Layers, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import type { Workspace } from "@/workspace/types";
 import {
@@ -25,6 +26,8 @@ interface TerminalWorkspaceDirectory {
   path: string;
   name: string;
 }
+
+type TerminalSidebarContent = 'workspaces' | 'files';
 
 export function TerminalPage() {
   const { t } = useTranslation();
@@ -77,6 +80,16 @@ export function TerminalPage() {
   const cycleSidebarMode = () => setSidebarMode((m) =>
     m === 'hidden' ? 'full' : m === 'full' ? 'compact' : 'hidden'
   );
+  const [sidebarContent, setSidebarContent] = useState<TerminalSidebarContent>(() => {
+    try {
+      return localStorage.getItem('junqi:terminal-sidebar-content') === 'files' ? 'files' : 'workspaces';
+    } catch {
+      return 'workspaces';
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('junqi:terminal-sidebar-content', sidebarContent); } catch {}
+  }, [sidebarContent]);
 
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
 
@@ -195,6 +208,8 @@ export function TerminalPage() {
         {sidebarMode !== "hidden" && (
           <WorkspaceSidebarPanel
             mode={sidebarMode}
+            content={sidebarContent}
+            onContentChange={setSidebarContent}
             projectPath={workspace?.workingDirectory || projectPath}
             workspaces={workspaces}
             recentDirectories={recentDirectories}
@@ -584,11 +599,13 @@ function StatusDot({ label, ok }: { label: string; ok: boolean }) {
 // WorkspaceSidebarPanel — redesigned (full 220px / compact 52px)
 // ──────────────────────────────────────────────────────────────
 function WorkspaceSidebarPanel({
-  mode, projectPath, workspaces, recentDirectories, activeWorkspaceId,
+  mode, content, onContentChange, projectPath, workspaces, recentDirectories, activeWorkspaceId,
   onSelectWorkspace, onCreateWorkspace, onOpenFolder, onOpenRecentDirectory,
   onClearRecentDirectories, onCloseWorkspace, onRenameWorkspace,
 }: {
   mode: 'full' | 'compact';
+  content: TerminalSidebarContent;
+  onContentChange: (content: TerminalSidebarContent) => void;
   projectPath: string;
   workspaces: Workspace[];
   recentDirectories: TerminalWorkspaceDirectory[];
@@ -603,8 +620,12 @@ function WorkspaceSidebarPanel({
 }) {
   const { t } = useTranslation();
   const width = mode === 'full' ? 220 : 52;
+  const [fileTreeVersion, setFileTreeVersion] = useState(0);
   const openWorkspacePaths = new Set(workspaces.map((workspace) => workspace.workingDirectory));
   const visibleRecentDirectories = recentDirectories.filter((directory) => !openWorkspacePaths.has(directory.path));
+  const showingFiles = content === 'files' && mode === 'full';
+  const fileRootAvailable = projectPath !== '.';
+  const fileRootName = projectPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || projectPath;
 
   return (
     <div style={{
@@ -622,12 +643,14 @@ function WorkspaceSidebarPanel({
           height: 34, display: 'flex', alignItems: 'center',
           padding: '0 8px 0 12px', gap: 6, flexShrink: 0,
         }}>
-          <FolderOpen size={13} strokeWidth={1.8} color="rgb(var(--aegis-text-dim))" style={{ flexShrink: 0 }} />
+          {showingFiles
+            ? <FolderTree size={13} strokeWidth={1.8} color="rgb(var(--aegis-text-dim))" style={{ flexShrink: 0 }} />
+            : <FolderOpen size={13} strokeWidth={1.8} color="rgb(var(--aegis-text-dim))" style={{ flexShrink: 0 }} />}
           <span style={{
             flex: 1, fontSize: 10, fontFamily: '"JetBrains Mono", monospace',
             color: 'rgb(var(--aegis-text-dim))', fontWeight: 600,
             letterSpacing: '0.08em', textTransform: 'uppercase',
-          }}>{t('terminal.workspaces', 'WORKSPACES')}</span>
+          }}>{showingFiles ? t('terminal.files') : t('terminal.workspaces', 'WORKSPACES')}</span>
           <button
             onClick={onOpenFolder}
             title={t('terminal.openFolder')}
@@ -691,6 +714,34 @@ function WorkspaceSidebarPanel({
       <div style={{ height: 1, flexShrink: 0, background: 'rgb(255 255 255 / 0.06)' }} />
 
       {/* ── 工作区列表 ──────────────────────────── */}
+      {showingFiles ? (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ minHeight: 46, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px 6px 12px', borderBottom: '1px solid rgb(255 255 255 / 0.06)' }}>
+            <FolderOpen size={14} strokeWidth={1.8} color="rgb(var(--aegis-primary))" style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text))' }} title={projectPath}>{fileRootName}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 9.5, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))' }} title={projectPath}>{projectPath}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setFileTreeVersion((version) => version + 1)}
+              title={t('terminal.refreshFiles')}
+              style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer', flexShrink: 0 }}
+              onMouseEnter={(event) => { (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; (event.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
+              onMouseLeave={(event) => { (event.currentTarget as HTMLElement).style.background = 'transparent'; (event.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
+            >
+              <RefreshCw size={13} strokeWidth={1.9} />
+            </button>
+          </div>
+          {fileRootAvailable ? (
+            <TerminalWorkspaceFiles key={`${projectPath}:${fileTreeVersion}`} root={projectPath} />
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, color: 'rgb(var(--aegis-text-dim))', fontSize: 11, textAlign: 'center' }}>
+              {t('terminal.filesUnavailable')}
+            </div>
+          )}
+        </div>
+      ) : (
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: mode === 'full' ? '6px 0' : '6px 0' }}>
         {workspaces.length === 0 ? (
           /* 空状态 */
@@ -767,25 +818,47 @@ function WorkspaceSidebarPanel({
           </div>
         )}
       </div>
+      )}
 
-      {/* ── 底部打开目录行（full 模式） ─────────── */}
+      {/* ── 底部视图切换 / 打开目录（full 模式） ── */}
       {mode === 'full' && (
         <>
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.05)', flexShrink: 0 }} />
-          <button
-            onClick={onOpenFolder}
-            style={{
-              height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              background: 'transparent', border: 'none', cursor: 'pointer', width: '100%',
-              color: 'rgb(var(--aegis-text-dim))', fontSize: 11,
-              fontFamily: '"JetBrains Mono", monospace',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.05)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
-          >
-            <FolderOpen size={12} strokeWidth={2} />
-            {t('terminal.openFolder')}
-          </button>
+          <div style={{ height: 34, display: 'flex', alignItems: 'center', gap: 2, padding: '0 6px' }}>
+            <button
+              type="button"
+              onClick={() => onContentChange('workspaces')}
+              title={t('terminal.workspaceList')}
+              aria-pressed={content === 'workspaces'}
+              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: content === 'workspaces' ? 'rgb(var(--aegis-primary) / 0.14)' : 'transparent', border: content === 'workspaces' ? '1px solid rgb(var(--aegis-primary) / 0.28)' : '1px solid transparent', borderRadius: 5, color: content === 'workspaces' ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
+              onMouseEnter={(event) => { if (content !== 'workspaces') (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; }}
+              onMouseLeave={(event) => { if (content !== 'workspaces') (event.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <Layers size={13} strokeWidth={1.9} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onContentChange('files')}
+              title={t('terminal.files')}
+              aria-pressed={content === 'files'}
+              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: content === 'files' ? 'rgb(var(--aegis-primary) / 0.14)' : 'transparent', border: content === 'files' ? '1px solid rgb(var(--aegis-primary) / 0.28)' : '1px solid transparent', borderRadius: 5, color: content === 'files' ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
+              onMouseEnter={(event) => { if (content !== 'files') (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; }}
+              onMouseLeave={(event) => { if (content !== 'files') (event.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <FolderTree size={13} strokeWidth={1.9} />
+            </button>
+            <span style={{ flex: 1 }} />
+            <button
+              type="button"
+              onClick={onOpenFolder}
+              title={t('terminal.openFolder')}
+              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 5, color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
+              onMouseEnter={(event) => { (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; (event.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
+              onMouseLeave={(event) => { (event.currentTarget as HTMLElement).style.background = 'transparent'; (event.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
+            >
+              <FolderOpen size={13} strokeWidth={1.9} />
+            </button>
+          </div>
         </>
       )}
     </div>

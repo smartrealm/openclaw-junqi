@@ -1,8 +1,7 @@
 /**
- * Thin invoke() wrappers around the existing Rust `fs_neu` commands, scoped for
- * the agent workspace file panel. Every call passes a `projectPath` root that
- * the Rust side uses as a security boundary (`validate_path_within`), so the
- * panel can never read/write outside the agent's workspace.
+ * Thin invoke() wrappers around shared Rust `fs_neu` commands. Every call
+ * passes a `projectPath` root that the Rust side uses as a security boundary.
+ * Terminal browsing uses stricter commands that reject external symlinks.
  *
  * Field names mirror the Rust structs (serde default = snake_case).
  */
@@ -25,6 +24,31 @@ export interface ImagePreview {
 /** List a directory (sorted dirs-first by the Rust side, IGNORED_DIRS filtered). */
 export function readDir(path: string, root: string): Promise<FsEntry[]> {
   return invoke('read_dir_entries', { path, projectPath: root });
+}
+
+/** Read terminal sidebar entries without following symlinks outside the workspace. */
+export function readTerminalWorkspaceDir(path: string, root: string): Promise<FsEntry[]> {
+  return invoke('read_terminal_workspace_dir_entries', { path, projectPath: root });
+}
+
+/** Open a workspace file using the operating system's default application. */
+export function openWithSystemDefault(path: string, root: string): Promise<void> {
+  return invoke('open_path_with_system_default', { path, projectPath: root });
+}
+
+/** Reveal a workspace entry in Finder / Explorer / the desktop file manager. */
+export function revealInSystemFileManager(path: string, root: string): Promise<void> {
+  return invoke('open_in_system_file_manager', { path, projectPath: root });
+}
+
+/** Reveal a terminal workspace entry without following external symlinks. */
+export function revealTerminalWorkspacePath(path: string, root: string): Promise<void> {
+  return invoke('reveal_terminal_workspace_path', { path, projectPath: root });
+}
+
+/** Format a workspace entry as safe input for the user's configured shell. */
+export function terminalPathInput(path: string, root: string): Promise<string> {
+  return invoke('terminal_escape_project_path', { path, projectPath: root });
 }
 
 /** Read a text file's content. Throws for binary/oversized files (Rust guards). */

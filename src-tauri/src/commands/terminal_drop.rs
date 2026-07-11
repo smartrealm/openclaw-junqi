@@ -248,6 +248,16 @@ pub fn terminal_change_directory_command(path: String) -> Result<String, String>
         .ok_or_else(|| "could not format terminal directory command".to_string())
 }
 
+/// Return one shell-safe path token for an entry that was selected from the
+/// active workspace file tree. The workspace boundary is enforced here rather
+/// than relying on a browser drag payload.
+#[tauri::command]
+pub fn terminal_escape_project_path(path: String, project_path: String) -> Result<String, String> {
+    let resolved = crate::commands::fs_neu::validate_path_within(&path, &project_path, false)?;
+    escaped_paths_for_current_shell(&[resolved])
+        .ok_or_else(|| "could not format terminal path".to_string())
+}
+
 pub fn emit_file_drop(app: &AppHandle, target_id: String, paths: &[PathBuf]) -> bool {
     let Some(input) = escaped_paths_for_current_shell(paths) else {
         return false;
@@ -263,7 +273,7 @@ pub fn emit_file_drop(app: &AppHandle, target_id: String, paths: &[PathBuf]) -> 
 mod tests {
     use super::{
         change_directory_command, posix_path_escape, posix_quote, target_at, targets,
-        terminal_change_directory_command, TerminalDropTarget,
+        terminal_change_directory_command, terminal_escape_project_path, TerminalDropTarget,
     };
     use std::path::Path;
 
@@ -308,5 +318,48 @@ mod tests {
     fn change_directory_command_rejects_a_missing_directory() {
         let missing = std::env::temp_dir().join(format!("junqi-missing-{}", uuid::Uuid::new_v4()));
         assert!(terminal_change_directory_command(missing.to_string_lossy().into_owned()).is_err());
+    }
+
+    #[test]
+    fn project_path_escape_rejects_entries_outside_the_workspace() {
+        let root =
+            std::env::temp_dir().join(format!("junqi-terminal-root-{}", uuid::Uuid::new_v4()));
+        let outside =
+            std::env::temp_dir().join(format!("junqi-terminal-outside-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&outside, "x").unwrap();
+
+        assert!(terminal_escape_project_path(
+            outside.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+        )
+        .is_err());
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_file(outside);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_path_escape_rejects_workspace_symlinks_to_outside_files() {
+        use std::os::unix::fs::symlink;
+
+        let root =
+            std::env::temp_dir().join(format!("junqi-terminal-root-{}", uuid::Uuid::new_v4()));
+        let outside =
+            std::env::temp_dir().join(format!("junqi-terminal-outside-{}", uuid::Uuid::new_v4()));
+        let link = root.join("outside-link");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&outside, "x").unwrap();
+        symlink(&outside, &link).unwrap();
+
+        assert!(terminal_escape_project_path(
+            link.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+        )
+        .is_err());
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_file(outside);
     }
 }

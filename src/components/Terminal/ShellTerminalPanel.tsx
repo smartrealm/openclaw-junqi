@@ -36,6 +36,10 @@ import {
 import { pasteAndSubmit as pasteTerminalAndSubmit } from './terminalPaste';
 import { useTerminalDropTarget } from './terminalDropTarget';
 import {
+  parseTerminalWorkspacePathDrop,
+  TERMINAL_WORKSPACE_PATH_MIME,
+} from './terminalWorkspacePathDrop';
+import {
   imageFromClipboardEvent,
   readTerminalClipboardEvent,
   readTerminalClipboardText,
@@ -286,6 +290,10 @@ interface TerminalFileDropEvent {
 interface TerminalCommandEvent {
   command?: unknown;
   projectPath?: unknown;
+}
+
+interface TerminalPasteEvent {
+  input?: unknown;
 }
 
 interface ShellSession {
@@ -994,6 +1002,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     const [shells, setShells] = useState<ShellSession[]>(() => initialStateRef.current!.shells);
     const [activeShellId, setActiveShellId] = useState<string | null>(() => initialStateRef.current!.activeShellId);
     const [terminalDropActive, setTerminalDropActive] = useState(false);
+    const [workspacePathDropActive, setWorkspacePathDropActive] = useState(false);
     const activeShellIdRef = useRef(activeShellId);
     activeShellIdRef.current = activeShellId;
     const onDirectoryChangeRef = useRef(onDirectoryChange);
@@ -1008,6 +1017,12 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       if (pasted) pendingTerminalPasteRef.current = null;
       return pasted;
     }, []);
+
+    const queueTerminalPaste = useCallback((input: string) => {
+      if (!input) return false;
+      pendingTerminalPasteRef.current = input;
+      return flushPendingTerminalPaste();
+    }, [flushPendingTerminalPaste]);
 
     const sendCommandToActiveShell = useCallback((command: string) => {
       const normalized = command.trim() ? command : '';
@@ -1065,12 +1080,11 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
         subscribeTauriEvent<TerminalFileDropEvent>('aegis:terminal-file-dropped', (event) => {
           if (event.payload?.target_id !== projectId) return;
           setTerminalDropActive(false);
-          pendingTerminalPasteRef.current = event.payload.input;
-          flushPendingTerminalPaste();
+          queueTerminalPaste(event.payload.input);
         }),
       ]);
       return unlisten;
-    }, [flushPendingTerminalPaste, projectId]);
+    }, [projectId, queueTerminalPaste]);
 
     useEffect(() => {
       const handler = (event: Event) => {
@@ -1085,6 +1099,17 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       window.addEventListener('junqi:deliver-terminal-command', handler);
       return () => window.removeEventListener('junqi:deliver-terminal-command', handler);
     }, [deliverTerminalCommand, paneFocused]);
+
+    useEffect(() => {
+      const handler = (event: Event) => {
+        if (!paneFocused) return;
+        const detail = (event as CustomEvent<TerminalPasteEvent>).detail;
+        if (typeof detail?.input !== 'string') return;
+        queueTerminalPaste(detail.input);
+      };
+      window.addEventListener('junqi:paste-terminal-input', handler);
+      return () => window.removeEventListener('junqi:paste-terminal-input', handler);
+    }, [paneFocused, queueTerminalPaste]);
 
     useEffect(() => {
       flushPendingTerminalPaste();
@@ -1152,6 +1177,46 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       )));
     }, []);
 
+    const handleWorkspacePathDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+      if (!Array.from(event.dataTransfer.types).includes(TERMINAL_WORKSPACE_PATH_MIME)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      setWorkspacePathDropActive(true);
+    }, []);
+
+    const handleWorkspacePathDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+      const nextTarget = event.relatedTarget;
+      if (!panelRef.current?.contains(nextTarget as Node | null)) {
+        setWorkspacePathDropActive(false);
+      }
+    }, []);
+
+    const handleWorkspacePathDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
+      const raw = event.dataTransfer.getData(TERMINAL_WORKSPACE_PATH_MIME);
+      if (!raw) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setWorkspacePathDropActive(false);
+
+      const payload = parseTerminalWorkspacePathDrop(raw);
+      if (!payload) return;
+      onPaneFocus?.();
+      try {
+        const input = await invoke<string>('terminal_escape_project_path', {
+          path: payload.path,
+          projectPath: payload.projectPath,
+        });
+        queueTerminalPaste(input);
+      } catch (error) {
+        debugError('terminal', '[terminal] unable to insert workspace path:', error);
+        addToast(
+          'error',
+          t('terminal.pathInsertFailedTitle'),
+          t('terminal.pathInsertFailed'),
+        );
+      }
+    }, [addToast, onPaneFocus, queueTerminalPaste, t]);
+
     const handleCloseShell = useCallback(
       (shellId: string) => {
         const closingIndex = shells.findIndex((shell) => shell.id === shellId);
@@ -1181,6 +1246,9 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     return (
       <div
         ref={panelRef}
+        onDragOverCapture={handleWorkspacePathDragOver}
+        onDragLeaveCapture={handleWorkspacePathDragLeave}
+        onDropCapture={handleWorkspacePathDrop}
         style={{
           flex: 1,
           height: height != null ? height : undefined,
@@ -1403,7 +1471,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
             onClose={() => setComposerOpen(false)}
           />
         </div>
-        {terminalDropActive && (
+        {(terminalDropActive || workspacePathDropActive) && (
           <div
             aria-hidden="true"
             style={{

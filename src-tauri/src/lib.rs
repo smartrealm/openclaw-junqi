@@ -145,6 +145,7 @@ pub fn run() {
             commands::pty_neu::resize_pty,
             commands::terminal_clipboard::stage_terminal_paste_image,
             commands::terminal_drop::terminal_change_directory_command,
+            commands::terminal_drop::terminal_escape_project_path,
             commands::terminal_drop::upsert_terminal_drop_target,
             commands::terminal_drop::remove_terminal_drop_target,
             commands::terminal_workspace::open_terminal_workspace_directory,
@@ -190,6 +191,9 @@ pub fn run() {
             commands::fs_neu::create_directory,
             commands::fs_neu::delete_path,
             commands::fs_neu::open_in_system_file_manager,
+            commands::fs_neu::open_path_with_system_default,
+            commands::fs_neu::read_terminal_workspace_dir_entries,
+            commands::fs_neu::reveal_terminal_workspace_path,
             commands::fs_neu::list_project_files,
             commands::fs_neu::search_project_files,
             // Session analytics (ported from nezha analytics.rs)

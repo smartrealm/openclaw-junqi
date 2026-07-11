@@ -69,7 +69,7 @@ const MAX_FILE_SEARCH_RESULTS: usize = 200;
 /// When true, a symlink whose *location* is inside the project but whose target
 /// is outside is also accepted (e.g. a symlinked CLAUDE.md / AGENTS.md). `../`
 /// traversal in the path itself stays rejected in both modes.
-fn validate_path_within(
+pub(crate) fn validate_path_within(
     target: &str,
     allowed_root: &str,
     allow_symlink_escape: bool,
@@ -232,133 +232,236 @@ fn previewable_image_mime_type(path: &Path) -> Option<&'static str> {
 
 // ── Tauri Commands ──────────────────────────────────────────────────────────
 
+fn reveal_in_system_file_manager(
+    path: &str,
+    project_path: &str,
+    allow_symlink_escape: bool,
+) -> Result<(), String> {
+    let target = validate_path_within(path, project_path, allow_symlink_escape)?;
+    let is_dir = target.is_dir();
+
+    #[cfg(target_os = "macos")]
+    let status = {
+        let mut command = Command::new("open");
+        if is_dir {
+            command.arg(&target);
+        } else {
+            command.arg("-R").arg(&target);
+        }
+        command.status()
+    };
+
+    #[cfg(target_os = "windows")]
+    let status = {
+        let mut command = Command::new("explorer");
+        if is_dir {
+            command.arg(&target);
+        } else {
+            command.arg(format!("/select,{}", target.display()));
+        }
+        command.status()
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let status = {
+        let folder = if is_dir {
+            target.as_path()
+        } else {
+            target
+                .parent()
+                .ok_or_else(|| "Cannot resolve parent directory".to_string())?
+        };
+        Command::new("xdg-open").arg(folder).status()
+    };
+
+    let status = status.map_err(|e| format!("Failed to launch system file manager: {}", e))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("System file manager exited with status {}", status))
+    }
+}
+
 #[tauri::command]
 pub async fn open_in_system_file_manager(path: String, project_path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let target = validate_path_within(&path, &project_path, true)?;
-        let is_dir = target.is_dir();
-
-        #[cfg(target_os = "macos")]
-        let status = {
-            let mut command = Command::new("open");
-            if is_dir {
-                command.arg(&target);
-            } else {
-                command.arg("-R").arg(&target);
-            }
-            command.status()
-        };
-
-        #[cfg(target_os = "windows")]
-        let status = {
-            let mut command = Command::new("explorer");
-            if is_dir {
-                command.arg(&target);
-            } else {
-                command.arg(format!("/select,{}", target.display()));
-            }
-            command.status()
-        };
-
-        #[cfg(all(unix, not(target_os = "macos")))]
-        let status = {
-            let folder = if is_dir {
-                target.as_path()
-            } else {
-                target
-                    .parent()
-                    .ok_or_else(|| "Cannot resolve parent directory".to_string())?
-            };
-            Command::new("xdg-open").arg(folder).status()
-        };
-
-        let status = status.map_err(|e| format!("Failed to launch system file manager: {}", e))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!("System file manager exited with status {}", status))
-        }
+        reveal_in_system_file_manager(&path, &project_path, true)
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
+/// Reveal a terminal workspace entry in the system file manager without
+/// following a workspace symlink outside of the selected workspace.
 #[tauri::command]
-pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<FsEntry>, String> {
+pub async fn reveal_terminal_workspace_path(
+    path: String,
+    project_path: String,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        validate_path_within(&path, &project_path, true)?;
-        let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
-        let mut result: Vec<FsEntry> = entries
-            .flatten()
-            .filter(|entry| {
-                let p = entry.path();
-                if p.is_dir() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    !IGNORED_DIRS.contains(&name_str.as_ref())
-                } else {
-                    true
-                }
-            })
-            .map(|entry| {
-                let p = entry.path();
-                let name = entry.file_name().to_string_lossy().into_owned();
-                let is_dir = p.is_dir();
-                let extension = p
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(|s| s.to_lowercase());
-                FsEntry {
-                    name,
-                    path: p.to_string_lossy().into_owned(),
-                    is_dir,
-                    extension,
-                    is_gitignored: false,
-                }
-            })
-            .collect();
-        result.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        });
+        reveal_in_system_file_manager(&path, &project_path, false)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
-        // Mark gitignored entries via `git check-ignore --stdin`
-        if !result.is_empty() {
-            let ignored_set: std::collections::HashSet<String> = {
-                use std::io::Write;
-                let mut cmd = std::process::Command::new("git");
-                crate::platform::suppress_console_window(&mut cmd);
-                cmd.args(["check-ignore", "--stdin"])
-                    .current_dir(&project_path)
-                    .stdin(std::process::Stdio::piped())
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::null());
-                match cmd.spawn() {
-                    Ok(mut child) => {
-                        if let Some(ref mut stdin) = child.stdin {
-                            for entry in &result {
-                                let _ = writeln!(stdin, "{}", entry.path);
-                            }
-                        }
-                        match child.wait_with_output() {
-                            Ok(output) => String::from_utf8_lossy(&output.stdout)
-                                .lines()
-                                .filter(|l| !l.is_empty())
-                                .map(|l| l.to_string())
-                                .collect(),
-                            Err(_) => std::collections::HashSet::new(),
+/// Open a workspace file with the operating system's default application.
+/// Unlike the global `open_folder` helper, this command keeps the target
+/// inside the active terminal workspace before handing it to the OS.
+#[tauri::command]
+pub async fn open_path_with_system_default(
+    path: String,
+    project_path: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = validate_path_within(&path, &project_path, false)?;
+        open::that(&target)
+            .map_err(|error| format!("Failed to open path with system default: {error}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn read_directory_entries(
+    path: &str,
+    project_path: &str,
+    allow_symlink_escape: bool,
+) -> Result<Vec<FsEntry>, String> {
+    let directory = validate_path_within(path, project_path, allow_symlink_escape)?;
+    let strict_root = (!allow_symlink_escape)
+        .then(|| validate_project_root(project_path))
+        .transpose()?;
+    let entries = std::fs::read_dir(&directory).map_err(|e| e.to_string())?;
+    let mut result: Vec<FsEntry> = entries
+        .flatten()
+        .filter(|entry| {
+            let path = entry.path();
+            if let Some(root) = strict_root.as_ref() {
+                let Ok(resolved) = path.canonicalize() else {
+                    return false;
+                };
+                if !resolved.starts_with(root) {
+                    return false;
+                }
+            }
+            if path.is_dir() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                !IGNORED_DIRS.contains(&name_str.as_ref())
+            } else {
+                true
+            }
+        })
+        .map(|entry| {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_dir = path.is_dir();
+            let extension = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_lowercase());
+            FsEntry {
+                name,
+                path: path.to_string_lossy().into_owned(),
+                is_dir,
+                extension,
+                is_gitignored: false,
+            }
+        })
+        .collect();
+    result.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    // Mark gitignored entries via `git check-ignore --stdin`.
+    if !result.is_empty() {
+        let ignored_set: std::collections::HashSet<String> = {
+            use std::io::Write;
+            let mut cmd = std::process::Command::new("git");
+            crate::platform::suppress_console_window(&mut cmd);
+            cmd.args(["check-ignore", "--stdin"])
+                .current_dir(project_path)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null());
+            match cmd.spawn() {
+                Ok(mut child) => {
+                    if let Some(ref mut stdin) = child.stdin {
+                        for entry in &result {
+                            let _ = writeln!(stdin, "{}", entry.path);
                         }
                     }
-                    Err(_) => std::collections::HashSet::new(),
+                    match child.wait_with_output() {
+                        Ok(output) => String::from_utf8_lossy(&output.stdout)
+                            .lines()
+                            .filter(|line| !line.is_empty())
+                            .map(|line| line.to_string())
+                            .collect(),
+                        Err(_) => std::collections::HashSet::new(),
+                    }
                 }
-            };
-            for entry in &mut result {
-                entry.is_gitignored = ignored_set.contains(&entry.path);
+                Err(_) => std::collections::HashSet::new(),
             }
+        };
+        for entry in &mut result {
+            entry.is_gitignored = ignored_set.contains(&entry.path);
         }
+    }
 
-        Ok(result)
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<FsEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || read_directory_entries(&path, &project_path, true))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::read_directory_entries;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn terminal_directory_listing_hides_external_symlink_entries() {
+        let root = std::env::temp_dir().join(format!("junqi-fs-root-{}", uuid::Uuid::new_v4()));
+        let outside =
+            std::env::temp_dir().join(format!("junqi-fs-outside-{}", uuid::Uuid::new_v4()));
+        let link = root.join("outside-link");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(root.join("inside.txt"), "inside").unwrap();
+        std::fs::write(outside.join("outside.txt"), "outside").unwrap();
+        symlink(&outside, &link).unwrap();
+
+        let entries =
+            read_directory_entries(&root.to_string_lossy(), &root.to_string_lossy(), false)
+                .unwrap();
+        assert!(entries.iter().any(|entry| entry.name == "inside.txt"));
+        assert!(entries.iter().all(|entry| entry.name != "outside-link"));
+        assert!(
+            read_directory_entries(&link.to_string_lossy(), &root.to_string_lossy(), false,)
+                .is_err()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+}
+
+/// Read terminal sidebar entries under a strict workspace boundary. This is
+/// intentionally separate from the agent file browser, which can read known
+/// project-local symlinks such as AGENTS.md.
+#[tauri::command]
+pub async fn read_terminal_workspace_dir_entries(
+    path: String,
+    project_path: String,
+) -> Result<Vec<FsEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_directory_entries(&path, &project_path, false)
     })
     .await
     .map_err(|e| e.to_string())?
