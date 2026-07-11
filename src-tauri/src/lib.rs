@@ -182,6 +182,7 @@ pub fn run() {
             commands::git_neu::remove_task_worktree,
             commands::git_neu::worktree_diff_stats,
             commands::git_neu::git_diff_shortstat,
+            commands::git_neu::git_file_diff_stats,
             // Nezha-style file system commands
             commands::fs_neu::read_dir_entries,
             commands::fs_neu::read_file_content,

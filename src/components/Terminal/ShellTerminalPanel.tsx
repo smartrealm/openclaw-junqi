@@ -24,11 +24,13 @@ import {
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import {
+  advanceShellLaunchPath,
   createShellRunId,
   isGeneratedShellTitle,
   parseOsc7Cwd,
   shellStateFromExit,
   type OpenShellResult,
+  type ShellLaunchPathState,
   type ShellExitEvent,
   type ShellOutputEvent,
   type ShellRuntimeState,
@@ -441,6 +443,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const onCwdChangeRef = useRef(onCwdChange);
     const onFocusRef = useRef(onFocus);
     const runIdRef = useRef<string | null>(null);
+    const launchPathStateRef = useRef<ShellLaunchPathState | null>(null);
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
     const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
     const resizeSuspendedRef = useRef(resizeSuspended);
@@ -454,6 +457,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     onCwdChangeRef.current = onCwdChange;
     onFocusRef.current = onFocus;
     resizeSuspendedRef.current = resizeSuspended;
+    launchPathStateRef.current = advanceShellLaunchPath(
+      launchPathStateRef.current,
+      projectPath,
+      restartNonce,
+    );
+    const launchProjectPath = launchPathStateRef.current.path;
 
     const sendInput = useCallback((data: string) => {
       const runId = runIdRef.current;
@@ -638,7 +647,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           dispose: () => term.textarea?.removeEventListener('focus', handleTerminalFocus),
         };
         disposeOscCwd = term.parser.registerOscHandler(7, (payload) => {
-          const cwd = parseOsc7Cwd(payload);
+          const cwd = parseOsc7Cwd(payload, APP_PLATFORM === 'windows' ? 'windows' : 'posix');
           if (cwd) onCwdChangeRef.current?.(cwd);
           return true;
         });
@@ -664,7 +673,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             if (size) lastSizeRef.current = size;
             invoke<OpenShellResult>('open_shell', {
               shellId,
-              projectPath,
+              projectPath: launchProjectPath,
               cols: size?.cols ?? term.cols,
               rows: size?.rows ?? term.rows,
               runId: requestedRunId,
@@ -764,7 +773,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         try { term.dispose(); } catch { /* already gone — rapid tab close */ }
         if (runId) invoke('kill_shell', { shellId, runId }).catch(() => {});
       };
-    }, [flushPendingResize, pasteFromSystemClipboard, projectPath, requestResize, restartNonce, sendInput, shellId]);
+    }, [flushPendingResize, launchProjectPath, pasteFromSystemClipboard, requestResize, restartNonce, sendInput, shellId]);
 
     useEffect(() => {
       if (!isActive) return;

@@ -25,6 +25,7 @@ import type { ThemeVariant, TerminalFontSize, FontFamily } from '@/_nezha_root/t
 
 interface PaneTreeViewProps {
   workspace: Workspace;
+  isActive?: boolean;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
@@ -32,6 +33,7 @@ interface PaneTreeViewProps {
   onClose?: () => void;
   onToggleSidebar?: () => void;
   sidebarActive?: boolean;
+  resizeSuspended?: boolean;
 }
 
 // ── Recursive node renderer ─────────────────────────────────────────────────
@@ -52,6 +54,7 @@ function PaneNodeRenderer({
   projectPath,
   onToggleSidebar,
   sidebarActive,
+  workspaceActive,
   resizeSuspended,
 }: {
   node: PaneNode;
@@ -69,6 +72,7 @@ function PaneNodeRenderer({
   projectPath: string;
   onToggleSidebar?: () => void;
   sidebarActive?: boolean;
+  workspaceActive: boolean;
   resizeSuspended: boolean;
 }) {
   if (node.type === 'leaf') {
@@ -97,9 +101,10 @@ function PaneNodeRenderer({
           monoFontFamily={monoFontFamily}
           projectPath={node.config.cwd || workspace.workingDirectory || projectPath}
           projectId={node.id}
-          paneFocused={isFocused}
+          isActive={workspaceActive}
+          paneFocused={workspaceActive && isFocused}
           onPaneFocus={() => onFocus(node.id)}
-          onDirectoryChange={(cwd) => useWorkspaceStore.getState().setPaneCwd(node.id, cwd)}
+          onDirectoryChange={(cwd) => useWorkspaceStore.getState().setPaneCwd(node.id, cwd, workspace.id)}
           onClose={() => onClose(node.id)}
           onSplitHorizontal={() => onSplit(node.id, 'horizontal')}
           onSplitVertical={() => onSplit(node.id, 'vertical')}
@@ -132,6 +137,7 @@ function PaneNodeRenderer({
       projectPath={projectPath}
       onToggleSidebar={onToggleSidebar}
       sidebarActive={sidebarActive}
+      workspaceActive={workspaceActive}
       resizeSuspended={resizeSuspended}
     />
   );
@@ -155,6 +161,7 @@ function SplitRenderer({
   projectPath,
   onToggleSidebar,
   sidebarActive,
+  workspaceActive,
   resizeSuspended,
 }: {
   node: PaneSplit;
@@ -172,6 +179,7 @@ function SplitRenderer({
   projectPath: string;
   onToggleSidebar?: () => void;
   sidebarActive?: boolean;
+  workspaceActive: boolean;
   resizeSuspended: boolean;
 }) {
   const { t } = useI18n();
@@ -257,6 +265,7 @@ function SplitRenderer({
           projectPath={projectPath}
           onToggleSidebar={onToggleSidebar}
           sidebarActive={sidebarActive}
+          workspaceActive={workspaceActive}
           resizeSuspended={descendantsResizeSuspended}
         />
       </div>
@@ -342,6 +351,7 @@ function SplitRenderer({
           projectPath={projectPath}
           onToggleSidebar={onToggleSidebar}
           sidebarActive={sidebarActive}
+          workspaceActive={workspaceActive}
           resizeSuspended={descendantsResizeSuspended}
         />
       </div>
@@ -399,6 +409,7 @@ function listAllLeafIds(node: PaneNode): string[] {
 
 export function PaneTreeView({
   workspace,
+  isActive = true,
   themeVariant,
   terminalFontSize,
   monoFontFamily,
@@ -406,6 +417,7 @@ export function PaneTreeView({
   onClose,
   onToggleSidebar,
   sidebarActive,
+  resizeSuspended = false,
 }: PaneTreeViewProps) {
   const { t } = useI18n();
   const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
@@ -418,6 +430,7 @@ export function PaneTreeView({
   // ⌘⇧E toggles pane zoom; Escape must always return to the full tree.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (!isActive) return;
       if (e.key === 'Escape' && zoomedPaneId) {
         e.preventDefault();
         setZoomedPaneId(null);
@@ -433,22 +446,22 @@ export function PaneTreeView({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [workspace.focusedPaneId, zoomedPaneId]);
+  }, [isActive, workspace.focusedPaneId, zoomedPaneId]);
 
   const handleSplit = useCallback(
     (leafId: string, direction: SplitDirection) => {
-      splitPane(leafId, direction);
+      splitPane(leafId, direction, undefined, workspace.id);
     },
-    [splitPane],
+    [splitPane, workspace.id],
   );
 
   const handleClose = useCallback(
     (leafId: string) => {
-      closePane(leafId);
+      closePane(leafId, workspace.id);
       const leafIds = listAllLeafIds(workspace.root);
       if (leafIds.length <= 1 && onClose) onClose();
     },
-    [closePane, workspace.root, onClose],
+    [closePane, onClose, workspace.id, workspace.root],
   );
 
   return (
@@ -509,7 +522,7 @@ export function PaneTreeView({
         zoomedPaneId={zoomedPaneId}
         isZoomed={isZoomed}
         onFocus={(id) => {
-          setFocus(id);
+          setFocus(id, workspace.id);
           if (zoomedPaneId === id) setZoomedPaneId(null);
         }}
         onSplit={handleSplit}
@@ -521,7 +534,8 @@ export function PaneTreeView({
         projectPath={projectPath}
         onToggleSidebar={onToggleSidebar}
         sidebarActive={sidebarActive}
-        resizeSuspended={false}
+        workspaceActive={isActive}
+        resizeSuspended={resizeSuspended}
       />
     </div>
   );

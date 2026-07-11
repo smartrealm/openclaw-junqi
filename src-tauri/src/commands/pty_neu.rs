@@ -47,14 +47,14 @@ struct ShellExitEvent {
 }
 
 struct PtyHandles {
-    master: Box<dyn portable_pty::MasterPty + Send>,
+    master: Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>,
     writer: Mutex<Box<dyn Write + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     run_id: String,
     termination_requested: Arc<AtomicBool>,
 }
 
-type PtyHandle = Arc<Mutex<PtyHandles>>;
+type PtyHandle = Arc<PtyHandles>;
 
 fn pty_registry() -> &'static Mutex<HashMap<String, PtyHandle>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, PtyHandle>>> = OnceLock::new();
@@ -89,23 +89,23 @@ fn resolve_shell_cwd(project_path: &str) -> PathBuf {
 }
 
 fn run_matches(handle: &PtyHandle, requested_run_id: Option<&str>) -> bool {
-    requested_run_id.is_none_or(|run_id| {
-        handle
-            .lock()
-            .map(|handles| handles.run_id == run_id)
-            .unwrap_or(false)
-    })
+    requested_run_id.is_none_or(|run_id| handle.run_id == run_id)
+}
+
+fn close_master(handle: &PtyHandle) {
+    if let Ok(mut master) = handle.master.lock() {
+        master.take();
+    }
 }
 
 fn terminate_handle(handle: &PtyHandle) {
-    let handles = match handle.lock() {
-        Ok(handles) => handles,
-        Err(_) => return,
-    };
-    handles.termination_requested.store(true, Ordering::Relaxed);
-    if let Ok(mut killer) = handles.killer.lock() {
+    handle.termination_requested.store(true, Ordering::Relaxed);
+    if let Ok(mut killer) = handle.killer.lock() {
         let _ = killer.kill();
     };
+    // On Windows this drops the ConPTY handle, so descendants cannot keep the
+    // reader alive after the shell process itself has been terminated.
+    close_master(handle);
 }
 
 fn remove_handle_if_current(shell_id: &str, handle: &PtyHandle) {
@@ -254,6 +254,7 @@ fn spawn_pty_reader(
                         break;
                     }
                 }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => {
                     read_error = true;
                     break;
@@ -267,12 +268,10 @@ fn spawn_pty_reader(
         drop(emit_tx);
         let _ = emitter.join();
 
-        let termination_requested = handle
-            .lock()
-            .map(|handles| handles.termination_requested.load(Ordering::Relaxed))
-            .unwrap_or(true);
+        let termination_requested = handle.termination_requested.load(Ordering::Relaxed);
         if read_error && !termination_requested {
             emit_shell_exit(&app, &shell_id, &run_id, None, "io_error");
+            terminate_handle(&handle);
         }
         remove_handle_if_current(&shell_id, &handle);
     });
@@ -287,10 +286,7 @@ fn spawn_exit_monitor(
 ) {
     std::thread::spawn(move || {
         let status = child.wait();
-        let termination_requested = handle
-            .lock()
-            .map(|handles| handles.termination_requested.load(Ordering::Relaxed))
-            .unwrap_or(true);
+        let termination_requested = handle.termination_requested.load(Ordering::Relaxed);
 
         if !termination_requested {
             match status {
@@ -300,6 +296,12 @@ fn spawn_exit_monitor(
                 Err(_) => emit_shell_exit(&app, &shell_id, &run_id, None, "wait_error"),
             }
         }
+        // Mark completion before the reader observes ConPTY closure so a
+        // normal exit cannot be reported again as an I/O failure.
+        handle.termination_requested.store(true, Ordering::Relaxed);
+        #[cfg(windows)]
+        close_master(&handle);
+        remove_handle_if_current(&shell_id, &handle);
     });
 }
 
@@ -348,13 +350,13 @@ pub fn open_shell(
         .take_writer()
         .map_err(|error| format!("open terminal writer: {error}"))?;
     let killer = child.clone_killer();
-    let handle = Arc::new(Mutex::new(PtyHandles {
-        master: pair.master,
+    let handle = Arc::new(PtyHandles {
+        master: Mutex::new(Some(pair.master)),
         writer: Mutex::new(writer),
         killer: Mutex::new(killer),
         run_id: run_id.clone(),
         termination_requested: Arc::new(AtomicBool::new(false)),
-    }));
+    });
 
     pty_registry()
         .lock()
@@ -408,13 +410,10 @@ pub fn send_input(task_id: String, run_id: Option<String>, data: String) -> Resu
     if !run_matches(&handle, run_id.as_deref()) {
         return Err(format!("stale shell run: {task_id}"));
     }
-    let handles = handle
-        .lock()
-        .map_err(|_| "terminal handle lock poisoned".to_string())?;
-    if handles.termination_requested.load(Ordering::Relaxed) {
+    if handle.termination_requested.load(Ordering::Relaxed) {
         return Err(format!("shell closed: {task_id}"));
     }
-    let mut writer = handles
+    let mut writer = handle
         .writer
         .lock()
         .map_err(|_| "terminal writer lock poisoned".to_string())?;
@@ -443,14 +442,17 @@ pub fn resize_pty(
     if !run_matches(&handle, run_id.as_deref()) {
         return Ok(());
     }
-    let handles = handle
-        .lock()
-        .map_err(|_| "terminal handle lock poisoned".to_string())?;
-    if handles.termination_requested.load(Ordering::Relaxed) {
+    if handle.termination_requested.load(Ordering::Relaxed) {
         return Ok(());
     }
-    handles
+    let mut master = handle
         .master
+        .lock()
+        .map_err(|_| "terminal master lock poisoned".to_string())?;
+    let Some(master) = master.as_mut() else {
+        return Ok(());
+    };
+    master
         .resize(PtySize {
             rows,
             cols,

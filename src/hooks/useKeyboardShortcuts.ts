@@ -25,6 +25,9 @@ export function useKeyboardShortcuts() {
 
       // Ctrl+K / Ctrl+P → Command Palette (kooky-style ⌘P, plus ⌘K alias)
       if (ctrl && (e.key === 'k' || e.key === 'p')) {
+        // Terminal owns Cmd/Ctrl+P because its palette includes workspaces,
+        // folders, and recents. Cmd/Ctrl+K still opens the global palette.
+        if (e.key === 'p' && location.pathname === '/terminal') return;
         e.preventDefault();
         setCommandPaletteOpen(!commandPaletteOpen);
         return;

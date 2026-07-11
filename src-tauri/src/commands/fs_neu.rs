@@ -134,6 +134,54 @@ fn validate_project_root(project_path: &str) -> Result<std::path::PathBuf, Strin
     Ok(canonical)
 }
 
+fn is_filesystem_link(metadata: &std::fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+fn git_check_ignore_input_path(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        if path
+            .get(..8)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(r"\\?\UNC\"))
+        {
+            return format!(r"\\{}", path.get(8..).unwrap_or_default());
+        }
+        if let Some(path) = path.strip_prefix(r"\\?\") {
+            return path.to_string();
+        }
+    }
+    path.to_string()
+}
+
+fn git_check_ignore_key(path: &str) -> String {
+    let path = git_check_ignore_input_path(path);
+    #[cfg(windows)]
+    {
+        return path.replace('\\', "/").to_ascii_lowercase();
+    }
+    #[cfg(not(windows))]
+    path
+}
+
+fn parse_git_check_ignore_z(stdout: &[u8]) -> std::collections::HashSet<String> {
+    stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| git_check_ignore_key(&String::from_utf8_lossy(path)))
+        .collect()
+}
+
 /// Names whose stem (the substring before the first `.`) are reserved on Windows.
 #[cfg(target_os = "windows")]
 const WINDOWS_RESERVED_STEMS: &[&str] = &[
@@ -356,8 +404,11 @@ fn read_directory_entries(
         .map(|entry| {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
+            // Windows junctions are reparse points but not always reported by
+            // FileType::is_symlink. Treat every reparse point as leaf-only so
+            // a junction back to an ancestor cannot create an expandable loop.
             let is_symlink = std::fs::symlink_metadata(&path)
-                .map(|metadata| metadata.file_type().is_symlink())
+                .map(|metadata| is_filesystem_link(&metadata))
                 .unwrap_or(false);
             // The agent file browser retains its legacy symlink traversal
             // behavior. The terminal tree treats links as leaves, matching
@@ -389,24 +440,34 @@ fn read_directory_entries(
             use std::io::Write;
             let mut cmd = std::process::Command::new("git");
             crate::platform::suppress_console_window(&mut cmd);
-            cmd.args(["check-ignore", "--stdin"])
+            cmd.args(["check-ignore", "-z", "--stdin"])
                 .current_dir(project_path)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::null());
             match cmd.spawn() {
                 Ok(mut child) => {
-                    if let Some(ref mut stdin) = child.stdin {
-                        for entry in &result {
-                            let _ = writeln!(stdin, "{}", entry.path);
-                        }
+                    let paths: Vec<String> = result
+                        .iter()
+                        .map(|entry| git_check_ignore_input_path(&entry.path))
+                        .collect();
+                    let writer = child.stdin.take().map(|mut stdin| {
+                        std::thread::spawn(move || {
+                            for path in paths {
+                                if stdin.write_all(path.as_bytes()).is_err()
+                                    || stdin.write_all(&[0]).is_err()
+                                {
+                                    break;
+                                }
+                            }
+                        })
+                    });
+                    let output = child.wait_with_output();
+                    if let Some(writer) = writer {
+                        let _ = writer.join();
                     }
-                    match child.wait_with_output() {
-                        Ok(output) => String::from_utf8_lossy(&output.stdout)
-                            .lines()
-                            .filter(|line| !line.is_empty())
-                            .map(|line| line.to_string())
-                            .collect(),
+                    match output {
+                        Ok(output) => parse_git_check_ignore_z(&output.stdout),
                         Err(_) => std::collections::HashSet::new(),
                     }
                 }
@@ -414,7 +475,7 @@ fn read_directory_entries(
             }
         };
         for entry in &mut result {
-            entry.is_gitignored = ignored_set.contains(&entry.path);
+            entry.is_gitignored = ignored_set.contains(&git_check_ignore_key(&entry.path));
         }
     }
 
@@ -428,11 +489,35 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
         .map_err(|e| e.to_string())?
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
-    use super::read_directory_entries;
+    use super::{git_check_ignore_key, parse_git_check_ignore_z, read_directory_entries};
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
+    #[test]
+    fn git_check_ignore_z_preserves_unicode_and_backslashes() {
+        let paths = parse_git_check_ignore_z("/tmp/项目.txt\0C:\\Work\\ignored.txt\0".as_bytes());
+        assert!(paths.contains(&git_check_ignore_key("/tmp/项目.txt")));
+        assert!(paths.contains(&git_check_ignore_key("C:\\Work\\ignored.txt")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn git_check_ignore_normalizes_windows_verbatim_paths() {
+        use super::git_check_ignore_input_path;
+
+        assert_eq!(
+            git_check_ignore_input_path(r"\\?\C:\Work\JunQi"),
+            r"C:\Work\JunQi"
+        );
+        assert_eq!(
+            git_check_ignore_input_path(r"\\?\UNC\server\share\JunQi"),
+            r"\\server\share\JunQi"
+        );
+    }
+
+    #[cfg(unix)]
     #[test]
     fn terminal_directory_listing_hides_external_symlink_entries() {
         let root = std::env::temp_dir().join(format!("junqi-fs-root-{}", uuid::Uuid::new_v4()));
@@ -464,6 +549,31 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn terminal_directory_listing_keeps_junction_cycles_leaf_only() {
+        let root = std::env::temp_dir().join(format!("junqi-fs-root-{}", uuid::Uuid::new_v4()));
+        let junction = root.join("loop");
+        std::fs::create_dir_all(&root).unwrap();
+        let status = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&root)
+            .status()
+            .unwrap();
+        assert!(status.success(), "failed to create test junction");
+
+        let entries =
+            read_directory_entries(&root.to_string_lossy(), &root.to_string_lossy(), false)
+                .unwrap();
+        assert!(entries
+            .iter()
+            .any(|entry| entry.name == "loop" && entry.is_symlink && !entry.is_dir));
+
+        let _ = std::fs::remove_dir(&junction);
+        let _ = std::fs::remove_dir_all(root);
     }
 }
 

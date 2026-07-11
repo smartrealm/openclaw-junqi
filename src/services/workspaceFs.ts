@@ -22,6 +22,17 @@ export interface ImagePreview {
   byte_length: number;
 }
 
+export interface TerminalGitFileDiff {
+  path: string;
+  insertions: number;
+  deletions: number;
+}
+
+export interface TerminalGitFileDiffResponse {
+  root: string;
+  files: TerminalGitFileDiff[];
+}
+
 /** List a directory (sorted dirs-first by the Rust side, IGNORED_DIRS filtered). */
 export function readDir(path: string, root: string): Promise<FsEntry[]> {
   return invoke('read_dir_entries', { path, projectPath: root });
@@ -50,6 +61,11 @@ export function revealTerminalWorkspacePath(path: string, root: string): Promise
 /** Format a workspace entry as safe input for the user's configured shell. */
 export function terminalPathInput(path: string, root: string): Promise<string> {
   return invoke('terminal_escape_project_path', { path, projectPath: root });
+}
+
+/** Read per-file line counts relative to Git HEAD for terminal tree badges. */
+export function readTerminalGitFileDiff(root: string): Promise<TerminalGitFileDiffResponse> {
+  return invoke('git_file_diff_stats', { projectPath: root });
 }
 
 /** Read a text file's content. Throws for binary/oversized files (Rust guards). */

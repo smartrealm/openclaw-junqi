@@ -59,3 +59,24 @@ test('new workspaces inherit the active pane cwd instead of the original project
   assert.equal(created.workingDirectory, '/repo/packages/web');
   assert.equal(findLeaf(created.root, created.focusedPaneId)?.config.cwd, '/repo/packages/web');
 });
+
+test('background workspace cwd updates stay isolated from the active workspace', () => {
+  const background = resetStore('/repo-a');
+  const backgroundLeafId = background.focusedPaneId;
+  const active = useWorkspaceStore.getState().createWorkspace('Project B', '/repo-b');
+
+  useWorkspaceStore.getState().setPaneCwd(
+    backgroundLeafId,
+    '/repo-a/packages/worker',
+    background.id,
+  );
+
+  const state = useWorkspaceStore.getState();
+  const updatedBackground = state.workspaces.find((workspace) => workspace.id === background.id);
+  const unchangedActive = state.workspaces.find((workspace) => workspace.id === active.id);
+  assert.equal(state.activeWorkspaceId, active.id);
+  assert.equal(updatedBackground?.workingDirectory, '/repo-a/packages/worker');
+  assert.equal(findLeaf(updatedBackground!.root, backgroundLeafId)?.config.cwd, '/repo-a/packages/worker');
+  assert.equal(unchangedActive?.workingDirectory, '/repo-b');
+  assert.equal(findLeaf(unchangedActive!.root, active.focusedPaneId)?.config.cwd, '/repo-b');
+});

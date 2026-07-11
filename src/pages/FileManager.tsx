@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import {
@@ -30,6 +30,7 @@ import { PageTransition } from '@/components/shared/PageTransition';
 import { useChatStore } from '@/stores/chatStore';
 import type { OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import clsx from 'clsx';
+import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
 
 const PdfPreview = lazy(() => import('./PdfPreview').then((m) => ({ default: m.PdfPreview })));
 const FileMarkdownPreview = lazy(() => import('./FileMarkdownPreview').then((m) => ({ default: m.FileMarkdownPreview })));
@@ -251,6 +252,7 @@ type FileManagerView = 'outputs' | 'uploads' | 'tree';
 
 export function FileManagerPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -665,14 +667,11 @@ export function FileManagerPage() {
                   setTreeActiveFilePath(null);
                 }}
                 onRunMakeTarget={(target) => {
-                  // Forward to TerminalPage via a window CustomEvent.
-                  // TerminalPage routes this to the focused terminal pane and
-                  // switches to this file tree's directory before executing.
-                  window.dispatchEvent(
-                    new CustomEvent("junqi:run-terminal-command", {
-                      detail: { command: `make ${target}\n`, projectPath: treeProjectPath },
-                    }),
-                  );
+                  enqueueTerminalCommand({
+                    command: `make -- ${target}\n`,
+                    projectPath: treeProjectPath,
+                  });
+                  navigate('/terminal');
                 }}
               />
             </Suspense>

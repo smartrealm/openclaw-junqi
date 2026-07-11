@@ -7,6 +7,7 @@ import {
   listLeafIds,
   newWorkspace,
   normalizeWorkspace,
+  normalizeWorkspaces,
   removeLeaf,
   splitLeaf,
 } from './types';
@@ -86,4 +87,72 @@ test('normalization migrates legacy projectPath data and repairs invalid focus i
     agent: 'codex',
     cwd: '/repo/app',
   });
+});
+
+test('normalization infers a missing workspace cwd from the focused pane', () => {
+  const migrated = normalizeWorkspace({
+    id: 'workspace-focused-cwd',
+    name: 'Focused project',
+    focusedPaneId: 'pane-two',
+    root: {
+      type: 'split',
+      id: 'split-one',
+      direction: 'horizontal',
+      sizes: [0.5, 0.5],
+      children: [
+        {
+          type: 'leaf',
+          id: 'pane-one',
+          config: { kind: 'shell', cwd: '/repo' },
+        },
+        {
+          type: 'leaf',
+          id: 'pane-two',
+          config: { kind: 'shell', cwd: '/repo/packages/web' },
+        },
+      ],
+    },
+  });
+
+  assert.equal(migrated.focusedPaneId, 'pane-two');
+  assert.equal(migrated.workingDirectory, '/repo/packages/web');
+});
+
+test('normalization maps a legacy config focus id to the matching non-first pane', () => {
+  const migrated = normalizeWorkspace({
+    focusedPaneId: 'legacy-second',
+    root: {
+      type: 'split',
+      id: 'split-legacy',
+      children: [
+        { type: 'leaf', id: 'pane-one', config: { id: 'legacy-first', cwd: '/repo' } },
+        { type: 'leaf', id: 'pane-two', config: { id: 'legacy-second', cwd: '/repo/app' } },
+      ],
+    },
+  });
+
+  assert.equal(migrated.focusedPaneId, 'pane-two');
+  assert.equal(migrated.workingDirectory, '/repo/app');
+});
+
+test('workspace collection normalization de-duplicates pane ids globally', () => {
+  const workspaces = normalizeWorkspaces([
+    {
+      id: 'workspace-one',
+      focusedPaneId: 'shared-pane',
+      root: { type: 'leaf', id: 'shared-pane', config: { cwd: '/repo/one' } },
+    },
+    {
+      id: 'workspace-two',
+      focusedPaneId: 'shared-pane',
+      root: { type: 'leaf', id: 'shared-pane', config: { cwd: '/repo/two' } },
+    },
+  ]);
+
+  const firstPaneId = listLeafIds(workspaces[0].root)[0];
+  const secondPaneId = listLeafIds(workspaces[1].root)[0];
+  assert.equal(firstPaneId, 'shared-pane');
+  assert.notEqual(secondPaneId, firstPaneId);
+  assert.equal(workspaces[1].focusedPaneId, secondPaneId);
+  assert.equal(workspaces[1].workingDirectory, '/repo/two');
 });

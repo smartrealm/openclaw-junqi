@@ -214,7 +214,12 @@ export function resizeSplit(root: PaneNode, splitId: string, ratio: number): Pan
   return { ...root, children: [first, second] };
 }
 
-function normalizeNode(value: unknown, fallbackCwd: string, usedIds: Set<string>): PaneNode {
+function normalizeNode(
+  value: unknown,
+  fallbackCwd: string,
+  usedIds: Set<string>,
+  persistedLeafIds: Map<string, string>,
+): PaneNode {
   const source = asRecord(value);
   if (source?.type === 'split' && Array.isArray(source.children) && source.children.length === 2) {
     return {
@@ -223,8 +228,8 @@ function normalizeNode(value: unknown, fallbackCwd: string, usedIds: Set<string>
       direction: normalizeSplitDirection(source.direction),
       sizes: normalizeSizes(source.sizes),
       children: [
-        normalizeNode(source.children[0], fallbackCwd, usedIds),
-        normalizeNode(source.children[1], fallbackCwd, usedIds),
+        normalizeNode(source.children[0], fallbackCwd, usedIds, persistedLeafIds),
+        normalizeNode(source.children[1], fallbackCwd, usedIds, persistedLeafIds),
       ],
     };
   }
@@ -235,7 +240,15 @@ function normalizeNode(value: unknown, fallbackCwd: string, usedIds: Set<string>
   // `projectPath` is the pre-v2 persisted field. Read it once during
   // migration, then retain only `cwd` in the in-memory model.
   const cwd = nonEmptyString(config.cwd) ?? nonEmptyString(config.projectPath) ?? fallbackCwd;
-  const id = uniqueId(source?.id, usedIds);
+  const persistedPaneId = nonEmptyString(source?.id);
+  const id = uniqueId(persistedPaneId, usedIds);
+  if (persistedPaneId && !persistedLeafIds.has(persistedPaneId)) {
+    persistedLeafIds.set(persistedPaneId, id);
+  }
+  const legacyConfigId = nonEmptyString(config.id);
+  if (legacyConfigId && !persistedLeafIds.has(legacyConfigId)) {
+    persistedLeafIds.set(legacyConfigId, id);
+  }
   return createLeaf({
     kind,
     ...(agent ? { agent } : {}),
@@ -250,38 +263,54 @@ function normalizeNode(value: unknown, fallbackCwd: string, usedIds: Set<string>
  * defensive boundary: no corrupted localStorage entry may leave focus pointing
  * at a split or a missing pane.
  */
-export function normalizeWorkspace(value: unknown, fallbackCwd = ''): Workspace {
+function normalizeWorkspaceWithPaneIds(
+  value: unknown,
+  fallbackCwd: string,
+  usedPaneIds: Set<string>,
+): Workspace {
   const source = asRecord(value) ?? {};
-  const root = normalizeNode(source.root, fallbackCwd, new Set());
-  const firstLeaf = findLeaf(root, listLeafIds(root)[0]);
+  const persistedLeafIds = new Map<string, string>();
+  const root = normalizeNode(source.root, fallbackCwd, usedPaneIds, persistedLeafIds);
+  const leafIds = listLeafIds(root);
+  const requestedFocus = nonEmptyString(source.focusedPaneId);
+  const resolvedFocus = requestedFocus && (
+    leafIds.includes(requestedFocus) ? requestedFocus : persistedLeafIds.get(requestedFocus)
+  );
+  const focusedPaneId = resolvedFocus && leafIds.includes(resolvedFocus)
+    ? resolvedFocus
+    : leafIds[0];
+  const focusedLeaf = findLeaf(root, focusedPaneId);
+  const firstLeaf = findLeaf(root, leafIds[0]);
   const workingDirectory = nonEmptyString(source.workingDirectory)
+    ?? focusedLeaf?.config.cwd
     ?? firstLeaf?.config.cwd
     ?? nonEmptyString(fallbackCwd)
     ?? '';
   const hydratedRoot = mapLeaves(root, (leaf) => (
     leaf.config.cwd ? leaf : { ...leaf, config: { ...leaf.config, cwd: workingDirectory } }
   ));
-  const leafIds = listLeafIds(hydratedRoot);
-  const requestedFocus = nonEmptyString(source.focusedPaneId);
 
   return {
     id: nonEmptyString(source.id) ?? newPaneId(),
     name: nonEmptyString(source.name) ?? 'Workspace',
     workingDirectory,
     root: hydratedRoot,
-    focusedPaneId: requestedFocus && leafIds.includes(requestedFocus)
-      ? requestedFocus
-      : leafIds[0],
+    focusedPaneId,
   };
+}
+
+export function normalizeWorkspace(value: unknown, fallbackCwd = ''): Workspace {
+  return normalizeWorkspaceWithPaneIds(value, fallbackCwd, new Set());
 }
 
 /** Normalize a persisted workspace collection and de-duplicate workspace ids. */
 export function normalizeWorkspaces(value: unknown, fallbackCwd = ''): Workspace[] {
   if (!Array.isArray(value)) return [];
-  const usedIds = new Set<string>();
+  const usedWorkspaceIds = new Set<string>();
+  const usedPaneIds = new Set<string>();
   return value.map((entry) => {
-    const workspace = normalizeWorkspace(entry, fallbackCwd);
-    workspace.id = uniqueId(workspace.id, usedIds);
+    const workspace = normalizeWorkspaceWithPaneIds(entry, fallbackCwd, usedPaneIds);
+    workspace.id = uniqueId(workspace.id, usedWorkspaceIds);
     return workspace;
   });
 }

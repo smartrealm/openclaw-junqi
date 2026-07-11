@@ -18,6 +18,25 @@ export interface OpenShellResult {
   run_id: string;
 }
 
+export interface ShellLaunchPathState {
+  restartNonce: number;
+  path: string;
+}
+
+/**
+ * Keep one launch directory for the lifetime of a shell run. OSC 7 updates
+ * the session's live cwd, but must not change the effect identity and restart
+ * the PTY. A deliberate restart adopts the latest reported directory.
+ */
+export function advanceShellLaunchPath(
+  previous: ShellLaunchPathState | null,
+  currentPath: string,
+  restartNonce: number,
+): ShellLaunchPathState {
+  if (previous && previous.restartNonce === restartNonce) return previous;
+  return { restartNonce, path: currentPath };
+}
+
 /** A renderer-owned id prevents delayed events from an older shell run leaking into a restart. */
 export function createShellRunId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -27,22 +46,31 @@ export function createShellRunId(): string {
 }
 
 /**
- * Decode OSC 7's file URL form into a local path. A hostname is intentionally
- * ignored: a terminal can report `file://localhost/...`, but JunQi's local
- * workspace store only tracks the pathname.
+ * Decode OSC 7's file URL form into a local path. POSIX shells commonly emit
+ * their machine hostname, which is local and should be ignored. On Windows a
+ * non-local authority represents a UNC server and must be preserved.
  */
-export function parseOsc7Cwd(payload: string): string | null {
+export function parseOsc7Cwd(payload: string, platform: 'posix' | 'windows' = 'posix'): string | null {
   const value = payload.trim();
   if (!value.startsWith('file://')) return null;
   try {
     const url = new URL(value);
     if (url.protocol !== 'file:') return null;
+    if (url.username || url.password || url.port || url.search || url.hash) return null;
     const path = decodeURIComponent(url.pathname);
     if (!path) return null;
+    const hostname = url.hostname;
+    const resolvedPath = platform === 'windows' && hostname && hostname.toLowerCase() !== 'localhost'
+      ? `//${hostname}${path}`
+      : path;
+    if ([...resolvedPath].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 0x20 || code === 0x7f;
+    })) return null;
     // file:///C:/repo is the Windows spelling. URL.pathname keeps its first
     // slash, while Windows cwd APIs expect C:/repo.
-    if (/^\/[A-Za-z]:\//.test(path)) return path.slice(1);
-    return path;
+    if (/^\/[A-Za-z]:\//.test(resolvedPath)) return resolvedPath.slice(1);
+    return resolvedPath;
   } catch {
     return null;
   }

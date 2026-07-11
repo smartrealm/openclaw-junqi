@@ -1675,6 +1675,93 @@ pub struct GitDiffSummary {
     pub deletions: i32,
 }
 
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub struct GitFileDiffStat {
+    pub path: String,
+    pub insertions: i32,
+    pub deletions: i32,
+}
+
+#[derive(serde::Serialize)]
+pub struct GitFileDiffResponse {
+    pub root: String,
+    pub files: Vec<GitFileDiffStat>,
+}
+
+fn parse_numstat_count(value: &[u8]) -> i32 {
+    std::str::from_utf8(value)
+        .ok()
+        .and_then(|value| value.parse::<i32>().ok())
+        .unwrap_or(0)
+}
+
+/// Parse `git diff --numstat -z`. Rename records store an empty path in the
+/// first record followed by old-path and new-path NUL fields; the new path is
+/// the one that can appear in the live workspace tree.
+fn parse_numstat_z(stdout: &[u8], repository_root: &Path) -> Vec<GitFileDiffStat> {
+    let fields: Vec<&[u8]> = stdout.split(|byte| *byte == 0).collect();
+    let mut index = 0usize;
+    let mut result = Vec::new();
+
+    while index < fields.len() {
+        let record = fields[index];
+        index += 1;
+        if record.is_empty() {
+            continue;
+        }
+
+        let Some(first_tab) = record.iter().position(|byte| *byte == b'\t') else {
+            continue;
+        };
+        let rest = &record[first_tab + 1..];
+        let Some(second_tab) = rest.iter().position(|byte| *byte == b'\t') else {
+            continue;
+        };
+
+        let insertions = parse_numstat_count(&record[..first_tab]);
+        let deletions = parse_numstat_count(&rest[..second_tab]);
+        let inline_path = &rest[second_tab + 1..];
+        let path_bytes = if inline_path.is_empty() {
+            // Rename/copy: consume the old path and retain the new path.
+            if index + 1 >= fields.len() {
+                break;
+            }
+            let new_path = fields[index + 1];
+            index += 2;
+            new_path
+        } else {
+            inline_path
+        };
+        if path_bytes.is_empty() {
+            continue;
+        }
+
+        let relative = PathBuf::from(String::from_utf8_lossy(path_bytes).into_owned());
+        if relative.is_absolute()
+            || relative.components().any(|component| {
+                !matches!(
+                    component,
+                    std::path::Component::Normal(_) | std::path::Component::CurDir
+                )
+            })
+        {
+            continue;
+        }
+
+        result.push(GitFileDiffStat {
+            path: repository_root
+                .join(relative)
+                .to_string_lossy()
+                .into_owned(),
+            insertions,
+            deletions,
+        });
+    }
+
+    result.sort_by(|a, b| a.path.cmp(&b.path));
+    result
+}
+
 #[tauri::command]
 pub async fn git_diff_shortstat(project_path: String) -> Result<GitDiffSummary, String> {
     // --shortstat HEAD covers all tracked changes (staged + unstaged).
@@ -1726,4 +1813,98 @@ pub async fn git_diff_shortstat(project_path: String) -> Result<GitDiffSummary, 
         insertions: ins,
         deletions: dels,
     })
+}
+
+/// Per-file companion to `git_diff_shortstat`. Both commands compare the
+/// working tree with HEAD, so the file badges and aggregate status stay in
+/// sync. Non-repositories and repositories without HEAD simply have no
+/// badges.
+#[tauri::command]
+pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResponse, String> {
+    let workspace_root = PathBuf::from(&project_path)
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve workspace root: {error}"))?;
+    let empty_response = || GitFileDiffResponse {
+        root: workspace_root.to_string_lossy().into_owned(),
+        files: Vec::new(),
+    };
+    let root_output = run_git_with_timeout(
+        project_path,
+        vec![
+            "--no-optional-locks".to_string(),
+            "rev-parse".to_string(),
+            "--show-toplevel".to_string(),
+        ],
+        Duration::from_secs(5),
+    )
+    .await?;
+    if !root_output.status.success() {
+        return Ok(empty_response());
+    }
+
+    let root_text = String::from_utf8_lossy(&root_output.stdout);
+    let root_text = root_text.trim();
+    if root_text.is_empty() {
+        return Ok(empty_response());
+    }
+    let git_worktree = root_text.to_string();
+    let repository_root = PathBuf::from(root_text)
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve git repository root: {error}"))?;
+    let output = run_git_with_timeout(
+        git_worktree,
+        vec![
+            "--no-optional-locks".to_string(),
+            "diff".to_string(),
+            "--numstat".to_string(),
+            "-z".to_string(),
+            "HEAD".to_string(),
+        ],
+        Duration::from_secs(5),
+    )
+    .await?;
+    if !output.status.success() {
+        return Ok(empty_response());
+    }
+
+    Ok(GitFileDiffResponse {
+        root: workspace_root.to_string_lossy().into_owned(),
+        files: parse_numstat_z(&output.stdout, &repository_root),
+    })
+}
+
+#[cfg(test)]
+mod terminal_file_diff_tests {
+    use super::parse_numstat_z;
+
+    #[test]
+    fn numstat_z_parses_regular_and_binary_files() {
+        let root = std::env::temp_dir().join("junqi-numstat-root");
+        let parsed = parse_numstat_z(b"10\t2\tsrc/main.rs\0-\t-\tassets/logo.png\0", &root);
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(
+            parsed[0].path,
+            root.join("assets/logo.png").to_string_lossy()
+        );
+        assert_eq!((parsed[0].insertions, parsed[0].deletions), (0, 0));
+        assert_eq!(parsed[1].path, root.join("src/main.rs").to_string_lossy());
+        assert_eq!((parsed[1].insertions, parsed[1].deletions), (10, 2));
+    }
+
+    #[test]
+    fn numstat_z_keeps_the_new_path_for_renames() {
+        let root = std::env::temp_dir().join("junqi-numstat-rename-root");
+        let parsed = parse_numstat_z(b"4\t1\t\0old name.rs\0new name.rs\0", &root);
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].path, root.join("new name.rs").to_string_lossy());
+        assert_eq!((parsed[0].insertions, parsed[0].deletions), (4, 1));
+    }
+
+    #[test]
+    fn numstat_z_rejects_paths_that_escape_the_repository() {
+        let root = std::env::temp_dir().join("junqi-numstat-safe-root");
+        assert!(parse_numstat_z(b"1\t1\t../outside.txt\0", &root).is_empty());
+    }
 }

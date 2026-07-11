@@ -8,6 +8,12 @@ import {
 } from "@/components/Terminal";
 import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
 import { TerminalWorkspaceFiles } from "@/components/Terminal/TerminalWorkspaceFiles";
+import {
+  clampTerminalSidebarWidth,
+  resizeTerminalSidebarWidth,
+  TERMINAL_SIDEBAR_MAX_WIDTH,
+  TERMINAL_SIDEBAR_MIN_WIDTH,
+} from "@/components/Terminal/terminalWorkspaceTree";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
@@ -21,6 +27,7 @@ import {
   DEFAULT_TERMINAL_FONT_SIZE,
   getDefaultMonoFont,
 } from "@/_nezha_root/types";
+import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
 
 interface TerminalWorkspaceDirectory {
   path: string;
@@ -74,9 +81,23 @@ export function TerminalPage() {
       return saved === 'full' || saved === 'compact' || saved === 'hidden' ? saved : 'hidden';
     } catch { return 'hidden'; }
   });
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      return clampTerminalSidebarWidth(Number(localStorage.getItem('junqi:terminal-sidebar-width')));
+    } catch {
+      return TERMINAL_SIDEBAR_MIN_WIDTH;
+    }
+  });
+  const [sidebarResizeActive, setSidebarResizeActive] = useState(false);
   useEffect(() => {
     try { localStorage.setItem('junqi:terminal-sidebar-mode', sidebarMode); } catch {}
   }, [sidebarMode]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try { localStorage.setItem('junqi:terminal-sidebar-width', String(sidebarWidth)); } catch {}
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [sidebarWidth]);
   const cycleSidebarMode = () => setSidebarMode((m) =>
     m === 'hidden' ? 'full' : m === 'full' ? 'compact' : 'hidden'
   );
@@ -178,16 +199,26 @@ export function TerminalPage() {
   }, [addToast, t]);
 
   useEffect(() => {
+    const deliver = (command: string, commandProjectPath?: string) => {
+      window.dispatchEvent(new CustomEvent('junqi:deliver-terminal-command', {
+        detail: { command, projectPath: commandProjectPath },
+      }));
+    };
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ command: string; projectPath?: string }>;
       const cmd = ce.detail?.command;
       if (!cmd) return;
-      window.dispatchEvent(new CustomEvent('junqi:deliver-terminal-command', {
-        detail: { command: cmd, projectPath: ce.detail?.projectPath },
-      }));
+      deliver(cmd, ce.detail?.projectPath);
     };
+    const pendingTimer = window.setTimeout(() => {
+      const pending = takePendingTerminalCommands();
+      for (const command of pending) deliver(command.command, command.projectPath);
+    }, 0);
     window.addEventListener("junqi:run-terminal-command", handler);
-    return () => window.removeEventListener("junqi:run-terminal-command", handler);
+    return () => {
+      window.clearTimeout(pendingTimer);
+      window.removeEventListener("junqi:run-terminal-command", handler);
+    };
   }, []);
 
   useEffect(() => {
@@ -208,6 +239,9 @@ export function TerminalPage() {
         {sidebarMode !== "hidden" && (
           <WorkspaceSidebarPanel
             mode={sidebarMode}
+            width={sidebarWidth}
+            onWidthChange={setSidebarWidth}
+            onResizeActiveChange={setSidebarResizeActive}
             content={sidebarContent}
             onContentChange={setSidebarContent}
             projectPath={workspace?.workingDirectory || projectPath}
@@ -227,23 +261,40 @@ export function TerminalPage() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
 
           <div ref={termWrapRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            {workspace ? (
-              <PaneTreeView
-                workspace={workspace}
-                themeVariant={themeVariant}
-                terminalFontSize={terminalFontSize}
-                monoFontFamily={monoFontFamily}
-                projectPath={workspace?.workingDirectory || projectPath}
-                onToggleSidebar={cycleSidebarMode}
-                sidebarActive={sidebarMode !== 'hidden'}
-              />
-            ) : (
+            {workspaces.map((candidate) => {
+              const candidateActive = candidate.id === activeWorkspaceId;
+              return (
+                <div
+                  key={candidate.id}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: 0,
+                    display: candidateActive ? 'flex' : 'none',
+                  }}
+                >
+                  <PaneTreeView
+                    workspace={candidate}
+                    isActive={candidateActive}
+                    themeVariant={themeVariant}
+                    terminalFontSize={terminalFontSize}
+                    monoFontFamily={monoFontFamily}
+                    projectPath={candidate.workingDirectory || projectPath}
+                    onToggleSidebar={cycleSidebarMode}
+                    sidebarActive={sidebarMode !== 'hidden'}
+                    resizeSuspended={sidebarResizeActive}
+                  />
+                </div>
+              );
+            })}
+            {workspaces.length === 0 && (
               <ShellTerminalPanel
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}
                 projectPath={projectPath}
                 projectId="default"
+                resizeSuspended={sidebarResizeActive}
                 onClose={() => {}}
                 onSplitHorizontal={() => {
                   import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
@@ -599,11 +650,14 @@ function StatusDot({ label, ok }: { label: string; ok: boolean }) {
 // WorkspaceSidebarPanel — redesigned (full 220px / compact 52px)
 // ──────────────────────────────────────────────────────────────
 function WorkspaceSidebarPanel({
-  mode, content, onContentChange, projectPath, workspaces, recentDirectories, activeWorkspaceId,
+  mode, width, onWidthChange, onResizeActiveChange, content, onContentChange, projectPath, workspaces, recentDirectories, activeWorkspaceId,
   onSelectWorkspace, onCreateWorkspace, onOpenFolder, onOpenRecentDirectory,
   onClearRecentDirectories, onCloseWorkspace, onRenameWorkspace,
 }: {
   mode: 'full' | 'compact';
+  width: number;
+  onWidthChange: (width: number) => void;
+  onResizeActiveChange: (active: boolean) => void;
   content: TerminalSidebarContent;
   onContentChange: (content: TerminalSidebarContent) => void;
   projectPath: string;
@@ -619,21 +673,55 @@ function WorkspaceSidebarPanel({
   onRenameWorkspace?: (id: string, name: string) => void;
 }) {
   const { t } = useTranslation();
-  const width = mode === 'full' ? 220 : 52;
+  const panelWidth = mode === 'full' ? width : 52;
   const [fileTreeVersion, setFileTreeVersion] = useState(0);
+  const [resizing, setResizing] = useState(false);
+  const resizeStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+    direction: 'ltr' | 'rtl';
+  } | null>(null);
   const openWorkspacePaths = new Set(workspaces.map((workspace) => workspace.workingDirectory));
   const visibleRecentDirectories = recentDirectories.filter((directory) => !openWorkspacePaths.has(directory.path));
   const showingFiles = content === 'files' && mode === 'full';
   const fileRootAvailable = projectPath !== '.';
   const fileRootName = projectPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || projectPath;
 
+  useEffect(() => {
+    if (!showingFiles || !fileRootAvailable) return;
+    const refresh = () => setFileTreeVersion((version) => version + 1);
+    const timer = window.setInterval(refresh, 5000);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [fileRootAvailable, showingFiles]);
+
+  useEffect(() => () => {
+    if (resizeStateRef.current) onResizeActiveChange(false);
+  }, [onResizeActiveChange]);
+
+  const finishResize = useCallback(() => {
+    if (!resizeStateRef.current) return;
+    resizeStateRef.current = null;
+    setResizing(false);
+    onResizeActiveChange(false);
+  }, [onResizeActiveChange]);
+
+  useEffect(() => {
+    if (mode !== 'full') finishResize();
+  }, [finishResize, mode]);
+
   return (
     <div style={{
-      width, flexShrink: 0, display: 'flex', flexDirection: 'column',
-      borderRight: '1px solid rgb(255 255 255 / 0.07)',
+      width: panelWidth, flexShrink: 0, display: 'flex', flexDirection: 'column',
+      borderInlineEnd: '1px solid rgb(255 255 255 / 0.07)',
       background: 'rgb(var(--aegis-surface))',
-      transition: 'width 0.18s cubic-bezier(0.22,1,0.36,1)',
+      transition: resizing ? 'none' : 'width 0.18s cubic-bezier(0.22,1,0.36,1)',
       overflow: 'hidden',
+      position: 'relative',
     }}>
       <ProjectStatusPanel projectPath={projectPath} mode={mode} />
 
@@ -734,7 +822,7 @@ function WorkspaceSidebarPanel({
             </button>
           </div>
           {fileRootAvailable ? (
-            <TerminalWorkspaceFiles key={`${projectPath}:${fileTreeVersion}`} root={projectPath} />
+            <TerminalWorkspaceFiles root={projectPath} refreshVersion={fileTreeVersion} />
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, color: 'rgb(var(--aegis-text-dim))', fontSize: 11, textAlign: 'center' }}>
               {t('terminal.filesUnavailable')}
@@ -860,6 +948,55 @@ function WorkspaceSidebarPanel({
             </button>
           </div>
         </>
+      )}
+      {mode === 'full' && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('terminal.resizeSidebar', 'Resize sidebar')}
+          aria-valuemin={TERMINAL_SIDEBAR_MIN_WIDTH}
+          aria-valuemax={TERMINAL_SIDEBAR_MAX_WIDTH}
+          aria-valuenow={width}
+          tabIndex={0}
+          title={t('terminal.resizeSidebar', 'Resize sidebar')}
+          onDoubleClick={() => onWidthChange(TERMINAL_SIDEBAR_MIN_WIDTH)}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            const delta = event.key === 'ArrowRight' ? 10 : -10;
+            const direction = getComputedStyle(event.currentTarget).direction === 'rtl' ? 'rtl' : 'ltr';
+            onWidthChange(resizeTerminalSidebarWidth(width, delta, direction));
+          }}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            resizeStateRef.current = {
+              pointerId: event.pointerId,
+              startX: event.clientX,
+              startWidth: width,
+              direction: getComputedStyle(event.currentTarget).direction === 'rtl' ? 'rtl' : 'ltr',
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setResizing(true);
+            onResizeActiveChange(true);
+          }}
+          onPointerMove={(event) => {
+            const state = resizeStateRef.current;
+            if (!state || state.pointerId !== event.pointerId) return;
+            onWidthChange(resizeTerminalSidebarWidth(
+              state.startWidth,
+              event.clientX - state.startX,
+              state.direction,
+            ));
+          }}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
+          onLostPointerCapture={finishResize}
+          style={{
+            position: 'absolute', insetBlock: 0, insetInlineEnd: 0, zIndex: 20,
+            width: 7, cursor: 'col-resize', touchAction: 'none',
+            background: resizing ? 'rgb(var(--aegis-primary) / 0.35)' : 'transparent',
+          }}
+        />
       )}
     </div>
   );

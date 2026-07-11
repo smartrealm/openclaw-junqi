@@ -40,16 +40,21 @@ interface WorkspaceStoreState {
     leafId: string,
     direction: SplitDirection,
     newLeafConfig?: Partial<LeafConfig>,
+    workspaceId?: string,
   ) => string | null;
-  closePane: (leafId: string) => void;
-  setFocus: (leafId: string) => void;
+  closePane: (leafId: string, workspaceId?: string) => void;
+  setFocus: (leafId: string, workspaceId?: string) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
-  updateLeafConfig: (leafId: string, patch: Partial<LeafConfig>) => void;
-  setPaneCwd: (leafId: string, cwd: string) => void;
+  updateLeafConfig: (leafId: string, patch: Partial<LeafConfig>, workspaceId?: string) => void;
+  setPaneCwd: (leafId: string, cwd: string, workspaceId?: string) => void;
   addShellPane: () => string | null;
   addAgentPane: (agent?: string) => string | null;
   renameWorkspace: (id: string, name: string) => void;
 }
+
+// v3 globally de-duplicates pane ids because inactive workspaces now remain
+// mounted and share the same terminal persistence and PTY registries.
+const WORKSPACE_PERSISTENCE_VERSION = 3;
 
 function nonEmpty(value: string | undefined | null): string {
   return value?.trim() ?? '';
@@ -102,6 +107,20 @@ function updateActive(
   return {
     workspaces: state.workspaces.map((workspace) => (
       workspace.id === state.activeWorkspaceId ? transform(workspace) : workspace
+    )),
+  };
+}
+
+function updateWorkspace(
+  state: WorkspaceStoreState,
+  workspaceId: string | undefined,
+  transform: (workspace: Workspace) => Workspace,
+): Pick<WorkspaceStoreState, 'workspaces'> {
+  const targetId = workspaceId ?? state.activeWorkspaceId;
+  if (!targetId) return { workspaces: state.workspaces };
+  return {
+    workspaces: state.workspaces.map((workspace) => (
+      workspace.id === targetId ? transform(workspace) : workspace
     )),
   };
 }
@@ -211,15 +230,17 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         };
       }),
 
-      splitPane: (leafId, direction, newLeafConfig) => {
+      splitPane: (leafId, direction, newLeafConfig, workspaceId) => {
         const state = get();
-        const workspace = activeWorkspace(state);
+        const workspace = workspaceId
+          ? state.workspaces.find((candidate) => candidate.id === workspaceId) ?? null
+          : activeWorkspace(state);
         if (!workspace) return null;
         const source = findLeaf(workspace.root, leafId);
         if (!source) return null;
         const cwd = currentPaneCwd(workspace, leafId, state.defaultWorkingDirectory);
         const newLeaf = makeLeaf(newLeafConfig ?? {}, cwd);
-        set((current) => updateActive(current, (active) => ({
+        set((current) => updateWorkspace(current, workspace.id, (active) => ({
           ...active,
           root: splitLeaf(active.root, leafId, direction, newLeaf),
           focusedPaneId: newLeaf.id,
@@ -228,7 +249,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         return newLeaf.id;
       },
 
-      closePane: (leafId) => set((state) => updateActive(state, (workspace) => {
+      closePane: (leafId, workspaceId) => set((state) => updateWorkspace(state, workspaceId, (workspace) => {
         const before = listLeafIds(workspace.root);
         if (!before.includes(leafId)) return workspace;
         const collapsed = removeLeaf(workspace.root, leafId);
@@ -245,7 +266,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         return { ...workspace, root, focusedPaneId, workingDirectory };
       })),
 
-      setFocus: (leafId) => set((state) => updateActive(state, (workspace) => {
+      setFocus: (leafId, workspaceId) => set((state) => updateWorkspace(state, workspaceId, (workspace) => {
         if (!findLeaf(workspace.root, leafId)) return workspace;
         return {
           ...workspace,
@@ -259,7 +280,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         root: resizeSplit(workspace.root, splitId, ratio),
       }))),
 
-      updateLeafConfig: (leafId, patch) => set((state) => updateActive(state, (workspace) => {
+      updateLeafConfig: (leafId, patch, workspaceId) => set((state) => updateWorkspace(state, workspaceId, (workspace) => {
         const leaf = findLeaf(workspace.root, leafId);
         if (!leaf) return workspace;
         const kind = patch.kind ?? leaf.config.kind;
@@ -282,10 +303,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         };
       })),
 
-      setPaneCwd: (leafId, cwd) => {
+      setPaneCwd: (leafId, cwd, workspaceId) => {
         const normalized = nonEmpty(cwd);
         if (!normalized) return;
-        get().updateLeafConfig(leafId, { cwd: normalized });
+        get().updateLeafConfig(leafId, { cwd: normalized }, workspaceId);
       },
 
       addShellPane: () => get().splitPane(
@@ -316,7 +337,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
     }),
     {
       name: 'workspace:v1',
-      version: 2,
+      version: WORKSPACE_PERSISTENCE_VERSION,
       migrate: (persisted) => {
         const state = (persisted as Partial<WorkspaceStoreState>) ?? {};
         const workspaces = normalizeWorkspaces(state.workspaces);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -17,6 +17,7 @@ import {
 import { useNotificationStore } from '@/stores/notificationStore';
 import {
   openWithSystemDefault,
+  readTerminalGitFileDiff,
   readTerminalWorkspaceDir,
   revealTerminalWorkspacePath,
   terminalPathInput,
@@ -27,6 +28,12 @@ import {
   serializeTerminalWorkspacePathDrop,
   TERMINAL_WORKSPACE_PATH_MIME,
 } from './terminalWorkspacePathDrop';
+import {
+  buildTerminalGitDiffIndex,
+  terminalWorkspacePathKey,
+  type TerminalGitDiffCounts,
+  type TerminalGitDiffIndex,
+} from './terminalWorkspaceTree';
 
 interface ContextMenuState {
   x: number;
@@ -37,6 +44,8 @@ interface TreeNodeProps {
   entry: FsEntry;
   root: string;
   depth: number;
+  refreshVersion: number;
+  diffIndex: TerminalGitDiffIndex;
   selectedPath: string | null;
   onSelect: (entry: FsEntry) => void;
   onOpen: (entry: FsEntry) => void;
@@ -45,10 +54,17 @@ interface TreeNodeProps {
   onInsertPath: (entry: FsEntry) => void;
 }
 
+function terminalWorkspaceEntryKey(entry: FsEntry): string {
+  const kind = entry.is_dir ? 'directory' : 'file';
+  return `${entry.path}:${kind}:${entry.is_symlink ? 'link' : 'regular'}`;
+}
+
 function TerminalWorkspaceFileNode({
   entry,
   root,
   depth,
+  refreshVersion,
+  diffIndex,
   selectedPath,
   onSelect,
   onOpen,
@@ -64,6 +80,7 @@ function TerminalWorkspaceFileNode({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const requestIdRef = useRef(0);
   const lastDirectoryToggleAtRef = useRef(0);
+  const lastRefreshVersionRef = useRef(refreshVersion);
   // Keep every symlink leaf-only. An in-project link can point back to an
   // ancestor, and expanding it would make an unbounded tree representable.
   const canExpand = entry.is_dir && !entry.is_symlink;
@@ -79,10 +96,10 @@ function TerminalWorkspaceFileNode({
     requestIdRef.current += 1;
   }, []);
 
-  const loadChildren = useCallback(async () => {
+  const loadChildren = useCallback(async (showLoading = true) => {
     if (!canExpand) return;
     const requestId = ++requestIdRef.current;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setLoadFailed(false);
     try {
       const next = await readTerminalWorkspaceDir(entry.path, root);
@@ -94,9 +111,15 @@ function TerminalWorkspaceFileNode({
         setLoadFailed(true);
       }
     } finally {
-      if (requestId === requestIdRef.current) setLoading(false);
+      if (showLoading && requestId === requestIdRef.current) setLoading(false);
     }
   }, [canExpand, entry.path, root]);
+
+  useEffect(() => {
+    if (lastRefreshVersionRef.current === refreshVersion) return;
+    lastRefreshVersionRef.current = refreshVersion;
+    if (expanded) void loadChildren(false);
+  }, [expanded, loadChildren, refreshVersion]);
 
   const handleClick = useCallback(async () => {
     onSelect(entry);
@@ -122,6 +145,10 @@ function TerminalWorkspaceFileNode({
   }, [entry.path, root]);
 
   const selected = selectedPath === entry.path;
+  const pathKey = terminalWorkspacePathKey(entry.path);
+  const diff = canExpand
+    ? (expanded ? undefined : diffIndex.directories.get(pathKey))
+    : diffIndex.files.get(pathKey);
   const pathIndent = 8 + depth * 13;
   const menuLeft = contextMenu
     ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 228))
@@ -170,6 +197,7 @@ function TerminalWorkspaceFileNode({
         <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontFamily: '"JetBrains Mono", monospace' }}>
           {entry.name}
         </span>
+        {diff && <TerminalGitDiffBadge counts={diff} />}
       </button>
 
       {expanded && loadFailed && (
@@ -179,10 +207,12 @@ function TerminalWorkspaceFileNode({
       )}
       {expanded && children?.map((child) => (
         <TerminalWorkspaceFileNode
-          key={child.path}
+          key={terminalWorkspaceEntryKey(child)}
           entry={child}
           root={root}
           depth={depth + 1}
+          refreshVersion={refreshVersion}
+          diffIndex={diffIndex}
           selectedPath={selectedPath}
           onSelect={onSelect}
           onOpen={onOpen}
@@ -232,6 +262,22 @@ function TerminalWorkspaceFileNode({
   );
 }
 
+function TerminalGitDiffBadge({ counts }: { counts: TerminalGitDiffCounts }) {
+  if (counts.insertions === 0 && counts.deletions === 0) {
+    return (
+      <span style={{ marginInlineStart: 'auto', flexShrink: 0, fontSize: 9.5, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))' }}>
+        +/-
+      </span>
+    );
+  }
+  return (
+    <span style={{ marginInlineStart: 'auto', flexShrink: 0, display: 'inline-flex', gap: 4, fontSize: 9.5, fontFamily: '"JetBrains Mono", monospace' }}>
+      {counts.insertions > 0 && <span style={{ color: 'rgb(34 197 94)' }}>+{counts.insertions}</span>}
+      {counts.deletions > 0 && <span style={{ color: 'rgb(239 68 68)' }}>-{counts.deletions}</span>}
+    </span>
+  );
+}
+
 function TerminalWorkspaceFileMenuItem({
   icon,
   label,
@@ -260,18 +306,24 @@ function TerminalWorkspaceFileMenuItem({
   );
 }
 
-export function TerminalWorkspaceFiles({ root }: { root: string }) {
+export function TerminalWorkspaceFiles({ root, refreshVersion = 0 }: { root: string; refreshVersion?: number }) {
   const { t } = useTranslation();
   const addToast = useNotificationStore((state) => state.addToast);
   const [entries, setEntries] = useState<FsEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [rootUnavailable, setRootUnavailable] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [gitDiffs, setGitDiffs] = useState<Awaited<ReturnType<typeof readTerminalGitFileDiff>>>(() => ({
+    root,
+    files: [],
+  }));
   const requestIdRef = useRef(0);
+  const gitRequestIdRef = useRef(0);
+  const lastRefreshVersionRef = useRef(refreshVersion);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (showLoading = true) => {
     const requestId = ++requestIdRef.current;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setRootUnavailable(false);
     try {
       const next = await readTerminalWorkspaceDir(root, root);
@@ -283,18 +335,43 @@ export function TerminalWorkspaceFiles({ root }: { root: string }) {
         setRootUnavailable(true);
       }
     } finally {
-      if (requestId === requestIdRef.current) setLoading(false);
+      if (showLoading && requestId === requestIdRef.current) setLoading(false);
     }
   }, [root]);
 
+  const refreshGitDiff = useCallback(async () => {
+    const requestId = ++gitRequestIdRef.current;
+    try {
+      const next = await readTerminalGitFileDiff(root);
+      if (requestId === gitRequestIdRef.current) setGitDiffs(next);
+    } catch {
+      if (requestId === gitRequestIdRef.current) setGitDiffs({ root, files: [] });
+    }
+  }, [root]);
+
+  const gitDiffIndex = useMemo(
+    () => buildTerminalGitDiffIndex(gitDiffs.root, gitDiffs.files),
+    [gitDiffs],
+  );
+
   useEffect(() => {
     setEntries(null);
+    setGitDiffs({ root, files: [] });
     setSelectedPath(null);
     void refresh();
+    void refreshGitDiff();
     return () => {
       requestIdRef.current += 1;
+      gitRequestIdRef.current += 1;
     };
-  }, [refresh]);
+  }, [refresh, refreshGitDiff]);
+
+  useEffect(() => {
+    if (lastRefreshVersionRef.current === refreshVersion) return;
+    lastRefreshVersionRef.current = refreshVersion;
+    void refresh(false);
+    void refreshGitDiff();
+  }, [refresh, refreshGitDiff, refreshVersion]);
 
   const reportFailure = useCallback((titleKey: string, bodyKey: string, error: unknown) => {
     debugError('terminal', `[terminal] ${titleKey}:`, error);
@@ -359,10 +436,12 @@ export function TerminalWorkspaceFiles({ root }: { root: string }) {
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '4px 4px 8px' }}>
       {entries.map((entry) => (
         <TerminalWorkspaceFileNode
-          key={entry.path}
+          key={terminalWorkspaceEntryKey(entry)}
           entry={entry}
           root={root}
           depth={0}
+          refreshVersion={refreshVersion}
+          diffIndex={gitDiffIndex}
           selectedPath={selectedPath}
           onSelect={(selected) => setSelectedPath(selected.path)}
           onOpen={(selected) => { void handleOpen(selected); }}
