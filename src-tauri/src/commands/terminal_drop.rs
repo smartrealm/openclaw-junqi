@@ -242,11 +242,8 @@ fn change_directory_command(path: &Path) -> Option<String> {
 /// the selected File Manager root has disappeared in the meantime.
 #[tauri::command]
 pub fn terminal_change_directory_command(path: String) -> Result<String, String> {
-    let candidate = PathBuf::from(path);
-    if !candidate.is_dir() {
-        return Err("terminal directory does not exist".to_string());
-    }
-    let canonical = candidate.canonicalize().unwrap_or(candidate);
+    let canonical =
+        crate::commands::terminal_workspace::resolve_terminal_workspace_directory(path)?;
     change_directory_command(&canonical)
         .ok_or_else(|| "could not format terminal directory command".to_string())
 }

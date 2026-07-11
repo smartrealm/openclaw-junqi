@@ -8,14 +8,23 @@ import {
 } from "@/components/Terminal";
 import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { homeDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { Check, Clock3, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
+import type { Workspace } from "@/workspace/types";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   getDefaultMonoFont,
 } from "@/_nezha_root/types";
+
+interface TerminalWorkspaceDirectory {
+  path: string;
+  name: string;
+}
 
 export function TerminalPage() {
   const { t } = useTranslation();
@@ -25,6 +34,8 @@ export function TerminalPage() {
   const terminalFontSize: TerminalFontSize = DEFAULT_TERMINAL_FONT_SIZE;
   const monoFontFamily: FontFamily = getDefaultMonoFont();
   const [projectPath, setProjectPath] = useState(".");
+  const [recentDirectories, setRecentDirectories] = useState<TerminalWorkspaceDirectory[]>([]);
+  const addToast = useNotificationStore((state) => state.addToast);
   useEffect(() => {
     let cancelled = false;
     homeDir()
@@ -72,6 +83,87 @@ export function TerminalPage() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
 
+  const refreshRecentDirectories = useCallback(async () => {
+    try {
+      const directories = await invoke<TerminalWorkspaceDirectory[]>('list_terminal_recent_workspaces');
+      setRecentDirectories(directories);
+    } catch {
+      // Recent folders are auxiliary state. A read failure must not block a shell.
+      setRecentDirectories([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRecentDirectories();
+  }, [refreshRecentDirectories]);
+
+  const recordWorkspaceDirectory = useCallback((directory: string) => {
+    if (!directory) return;
+    void invoke('record_terminal_workspace_directory', { path: directory })
+      .then(() => refreshRecentDirectories())
+      .catch(() => undefined);
+  }, [refreshRecentDirectories]);
+
+  const createWorkspace = useCallback(() => {
+    const created = useWorkspaceStore.getState().createWorkspace();
+    recordWorkspaceDirectory(created.workingDirectory);
+    return created;
+  }, [recordWorkspaceDirectory]);
+
+  const openWorkspaceDirectory = useCallback(async (directoryPath: string) => {
+    try {
+      const directory = await invoke<TerminalWorkspaceDirectory>('open_terminal_workspace_directory', {
+        path: directoryPath,
+      });
+      useWorkspaceStore.getState().createWorkspace(directory.name, directory.path);
+      await refreshRecentDirectories();
+      return directory;
+    } catch {
+      addToast(
+        'error',
+        t('terminal.openFolderFailedTitle'),
+        t('terminal.openFolderFailed'),
+      );
+      return null;
+    }
+  }, [addToast, refreshRecentDirectories, t]);
+
+  const chooseWorkspaceDirectory = useCallback(async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: true,
+        defaultPath: workspace?.workingDirectory || projectPath,
+        title: t('terminal.openFolderDialogTitle'),
+      });
+      const paths = typeof selected === 'string'
+        ? [selected]
+        : Array.isArray(selected) ? selected : [];
+      for (const path of paths) {
+        await openWorkspaceDirectory(path);
+      }
+    } catch {
+      addToast(
+        'error',
+        t('terminal.openFolderFailedTitle'),
+        t('terminal.openFolderFailed'),
+      );
+    }
+  }, [addToast, openWorkspaceDirectory, projectPath, t, workspace?.workingDirectory]);
+
+  const clearRecentDirectories = useCallback(async () => {
+    try {
+      await invoke('clear_terminal_recent_workspaces');
+      setRecentDirectories([]);
+    } catch {
+      addToast(
+        'error',
+        t('terminal.clearRecentFoldersFailedTitle'),
+        t('terminal.clearRecentFoldersFailed'),
+      );
+    }
+  }, [addToast, t]);
+
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ command: string; projectPath?: string }>;
@@ -103,13 +195,15 @@ export function TerminalPage() {
         {sidebarMode !== "hidden" && (
           <WorkspaceSidebarPanel
             mode={sidebarMode}
-            onModeChange={setSidebarMode}
-            onToggleSidebar={cycleSidebarMode}
             projectPath={workspace?.workingDirectory || projectPath}
             workspaces={workspaces}
+            recentDirectories={recentDirectories}
             activeWorkspaceId={activeWorkspaceId}
             onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
-            onCreateWorkspace={() => useWorkspaceStore.getState().createWorkspace()}
+            onCreateWorkspace={createWorkspace}
+            onOpenFolder={chooseWorkspaceDirectory}
+            onOpenRecentDirectory={openWorkspaceDirectory}
+            onClearRecentDirectories={clearRecentDirectories}
             onCloseWorkspace={(id) => useWorkspaceStore.getState().closeWorkspace(id)}
             onRenameWorkspace={(id, name) => useWorkspaceStore.getState().renameWorkspace(id, name)}
           />
@@ -124,7 +218,7 @@ export function TerminalPage() {
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}
-                projectPath={projectPath}
+                projectPath={workspace?.workingDirectory || projectPath}
                 onToggleSidebar={cycleSidebarMode}
                 sidebarActive={sidebarMode !== 'hidden'}
               />
@@ -159,11 +253,14 @@ export function TerminalPage() {
 
       <CommandPaletteModal
         open={cmdPaletteOpen}
-        onClose={() => setCmdPaletteOpen(false)}
-        workspaces={workspaces}
-        onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
-        onCreateWorkspace={() => useWorkspaceStore.getState().createWorkspace()}
-      />
+      onClose={() => setCmdPaletteOpen(false)}
+      workspaces={workspaces}
+      recentDirectories={recentDirectories}
+      onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
+      onCreateWorkspace={createWorkspace}
+      onOpenFolder={chooseWorkspaceDirectory}
+      onOpenRecentDirectory={openWorkspaceDirectory}
+    />
     </div>
   );
 }
@@ -487,22 +584,27 @@ function StatusDot({ label, ok }: { label: string; ok: boolean }) {
 // WorkspaceSidebarPanel — redesigned (full 220px / compact 52px)
 // ──────────────────────────────────────────────────────────────
 function WorkspaceSidebarPanel({
-  mode, onModeChange, onToggleSidebar, projectPath, workspaces, activeWorkspaceId,
-  onSelectWorkspace, onCreateWorkspace, onCloseWorkspace, onRenameWorkspace,
+  mode, projectPath, workspaces, recentDirectories, activeWorkspaceId,
+  onSelectWorkspace, onCreateWorkspace, onOpenFolder, onOpenRecentDirectory,
+  onClearRecentDirectories, onCloseWorkspace, onRenameWorkspace,
 }: {
   mode: 'full' | 'compact';
-  onModeChange: (m: 'full' | 'compact' | 'hidden') => void;
-  onToggleSidebar?: () => void;
   projectPath: string;
-  workspaces: Array<{ id: string; name: string; focusedPaneId: string; root: any }>;
+  workspaces: Workspace[];
+  recentDirectories: TerminalWorkspaceDirectory[];
   activeWorkspaceId: string | null;
   onSelectWorkspace: (id: string) => void;
   onCreateWorkspace: () => void;
+  onOpenFolder: () => void;
+  onOpenRecentDirectory: (path: string) => void | Promise<unknown>;
+  onClearRecentDirectories: () => void | Promise<unknown>;
   onCloseWorkspace: (id: string) => void;
   onRenameWorkspace?: (id: string, name: string) => void;
 }) {
   const { t } = useTranslation();
   const width = mode === 'full' ? 220 : 52;
+  const openWorkspacePaths = new Set(workspaces.map((workspace) => workspace.workingDirectory));
+  const visibleRecentDirectories = recentDirectories.filter((directory) => !openWorkspacePaths.has(directory.path));
 
   return (
     <div style={{
@@ -520,15 +622,25 @@ function WorkspaceSidebarPanel({
           height: 34, display: 'flex', alignItems: 'center',
           padding: '0 8px 0 12px', gap: 6, flexShrink: 0,
         }}>
-          {/* 图标 */}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--aegis-text-dim))" strokeWidth="2" style={{ flexShrink: 0 }}>
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-          </svg>
+          <FolderOpen size={13} strokeWidth={1.8} color="rgb(var(--aegis-text-dim))" style={{ flexShrink: 0 }} />
           <span style={{
             flex: 1, fontSize: 10, fontFamily: '"JetBrains Mono", monospace',
             color: 'rgb(var(--aegis-text-dim))', fontWeight: 600,
             letterSpacing: '0.08em', textTransform: 'uppercase',
           }}>{t('terminal.workspaces', 'WORKSPACES')}</span>
+          <button
+            onClick={onOpenFolder}
+            title={t('terminal.openFolder')}
+            style={{
+              width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: 'none', borderRadius: 5,
+              color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
+          >
+            <FolderOpen size={13} strokeWidth={2} />
+          </button>
           {/* 新建按钮 */}
           <button
             onClick={onCreateWorkspace}
@@ -541,28 +653,36 @@ function WorkspaceSidebarPanel({
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
+            <Plus size={13} strokeWidth={2.5} />
           </button>
         </div>
       ) : (
-        /* compact 顶部：只有新建按钮 */
-        <div style={{ height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, flexShrink: 0 }}>
           <button
-            onClick={onCreateWorkspace}
-            title={t('terminal.workspaceNew')}
+            onClick={onOpenFolder}
+            title={t('terminal.openFolder')}
             style={{
-              width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 24, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'transparent', border: 'none', borderRadius: 6,
               color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer',
             }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
+            <FolderOpen size={13} strokeWidth={2} />
+          </button>
+          <button
+            onClick={onCreateWorkspace}
+            title={t('terminal.workspaceNew')}
+            style={{
+              width: 24, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: 'none', borderRadius: 6,
+              color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
+          >
+            <Plus size={13} strokeWidth={2.5} />
           </button>
         </div>
       )}
@@ -604,14 +724,56 @@ function WorkspaceSidebarPanel({
             />
           ))
         )}
+
+        {mode === 'full' && visibleRecentDirectories.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgb(255 255 255 / 0.05)' }}>
+            <div style={{ height: 22, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 0 12px' }}>
+              <Clock3 size={11} strokeWidth={1.9} color="rgb(var(--aegis-text-dim))" />
+              <span style={{ flex: 1, fontSize: 10, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                {t('terminal.recentFolders')}
+              </span>
+              <button
+                type="button"
+                onClick={() => { void onClearRecentDirectories(); }}
+                title={t('terminal.clearRecentFolders')}
+                style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer', padding: 0 }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
+              >
+                <Trash2 size={11} strokeWidth={1.9} />
+              </button>
+            </div>
+            {visibleRecentDirectories.slice(0, 5).map((directory) => (
+              <button
+                type="button"
+                key={directory.path}
+                onClick={() => { void onOpenRecentDirectory(directory.path); }}
+                title={directory.path}
+                style={{
+                  width: '100%', minWidth: 0, height: 38, display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '0 10px 0 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
+                  color: 'rgb(var(--aegis-text-dim))',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.05)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              >
+                <Clock3 size={12} strokeWidth={1.8} style={{ flexShrink: 0, opacity: 0.72 }} />
+                <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text))' }}>{directory.name}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 9.5, fontFamily: '"JetBrains Mono", monospace', opacity: 0.68 }}>{directory.path}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* ── 底部新建行（full 模式） ──────────────── */}
+      {/* ── 底部打开目录行（full 模式） ─────────── */}
       {mode === 'full' && (
         <>
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.05)', flexShrink: 0 }} />
           <button
-            onClick={onCreateWorkspace}
+            onClick={onOpenFolder}
             style={{
               height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               background: 'transparent', border: 'none', cursor: 'pointer', width: '100%',
@@ -621,10 +783,8 @@ function WorkspaceSidebarPanel({
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.05)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            {t('terminal.workspaceNew')}
+            <FolderOpen size={12} strokeWidth={2} />
+            {t('terminal.openFolder')}
           </button>
         </>
       )}
@@ -670,17 +830,22 @@ interface PaletteItem {
   id: string;
   label: string;
   subtitle?: string;
-  kind: 'workspace' | 'new-workspace';
+  path?: string;
+  kind: 'workspace' | 'new-workspace' | 'open-folder' | 'recent-folder';
 }
 
 function CommandPaletteModal({
-  open, onClose, workspaces, onSelectWorkspace, onCreateWorkspace,
+  open, onClose, workspaces, recentDirectories, onSelectWorkspace, onCreateWorkspace,
+  onOpenFolder, onOpenRecentDirectory,
 }: {
   open: boolean;
   onClose: () => void;
-  workspaces: Array<{ id: string; name: string }>;
+  workspaces: Workspace[];
+  recentDirectories: TerminalWorkspaceDirectory[];
   onSelectWorkspace: (id: string) => void;
   onCreateWorkspace: () => void;
+  onOpenFolder: () => void | Promise<unknown>;
+  onOpenRecentDirectory: (path: string) => void | Promise<unknown>;
 }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
@@ -701,27 +866,65 @@ function CommandPaletteModal({
 
   // Build scored, sorted items
   const items = useMemo((): PaletteItem[] => {
-    const ws: PaletteItem[] = workspaces.map((w) => ({
-      id: w.id, label: w.name || '新工作区', kind: 'workspace',
+    const openFolder: PaletteItem = {
+      id: '__open-folder__',
+      label: t('terminal.openFolder'),
+      subtitle: t('terminal.openFolderDescription'),
+      kind: 'open-folder',
+    };
+    const ws: PaletteItem[] = workspaces.map((workspace) => ({
+      id: workspace.id,
+      label: workspace.name || t('terminal.workspaceDefault'),
+      subtitle: workspace.workingDirectory || undefined,
+      kind: 'workspace',
     }));
-    const newWs: PaletteItem = { id: '__new__', label: '新建工作区', kind: 'new-workspace' };
-    if (!query) return [...ws, newWs];
-    const scored = ws
-      .map((item) => ({ item, score: fuzzyScore(query, item.label) }))
+    const openWorkspacePaths = new Set(workspaces.map((workspace) => workspace.workingDirectory));
+    const recent: PaletteItem[] = recentDirectories
+      .filter((directory) => !openWorkspacePaths.has(directory.path))
+      .map((directory) => ({
+        id: `recent-${directory.path}`,
+        label: directory.name,
+        subtitle: directory.path,
+        path: directory.path,
+        kind: 'recent-folder',
+      }));
+    const newWs: PaletteItem = {
+      id: '__new__',
+      label: t('terminal.workspaceNew'),
+      subtitle: t('terminal.newWorkspaceDescription'),
+      kind: 'new-workspace',
+    };
+    const candidates = [openFolder, ...ws, ...recent, newWs];
+    if (!query) return candidates;
+    return candidates
+      .map((item) => ({ item, score: fuzzyScore(query, `${item.label} ${item.subtitle ?? ''}`) }))
       .filter((x) => x.score > -Infinity)
       .sort((a, b) => b.score - a.score)
       .map((x) => x.item);
-    // "new workspace" only if query roughly matches
-    if (fuzzyScore(query, '新建工作区') > -Infinity || fuzzyScore(query, 'new workspace') > -Infinity) {
-      scored.push(newWs);
-    }
-    return scored;
-  }, [query, workspaces]);
+  }, [query, recentDirectories, t, workspaces]);
 
   // Clamp selectedIdx
   useEffect(() => {
     setSelectedIdx((prev) => Math.min(prev, Math.max(0, items.length - 1)));
   }, [items.length]);
+
+  const activateItem = useCallback((item: PaletteItem) => {
+    switch (item.kind) {
+      case 'workspace':
+        onSelectWorkspace(item.id);
+        break;
+      case 'new-workspace':
+        void onCreateWorkspace();
+        break;
+      case 'open-folder':
+        void onOpenFolder();
+        break;
+      case 'recent-folder':
+        if (item.path) void onOpenRecentDirectory(item.path);
+        break;
+    }
+    onClose();
+  }, [onClose, onCreateWorkspace, onOpenFolder, onOpenRecentDirectory, onSelectWorkspace]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
@@ -733,13 +936,9 @@ function CommandPaletteModal({
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const item = items[selectedIdx];
-      if (item) {
-        if (item.kind === 'new-workspace') { onCreateWorkspace(); }
-        else { onSelectWorkspace(item.id); }
-        onClose();
-      }
+      if (item) activateItem(item);
     }
-  }, [items, selectedIdx, onSelectWorkspace, onCreateWorkspace, onClose]);
+  }, [activateItem, items, selectedIdx]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -763,9 +962,7 @@ function CommandPaletteModal({
       }}>
         {/* Search input */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgb(255 255 255 / 0.07)' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--aegis-text-dim))" strokeWidth="2.5">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
+          <Search size={14} strokeWidth={2.3} color="rgb(var(--aegis-text-dim))" />
           <input
             ref={inputRef}
             value={query}
@@ -778,52 +975,54 @@ function CommandPaletteModal({
               color: 'rgb(var(--aegis-text))',
             }}
           />
-          <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.5 }}>ESC 关闭</span>
+          <span style={{ fontSize: 10, color: 'rgb(var(--aegis-text-dim))', opacity: 0.5 }}>{t('terminal.paletteCloseHint')}</span>
         </div>
         {/* Results */}
         <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
           {items.length === 0 && (
             <div style={{ padding: '20px', textAlign: 'center', color: 'rgb(var(--aegis-text-dim))', fontSize: 12, fontFamily: '"JetBrains Mono", monospace' }}>
-              无结果
+              {t('terminal.noResults')}
             </div>
           )}
           {items.map((item, idx) => {
             const isSelected = idx === selectedIdx;
             const isNew = item.kind === 'new-workspace';
+            const isAction = item.kind === 'new-workspace' || item.kind === 'open-folder';
+            const icon = item.kind === 'new-workspace'
+              ? <Plus size={14} strokeWidth={2.2} />
+              : item.kind === 'open-folder'
+                ? <FolderOpen size={14} strokeWidth={2} />
+                : item.kind === 'recent-folder'
+                  ? <Clock3 size={14} strokeWidth={1.9} />
+                  : <FolderOpen size={14} strokeWidth={1.9} />;
             return (
               <div
                 key={item.id}
-                onClick={() => {
-                  if (isNew) onCreateWorkspace(); else onSelectWorkspace(item.id);
-                  onClose();
-                }}
+                onClick={() => activateItem(item)}
                 onMouseEnter={() => setSelectedIdx(idx)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '0 14px', height: 40, cursor: 'pointer',
+                  padding: '0 14px', minHeight: item.subtitle ? 46 : 40, cursor: 'pointer',
                   background: isSelected ? 'rgb(var(--aegis-overlay)/0.10)' : 'transparent',
                   borderTop: isNew ? '1px solid rgb(255 255 255 / 0.07)' : 'none',
                   marginTop: isNew ? 4 : 0,
                 }}
               >
-                {isNew ? (
-                  <span style={{ fontSize: 14, color: 'rgb(var(--aegis-primary))' }}>+</span>
-                ) : (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--aegis-text-dim))" strokeWidth="2">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
-                )}
-                <span style={{
-                  fontSize: 12, fontFamily: '"JetBrains Mono", monospace',
-                  color: isNew ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text))',
-                  flex: 1,
-                }}>
-                  {item.label}
+                <span style={{ display: 'flex', color: isAction ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))', flexShrink: 0 }}>
+                  {icon}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: item.subtitle ? 2 : 0 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontFamily: '"JetBrains Mono", monospace', color: isAction ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text))' }}>
+                    {item.label}
+                  </span>
+                  {item.subtitle && (
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, fontFamily: '"JetBrains Mono", monospace', color: 'rgb(var(--aegis-text-dim))', opacity: 0.72 }}>
+                      {item.subtitle}
+                    </span>
+                  )}
                 </span>
                 {isSelected && (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--aegis-text-dim))" strokeWidth="2">
-                    <polyline points="20 6 9 17 4 12"/>
-                  </svg>
+                  <Check size={13} strokeWidth={2} color="rgb(var(--aegis-text-dim))" />
                 )}
               </div>
             );

@@ -38,6 +38,7 @@ pub mod terminal;
 pub mod terminal_clipboard;
 pub mod terminal_drop;
 pub mod terminal_shell_integration;
+pub mod terminal_workspace;
 pub mod usage;
 pub mod voice;
 pub mod voice_wake;

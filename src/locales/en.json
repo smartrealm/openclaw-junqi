@@ -841,7 +841,19 @@
     "selectAll": "Select All",
     "clear": "Clear",
     "workspaces": "WORKSPACES",
-    "searchWorkspace": "Search workspaces, actions…"
+    "searchWorkspace": "Search workspaces, actions…",
+    "openFolder": "Open Project Folder",
+    "openFolderDialogTitle": "Choose folders to open as workspaces",
+    "openFolderDescription": "Choose a directory and open it in a new terminal workspace",
+    "recentFolders": "Recent Folders",
+    "clearRecentFolders": "Clear recent folders",
+    "openFolderFailedTitle": "Cannot open project folder",
+    "openFolderFailed": "Confirm that the directory still exists and JunQi can access it.",
+    "clearRecentFoldersFailedTitle": "Cannot clear recent folders",
+    "clearRecentFoldersFailed": "Try again shortly.",
+    "newWorkspaceDescription": "Create a workspace using the current terminal directory",
+    "paletteCloseHint": "Esc to close",
+    "noResults": "No matching results"
   },
   "offline": {
     "title": "Not Connected",

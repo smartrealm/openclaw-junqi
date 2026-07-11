@@ -839,7 +839,19 @@
     "selectAll": "全选",
     "clear": "清屏",
     "workspaces": "WORKSPACES",
-    "searchWorkspace": "搜索工作区、操作…"
+    "searchWorkspace": "搜索工作区、操作…",
+    "openFolder": "打开项目目录",
+    "openFolderDialogTitle": "选择要作为工作区打开的项目目录",
+    "openFolderDescription": "选择目录并在新的终端工作区中打开",
+    "recentFolders": "最近目录",
+    "clearRecentFolders": "清除最近目录",
+    "openFolderFailedTitle": "无法打开项目目录",
+    "openFolderFailed": "请确认目录仍然存在，并且 JunQi 有访问权限。",
+    "clearRecentFoldersFailedTitle": "无法清除最近目录",
+    "clearRecentFoldersFailed": "请稍后重试。",
+    "newWorkspaceDescription": "沿用当前终端目录创建工作区",
+    "paletteCloseHint": "Esc 关闭",
+    "noResults": "没有匹配结果"
   },
   "offline": {
     "title": "未连接",

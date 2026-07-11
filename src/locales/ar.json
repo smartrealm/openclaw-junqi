@@ -605,7 +605,19 @@
     "selectAll": "تحديد الكل",
     "clear": "مسح",
     "workspaces": "WORKSPACES",
-    "searchWorkspace": "ابحث في مساحات العمل، الإجراءات…"
+    "searchWorkspace": "ابحث في مساحات العمل، الإجراءات…",
+    "openFolder": "فتح مجلد مشروع",
+    "openFolderDialogTitle": "اختر مجلدات لفتحها كمساحات عمل",
+    "openFolderDescription": "اختر دليلاً وافتحه في مساحة عمل طرفية جديدة",
+    "recentFolders": "المجلدات الحديثة",
+    "clearRecentFolders": "مسح المجلدات الحديثة",
+    "openFolderFailedTitle": "تعذر فتح مجلد المشروع",
+    "openFolderFailed": "تأكد من أن الدليل ما زال موجوداً وأن JunQi يستطيع الوصول إليه.",
+    "clearRecentFoldersFailedTitle": "تعذر مسح المجلدات الحديثة",
+    "clearRecentFoldersFailed": "حاول مرة أخرى بعد قليل.",
+    "newWorkspaceDescription": "أنشئ مساحة عمل باستخدام دليل الطرفية الحالي",
+    "paletteCloseHint": "Esc للإغلاق",
+    "noResults": "لا توجد نتائج مطابقة"
   },
   "offline": {
     "title": "غير متصل",

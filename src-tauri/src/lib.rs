@@ -147,6 +147,10 @@ pub fn run() {
             commands::terminal_drop::terminal_change_directory_command,
             commands::terminal_drop::upsert_terminal_drop_target,
             commands::terminal_drop::remove_terminal_drop_target,
+            commands::terminal_workspace::open_terminal_workspace_directory,
+            commands::terminal_workspace::record_terminal_workspace_directory,
+            commands::terminal_workspace::list_terminal_recent_workspaces,
+            commands::terminal_workspace::clear_terminal_recent_workspaces,
             // Nezha-style git commands
             commands::git_neu::git_status,
             commands::git_neu::git_log,
