@@ -39,9 +39,33 @@ import {
 } from "../services/gateway/configResolvers";
 import { formatGatewayLogs } from '../services/gateway/gatewayLogFormatting';
 import { gatewayRestartSingleFlight } from '../services/gateway/SingleFlight';
+import { gatewayRestartProgressFromLog, type GatewayRecoveryStatus } from '../services/gateway/recoveryProgress';
 
 const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
 const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
+
+interface GatewayProgressEvent {
+  step: 'gateway';
+  message: string;
+  progress: number;
+  key?: string;
+  params?: Record<string, unknown>;
+  status?: GatewayRecoveryStatus;
+}
+
+function dispatchGatewayProgress(detail: GatewayProgressEvent): void {
+  window.dispatchEvent(new CustomEvent('aegis:gateway-progress', { detail }));
+}
+
+// Rust owns the restart lifecycle. Bridge its structured, line-oriented events
+// once at the adapter boundary so every renderer surface sees the same progress.
+try {
+  listen<string>('gateway-restart-progress', (event) => {
+    dispatchGatewayProgress(gatewayRestartProgressFromLog(String(event.payload ?? '')));
+  }).catch(() => {});
+} catch {
+  // Browser-only previews do not have the Tauri event bridge.
+}
 
 let _deviceIdentity: any = null;
 async function deviceIdentity() {
@@ -140,22 +164,37 @@ async function readRecentGatewayLogs(): Promise<{ stdout: string; stderr: string
 function restartLocalGateway(): Promise<{ success: boolean; method?: string; error?: string }> {
   return gatewayRestartSingleFlight.run(async () => {
     window.dispatchEvent(new CustomEvent(GATEWAY_RESTART_STARTED_EVENT));
-    window.dispatchEvent(new CustomEvent('aegis:gateway-progress', {
-      detail: {
-        step: 'gateway',
-        message: '正在重启 OpenClaw Gateway…',
-        progress: 0.15,
-        key: 'gateway.progress.restart',
-      },
-    }));
+    dispatchGatewayProgress({
+      step: 'gateway',
+      message: 'Restarting OpenClaw Gateway...',
+      progress: 0.15,
+      key: 'gateway.progress.restart',
+      status: 'running',
+    });
     invalidateGatewayPortCache();
     try {
       const port = await readGatewayPort();
       const result: any = await invoke("restart_gateway", { port });
       if (result?.token) _cachedGatewayToken = result.token;
+      dispatchGatewayProgress({
+        step: 'gateway',
+        message: 'Gateway service restarted, reconnecting...',
+        progress: 0.94,
+        key: 'gateway.progress.restartDone',
+        status: 'running',
+      });
       return { success: true, method: "gateway-restart" };
     } catch (e: any) {
-      return { success: false, error: String(e) };
+      const error = String(e);
+      dispatchGatewayProgress({
+        step: 'gateway',
+        message: `Restart failed: ${error}`,
+        progress: 1,
+        key: 'gateway.progress.restartFailed',
+        params: { error },
+        status: 'failed',
+      });
+      return { success: false, error };
     } finally {
       window.dispatchEvent(new CustomEvent(GATEWAY_RESTART_FINISHED_EVENT));
     }
@@ -500,12 +539,19 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
   consoleUi: {
     // Open the gateway's Control UI in an in-app window (mirrors openclaw-desktop).
     // The Rust side injects the gateway token via the URL hash and a floating
-    // "← 返回 JunQi" button. Falls back to the system browser on failure.
+    // "← 返回 JunQi" button. Never open a dead localhost URL in the system browser.
     open: async () => {
-      try { await invoke("open_control_ui"); return { success: true }; }
-      catch (e: any) {
-        try { const { open } = await import("@tauri-apps/plugin-shell"); const _cp = await readGatewayPort(); await open(`http://127.0.0.1:${_cp}`); return { success: true }; }
-        catch { return { success: false, error: String(e) }; }
+      try {
+        const status: any = await invoke('gateway_status');
+        const ready = Boolean(status?.running)
+          && await invoke<boolean>('probe_gateway_port', { port: status.port });
+        if (!ready) {
+          return { success: false, error: 'Gateway is not ready yet.' };
+        }
+        await invoke('open_control_ui');
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: String(e) };
       }
     },
   },

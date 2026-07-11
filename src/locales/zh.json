@@ -447,7 +447,8 @@
     "tab.storage": "存储",
     "tab.about": "关于",
     "gatewayUrlHint": "留空使用默认值 (ws://127.0.0.1:18789)",
-    "controlUi": "Control UI"
+    "controlUi": "Control UI",
+    "controlUiRecovering": "Gateway 正在恢复，连接完成后将自动打开 Control UI。"
   },
   "theme": {
     "followSystem": "跟随系统",
@@ -841,6 +842,11 @@
     "connectingTitle": "正在连接",
     "connectingDescription": "OpenClaw Gateway 正在启动并建立连接，完成后会自动进入应用。",
     "connectingHint": "首次启动或冷启动时可能需要更久，请稍候。",
+    "connectingProgress": "正在建立与 Gateway 的连接…",
+    "checkingGateway": "正在检查 OpenClaw Gateway…",
+    "recoveryProgress": "Gateway 恢复进度",
+    "controlUiQueued": "Gateway 就绪后将自动打开 Control UI。",
+    "controlUiUnavailable": "暂时无法打开 Control UI，请完成 Gateway 恢复后重试。",
     "retrying": "正在尝试重新连接…",
     "retryGateway": "重新连接"
   },
@@ -2415,6 +2421,14 @@
   "gateway.progress.restart": "正在重启 OpenClaw Gateway…",
   "gateway.progress.restartDone": "Gateway 服务重启完成，正在重新连接…",
   "gateway.progress.restartFailed": "重启失败：{{error}}",
+  "gateway.progress.restartUnavailable": "当前运行环境无法重启 Gateway。",
+  "gateway.progress.waitingForLifecycle": "正在等待其他 Gateway 操作完成…",
+  "gateway.progress.stoppingManaged": "正在结束桌面托管的 Gateway 进程…",
+  "gateway.progress.managedFallback": "系统服务不可用，正在切换到桌面托管 Gateway…",
+  "gateway.progress.startingManaged": "正在启动桌面托管 Gateway…",
+  "gateway.progress.healthCheck": "正在等待 Gateway 就绪…",
+  "gateway.progress.gatewayReady": "Gateway 已就绪，正在重新连接…",
+  "gateway.progress.restartWorking": "正在执行 Gateway 重启步骤…",
   "gateway.progress.gatewayHealthy": "Gateway 健康（{{mode}}），正在重新连接…",
   "gateway.progress.ensureUnhealthy": "ensure_gateway_running 状态异常，正在执行重启…",
   "gateway.progress.ensureFailed": "ensure_gateway_running 调用失败，正在执行重启…",

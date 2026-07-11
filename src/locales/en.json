@@ -447,7 +447,8 @@
     "tab.storage": "Storage",
     "tab.about": "About",
     "gatewayUrlHint": "Leave empty for default (ws://127.0.0.1:18789)",
-    "controlUi": "Control UI"
+    "controlUi": "Control UI",
+    "controlUiRecovering": "Gateway is recovering. Control UI will open automatically once it reconnects."
   },
   "theme": {
     "followSystem": "Follow System",
@@ -843,6 +844,11 @@
     "connectingTitle": "Connecting",
     "connectingDescription": "OpenClaw Gateway is starting and the app is establishing a connection automatically.",
     "connectingHint": "The first cold start can take longer. Please wait a moment.",
+    "connectingProgress": "Establishing a connection to Gateway...",
+    "checkingGateway": "Checking OpenClaw Gateway...",
+    "recoveryProgress": "Gateway recovery progress",
+    "controlUiQueued": "Control UI will open automatically when Gateway is ready.",
+    "controlUiUnavailable": "Control UI cannot be opened yet. Finish Gateway recovery and try again.",
     "retrying": "Attempting to reconnect...",
     "retryGateway": "Reconnect"
   },
@@ -2371,6 +2377,14 @@
   "gateway.progress.restart": "Restarting OpenClaw Gateway…",
   "gateway.progress.restartDone": "Gateway service restarted, reconnecting…",
   "gateway.progress.restartFailed": "Restart failed: {{error}}",
+  "gateway.progress.restartUnavailable": "Gateway restart is unavailable in this runtime.",
+  "gateway.progress.waitingForLifecycle": "Waiting for another Gateway operation to finish...",
+  "gateway.progress.stoppingManaged": "Stopping the desktop-managed Gateway process...",
+  "gateway.progress.managedFallback": "System service unavailable; switching to the desktop-managed Gateway...",
+  "gateway.progress.startingManaged": "Starting the desktop-managed Gateway...",
+  "gateway.progress.healthCheck": "Waiting for Gateway to become ready...",
+  "gateway.progress.gatewayReady": "Gateway is ready, reconnecting...",
+  "gateway.progress.restartWorking": "Running Gateway restart steps...",
   "gateway.progress.gatewayHealthy": "Gateway healthy ({{mode}}), reconnecting…",
   "gateway.progress.ensureUnhealthy": "ensure_gateway_running status abnormal, restarting…",
   "gateway.progress.ensureFailed": "ensure_gateway_running call failed, restarting…",

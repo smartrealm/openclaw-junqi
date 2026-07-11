@@ -8,7 +8,6 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSequenceStore';
 import { usePetStore } from '@/stores/petStore';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
-import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useSetupProgress } from '@/hooks/useSetupProgress';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
@@ -65,7 +64,10 @@ export function StatusBar() {
   const gatewayPanelRef = useRef<HTMLDivElement>(null);
   const gatewayButtonRef = useRef<HTMLButtonElement>(null);
   const gatewayProgress = useSetupProgress('gateway');
-  const showGatewayProgress = !!gatewayProgress && (!connected || reconnecting);
+  const gatewayProgressActive = Boolean(gatewayProgress)
+    && gatewayProgress?.status !== 'completed'
+    && gatewayProgress?.status !== 'failed';
+  const showGatewayProgress = Boolean(gatewayProgress) && !connected;
   const gatewayMsg = showGatewayProgress ? gatewayProgress?.message ?? null : null;
   const gatewayProg = showGatewayProgress ? gatewayProgress?.progress ?? null : null;
 
@@ -81,25 +83,22 @@ export function StatusBar() {
   }, [gatewayPanelOpen]);
 
   useEffect(() => {
-    if (connected && !gatewayMsg) setReconnecting(false);
-  }, [connected, gatewayMsg]);
+    if (connected || gatewayProgress?.status === 'completed' || gatewayProgress?.status === 'failed') {
+      setReconnecting(false);
+    }
+  }, [connected, gatewayProgress?.status]);
 
   const handleRestart = () => {
     if (reconnecting) return;
     setReconnecting(true);
-    // 1. Disconnect WS + reset state.
-    try { gatewayManager.reset(); } catch {}
-    // 2. Dispatch a global event so App.tsx picks this up and runs the full
-    //    restart pipeline. App.tsx also emits aegis:gateway-progress so the
-    //    inline status message + spinner update via useSetupProgress.
+    // App owns the complete lifecycle sequence. Keeping this surface event-only
+    // prevents a status-bar click from racing the offline recovery route.
     window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
-      detail: { action: connected ? 'restart' : 'reconnect' },
+      detail: { action: connected ? 'restart' : 'reconnect', source: 'status-bar' },
     }));
-    // 3. Self-clear if no progress event arrives within 5s (safety net).
-    setTimeout(() => setReconnecting(false), 5_000);
   };
 
-  const reconnectBusy = isBooting || reconnecting || !!gatewayMsg;
+  const reconnectBusy = isBooting || (!connected && (reconnecting || gatewayProgressActive));
   const reconnectPct = gatewayProg != null
     ? Math.round(Math.max(0, Math.min(1, gatewayProg)) * 100)
     : (reconnecting ? null : 0);

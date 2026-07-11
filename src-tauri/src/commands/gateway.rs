@@ -77,6 +77,12 @@ impl ConfigMetadata {
     }
 }
 
+/// Resolve the user-configured Gateway port for commands that need to target
+/// the Control UI without assuming OpenClaw's default port.
+pub(crate) fn configured_gateway_port() -> u16 {
+    ConfigMetadata::load(&paths::config_path()).port
+}
+
 /// Read the gateway auth token from the config file.
 /// Returns `None` if the file is missing, malformed, or has no token.
 fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {

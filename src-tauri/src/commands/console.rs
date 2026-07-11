@@ -10,7 +10,6 @@ use crate::paths;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const CONTROL_UI_LABEL: &str = "control-ui";
-const CONTROL_UI_BASE: &str = "http://127.0.0.1:18789";
 
 /// Read the gateway token straight from the local OpenClaw config
 /// (`~/.openclaw/openclaw.json` → gateway.auth.token).
@@ -22,6 +21,23 @@ fn read_gateway_token() -> Option<String> {
         .get("token")?
         .as_str()
         .map(|s| s.to_string())
+}
+
+fn control_ui_url(port: u16, token: Option<String>) -> Result<url::Url, String> {
+    let mut url = url::Url::parse(&format!("http://127.0.0.1:{}", port))
+        .map_err(|e| format!("Invalid Control UI URL: {}", e))?;
+
+    if let Some(token) = token.filter(|value| !value.is_empty()) {
+        // The Control UI reads the hash with URLSearchParams. Serialize the
+        // token instead of concatenating it so custom user tokens cannot
+        // accidentally alter the fragment shape.
+        let fragment = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("token", &token)
+            .finish();
+        url.set_fragment(Some(&fragment));
+    }
+
+    Ok(url)
 }
 
 /// Injected into the (remote) Control UI page: a small draggable orb that
@@ -210,24 +226,38 @@ const RETURN_BUTTON_SCRIPT: &str = r#"
 /// Open (or focus) the Control UI window, authenticating via the token hash.
 #[tauri::command]
 pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
+    let port = crate::commands::gateway::configured_gateway_port();
+    if !crate::commands::gateway::is_gateway_serving(port).await {
+        return Err(format!(
+            "OpenClaw Gateway is not ready on 127.0.0.1:{}. Start or reconnect it before opening Control UI.",
+            port
+        ));
+    }
+
+    let target = control_ui_url(port, read_gateway_token())?;
+
     if let Some(win) = app.get_webview_window(CONTROL_UI_LABEL) {
+        // Re-target only when the configured port changed. Keeping an existing
+        // window on the same endpoint preserves the user's current Control UI
+        // route and avoids discarding in-progress work on a simple focus click.
+        let needs_navigation = win
+            .url()
+            .map(|current| {
+                current.host_str() != Some("127.0.0.1")
+                    || current.port_or_known_default() != Some(port)
+            })
+            .unwrap_or(true);
+        if needs_navigation {
+            win.navigate(target.clone())
+                .map_err(|e| format!("Failed to refresh Control UI: {}", e))?;
+        }
         let _ = win.show();
         let _ = win.unminimize();
         let _ = win.set_focus();
         return Ok(());
     }
 
-    // The Control UI SPA reads its token from the URL hash (#token=…), not a
-    // query param. Gateway tokens are URL-safe, so a raw append is fine.
-    let url_str = match read_gateway_token() {
-        Some(tok) if !tok.is_empty() => format!("{}#token={}", CONTROL_UI_BASE, tok),
-        _ => CONTROL_UI_BASE.to_string(),
-    };
-    let parsed: url::Url = url_str
-        .parse()
-        .map_err(|e| format!("Invalid Control UI URL: {}", e))?;
-
-    WebviewWindowBuilder::new(&app, CONTROL_UI_LABEL, WebviewUrl::External(parsed))
+    WebviewWindowBuilder::new(&app, CONTROL_UI_LABEL, WebviewUrl::External(target))
         .title("OpenClaw Console")
         .inner_size(1280.0, 860.0)
         .min_inner_size(800.0, 600.0)
@@ -270,4 +300,16 @@ pub async fn write_models_log(msg: String) -> Result<(), String> {
         .map_err(|e| format!("open: {}", e))?
         .write_all(line.as_bytes())
         .map_err(|e| format!("write: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::control_ui_url;
+
+    #[test]
+    fn control_ui_url_uses_the_configured_port_and_encodes_the_token() {
+        let url = control_ui_url(28123, Some("token with & separators".into())).unwrap();
+        assert_eq!(url.port_or_known_default(), Some(28123));
+        assert_eq!(url.fragment(), Some("token=token+with+%26+separators"));
+    }
 }

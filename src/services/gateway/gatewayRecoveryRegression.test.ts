@@ -170,6 +170,24 @@ test('BUG-05 recovery log surfaces retain useful diagnostic context', () => {
   assert.match(boot, /slice\(-40\)/);
 });
 
+test('BUG-GL11 offline recovery shares the App route and exposes determinate progress', () => {
+  const offline = source('src/components/OfflineOverlay.tsx');
+  const adapter = source('src/api/tauri-adapter.ts');
+  const app = source('src/App.tsx');
+  const settings = source('src/pages/SettingsPage.tsx');
+  const console = source('src-tauri/src/commands/console.rs');
+  assert.match(offline, /useSetupProgress\('gateway'\)/);
+  assert.match(offline, /aegis:manual-reconnect/);
+  assert.match(offline, /role="progressbar"/);
+  assert.doesNotMatch(offline, /gateway\?\.ensureRunning/);
+  assert.match(adapter, /gatewayRestartProgressFromLog/);
+  assert.doesNotMatch(adapter.slice(adapter.indexOf('consoleUi:'), adapter.indexOf('\n  logs:')), /plugin-shell/);
+  assert.match(app, /openControlUiAfterRecoveryRef/);
+  assert.match(settings, /openControlUi:\s*true/);
+  assert.match(console, /configured_gateway_port/);
+  assert.match(console, /is_gateway_serving\(port\)/);
+});
+
 test('BUG-06 stalled boot exposes the complete self-rescue center', () => {
   const boot = source('src/components/BootTimelineOverlay.tsx');
   const panel = source('src/components/GatewaySelfRescuePanel.tsx');

@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
 
 export interface SetupProgressDetail {
   step: string;
@@ -27,6 +28,8 @@ export interface SetupProgressDetail {
   /** Optional i18n key. When present the `message` field falls back
    *  to the (typically English) raw text. */
   key?: string;
+  /** Terminal recovery states keep controls usable after a failed attempt. */
+  status?: GatewayRecoveryStatus;
 }
 
 interface RawSetupProgressDetail extends SetupProgressDetail {
@@ -46,13 +49,27 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
     function accept(d: Partial<RawSetupProgressDetail> | undefined): void {
       if (!d || typeof d.step !== 'string' || typeof d.message !== 'string') return;
       if (filterStep && d.step !== filterStep) return;
+      const step = d.step;
       const progress = typeof d.progress === 'number' ? d.progress : 0;
       const key = typeof d.key === 'string' ? d.key : undefined;
+      const status = d.status === 'completed' || d.status === 'failed' || d.status === 'running'
+        ? d.status
+        : undefined;
       const display = key ? initialTRef.current(key, d.params ?? {}) : d.message;
       // If t() returned the key unchanged (no translation registered),
       // gracefully fall back to the raw message string.
       const message = display === key ? d.message : display;
-      setLatest({ step: d.step, message, progress, key });
+      setLatest((previous) => {
+        // A recovery may switch from ensure -> restart -> health check. Those
+        // producers report their own local percentages, so retain the furthest
+        // running value and never visually move a progress bar backwards.
+        const previousRunning = previous?.status !== 'completed' && previous?.status !== 'failed';
+        const nextRunning = status !== 'completed' && status !== 'failed';
+        const resolvedProgress = previous && previous.step === step && previousRunning && nextRunning
+          ? Math.max(previous.progress, progress)
+          : progress;
+        return { step, message, progress: resolvedProgress, key, status };
+      });
     }
 
     // Producer 1: Tauri event from Rust.

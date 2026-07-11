@@ -16,6 +16,7 @@ import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
+import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import { changeLanguage } from '@/i18n';
 import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
@@ -109,6 +110,8 @@ export default function App() {
   const lastGatewayToastKeyRef = useRef<string | null>(null);
   const lastGatewayErrorToastRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
+  const manualGatewayRecoveryInFlightRef = useRef(false);
+  const openControlUiAfterRecoveryRef = useRef(false);
   const [bootRecoveryAttempt, setBootRecoveryAttempt] = useState(0);
   const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
   const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
@@ -277,29 +280,43 @@ export default function App() {
    * just synthesized in-process so non-install flows (manual reconnect,
    * boot recovery) still show granular progress text inline.
    */
-  const emitGatewayProgress = useCallback((message: string, progress: number, key?: string) => {
+  const emitGatewayProgress = useCallback((
+    message: string,
+    progress: number,
+    key?: string,
+    params?: Record<string, unknown>,
+    status: GatewayRecoveryStatus = 'running',
+  ) => {
     window.dispatchEvent(new CustomEvent('aegis:gateway-progress', {
-      detail: { step: 'gateway', message, progress, key },
+      detail: { step: 'gateway', message, progress, key, params, status },
     }));
   }, []);
 
-  const triggerGatewayReconnect = useCallback((label = 'manual') => {
+  const triggerGatewayReconnect = useCallback((label = 'manual', minimumProgress = 0.30) => {
     addBootRecoveryLog(`Reconnect requested (${label})`);
     setBootRecoveryAttempt(0);
     setBootRecoveryReady(false);
-    emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.30, 'gateway.progress.reconnect');
+    const reconnectProgress = Math.min(0.96, Math.max(0.30, minimumProgress));
+    const syncingProgress = Math.min(0.98, Math.max(0.65, reconnectProgress + 0.03));
+    emitGatewayProgress('Reconnecting to OpenClaw Gateway…', reconnectProgress, 'gateway.progress.reconnect');
     // Allow the auto-recovery effect to re-arm if the user clicks "reconnect"
     // stays true after the first recovery attempt and blocks all subsequent retries.
     bootRecoveryStartedRef.current = false;
     try { gateway.disconnect(); } catch {}
-    emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.65, 'gateway.progress.detectConnectSync');
+    emitGatewayProgress('Detecting, connecting, and syncing runtime state…', syncingProgress, 'gateway.progress.detectConnectSync');
     // Use reconnect() instead of reset() — triggers an immediate status probe
     // so we don't wait up to 2s for the periodic poller to drive the FSM.
     try { gatewayManager.reconnect(); } catch {}
   }, [addBootRecoveryLog, emitGatewayProgress]);
 
   const restartGatewayFromBoot = useCallback(async () => {
-    if (!window.aegis?.gateway?.retry) return;
+    if (!window.aegis?.gateway?.retry) {
+      const message = 'Gateway restart is unavailable in this runtime.';
+      emitGatewayProgress(message, 1, 'gateway.progress.restartUnavailable', undefined, 'failed');
+      setGatewayBootError(message);
+      openControlUiAfterRecoveryRef.current = false;
+      return false;
+    }
     setBootRecoveryRestarting(true);
     setBootRecoveryReady(true);
     addBootRecoveryLog('Restarting Gateway service…');
@@ -310,17 +327,26 @@ export default function App() {
         throw new Error(result.error || 'Gateway restart failed');
       }
       addBootRecoveryLog('Gateway restart command completed');
-      emitGatewayProgress('Gateway service restarted, reconnecting…', 0.60, 'gateway.progress.restartDone');
-      triggerGatewayReconnect('after-restart');
+      emitGatewayProgress('Gateway service restarted, reconnecting…', 0.94, 'gateway.progress.restartDone');
+      triggerGatewayReconnect('after-restart', 0.95);
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       addBootRecoveryLog(`Gateway restart failed: ${message}`);
-      emitGatewayProgress(`Restart failed: ${message}`, 1.0, 'gateway.progress.restartFailed');
+      emitGatewayProgress(
+        `Restart failed: ${message}`,
+        1.0,
+        'gateway.progress.restartFailed',
+        { error: message },
+        'failed',
+      );
       setGatewayBootError(message);
+      openControlUiAfterRecoveryRef.current = false;
       const logs = await window.aegis.gateway.getLogs?.(80);
       if (logs) {
         setGatewayBootLogs(formatGatewayLogs(logs));
       }
+      return false;
     } finally {
       setBootRecoveryRestarting(false);
     }
@@ -684,6 +710,21 @@ export default function App() {
       if (snap.connected) {
         setGatewayBootError(null);
         setGatewayBootLogs(undefined);
+        if (openControlUiAfterRecoveryRef.current) {
+          openControlUiAfterRecoveryRef.current = false;
+          const openingControlUi = window.aegis?.consoleUi?.open();
+          if (openingControlUi) {
+            void openingControlUi.then((result) => {
+              if (!result.success) {
+                void addToastLazy(
+                  'error',
+                  t('settings.controlUi', 'Control UI'),
+                  t('offline.controlUiUnavailable', '暂时无法打开 Control UI，请完成 Gateway 恢复后重试。'),
+                );
+              }
+            });
+          }
+        }
       }
     });
     gatewayManager.init();
@@ -741,39 +782,59 @@ export default function App() {
     };
     window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
 
-    // StatusBar Gateway action fires this event. Connected state requests a
-    // real Gateway restart; disconnected state only ensures the process is
-    // healthy before reconnecting the WebSocket.
+    // Every visible recovery entry point dispatches this event. App owns the
+    // process lifecycle so the OfflineOverlay and StatusBar cannot race each
+    // other with separate ensure/restart sequences.
     const handleManualReconnect = (event: Event) => {
-      const action = (event as CustomEvent<{ action?: string }>).detail?.action === 'restart'
+      const detail = (event as CustomEvent<{
+        action?: string;
+        source?: string;
+        openControlUi?: boolean;
+      }>).detail;
+      if (detail?.openControlUi) openControlUiAfterRecoveryRef.current = true;
+      if (manualGatewayRecoveryInFlightRef.current) return;
+      const action = detail?.action === 'restart'
         ? 'restart'
         : 'reconnect';
-      bootRecoveryStartedRef.current = false;
-      try { gateway.disconnect(); } catch {}
-      if (action === 'restart') {
-        void restartGatewayFromBoot();
-        return;
-      }
-      emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.10, 'gateway.progress.reconnect');
-      emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
-      void window.aegis?.gateway?.ensureRunning?.().then((r: any) => {
-        addBootRecoveryLog(r?.healthy
-          ? `Gateway healthy (${r.mode ?? 'native'}) — reconnecting`
-          : `ensure_gateway_running returned unhealthy — restarting`);
-        emitGatewayProgress(r?.healthy
-          ? `Gateway healthy (${r.mode ?? 'native'}), reconnecting…`
-          : `ensure_gateway_running status abnormal, restarting…`,
-          0.75,
-          r?.healthy ? 'gateway.progress.gatewayHealthy' : 'gateway.progress.ensureUnhealthy',
-        );
-        if (r?.healthy) {
-          try { gatewayManager.reconnect(); } catch {}
-        } else {
-          void restartGatewayFromBoot();
+      const source = detail?.source || 'manual';
+      manualGatewayRecoveryInFlightRef.current = true;
+      void (async () => {
+        bootRecoveryStartedRef.current = false;
+        addBootRecoveryLog(`Gateway recovery requested (${source}, ${action})`);
+        try { gateway.disconnect(); } catch {}
+
+        try {
+          if (action === 'restart') {
+            await restartGatewayFromBoot();
+            return;
+          }
+
+          emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.10, 'gateway.progress.reconnect');
+          emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
+          const result = await window.aegis?.gateway?.ensureRunning?.();
+          addBootRecoveryLog(result?.healthy
+            ? `Gateway healthy (${result.mode ?? 'native'}) — reconnecting`
+            : 'ensure_gateway_running returned unhealthy — restarting');
+          emitGatewayProgress(
+            result?.healthy
+              ? `Gateway healthy (${result.mode ?? 'native'}), reconnecting…`
+              : 'ensure_gateway_running status abnormal, restarting…',
+            result?.healthy ? 0.75 : 0.45,
+            result?.healthy ? 'gateway.progress.gatewayHealthy' : 'gateway.progress.ensureUnhealthy',
+          );
+          if (result?.healthy) {
+            triggerGatewayReconnect(`manual-${source}`, 0.82);
+          } else {
+            await restartGatewayFromBoot();
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          addBootRecoveryLog(`ensure_gateway_running failed: ${message}`);
+          emitGatewayProgress('ensure_gateway_running call failed, restarting…', 0.45, 'gateway.progress.ensureFailed');
+          await restartGatewayFromBoot();
         }
-      }).catch(() => {
-        emitGatewayProgress('ensure_gateway_running call failed, restarting…', 0.40, 'gateway.progress.ensureFailed');
-        void restartGatewayFromBoot();
+      })().finally(() => {
+        manualGatewayRecoveryInFlightRef.current = false;
       });
     };
     window.addEventListener('aegis:manual-reconnect', handleManualReconnect);
@@ -792,7 +853,7 @@ export default function App() {
       window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
       gatewayManager.destroy();
     };
-  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog]);
+  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, triggerGatewayReconnect]);
 
 
   // ── Pairing Handlers ──

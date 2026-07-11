@@ -280,6 +280,22 @@ export function SettingsPageFull() {
     notifications.notify({ type: 'error', title, body });
   };
 
+  const openControlUi = async () => {
+    try {
+      const result = await window.aegis?.consoleUi?.open();
+      if (result?.success) return;
+    } catch {
+      // Fall through to the normal Gateway recovery path below.
+    }
+    notifyInfo(
+      t('settings.controlUi', 'Control UI'),
+      t('settings.controlUiRecovering', 'Gateway 正在恢复，连接完成后将自动打开 Control UI。'),
+    );
+    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
+      detail: { action: 'reconnect', source: 'settings-control-ui', openControlUi: true },
+    }));
+  };
+
   const copyDiagnosticInfo = async () => {
     const gatewayUrl = localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || 'ws://127.0.0.1:18789';
     const hasGatewayToken = Boolean((editToken || '').trim() || (gatewayToken || '').trim());
@@ -1203,7 +1219,7 @@ export function SettingsPageFull() {
         {window.aegis?.consoleUi && (
           <div className="mt-3 flex items-center justify-center">
             <button
-              onClick={() => window.aegis?.consoleUi?.open()}
+              onClick={() => { void openControlUi(); }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold
                 bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/30
                 hover:bg-aegis-primary/25 transition-colors"
