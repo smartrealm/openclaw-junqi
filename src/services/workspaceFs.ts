@@ -11,6 +11,7 @@ export interface FsEntry {
   name: string;
   path: string;
   is_dir: boolean;
+  is_symlink?: boolean;
   extension?: string | null;
   is_gitignored?: boolean;
 }

@@ -17,6 +17,7 @@ pub(crate) struct FsEntry {
     name: String,
     path: String,
     is_dir: bool,
+    is_symlink: bool,
     extension: Option<String>,
     is_gitignored: bool,
 }
@@ -355,7 +356,13 @@ fn read_directory_entries(
         .map(|entry| {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
-            let is_dir = path.is_dir();
+            let is_symlink = std::fs::symlink_metadata(&path)
+                .map(|metadata| metadata.file_type().is_symlink())
+                .unwrap_or(false);
+            // The agent file browser retains its legacy symlink traversal
+            // behavior. The terminal tree treats links as leaves, matching
+            // the strict boundary and making recursive link cycles impossible.
+            let is_dir = path.is_dir() && (allow_symlink_escape || !is_symlink);
             let extension = path
                 .extension()
                 .and_then(|e| e.to_str())
@@ -364,6 +371,7 @@ fn read_directory_entries(
                 name,
                 path: path.to_string_lossy().into_owned(),
                 is_dir,
+                is_symlink,
                 extension,
                 is_gitignored: false,
             }
@@ -431,17 +439,24 @@ mod tests {
         let outside =
             std::env::temp_dir().join(format!("junqi-fs-outside-{}", uuid::Uuid::new_v4()));
         let link = root.join("outside-link");
+        let internal_dir = root.join("inside-dir");
+        let internal_link = root.join("inside-link");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
+        std::fs::create_dir_all(&internal_dir).unwrap();
         std::fs::write(root.join("inside.txt"), "inside").unwrap();
         std::fs::write(outside.join("outside.txt"), "outside").unwrap();
         symlink(&outside, &link).unwrap();
+        symlink(&internal_dir, &internal_link).unwrap();
 
         let entries =
             read_directory_entries(&root.to_string_lossy(), &root.to_string_lossy(), false)
                 .unwrap();
         assert!(entries.iter().any(|entry| entry.name == "inside.txt"));
         assert!(entries.iter().all(|entry| entry.name != "outside-link"));
+        assert!(entries
+            .iter()
+            .any(|entry| entry.name == "inside-link" && entry.is_symlink && !entry.is_dir));
         assert!(
             read_directory_entries(&link.to_string_lossy(), &root.to_string_lossy(), false,)
                 .is_err()

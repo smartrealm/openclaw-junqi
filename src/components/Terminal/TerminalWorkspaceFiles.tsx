@@ -10,6 +10,7 @@ import {
   Folder,
   FolderOpen,
   FolderX,
+  Link,
   Loader2,
   SquareTerminal,
 } from 'lucide-react';
@@ -63,6 +64,9 @@ function TerminalWorkspaceFileNode({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const requestIdRef = useRef(0);
   const lastDirectoryToggleAtRef = useRef(0);
+  // Keep every symlink leaf-only. An in-project link can point back to an
+  // ancestor, and expanding it would make an unbounded tree representable.
+  const canExpand = entry.is_dir && !entry.is_symlink;
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -76,7 +80,7 @@ function TerminalWorkspaceFileNode({
   }, []);
 
   const loadChildren = useCallback(async () => {
-    if (!entry.is_dir) return;
+    if (!canExpand) return;
     const requestId = ++requestIdRef.current;
     setLoading(true);
     setLoadFailed(false);
@@ -92,11 +96,11 @@ function TerminalWorkspaceFileNode({
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [entry.is_dir, entry.path, root]);
+  }, [canExpand, entry.path, root]);
 
   const handleClick = useCallback(async () => {
     onSelect(entry);
-    if (!entry.is_dir) return;
+    if (!canExpand) return;
     const now = Date.now();
     if (now - lastDirectoryToggleAtRef.current < 280 || loading) return;
     lastDirectoryToggleAtRef.current = now;
@@ -106,7 +110,7 @@ function TerminalWorkspaceFileNode({
     }
     await loadChildren();
     setExpanded(true);
-  }, [entry, expanded, loadChildren, loading, onSelect]);
+  }, [canExpand, entry, expanded, loadChildren, loading, onSelect]);
 
   const handleDragStart = useCallback((event: React.DragEvent<HTMLButtonElement>) => {
     event.dataTransfer.effectAllowed = 'copy';
@@ -123,7 +127,7 @@ function TerminalWorkspaceFileNode({
     ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 228))
     : 0;
   const menuTop = contextMenu
-    ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - (entry.is_dir ? 146 : 180)))
+    ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - (canExpand ? 146 : 180)))
     : 0;
 
   return (
@@ -132,7 +136,7 @@ function TerminalWorkspaceFileNode({
         type="button"
         draggable
         onClick={() => { void handleClick(); }}
-        onDoubleClick={() => { if (!entry.is_dir) onOpen(entry); }}
+        onDoubleClick={() => { if (!canExpand) onOpen(entry); }}
         onContextMenu={(event) => {
           event.preventDefault();
           onSelect(entry);
@@ -154,13 +158,14 @@ function TerminalWorkspaceFileNode({
           if (!selected) (event.currentTarget as HTMLElement).style.background = 'transparent';
         }}
       >
-        {entry.is_dir ? (
+        {canExpand ? (
           loading ? <Loader2 size={12} className="shrink-0 animate-spin" />
             : expanded ? <ChevronDown size={12} className="shrink-0" />
               : <ChevronRight size={12} className="shrink-0" />
         ) : <span style={{ width: 12, flexShrink: 0 }} />}
-        {entry.is_dir
+        {canExpand
           ? (expanded ? <FolderOpen size={13} className="shrink-0 text-aegis-primary/75" /> : <Folder size={13} className="shrink-0 text-aegis-primary/75" />)
+          : entry.is_symlink ? <Link size={13} className="shrink-0" />
           : <File size={13} className="shrink-0" />}
         <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontFamily: '"JetBrains Mono", monospace' }}>
           {entry.name}
@@ -198,7 +203,7 @@ function TerminalWorkspaceFileNode({
             boxShadow: '0 10px 28px rgb(0 0 0 / 0.35)',
           }}
         >
-          {!entry.is_dir && (
+          {!canExpand && (
             <TerminalWorkspaceFileMenuItem
               icon={<ExternalLink size={13} />}
               label={t('terminal.openWithSystem')}
