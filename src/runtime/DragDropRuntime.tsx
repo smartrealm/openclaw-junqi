@@ -14,6 +14,7 @@ export default function DragDropRuntime() {
   const { t } = useTranslation();
   const [draggingOver, setDraggingOver] = useState(false);
   const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
+  const [terminalDropTargetId, setTerminalDropTargetId] = useState<string | null>(null);
   const dragSfxStop = useRef<null | (() => void)>(null);
   const dragSfxToken = useRef(0);
 
@@ -37,6 +38,7 @@ export default function DragDropRuntime() {
         usePetStore.getState().bumpSwallowTick();
         usePetStore.getState().setDragActive(false);
         setDraggingOver(false);
+        setTerminalDropTargetId(null);
       }),
       subscribeTauriEvent<string[]>('aegis:drag-active', (e) => {
         debugLog('app', '[aegis] drag-active', e.payload);
@@ -62,6 +64,7 @@ export default function DragDropRuntime() {
         dragSfxToken.current += 1;
         setDraggingOver(false);
         setDraggedPaths([]);
+        setTerminalDropTargetId(null);
         usePetStore.getState().setDragActive(false);
         usePetStore.getState().setDragOver(false);
         dragSfxStop.current?.();
@@ -69,6 +72,9 @@ export default function DragDropRuntime() {
       }),
       subscribeTauriEvent<boolean>('aegis:drag-over-main', (e) => {
         usePetStore.getState().setDragOver(e.payload ?? false);
+      }),
+      subscribeTauriEvent<{ target_id?: string | null }>('aegis:terminal-drag-target', (e) => {
+        setTerminalDropTargetId(e.payload?.target_id ?? null);
       }),
     ]);
     return () => {
@@ -79,7 +85,9 @@ export default function DragDropRuntime() {
     };
   }, []);
 
-  if (!draggingOver) return null;
+  // The terminal owns its own focused drop feedback. Suppress the generic
+  // Quick Chat overlay while a file is over a registered terminal pane.
+  if (!draggingOver || terminalDropTargetId) return null;
   return (
     <div
       className="fixed inset-0 z-[9998] pointer-events-none flex items-center justify-center"

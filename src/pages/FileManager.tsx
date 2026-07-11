@@ -666,8 +666,8 @@ export function FileManagerPage() {
                 }}
                 onRunMakeTarget={(target) => {
                   // Forward to TerminalPage via a window CustomEvent.
-                  // TerminalPage listens for "junqi:run-terminal-command" and
-                  // forwards to its active ShellTerminalPanel via sendCommand.
+                  // TerminalPage routes this to the focused terminal pane and
+                  // switches to this file tree's directory before executing.
                   window.dispatchEvent(
                     new CustomEvent("junqi:run-terminal-command", {
                       detail: { command: `make ${target}\n`, projectPath: treeProjectPath },

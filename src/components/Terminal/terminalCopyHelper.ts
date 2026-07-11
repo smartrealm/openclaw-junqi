@@ -163,6 +163,8 @@ export interface TerminalKeyOptions {
   matchesNewline?: (e: KeyboardEvent) => boolean;
   /** Called (instead of the default submit) when that combo is pressed. */
   onNewline?: () => void;
+  /** Handles Ctrl+V on WebViews that do not dispatch a native paste event. */
+  onPaste?: () => void | Promise<void>;
 }
 
 /**
@@ -202,12 +204,16 @@ export function attachSmartCopy(
       (e.key === "v" || e.key === "V")
     ) {
       e.preventDefault();
-      navigator.clipboard
-        .readText()
-        .then((text) => {
-          if (text) terminal.paste(text);
-        })
-        .catch(() => {});
+      if (keyOptions?.onPaste) {
+        void keyOptions.onPaste();
+      } else {
+        navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) terminal.paste(text);
+          })
+          .catch(() => {});
+      }
       return false;
     }
 

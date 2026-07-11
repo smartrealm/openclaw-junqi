@@ -1,224 +1,307 @@
-// ── Shared PTY infrastructure (ported from nezha) ─────────────────────────
-//
-// Provides the shell terminal backend for JunQi. Uses the same portable-pty
-// primitives and bounded-channel architecture as nezha's desktop terminal:
-//   - Bounded emit channel (32 slots) with backpressure propagation to OS PTY
-//   - UTF-8 carryover buffer for split CJK/emoji codepoints
-//   - Batched event emission with flush interval
-//   - Font-ready / WebGL-safe size guard: cols < 2 || rows < 2 → no-op
-//
-// Events: "shell-output" { shell_id, data }
-// Cmds:   open_shell, kill_shell, send_input, resize_pty
+//! Interactive shell PTY backend.
+//!
+//! This is the one lifecycle used by JunQi's Terminal workspace. It mirrors
+//! Kooky's invariants while remaining portable across Tauri's supported OSes:
+//! - every shell run has an id, so delayed cleanup cannot kill a replacement;
+//! - the listener subscribes before launch and receives batched UTF-8 output;
+//! - process exit is explicit instead of leaving a dead-looking terminal tab;
+//! - shells inherit the user's login environment and fall back safely when a
+//!   persisted project folder no longer exists.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{native_pty_system, Child, ChildKiller, PtySize};
 use tauri::{AppHandle, Emitter};
-
-// ── Constants (mirrors nezha) ─────────────────────────────────────────────
 
 const PTY_READ_BUFFER_SIZE: usize = 32 * 1024;
 const PTY_EMIT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const PTY_EMIT_MAX_BATCH_BYTES: usize = 64 * 1024;
-/// Bounded channel capacity: when full, the reader thread blocks, propagating
-/// backpressure to the OS PTY buffer, which eventually blocks the writing
-/// process (Claude/Codex) at the write() syscall level — throttling at the source.
 const PTY_EMIT_CHANNEL_CAPACITY: usize = 32;
+const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_SHELL_RUN_ID_BYTES: usize = 128;
 
-// ── Global registry ───────────────────────────────────────────────────────
+#[derive(serde::Serialize)]
+pub struct OpenShellResult {
+    cwd: String,
+    run_id: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ShellOutputEvent {
+    shell_id: String,
+    run_id: String,
+    data: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ShellExitEvent {
+    shell_id: String,
+    run_id: String,
+    exit_code: Option<u32>,
+    reason: &'static str,
+}
 
 struct PtyHandles {
     master: Box<dyn portable_pty::MasterPty + Send>,
     writer: Mutex<Box<dyn Write + Send>>,
-    child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
-    closed: Arc<AtomicBool>,
+    killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    run_id: String,
+    termination_requested: Arc<AtomicBool>,
 }
 
-type PtyHandle = Arc<Mutex<Option<PtyHandles>>>;
+type PtyHandle = Arc<Mutex<PtyHandles>>;
 
-fn pty_registry() -> &'static Mutex<std::collections::HashMap<String, PtyHandle>> {
-    static REGISTRY: OnceLock<Mutex<std::collections::HashMap<String, PtyHandle>>> =
-        OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+fn pty_registry() -> &'static Mutex<HashMap<String, PtyHandle>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, PtyHandle>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-static SHELL_COUNTER: AtomicU64 = AtomicU64::new(1);
+static SHELL_RUN_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-fn next_shell_id() -> String {
-    format!("shell-{}", SHELL_COUNTER.fetch_add(1, Ordering::Relaxed))
+fn next_shell_run_id() -> String {
+    format!(
+        "shell-run-{}",
+        SHELL_RUN_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
-// ── Environment setup (mirrors nezha) ─────────────────────────────────────
+fn normalized_run_id(value: Option<String>) -> String {
+    value
+        .filter(|run_id| !run_id.trim().is_empty() && run_id.len() <= MAX_SHELL_RUN_ID_BYTES)
+        .unwrap_or_else(next_shell_run_id)
+}
 
-/// Set standard environment variables on a CommandBuilder for PTY child processes.
-fn setup_env(cmd: &mut CommandBuilder) {
-    // Ensure locale is UTF-8.
-    // macOS Terminal.app / iTerm2 auto-inject LANG, but Tauri apps launched
-    // from the Dock have no locale vars, breaking CJK input in PTY children.
-    let has = |name: &str| std::env::var(name).is_ok();
-    if !has("LANG") {
-        cmd.env("LANG", "en_US.UTF-8");
+fn resolve_shell_cwd(project_path: &str) -> PathBuf {
+    let candidate = PathBuf::from(project_path);
+    if candidate.is_dir() {
+        return candidate.canonicalize().unwrap_or(candidate);
     }
-    if !has("LC_CTYPE") {
-        cmd.env("LC_CTYPE", "en_US.UTF-8");
-    }
 
-    // Set terminal type so TUI programs (Claude Code / Codex) emit correct escape sequences.
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("COLORTERM", "truecolor");
+    crate::platform::home_dir()
+        .filter(|path| path.is_dir())
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// 按当前平台构造 shell 命令。
-fn build_shell_cmd(project_path: &str) -> CommandBuilder {
-    let shell = crate::platform::default_shell_command();
-    let mut cmd = CommandBuilder::new(&shell.program);
-    for arg in &shell.args {
-        cmd.arg(arg);
-    }
-    cmd.cwd(project_path);
-    cmd
+fn run_matches(handle: &PtyHandle, requested_run_id: Option<&str>) -> bool {
+    requested_run_id.is_none_or(|run_id| {
+        handle
+            .lock()
+            .map(|handles| handles.run_id == run_id)
+            .unwrap_or(false)
+    })
 }
 
-// ── Output routing ────────────────────────────────────────────────────────
-
-#[derive(Clone, Copy)]
-enum PtyEmitMode {
-    Immediate,
-    Batched {
-        flush_interval: Duration,
-        max_batch_bytes: usize,
-    },
+fn terminate_handle(handle: &PtyHandle) {
+    let handles = match handle.lock() {
+        Ok(handles) => handles,
+        Err(_) => return,
+    };
+    handles.termination_requested.store(true, Ordering::Relaxed);
+    if let Ok(mut killer) = handles.killer.lock() {
+        let _ = killer.kill();
+    };
 }
 
-/// Output destination: shell terminals use event-based emit so multiple
-/// frontend panels can subscribe by shell_id.
-#[derive(Clone)]
-enum OutputSink {
-    Event {
-        event_name: &'static str,
-        id_key: &'static str,
-    },
-}
-
-fn send_pty_chunk(app: &AppHandle, id: &str, sink: &OutputSink, data: String) {
-    match sink {
-        OutputSink::Event { event_name, id_key } => {
-            let mut payload = serde_json::Map::new();
-            payload.insert(
-                (*id_key).to_string(),
-                serde_json::Value::String(id.to_string()),
-            );
-            payload.insert("data".to_string(), serde_json::Value::String(data));
-            let _ = app.emit(event_name, serde_json::Value::Object(payload));
+fn remove_handle_if_current(shell_id: &str, handle: &PtyHandle) {
+    let removed = {
+        let mut registry = match pty_registry().lock() {
+            Ok(registry) => registry,
+            Err(_) => return,
+        };
+        if registry
+            .get(shell_id)
+            .is_some_and(|current| Arc::ptr_eq(current, handle))
+        {
+            registry.remove(shell_id)
+        } else {
+            None
         }
-    }
+    };
+    drop(removed);
 }
 
-fn flush_pty_batch(app: &AppHandle, id: &str, sink: &OutputSink, batch: &mut String) {
-    if batch.is_empty() {
+fn emit_shell_output(app: &AppHandle, shell_id: &str, run_id: &str, data: String) {
+    if data.is_empty() {
         return;
     }
-    send_pty_chunk(app, id, sink, std::mem::take(batch));
+    let _ = app.emit(
+        "shell-output",
+        ShellOutputEvent {
+            shell_id: shell_id.to_string(),
+            run_id: run_id.to_string(),
+            data,
+        },
+    );
 }
 
-/// Spawn a background thread that reads PTY output and delivers it to the
-/// frontend via the configured sink.
-///
-/// - `sink`: shell terminals use `OutputSink::Event` for multi-panel broadcast
-/// - `on_finish`: optional cleanup callback when the PTY reader exits
-fn spawn_pty_reader(
-    app: AppHandle,
-    id: String,
-    sink: OutputSink,
-    emit_mode: PtyEmitMode,
-    reader: Box<dyn Read + Send>,
-    on_finish: Option<Box<dyn FnOnce() + Send>>,
+fn emit_shell_exit(
+    app: &AppHandle,
+    shell_id: &str,
+    run_id: &str,
+    exit_code: Option<u32>,
+    reason: &'static str,
 ) {
-    std::thread::spawn(move || {
-        let mut reader = reader;
-        let mut buf = [0u8; PTY_READ_BUFFER_SIZE];
-        // Save incomplete UTF-8 byte sequences from the previous read.
-        let mut leftover: Vec<u8> = Vec::new();
-        let (emit_tx, emit_worker) = match emit_mode {
-            PtyEmitMode::Immediate => (None, None),
-            PtyEmitMode::Batched {
-                flush_interval,
-                max_batch_bytes,
-            } => {
-                let (tx, rx) = std::sync::mpsc::sync_channel::<String>(PTY_EMIT_CHANNEL_CAPACITY);
-                let emit_app = app.clone();
-                let emit_id = id.clone();
-                let worker_sink = sink.clone();
-                let worker = std::thread::spawn(move || {
-                    let mut batch = String::new();
-                    loop {
-                        match rx.recv_timeout(flush_interval) {
-                            Ok(chunk) => {
-                                batch.push_str(&chunk);
-                                if batch.len() >= max_batch_bytes {
-                                    flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
-                                }
-                            }
-                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
-                            }
-                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                                flush_pty_batch(&emit_app, &emit_id, &worker_sink, &mut batch);
-                                break;
-                            }
-                        }
-                    }
-                });
-                (Some(tx), Some(worker))
+    let _ = app.emit(
+        "shell-exit",
+        ShellExitEvent {
+            shell_id: shell_id.to_string(),
+            run_id: run_id.to_string(),
+            exit_code,
+            reason,
+        },
+    );
+}
+
+/// Pull all valid UTF-8 out of a stream fragment while retaining a trailing
+/// incomplete codepoint for the next PTY read. Invalid complete bytes become
+/// U+FFFD so one malformed byte never blocks all following terminal output.
+fn take_utf8_ready(bytes: &mut Vec<u8>) -> String {
+    let mut output = String::new();
+    loop {
+        match std::str::from_utf8(bytes) {
+            Ok(text) => {
+                output.push_str(text);
+                bytes.clear();
+                return output;
             }
-        };
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let mut combined = std::mem::take(&mut leftover);
-                    combined.extend_from_slice(&buf[..n]);
-
-                    let valid_len = match std::str::from_utf8(&combined) {
-                        Ok(_) => combined.len(),
-                        Err(e) => e.valid_up_to(),
-                    };
-
-                    if valid_len > 0 {
-                        // SAFETY: valid_len bytes are confirmed valid UTF-8
-                        let data = unsafe {
-                            std::str::from_utf8_unchecked(&combined[..valid_len]).to_owned()
-                        };
-                        if let Some(ref tx) = emit_tx {
-                            match tx.send(data) {
-                                Ok(()) => {}
-                                Err(err) => send_pty_chunk(&app, &id, &sink, err.0),
-                            }
-                        } else {
-                            send_pty_chunk(&app, &id, &sink, data);
-                        }
+            Err(error) => {
+                let valid_len = error.valid_up_to();
+                if valid_len > 0 {
+                    // SAFETY: from_utf8 reported this prefix as valid.
+                    output.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[..valid_len]) });
+                }
+                match error.error_len() {
+                    Some(invalid_len) => {
+                        output.push('\u{FFFD}');
+                        bytes.drain(..valid_len + invalid_len);
                     }
-
-                    if valid_len < combined.len() {
-                        leftover = combined[valid_len..].to_vec();
+                    None => {
+                        bytes.drain(..valid_len);
+                        return output;
                     }
                 }
             }
         }
+    }
+}
+
+fn spawn_pty_reader(
+    app: AppHandle,
+    shell_id: String,
+    run_id: String,
+    reader: Box<dyn Read + Send>,
+    handle: PtyHandle,
+) {
+    std::thread::spawn(move || {
+        let (emit_tx, emit_rx) = std::sync::mpsc::sync_channel::<String>(PTY_EMIT_CHANNEL_CAPACITY);
+        let emitter_app = app.clone();
+        let emitter_shell_id = shell_id.clone();
+        let emitter_run_id = run_id.clone();
+        let emitter = std::thread::spawn(move || {
+            let mut batch = String::new();
+            loop {
+                match emit_rx.recv_timeout(PTY_EMIT_FLUSH_INTERVAL) {
+                    Ok(chunk) => {
+                        batch.push_str(&chunk);
+                        if batch.len() >= PTY_EMIT_MAX_BATCH_BYTES {
+                            emit_shell_output(
+                                &emitter_app,
+                                &emitter_shell_id,
+                                &emitter_run_id,
+                                std::mem::take(&mut batch),
+                            );
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        emit_shell_output(
+                            &emitter_app,
+                            &emitter_shell_id,
+                            &emitter_run_id,
+                            std::mem::take(&mut batch),
+                        );
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        emit_shell_output(
+                            &emitter_app,
+                            &emitter_shell_id,
+                            &emitter_run_id,
+                            std::mem::take(&mut batch),
+                        );
+                        break;
+                    }
+                }
+            }
+        });
+
+        let mut reader = reader;
+        let mut buffer = [0u8; PTY_READ_BUFFER_SIZE];
+        let mut pending = Vec::with_capacity(PTY_READ_BUFFER_SIZE + 4);
+        let mut read_error = false;
+
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => {
+                    pending.extend_from_slice(&buffer[..read]);
+                    let data = take_utf8_ready(&mut pending);
+                    if !data.is_empty() && emit_tx.send(data).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => {
+                    read_error = true;
+                    break;
+                }
+            }
+        }
+
+        if !pending.is_empty() {
+            let _ = emit_tx.send(String::from_utf8_lossy(&pending).into_owned());
+        }
         drop(emit_tx);
-        if let Some(worker) = emit_worker {
-            let _ = worker.join();
+        let _ = emitter.join();
+
+        let termination_requested = handle
+            .lock()
+            .map(|handles| handles.termination_requested.load(Ordering::Relaxed))
+            .unwrap_or(true);
+        if read_error && !termination_requested {
+            emit_shell_exit(&app, &shell_id, &run_id, None, "io_error");
         }
-        if let Some(f) = on_finish {
-            f();
-        }
+        remove_handle_if_current(&shell_id, &handle);
     });
 }
 
-// ── Tauri commands ────────────────────────────────────────────────────────
+fn spawn_exit_monitor(
+    app: AppHandle,
+    shell_id: String,
+    run_id: String,
+    mut child: Box<dyn Child + Send + Sync>,
+    handle: PtyHandle,
+) {
+    std::thread::spawn(move || {
+        let status = child.wait();
+        let termination_requested = handle
+            .lock()
+            .map(|handles| handles.termination_requested.load(Ordering::Relaxed))
+            .unwrap_or(true);
+
+        if !termination_requested {
+            match status {
+                Ok(status) => {
+                    emit_shell_exit(&app, &shell_id, &run_id, Some(status.exit_code()), "exited")
+                }
+                Err(_) => emit_shell_exit(&app, &shell_id, &run_id, None, "wait_error"),
+            }
+        }
+    });
+}
 
 #[tauri::command]
 pub fn open_shell(
@@ -227,131 +310,145 @@ pub fn open_shell(
     project_path: String,
     cols: Option<u16>,
     rows: Option<u16>,
-) -> Result<(), String> {
-    // Kill any existing shell with the same ID first.
-    {
-        let registry = pty_registry().lock().unwrap();
-        if let Some(handle) = registry.get(&shell_id) {
-            let guard = handle.lock().unwrap();
-            if let Some(handles) = guard.as_ref() {
-                let _ = handles.child.lock().unwrap().kill();
-            }
-        }
-        drop(registry);
-        remove_pty_handles(&shell_id);
+    run_id: Option<String>,
+) -> Result<OpenShellResult, String> {
+    let run_id = normalized_run_id(run_id);
+
+    // Replacing a tab's shell is deliberate (restart / persisted session
+    // restore). Remove first, then kill outside the registry lock so a slow
+    // process cannot block unrelated terminal operations.
+    if let Some(previous) = pty_registry().lock().unwrap().remove(&shell_id) {
+        terminate_handle(&previous);
     }
 
+    let cwd = resolve_shell_cwd(&project_path);
     let pair = native_pty_system()
         .openpty(PtySize {
-            rows: rows.unwrap_or(24),
-            cols: cols.unwrap_or(120),
+            rows: rows.unwrap_or(24).clamp(2, 10_000),
+            cols: cols.unwrap_or(120).clamp(2, 10_000),
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| format!("open terminal PTY: {error}"))?;
 
-    let mut cmd = build_shell_cmd(&project_path);
-    setup_env(&mut cmd);
-
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let command =
+        crate::commands::terminal_shell_integration::build_interactive_shell_command(&app, &cwd);
+    let child = pair
+        .slave
+        .spawn_command(command)
+        .map_err(|error| format!("start shell: {error}"))?;
     drop(pair.slave);
-    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
-    let handles = PtyHandles {
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|error| format!("open terminal reader: {error}"))?;
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|error| format!("open terminal writer: {error}"))?;
+    let killer = child.clone_killer();
+    let handle = Arc::new(Mutex::new(PtyHandles {
         master: pair.master,
         writer: Mutex::new(writer),
-        child: Arc::new(Mutex::new(child)),
-        closed: Arc::new(AtomicBool::new(false)),
-    };
+        killer: Mutex::new(killer),
+        run_id: run_id.clone(),
+        termination_requested: Arc::new(AtomicBool::new(false)),
+    }));
 
     pty_registry()
         .lock()
         .unwrap()
-        .insert(shell_id.clone(), Arc::new(Mutex::new(Some(handles))));
+        .insert(shell_id.clone(), handle.clone());
 
-    // Cleanup callback: when the shell exits, remove handles from the registry.
-    let app_cleanup = app.clone();
-    let sid_cleanup = shell_id.clone();
-    let on_finish = Box::new(move || {
-        remove_pty_handles(&sid_cleanup);
-        drop(app_cleanup); // keep AppHandle alive until here
-    });
-
-    spawn_pty_reader(
-        app,
-        shell_id,
-        OutputSink::Event {
-            event_name: "shell-output",
-            id_key: "shell_id",
-        },
-        PtyEmitMode::Immediate,
-        reader,
-        Some(on_finish),
+    spawn_exit_monitor(
+        app.clone(),
+        shell_id.clone(),
+        run_id.clone(),
+        child,
+        handle.clone(),
     );
+    spawn_pty_reader(app, shell_id, run_id.clone(), reader, handle);
 
-    Ok(())
-}
-
-fn remove_pty_handles(shell_id: &str) {
-    let handle = pty_registry().lock().unwrap().remove(shell_id);
-    if let Some(handle) = handle {
-        let guard = handle.lock().unwrap();
-        if let Some(handles) = guard.as_ref() {
-            handles.closed.store(true, Ordering::Relaxed);
-        }
-    }
+    Ok(OpenShellResult {
+        cwd: cwd.to_string_lossy().into_owned(),
+        run_id,
+    })
 }
 
 #[tauri::command]
-pub fn kill_shell(shell_id: String) -> Result<(), String> {
-    let handle = pty_registry().lock().unwrap().remove(&shell_id);
-    if let Some(handle) = handle {
-        let guard = handle.lock().unwrap();
-        if let Some(handles) = guard.as_ref() {
-            handles.closed.store(true, Ordering::Relaxed);
-            let _ = handles.child.lock().unwrap().kill();
+pub fn kill_shell(shell_id: String, run_id: Option<String>) -> Result<(), String> {
+    let handle = {
+        let mut registry = pty_registry()
+            .lock()
+            .map_err(|_| "terminal registry lock poisoned".to_string())?;
+        match registry.get(&shell_id) {
+            Some(handle) if run_matches(handle, run_id.as_deref()) => registry.remove(&shell_id),
+            Some(_) => None,
+            None => None,
         }
+    };
+    if let Some(handle) = handle {
+        terminate_handle(&handle);
     }
     Ok(())
 }
 
 #[tauri::command]
-pub fn send_input(task_id: String, data: String) -> Result<(), String> {
-    let registry = pty_registry().lock().unwrap();
-    let handle = registry
+pub fn send_input(task_id: String, run_id: Option<String>, data: String) -> Result<(), String> {
+    if data.len() > MAX_INPUT_BYTES {
+        return Err("terminal input exceeds 4 MiB".to_string());
+    }
+    let handle = pty_registry()
+        .lock()
+        .map_err(|_| "terminal registry lock poisoned".to_string())?
         .get(&task_id)
+        .cloned()
         .ok_or_else(|| format!("unknown shell id: {task_id}"))?;
-    let guard = handle.lock().unwrap();
-    let handles = guard
-        .as_ref()
-        .ok_or_else(|| format!("shell closed: {task_id}"))?;
-    handles
+    if !run_matches(&handle, run_id.as_deref()) {
+        return Err(format!("stale shell run: {task_id}"));
+    }
+    let handles = handle
+        .lock()
+        .map_err(|_| "terminal handle lock poisoned".to_string())?;
+    if handles.termination_requested.load(Ordering::Relaxed) {
+        return Err(format!("shell closed: {task_id}"));
+    }
+    let mut writer = handles
         .writer
         .lock()
-        .map_err(|_| "writer lock poisoned".to_string())?
+        .map_err(|_| "terminal writer lock poisoned".to_string())?;
+    writer
         .write_all(data.as_bytes())
-        .map_err(|e| e.to_string())?;
-    Ok(())
+        .map_err(|error| error.to_string())?;
+    writer.flush().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn resize_pty(task_id: String, cols: u16, rows: u16) -> Result<(), String> {
-    // Guard: reject degenerate sizes. FitAddon in a display:none container can
-    // report cols=2, which would send SIGWINCH cols=2 to Claude Code / Codex
-    // and permanently shred the TUI layout. Frontend has three layers of defense;
-    // this is the fourth and final backstop.
+pub fn resize_pty(
+    task_id: String,
+    run_id: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
     if cols < 2 || rows < 2 || cols > 10_000 || rows > 10_000 {
         return Ok(());
     }
-    let registry = pty_registry().lock().unwrap();
-    let handle = registry
+    let handle = pty_registry()
+        .lock()
+        .map_err(|_| "terminal registry lock poisoned".to_string())?
         .get(&task_id)
+        .cloned()
         .ok_or_else(|| format!("unknown shell id: {task_id}"))?;
-    let guard = handle.lock().unwrap();
-    let handles = guard
-        .as_ref()
-        .ok_or_else(|| format!("shell closed: {task_id}"))?;
+    if !run_matches(&handle, run_id.as_deref()) {
+        return Ok(());
+    }
+    let handles = handle
+        .lock()
+        .map_err(|_| "terminal handle lock poisoned".to_string())?;
+    if handles.termination_requested.load(Ordering::Relaxed) {
+        return Ok(());
+    }
     handles
         .master
         .resize(PtySize {
@@ -360,6 +457,41 @@ pub fn resize_pty(task_id: String, cols: u16, rows: u16) -> Result<(), String> {
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|e| e.to_string())?;
-    Ok(())
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalized_run_id, resolve_shell_cwd, take_utf8_ready};
+
+    #[test]
+    fn utf8_decoder_keeps_incomplete_cjk_until_the_next_read() {
+        let mut bytes = vec![b'a', 0xe4, 0xb8];
+        assert_eq!(take_utf8_ready(&mut bytes), "a");
+        assert_eq!(bytes, vec![0xe4, 0xb8]);
+
+        bytes.push(0xad);
+        assert_eq!(take_utf8_ready(&mut bytes), "中");
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn utf8_decoder_recovers_after_invalid_complete_bytes() {
+        let mut bytes = vec![b'a', 0xff, b'b'];
+        assert_eq!(take_utf8_ready(&mut bytes), "a\u{FFFD}b");
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn shell_cwd_falls_back_when_a_persisted_folder_no_longer_exists() {
+        let cwd = resolve_shell_cwd("/path/that/junqi/does/not/own");
+        assert!(cwd.is_dir());
+    }
+
+    #[test]
+    fn blank_or_unbounded_run_ids_are_replaced() {
+        assert!(normalized_run_id(Some(" ".to_string())).starts_with("shell-run-"));
+        assert!(normalized_run_id(Some("x".repeat(129))).starts_with("shell-run-"));
+        assert_eq!(normalized_run_id(Some("run-1".to_string())), "run-1");
+    }
 }

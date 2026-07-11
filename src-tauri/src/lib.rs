@@ -143,6 +143,10 @@ pub fn run() {
             commands::pty_neu::kill_shell,
             commands::pty_neu::send_input,
             commands::pty_neu::resize_pty,
+            commands::terminal_clipboard::stage_terminal_paste_image,
+            commands::terminal_drop::terminal_change_directory_command,
+            commands::terminal_drop::upsert_terminal_drop_target,
+            commands::terminal_drop::remove_terminal_drop_target,
             // Nezha-style git commands
             commands::git_neu::git_status,
             commands::git_neu::git_log,
@@ -272,9 +276,10 @@ pub fn run() {
             // Leave (drag escaped without dropping), Drop (final deposit).
             let app_for_dd = app.handle().clone();
             if let Some(main_win) = app.get_webview_window("main") {
-                // Compute window-local logical position from global screen coords.
-                // Window's own (outer_position) tells us where it sits on the
-                // multi-monitor layout; subtract that to get window-local coords.
+                // Tauri drag positions are physical pixels relative to the
+                // WebView. Convert only when publishing logical UI positions;
+                // add the native window origin only for cross-window pet hit
+                // testing below.
                 let win_pos = main_win.outer_position().ok();
                 let win_pos_x = win_pos.map(|p| p.x as f64).unwrap_or(0.0);
                 let win_pos_y = win_pos.map(|p| p.y as f64).unwrap_or(0.0);
@@ -291,21 +296,25 @@ pub fn run() {
                 main_win.on_window_event(move |event| {
                     use tauri::WindowEvent;
                     if let WindowEvent::DragDrop(dd) = event {
-                        eprintln!("[dragdrop] event: {:?}", dd);
                         match dd {
-                            tauri::DragDropEvent::Enter { paths, .. } => {
-                                eprintln!("[dragdrop] Enter paths={:?}", paths);
+                            tauri::DragDropEvent::Enter { paths, position } => {
                                 commands::quickchat::ResourceDropCoordinator::enter(
                                     &app_for_dd,
                                     paths,
                                 );
+                                commands::terminal_drop::emit_hover(
+                                    &app_for_dd,
+                                    commands::terminal_drop::target_at(
+                                        position.x as f64,
+                                        position.y as f64,
+                                    ),
+                                );
                             }
                             tauri::DragDropEvent::Over { position, .. } => {
-                                // Global → logical → window-local
-                                let gx = position.x as f64 / scale;
-                                let gy = position.y as f64 / scale;
-                                let local_x = gx - win_pos_x;
-                                let local_y = gy - win_pos_y;
+                                let local_x = position.x as f64 / scale;
+                                let local_y = position.y as f64 / scale;
+                                let gx = (position.x as f64 + win_pos_x) / scale;
+                                let gy = (position.y as f64 + win_pos_y) / scale;
                                 let _ = app_for_dd.emit(
                                     "aegis:drag-move",
                                     serde_json::json!({
@@ -338,15 +347,45 @@ pub fn run() {
                                     &app_for_dd,
                                     over_pet,
                                 );
+                                commands::terminal_drop::emit_hover(
+                                    &app_for_dd,
+                                    commands::terminal_drop::target_at(
+                                        position.x as f64,
+                                        position.y as f64,
+                                    ),
+                                );
                             }
                             tauri::DragDropEvent::Leave => {
+                                commands::terminal_drop::clear_hover(&app_for_dd);
                                 commands::quickchat::ResourceDropCoordinator::leave(&app_for_dd);
                             }
-                            tauri::DragDropEvent::Drop { paths, .. } => {
-                                commands::quickchat::ResourceDropCoordinator::drop(
-                                    &app_for_dd,
-                                    paths,
+                            tauri::DragDropEvent::Drop { paths, position } => {
+                                let target_id = commands::terminal_drop::target_at(
+                                    position.x as f64,
+                                    position.y as f64,
                                 );
+                                commands::terminal_drop::clear_hover(&app_for_dd);
+                                if let Some(target_id) = target_id {
+                                    if commands::terminal_drop::emit_file_drop(
+                                        &app_for_dd,
+                                        target_id,
+                                        paths,
+                                    ) {
+                                        commands::quickchat::ResourceDropCoordinator::leave(
+                                            &app_for_dd,
+                                        );
+                                    } else {
+                                        commands::quickchat::ResourceDropCoordinator::drop(
+                                            &app_for_dd,
+                                            paths,
+                                        );
+                                    }
+                                } else {
+                                    commands::quickchat::ResourceDropCoordinator::drop(
+                                        &app_for_dd,
+                                        paths,
+                                    );
+                                }
                             }
                             _ => {}
                         }

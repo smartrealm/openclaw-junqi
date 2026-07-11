@@ -23,8 +23,27 @@ import {
   refreshTerminalDisplay,
 } from "./terminalShared";
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
+import {
+  createShellRunId,
+  isGeneratedShellTitle,
+  parseOsc7Cwd,
+  shellStateFromExit,
+  type OpenShellResult,
+  type ShellExitEvent,
+  type ShellOutputEvent,
+  type ShellRuntimeState,
+} from "./shellLifecycle";
+import { pasteAndSubmit as pasteTerminalAndSubmit } from './terminalPaste';
+import { useTerminalDropTarget } from './terminalDropTarget';
+import {
+  imageFromClipboardEvent,
+  readTerminalClipboardEvent,
+  readTerminalClipboardText,
+} from './terminalClipboard';
 import { debugError } from "@/utils/debugLog";
-import { Plus, Terminal as TerminalIcon, Trash2, X, SplitSquareHorizontal, SplitSquareVertical, PanelLeft } from "lucide-react";
+import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
+import { useNotificationStore } from '@/stores/notificationStore';
+import { Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, PanelLeft, RotateCcw } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
 import { PaneComposerBar } from "./PaneComposerBar";
@@ -32,27 +51,18 @@ import { PaneSearchBar } from "./PaneSearchBar";
 import type { Terminal as XTermType } from '@xterm/xterm';
 import "@xterm/xterm/css/xterm.css";
 
-interface ShellOutputEvent {
-  shell_id: string;
-  data: string;
-}
-
 export interface ShellTerminalPanelHandle {
-  sendCommand: (cmd: string) => void;
+  sendCommand: (cmd: string) => boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────
-// computeShellTitle — kooky Session.title precedence:
-//   1. customTitle (user-set)         — not yet supported via UI
-//   2. terminalTitle (OSC 0/2 report)  — wired via agent_task_pty backend
-//   3. "~" if cwd == $HOME              — never reached (backend always sets terminalTitle)
-//   4. lastPathComponent(cwd)          — fallback
-// In practice (2) dominates; fall-through is rare.
+// Kooky title precedence: user rename first, then the session's current
+// directory, then the generated terminal label.
 // ─────────────────────────────────────────────────────────────────
 function computeShellTitle(shell: ShellSession): string {
-  if (shell.title && shell.title.trim()) return shell.title;
-  const cwd = (shell as ShellSession & { cwd?: string }).cwd ?? '';
-  if (!cwd) return '~';
+  if (shell.title && shell.title.trim() && !isGeneratedShellTitle(shell.title)) return shell.title;
+  const cwd = shell.cwd ?? '';
+  if (!cwd) return shell.title || '~';
   // Support both Unix '/' and Windows '\' path separators
   const trimmed = cwd.replace(/[\/\\]+$/, '');
   if (!trimmed) return '~';
@@ -68,6 +78,7 @@ function computeShellTitle(shell: ShellSession): string {
 
 interface TabShellItemProps {
   title: string;
+  status: ShellRuntimeState;
   selected: boolean;
   index: number;
   totalCount: number;
@@ -86,7 +97,7 @@ interface TabShellItemProps {
 }
 
 function TabShellItem({
-  title, selected, index, totalCount,
+  title, status, selected, index, totalCount,
   onSelect, onClose, onCloseOthers, onCloseAll, onCloseToRight, onRename,
   onDuplicate, onSplitH, onSplitV,
   onDragStart, onDragEnter, onDragEnd,
@@ -152,7 +163,19 @@ function TabShellItem({
           outlineOffset: -1,
         }}
       >
-        <TerminalIcon size={12} color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"} />
+        <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+          <TerminalIcon size={12} color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"} />
+          {status !== 'running' && (
+            <span
+              title={status === 'starting' ? t('terminal.starting', 'Starting') : t('terminal.exited', 'Exited')}
+              style={{
+                position: 'absolute', right: -3, bottom: -2, width: 5, height: 5, borderRadius: '50%',
+                background: status === 'starting' ? 'rgb(var(--aegis-primary))' : 'rgb(239 68 68)',
+                border: '1px solid rgb(var(--terminal-bg))',
+              }}
+            />
+          )}
+        </span>
         {renaming ? (
           <input
             ref={renameInputRef}
@@ -246,12 +269,32 @@ function TabShellItem({
   );
 }
 interface ShellTerminalInstanceHandle {
-  sendCommand: (cmd: string) => void;
+  sendCommand: (cmd: string) => boolean;
+  pasteText: (text: string) => boolean;
+  pasteAndSubmit: (text: string) => boolean;
+}
+
+interface TerminalDropHoverEvent {
+  target_id: string | null;
+}
+
+interface TerminalFileDropEvent {
+  target_id: string;
+  input: string;
+}
+
+interface TerminalCommandEvent {
+  command?: unknown;
+  projectPath?: unknown;
 }
 
 interface ShellSession {
   id: string;
   title: string;
+  cwd?: string;
+  status: ShellRuntimeState;
+  exitCode?: number | null;
+  restartNonce: number;
 }
 
 interface Props {
@@ -268,22 +311,22 @@ interface Props {
   /** kooky TabBarView.splitButtons: split Right / Down triggers. */
   onSplitHorizontal?: () => void;
   onSplitVertical?: () => void;
-  /** PaneNode leaf config — overrides defaults when inside a PaneTreeView. */
-  paneConfig?: {
-    kind?: string;
-    agent?: string;
-    label?: string;
-    projectPath?: string;
-  };
+  /** Only the focused pane is allowed to claim keyboard focus / global shortcuts. */
+  paneFocused?: boolean;
+  onPaneFocus?: () => void;
+  onDirectoryChange?: (cwd: string) => void;
   /** kooky StatusBarIconButton zoom — wired from PaneTreeView */
   canZoom?: boolean;
   isZoomed?: boolean;
   onZoom?: () => void;
   onToggleSidebar?: () => void;
   sidebarActive?: boolean;
+  /** Parent split divider is moving; defer PTY resizes until its final size. */
+  resizeSuspended?: boolean;
 }
 
 const MAX_SHELLS = 5;
+const MAX_PENDING_TERMINAL_COMMANDS = 32;
 
 function shellPersistKey(projectId: string): string {
   return `junqi:terminal-shells:${projectId}`;
@@ -294,9 +337,20 @@ function loadShellState(projectId: string): { shells: ShellSession[]; activeShel
     const raw = localStorage.getItem(shellPersistKey(projectId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    const shells = Array.isArray(parsed?.shells)
-      ? parsed.shells.filter((s: any): s is ShellSession => typeof s?.id === 'string' && typeof s?.title === 'string')
-      : [];
+    const rawShells: unknown[] = Array.isArray(parsed?.shells) ? parsed.shells as unknown[] : [];
+    const shells: ShellSession[] = rawShells
+        .filter((s: unknown): s is { id: string; title: string; cwd?: string } => (
+          typeof s === 'object' && s !== null
+          && typeof (s as { id?: unknown }).id === 'string'
+          && typeof (s as { title?: unknown }).title === 'string'
+        ))
+        .map((shell): ShellSession => ({
+          id: shell.id,
+          title: shell.title,
+          ...(typeof shell.cwd === 'string' && shell.cwd.trim() ? { cwd: shell.cwd.trim() } : {}),
+          status: 'starting' as const,
+          restartNonce: 0,
+        }));
     if (shells.length === 0) return null;
     return {
       shells: shells.slice(0, MAX_SHELLS),
@@ -310,14 +364,18 @@ function loadShellState(projectId: string): { shells: ShellSession[]; activeShel
 
 function saveShellState(projectId: string, shells: ShellSession[], activeShellId: string | null, nextIndex: number): void {
   try {
-    localStorage.setItem(shellPersistKey(projectId), JSON.stringify({ shells, activeShellId, nextIndex }));
+    const persistedShells = shells.map(({ id, title, cwd }) => ({ id, title, ...(cwd ? { cwd } : {}) }));
+    localStorage.setItem(shellPersistKey(projectId), JSON.stringify({ shells: persistedShells, activeShellId, nextIndex }));
   } catch {}
 }
 
-function createShellSession(projectId: string, index: number): ShellSession {
+function createShellSession(projectId: string, index: number, cwd?: string): ShellSession {
   return {
     id: `shell:${projectId}:${index}:${Date.now()}`,
     title: `Terminal ${index}`,
+    ...(cwd ? { cwd } : {}),
+    status: 'starting',
+    restartNonce: 0,
   };
 }
 
@@ -325,14 +383,39 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   shellId: string;
   projectPath: string;
   isActive: boolean;
+  isFocused: boolean;
+  runtimeState: ShellRuntimeState;
+  restartNonce: number;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   onReady?: () => void;
   onActiveTermChange?: (term: XTermType | null) => void;
+  onLifecycleChange?: (state: ShellRuntimeState, exitCode?: number | null) => void;
+  onCwdChange?: (cwd: string) => void;
+  onFocus?: () => void;
+  onRestart?: () => void;
+  resizeSuspended?: boolean;
 }>(
   function ShellTerminalInstance(
-    { shellId, projectPath, isActive, themeVariant, terminalFontSize, monoFontFamily, onReady, onActiveTermChange },
+    {
+      shellId,
+      projectPath,
+      isActive,
+      isFocused,
+      runtimeState,
+      restartNonce,
+      themeVariant,
+      terminalFontSize,
+      monoFontFamily,
+      onReady,
+      onActiveTermChange,
+      onLifecycleChange,
+      onCwdChange,
+      onFocus,
+      onRestart,
+      resizeSuspended = false,
+    },
     ref,
   ) {
     const { t } = useI18n();
@@ -342,26 +425,108 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const fitAddonRef = useRef<FitAddon | null>(null);
     const themeVariantRef = useRef(themeVariant);
     const isActiveRef = useRef(isActive);
+    const isFocusedRef = useRef(isFocused);
     const terminalFontSizeRef = useRef(terminalFontSize);
     const monoFontFamilyRef = useRef(monoFontFamily);
     const onReadyRef = useRef(onReady);
+    const onLifecycleChangeRef = useRef(onLifecycleChange);
+    const onCwdChangeRef = useRef(onCwdChange);
+    const onFocusRef = useRef(onFocus);
+    const runIdRef = useRef<string | null>(null);
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+    const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+    const resizeSuspendedRef = useRef(resizeSuspended);
     themeVariantRef.current = themeVariant;
     isActiveRef.current = isActive;
+    isFocusedRef.current = isFocused;
     terminalFontSizeRef.current = terminalFontSize;
     monoFontFamilyRef.current = monoFontFamily;
     onReadyRef.current = onReady;
+    onLifecycleChangeRef.current = onLifecycleChange;
+    onCwdChangeRef.current = onCwdChange;
+    onFocusRef.current = onFocus;
+    resizeSuspendedRef.current = resizeSuspended;
+
+    const sendInput = useCallback((data: string) => {
+      const runId = runIdRef.current;
+      if (!runId || !data) return false;
+      invoke("send_input", { taskId: shellId, runId, data }).catch((err) => {
+        debugError("terminal", "[ShellTerminalPanel] send_input failed:", err);
+      });
+      return true;
+    }, [shellId]);
+
+    const pasteFromSystemClipboard = useCallback(async () => {
+      const terminal = terminalRef.current;
+      if (!terminal) return;
+      const text = await readTerminalClipboardText();
+      if (text) {
+        terminal.focus();
+        terminal.paste(text);
+      }
+    }, []);
+
+    const sendPtyResize = useCallback((size: { cols: number; rows: number }) => {
+      const runId = runIdRef.current;
+      if (!runId) return false;
+      void invoke('resize_pty', {
+        taskId: shellId,
+        runId,
+        cols: size.cols,
+        rows: size.rows,
+      }).catch(() => undefined);
+      return true;
+    }, [shellId]);
+
+    const flushPendingResize = useCallback(() => {
+      const pending = pendingResizeRef.current;
+      if (!pending || resizeSuspendedRef.current) return false;
+      if (!sendPtyResize(pending)) return false;
+      pendingResizeRef.current = null;
+      return true;
+    }, [sendPtyResize]);
+
+    const requestResize = useCallback((size: { cols: number; rows: number } | null) => {
+      if (!size) return;
+      const last = lastSizeRef.current;
+      if (last && last.cols === size.cols && last.rows === size.rows) return;
+      lastSizeRef.current = size;
+      if (resizeSuspendedRef.current) {
+        pendingResizeRef.current = size;
+        return;
+      }
+      sendPtyResize(size);
+    }, [sendPtyResize]);
+
+    useEffect(() => {
+      if (!resizeSuspended) flushPendingResize();
+    }, [flushPendingResize, resizeSuspended]);
 
     useImperativeHandle(
       ref,
       () => ({
         sendCommand: (cmd: string) => {
-          invoke("send_input", { taskId: shellId, data: cmd }).catch((err) => {
-            debugError("terminal", "[ShellTerminalPanel] send_input failed:", err);
-          });
+          return sendInput(cmd);
+        },
+        pasteText: (text: string) => {
+          const terminal = terminalRef.current;
+          if (!terminal || !text) return false;
+          terminal.focus();
+          terminal.paste(text);
+          return true;
+        },
+        pasteAndSubmit: (text: string) => {
+          const terminal = terminalRef.current;
+          if (!terminal) return false;
+          terminal.focus();
+          return pasteTerminalAndSubmit(
+            (value) => terminal.paste(value),
+            sendInput,
+            text,
+          );
         },
       }),
-      [shellId],
+      [sendInput],
     );
 
     useEffect(() => {
@@ -371,6 +536,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let initTimeoutId: number | null = null;
       let readyTimeoutId: number | null = null;
       let disposeSafeOpen: (() => void) | null = null;
+      let unlistenOutput: (() => void) | null = null;
+      let unlistenExit: (() => void) | null = null;
+      let listenersReady = false;
+      let shellStarted = false;
+      let startShell: (() => void) | null = null;
 
       const { term, fitAddon, whenFontsReady } = initTerminal(
         themeVariantRef.current,
@@ -383,8 +553,6 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       if (isActiveRef.current) onActiveTermChange?.(term as unknown as XTermType);
       fitAddonRef.current = fitAddon;
 
-      // Holders for addons wired in openAndWire so the cleanup function can
-      // dispose them even when term.open() was deferred.
       let disposeCharSizeOverride: (() => void) | null = null;
       let disposeScrollbarAutoHide: (() => void) | null = null;
       let disposeInputFix: (() => void) | null = null;
@@ -392,79 +560,130 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let writer: ReturnType<typeof createSmartWriter> | null = null;
       let disposeMacWebKitGuard: (() => void) | null = null;
       let disposeSmartCopy: (() => void) | null = null;
+      let disposeNativeImagePaste: (() => void) | null = null;
       let disposeOnData: { dispose(): void } | null = null;
+      let disposeTermFocus: { dispose(): void } | null = null;
+      let disposeOscCwd: { dispose(): void } | null = null;
       let resizeObserver: ResizeObserver | null = null;
-      let unlisten: (() => void) | null = null;
       let visibilityHandler: (() => void) | null = null;
       let opened = false;
 
-      // safeOpenTerminal defers term.open() until the container has non-zero
-      // dimensions. xterm.js throws "dimensions" / "syncScrollArea" errors
-      // when open() runs against a 0-size container (common with flex:1
-      // layouts whose final size isn't resolved on the first effect tick).
-      // All addons must be wired AFTER open — they depend on term.element.
+      const subscribe = async () => {
+        const [outputUnlisten, exitUnlisten] = await Promise.all([
+          listen<ShellOutputEvent>('shell-output', (event) => {
+            if (
+              event.payload.shell_id === shellId
+              && event.payload.run_id === runIdRef.current
+              && terminalRef.current
+              && writer
+            ) {
+              writer.write(event.payload.data);
+            }
+          }),
+          listen<ShellExitEvent>('shell-exit', (event) => {
+            if (event.payload.shell_id !== shellId || event.payload.run_id !== runIdRef.current) return;
+            onLifecycleChangeRef.current?.(
+              shellStateFromExit(event.payload),
+              event.payload.exit_code,
+            );
+          }),
+        ]);
+        if (cleaned) {
+          outputUnlisten();
+          exitUnlisten();
+          return;
+        }
+        unlistenOutput = outputUnlisten;
+        unlistenExit = exitUnlisten;
+        listenersReady = true;
+        startShell?.();
+      };
+      void subscribe();
+
+      // safeOpenTerminal waits for non-zero layout dimensions. The PTY is
+      // deliberately not spawned until both xterm and its event listeners are
+      // ready, so the initial prompt/banner cannot race past the renderer.
       const openAndWire = () => {
         if (opened || cleaned) return;
         opened = true;
 
-        // 必须在 term.open() 之后挂：_charSizeService 在 open 时才实例化。
         disposeCharSizeOverride = applyDomCharSizeOverride(term);
         disposeScrollbarAutoHide = attachTerminalScrollbarAutoHide(term, container);
         disposeInputFix = attachMacWebKitShiftInputFix(term);
         webglHandle = loadWebglAddon(term);
         writer = createSmartWriter(term);
         disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
+        disposeSmartCopy = attachSmartCopy(term, { onPaste: pasteFromSystemClipboard });
+        const handleNativeImagePaste = (event: ClipboardEvent) => {
+          if (!imageFromClipboardEvent(event)) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          void readTerminalClipboardEvent(event).then((text) => {
+            if (!cleaned && text) term.paste(text);
+          });
+        };
+        term.textarea?.addEventListener('paste', handleNativeImagePaste, true);
+        disposeNativeImagePaste = () => term.textarea?.removeEventListener('paste', handleNativeImagePaste, true);
+        const handleTerminalFocus = () => onFocusRef.current?.();
+        term.textarea?.addEventListener('focus', handleTerminalFocus);
+        disposeTermFocus = {
+          dispose: () => term.textarea?.removeEventListener('focus', handleTerminalFocus),
+        };
+        disposeOscCwd = term.parser.registerOscHandler(7, (payload) => {
+          const cwd = parseOsc7Cwd(payload);
+          if (cwd) onCwdChangeRef.current?.(cwd);
+          return true;
+        });
 
         const fit = () => {
           if (cleaned) return;
-          const s = safeFit(fitAddon, term, container);
-          if (!s) return;
-          const last = lastSizeRef.current;
-          if (last && last.cols === s.cols && last.rows === s.rows) return;
-          lastSizeRef.current = { cols: s.cols, rows: s.rows };
-          invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
+          requestResize(safeFit(fitAddon, term, container));
         };
 
-        // 字体 ready 后真实 cell 宽度可能变化，再 fit 一次让 cols/rows 跟上。
         whenFontsReady.then(() => {
-          if (cleaned) return;
-          fit();
+          if (!cleaned) fit();
         });
 
-        initTimeoutId = window.setTimeout(() => {
-          if (cleaned) return;
-          fit();
-          invoke<void>("open_shell", {
-            shellId,
-            projectPath,
-            cols: term.cols,
-            rows: term.rows,
-          })
-            .then(() => {
-              if (cleaned) return;
-              readyTimeoutId = window.setTimeout(() => {
-                if (!cleaned) {
-                  onReadyRef.current?.();
-                }
-              }, 300);
+        startShell = () => {
+          if (!listenersReady || shellStarted || cleaned) return;
+          shellStarted = true;
+          initTimeoutId = window.setTimeout(() => {
+            if (cleaned) return;
+            const requestedRunId = createShellRunId();
+            runIdRef.current = requestedRunId;
+            onLifecycleChangeRef.current?.('starting');
+            const size = safeFit(fitAddon, term, container);
+            if (size) lastSizeRef.current = size;
+            invoke<OpenShellResult>('open_shell', {
+              shellId,
+              projectPath,
+              cols: size?.cols ?? term.cols,
+              rows: size?.rows ?? term.rows,
+              runId: requestedRunId,
             })
-            .catch((err) => {
-              debugError("terminal", "[ShellTerminalPanel] open_shell failed:", err);
-            });
-          if (isActiveRef.current) {
-            term.focus();
-          }
-        }, 50);
+              .then((result) => {
+                if (cleaned || result.run_id !== requestedRunId) return;
+                runIdRef.current = result.run_id;
+                onCwdChangeRef.current?.(result.cwd);
+                onLifecycleChangeRef.current?.('running');
+                flushPendingResize();
+                readyTimeoutId = window.setTimeout(() => {
+                  if (!cleaned) onReadyRef.current?.();
+                }, 300);
+              })
+              .catch((error) => {
+                if (cleaned) return;
+                onLifecycleChangeRef.current?.('failed');
+                debugError('terminal', '[ShellTerminalPanel] open_shell failed:', error);
+              });
+            if (isFocusedRef.current) term.focus();
+          }, 50);
+        };
+        startShell();
 
-        disposeSmartCopy = attachSmartCopy(term);
-
-        // ── 微批处理缓冲：解决 UU远程桌面/VNC 等工具通过 WKWebView insertText:
-        //    逐字符注入时每字符单独触发 onData 的问题。
-        //
-        //    原理：原生终端（Terminal.app）走 NSTextInputClient.insertText:，
-        //    AppKit 天然批量；WKWebView 只有 keydown 事件，每字符一次。
-        //    用 queueMicrotask 把同一微任务检查点内收到的所有字符合并成一次
-        //    send_input，延迟 < 1ms，对正常键盘（字符间隔 > 30ms）完全透明。
+        // Some remote-desktop WebViews inject one onData call per character.
+        // Coalesce only that microtask-sized burst; ordinary keyboard latency is
+        // unchanged and all data is still sent through the run-id guard.
         let inputBuf = '';
         let inputFlushPending = false;
         const flushInputBuf = () => {
@@ -472,7 +691,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           if (!inputBuf) return;
           const data = inputBuf;
           inputBuf = '';
-          invoke("send_input", { taskId: shellId, data }).catch(() => {});
+          sendInput(data);
         };
         const sendInputBuffered = (data: string) => {
           inputBuf += data;
@@ -481,13 +700,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             queueMicrotask(flushInputBuf);
           }
         };
-
         const linuxIME = attachLinuxIMEFix(term, sendInputBuffered);
         disposeOnData = { dispose: () => linuxIME.dispose() };
 
-        // Use rAF instead of setTimeout so fit() runs outside the ResizeObserver
-        // notification cycle, preventing the benign but noisy Tauri JS error:
-        // "ResizeObserver loop completed with undelivered notifications"
         let rafId: number | null = null;
         resizeObserver = new ResizeObserver(() => {
           if (rafId !== null) cancelAnimationFrame(rafId);
@@ -499,50 +714,37 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         resizeObserver.observe(container);
 
         const handleVisibilityChange = () => {
-          if (document.visibilityState !== "visible" || !terminalRef.current || !isActiveRef.current) return;
+          if (document.visibilityState !== 'visible' || !terminalRef.current || !isActiveRef.current) return;
           window.requestAnimationFrame(() => {
             fit();
-            const t = terminalRef.current;
-            if (t) {
-              refreshTerminalDisplay(t);
-              t.focus();
-            }
+            const current = terminalRef.current;
+            if (!current) return;
+            refreshTerminalDisplay(current);
+            if (isFocusedRef.current) current.focus();
           });
         };
         visibilityHandler = handleVisibilityChange;
-        document.addEventListener("visibilitychange", handleVisibilityChange);
-
-        listen<ShellOutputEvent>("shell-output", (event) => {
-          if (event.payload.shell_id === shellId && terminalRef.current && writer) {
-            writer.write(event.payload.data);
-          }
-        }).then((fn) => {
-          if (cleaned) {
-            fn();
-          } else {
-            unlisten = fn;
-          }
-        });
+        document.addEventListener('visibilitychange', handleVisibilityChange);
       };
 
       disposeSafeOpen = safeOpenTerminal(term, container, openAndWire);
 
       return () => {
         cleaned = true;
+        const runId = runIdRef.current;
+        runIdRef.current = null;
         disposeSafeOpen?.();
-        if (initTimeoutId !== null) {
-          window.clearTimeout(initTimeoutId);
-        }
-        if (readyTimeoutId !== null) {
-          window.clearTimeout(readyTimeoutId);
-        }
-        unlisten?.();
+        if (initTimeoutId !== null) window.clearTimeout(initTimeoutId);
+        if (readyTimeoutId !== null) window.clearTimeout(readyTimeoutId);
+        unlistenOutput?.();
+        unlistenExit?.();
         disposeSmartCopy?.();
+        disposeNativeImagePaste?.();
         disposeOnData?.dispose();
+        disposeTermFocus?.dispose();
+        disposeOscCwd?.dispose();
         resizeObserver?.disconnect();
-        if (visibilityHandler) {
-          document.removeEventListener("visibilitychange", visibilityHandler);
-        }
+        if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
         if (isActiveRef.current) onActiveTermChange?.(null);
         terminalRef.current = null;
         fitAddonRef.current = null;
@@ -552,9 +754,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         disposeMacWebKitGuard?.();
         disposeInputFix?.();
         try { term.dispose(); } catch { /* already gone — rapid tab close */ }
-        invoke("kill_shell", { shellId }).catch(() => {});
+        if (runId) invoke('kill_shell', { shellId, runId }).catch(() => {});
       };
-    }, [shellId, projectPath]);
+    }, [flushPendingResize, pasteFromSystemClipboard, projectPath, requestResize, restartNonce, sendInput, shellId]);
 
     useEffect(() => {
       if (!isActive) return;
@@ -562,17 +764,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       window.requestAnimationFrame(() => {
         if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) return;
         const s = safeFit(fitAddonRef.current, terminalRef.current, containerRef.current);
-        if (s) {
-          const last = lastSizeRef.current;
-          if (!last || last.cols !== s.cols || last.rows !== s.rows) {
-            lastSizeRef.current = { cols: s.cols, rows: s.rows };
-            invoke("resize_pty", { taskId: shellId, cols: s.cols, rows: s.rows }).catch(() => {});
-          }
-        }
+        requestResize(s);
         refreshTerminalDisplay(terminalRef.current);
-        terminalRef.current.focus();
+        if (isFocused) terminalRef.current.focus();
       });
-    }, [isActive, shellId, onActiveTermChange]);
+    }, [isActive, isFocused, onActiveTermChange, requestResize]);
 
     useEffect(() => {
       if (terminalRef.current && containerRef.current) {
@@ -592,11 +788,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         containerRef.current,
       );
       if (!size) return;
-      const last = lastSizeRef.current;
-      if (last && last.cols === size.cols && last.rows === size.rows) return;
-      lastSizeRef.current = { cols: size.cols, rows: size.rows };
-      invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
-    }, [terminalFontSize, shellId]);
+      requestResize(size);
+    }, [requestResize, terminalFontSize]);
 
     useEffect(() => {
       if (!termCtxMenu) return;
@@ -618,8 +811,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     };
 
     const pasteClipboard = async () => {
-      const data = await navigator.clipboard.readText().catch(() => '');
-      if (data) invoke('send_input', { taskId: shellId, data }).catch(() => {});
+      await pasteFromSystemClipboard();
       setTermCtxMenu(null);
       terminalRef.current?.focus();
     };
@@ -645,23 +837,16 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         containerRef.current,
       );
       if (!result) return;
-      const pushResize = (size: { cols: number; rows: number } | null) => {
-        if (!size) return;
-        const last = lastSizeRef.current;
-        if (last && last.cols === size.cols && last.rows === size.rows) return;
-        lastSizeRef.current = { cols: size.cols, rows: size.rows };
-        invoke("resize_pty", { taskId: shellId, cols: size.cols, rows: size.rows }).catch(() => {});
-      };
-      pushResize(result.immediate);
+      requestResize(result.immediate);
       let cancelled = false;
       result.whenSettled.then((s) => {
         if (cancelled) return;
-        pushResize(s);
+        requestResize(s);
       });
       return () => {
         cancelled = true;
       };
-    }, [monoFontFamily, shellId]);
+    }, [monoFontFamily, requestResize]);
 
     const menuItemStyle: React.CSSProperties = {
       padding: '5px 12px',
@@ -708,11 +893,15 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         <div
           ref={containerRef}
           className="nezha-xterm-host nezha-shell-xterm-host"
-          onMouseDown={() => terminalRef.current?.focus()}
+          onMouseDown={() => {
+            onFocusRef.current?.();
+            terminalRef.current?.focus();
+          }}
           onContextMenu={(e) => {
             if (!isActive) return;
             e.preventDefault();
             e.stopPropagation();
+            onFocusRef.current?.();
             terminalRef.current?.focus();
             setTermCtxMenu({ x: e.clientX, y: e.clientY });
           }}
@@ -726,6 +915,32 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             pointerEvents: isActive ? "auto" : "none",
           }}
         />
+        {isActive && (runtimeState === 'exited' || runtimeState === 'failed') && (
+          <div
+            style={{
+              position: 'absolute', right: 12, bottom: 30, zIndex: 4,
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 8px', borderRadius: 5,
+              background: 'rgb(var(--aegis-elevated))',
+              border: `1px solid ${runtimeState === 'failed' ? 'rgb(239 68 68 / 0.45)' : 'rgb(var(--aegis-overlay) / 0.14)'}`,
+              color: 'rgb(var(--aegis-text-secondary))',
+              fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+            }}
+          >
+            <span>{runtimeState === 'failed' ? t('terminal.failed', 'Terminal stopped unexpectedly') : t('terminal.exited', 'Terminal exited')}</span>
+            <button
+              type="button"
+              onClick={onRestart}
+              title={t('terminal.restart', 'Restart terminal')}
+              style={{
+                width: 22, height: 22, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                color: 'rgb(var(--aegis-primary))', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer',
+              }}
+            >
+              <RotateCcw size={13} />
+            </button>
+          </div>
+        )}
         {terminalMenu}
       </>
     );
@@ -752,14 +967,19 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       onZoom,
       onToggleSidebar,
       sidebarActive,
+      paneFocused = isActive,
+      onPaneFocus,
+      onDirectoryChange,
+      resizeSuspended = false,
     },
     ref,
   ) {
     const { t } = useI18n();
+    const addToast = useNotificationStore((state) => state.addToast);
     const initialStateRef = useRef<{ shells: ShellSession[]; activeShellId: string | null; nextIndex: number } | null>(null);
     if (!initialStateRef.current) {
       initialStateRef.current = loadShellState(projectId) ?? (() => {
-        const initial = createShellSession(projectId, 1);
+        const initial = createShellSession(projectId, 1, projectPath);
         return { shells: [initial], activeShellId: initial.id, nextIndex: 2 };
       })();
     }
@@ -768,10 +988,108 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     const dragSrcIdxRef = useRef<number | null>(null);
     const dragDstIdxRef = useRef<number | null>(null);
     const shellRefs = useRef<Record<string, ShellTerminalInstanceHandle | null>>({});
+    const panelRef = useRef<HTMLDivElement>(null);
+    const pendingTerminalPasteRef = useRef<string | null>(null);
+    const pendingTerminalCommandsRef = useRef<string[]>([]);
     const [shells, setShells] = useState<ShellSession[]>(() => initialStateRef.current!.shells);
     const [activeShellId, setActiveShellId] = useState<string | null>(() => initialStateRef.current!.activeShellId);
+    const [terminalDropActive, setTerminalDropActive] = useState(false);
     const activeShellIdRef = useRef(activeShellId);
     activeShellIdRef.current = activeShellId;
+    const onDirectoryChangeRef = useRef(onDirectoryChange);
+    onDirectoryChangeRef.current = onDirectoryChange;
+    useTerminalDropTarget(projectId, panelRef);
+
+    const flushPendingTerminalPaste = useCallback(() => {
+      const input = pendingTerminalPasteRef.current;
+      const shellId = activeShellIdRef.current;
+      if (!input || !shellId) return false;
+      const pasted = shellRefs.current[shellId]?.pasteText(input) ?? false;
+      if (pasted) pendingTerminalPasteRef.current = null;
+      return pasted;
+    }, []);
+
+    const sendCommandToActiveShell = useCallback((command: string) => {
+      const normalized = command.trim() ? command : '';
+      if (!normalized) return false;
+      const shellId = activeShellIdRef.current;
+      if (shellId && shellRefs.current[shellId]?.sendCommand(command)) return true;
+
+      const pending = pendingTerminalCommandsRef.current;
+      if (pending.length >= MAX_PENDING_TERMINAL_COMMANDS) pending.shift();
+      pending.push(command);
+      return false;
+    }, []);
+
+    const flushPendingTerminalCommands = useCallback(() => {
+      const shellId = activeShellIdRef.current;
+      if (!shellId) return false;
+      const terminal = shellRefs.current[shellId];
+      if (!terminal) return false;
+      const pending = pendingTerminalCommandsRef.current;
+      while (pending.length > 0) {
+        if (!terminal.sendCommand(pending[0])) return false;
+        pending.shift();
+      }
+      return true;
+    }, []);
+
+    const deliverTerminalCommand = useCallback(async (command: string, projectPath?: string) => {
+      if (!projectPath?.trim()) {
+        sendCommandToActiveShell(command);
+        return;
+      }
+
+      try {
+        const changeDirectory = await invoke<string>('terminal_change_directory_command', {
+          path: projectPath,
+        });
+        sendCommandToActiveShell(`${changeDirectory}${command}`);
+      } catch (error) {
+        // Never run a project command in an arbitrary current directory when
+        // the selected File Manager root has disappeared.
+        debugError('terminal', '[terminal] unable to change command directory:', error);
+        addToast(
+          'error',
+          t('terminal.commandNotRun', 'Command not run'),
+          t('terminal.commandDirectoryUnavailable', 'The selected project directory is unavailable.'),
+        );
+      }
+    }, [addToast, sendCommandToActiveShell, t]);
+
+    useEffect(() => {
+      const unlisten = combineUnlisteners([
+        subscribeTauriEvent<TerminalDropHoverEvent>('aegis:terminal-drag-target', (event) => {
+          setTerminalDropActive(event.payload?.target_id === projectId);
+        }),
+        subscribeTauriEvent<TerminalFileDropEvent>('aegis:terminal-file-dropped', (event) => {
+          if (event.payload?.target_id !== projectId) return;
+          setTerminalDropActive(false);
+          pendingTerminalPasteRef.current = event.payload.input;
+          flushPendingTerminalPaste();
+        }),
+      ]);
+      return unlisten;
+    }, [flushPendingTerminalPaste, projectId]);
+
+    useEffect(() => {
+      const handler = (event: Event) => {
+        if (!paneFocused) return;
+        const detail = (event as CustomEvent<TerminalCommandEvent>).detail;
+        if (typeof detail?.command !== 'string') return;
+        void deliverTerminalCommand(
+          detail.command,
+          typeof detail.projectPath === 'string' ? detail.projectPath : undefined,
+        );
+      };
+      window.addEventListener('junqi:deliver-terminal-command', handler);
+      return () => window.removeEventListener('junqi:deliver-terminal-command', handler);
+    }, [deliverTerminalCommand, paneFocused]);
+
+    useEffect(() => {
+      flushPendingTerminalPaste();
+      flushPendingTerminalCommands();
+    }, [activeShellId, flushPendingTerminalCommands, flushPendingTerminalPaste]);
 
     useEffect(() => {
       saveShellState(projectId, shells, activeShellId, nextShellIndexRef.current);
@@ -781,12 +1099,10 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       ref,
       () => ({
         sendCommand: (cmd: string) => {
-          const currentShellId = activeShellIdRef.current;
-          if (!currentShellId) return;
-          shellRefs.current[currentShellId]?.sendCommand(cmd);
+          return sendCommandToActiveShell(cmd);
         },
       }),
-      [],
+      [sendCommandToActiveShell],
     );
 
     // ── kooky ComposerBar 状态 ──
@@ -798,6 +1114,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     // ── ⌘L / Ctrl+L 快捷键 — 切换 ComposerBar ──
     useEffect(() => {
       const handler = (e: KeyboardEvent) => {
+        if (!paneFocused) return;
         if ((e.metaKey || e.ctrlKey) && e.key === "l") {
           e.preventDefault();
           setComposerOpen((v) => !v);
@@ -810,14 +1127,30 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       };
       window.addEventListener("keydown", handler);
       return () => window.removeEventListener("keydown", handler);
-    }, []);
+    }, [paneFocused]);
 
     const handleAddShell = useCallback(() => {
       if (shells.length >= MAX_SHELLS) return;
-      const nextShell = createShellSession(projectId, nextShellIndexRef.current++);
+      const activeCwd = shells.find((shell) => shell.id === activeShellId)?.cwd || projectPath;
+      const nextShell = createShellSession(projectId, nextShellIndexRef.current++, activeCwd);
       setShells((prev) => [...prev, nextShell]);
       setActiveShellId(nextShell.id);
-    }, [projectId, shells.length]);
+      if (activeCwd) onDirectoryChangeRef.current?.(activeCwd);
+    }, [activeShellId, projectId, projectPath, shells]);
+
+    const updateShell = useCallback((shellId: string, patch: Partial<ShellSession>) => {
+      setShells((previous) => previous.map((shell) => (
+        shell.id === shellId ? { ...shell, ...patch } : shell
+      )));
+    }, []);
+
+    const restartShell = useCallback((shellId: string) => {
+      setShells((previous) => previous.map((shell) => (
+        shell.id === shellId
+          ? { ...shell, status: 'starting', exitCode: undefined, restartNonce: shell.restartNonce + 1 }
+          : shell
+      )));
+    }, []);
 
     const handleCloseShell = useCallback(
       (shellId: string) => {
@@ -847,6 +1180,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
 
     return (
       <div
+        ref={panelRef}
         style={{
           flex: 1,
           height: height != null ? height : undefined,
@@ -854,6 +1188,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
           display: "flex",
           flexDirection: "column",
           background: "var(--aegis-elevated)",
+          position: 'relative',
         }}
       >
         {onResizeStart && (
@@ -902,10 +1237,15 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                   <TabShellItem
                     key={shell.id}
                     title={tabTitle}
+                    status={shell.status}
                     selected={selected}
                     index={idx}
                     totalCount={shells.length}
-                    onSelect={() => setActiveShellId(shell.id)}
+                    onSelect={() => {
+                      setActiveShellId(shell.id);
+                      if (shell.cwd) onDirectoryChangeRef.current?.(shell.cwd);
+                      onPaneFocus?.();
+                    }}
                     onClose={(e) => { e.stopPropagation(); handleCloseShell(shell.id); }}
                     onCloseOthers={() => {
                       const toClose = shells.filter((s) => s.id !== shell.id);
@@ -949,9 +1289,10 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       dragDstIdxRef.current = null;
                     }}
                     onDuplicate={() => {
-                      const dup = createShellSession(projectId, nextShellIndexRef.current++);
+                      const dup = createShellSession(projectId, nextShellIndexRef.current++, shell.cwd || projectPath);
                       setShells((prev) => [...prev, { ...dup, title: shell.title }]);
                       setActiveShellId(dup.id);
+                      if (shell.cwd) onDirectoryChangeRef.current?.(shell.cwd);
                     }}
                     onSplitH={onSplitHorizontal}
                     onSplitV={onSplitVertical}
@@ -1007,21 +1348,41 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                   shellRefs.current[shell.id] = instance;
                 }}
                 shellId={shell.id}
-                projectPath={projectPath}
+                projectPath={shell.cwd || projectPath}
                 isActive={isActive && activeShellId === shell.id}
+                isFocused={paneFocused && activeShellId === shell.id}
+                runtimeState={shell.status}
+                restartNonce={shell.restartNonce}
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}
-                onReady={onReady}
+                onReady={() => {
+                  flushPendingTerminalPaste();
+                  flushPendingTerminalCommands();
+                  onReady?.();
+                }}
                 onActiveTermChange={(term) => {
                   if (activeShellIdRef.current === shell.id) activeTermRef.current = term;
                 }}
+                onLifecycleChange={(status, exitCode) => {
+                  updateShell(shell.id, { status, ...(exitCode !== undefined ? { exitCode } : {}) });
+                }}
+                onCwdChange={(cwd) => {
+                  updateShell(shell.id, { cwd });
+                  if (activeShellIdRef.current === shell.id) onDirectoryChangeRef.current?.(cwd);
+                }}
+                onFocus={() => {
+                  setActiveShellId(shell.id);
+                  onPaneFocus?.();
+                }}
+                onRestart={() => restartShell(shell.id)}
+                resizeSuspended={resizeSuspended}
               />
             ))}
           </div>
           {/* kooky PaneStatusBar — 底部状态栏 */}
           <PaneStatusBar
-            projectPath={projectPath}
+            projectPath={shells.find((shell) => shell.id === activeShellId)?.cwd || projectPath}
             paneId={projectId}
             onToggleComposer={() => setComposerOpen((v) => !v)}
             composerActive={composerOpen}
@@ -1036,12 +1397,42 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
             onDraftChange={setComposerDraft}
             onSend={(text) => {
               const sid = activeShellIdRef.current;
-              if (sid) invoke("send_input", { taskId: sid, data: text + "\n" }).catch(() => {});
+              if (sid) shellRefs.current[sid]?.pasteAndSubmit(text);
               setComposerOpen(false);
             }}
             onClose={() => setComposerOpen(false)}
           />
         </div>
+        {terminalDropActive && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 4,
+              zIndex: 20,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              border: '1px dashed rgb(var(--aegis-primary) / 0.78)',
+              background: 'rgb(var(--aegis-primary) / 0.08)',
+              color: 'rgb(var(--aegis-text))',
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: 12,
+            }}
+          >
+            <span
+              style={{
+                padding: '6px 10px',
+                borderRadius: 5,
+                background: 'rgb(var(--aegis-elevated) / 0.94)',
+                border: '1px solid rgb(var(--aegis-overlay) / 0.12)',
+              }}
+            >
+              {t('terminal.dropPaths', 'Release to paste file paths')}
+            </span>
+          </div>
+        )}
       </div>
     );
   },

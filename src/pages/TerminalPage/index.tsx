@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { useTheme } from "@/theme/useTheme";
 import {
   ShellTerminalPanel,
-  type ShellTerminalPanelHandle,
 } from "@/components/Terminal";
 import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -22,12 +21,28 @@ export function TerminalPage() {
   const { t } = useTranslation();
   const resolvedTheme = useTheme();
   const themeVariant: ThemeVariant = resolvedTheme.replace("aegis-", "") as ThemeVariant;
-  const panelRef = useRef<ShellTerminalPanelHandle>(null);
 
   const terminalFontSize: TerminalFontSize = DEFAULT_TERMINAL_FONT_SIZE;
   const monoFontFamily: FontFamily = getDefaultMonoFont();
   const [projectPath, setProjectPath] = useState(".");
-  useEffect(() => { homeDir().then(setProjectPath).catch(() => setProjectPath(".")); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    homeDir()
+      .then((path) => {
+        if (cancelled) return;
+        setProjectPath(path);
+        const store = useWorkspaceStore.getState();
+        store.setDefaultWorkingDirectory(path);
+        store.ensureActive(path);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const store = useWorkspaceStore.getState();
+        store.setDefaultWorkingDirectory(".");
+        store.ensureActive(".");
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const termWrapRef = useRef<HTMLDivElement>(null);
 
@@ -62,7 +77,9 @@ export function TerminalPage() {
       const ce = e as CustomEvent<{ command: string; projectPath?: string }>;
       const cmd = ce.detail?.command;
       if (!cmd) return;
-      panelRef.current?.sendCommand(cmd);
+      window.dispatchEvent(new CustomEvent('junqi:deliver-terminal-command', {
+        detail: { command: cmd, projectPath: ce.detail?.projectPath },
+      }));
     };
     window.addEventListener("junqi:run-terminal-command", handler);
     return () => window.removeEventListener("junqi:run-terminal-command", handler);
@@ -88,7 +105,7 @@ export function TerminalPage() {
             mode={sidebarMode}
             onModeChange={setSidebarMode}
             onToggleSidebar={cycleSidebarMode}
-            projectPath={projectPath}
+            projectPath={workspace?.workingDirectory || projectPath}
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
             onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
@@ -113,7 +130,6 @@ export function TerminalPage() {
               />
             ) : (
               <ShellTerminalPanel
-                ref={panelRef}
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}

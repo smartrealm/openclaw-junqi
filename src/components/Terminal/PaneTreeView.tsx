@@ -8,8 +8,10 @@
 // Source: kooky Sources/KookyKit/Terminal/PaneTreeView.swift (1311 lines)
 // ─────────────────────────────────────────────────────────────────
 
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
+import { Maximize2, SplitSquareHorizontal, SplitSquareVertical, X } from 'lucide-react';
 import { ShellTerminalPanel } from './ShellTerminalPanel';
+import { useI18n } from './i18n-fallback';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type {
   PaneNode,
@@ -50,6 +52,7 @@ function PaneNodeRenderer({
   projectPath,
   onToggleSidebar,
   sidebarActive,
+  resizeSuspended,
 }: {
   node: PaneNode;
   workspace: Workspace;
@@ -66,6 +69,7 @@ function PaneNodeRenderer({
   projectPath: string;
   onToggleSidebar?: () => void;
   sidebarActive?: boolean;
+  resizeSuspended: boolean;
 }) {
   if (node.type === 'leaf') {
     // In zoom mode, only the zoomed pane is visible
@@ -83,8 +87,6 @@ function PaneNodeRenderer({
           position: 'relative',
           outline: isFocused ? '1px solid rgb(var(--aegis-primary)/0.3)' : 'none',
           outlineOffset: -1,
-          opacity: isFocused ? 1 : 0.5,
-          transition: 'opacity 0.15s',
         }}
         onClick={() => !isFocused && onFocus(node.id)}
       >
@@ -93,9 +95,11 @@ function PaneNodeRenderer({
           themeVariant={themeVariant}
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
-          projectPath={node.config.projectPath || projectPath}
+          projectPath={node.config.cwd || workspace.workingDirectory || projectPath}
           projectId={node.id}
-          paneConfig={node.config}
+          paneFocused={isFocused}
+          onPaneFocus={() => onFocus(node.id)}
+          onDirectoryChange={(cwd) => useWorkspaceStore.getState().setPaneCwd(node.id, cwd)}
           onClose={() => onClose(node.id)}
           onSplitHorizontal={() => onSplit(node.id, 'horizontal')}
           onSplitVertical={() => onSplit(node.id, 'vertical')}
@@ -104,6 +108,7 @@ function PaneNodeRenderer({
           onZoom={() => onZoom(node.id)}
           onToggleSidebar={onToggleSidebar}
           sidebarActive={sidebarActive}
+          resizeSuspended={resizeSuspended}
         />
       </div>
     );
@@ -127,6 +132,7 @@ function PaneNodeRenderer({
       projectPath={projectPath}
       onToggleSidebar={onToggleSidebar}
       sidebarActive={sidebarActive}
+      resizeSuspended={resizeSuspended}
     />
   );
 }
@@ -149,6 +155,7 @@ function SplitRenderer({
   projectPath,
   onToggleSidebar,
   sidebarActive,
+  resizeSuspended,
 }: {
   node: PaneSplit;
   workspace: Workspace;
@@ -165,16 +172,20 @@ function SplitRenderer({
   projectPath: string;
   onToggleSidebar?: () => void;
   sidebarActive?: boolean;
+  resizeSuspended: boolean;
 }) {
+  const { t } = useI18n();
   const isHorizontal = node.direction === 'horizontal';
   const [ratio, setRatio] = useState(node.sizes[0]);
   const [dragging, setDragging] = useState(false);
   const [hovering, setHovering] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const ratioRef = useRef(ratio);
 
   // Sync ratio from store when node.sizes changes externally
   useEffect(() => {
     setRatio(node.sizes[0]);
+    ratioRef.current = node.sizes[0];
   }, [node.sizes[0]]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -196,12 +207,13 @@ function SplitRenderer({
         newRatio = (e.clientY - rect.top) / rect.height;
       }
       newRatio = Math.max(0.15, Math.min(0.85, newRatio));
+      ratioRef.current = newRatio;
       setRatio(newRatio);
     };
     const onUp = () => {
       setDragging(false);
       // Persist to store on mouse up
-      useWorkspaceStore.getState().resizeSplit(node.id, ratio);
+      useWorkspaceStore.getState().resizeSplit(node.id, ratioRef.current);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -209,9 +221,10 @@ function SplitRenderer({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [dragging, isHorizontal, node.id, ratio]);
+  }, [dragging, isHorizontal, node.id]);
 
   const splitterSize = 4;
+  const descendantsResizeSuspended = resizeSuspended || dragging;
   const childStyleA = { flex: ratio, minWidth: 0, minHeight: 0, display: 'flex' as const, overflow: 'hidden' as const };
   const childStyleB = { flex: 1 - ratio, minWidth: 0, minHeight: 0, display: 'flex' as const, overflow: 'hidden' as const };
 
@@ -244,6 +257,7 @@ function SplitRenderer({
           projectPath={projectPath}
           onToggleSidebar={onToggleSidebar}
           sidebarActive={sidebarActive}
+          resizeSuspended={descendantsResizeSuspended}
         />
       </div>
 
@@ -284,29 +298,27 @@ function SplitRenderer({
             }}
           >
             <SplitButton
-              label="Split Right"
+              label={t('terminal.splitRight', 'Split Right')}
               onClick={(e) => {
                 e.stopPropagation();
                 // Find a leaf in child A or B to split
                 const leafIds = listAllLeafIds(node);
-                if (leafIds.length > 0) onSplit(leafIds[leafIds.length - 1], 'horizontal');
+                const target = leafIds.includes(focusedPaneId) ? focusedPaneId : leafIds[0];
+                if (target) onSplit(target, 'horizontal');
               }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="12" y1="3" x2="12" y2="21" />
-              </svg>
+              <SplitSquareHorizontal size={12} />
             </SplitButton>
             <SplitButton
-              label="Split Down"
+              label={t('terminal.splitDown', 'Split Down')}
               onClick={(e) => {
                 e.stopPropagation();
                 const leafIds = listAllLeafIds(node);
-                if (leafIds.length > 0) onSplit(leafIds[leafIds.length - 1], 'vertical');
+                const target = leafIds.includes(focusedPaneId) ? focusedPaneId : leafIds[0];
+                if (target) onSplit(target, 'vertical');
               }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="12" x2="21" y2="12" />
-              </svg>
+              <SplitSquareVertical size={12} />
             </SplitButton>
           </div>
         )}
@@ -330,6 +342,7 @@ function SplitRenderer({
           projectPath={projectPath}
           onToggleSidebar={onToggleSidebar}
           sidebarActive={sidebarActive}
+          resizeSuspended={descendantsResizeSuspended}
         />
       </div>
     </div>
@@ -394,6 +407,7 @@ export function PaneTreeView({
   onToggleSidebar,
   sidebarActive,
 }: PaneTreeViewProps) {
+  const { t } = useI18n();
   const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
   const setFocus = useWorkspaceStore((s) => s.setFocus);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
@@ -401,9 +415,14 @@ export function PaneTreeView({
 
   const isZoomed = zoomedPaneId !== null;
 
-  // ⌘⇧E handler — toggle pane zoom
+  // ⌘⇧E toggles pane zoom; Escape must always return to the full tree.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && zoomedPaneId) {
+        e.preventDefault();
+        setZoomedPaneId(null);
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'E') {
         e.preventDefault();
         setZoomedPaneId((prev) => {
@@ -414,7 +433,7 @@ export function PaneTreeView({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [workspace.focusedPaneId]);
+  }, [workspace.focusedPaneId, zoomedPaneId]);
 
   const handleSplit = useCallback(
     (leafId: string, direction: SplitDirection) => {
@@ -431,8 +450,6 @@ export function PaneTreeView({
     },
     [closePane, workspace.root, onClose],
   );
-
-  const allLeafIds = useMemo(() => listAllLeafIds(workspace.root), [workspace.root]);
 
   return (
     <div
@@ -465,9 +482,11 @@ export function PaneTreeView({
             fontFamily: '"JetBrains Mono", monospace',
           }}
         >
-          <span>zoom</span>
+          <Maximize2 size={13} aria-label={t('terminal.zoom', 'Pane zoom')} />
           <button
             onClick={() => setZoomedPaneId(null)}
+            title={t('terminal.exitZoom', 'Exit pane zoom')}
+            aria-label={t('terminal.exitZoom', 'Exit pane zoom')}
             style={{
               background: 'none',
               border: 'none',
@@ -475,11 +494,9 @@ export function PaneTreeView({
               color: 'rgb(var(--aegis-text-dim))',
               padding: 0,
               display: 'flex',
-              fontSize: 12,
-              fontFamily: '"JetBrains Mono", monospace',
             }}
           >
-            esc
+            <X size={13} />
           </button>
         </div>
       )}
@@ -504,6 +521,7 @@ export function PaneTreeView({
         projectPath={projectPath}
         onToggleSidebar={onToggleSidebar}
         sidebarActive={sidebarActive}
+        resizeSuspended={false}
       />
     </div>
   );

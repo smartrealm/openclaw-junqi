@@ -182,7 +182,7 @@ function ShellPaneHost({ leaf }: { leaf: PaneLeaf }) {
         themeVariant={themeVariant}
         terminalFontSize={DEFAULT_TERMINAL_FONT_SIZE as TerminalFontSize}
         monoFontFamily={getDefaultMonoFont() as FontFamily}
-        projectPath={leaf.config.projectPath ?? ''}
+        projectPath={leaf.config.cwd ?? ''}
         projectId={leaf.id}
         onClose={() => closePane(leaf.id)}
       />
@@ -220,9 +220,9 @@ function LeafPaneView({ leaf }: { leaf: PaneLeaf }) {
         {leaf.config.kind === 'agent' && leaf.config.agent && (
           <span className="text-aegis-text-dim">· {leaf.config.agent}</span>
         )}
-        {leaf.config.projectPath && (
-          <span className="text-aegis-text-dim truncate" title={leaf.config.projectPath}>
-            · {leaf.config.projectPath.split('/').pop() || leaf.config.projectPath}
+        {leaf.config.cwd && (
+          <span className="text-aegis-text-dim truncate" title={leaf.config.cwd}>
+            · {leaf.config.cwd.split('/').pop() || leaf.config.cwd}
           </span>
         )}
         <span className="ml-auto flex items-center gap-0.5">
