@@ -1030,6 +1030,7 @@ export function AgentWorkspacePage() {
                 permissionMode={task.permissionMode}
                 initialStatus={task.status}
                 initialSessionPath={task.sessionPath}
+                initialSessionId={task.agent === 'codex' ? task.codexSessionId : task.agent === 'claude' ? task.claudeSessionId : undefined}
                 initialWorktreePath={task.worktreePath}
                 initialWorktreeBranch={task.worktreeBranch}
                 initialWorktreeDiscarded={task.worktreeDiscarded}

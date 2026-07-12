@@ -422,6 +422,7 @@ export interface AgentRunViewProps {
   permissionMode?: PermissionMode;
   initialStatus?: AgentWorkspaceTaskStatus;
   initialSessionPath?: string;
+  initialSessionId?: string;
   /** Persisted worktree for a task reopened after a project switch or restart. */
   initialWorktreePath?: string;
   initialWorktreeBranch?: string;
@@ -445,6 +446,7 @@ export function AgentRunView({
   permissionMode: providedPermissionMode,
   initialStatus: providedInitialStatus,
   initialSessionPath: providedInitialSessionPath,
+  initialSessionId: providedInitialSessionId,
   initialWorktreePath: providedInitialWorktreePath,
   initialWorktreeBranch: providedInitialWorktreeBranch,
   initialWorktreeDiscarded = false,
@@ -550,6 +552,7 @@ export function AgentRunView({
   const [worktreeBranch, setWorktreeBranch] = useState<string | null>(initialWorktreeDiscarded ? null : providedInitialWorktreeBranch ?? null);
   const [diffStats, setDiffStats] = useState<{ additions: number; deletions: number } | null>(null);
   const [sessionPath, setSessionPath] = useState<string | null>(providedInitialSessionPath ?? null);
+  const [sessionId, setSessionId] = useState<string | null>(providedInitialSessionId ?? null);
   const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
   const [exportingSession, setExportingSession] = useState(false);
   const [missingInstructionsFile, setMissingInstructionsFile] = useState(false);
@@ -819,10 +822,8 @@ export function AgentRunView({
     const p = listen<{ task_id: string; session_id: string; session_path: string }>('task-session', (e) => {
       if (e.payload.task_id !== taskId || !e.payload.session_path) return;
       setSessionPath(e.payload.session_path);
-      const resumeFlag =
-        agent === 'claude' ? '--resume'
-        : agent === 'pi' ? '--session'
-        : null;
+      setSessionId(e.payload.session_id);
+      const resumeFlag = agent === 'codex' ? 'resume' : agent === 'claude' ? '--resume' : agent === 'pi' ? '--session' : null;
       const resumeCommand = resumeFlag ? `${agent} ${resumeFlag} ${e.payload.session_id}` : undefined;
       recordSession({
         agent,
@@ -1087,16 +1088,16 @@ export function AgentRunView({
   }, [isDone, status]);
 
   // ── Resume support ──────────────────────────────────────────────────────
-  const resumeFlag = agent === 'claude' ? '--resume' : agent === 'pi' ? '--session' : null;
+  const resumeFlag = agent === 'codex' ? 'resume' : agent === 'claude' ? '--resume' : agent === 'pi' ? '--session' : null;
   const canResume = !running && isDone && !!sessionPath && !!resumeFlag && status === 'done';
   const resumeIdRef = useRef<string | null>(null);
 
   const handleResume = useCallback(() => {
-    const sessionId = sessionPath?.split('/').pop()?.replace('.jsonl', '') ?? '';
-    resumeIdRef.current = sessionId;
+    const resumeSessionId = sessionId ?? sessionPath?.split('/').pop()?.replace('.jsonl', '') ?? '';
+    resumeIdRef.current = resumeSessionId;
     setStatus('idle'); setRunning(false); setError(null); setMetrics(null); setDiffStats(null);
-    setPrompt(`[Resuming conversation ${sessionId}]`);
-  }, [sessionPath]);
+    setPrompt(`[Resuming conversation ${resumeSessionId}]`);
+  }, [sessionId, sessionPath]);
 
   const handleReconnect = useCallback(() => {
     setStatus('running');
@@ -1216,12 +1217,13 @@ export function AgentRunView({
       {!running && !isDone && <AgentHeader agent={agent} />}
       {/* ── Session history (kooky-style recent list) ─────────────────── */}
       {!running && !isDone && <SessionHistoryStrip agent={agent} projectPath={projectPath} onResume={(cmd) => {
-        const m = cmd.match(/(claude|pi)\s+(?:--resume|--session)\s+(\S+)/);
-        if (m) {
-          resumeIdRef.current = m[2];
+        const m = cmd.match(/^(?:claude|pi)\s+(?:--resume|--session)\s+(\S+)|^codex\s+resume\s+(\S+)/);
+        const resumeSessionId = m?.[1] ?? m?.[2];
+        if (resumeSessionId) {
+          resumeIdRef.current = resumeSessionId;
           setStatus('idle');
           setError(null);
-          setPrompt(`[Resuming ${agent} session ${m[2]}]`);
+          setPrompt(`[Resuming ${agent} session ${resumeSessionId}]`);
         }
       }} />}
       {(running || isDone) && (

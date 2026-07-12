@@ -396,6 +396,18 @@ fn permission_flag(agent: &str, mode: &str) -> Vec<String> {
     flag.split_ascii_whitespace().map(str::to_string).collect()
 }
 
+fn resume_arguments(agent: &str, session_id: &str) -> Option<Vec<String>> {
+    if session_id.is_empty() {
+        return None;
+    }
+    match agent {
+        "codex" => Some(vec!["resume".to_string(), session_id.to_string()]),
+        _ => find_agent(agent)
+            .and_then(|spec| spec.resume_flag)
+            .map(|flag| vec![flag.to_string(), session_id.to_string()]),
+    }
+}
+
 #[tauri::command]
 pub async fn run_task(
     app: AppHandle,
@@ -456,16 +468,16 @@ pub async fn run_task(
     for arg in permission_flag(&agent, &permission_mode) {
         cmd.arg(arg);
     }
-    // Resume flag: prepend --resume <id> before the prompt.
-    if let Some(flag) = spec.resume_flag {
-        if let Some(ref rid) = resume_id {
-            if !rid.is_empty() {
-                cmd.arg(flag);
-                cmd.arg(rid.clone());
-            }
+    let resume_args = resume_id
+        .as_deref()
+        .and_then(|session_id| resume_arguments(&agent, session_id));
+    if let Some(arguments) = &resume_args {
+        for argument in arguments {
+            cmd.arg(argument);
         }
     }
-    if !prompt.is_empty() {
+    // Codex resume is a subcommand and does not accept the original prompt.
+    if !prompt.is_empty() && !(agent == "codex" && resume_args.is_some()) {
         if let Some(flag) = spec.prompt_flag {
             cmd.arg(flag);
         }
@@ -1031,8 +1043,8 @@ pub fn get_active_task_ids() -> Vec<String> {
 mod tests {
     use super::{
         append_task_output, claude_project_directory_name, decode_task_image, permission_flag,
-        prompt_with_attachments, prompt_with_project_prefix, safe_task_id, task_final_status,
-        task_output_buffers, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+        prompt_with_attachments, prompt_with_project_prefix, resume_arguments, safe_task_id,
+        task_final_status, task_output_buffers, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
     };
 
     #[test]
@@ -1074,6 +1086,19 @@ mod tests {
     fn agents_without_permission_flags_receive_no_arguments() {
         assert!(permission_flag("pi", "ask").is_empty());
         assert!(permission_flag("unknown", "ask").is_empty());
+    }
+
+    #[test]
+    fn resume_arguments_follow_each_agent_cli_shape() {
+        assert_eq!(
+            resume_arguments("claude", "session-1"),
+            Some(vec!["--resume".to_string(), "session-1".to_string()]),
+        );
+        assert_eq!(
+            resume_arguments("codex", "session-2"),
+            Some(vec!["resume".to_string(), "session-2".to_string()]),
+        );
+        assert_eq!(resume_arguments("codex", ""), None);
     }
 
     #[test]
