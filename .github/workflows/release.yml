@@ -98,7 +98,9 @@ jobs:
             target: 'universal-apple-darwin'
             rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
             macos_signing_identity: '-'
-            bundle_args: '--bundles dmg'
+            # The updater consumes the signed .app.tar.gz artifact; DMG is
+            # retained for manual installation.
+            bundle_args: '--bundles app,dmg'
             installer_paths: |
               src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           # Windows — native MSVC runners for both supported architectures.
