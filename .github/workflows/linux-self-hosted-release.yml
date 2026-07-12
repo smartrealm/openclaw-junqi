@@ -20,9 +20,41 @@ jobs:
     name: Build and publish Linux x64
     # Keep this static: a matching runner must carry every label below.
     runs-on: [self-hosted, linux, x64, junqi-linux-x64]
+    # Build inside Ubuntu so the CentOS host's older WebKitGTK does not affect
+    # Tauri/Wry, which requires the WebKitGTK 4.1 pkg-config contract.
+    container: ubuntu:22.04
     env:
       RELEASE_TAG: ${{ inputs.ref }}
+      CARGO_BUILD_JOBS: '1'
     steps:
+      # This runs before JavaScript actions because the minimal Ubuntu image
+      # needs Git for checkout and gh for the release upload.
+      - name: Install container build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            ca-certificates \
+            git \
+            gh \
+            build-essential \
+            curl \
+            wget \
+            file \
+            pkg-config \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libasound2-dev \
+            libfuse2 \
+            dpkg
+
       - name: Validate requested tag
         shell: bash
         run: |
@@ -86,8 +118,6 @@ jobs:
             exit 1
           fi
 
-      # The CentOS host is bootstrapped separately; do not install distro
-      # packages inside an untrusted repository workflow.
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -140,3 +170,10 @@ jobs:
           gh release upload "$RELEASE_TAG" "$APPIMAGE_PATH" "$DEB_PATH" \
             --clobber \
             --repo "$GITHUB_REPOSITORY"
+
+      # Container-created files can otherwise remain root-owned in the
+      # runner workspace and exhaust the small self-hosted host disk.
+      - name: Clean build workspace
+        if: always()
+        shell: bash
+        run: rm -rf node_modules dist src-tauri/target
