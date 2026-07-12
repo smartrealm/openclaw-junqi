@@ -64,6 +64,18 @@ jobs:
             libfuse2 \
             dpkg
 
+      - name: Configure GitHub route for checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The container has its own /etc/hosts and does not inherit the
+          # host-level route fix used by the self-hosted runner service.
+          printf '%s\n' '140.82.112.3 github.com # JunQi self-hosted build route' >> /etc/hosts
+          curl --fail --silent --show-error --head \
+            --connect-timeout 5 --max-time 15 \
+            https://github.com/ >/dev/null
+
       - name: Validate requested tag
         shell: bash
         run: |
@@ -85,7 +97,7 @@ jobs:
         with:
           # A fully-qualified tag ref prevents a same-named branch from being built.
           ref: refs/tags/${{ inputs.ref }}
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
