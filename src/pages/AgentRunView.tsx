@@ -433,6 +433,7 @@ export interface AgentRunViewProps {
   autoStart?: boolean;
   onTaskStarted?: () => void;
   onTaskSaved?: () => void;
+  onOpenWorktreeTerminal?: () => void;
 }
 
 export function AgentRunView({
@@ -454,6 +455,7 @@ export function AgentRunView({
   autoStart = false,
   onTaskStarted,
   onTaskSaved,
+  onOpenWorktreeTerminal,
 }: AgentRunViewProps = {}) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
@@ -1249,6 +1251,11 @@ export function AgentRunView({
           {!running && (
             <button type="button" disabled={generatingTitle} onClick={() => void generateTitle()} title="生成任务名称" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50">
               <Sparkle size={13} className={generatingTitle ? 'animate-spin' : ''} />
+            </button>
+          )}
+          {running && worktreePath && onOpenWorktreeTerminal && (
+            <button type="button" onClick={onOpenWorktreeTerminal} title="打开工作树终端" className="inline-flex h-7 items-center gap-1.5 rounded border border-aegis-border px-2 text-[11px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">
+              <SquareTerminal size={12} />工作树终端
             </button>
           )}
           {running && <>

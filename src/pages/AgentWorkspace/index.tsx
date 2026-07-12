@@ -43,6 +43,7 @@ import { findWorkspaceForDirectory } from '@/workspace/projectWorkspace';
 import { useTheme } from '@/theme/useTheme';
 import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
 import { StatusIcon } from '@/components/shared/StatusIcon';
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 
 type RightPanel = 'files' | 'changes' | 'history' | null;
 type DiffTarget =
@@ -935,6 +936,7 @@ export function AgentWorkspacePage() {
         </header>
 
         <div className="relative min-h-0 flex-1">
+          <ErrorBoundary fallbackMessage="任务内容加载失败，请重试。">
           {openDiff ? (
             <GitDiffViewer
               projectPath={currentGitPath}
@@ -1037,9 +1039,11 @@ export function AgentWorkspacePage() {
                 initialIsDraft={task.isDraft}
                 autoStart={autoStartTaskId === task.id}
                 onTaskStarted={() => setAutoStartTaskId((current) => current === task.id ? null : current)}
+                onOpenWorktreeTerminal={() => setShowShellTerminal(true)}
               />
             </div>
           ))}
+          </ErrorBoundary>
         </div>
         {showShellTerminal && projectPath && (
           <div className="relative shrink-0 border-t border-aegis-border" style={{ height: terminalHeight }}>
@@ -1073,29 +1077,35 @@ export function AgentWorkspacePage() {
             className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize bg-transparent"
           />
           {rightPanel === 'files' && (
-            <FileExplorer
-              projectPath={projectPath}
-              projectName={workspace?.name || 'Project'}
-              onFileSelect={openFile}
-              active
-              width={rightPanelWidth}
-            />
+            <ErrorBoundary fallbackMessage="文件浏览器加载失败。">
+              <FileExplorer
+                projectPath={projectPath}
+                projectName={workspace?.name || 'Project'}
+                onFileSelect={openFile}
+                active
+                width={rightPanelWidth}
+              />
+            </ErrorBoundary>
           )}
           {rightPanel === 'changes' && (
-            <GitChanges
-              projectPath={currentGitPath}
-              currentTaskCreatedAt={selected?.createdAt ?? null}
-              onFileSelect={(filePath, staged, title) => showDiff({ mode: 'file', filePath, staged, title })}
-              width={rightPanelWidth}
-            />
+            <ErrorBoundary fallbackMessage="Git 变更面板加载失败。">
+              <GitChanges
+                projectPath={currentGitPath}
+                currentTaskCreatedAt={selected?.createdAt ?? null}
+                onFileSelect={(filePath, staged, title) => showDiff({ mode: 'file', filePath, staged, title })}
+                width={rightPanelWidth}
+              />
+            </ErrorBoundary>
           )}
           {rightPanel === 'history' && (
-            <GitHistory
-              projectPath={currentGitPath}
-              onCommitSelect={(commitHash, title) => showDiff({ mode: 'commit', commitHash, title })}
-              onFileClick={(commitHash, filePath, title) => showDiff({ mode: 'commit-file', commitHash, filePath, title })}
-              width={rightPanelWidth}
-            />
+            <ErrorBoundary fallbackMessage="Git 历史面板加载失败。">
+              <GitHistory
+                projectPath={currentGitPath}
+                onCommitSelect={(commitHash, title) => showDiff({ mode: 'commit', commitHash, title })}
+                onFileClick={(commitHash, filePath, title) => showDiff({ mode: 'commit-file', commitHash, filePath, title })}
+                width={rightPanelWidth}
+              />
+            </ErrorBoundary>
           )}
         </aside>
       )}
