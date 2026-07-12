@@ -84,7 +84,8 @@ jobs:
     name: Build ${{ matrix.name }}
     needs: verify-version
     permissions:
-      contents: read
+      # Tauri Action uploads signed bundles and latest.json for tagged builds.
+      contents: write
     strategy:
       fail-fast: false              # keep all platforms building even if one fails
       matrix:
