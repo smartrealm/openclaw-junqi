@@ -1,6 +1,6 @@
 {
   "name": "junqi-desktop",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "private": true,
   "type": "module",
   "description": "JunQi Desktop — AI-powered desktop assistant by 陕西浚启智境科技有限公司",
@@ -59,6 +59,7 @@
     "@tauri-apps/plugin-fs": "~2.4.0",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "~2.3.5",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@types/dompurify": "^3.0.5",
     "@uiw/codemirror-theme-github": "^4.25.10",
     "@uiw/codemirror-theme-solarized": "^4.25.10",

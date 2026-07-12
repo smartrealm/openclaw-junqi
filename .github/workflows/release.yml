@@ -186,10 +186,16 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Prefer a configured Developer ID; keep certificate-free builds
           # internally valid by sealing the complete app with an ad-hoc identity.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || matrix.macos_signing_identity }}
         with:
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || (startsWith(github.event.inputs.ref, 'v') && github.event.inputs.ref || '') }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('JunQi Desktop {0}', github.ref_name) || (startsWith(github.event.inputs.ref, 'v') && format('JunQi Desktop {0}', github.event.inputs.ref) || '') }}
+          releaseBody: 'JunQi Desktop signed desktop release.'
+          updaterJsonPreferNsis: true
           args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
       - name: Verify macOS disk image and app signature
