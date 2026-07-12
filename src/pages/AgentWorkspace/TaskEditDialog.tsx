@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
@@ -17,6 +17,12 @@ export function AgentWorkspaceTaskEditDialog({ task, onSave, onClose }: {
   const [agent, setAgent] = useState(task.agent === 'codex' ? 'codex' : 'claude');
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(task.permissionMode);
   const valid = Boolean(prompt.trim());
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
 
   return createPortal(
     <div role="presentation" className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/45 p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -44,4 +50,3 @@ export function AgentWorkspaceTaskEditDialog({ task, onSave, onClose }: {
     document.body,
   );
 }
-

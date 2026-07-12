@@ -36,6 +36,7 @@ import { AgentWorkspaceTaskEditDialog } from './TaskEditDialog';
 import { ProjectAvatar } from './ProjectAvatar';
 import { AgentWorkspaceBranchBar } from './BranchBar';
 import { AgentWorkspaceProjectSettingsDialog } from './ProjectSettingsDialog';
+import { AgentWorkspaceTodoTaskView } from './TodoTaskView';
 import { useAgentWorkspaceStore, type AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { findWorkspaceForDirectory } from '@/workspace/projectWorkspace';
@@ -319,7 +320,7 @@ export function AgentWorkspacePage() {
     closeWorkspace(closingWorkspace.id);
   }, [closeWorkspace, deleteTasks, tasks, workspaces]);
   const renderedRunTasks = useMemo(() => tasks.filter((task) => (
-    selected?.id === task.id
+    (selected?.id === task.id && task.status !== 'todo')
     || (mountedRunTaskIds.has(task.id) && isActiveTask(task))
   )), [isActiveTask, mountedRunTaskIds, selected?.id, tasks]);
   const hasAttention = projectTasks.some((task) => (
@@ -857,6 +858,8 @@ export function AgentWorkspacePage() {
                         setOpenFiles([]);
                         setActiveFilePath(null);
                         setAutoStartTaskId(task.id);
+                        setMountedRunTaskIds((current) => new Set([...current, task.id]));
+                        updateTask(task.id, { status: 'pending' });
                         selectTask(task.id);
                       }}
                       className="flex h-6 w-6 items-center justify-center rounded text-aegis-primary hover:bg-aegis-hover"
@@ -999,6 +1002,16 @@ export function AgentWorkspacePage() {
                 <Plus size={14} />新建任务
               </button>
             </section>
+          ) : selected.status === 'todo' ? (
+            <AgentWorkspaceTodoTaskView
+              task={selected}
+              onEdit={() => setEditingTaskDetailsId(selected.id)}
+              onRun={() => {
+                setAutoStartTaskId(selected.id);
+                setMountedRunTaskIds((current) => new Set([...current, selected.id]));
+                updateTask(selected.id, { status: 'pending' });
+              }}
+            />
           ) : null}
 
           {renderedRunTasks.map((task) => (
