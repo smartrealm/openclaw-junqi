@@ -62,6 +62,10 @@ import {
 } from './terminalClipboard';
 import { debugError } from "@/utils/debugLog";
 import {
+  FILE_TREE_POINTER_DRAG_EVENT,
+  type FileTreePointerDragDetail,
+} from "@/components/FileExplorer/pathDrag";
+import {
   cancelTerminalPtyHandoff,
   completeTerminalPtyHandoff,
   createTerminalRendererInstanceId,
@@ -1396,6 +1400,29 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       pendingTerminalPasteRef.current = input;
       return flushPendingTerminalPaste();
     }, [flushPendingTerminalPaste]);
+
+    useEffect(() => {
+      if (!isActive || !paneFocused || isRemoteWorkspace) return;
+      const handleFileTreeDrop = (event: Event) => {
+        const detail = (event as CustomEvent<FileTreePointerDragDetail>).detail;
+        if (detail.type !== 'drop' || detail.paths.length === 0) return;
+        const panel = panelRef.current;
+        if (!panel) return;
+        const rect = panel.getBoundingClientRect();
+        if (detail.x < rect.left || detail.x > rect.right || detail.y < rect.top || detail.y > rect.bottom) return;
+        const target = document.elementFromPoint(detail.x, detail.y);
+        if (target && !panel.contains(target)) return;
+        onPaneFocus?.();
+        void Promise.all(detail.paths.map((path) => invoke<string>('terminal_escape_project_path', {
+          path,
+          projectPath,
+        }))).then((paths) => {
+          queueTerminalPaste(`${paths.join(' ')} `);
+        }).catch((error) => debugError('terminal', 'file tree path drop failed', error));
+      };
+      window.addEventListener(FILE_TREE_POINTER_DRAG_EVENT, handleFileTreeDrop);
+      return () => window.removeEventListener(FILE_TREE_POINTER_DRAG_EVENT, handleFileTreeDrop);
+    }, [isActive, isRemoteWorkspace, onPaneFocus, paneFocused, projectPath, queueTerminalPaste]);
 
     const sendCommandToActiveShell = useCallback((command: string) => {
       const normalized = command.trim() ? command : '';

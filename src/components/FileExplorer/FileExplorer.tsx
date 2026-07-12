@@ -14,6 +14,7 @@ import { CreateInputRow } from "./CreateInputRow";
 import { TreeItem } from "./TreeItem";
 import { writeClipboardText } from "./clipboard";
 import { debugError } from "@/utils/debugLog";
+import { dispatchFileTreePointerDrag } from "./pathDrag";
 import {
   AUTO_REFRESH_MS,
   ROW_HEIGHT,
@@ -66,6 +67,9 @@ export function FileExplorer({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const commitInFlightRef = useRef(false);
   const deleteInFlightRef = useRef(false);
+  const [dragPreview, setDragPreview] = useState<{ x: number; y: number; node: TreeNode } | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const suppressClickPathRef = useRef<string | null>(null);
 
   // ── Cancellable invoke wrapper ──
   const cancelledRef = useRef(false);
@@ -336,11 +340,60 @@ export function FileExplorer({
 
   const handleSelect = useCallback(
     (node: TreeNode) => {
+      if (suppressClickPathRef.current === node.path) return;
       setSelectedPath(node.path);
       onFileSelect(node.path, node.name);
     },
     [onFileSelect],
   );
+
+  const handlePointerDown = useCallback((event: React.PointerEvent, node: TreeNode) => {
+    if (event.button !== 0) return;
+    dragCleanupRef.current?.();
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handleMove, true);
+      window.removeEventListener("pointerup", handleUp, true);
+      window.removeEventListener("pointercancel", handleCancel, true);
+      setDragPreview(null);
+      dragCleanupRef.current = null;
+    };
+    const finish = (type: "drop" | "cancel", x: number, y: number) => {
+      cleanup();
+      if (!dragging) return;
+      dispatchFileTreePointerDrag({ type, paths: [node.path], x, y });
+      suppressClickPathRef.current = node.path;
+      window.setTimeout(() => {
+        if (suppressClickPathRef.current === node.path) suppressClickPathRef.current = null;
+      }, 100);
+    };
+    function handleMove(moveEvent: PointerEvent) {
+      if (moveEvent.pointerId !== pointerId) return;
+      if (!dragging && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 5) return;
+      dragging = true;
+      moveEvent.preventDefault();
+      setDragPreview({ x: moveEvent.clientX, y: moveEvent.clientY, node });
+    }
+    function handleUp(upEvent: PointerEvent) {
+      if (upEvent.pointerId !== pointerId) return;
+      if (dragging) upEvent.preventDefault();
+      finish("drop", upEvent.clientX, upEvent.clientY);
+    }
+    function handleCancel(cancelEvent: PointerEvent) {
+      if (cancelEvent.pointerId !== pointerId) return;
+      finish("cancel", cancelEvent.clientX, cancelEvent.clientY);
+    }
+    dragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handleMove, true);
+    window.addEventListener("pointerup", handleUp, true);
+    window.addEventListener("pointercancel", handleCancel, true);
+  }, []);
+
+  useEffect(() => () => dragCleanupRef.current?.(), []);
 
   const ensureExpanded = useCallback(
     (dirPath: string) => {
@@ -508,6 +561,15 @@ export function FileExplorer({
         overflow: "hidden",
       }}
     >
+      {dragPreview && (
+        <div
+          className="pointer-events-none fixed z-[10000] flex max-w-64 items-center gap-2 rounded border border-aegis-border bg-aegis-surface px-2 py-1 text-xs text-aegis-text shadow-lg"
+          style={{ left: dragPreview.x + 12, top: dragPreview.y + 12 }}
+        >
+          {dragPreview.node.is_dir ? <FolderOpen size={13} /> : <span className="text-aegis-primary">@</span>}
+          <span className="truncate">{dragPreview.node.name}</span>
+        </div>
+      )}
       {ctxMenu && (
         <FileExplorerContextMenu
           ctxMenu={ctxMenu}
@@ -668,6 +730,8 @@ export function FileExplorer({
                     onSelect={handleSelect}
                     onToggle={handleToggle}
                     onContextMenu={handleContextMenu}
+                    onPointerDown={handlePointerDown}
+                    draggingPath={dragPreview?.node.path ?? null}
                   />
                 </div>
               );

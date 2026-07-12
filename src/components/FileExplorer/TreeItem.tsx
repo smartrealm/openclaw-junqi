@@ -14,6 +14,8 @@ export const TreeItem = memo(function TreeItem({
   onSelect,
   onToggle,
   onContextMenu,
+  onPointerDown,
+  draggingPath,
 }: {
   node: TreeNode;
   depth: number;
@@ -22,11 +24,14 @@ export const TreeItem = memo(function TreeItem({
   onSelect: (node: TreeNode) => void;
   onToggle: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
+  onPointerDown?: (e: React.PointerEvent, node: TreeNode) => void;
+  draggingPath?: string | null;
 }) {
   const isDir = node.is_dir;
   const isExpanded = node.expanded;
   const isSelected = node.path === selectedPath;
   const isContext = node.path === contextPath;
+  const isDragging = node.path === draggingPath;
   const padLeft = 2 + depth * 16;
 
   const rowBg = isSelected
@@ -53,7 +58,8 @@ export const TreeItem = memo(function TreeItem({
         margin: "0 4px",
         boxSizing: "border-box",
         userSelect: "none",
-        background: rowBg,
+        background: isDragging ? "var(--aegis-hover)" : rowBg,
+        opacity: isDragging ? 0.55 : 1,
       }}
       onMouseEnter={(e) => {
         if (!isSelected) {
@@ -72,6 +78,8 @@ export const TreeItem = memo(function TreeItem({
         onSelect(node);
       }}
       onContextMenu={(e) => onContextMenu(e, node)}
+      onPointerDown={(event) => onPointerDown?.(event, node)}
+      draggable={false}
     >
       {/* Indent spacer */}
       <div style={{ width: padLeft, flexShrink: 0 }} />
