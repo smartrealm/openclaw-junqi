@@ -9,8 +9,9 @@
 //   const display = useAppVersion('v');     // "v0.1.0"
 // ═══════════════════════════════════════════════════════════
 
-/** App version string — injected at build time by Vite (see vite.config.ts) */
-export const APP_VERSION: string = __APP_VERSION__ ?? 'dev';
+import { APP_VERSION } from '@/version';
+
+export { APP_VERSION };
 
 /**
  * React hook — returns the app version with optional prefix.

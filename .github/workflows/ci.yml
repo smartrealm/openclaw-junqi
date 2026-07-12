@@ -105,10 +105,10 @@ jobs:
         # tsc with no emit — fastest possible type validation, no JS output.
         run: npx tsc --noEmit
 
-      - name: ESLint
-        # Continue on error so we surface all lint problems in one run;
-        # tighten to fail-on-error once the codebase is lint-clean.
-        run: npx eslint . --ext .ts,.tsx --max-warnings=0 || true
+      - name: Frontend lint
+        # `lint` is the repository's maintained frontend quality gate: it
+        # enforces architectural boundaries and a no-emit TypeScript check.
+        run: pnpm lint
 
   build:
     name: Frontend (vite build)

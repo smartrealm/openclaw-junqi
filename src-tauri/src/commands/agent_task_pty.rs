@@ -472,15 +472,13 @@ pub async fn run_task(
         serde_json::json!({ "task_id": task_id, "status": "running" }),
     );
 
-    // ── Tool-call activity watcher (kooky-style event strip) ─────────────────
-    spawn_toolcall_watcher(app.clone(), task_id.clone());
-
     // ── Session watcher: discover JSONL in background ────────────────────────
     spawn_session_watcher(
         app.clone(),
         task_id.clone(),
         project_path.clone(),
         agent.clone(),
+        spec.reports_tool_calls,
     );
 
     // ── Background reader: batched flush via Channel ─────────────────────────
@@ -622,7 +620,13 @@ pub async fn run_task(
 // This background task polls the expected directory for new files (by mtime
 // after task start time), and emits `task-session` when a match is found.
 
-fn spawn_session_watcher(app: AppHandle, task_id: String, project_path: String, agent: String) {
+fn spawn_session_watcher(
+    app: AppHandle,
+    task_id: String,
+    project_path: String,
+    agent: String,
+    reports_tool_calls: bool,
+) {
     std::thread::spawn(move || {
         let start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -634,6 +638,11 @@ fn spawn_session_watcher(app: AppHandle, task_id: String, project_path: String, 
             std::path::PathBuf::from(&project_path)
                 .join(".codex")
                 .join("sessions")
+        } else if agent == "claude" {
+            match claude_sessions_dir_for_project(&project_path) {
+                Some(path) => path,
+                None => return,
+            }
         } else {
             // Claude: resolve ~/.claude/projects/<hash> by scanning subdirs
             let home = dirs_next().unwrap_or_else(|| {
@@ -658,7 +667,7 @@ fn spawn_session_watcher(app: AppHandle, task_id: String, project_path: String, 
                 // Only consider .jsonl files.
                 if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                     // Claude: the sessions dir contains project-hash subdirs.
-                    if agent != "codex" && path.is_dir() {
+                    if agent != "codex" && agent != "claude" && path.is_dir() {
                         // Recurse one level: ~/.claude/projects/<hash>/*.jsonl
                         if let Ok(inner) = std::fs::read_dir(&path) {
                             for inner_entry in inner.flatten() {
@@ -679,6 +688,13 @@ fn spawn_session_watcher(app: AppHandle, task_id: String, project_path: String, 
                                             "session_path": &session_path_str,
                                         }),
                                     );
+                                    if reports_tool_calls {
+                                        spawn_toolcall_watcher(
+                                            app.clone(),
+                                            task_id.clone(),
+                                            inner_path.clone(),
+                                        );
+                                    }
                                     super::notification::push_local_notification(
                                         "info",
                                         "Session discovered",
@@ -714,6 +730,9 @@ fn spawn_session_watcher(app: AppHandle, task_id: String, project_path: String, 
                             "session_path": &session_path_str,
                         }),
                     );
+                    if reports_tool_calls {
+                        spawn_toolcall_watcher(app.clone(), task_id.clone(), path.clone());
+                    }
                     super::notification::push_local_notification(
                         "info",
                         "Session discovered",
@@ -736,6 +755,28 @@ fn spawn_session_watcher(app: AppHandle, task_id: String, project_path: String, 
     });
 }
 
+fn claude_project_directory_name(project_path: &str) -> String {
+    project_path
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn claude_sessions_dir_for_project(project_path: &str) -> Option<PathBuf> {
+    let home = dirs_next()?;
+    Some(
+        home.join(".claude")
+            .join("projects")
+            .join(claude_project_directory_name(project_path)),
+    )
+}
+
 /// Tool-call activity watcher — kooky ToolCallActivityStrip model.
 ///
 /// Scans the running session's JSONL file (once discovered) for tool_use
@@ -743,33 +784,18 @@ fn spawn_session_watcher(app: AppHandle, task_id: String, project_path: String, 
 /// counters stream to the frontend in real-time so the status bar's
 /// tool-call pill reflects what the agent is doing.
 ///
-/// Until the session file is discovered, we watch the task registry's
-/// PTY output buffer via a polling hook: as soon as the session file
-/// exists, we tail it for tool_use blocks.
-fn spawn_toolcall_watcher(app: tauri::AppHandle, task_id: String) {
+/// The session watcher supplies the task's exact JSONL path before this
+/// watcher starts, so concurrent tasks never share a global newest-file scan.
+fn spawn_toolcall_watcher(app: tauri::AppHandle, task_id: String, path: PathBuf) {
     std::thread::spawn(move || {
-        // Wait for session file to appear (poll for up to 60s).
-        let mut session_path: Option<String> = None;
-        for _ in 0..60 {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            // We don't know the session file path here — it's in the
-            // session watcher. Listen via the global state instead:
-            // scan the task registry's recent output by checking
-            // ~/.claude/projects and .codex/sessions.
-            let candidates = recent_session_files();
-            if let Some(p) = candidates.first() {
-                session_path = Some(p.clone());
-                break;
-            }
-        }
-        let Some(path) = session_path else {
-            return;
-        };
-
-        // Tail JSONL file: every line is a Claude / Codex session entry.
-        // Count tool_use blocks by name.
+        // The session watcher has already associated this exact JSONL with the
+        // task. Stop with the PTY so completed tasks cannot leak polling threads.
         let mut last_size: u64 = 0;
-        loop {
+        while pty_registry()
+            .lock()
+            .map(|registry| registry.contains_key(&task_id))
+            .unwrap_or(false)
+        {
             std::thread::sleep(std::time::Duration::from_millis(500));
             let Ok(text) = std::fs::read_to_string(&path) else {
                 continue;
@@ -814,55 +840,6 @@ fn spawn_toolcall_watcher(app: tauri::AppHandle, task_id: String) {
             );
         }
     });
-}
-
-/// Find the most recent Claude/Codex session file across known directories.
-/// Cheap scan: list_dir + sort by mtime, return the newest .jsonl.
-fn recent_session_files() -> Vec<String> {
-    let home = match dirs_next() {
-        Some(h) => h,
-        None => return Vec::new(),
-    };
-    let mut paths: Vec<(std::time::SystemTime, String)> = Vec::new();
-
-    // Claude: ~/.claude/projects/*/*.jsonl
-    let claude_dir = home.join(".claude").join("projects");
-    if let Ok(read) = std::fs::read_dir(&claude_dir) {
-        for proj in read.flatten() {
-            if let Ok(read2) = std::fs::read_dir(proj.path()) {
-                for f in read2.flatten() {
-                    let p = f.path();
-                    if p.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                        if let Ok(meta) = f.metadata() {
-                            if let Ok(mtime) = meta.modified() {
-                                paths.push((mtime, p.to_string_lossy().to_string()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Codex: $cwd/.codex/sessions/*.jsonl (search common cwd candidates)
-    if let Ok(cwd) = std::env::current_dir() {
-        let codex_dir = cwd.join(".codex").join("sessions");
-        if let Ok(read) = std::fs::read_dir(&codex_dir) {
-            for f in read.flatten() {
-                let p = f.path();
-                if p.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                    if let Ok(meta) = f.metadata() {
-                        if let Ok(mtime) = meta.modified() {
-                            paths.push((mtime, p.to_string_lossy().to_string()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    paths.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
-    paths.into_iter().take(1).map(|(_, p)| p).collect()
 }
 
 /// Minimal URL-encode for file paths used in notification deep-links.
@@ -1010,9 +987,33 @@ pub fn get_active_task_ids() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_task_output, decode_task_image, permission_flag, prompt_with_attachments,
-        safe_task_id, task_final_status, task_output_buffers, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+        append_task_output, claude_project_directory_name, decode_task_image, permission_flag,
+        prompt_with_attachments, safe_task_id, task_final_status, task_output_buffers,
+        MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
     };
+
+    #[test]
+    fn tool_call_watcher_is_task_scoped_without_global_session_scan() {
+        let source = include_str!("agent_task_pty.rs");
+        let removed_global_scan = ["candidates = ", "recent_session_files"].concat();
+        assert!(!source.contains(&removed_global_scan));
+        assert!(
+            source.contains("spawn_toolcall_watcher(app.clone(), task_id.clone(), path.clone())")
+        );
+        assert!(source.contains("registry.contains_key(&task_id)"));
+    }
+
+    #[test]
+    fn claude_session_directory_name_is_project_scoped() {
+        assert_eq!(
+            claude_project_directory_name("/Users/wei/Jun Qi"),
+            "-Users-wei-Jun-Qi"
+        );
+        assert_eq!(
+            claude_project_directory_name(r"C:\Work\junqi"),
+            "C--Work-junqi"
+        );
+    }
 
     #[test]
     fn permission_modes_expand_to_real_cli_arguments() {

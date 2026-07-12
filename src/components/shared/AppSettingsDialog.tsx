@@ -32,6 +32,7 @@ import { changeLanguage } from '@/i18n';
 import type { AegisTheme } from '@/theme/types';
 import { APP_LANGUAGE_OPTIONS, type SupportedLanguage } from '@/i18n/languages';
 import { StatusDot } from '@/components/shared/StatusDot';
+import { APP_VERSION } from '@/version';
 import clsx from 'clsx';
 
 // ── Nav ─────────────────────────────────────────────────────────────────────
@@ -396,7 +397,7 @@ function AboutPanel() {
   return (
     <div className="p-6"><h2 className="text-[16px] font-bold text-aegis-text mb-1">About JunQi</h2><p className="text-[12px] text-aegis-text-dim mb-6">OpenClaw Gateway desktop client with Nezha-style AI tooling.</p>
       <div className="flex flex-col gap-3">
-        {[['Version','0.5.0'],['Stack','React 19 · Tauri 2 · TypeScript · Vite · xterm.js'],['Backend','Rust · portable-pty · serde_json · chrono · toml · serde_yaml'],['Features','Gateway chat · 24+ pages · Nezha 39-feature port · Skill hub · Worktree · Session playback · Agent PTY · 14 agents']].map(([t,b])=>
+        {[['Version', APP_VERSION],['Stack','React 19 · Tauri 2 · TypeScript · Vite · xterm.js'],['Backend','Rust · portable-pty · serde_json · chrono · toml · serde_yaml'],['Features','Gateway chat · 24+ pages · Nezha 39-feature port · Skill hub · Worktree · Session playback · Agent PTY · 14 agents']].map(([t,b])=>
           <div key={t} className="rounded-xl p-4" style={{background:'rgb(var(--aegis-overlay)/0.04)',border:'1px solid rgb(var(--aegis-border))'}}><div className="text-[12px] font-semibold text-aegis-text-secondary mb-1">{t}</div><div className="text-[12px] text-aegis-text-dim leading-relaxed">{b}</div></div>)}
         <a href="https://github.com/hanshuaikang/nezha" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2 px-3 py-2 rounded-md text-[12px] w-fit hover:bg-[rgb(var(--aegis-overlay)/0.04)] transition-colors" style={{color:'rgb(var(--aegis-primary))',border:'1px solid rgb(var(--aegis-border))'}}><ExternalLink size={12}/>nezha on GitHub</a>
       </div>

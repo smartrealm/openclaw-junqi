@@ -40,6 +40,7 @@ import {
 import { formatGatewayLogs } from '../services/gateway/gatewayLogFormatting';
 import { gatewayRestartSingleFlight } from '../services/gateway/SingleFlight';
 import { gatewayRestartProgressFromLog, type GatewayRecoveryStatus } from '../services/gateway/recoveryProgress';
+import { APP_VERSION } from '../version';
 
 const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
 const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
@@ -217,7 +218,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
           openclaw = m ? m[1] : String(st.version);
         }
       } catch {}
-      return { desktop: (window as any).__APP_VERSION__ || "0.5.0", openclaw };
+      return { desktop: (window as any).__APP_VERSION__ || APP_VERSION, openclaw };
     },
     platformInfo: async () => {
       try {
