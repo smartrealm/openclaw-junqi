@@ -116,12 +116,17 @@ jobs:
           fi
 
           archive="$RUNNER_TEMP/junqi-source-$source_commit.tar.gz"
+          auth_config="$(mktemp "$RUNNER_TEMP/junqi-curl-auth.XXXXXX")"
+          chmod 600 "$auth_config"
+          trap 'rm -f "$auth_config"' EXIT
+          printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" > "$auth_config"
+          printf '%s\n' 'header = "Accept: application/vnd.github+json"' >> "$auth_config"
+
           rm -rf "$GITHUB_WORKSPACE"
           mkdir -p "$GITHUB_WORKSPACE"
           curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
             --connect-timeout 10 --max-time 300 \
-            --header "Authorization: Bearer $GH_TOKEN" \
-            --header 'Accept: application/vnd.github+json' \
+            --config "$auth_config" \
             --output "$archive" \
             "https://api.github.com/repos/$repo/tarball/$source_commit"
           tar --extract --gzip --file "$archive" --strip-components=1 -C "$GITHUB_WORKSPACE"
