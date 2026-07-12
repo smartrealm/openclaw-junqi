@@ -28,10 +28,12 @@ jobs:
       CARGO_BUILD_JOBS: '1'
       # The host's Mihomo proxy is exposed to job containers through the
       # Docker bridge gateway. Keep proxying scoped to this build job.
-      HTTP_PROXY: http://172.17.0.1:7890
-      HTTPS_PROXY: http://172.17.0.1:7890
-      ALL_PROXY: http://172.17.0.1:7890
-      NO_PROXY: 127.0.0.1,localhost,172.17.0.1
+      # The runner also inherits its own proxy as lower-case variables.
+      # Override those exact keys because APT prioritizes lower-case forms.
+      http_proxy: http://172.17.0.1:7890
+      https_proxy: http://172.17.0.1:7890
+      all_proxy: http://172.17.0.1:7890
+      no_proxy: 127.0.0.1,localhost,172.17.0.1
     steps:
       # This runs before JavaScript actions because the minimal Ubuntu image
       # needs Git for checkout and gh for the release upload.
