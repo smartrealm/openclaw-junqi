@@ -64,18 +64,6 @@ jobs:
             libfuse2 \
             dpkg
 
-      - name: Configure GitHub route for checkout
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # The container has its own /etc/hosts and does not inherit the
-          # host-level route fix used by the self-hosted runner service.
-          printf '%s\n' '140.82.112.3 github.com # JunQi self-hosted build route' >> /etc/hosts
-          curl --fail --silent --show-error --head \
-            --connect-timeout 5 --max-time 15 \
-            https://github.com/ >/dev/null
-
       - name: Validate requested tag
         shell: bash
         run: |
@@ -92,12 +80,58 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout requested tag
-        uses: actions/checkout@v7
-        with:
-          # A fully-qualified tag ref prevents a same-named branch from being built.
-          ref: refs/tags/${{ inputs.ref }}
-          fetch-depth: 1
+      - name: Download requested tag source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo="$GITHUB_REPOSITORY"
+          tag="$RELEASE_TAG"
+          tag_object_type="$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.type')"
+          tag_object_sha="$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.sha')"
+
+          case "$tag_object_type" in
+            commit)
+              source_commit="$tag_object_sha"
+              ;;
+            tag)
+              source_object_type="$(gh api "repos/$repo/git/tags/$tag_object_sha" --jq '.object.type')"
+              source_commit="$(gh api "repos/$repo/git/tags/$tag_object_sha" --jq '.object.sha')"
+              if [[ "$source_object_type" != commit ]]; then
+                echo "::error::Tag $tag does not resolve to a commit" >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Unsupported tag object type: $tag_object_type" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Tag $tag did not resolve to a commit SHA" >&2
+            exit 1
+          fi
+
+          archive="$RUNNER_TEMP/junqi-source-$source_commit.tar.gz"
+          rm -rf "$GITHUB_WORKSPACE"
+          mkdir -p "$GITHUB_WORKSPACE"
+          curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
+            --connect-timeout 10 --max-time 300 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --output "$archive" \
+            "https://api.github.com/repos/$repo/tarball/$source_commit"
+          tar --extract --gzip --file "$archive" --strip-components=1 -C "$GITHUB_WORKSPACE"
+
+          if [[ ! -f "$GITHUB_WORKSPACE/package.json" ]]; then
+            echo '::error::Downloaded tag archive did not contain package.json' >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$source_commit" > "$RUNNER_TEMP/junqi-source-commit"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -115,21 +149,15 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
 
-      - name: Verify checked-out tag and desktop version
+      - name: Verify downloaded tag and desktop version
         shell: bash
         run: |
           set -euo pipefail
 
           tag="$RELEASE_TAG"
-          if ! git show-ref --verify --quiet "refs/tags/$tag"; then
-            echo "::error::Requested tag was not fetched: $tag"
-            exit 1
-          fi
-
-          tag_commit="$(git rev-parse "refs/tags/$tag^{commit}")"
-          head_commit="$(git rev-parse HEAD)"
-          if [[ "$tag_commit" != "$head_commit" ]]; then
-            echo "::error::Checked-out commit does not match tag $tag"
+          source_commit="$(cat "$RUNNER_TEMP/junqi-source-commit")"
+          if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Downloaded source is missing a valid tag commit SHA"
             exit 1
           fi
 
