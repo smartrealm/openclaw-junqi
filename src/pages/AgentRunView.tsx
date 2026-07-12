@@ -415,6 +415,7 @@ function SessionHistoryStrip({ agent, projectPath, onResume }: {
 
 export interface AgentRunViewProps {
   taskId?: string;
+  initialTitle?: string;
   projectPath?: string;
   agent?: AgentRunAgent;
   prompt?: string;
@@ -436,6 +437,7 @@ export interface AgentRunViewProps {
 
 export function AgentRunView({
   taskId: providedTaskId,
+  initialTitle = '',
   projectPath: providedProjectPath,
   agent: providedAgent,
   prompt: providedPrompt,
@@ -479,6 +481,14 @@ export function AgentRunView({
   const [launchMode, setLaunchMode] = useState<LaunchMode>(providedInitialLaunchMode ?? (providedInitialWorktreePath && !initialWorktreeDiscarded ? 'worktree' : 'local'));
   const [baseBranch, setBaseBranch] = useState(providedInitialBaseBranch ?? '');
   const [prompt, setPrompt] = useState(initialPrompt);
+  const [taskTitle, setTaskTitle] = useState(initialTitle);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(initialTitle);
+  const [generatingTitle, setGeneratingTitle] = useState(false);
+  useEffect(() => {
+    setTaskTitle(initialTitle);
+    if (!editingTitle) setTitleDraft(initialTitle);
+  }, [editingTitle, initialTitle]);
   const [projectPath, setProjectPath] = useState(() => {
     const requestedPath = providedProjectPath ?? params.get('projectPath');
     if (requestedPath) return requestedPath;
@@ -741,7 +751,7 @@ export function AgentRunView({
       xtermRef.current = null;
       fitRef.current = null;
     };
-  }, [replayOutputTo]);
+  }, [replayOutputTo, status]);
 
   const writeTerm = useCallback((chunk: string) => {
     outputBufferRef.current += chunk;
@@ -1086,6 +1096,19 @@ export function AgentRunView({
     setPrompt(`[Resuming conversation ${sessionId}]`);
   }, [sessionPath]);
 
+  const handleReconnect = useCallback(() => {
+    setStatus('running');
+    setRunning(true);
+    setError(null);
+    if (workspaceTaskId) {
+      updateWorkspaceTask(workspaceTaskId, {
+        status: 'running',
+        failureReason: undefined,
+        attentionRequestedAt: undefined,
+      });
+    }
+  }, [updateWorkspaceTask, workspaceTaskId]);
+
   const handleExportSession = useCallback(async () => {
     if (!sessionPath || exportingSession) return;
     setExportingSession(true);
@@ -1117,6 +1140,36 @@ export function AgentRunView({
   }, [agent, exportingSession, prompt, sessionPath]);
 
   useEffect(() => { if (prompt === '' && resumeIdRef.current) resumeIdRef.current = null; }, [prompt]);
+
+  const commitTitle = useCallback(() => {
+    const nextTitle = titleDraft.trim();
+    if (nextTitle) {
+      setTaskTitle(nextTitle);
+      if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { title: nextTitle });
+    }
+    setEditingTitle(false);
+  }, [titleDraft, updateWorkspaceTask, workspaceTaskId]);
+
+  const generateTitle = useCallback(async () => {
+    if (!workspaceTaskId || generatingTitle || running) return;
+    setGeneratingTitle(true);
+    try {
+      const nextTitle = await invoke<string>('generate_task_name', {
+        projectPath,
+        agent,
+        originalPrompt: prompt,
+      });
+      if (nextTitle.trim()) {
+        setTaskTitle(nextTitle.trim());
+        setTitleDraft(nextTitle.trim());
+        updateWorkspaceTask(workspaceTaskId, { title: nextTitle.trim() });
+      }
+    } catch (reason) {
+      setError(`生成任务名称失败：${String(reason)}`);
+    } finally {
+      setGeneratingTitle(false);
+    }
+  }, [agent, generatingTitle, projectPath, prompt, running, updateWorkspaceTask, workspaceTaskId]);
 
   // ── Save as Todo (localStorage) ─────────────────────────────────────────
   const handleSaveTodo = useCallback(() => {
@@ -1169,28 +1222,39 @@ export function AgentRunView({
           setPrompt(`[Resuming ${agent} session ${m[2]}]`);
         }
       }} />}
-      {running && (
+      {(running || isDone) && (
         <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0" style={{ background: 'rgb(var(--aegis-primary)/0.06)', borderColor: 'rgb(var(--aegis-border))' }}>
-          <StatusBadge state={needsRecovery ? 'idle' : 'running'} size={10} />
-          <span className="text-[12px] font-semibold text-aegis-text">{statusLabel}</span>
+          <StatusBadge state={needsRecovery ? 'idle' : status === 'done' ? 'ended' : status === 'failed' ? 'failed' : status === 'cancelled' ? 'idle' : 'running'} size={10} />
           <StatusIcon status={status} size={13} />
-          <span className="ml-auto text-[10px] font-mono text-aegis-text-dim">{taskId}</span>
-          <button
-            type="button"
-            onClick={handleMarkDone}
-            title="标记完成"
-            className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-emerald-500/10 hover:text-emerald-400"
-          >
-            <CheckCircle2 size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={handleCancel}
-            title="取消任务"
-            className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400"
-          >
-            <Square size={12} fill="currentColor" />
-          </button>
+          {editingTitle ? (
+            <input
+              autoFocus
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitTitle();
+                if (event.key === 'Escape') setEditingTitle(false);
+              }}
+              className="h-7 min-w-0 max-w-[420px] flex-1 border-b-2 border-aegis-primary bg-transparent px-1 text-sm font-semibold outline-none"
+            />
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-aegis-text">{taskTitle || prompt || statusLabel}</span>
+          )}
+          {!editingTitle && (
+            <button type="button" onClick={() => { setTitleDraft(taskTitle); setEditingTitle(true); }} title="重命名任务" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">
+              <Pencil size={13} />
+            </button>
+          )}
+          {!running && (
+            <button type="button" disabled={generatingTitle} onClick={() => void generateTitle()} title="生成任务名称" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50">
+              <Sparkle size={13} className={generatingTitle ? 'animate-spin' : ''} />
+            </button>
+          )}
+          {running && <>
+            <button type="button" onClick={handleMarkDone} title="标记完成" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-emerald-500/10 hover:text-emerald-400"><CheckCircle2 size={13} /></button>
+            <button type="button" onClick={handleCancel} title="取消任务" className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400"><Square size={12} fill="currentColor" /></button>
+          </>}
         </div>
       )}
 
@@ -1334,7 +1398,8 @@ export function AgentRunView({
                   <button
                     type="button"
                     onClick={() => {
-                      if (sessionPath) handleResume();
+                      if (status === 'detached') handleReconnect();
+                      else if (sessionPath) handleResume();
                       else {
                         setStatus('idle');
                         setRunning(false);
@@ -1342,7 +1407,7 @@ export function AgentRunView({
                     }}
                     className="inline-flex items-center gap-1.5 rounded bg-aegis-primary px-3 py-1.5 text-xs font-semibold text-white"
                   >
-                    <RotateCcw size={12} />{sessionPath ? '继续会话' : '编辑并重试'}
+                    <RotateCcw size={12} />{status === 'detached' ? '重新连接' : sessionPath ? '继续会话' : '编辑并重试'}
                   </button>
                   <button
                     type="button"

@@ -1006,6 +1006,7 @@ export function AgentWorkspacePage() {
             >
               <AgentRunView
                 taskId={task.id}
+                initialTitle={task.title}
                 projectPath={task.projectPath}
                 agent={task.agent === 'codex' || task.agent === 'pi' ? task.agent : 'claude'}
                 prompt={task.prompt}
