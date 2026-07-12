@@ -110,7 +110,7 @@ export const gateway = {
   async setSessionThinking(level: string | null, sessionKey = 'agent:main:main') {
     return connection.request('sessions.patch', { key: sessionKey, thinkingLevel: level });
   },
-  async setSessionLabel(label: string, sessionKey = 'agent:main:main') {
+  async setSessionLabel(label: string | null, sessionKey = 'agent:main:main') {
     return connection.request('sessions.patch', { key: sessionKey, label });
   },
   // Inject a per-session system prompt (persona). Backend may not yet support

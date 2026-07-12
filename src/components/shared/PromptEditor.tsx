@@ -15,7 +15,7 @@ import {
   type KeyboardEvent, type ChangeEvent, type DragEvent,
 } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { File, X, Image as ImageIcon } from 'lucide-react';
+import { File, Folder, X, Image as ImageIcon } from 'lucide-react';
 
 const LARGE_PASTE_THRESHOLD = 2000;
 
@@ -86,6 +86,15 @@ export interface PromptEditorProps {
   onRemoveImage?: (index: number) => void;
   /** Draft key for persisting text + images across unmounts. */
   draftKey?: string;
+  /** Project root used for @-mention lookup. Falls back to the active workspace. */
+  projectPath?: string;
+  /** Other local projects available as a source for @-mentions. */
+  mentionProjects?: MentionProject[];
+}
+
+export interface MentionProject {
+  name: string;
+  path: string;
 }
 
 interface FileEntry {
@@ -93,6 +102,7 @@ interface FileEntry {
   path: string;
   /** Pre-rendered chip label, e.g. "@src/App.tsx" */
   chip?: string;
+  kind?: 'file' | 'project';
 }
 
 export function PromptEditor({
@@ -108,6 +118,8 @@ export function PromptEditor({
   onAttachImages,
   onRemoveImage,
   draftKey,
+  projectPath,
+  mentionProjects = [],
   expanded = false,
   onExpandedChange,
 }: PromptEditorProps) {
@@ -125,6 +137,7 @@ export function PromptEditor({
     items: FileEntry[];
     selectedIndex: number;
     loading: boolean;
+    scopeProject?: MentionProject;
   }>({
     open: false,
     query: '',
@@ -132,6 +145,7 @@ export function PromptEditor({
     items: [],
     selectedIndex: 0,
     loading: false,
+    scopeProject: undefined,
   });
 
   useEffect(() => {
@@ -210,24 +224,28 @@ export function PromptEditor({
       return;
     }
     // Open picker; items fetched lazily in a separate effect.
-    setPicker({
+    setPicker((previous) => ({
       open: true,
       query,
       cursorStart: atIdx,
       items: [],
       selectedIndex: 0,
       loading: true,
-    });
+      // Preserve the selected source while the user narrows its file list.
+      scopeProject: previous.open ? previous.scopeProject : undefined,
+    }));
   }, [value]);
 
-  // ── Fetch workspace files when picker opens ──────────────────────────────
+  // ── Fetch project files when picker opens ────────────────────────────────
   useEffect(() => {
     if (!picker.open) return;
     let cancelled = false;
     (async () => {
       try {
-        const workspacePath = await invoke<string>('get_workspace_path');
-        const paths = await invoke<string[]>('list_project_files', { projectPath: workspacePath });
+        const root = picker.scopeProject?.path
+          || projectPath
+          || await invoke<string>('get_workspace_path');
+        const paths = await invoke<string[]>('list_project_files', { projectPath: root });
         if (cancelled) return;
         const filtered = (paths ?? []).filter((p) => {
           const name = p.split('/').pop() ?? p;
@@ -237,12 +255,32 @@ export function PromptEditor({
             p.toLowerCase().includes(picker.query.toLowerCase())
           );
         }).slice(0, 8);
+        const files = filtered.map((path) => {
+          const name = path.split('/').pop() ?? path;
+          // The active project is the CLI's working directory, so a relative
+          // mention is concise. A different project needs its absolute root.
+          const mentionPath = picker.scopeProject
+            ? `${picker.scopeProject.path.replace(/[\\/]+$/, '')}/${path}`
+            : path;
+          return { name, path, chip: `@${mentionPath}`, kind: 'file' as const };
+        });
+        const normalizedQuery = picker.query.toLowerCase();
+        const projects = picker.scopeProject ? [] : mentionProjects
+          .filter((project) => project.path && project.path !== root)
+          .filter((project) => (
+            !normalizedQuery
+            || project.name.toLowerCase().includes(normalizedQuery)
+            || project.path.toLowerCase().includes(normalizedQuery)
+          ))
+          .slice(0, 4)
+          .map((project) => ({
+            name: project.name,
+            path: project.path,
+            kind: 'project' as const,
+          }));
         setPicker((p) => ({
           ...p,
-          items: filtered.map((path) => {
-            const name = path.split('/').pop() ?? path;
-            return { name, path, chip: `@${name}` };
-          }),
+          items: [...projects, ...files].slice(0, 8),
           loading: false,
           selectedIndex: 0,
         }));
@@ -253,10 +291,21 @@ export function PromptEditor({
       }
     })();
     return () => { cancelled = true; };
-  }, [picker.open, picker.query]);
+  }, [mentionProjects, picker.open, picker.query, picker.scopeProject, projectPath]);
 
   // ── Replace @query with @filename at cursor ──────────────────────────────
   const insertMention = useCallback((entry: FileEntry) => {
+    if (entry.kind === 'project') {
+      setPicker((p) => ({
+        ...p,
+        query: '',
+        items: [],
+        selectedIndex: 0,
+        loading: true,
+        scopeProject: { name: entry.name, path: entry.path },
+      }));
+      return;
+    }
     const el = textareaRef.current;
     if (!el) return;
     const cursor = el.selectionStart;
@@ -272,6 +321,7 @@ export function PromptEditor({
       items: [],
       selectedIndex: 0,
       loading: false,
+      scopeProject: undefined,
     });
     // Restore focus + place cursor after the inserted chip + trailing space.
     requestAnimationFrame(() => {
@@ -309,7 +359,7 @@ export function PromptEditor({
       }
       if (e.key === 'Escape') {
         e.preventDefault();
-        setPicker((p) => ({ ...p, open: false }));
+        setPicker((p) => ({ ...p, open: false, scopeProject: undefined }));
         return;
       }
     }
@@ -466,11 +516,13 @@ export function PromptEditor({
           >
             <span className="font-mono">@</span>
             <span className="flex-1 truncate font-sans normal-case">
-              {picker.query || 'mention a file…'}
+              {picker.scopeProject
+                ? `${picker.scopeProject.name} · ${picker.query || 'mention a file…'}`
+                : picker.query || 'mention a file…'}
             </span>
             <button
               type="button"
-              onClick={() => setPicker((p) => ({ ...p, open: false }))}
+              onClick={() => setPicker((p) => ({ ...p, open: false, scopeProject: undefined }))}
               className="p-0.5 rounded hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
             >
               <X size={11} />
@@ -483,12 +535,12 @@ export function PromptEditor({
               </div>
             ) : picker.items.length === 0 ? (
               <div className="px-3 py-3 text-[11px] text-aegis-text-dim">
-                No matching files in workspace.
+                No matching files or projects.
               </div>
             ) : (
               picker.items.map((item, i) => (
                 <button
-                  key={item.path}
+                  key={`${item.kind ?? 'file'}:${item.path}`}
                   type="button"
                   onMouseEnter={() =>
                     setPicker((p) => ({ ...p, selectedIndex: i }))
@@ -503,13 +555,17 @@ export function PromptEditor({
                     color: 'rgb(var(--aegis-text))',
                   }}
                 >
-                  <File size={12} className="text-aegis-text-dim shrink-0" />
-                  <span className="font-mono truncate">{item.chip}</span>
+                  {item.kind === 'project'
+                    ? <Folder size={12} className="text-aegis-text-dim shrink-0" />
+                    : <File size={12} className="text-aegis-text-dim shrink-0" />}
+                  <span className={item.kind === 'project' ? 'truncate' : 'font-mono truncate'}>
+                    {item.kind === 'project' ? item.name : item.chip}
+                  </span>
                   <span
                     className="ml-auto text-[10px] truncate max-w-[40%]"
                     style={{ color: 'rgb(var(--aegis-text-dim))' }}
                   >
-                    {item.path}
+                    {item.kind === 'project' ? 'Project' : item.path}
                   </span>
                 </button>
               ))

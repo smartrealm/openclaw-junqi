@@ -82,11 +82,17 @@ earlyBootstrap();
       } catch {
     /* plain vite/browser context */
   }
+  if (windowLabel.startsWith('terminal-')) {
+    (window as Window & { __JUNQI_TERMINAL_WINDOW_LABEL__?: string })
+      .__JUNQI_TERMINAL_WINDOW_LABEL__ = windowLabel;
+  }
   const Root =
     windowLabel === 'pet'
       ? (await import('./pet/PetWindow')).default
       : windowLabel === 'quickchat'
         ? (await import('./pages/QuickChatRoot')).default
+        : windowLabel.startsWith('terminal-')
+          ? (await import('./pages/TerminalWindowRoot')).default
       : (await import('./App')).default;
 
   ReactDOM.createRoot(document.getElementById('app-root')!).render(

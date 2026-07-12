@@ -113,10 +113,14 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
     // Persist drag position: when the user moves the pet, broadcast the new
     // logical position so the pet webview (an independent window) can store it
     // for restore on the next launch.
-    let scale = win.scale_factor().unwrap_or(1.0);
+    // The window can cross monitors with different DPI. Capturing the scale
+    // factor here would make persisted coordinates drift on Windows after a
+    // cross-monitor drag, so resolve it for each move event instead.
+    let win_for_move = win.clone();
     let app_for_move = app.clone();
     win.on_window_event(move |event| {
         if let WindowEvent::Moved(pos) = event {
+            let scale = win_for_move.scale_factor().unwrap_or(1.0);
             let _ = app_for_move.emit(
                 "pet-moved",
                 serde_json::json!({ "x": pos.x as f64 / scale, "y": pos.y as f64 / scale }),
@@ -571,7 +575,7 @@ fn loaded_pet_package(
     })
 }
 
-/// Import a validated Codex-compatible v2 pet package. The selected path must
+/// Import a validated JunQi v2 pet package. The selected path must
 /// be the package's pet.json; its sibling spritesheet is copied atomically.
 #[tauri::command]
 pub async fn import_pet_package(
@@ -659,11 +663,11 @@ pub async fn clear_pet_package(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn list_codex_pet_packages() -> Result<Vec<AvailablePetPackage>, String> {
+pub async fn list_pet_packages() -> Result<Vec<AvailablePetPackage>, String> {
     let Some(home) = dirs::home_dir() else {
         return Ok(Vec::new());
     };
-    let root = home.join(".codex").join("pets");
+    let root = home.join(".junqi").join("pets");
     let Ok(entries) = std::fs::read_dir(root) else {
         return Ok(Vec::new());
     };
@@ -685,6 +689,54 @@ pub async fn list_codex_pet_packages() -> Result<Vec<AvailablePetPackage>, Strin
     }
     packages.sort_by(|left, right| left.display_name.cmp(&right.display_name));
     Ok(packages)
+}
+
+/// Promote the newest validated JunQi-generated package into the active pet
+/// slot. A chat-created `@hatch-pet` package lands in `~/.junqi/pets`; this
+/// closes the loop without making the floating window parse arbitrary paths.
+#[tauri::command]
+pub async fn activate_latest_pet_package(
+    app: AppHandle,
+    newer_than_unix_ms: Option<i64>,
+) -> Result<Option<LoadedPetPackage>, String> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(None);
+    };
+    let root = home.join(".junqi").join("pets");
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Ok(None);
+    };
+
+    let latest = entries
+        .flatten()
+        .filter_map(|entry| {
+            let manifest_path = entry.path().join("pet.json");
+            if !manifest_path.is_file() || validate_pet_manifest(&manifest_path).is_err() {
+                return None;
+            }
+            let modified = std::fs::metadata(&manifest_path)
+                .and_then(|metadata| metadata.modified())
+                .ok()?;
+            if let Some(after) = newer_than_unix_ms {
+                let modified_ms = modified
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()?
+                    .as_millis() as i64;
+                if modified_ms <= after {
+                    return None;
+                }
+            }
+            Some((modified, manifest_path))
+        })
+        .max_by_key(|(modified, _)| *modified)
+        .map(|(_, manifest_path)| manifest_path);
+
+    let Some(manifest_path) = latest else {
+        return Ok(None);
+    };
+    import_pet_package(app, manifest_path.to_string_lossy().into_owned(), None)
+        .await
+        .map(Some)
 }
 
 fn image_mime(ext: &str) -> &'static str {
@@ -820,7 +872,7 @@ mod pet_package_tests {
     }
 
     #[test]
-    fn accepts_codex_v2_atlas_dimensions() {
+    fn accepts_junqi_v2_atlas_dimensions() {
         let manifest = write_package(1536, 2288, 2);
         let result = validate_pet_manifest(&manifest);
         assert!(result.is_ok());

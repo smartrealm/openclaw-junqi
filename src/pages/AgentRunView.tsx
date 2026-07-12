@@ -11,20 +11,21 @@
 //         nezha/src/components/RunningView.tsx (788 lines)
 // ═══════════════════════════════════════════════════════════
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import {
   Play, Square, RotateCcw, ChevronDown, ChevronRight, AlertCircle,
   ExternalLink, GitBranch, GitMerge, Trash2, Clock,
   Loader2, BarChart3, FileText, CheckCircle2, XCircle,
-  Activity, FileWarning, Image as ImageIcon, Bookmark, Command,
+  Activity, FileWarning, FilePlus2, Image as ImageIcon, Bookmark, Command,
   CornerDownLeft, Laptop, GitPullRequestArrow, Plus, RefreshCw,
-  Search, X, Check, Globe, List, Box, SquareTerminal, Pencil, Folder,
+  Search, X, Check, Globe, List, Box, SquareTerminal, Pencil, Folder, Download,
 } from 'lucide-react';
 import {
   Sparkle,
@@ -44,6 +45,12 @@ import {
 } from '@phosphor-icons/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { PromptEditor, type ImageAttach } from '@/components/shared/PromptEditor';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import {
+  useAgentWorkspaceStore,
+  type AgentWorkspaceTask,
+  type AgentWorkspaceTaskStatus,
+} from '@/stores/agentWorkspaceStore';
 import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
 import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
 import { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from '@/components/shared/ToolCallHistoryPopover';
@@ -62,9 +69,12 @@ async function loadTerminalDeps() {
 
 // ── Types (matching nezha's types.ts) ──────────────────────────────────────
 
-type AgentType = 'claude' | 'codex' | 'pi';
-type PermissionMode = 'ask' | 'auto_edit' | 'full_access';
+export type AgentRunAgent = 'claude' | 'codex' | 'pi';
+type AgentType = AgentRunAgent;
+export type AgentRunPermissionMode = 'ask' | 'auto_edit' | 'full_access';
+type PermissionMode = AgentRunPermissionMode;
 type LaunchMode = 'local' | 'worktree';
+type AgentWorkspaceTaskPatch = Partial<Omit<AgentWorkspaceTask, 'id' | 'createdAt' | 'status'>>;
 
 interface SessionMetrics {
   tool_calls: number;
@@ -73,6 +83,22 @@ interface SessionMetrics {
   total_tokens: number;
   context_tokens: number;
   context_window: number;
+}
+
+interface HookAgentReadiness {
+  agent: 'claude' | 'codex';
+  usable: boolean;
+  reason?: 'version_too_low' | 'no_node' | 'not_installed';
+  detected_version?: string;
+  min_version?: string;
+}
+
+function isActiveWorkspaceTaskStatus(status: AgentWorkspaceTaskStatus | undefined): boolean {
+  return status === 'running'
+    || status === 'input_required'
+    || status === 'awaiting_review'
+    || status === 'detached'
+    || status === 'interrupted';
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -385,35 +411,124 @@ function SessionHistoryStrip({ agent, projectPath, onResume }: {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export function AgentRunView() {
+export interface AgentRunViewProps {
+  taskId?: string;
+  projectPath?: string;
+  agent?: AgentRunAgent;
+  prompt?: string;
+  permissionMode?: PermissionMode;
+  initialStatus?: AgentWorkspaceTaskStatus;
+  initialSessionPath?: string;
+  /** Persisted worktree for a task reopened after a project switch or restart. */
+  initialWorktreePath?: string;
+  initialWorktreeDiscarded?: boolean;
+  initialBaseBranch?: string;
+  initialPlanMode?: boolean;
+  initialLaunchMode?: LaunchMode;
+  initialIsDraft?: boolean;
+  onTaskStarted?: () => void;
+  onTaskSaved?: () => void;
+}
+
+export function AgentRunView({
+  taskId: providedTaskId,
+  projectPath: providedProjectPath,
+  agent: providedAgent,
+  prompt: providedPrompt,
+  permissionMode: providedPermissionMode,
+  initialStatus: providedInitialStatus,
+  initialSessionPath: providedInitialSessionPath,
+  initialWorktreePath: providedInitialWorktreePath,
+  initialWorktreeDiscarded = false,
+  initialBaseBranch: providedInitialBaseBranch,
+  initialPlanMode: providedInitialPlanMode = false,
+  initialLaunchMode: providedInitialLaunchMode,
+  initialIsDraft = false,
+  onTaskStarted,
+  onTaskSaved,
+}: AgentRunViewProps = {}) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const initialAgent = (params.get('agent') === 'codex' ? 'codex' : 'claude') as AgentType;
-  const initialPrompt = params.get('prompt') ?? '';
+  const updateWorkspaceTask = useAgentWorkspaceStore((state) => state.updateTask);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const mentionProjects = useMemo(() => workspaces
+    .filter((workspace) => !workspace.sshRemoteHost)
+    .map((workspace) => ({
+      name: workspace.name,
+      path: workspace.projectDirectory || workspace.workingDirectory,
+    }))
+    .filter((workspace) => Boolean(workspace.path)), [workspaces]);
+  const requestedAgent = providedAgent ?? params.get('agent');
+  const initialAgent: AgentType = requestedAgent === 'codex' || requestedAgent === 'pi'
+    ? requestedAgent
+    : 'claude';
+  const initialPrompt = providedPrompt ?? params.get('prompt') ?? '';
+  const initiallyActive = isActiveWorkspaceTaskStatus(providedInitialStatus);
 
   // ── Task config state ────────────────────────────────────────────────────
   const [agent, setAgent] = useState<AgentType>(initialAgent);
-  const [perm, setPerm] = useState<PermissionMode>('ask');
-  const [planMode, setPlanMode] = useState(false);
-  const [launchMode, setLaunchMode] = useState<LaunchMode>('local');
-  const [baseBranch, setBaseBranch] = useState('');
+  const [perm, setPerm] = useState<PermissionMode>(providedPermissionMode ?? 'ask');
+  const [planMode, setPlanMode] = useState(providedInitialPlanMode);
+  const [launchMode, setLaunchMode] = useState<LaunchMode>(providedInitialLaunchMode ?? (providedInitialWorktreePath && !initialWorktreeDiscarded ? 'worktree' : 'local'));
+  const [baseBranch, setBaseBranch] = useState(providedInitialBaseBranch ?? '');
   const [prompt, setPrompt] = useState(initialPrompt);
-  const [projectPath, setProjectPath] = useState('');
+  const [projectPath, setProjectPath] = useState(() => {
+    const requestedPath = providedProjectPath ?? params.get('projectPath');
+    if (requestedPath) return requestedPath;
+    const workspaceState = useWorkspaceStore.getState();
+    const activeWorkspace = workspaceState.workspaces.find(
+      (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+    );
+    return activeWorkspace?.projectDirectory ?? activeWorkspace?.workingDirectory ?? '';
+  });
   const [attachedImages, setAttachedImages] = useState<ImageAttach[]>([]);
   const [textAttachments, setTextAttachments] = useState<{ text: string; chars: number }[]>([]);
   const [composerExpanded, setComposerExpanded] = useState(false); // ⌘L multi-line mode (kooky-style)
-  const [taskId] = useState(() => `task-${Date.now()}-${Math.random().toString(36).slice(2,8)}`);
+  const draftUserEditedRef = useRef(false);
+  const [taskId] = useState(() => providedTaskId?.trim() || params.get('taskId')?.trim() || `task-${Date.now()}-${Math.random().toString(36).slice(2,8)}`);
+  const workspaceTaskId = providedTaskId?.trim() || params.get('taskId')?.trim() || null;
+
+  // Match Nezha's fresh-task behavior: a project can supply default agent and
+  // permission mode. Never apply it to an existing or edited task.
+  useEffect(() => {
+    if (!initialIsDraft || initialPrompt.trim() || !projectPath) return;
+    let cancelled = false;
+    void invoke<{ agent?: { default?: string; default_permission_mode?: string } }>('read_project_config', { projectPath })
+      .then((config) => {
+        if (cancelled || draftUserEditedRef.current) return;
+        const defaultAgent = config.agent?.default;
+        if (defaultAgent === 'claude' || defaultAgent === 'codex' || defaultAgent === 'pi') setAgent(defaultAgent);
+        const defaultPermission = config.agent?.default_permission_mode;
+        if (defaultPermission === 'ask' || defaultPermission === 'auto_edit' || defaultPermission === 'full_access') {
+          setPerm(defaultPermission);
+        }
+      })
+      .catch(() => { /* project config is optional */ });
+    return () => { cancelled = true; };
+  }, [initialIsDraft, initialPrompt, projectPath]);
+
+  const updateWorkspaceTaskState = useCallback(
+    (nextStatus: AgentWorkspaceTaskStatus, patch: AgentWorkspaceTaskPatch = {}) => {
+      if (!workspaceTaskId) return;
+      updateWorkspaceTask(workspaceTaskId, { status: nextStatus, ...patch });
+    },
+    [updateWorkspaceTask, workspaceTaskId],
+  );
 
   // ── Execution state ──────────────────────────────────────────────────────
-  const [running, setRunning] = useState(false);
-  const [status, setStatus] = useState<StatusIconValue>('idle');
+  const [running, setRunning] = useState(initiallyActive);
+  const [status, setStatus] = useState<StatusIconValue>(initiallyActive ? providedInitialStatus! : 'idle');
   const [error, setError] = useState<string | null>(null);
-  const [worktreeBranch, setWorktreeBranch] = useState<string | null>(null);
+  const restoredWorktreePath = initialWorktreeDiscarded ? null : providedInitialWorktreePath ?? null;
+  const [worktreeBranch, setWorktreeBranch] = useState<string | null>(restoredWorktreePath);
+  const worktreeBranchRef = useRef<string | null>(restoredWorktreePath);
   const [diffStats, setDiffStats] = useState<{ additions: number; deletions: number } | null>(null);
-  const [sessionPath, setSessionPath] = useState<string | null>(null);
+  const [sessionPath, setSessionPath] = useState<string | null>(providedInitialSessionPath ?? null);
   const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
-  const [missingClaudeMd, setMissingClaudeMd] = useState(false);
+  const [exportingSession, setExportingSession] = useState(false);
+  const [missingInstructionsFile, setMissingInstructionsFile] = useState(false);
+  const [hookReadiness, setHookReadiness] = useState<HookAgentReadiness[] | null>(null);
 
   // ── Tool-call activity (kooky ToolCallActivityStrip model) ───────────────
   // Real-time counts from agent_task_pty backend — Bash / Edit / Read / Other.
@@ -467,6 +582,7 @@ export function AgentRunView() {
   // Buffer the chunks and flush on every xterm mount so terminal output
   // is never lost across remounts (running → done key change).
   const outputBufferRef = useRef<string>('');
+  const outputChannelOwnedRef = useRef(false);
   const termDisposersRef = useRef<Array<() => void>>([]);
 
   // Ref-mirror of `running` so onData / onResize callbacks inside the
@@ -624,18 +740,50 @@ export function AgentRunView() {
     xtermRef.current?.clear();
   }, []);
 
-  // ── CLAUDE.md check ─────────────────────────────────────────────────────
+  // A task can keep running after the route unmounts. On return, replay the
+  // bounded native snapshot and subscribe to the shared output event stream.
+  useEffect(() => {
+    if (!workspaceTaskId || !initiallyActive || outputChannelOwnedRef.current) return;
+    let disposed = false;
+    void invoke<string>('get_task_output_snapshot', { taskId }).then((snapshot) => {
+      if (!disposed && snapshot) writeTerm(snapshot);
+    }).catch(() => undefined);
+    const subscription = listen<{ task_id: string; output: string }>('task-output', (event) => {
+      if (event.payload.task_id === taskId && event.payload.output) writeTerm(event.payload.output);
+    });
+    return () => {
+      disposed = true;
+      void subscription.then((unlisten) => unlisten());
+    };
+  }, [initiallyActive, taskId, workspaceTaskId, writeTerm]);
+
+  // ── Agent instruction-file check ─────────────────────────────────────────
   useEffect(() => {
     if (!projectPath || projectPath === '.') return;
     let cancelled = false;
+    const instructionsFile = agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md';
     invoke<string[]>('read_dir_entries', { path: projectPath, maxDepth: 1 })
       .then((entries) => {
         if (cancelled) return;
         const names = new Set((entries ?? []).map((e) => e.split(/[\\/]/).pop() || ''));
-        setMissingClaudeMd(!names.has('CLAUDE.md') && !names.has('AGENTS.md'));
+        setMissingInstructionsFile(!names.has(instructionsFile));
       }).catch(() => {});
     return () => { cancelled = true; };
-  }, [projectPath]);
+  }, [agent, projectPath]);
+
+  // Hooks enrich the live task timeline but are deliberately non-blocking:
+  // agents still run through the PTY fallback when they are unavailable.
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<HookAgentReadiness[]>('get_hook_readiness')
+      .then((readiness) => {
+        if (!cancelled) setHookReadiness(readiness);
+      })
+      .catch(() => {
+        if (!cancelled) setHookReadiness([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Session discovery + persistence + metrics ─────────────────────────────
   // kooky-style: each (agent, project, sessionId) is recorded locally so the
@@ -658,9 +806,15 @@ export function AgentRunView() {
         sessionPath: e.payload.session_path,
         resumeCommand,
       });
+      if (workspaceTaskId) {
+        updateWorkspaceTask(workspaceTaskId, {
+          sessionId: e.payload.session_id,
+          sessionPath: e.payload.session_path,
+        });
+      }
     });
     return () => { void p.then((u) => u()); };
-  }, [taskId, agent, projectPath, recordSession]);
+  }, [taskId, agent, projectPath, recordSession, updateWorkspaceTask, workspaceTaskId]);
 
   // ── Tool-call activity listener (kooky ToolCallActivityStrip model) ──────
   useEffect(() => {
@@ -680,6 +834,43 @@ export function AgentRunView() {
   }, [taskId]);
 
   useEffect(() => {
+    const listener = listen<{ task_id: string; status: string }>('task-status', (event) => {
+      if (event.payload.task_id !== taskId) return;
+      const nextStatus = event.payload.status;
+      if (
+        nextStatus !== 'running'
+        && nextStatus !== 'input_required'
+        && nextStatus !== 'awaiting_review'
+        && nextStatus !== 'detached'
+        && nextStatus !== 'interrupted'
+        && nextStatus !== 'done'
+        && nextStatus !== 'failed'
+        && nextStatus !== 'cancelled'
+      ) return;
+
+      setStatus(nextStatus);
+      setRunning(
+        nextStatus === 'running'
+        || nextStatus === 'input_required'
+        || nextStatus === 'awaiting_review'
+        || nextStatus === 'detached'
+        || nextStatus === 'interrupted',
+      );
+      updateWorkspaceTaskState(nextStatus);
+
+      if (nextStatus !== 'done' || !worktreeBranchRef.current) return;
+      void invoke<{ additions: number; deletions: number }>('worktree_diff_stats', {
+        worktreePath: worktreeBranchRef.current,
+        baseBranch: baseBranch || 'main',
+      }).then((stats) => {
+        setDiffStats(stats);
+        if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, stats);
+      }).catch(() => undefined);
+    });
+    return () => { void listener.then((unlisten) => unlisten()); };
+  }, [baseBranch, taskId, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId]);
+
+  useEffect(() => {
     if (!sessionPath || !running) return;
     const fetch = async () => {
       try { setMetrics(await invoke<SessionMetrics>('read_session_metrics', { sessionPath })); } catch { /* */ }
@@ -690,46 +881,167 @@ export function AgentRunView() {
   }, [sessionPath, running]);
 
   // ── Start / Cancel ───────────────────────────────────────────────────────
-  const handleStart = useCallback(async () => {
-    if (!prompt.trim() || running) return;
+  const handleStart = useCallback(async (promptOverride?: string) => {
+    const basePrompt = (promptOverride ?? prompt).trim();
+    if ((!basePrompt && attachedImages.length === 0 && textAttachments.length === 0) || running) return;
+    const taskPrompt = planMode && basePrompt ? `${basePrompt}\n\nPlease use plan mode.` : basePrompt;
     setError(null); clearTerm(); setStatus('running'); setRunning(true); setMetrics(null); setDiffStats(null);
+    if (workspaceTaskId) {
+      updateWorkspaceTask(workspaceTaskId, {
+        prompt: taskPrompt,
+        title: taskPrompt.split('\n')[0].slice(0, 56),
+        agent,
+        permissionMode: perm,
+        planMode,
+        launchMode,
+        baseBranch: baseBranch || undefined,
+        isDraft: false,
+      });
+    }
+    updateWorkspaceTaskState('running', { failureReason: undefined });
+    onTaskStarted?.();
 
     const onOutput = new Channel<string>();
+    outputChannelOwnedRef.current = true;
     onOutput.onmessage = (chunk) => writeTerm(chunk);
 
     try {
       let actualPath = projectPath || '.';
       if (launchMode === 'worktree') {
         const result = await invoke<{ path: string; branch: string }>('create_task_worktree', { projectPath: actualPath, taskId, baseBranch: baseBranch || undefined });
-        actualPath = result.path; setWorktreeBranch(result.path);
+        actualPath = result.path;
+        setWorktreeBranch(result.path);
+        worktreeBranchRef.current = result.path;
+        if (workspaceTaskId) {
+          updateWorkspaceTask(workspaceTaskId, {
+            worktreePath: result.path,
+            worktreeBranch: result.branch,
+            baseBranch: baseBranch || undefined,
+            worktreeDiscarded: false,
+          });
+        }
       }
-      await invoke('run_task', { taskId, projectPath: actualPath, prompt, agent, permissionMode: perm, cols: 220, rows: 50, onOutput, resumeId: resumeIdRef.current });
-      setStatus('done');
-      if (launchMode === 'worktree' && worktreeBranch) {
-        try {
-          const s = await invoke<{ additions: number; deletions: number }>('worktree_diff_stats', { worktreePath: worktreeBranch, baseBranch: baseBranch || 'main' });
-          setDiffStats(s);
-        } catch { /* */ }
-      }
-    } catch (e) { setError(String(e)); setStatus('failed'); }
-    finally { setRunning(false); }
-  }, [prompt, running, agent, perm, projectPath, launchMode, baseBranch, taskId, worktreeBranch, writeTerm, clearTerm]);
+      await invoke('run_task', {
+        taskId,
+        projectPath: actualPath,
+        prompt: taskPrompt,
+        agent,
+        permissionMode: perm,
+        images: attachedImages.map((image) => image.src),
+        texts: textAttachments.map((attachment) => attachment.text),
+        cols: 220,
+        rows: 50,
+        onOutput,
+        resumeId: resumeIdRef.current,
+      });
+    } catch (e) {
+      const failureReason = String(e);
+      setError(failureReason);
+      setStatus('failed');
+      updateWorkspaceTaskState('failed', { failureReason });
+      setRunning(false);
+    }
+  }, [prompt, running, agent, perm, projectPath, launchMode, baseBranch, taskId, writeTerm, clearTerm, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId, onTaskStarted, planMode, attachedImages, textAttachments]);
 
   const handleCancel = useCallback(async () => {
-    try { await invoke('cancel_task', { taskId }); setStatus('cancelled'); } catch (e) { setError(String(e)); } finally { setRunning(false); }
-  }, [taskId]);
+    try {
+      await invoke('cancel_task', { taskId });
+      setStatus('cancelled');
+      updateWorkspaceTaskState('cancelled');
+    } catch (e) {
+      const failureReason = String(e);
+      setError(failureReason);
+      updateWorkspaceTaskState('failed', { failureReason });
+    } finally { setRunning(false); }
+  }, [taskId, updateWorkspaceTaskState]);
+
+  const handleMarkDone = useCallback(async () => {
+    try {
+      await invoke('complete_task', { taskId });
+      setStatus('done');
+      setRunning(false);
+      updateWorkspaceTaskState('done');
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [taskId, updateWorkspaceTaskState]);
 
   // ── Worktree actions ─────────────────────────────────────────────────────
   const mergeWorktree = async () => {
     if (!worktreeBranch) return;
-    try { await invoke('merge_task_worktree', { projectPath: projectPath || '.', taskWorktreePath: worktreeBranch }); setDiffStats(null); } catch (e) { setError(String(e)); }
+    try {
+      await invoke('merge_task_worktree', { projectPath: projectPath || '.', taskWorktreePath: worktreeBranch });
+      setDiffStats(null);
+      if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { additions: 0, deletions: 0 });
+    } catch (e) { setError(String(e)); }
   };
   const discardWorktree = async () => {
     if (!worktreeBranch) return;
-    try { await invoke('remove_task_worktree', { taskWorktreePath: worktreeBranch }); setDiffStats(null); setWorktreeBranch(null); } catch (e) { setError(String(e)); }
+    try {
+      await invoke('remove_task_worktree', { taskWorktreePath: worktreeBranch });
+      setDiffStats(null);
+      setWorktreeBranch(null);
+      worktreeBranchRef.current = null;
+      if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { worktreeDiscarded: true, additions: 0, deletions: 0 });
+    } catch (e) { setError(String(e)); }
   };
 
   const isDone = status === 'done' || status === 'failed' || status === 'cancelled';
+  const needsRecovery = status === 'detached' || status === 'interrupted';
+  const statusLabel = status === 'input_required'
+    ? '需要输入'
+    : status === 'awaiting_review'
+      ? '等待审阅'
+      : status === 'detached'
+        ? '任务已分离'
+        : status === 'interrupted'
+          ? '任务已中断'
+          : '智能体运行中';
+  const currentHookReadiness = agent === 'claude' || agent === 'codex'
+    ? hookReadiness?.find((entry) => entry.agent === agent) ?? null
+    : null;
+  const hookWarning = (() => {
+    if (!currentHookReadiness || currentHookReadiness.usable) return null;
+    const agentLabel = agent === 'claude' ? 'Claude Code' : 'Codex';
+    if (currentHookReadiness.reason === 'version_too_low') {
+      return `${agentLabel} ${currentHookReadiness.detected_version ?? ''} 低于钩子所需版本 ${currentHookReadiness.min_version ?? ''}。`;
+    }
+    if (currentHookReadiness.reason === 'no_node') return '未检测到 Node.js，实时任务钩子不可用。';
+    return `${agentLabel} 的实时任务钩子尚未安装。`;
+  })();
+
+  // Match Nezha's NewTask draft behavior: configuration and prompt survive
+  // project switches and application restarts, without persisting every key.
+  useEffect(() => {
+    if (!workspaceTaskId || running || isDone) return;
+    const timer = window.setTimeout(() => {
+      updateWorkspaceTask(workspaceTaskId, {
+        prompt,
+        agent,
+        permissionMode: perm,
+        planMode,
+        launchMode,
+        baseBranch: baseBranch || undefined,
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [agent, baseBranch, isDone, launchMode, perm, planMode, prompt, running, updateWorkspaceTask, workspaceTaskId]);
+
+  // A running task receives diff stats from the status event. A persisted task
+  // does not replay that event after navigation, so restore the same data here.
+  useEffect(() => {
+    if (!isDone || !worktreeBranch) return;
+    let cancelled = false;
+    void invoke<{ additions: number; deletions: number }>('worktree_diff_stats', {
+      worktreePath: worktreeBranch,
+      baseBranch: baseBranch || 'main',
+    }).then((stats) => {
+      if (!cancelled) setDiffStats(stats);
+    }).catch(() => {
+      if (!cancelled) setDiffStats(null);
+    });
+    return () => { cancelled = true; };
+  }, [baseBranch, isDone, worktreeBranch]);
 
   // Mark running tool events as done/error on task end (kooky PreToolUse/PostToolUse pattern)
   useEffect(() => {
@@ -751,16 +1063,60 @@ export function AgentRunView() {
     setPrompt(`[Resuming conversation ${sessionId}]`);
   }, [sessionPath]);
 
+  const handleExportSession = useCallback(async () => {
+    if (!sessionPath || exportingSession) return;
+    setExportingSession(true);
+    try {
+      const title = (prompt.split('\n')[0].trim() || 'session').slice(0, 50);
+      const safeName = title.replace(/[^\w\u4e00-\u9fa5-]+/g, '_').replace(/^_+|_+$/g, '') || 'session';
+      const outputPath = await save({
+        title: '导出会话 Markdown',
+        defaultPath: `junqi-${safeName}.md`,
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      });
+      if (!outputPath) return;
+      await invoke('export_session_markdown', {
+        sessionPath,
+        outputPath,
+        taskMeta: {
+          name: title,
+          prompt,
+          agent,
+          created_at: Math.floor(Date.now() / 1000),
+          session_id: sessionPath.split(/[\\/]/).pop()?.replace(/\.jsonl$/, '') ?? null,
+        },
+      });
+    } catch (reason) {
+      setError(`导出会话失败：${String(reason)}`);
+    } finally {
+      setExportingSession(false);
+    }
+  }, [agent, exportingSession, prompt, sessionPath]);
+
   useEffect(() => { if (prompt === '' && resumeIdRef.current) resumeIdRef.current = null; }, [prompt]);
 
   // ── Save as Todo (localStorage) ─────────────────────────────────────────
   const handleSaveTodo = useCallback(() => {
-    if (!prompt.trim() && textAttachments.length === 0) return;
+    if (launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)) return;
     const todos = JSON.parse(localStorage.getItem('junqi:saved-todos') || '[]');
     todos.push({ at: Date.now(), agent, prompt, perm, textChars: textAttachments.map(t => t.text) });
     localStorage.setItem('junqi:saved-todos', JSON.stringify(todos.slice(-20)));
-    setPrompt(''); setAttachedImages([]); setTextAttachments([]);
-  }, [prompt, agent, perm, textAttachments]);
+    if (workspaceTaskId) {
+      updateWorkspaceTask(workspaceTaskId, {
+        prompt,
+        title: prompt.split('\n')[0].slice(0, 56),
+        agent,
+        permissionMode: perm,
+        planMode,
+        launchMode,
+        baseBranch: baseBranch || undefined,
+        status: 'todo',
+        isDraft: false,
+      });
+    }
+    onTaskSaved?.();
+    setAttachedImages([]); setTextAttachments([]);
+  }, [prompt, agent, perm, textAttachments, workspaceTaskId, updateWorkspaceTask, onTaskSaved, launchMode]);
 
   // ── Xterm re-fit on done ────────────────────────────────────────────────
   useEffect(() => {
@@ -792,19 +1148,50 @@ export function AgentRunView() {
       }} />}
       {running && (
         <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0" style={{ background: 'rgb(var(--aegis-primary)/0.06)', borderColor: 'rgb(var(--aegis-border))' }}>
-          <StatusBadge state="running" size={10} />
-          <span className="text-[12px] font-semibold text-aegis-text">Agent running</span>
+          <StatusBadge state={needsRecovery ? 'idle' : 'running'} size={10} />
+          <span className="text-[12px] font-semibold text-aegis-text">{statusLabel}</span>
           <StatusIcon status={status} size={13} />
           <span className="ml-auto text-[10px] font-mono text-aegis-text-dim">{taskId}</span>
+          <button
+            type="button"
+            onClick={handleMarkDone}
+            title="标记完成"
+            className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-emerald-500/10 hover:text-emerald-400"
+          >
+            <CheckCircle2 size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={handleCancel}
+            title="取消任务"
+            className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400"
+          >
+            <Square size={12} fill="currentColor" />
+          </button>
         </div>
       )}
 
       {/* ── Missing-file warning ──────────────────────────────────────── */}
-      {missingClaudeMd && !running && !isDone && (
+      {missingInstructionsFile && !running && !isDone && (
         <div className="mx-4 mt-3 px-3 py-2 rounded-lg flex items-center gap-2 text-[12px]"
           style={{ background: 'rgb(var(--aegis-warning)/0.06)', border: '1px solid rgb(var(--aegis-warning)/0.2)', color: 'rgb(var(--aegis-warning))' }}>
           <FileWarning size={14} className="shrink-0" />
-          <span>No CLAUDE.md found. Create one to help the agent understand your project.</span>
+          <span className="min-w-0 flex-1">{agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md'} 未找到，创建后可让智能体理解项目约束。</span>
+          <button
+            type="button"
+            title={`初始化 ${agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md'}`}
+            onClick={() => void handleStart(`Create a concise ${agent === 'claude' ? 'CLAUDE.md' : 'AGENTS.md'} for this project. Inspect the repository first, then document its architecture, development commands, test commands, and coding conventions.`)}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-aegis-warning hover:bg-aegis-warning/10"
+          >
+            <FilePlus2 size={14} />
+          </button>
+        </div>
+      )}
+
+      {hookWarning && !running && !isDone && (
+        <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2 text-[12px] text-aegis-text-dim">
+          <AlertCircle size={14} className="shrink-0 text-amber-400" />
+          <span>{hookWarning}</span>
         </div>
       )}
 
@@ -814,8 +1201,14 @@ export function AgentRunView() {
         {!running && !isDone && (
           <div className="px-4 py-3 flex flex-col gap-3">
             <div className="flex items-center gap-3 flex-wrap">
-              <AgentToggle agent={agent} onChange={setAgent} disabled={running} />
-              <PermissionSelector perm={perm} onChange={setPerm} disabled={running} />
+              <AgentToggle agent={agent} onChange={(next) => {
+                draftUserEditedRef.current = true;
+                setAgent(next);
+              }} disabled={running} />
+              <PermissionSelector perm={perm} onChange={(next) => {
+                draftUserEditedRef.current = true;
+                setPerm(next);
+              }} disabled={running} />
             </div>
             <div className="flex items-center gap-2">
               <input value={projectPath} onChange={(e) => setProjectPath(e.target.value)}
@@ -825,9 +1218,18 @@ export function AgentRunView() {
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               <LaunchSelector mode={launchMode} baseBranch={baseBranch}
-                onMode={setLaunchMode} onBranch={setBaseBranch} disabled={running} projectPath={projectPath} />
+                onMode={(next) => {
+                  draftUserEditedRef.current = true;
+                  setLaunchMode(next);
+                }} onBranch={(next) => {
+                  draftUserEditedRef.current = true;
+                  setBaseBranch(next);
+                }} disabled={running} projectPath={projectPath} />
               <label className="flex items-center gap-1.5 text-[12px] text-aegis-text-dim cursor-pointer select-none">
-                <input type="checkbox" checked={planMode} onChange={(e) => setPlanMode(e.target.checked)} disabled={running}
+                <input type="checkbox" checked={planMode} onChange={(e) => {
+                  draftUserEditedRef.current = true;
+                  setPlanMode(e.target.checked);
+                }} disabled={running}
                   className="w-3.5 h-3.5 rounded accent-aegis-primary" />
                 Plan mode
               </label>
@@ -839,9 +1241,14 @@ export function AgentRunView() {
         {!running && !isDone && (
           <div className="px-4 pb-3">
             <PromptEditor
-              value={prompt} onChange={setPrompt} onSubmit={handleStart} submitHint=""
+              value={prompt} onChange={(next) => {
+                draftUserEditedRef.current = true;
+                setPrompt(next);
+              }} onSubmit={handleStart} submitHint=""
               placeholder="What should the agent do? type @ to mention a file, drag images here (⌘L expands)"
-              rows={4} disabled={running} draftKey="agent-run"
+              rows={4} disabled={running} draftKey={`agent-run:${taskId}`}
+              projectPath={projectPath}
+              mentionProjects={mentionProjects}
               expanded={composerExpanded} onExpandedChange={setComposerExpanded}
               images={attachedImages} onAttachImages={setAttachedImages}
               onRemoveImage={(i) => setAttachedImages((p) => p.filter((_, idx) => idx !== i))}
@@ -869,14 +1276,15 @@ export function AgentRunView() {
         {/* ── Send / Cancel bar ───────────────────────────────────────── */}
         {!running && !isDone && (
           <div className="px-4 pb-4 flex items-center gap-2 flex-wrap">
-            <button type="button" onClick={handleStart}
-              disabled={!prompt.trim() && textAttachments.length === 0}
+            <button type="button" onClick={() => void handleStart()}
+              disabled={!prompt.trim() && textAttachments.length === 0 && attachedImages.length === 0}
               className="flex items-center gap-2 px-5 py-2 rounded-lg text-[13px] font-bold transition-all"
-              style={{ background: 'rgb(var(--aegis-primary))', color: 'rgb(var(--aegis-on-primary))', opacity: prompt.trim() || textAttachments.length > 0 ? 1 : 0.4 }}>
+              style={{ background: 'rgb(var(--aegis-primary))', color: 'rgb(var(--aegis-on-primary))', opacity: prompt.trim() || textAttachments.length > 0 || attachedImages.length > 0 ? 1 : 0.4 }}>
               <Play size={14} fill="currentColor" /> Send
             </button>
             <button type="button" onClick={handleSaveTodo}
-              disabled={!prompt.trim() && textAttachments.length === 0}
+              disabled={launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)}
+              title={launchMode === 'worktree' ? '工作树任务需要直接启动' : undefined}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium text-aegis-text-dim hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors">
               <Bookmark size={13} /> Save as Todo
             </button>
@@ -892,7 +1300,44 @@ export function AgentRunView() {
         {/* ── Running: minimal terminal + plan-A input dock ───────────── */}
         {running && (
           <div className="flex-1 flex flex-col min-h-0 px-4 pb-2 gap-1">
-            {terminalError ? (
+            {needsRecovery ? (
+              <div className="flex min-h-[300px] flex-1 flex-col items-center justify-center gap-3 rounded border border-amber-400/25 bg-amber-400/5 p-6 text-center">
+                <AlertCircle size={26} className="text-amber-400" />
+                <div>
+                  <div className="text-sm font-semibold text-aegis-text">{status === 'detached' ? '运行连接已分离' : '运行被中断'}</div>
+                  <p className="mt-1 text-xs leading-5 text-aegis-text-dim">会话记录会保留。恢复后可以继续编辑提示词并重新运行。</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (sessionPath) handleResume();
+                      else {
+                        setStatus('idle');
+                        setRunning(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded bg-aegis-primary px-3 py-1.5 text-xs font-semibold text-white"
+                  >
+                    <RotateCcw size={12} />{sessionPath ? '继续会话' : '编辑并重试'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMarkDone}
+                    className="inline-flex items-center gap-1.5 rounded border border-aegis-border px-3 py-1.5 text-xs text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+                  >
+                    <CheckCircle2 size={12} />标记完成
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="inline-flex items-center gap-1.5 rounded border border-aegis-border px-3 py-1.5 text-xs text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+                  >
+                    <X size={12} />结束任务
+                  </button>
+                </div>
+              </div>
+            ) : terminalError ? (
               <div className="flex-1 flex items-center justify-center p-4 rounded text-center"
                 style={{ background: 'var(--terminal-bg)', border: '1px solid rgb(var(--aegis-danger))', minHeight: 300, color: 'rgb(var(--aegis-danger))' }}>
                 <div>
@@ -973,6 +1418,15 @@ export function AgentRunView() {
                   <>
                     <button onClick={() => navigate(`/session?path=${encodeURIComponent(sessionPath)}`)} title={sessionPath}
                       className="hover:text-[rgb(var(--aegis-primary))] transition-colors">{t('agent.session.view', 'session')}</button>
+                    <button
+                      type="button"
+                      disabled={exportingSession}
+                      onClick={() => void handleExportSession()}
+                      title="导出会话 Markdown"
+                      className="flex h-5 w-5 items-center justify-center rounded hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50"
+                    >
+                      <Download size={11} />
+                    </button>
                     {canResume && <button onClick={handleResume} className="hover:text-[rgb(var(--aegis-success))] transition-colors">{t('agent.session.resume', 'resume')}</button>}
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>
                   </>

@@ -540,10 +540,10 @@ export const SKIN_REGISTRY: Record<PetSkin, FC<SkinProps>> = {
 };
 
 export const PET_SKIN_OPTIONS: PetSkinOption[] = [
+  { id: 'robot', label: '机器人' },
   { id: 'jellyfish', label: '水母' },
   { id: 'blue-mascot', label: '蓝色萌宠' },
   { id: 'lobster', label: '龙虾' },
-  { id: 'robot', label: '机器人' },
   { id: 'cat', label: '猫咪' },
   { id: 'ghost', label: '幽灵' },
 ];

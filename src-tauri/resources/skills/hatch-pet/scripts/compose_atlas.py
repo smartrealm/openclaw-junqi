@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compose or normalize a Codex pet spritesheet atlas."""
+"""Compose or normalize a JunQi pet spritesheet atlas."""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ def compose_from_source_atlas(path: Path, resize_source: bool) -> Image.Image:
         if abs(source_ratio - ATLAS_ASPECT_RATIO) > 0.02:
             raise SystemExit(
                 "refusing to resize source atlas because its aspect ratio does not match "
-                f"the Codex atlas ratio {ATLAS_ASPECT_RATIO:.3f}; got {source_ratio:.3f}. "
+                f"the JunQi atlas ratio {ATLAS_ASPECT_RATIO:.3f}; got {source_ratio:.3f}. "
                 "Generate exact atlas dimensions or use --frames-root."
             )
         source = source.resize((ATLAS_WIDTH, ATLAS_HEIGHT), Image.Resampling.LANCZOS)
@@ -144,7 +144,7 @@ def main() -> None:
     parser.add_argument(
         "--resize-source",
         action="store_true",
-        help="Resize a lower-resolution source atlas only when it already has the Codex atlas aspect ratio.",
+        help="Resize a lower-resolution source atlas only when it already has the JunQi atlas aspect ratio.",
     )
     args = parser.parse_args()
 

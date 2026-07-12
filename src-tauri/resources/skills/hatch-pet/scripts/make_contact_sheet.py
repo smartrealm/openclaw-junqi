@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a labeled contact sheet from a Codex pet atlas."""
+"""Create a labeled contact sheet from a JunQi pet atlas."""
 
 from __future__ import annotations
 

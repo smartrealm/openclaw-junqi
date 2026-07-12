@@ -6,6 +6,7 @@ import {
   findLeaf,
   listLeafIds,
   newWorkspace,
+  newSshWorkspace,
   normalizeWorkspace,
   normalizeWorkspaces,
   removeLeaf,
@@ -76,6 +77,7 @@ test('normalization migrates legacy projectPath data and repairs invalid focus i
 
   assert.equal(migrated.name, 'Legacy project');
   assert.equal(migrated.workingDirectory, '/repo');
+  assert.equal(migrated.projectDirectory, '/repo');
   assert.deepEqual(listLeafIds(migrated.root), ['pane-one', 'pane-two']);
   assert.equal(migrated.focusedPaneId, 'pane-one');
   assert.deepEqual(findLeaf(migrated.root, 'pane-one')?.config, {
@@ -116,6 +118,7 @@ test('normalization infers a missing workspace cwd from the focused pane', () =>
 
   assert.equal(migrated.focusedPaneId, 'pane-two');
   assert.equal(migrated.workingDirectory, '/repo/packages/web');
+  assert.equal(migrated.projectDirectory, '/repo/packages/web');
 });
 
 test('normalization maps a legacy config focus id to the matching non-first pane', () => {
@@ -133,6 +136,7 @@ test('normalization maps a legacy config focus id to the matching non-first pane
 
   assert.equal(migrated.focusedPaneId, 'pane-two');
   assert.equal(migrated.workingDirectory, '/repo/app');
+  assert.equal(migrated.projectDirectory, '/repo/app');
 });
 
 test('workspace collection normalization de-duplicates pane ids globally', () => {
@@ -155,4 +159,67 @@ test('workspace collection normalization de-duplicates pane ids globally', () =>
   assert.notEqual(secondPaneId, firstPaneId);
   assert.equal(workspaces[1].focusedPaneId, secondPaneId);
   assert.equal(workspaces[1].workingDirectory, '/repo/two');
+  assert.equal(workspaces[1].projectDirectory, '/repo/two');
+});
+
+test('normalization preserves a stable project root when focused cwd changes', () => {
+  const migrated = normalizeWorkspace({
+    id: 'workspace-one',
+    projectDirectory: '/repo',
+    workingDirectory: '/repo/packages/web',
+    focusedPaneId: 'pane-one',
+    root: { type: 'leaf', id: 'pane-one', config: { cwd: '/repo/packages/web' } },
+  });
+
+  assert.equal(migrated.projectDirectory, '/repo');
+  assert.equal(migrated.workingDirectory, '/repo/packages/web');
+});
+
+test('normalization retains worktree ownership separately from the active cwd', () => {
+  const migrated = normalizeWorkspace({
+    id: 'worktree',
+    projectDirectory: '/repo-task',
+    workingDirectory: '/tmp',
+    worktreeParentId: 'source',
+    worktreeBranch: 'feature/task',
+    worktreePath: '/repo-task',
+    root: { type: 'leaf', id: 'pane-one', config: { cwd: '/tmp' } },
+  });
+
+  assert.equal(migrated.worktreeParentId, 'source');
+  assert.equal(migrated.worktreeBranch, 'feature/task');
+  assert.equal(migrated.worktreePath, '/repo-task');
+  assert.equal(migrated.workingDirectory, '/tmp');
+});
+
+test('workspace path fields preserve legal leading and trailing whitespace', () => {
+  const workspace = newWorkspace('Report', '/projects/report ');
+
+  assert.equal(workspace.projectDirectory, '/projects/report ');
+  assert.equal(workspace.workingDirectory, '/projects/report ');
+  assert.equal(findLeaf(workspace.root, workspace.focusedPaneId)?.config.cwd, '/projects/report ');
+});
+
+test('SSH workspaces persist a remote destination without inventing a local root', () => {
+  const workspace = newSshWorkspace('dev@bastion');
+  assert.equal(workspace.sshRemoteHost, 'dev@bastion');
+  assert.equal(workspace.projectDirectory, '');
+  assert.equal(workspace.workingDirectory, '');
+
+  const restored = normalizeWorkspace({
+    ...workspace,
+    root: workspace.root,
+  });
+  assert.equal(restored.sshRemoteHost, 'dev@bastion');
+  assert.equal(restored.projectDirectory, '');
+
+  const stale = normalizeWorkspace({
+    ...workspace,
+    projectDirectory: '/old-local-project',
+    workingDirectory: '/old-local-cwd',
+    root: createLeaf({ kind: 'shell', cwd: '/old-local-pane' }, workspace.focusedPaneId),
+  });
+  assert.equal(stale.projectDirectory, '');
+  assert.equal(stale.workingDirectory, '');
+  assert.equal(findLeaf(stale.root, stale.focusedPaneId)?.config.cwd, undefined);
 });

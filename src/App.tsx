@@ -2,6 +2,7 @@ import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { useTheme } from '@/theme/useTheme';
+import { useAgentWorkspaceTaskEvents } from '@/hooks/useAgentWorkspaceTaskEvents';
 
 const AppRoutes = lazy(() => import('@/AppRoutes'));
 const PetRuntime = lazy(() => import('@/pet/PetRuntime'));
@@ -10,7 +11,7 @@ const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => 
 const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
 const BootTimelineOverlay = lazy(() => import('@/components/BootTimelineOverlay').then(m => ({ default: m.BootTimelineOverlay })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
-import { useChatStore, primeSessionLabelCache, getSessionLabelPref } from '@/stores/chatStore';
+import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
@@ -20,11 +21,8 @@ import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress'
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import { changeLanguage } from '@/i18n';
 import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
+import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { debugLog, debugWarn } from '@/utils/debugLog';
-// User-renamed session labels live in localStorage under
-// 'aegis:session-label-prefs'. The chatStore reads them at sessions.list
-// merge time so renames survive an app restart even when the openclaw
-// gateway has discarded the `label` field. Writer: src/utils/sessionRename.ts.
 
 function RouteLoadingFallback() {
   return (
@@ -34,6 +32,11 @@ function RouteLoadingFallback() {
       <style>{'@keyframes spin{to{transform:rotate(360deg)}}'}</style>
     </div>
   );
+}
+
+function ThemeRuntime() {
+  useTheme();
+  return null;
 }
 
 function LazyPetRuntimeHost() {
@@ -62,19 +65,7 @@ async function addToastLazy(type: 'message' | 'task_complete' | 'info' | 'error'
 
 export default function App() {
   const { t } = useTranslation();
-  // ── Theme: resolve setting → concrete theme, apply to <html> + native chrome,
-  //         follow OS preference live when set to 'system'. All in one hook. ──
-  useTheme();
-
-  // Prime the session-label override cache from disk before the first
-  // Eagerly prime the persisted label cache so any subsequent
-  // setSessions merge can see user renames. The prime is fire-and-forget
-  // — the merge logic in chatStore safely falls through to the server
-  // label when the cache hasn't loaded yet, and any later setSessions
-  // call picks up the override once the prime resolves.
-  useEffect(() => {
-    void primeSessionLabelCache();
-  }, []);
+  useAgentWorkspaceTaskEvents();
 
   const {
     addMessage,
@@ -122,42 +113,29 @@ export default function App() {
   // synchronously applies the active session's data to the TitleBar state — no separate
   // loadTokenUsage needed.
   const loadSessions = useCallback(async () => {
-    // No gate: we don't need labelsReady to be true here. setSessions's
-    // merge logic already consults getSessionLabelPref(key), which safely
-    // returns undefined if the cache hasn't been primed yet. The merge
-    // then falls through to the server's label. Once the prime promise
-    // resolves, a later setSessions call (e.g. on the next gateway
-    // handshake) will pick up the override.
     try {
+      // Compatibility only: prior Desktop builds wrote labels to a local JSON
+      // file. Copy confirmed entries to OpenClaw before this read, then let
+      // Gateway labels remain the sole source of truth.
+      await migrateLegacySessionLabelsOnce();
       const result = await gateway.getSessions();
       const rawSessions = Array.isArray(result?.sessions) ? result.sessions : [];
       // Gateway-level defaults (configured model, context window)
       const defaults = result?.defaults
         ? { model: result.defaults.model ?? null, contextTokens: result.defaults.contextTokens ?? null }
         : undefined;
-      // Read the label cache synchronously — it's a module-level Map
-      // populated by primeSessionLabelCache() at boot. The first loadSessions
-      // call after mount waits for the prime to settle, so by the time we
-      // touch this helper the cache is ready. If the user renamed this
-      // session on a previous run, the override is here.
       const sessions = rawSessions.map((s: any) => {
         const key = s.key || s.sessionKey || 'unknown';
-        // Priority: persisted user rename → server-provided label →
-        // gateway-default fallback. The persisted label wins because the
-        // gateway often strips the `label` field on its own.
-        const persistedLabel = getSessionLabelPref(key);
-        let label = persistedLabel || s.label || s.name || key;
-        if (!persistedLabel) {
-          if (key === 'agent:main:main') label = t('dashboard.mainSession');
-          else if (key.startsWith('agent:main:')) label = key.split(':').pop() || key;
-        }
         const persistedModel = getSessionModelPref(key);
         const resolvedModel = s.model ?? persistedModel ?? null;
         if (typeof s.model === 'string' && s.model.trim().length > 0) {
           setSessionModelPref(key, s.model);
         }
         return {
-          key, label,
+          key,
+          label: typeof s.label === 'string'
+            ? s.label
+            : (typeof s.name === 'string' ? s.name : ''),
           topic: typeof s.topic === 'string' ? s.topic : undefined,
           lastMessage: s.lastMessage?.content?.substring?.(0, 60),
           lastTimestamp: s.lastMessage?.timestamp || s.updatedAt,
@@ -177,7 +155,7 @@ export default function App() {
       // This keeps TitleBar model in sync from gateway defaults after config changes.
       setSessions(sessions, defaults);
     } catch { /* silent */ }
-  }, [setSessions, t]);
+  }, [setSessions]);
 
   // ── Load Available Models from Gateway ──
   // Uses Chain of Responsibility: config.get(WS) → openclaw.json(file) → agents+sessions.
@@ -898,6 +876,7 @@ export default function App() {
   if (!setupComplete) {
     return (
       <>
+        <ThemeRuntime />
         <LazyPetRuntimeHost />
         <Suspense fallback={<RouteLoadingFallback />}>
           <SetupPage />
@@ -908,6 +887,7 @@ export default function App() {
 
   return (
     <>
+      <ThemeRuntime />
       <LazyPetRuntimeHost />
 
       {/* Gateway process error overlay — shown when the gateway failed to start.

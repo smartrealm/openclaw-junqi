@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, RefreshCw, GripVertical, Sparkles, Pencil, Plus } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
+import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -393,6 +394,7 @@ function NewSessionPicker({
   const [pickerRenamingKey, setPickerRenamingKey] = useState<string | null>(null);
   const [pickerRenameValue, setPickerRenameValue] = useState('');
   const [pickerRenaming, setPickerRenaming] = useState(false);
+  const [pickerRenameError, setPickerRenameError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pickerCtxMenu) return;
@@ -408,11 +410,13 @@ function NewSessionPicker({
   const cancelPickerRename = useCallback(() => {
     setPickerRenamingKey(null);
     setPickerRenameValue('');
+    setPickerRenameError(null);
   }, []);
 
   const beginPickerRename = useCallback((session: Session) => {
     setPickerCtxMenu(null);
     setPickerRenamingKey(session.key);
+    setPickerRenameError(null);
     // Pre-fill with the same display label the row shows so the user sees
     // exactly what they'll replace.
     const display = sessionLabel(session, session.key, agents, mainDisplayName, messagesPerSession[session.key]);
@@ -423,35 +427,22 @@ function NewSessionPicker({
     if (pickerRenaming || !pickerRenamingKey) return;
     setPickerRenaming(true);
     try {
-      const ok = await applySessionRename(pickerRenamingKey, pickerRenameValue);
-      if (ok) {
-        // Refresh the available-sessions list so the user sees the server-
-        // confirmed label (or any backend trim/reject). Keep the picker open
-        // so the edit context stays visible — the renamed row updates in place.
-        try {
-          const result: any = await gateway.getSessions();
-          const list = (result?.sessions || []).map((s: any) => ({
-            key: s.key || s.sessionKey,
-            label: s.label || s.name || '',
-            lastMessage: s.lastMessage?.content?.substring?.(0, 80),
-            lastTimestamp: s.lastMessage?.timestamp || s.updatedAt,
-            kind: s.kind,
-            agentId: s.agentId || s.agent_id,
-            agent: s.agent,
-            metadata: s.metadata,
-          }));
-          setNewSessions(list);
-        } catch (err) {
-          debugWarn('app', '[NewSessionPicker] refresh after rename failed:', err);
-        }
+      const result = await applySessionRename(pickerRenamingKey, pickerRenameValue);
+      if (!result.ok) {
+        setPickerRenameError(result.error);
+        return;
       }
+      setNewSessions((previous) => previous.map((session) => (
+        session.key === pickerRenamingKey ? { ...session, label: result.label } : session
+      )));
+      cancelPickerRename();
     } finally {
       setPickerRenaming(false);
-      cancelPickerRename();
     }
-  }, [pickerRenaming, pickerRenamingKey, pickerRenameValue, cancelPickerRename]);
+  }, [pickerRenaming, pickerRenamingKey, pickerRenameValue, cancelPickerRename, setNewSessions]);
 
   const deleteAvailableSession = useCallback((session: Session) => {
+    if (parseSessionKey(session.key).isMainSession) return;
     setPickerCtxMenu(null);
     showConfirm(
       t('chat.deleteSession', '删除会话'),
@@ -642,7 +633,7 @@ function NewSessionPicker({
                 return (
                   <div
                     key={session.key}
-                    className="w-full min-w-0 overflow-hidden flex flex-col gap-1 px-3 py-2 rounded-lg text-start hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors cursor-pointer"
+                    className="group/picker-session relative w-full min-w-0 overflow-hidden flex flex-col gap-1 px-3 py-2 pr-14 rounded-lg text-start hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors cursor-pointer"
                     onClick={() => {
                       if (isRenaming) return;
                       onOpenExisting(session.key);
@@ -661,7 +652,7 @@ function NewSessionPicker({
                         value={pickerRenameValue}
                         onChange={(e) => setPickerRenameValue(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        onBlur={() => void submitPickerRename()}
+                        onBlur={cancelPickerRename}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
@@ -672,7 +663,12 @@ function NewSessionPicker({
                           }
                         }}
                         disabled={pickerRenaming}
-                        className="w-full max-w-full h-[22px] px-1.5 rounded bg-aegis-bg border border-aegis-primary/40 text-[12px] text-aegis-text outline-none"
+                        aria-invalid={pickerRenameError ? true : undefined}
+                        title={pickerRenameError ?? undefined}
+                        className={clsx(
+                          'w-full max-w-full h-[22px] px-1.5 rounded bg-aegis-bg border text-[12px] text-aegis-text outline-none',
+                          pickerRenameError ? 'border-aegis-danger/60' : 'border-aegis-primary/40',
+                        )}
                       />
                     ) : (
                       <span className="block w-full min-w-0 truncate text-[12px] text-aegis-text font-medium">
@@ -690,6 +686,31 @@ function NewSessionPicker({
                           <span className="shrink-0 text-[9px] text-aegis-text-dim/80 tabular-nums">
                             {timeLabel}
                           </span>
+                        )}
+                      </span>
+                    )}
+                    {!isRenaming && (
+                      <span className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/picker-session:opacity-100 group-focus-within/picker-session:opacity-100">
+                        <IconButton
+                          size="xs"
+                          aria-label={t('chat.renameSession', 'Rename session')}
+                          title={t('chat.renameSession', 'Rename session')}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => { event.stopPropagation(); beginPickerRename(session); }}
+                        >
+                          <Pencil size={12} />
+                        </IconButton>
+                        {!parseSessionKey(session.key).isMainSession && (
+                          <IconButton
+                            size="xs"
+                            tone="danger"
+                            aria-label={t('chat.deleteSession', 'Delete session')}
+                            title={t('chat.deleteSession', 'Delete session')}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => { event.stopPropagation(); deleteAvailableSession(session); }}
+                          >
+                            <Trash2 size={12} />
+                          </IconButton>
                         )}
                       </span>
                     )}
@@ -728,14 +749,18 @@ function NewSessionPicker({
             <Pencil size={13} className="opacity-60" />
             {t('chat.renameSession', 'Rename session')}
           </button>
-          <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
-          <button
-            onClick={() => deleteAvailableSession(pickerCtxMenu.session)}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
-          >
-            <Trash2 size={13} />
-            {t('chat.deleteSession', 'Delete session')}
-          </button>
+          {!parseSessionKey(pickerCtxMenu.session.key).isMainSession && (
+            <>
+              <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
+              <button
+                onClick={() => deleteAvailableSession(pickerCtxMenu.session)}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 size={13} />
+                {t('chat.deleteSession', 'Delete session')}
+              </button>
+            </>
+          )}
         </div>,
         document.body,
       )}
@@ -856,7 +881,9 @@ export function ChatTabs() {
             const lastMessage = s.lastMessage?.content?.substring?.(0, 80) || previous?.lastMessage;
             return {
               key,
-              label: s.label || s.name || previous?.label || key || '',
+              label: typeof s.label === 'string'
+                ? s.label
+                : (typeof s.name === 'string' ? s.name : ''),
               topic: previous?.topic,
               lastMessage,
               lastTimestamp: s.lastMessage?.timestamp || s.updatedAt || previous?.lastTimestamp,
@@ -1014,6 +1041,7 @@ export function ChatTabs() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -1029,18 +1057,20 @@ export function ChatTabs() {
     setCtxMenu({ key, x: e.clientX, y: e.clientY });
   }, []);
 
-  const handleDeleteSession = useCallback(async () => {
-    if (!ctxMenu) return;
-    const key = ctxMenu.key;
-    setCtxMenu(null);
+  const requestDeleteSession = useCallback((key: string) => {
     showConfirm(
       t('chat.deleteSession', '删除会话'),
       t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
-      async () => {
-        await deleteSessionEverywhere(key);
-      }
+      () => { void deleteSessionEverywhere(key); },
     );
-  }, [ctxMenu, t]);
+  }, [t]);
+
+  const handleDeleteSession = useCallback(() => {
+    if (!ctxMenu) return;
+    const key = ctxMenu.key;
+    setCtxMenu(null);
+    requestDeleteSession(key);
+  }, [ctxMenu, requestDeleteSession]);
 
   const { clearSessionMessages, clearSessionTokens } = useChatStore();
   const handleResetSession = useCallback(async () => {
@@ -1063,31 +1093,28 @@ export function ChatTabs() {
   const startRename = useCallback((key: string, currentLabel: string) => {
     setEditingKey(key);
     setEditingLabel(currentLabel);
+    setRenameError(null);
   }, []);
 
   const cancelRename = useCallback(() => {
     setEditingKey(null);
     setEditingLabel('');
+    setRenameError(null);
   }, []);
 
-  const submitRename = useCallback(async (key: string, fallbackLabel: string) => {
+  const submitRename = useCallback(async (key: string, nativeLabel: string) => {
     if (renaming) return;
-    if (!editingLabel.trim() || editingLabel.trim() === fallbackLabel) {
+    if (editingLabel.trim() === nativeLabel.trim()) {
       cancelRename();
       return;
     }
     setRenaming(true);
     try {
-      const ok = await applySessionRename(key, editingLabel);
-      if (ok) {
-        // aegis:refresh is fired so any other tab listening to "session list
-        // changed" re-renders. sessions.list refetch is intentionally avoided
-        // here (heavy + aegis:refresh only reloads chat history).
-        window.dispatchEvent(new Event('aegis:refresh'));
-      }
+      const result = await applySessionRename(key, editingLabel);
+      if (result.ok) cancelRename();
+      else setRenameError(result.error);
     } finally {
       setRenaming(false);
-      cancelRename();
     }
   }, [editingLabel, renaming, cancelRename]);
 
@@ -1138,7 +1165,7 @@ export function ChatTabs() {
             <SortableTab id={key} disabled={isMain}>
 	            <div
 	              key={key}
-	              className="relative shrink-0"
+	              className="group/tab relative shrink-0"
                   data-active-session-tab={isActive ? 'true' : undefined}
 	              ref={isMain ? mainTabRef : undefined}
 	              onMouseEnter={isMain ? handleMainTabEnter : undefined}
@@ -1153,7 +1180,7 @@ export function ChatTabs() {
                 onClick={() => isActive ? undefined : setActiveSession(key)}
                 onAuxClick={(e) => !isMain && handleTabAuxClick(e, key)}
                 className={clsx(
-                  'group flex items-center gap-1.5 h-[38px] px-3 text-[12px] font-medium transition-colors select-none relative',
+                  'flex items-center gap-1.5 h-[38px] px-3 pr-[68px] text-[12px] font-medium transition-colors select-none relative',
                   'border-b-2 focus-visible:outline-none',
                   isActive
                     ? 'text-aegis-text border-aegis-primary bg-[rgb(var(--aegis-overlay)/0.04)]'
@@ -1177,17 +1204,22 @@ export function ChatTabs() {
                     value={editingLabel}
                     onChange={(e) => setEditingLabel(e.target.value)}
                     onClick={(e) => e.stopPropagation()}
-                    onBlur={() => void submitRename(key, label)}
+                    onBlur={cancelRename}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        void submitRename(key, label);
+                        void submitRename(key, session?.label ?? '');
                       } else if (e.key === 'Escape') {
                         e.preventDefault();
                         cancelRename();
                       }
                     }}
-                    className="max-w-[180px] min-w-[80px] h-[22px] px-1.5 rounded bg-aegis-bg border border-aegis-primary/40 text-[12px] text-aegis-text outline-none"
+                    aria-invalid={renameError ? true : undefined}
+                    title={renameError ?? undefined}
+                    className={clsx(
+                      'max-w-[180px] min-w-[80px] h-[22px] px-1.5 rounded bg-aegis-bg border text-[12px] text-aegis-text outline-none',
+                      renameError ? 'border-aegis-danger/60' : 'border-aegis-primary/40',
+                    )}
                     disabled={renaming}
                   />
                 ) : (
@@ -1235,20 +1267,44 @@ export function ChatTabs() {
                   </span>
                 )}
 
-                {/* Close button (non-main tabs only) */}
-                {!isMain && (
-                  <span
-                    onClick={(e) => handleTabClose(e, key)}
-                    className={clsx(
-                      'ml-0.5 p-0.5 rounded hover:bg-[rgb(var(--aegis-overlay)/0.1)] transition-colors cursor-pointer',
-                      isActive ? 'opacity-50 hover:opacity-100' : 'opacity-0 group-hover:opacity-50 hover:!opacity-100',
-                    )}
-                    title={t('chat.closeTab', 'Close tab')}
-                  >
-                    <X size={10} />
-                  </span>
-                )}
               </button>
+              <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
+                <IconButton
+                  size="xs"
+                  aria-label={t('chat.renameSession', 'Rename session')}
+                  title={t('chat.renameSession', 'Rename session')}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    startRename(key, session?.label || label);
+                  }}
+                >
+                  <Pencil size={12} />
+                </IconButton>
+                {!isMainSession && (
+                  <IconButton
+                    size="xs"
+                    tone="danger"
+                    aria-label={t('chat.deleteSession', 'Delete session')}
+                    title={t('chat.deleteSession', 'Delete session')}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => { event.stopPropagation(); requestDeleteSession(key); }}
+                  >
+                    <Trash2 size={12} />
+                  </IconButton>
+                )}
+                {!isMain && (
+                  <IconButton
+                    size="xs"
+                    aria-label={t('chat.closeTab', 'Close tab')}
+                    title={t('chat.closeTab', 'Close tab')}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => handleTabClose(event, key)}
+                  >
+                    <X size={12} />
+                  </IconButton>
+                )}
+              </span>
 
             </div>
             </SortableTab>

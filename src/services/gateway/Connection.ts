@@ -454,6 +454,12 @@ export class GatewayConnection {
           this.emitRetryState('connected');
           this.emitStatus();
           startPolling(this);
+          // Labels and deletes may be initiated by another OpenClaw client.
+          // Subscribe once per connected socket so those mutations propagate
+          // immediately instead of waiting for the 10s polling interval.
+          void this.request('sessions.subscribe', {}).catch((error) => {
+            debugWarn('gateway', '[GW] Unable to subscribe to session changes:', error);
+          });
           this.flushQueue();
         } else {
           const err = response.error?.message || JSON.stringify(response);

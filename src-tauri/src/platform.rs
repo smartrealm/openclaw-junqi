@@ -33,6 +33,15 @@ pub fn bin_name(base: &str) -> String {
     }
 }
 
+/// Keep background CLI operations from opening a visible console window on Windows.
+pub fn configure_background_command(command: &mut tokio::process::Command) {
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+
+    #[cfg(not(windows))]
+    let _ = command;
+}
+
 pub fn home_dir() -> Option<PathBuf> {
     if cfg!(windows) {
         std::env::var_os("USERPROFILE")

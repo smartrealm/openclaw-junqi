@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy } from "./terminalCopyHelper";
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "./_nezha-types";
 import {
@@ -25,11 +26,24 @@ import {
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInputFix";
 import {
   advanceShellLaunchPath,
+  applyTerminalToolCallEvent,
   createShellRunId,
-  isGeneratedShellTitle,
+  markStalledTerminalToolCalls,
+  migrateShellTitleState,
+  normalizeShellCustomTitle,
   parseOsc7Cwd,
+  parseJunqiAgentStatusTitle,
+  recordClosedTerminalShell,
+  resolveShellDisplayTitle,
   shellStateFromExit,
+  takeRecentlyClosedTerminalShell,
+  terminalAgentLaunchCommand,
+  type TerminalAgentId,
+  type TerminalAgentActivity,
+  type TerminalHookEvent,
+  type TerminalToolCall,
   type OpenShellResult,
+  type ShellProxyInfo,
   type ShellLaunchPathState,
   type ShellExitEvent,
   type ShellOutputEvent,
@@ -47,9 +61,19 @@ import {
   readTerminalClipboardText,
 } from './terminalClipboard';
 import { debugError } from "@/utils/debugLog";
+import {
+  cancelTerminalPtyHandoff,
+  completeTerminalPtyHandoff,
+  createTerminalRendererInstanceId,
+  prepareTerminalPtyHandoff,
+  registerTerminalPtyOwner,
+  terminalTransferMatchesRemote,
+  takeTerminalPtyHandoffSnapshot,
+  unregisterTerminalPtyOwner,
+} from './terminalPtyHandoff';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, PanelLeft, RotateCcw } from "lucide-react";
+import { Bot, ChevronDown, Code2, Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, RotateCcw } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
 import { PaneComposerBar } from "./PaneComposerBar";
@@ -66,14 +90,7 @@ export interface ShellTerminalPanelHandle {
 // directory, then the generated terminal label.
 // ─────────────────────────────────────────────────────────────────
 function computeShellTitle(shell: ShellSession): string {
-  if (shell.title && shell.title.trim() && !isGeneratedShellTitle(shell.title)) return shell.title;
-  const cwd = shell.cwd ?? '';
-  if (!cwd) return shell.title || '~';
-  // Support both Unix '/' and Windows '\' path separators
-  const trimmed = cwd.replace(/[\/\\]+$/, '');
-  if (!trimmed) return '~';
-  const seg = trimmed.split(/[\/\\]/).pop() || '~';
-  return seg;
+  return resolveShellDisplayTitle(shell);
 }
 
 // ── kooky TabBarItem port: 40pt strip, cornerRadius 6, chromeActive bg,
@@ -85,28 +102,33 @@ function computeShellTitle(shell: ShellSession): string {
 interface TabShellItemProps {
   title: string;
   status: ShellRuntimeState;
+  exitCode?: number | null;
   selected: boolean;
   index: number;
   totalCount: number;
   onSelect: () => void;
-  onClose: (e: React.MouseEvent) => void;
+  onClose: () => void;
   onCloseOthers?: () => void;
-  onCloseAll?: () => void;
   onCloseToRight?: () => void;
   onRename?: (name: string) => void;
   onDuplicate?: () => void;
+  onMoveToNewWindow?: () => void;
   onSplitH?: () => void;
   onSplitV?: () => void;
-  onDragStart?: (index: number) => void;
+  onRevealDirectory?: () => void;
+  onDragStart?: (event: React.DragEvent<HTMLDivElement>, index: number) => void;
   onDragEnter?: (index: number) => void;
   onDragEnd?: () => void;
+  onExternalDrop?: (event: React.DragEvent<HTMLDivElement>, index: number) => void;
+  renameRequested?: boolean;
+  onRenameRequestHandled?: () => void;
 }
 
 function TabShellItem({
-  title, status, selected, index, totalCount,
-  onSelect, onClose, onCloseOthers, onCloseAll, onCloseToRight, onRename,
-  onDuplicate, onSplitH, onSplitV,
-  onDragStart, onDragEnter, onDragEnd,
+  title, status, exitCode, selected, index, totalCount,
+  onSelect, onClose, onCloseOthers, onCloseToRight, onRename,
+  onDuplicate, onMoveToNewWindow, onSplitH, onSplitV, onRevealDirectory,
+  onDragStart, onDragEnter, onDragEnd, onExternalDrop, renameRequested = false, onRenameRequestHandled,
 }: TabShellItemProps) {
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
@@ -115,6 +137,7 @@ function TabShellItem({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (renaming && renameInputRef.current) {
@@ -124,8 +147,17 @@ function TabShellItem({
   }, [renaming]);
 
   useEffect(() => {
+    if (!renameRequested) return;
+    setRenameValue(title);
+    setRenaming(true);
+    onRenameRequestHandled?.();
+  }, [onRenameRequestHandled, renameRequested, title]);
+
+  useEffect(() => {
     if (!ctxMenu) return;
-    const handler = () => setCtxMenu(null);
+    const handler = (event: MouseEvent) => {
+      if (!contextMenuRef.current?.contains(event.target as Node)) setCtxMenu(null);
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [ctxMenu]);
@@ -140,7 +172,10 @@ function TabShellItem({
   const menuLeave = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; };
 
   const startRename = () => { setRenameValue(title); setRenaming(true); setCtxMenu(null); };
-  const commitRename = () => { const v = renameValue.trim(); if (v) onRename?.(v); setRenaming(false); };
+  const commitRename = () => {
+    onRename?.(renameValue);
+    setRenaming(false);
+  };
 
   return (
     <>
@@ -150,10 +185,17 @@ function TabShellItem({
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => { setHovered(false); setDragOver(false); }}
-        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(index); }}
+        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(e, index); }}
         onDragEnter={(e) => { e.preventDefault(); setDragOver(true); onDragEnter?.(index); }}
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
         onDragLeave={() => setDragOver(false)}
+        onDrop={(event) => {
+          if (!Array.from(event.dataTransfer.types).includes(TERMINAL_SHELL_TRANSFER_MIME)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setDragOver(false);
+          onExternalDrop?.(event, index);
+        }}
         onDragEnd={() => { setDragOver(false); onDragEnd?.(); }}
         style={{
           display: "flex", alignItems: "center", gap: 7,
@@ -171,16 +213,16 @@ function TabShellItem({
       >
         <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
           <TerminalIcon size={12} color={selected ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))"} />
-          {status !== 'running' && (
+          {status === 'failed' || (status === 'exited' && exitCode !== 0 && exitCode != null) ? (
             <span
-              title={status === 'starting' ? t('terminal.starting', 'Starting') : t('terminal.exited', 'Exited')}
+              title={exitCode != null ? `exit ${exitCode}` : t('terminal.failed', 'Terminal stopped unexpectedly')}
               style={{
                 position: 'absolute', right: -3, bottom: -2, width: 5, height: 5, borderRadius: '50%',
-                background: status === 'starting' ? 'rgb(var(--aegis-primary))' : 'rgb(239 68 68)',
+                background: 'rgb(239 68 68)',
                 border: '1px solid rgb(var(--terminal-bg))',
               }}
             />
-          )}
+          ) : null}
         </span>
         {renaming ? (
           <input
@@ -209,7 +251,7 @@ function TabShellItem({
           </span>
         )}
         <button
-          onClick={(e) => { e.stopPropagation(); onClose(e); }}
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
           title={t('terminal.close', 'Close')}
           style={{
             background: "none", border: "none", color: "rgb(var(--aegis-text-dim))",
@@ -227,25 +269,34 @@ function TabShellItem({
       </div>
 
       {ctxMenu && (
-        <div style={{
+        <div
+          ref={contextMenuRef}
+          onMouseDown={(event) => event.stopPropagation()}
+          style={{
           position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 220), top: Math.min(ctxMenu.y, window.innerHeight - 280), zIndex: 2147482000,
           background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(255 255 255 / 0.08)',
           borderRadius: 6, boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
           padding: '4px 0', minWidth: 180, display: 'flex', flexDirection: 'column',
-        }}>
+          }}
+        >
           <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-            onClick={() => { onClose(null as any); setCtxMenu(null); }}>{t('terminal.close', 'Close')}</button>
-          {onCloseOthers && totalCount > 1 && (
+            onClick={() => { onClose(); setCtxMenu(null); }}>{t('terminal.close', 'Close')}</button>
+          <button disabled={!onCloseOthers || totalCount <= 1} style={{ ...menuItemStyle, opacity: onCloseOthers && totalCount > 1 ? 1 : 0.45, cursor: onCloseOthers && totalCount > 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            onClick={() => { if (onCloseOthers && totalCount > 1) { onCloseOthers(); setCtxMenu(null); } }}>{t('terminal.closeOthers', 'Close Others')}</button>
+          <button disabled={!onCloseToRight || index >= totalCount - 1} style={{ ...menuItemStyle, opacity: onCloseToRight && index < totalCount - 1 ? 1 : 0.45, cursor: onCloseToRight && index < totalCount - 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            onClick={() => { if (onCloseToRight && index < totalCount - 1) { onCloseToRight(); setCtxMenu(null); } }}>{t('terminal.closeTabsToRight', 'Close Tabs to the Right')}</button>
+          <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
+          {onSplitH && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onCloseOthers(); setCtxMenu(null); }}>{t('terminal.closeOthers', 'Close Others')}</button>
+              onClick={() => { onSplitH(); setCtxMenu(null); }}>{t('terminal.splitRight', 'Split Right')}</button>
           )}
-          {onCloseToRight && index < totalCount - 1 && (
+          {onSplitV && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onCloseToRight(); setCtxMenu(null); }}>{t('terminal.closeTabsToRight', 'Close Tabs to the Right')}</button>
+              onClick={() => { onSplitV(); setCtxMenu(null); }}>{t('terminal.splitDown', 'Split Down')}</button>
           )}
-          {onCloseAll && (
+          {onMoveToNewWindow && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onCloseAll(); setCtxMenu(null); }}>{t('terminal.closeAll', 'Close All')}</button>
+              onClick={() => { onMoveToNewWindow(); setCtxMenu(null); }}>Move to New Window</button>
           )}
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onRename && (
@@ -256,28 +307,40 @@ function TabShellItem({
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={() => { onDuplicate(); setCtxMenu(null); }}>{t('terminal.duplicateTab', 'Duplicate Tab')}</button>
           )}
-          {(onSplitH || onSplitV) && <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />}
-          {onSplitH && (
+          {onRevealDirectory && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onSplitH(); setCtxMenu(null); }}>
-              {t('terminal.splitRight', 'Split Right')}
-            </button>
-          )}
-          {onSplitV && (
-            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onSplitV(); setCtxMenu(null); }}>
-              {t('terminal.splitDown', 'Split Down')}
-            </button>
+              onClick={() => { onRevealDirectory(); setCtxMenu(null); }}>{t('terminal.revealInFileManager', 'Reveal in file manager')}</button>
           )}
         </div>
       )}
     </>
   );
 }
+
+function TerminalLaunchMenuItem({ icon, label, onClick }: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      style={{ width: '100%', height: 28, display: 'flex', alignItems: 'center', gap: 8, border: 'none', borderRadius: 4, background: 'transparent', color: 'rgb(var(--aegis-text))', padding: '0 8px', cursor: 'pointer', textAlign: 'left', fontSize: 11.5 }}
+      onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; }}
+      onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
+    >
+      <span style={{ color: 'rgb(var(--aegis-text-dim))', display: 'inline-flex' }}>{icon}</span>{label}
+    </button>
+  );
+}
+
 interface ShellTerminalInstanceHandle {
   sendCommand: (cmd: string) => boolean;
   pasteText: (text: string) => boolean;
   pasteAndSubmit: (text: string) => boolean;
+  serializeSnapshot: () => string;
 }
 
 interface TerminalDropHoverEvent {
@@ -300,15 +363,64 @@ interface TerminalPasteEvent {
 
 interface ShellSession {
   id: string;
-  title: string;
+  generatedTitle: string;
+  customTitle?: string;
   cwd?: string;
   status: ShellRuntimeState;
   exitCode?: number | null;
+  proxy?: ShellProxyInfo | null;
+  /** Runtime-only PTY identity. Never persisted: restored tabs start fresh shells. */
+  runId?: string;
+  /** Serialized xterm state supplied by a separate terminal window. */
+  handoffSnapshot?: string;
+  agentActivity?: TerminalAgentActivity;
+  toolCalls?: TerminalToolCall[];
   restartNonce: number;
+}
+
+const TERMINAL_SHELL_TRANSFER_MIME = 'application/x-junqi-terminal-shell';
+const TERMINAL_SHELL_MOVED_EVENT = 'junqi:terminal-shell-moved';
+
+interface TerminalShellTransferPayload {
+  sourceProjectId: string;
+  shell: Pick<ShellSession, 'id' | 'generatedTitle' | 'customTitle' | 'cwd' | 'proxy'>;
+  runId?: string;
+  /** Spawn-pinned SSH workspace host. Runtime-only, like the PTY id. */
+  sshHost?: string;
+}
+
+interface TerminalWindowHandoff {
+  shell: Pick<ShellSession, 'id' | 'generatedTitle' | 'customTitle' | 'cwd' | 'proxy'>;
+  runId: string;
+  snapshot: string;
+  sshHost?: string;
+}
+
+function parseTerminalShellTransfer(raw: string): TerminalShellTransferPayload | null {
+  try {
+    const value = JSON.parse(raw) as Partial<TerminalShellTransferPayload>;
+    if (!value || typeof value.sourceProjectId !== 'string' || !value.shell || typeof value.shell.id !== 'string') return null;
+      return {
+      sourceProjectId: value.sourceProjectId,
+      shell: {
+        id: value.shell.id,
+        generatedTitle: typeof value.shell.generatedTitle === 'string' ? value.shell.generatedTitle : 'Terminal',
+        ...(typeof value.shell.customTitle === 'string' ? { customTitle: value.shell.customTitle } : {}),
+        ...(typeof value.shell.cwd === 'string' && value.shell.cwd ? { cwd: value.shell.cwd } : {}),
+        ...(value.shell.proxy && typeof value.shell.proxy === 'object' ? { proxy: value.shell.proxy as ShellProxyInfo } : {}),
+      },
+      ...(typeof value.runId === 'string' && value.runId ? { runId: value.runId } : {}),
+      ...(typeof value.sshHost === 'string' && value.sshHost.trim() ? { sshHost: value.sshHost.trim() } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 interface Props {
   projectPath: string;
+  /** Remote workspace destination. When set, each tab owns an SSH PTY. */
+  sshHost?: string;
   projectId: string;
   isActive?: boolean;
   onClose: () => void;
@@ -329,13 +441,10 @@ interface Props {
   canZoom?: boolean;
   isZoomed?: boolean;
   onZoom?: () => void;
-  onToggleSidebar?: () => void;
-  sidebarActive?: boolean;
   /** Parent split divider is moving; defer PTY resizes until its final size. */
   resizeSuspended?: boolean;
 }
 
-const MAX_SHELLS = 5;
 const MAX_PENDING_TERMINAL_COMMANDS = 32;
 
 function shellPersistKey(projectId: string): string {
@@ -349,21 +458,23 @@ function loadShellState(projectId: string): { shells: ShellSession[]; activeShel
     const parsed = JSON.parse(raw);
     const rawShells: unknown[] = Array.isArray(parsed?.shells) ? parsed.shells as unknown[] : [];
     const shells: ShellSession[] = rawShells
-        .filter((s: unknown): s is { id: string; title: string; cwd?: string } => (
+        .filter((s: unknown): s is Record<string, unknown> & { id: string } => (
           typeof s === 'object' && s !== null
           && typeof (s as { id?: unknown }).id === 'string'
-          && typeof (s as { title?: unknown }).title === 'string'
         ))
-        .map((shell): ShellSession => ({
-          id: shell.id,
-          title: shell.title,
-          ...(typeof shell.cwd === 'string' && shell.cwd.trim() ? { cwd: shell.cwd.trim() } : {}),
-          status: 'starting' as const,
-          restartNonce: 0,
-        }));
+        .map((shell, index): ShellSession => {
+          const titleState = migrateShellTitleState(shell, `Terminal ${index + 1}`);
+          return {
+            id: shell.id,
+            ...titleState,
+            ...(typeof shell.cwd === 'string' && shell.cwd.trim() ? { cwd: shell.cwd.trim() } : {}),
+            status: 'starting' as const,
+            restartNonce: 0,
+          };
+        });
     if (shells.length === 0) return null;
     return {
-      shells: shells.slice(0, MAX_SHELLS),
+      shells,
       activeShellId: shells.some((s: ShellSession) => s.id === parsed?.activeShellId) ? parsed.activeShellId : shells[0].id,
       nextIndex: Number.isFinite(parsed?.nextIndex) ? Math.max(2, Number(parsed.nextIndex)) : shells.length + 1,
     };
@@ -374,7 +485,12 @@ function loadShellState(projectId: string): { shells: ShellSession[]; activeShel
 
 function saveShellState(projectId: string, shells: ShellSession[], activeShellId: string | null, nextIndex: number): void {
   try {
-    const persistedShells = shells.map(({ id, title, cwd }) => ({ id, title, ...(cwd ? { cwd } : {}) }));
+    const persistedShells = shells.map(({ id, generatedTitle, customTitle, cwd }) => ({
+      id,
+      generatedTitle,
+      ...(customTitle ? { customTitle } : {}),
+      ...(cwd ? { cwd } : {}),
+    }));
     localStorage.setItem(shellPersistKey(projectId), JSON.stringify({ shells: persistedShells, activeShellId, nextIndex }));
   } catch {}
 }
@@ -382,7 +498,7 @@ function saveShellState(projectId: string, shells: ShellSession[], activeShellId
 function createShellSession(projectId: string, index: number, cwd?: string): ShellSession {
   return {
     id: `shell:${projectId}:${index}:${Date.now()}`,
-    title: `Terminal ${index}`,
+    generatedTitle: `Terminal ${index}`,
     ...(cwd ? { cwd } : {}),
     status: 'starting',
     restartNonce: 0,
@@ -392,38 +508,60 @@ function createShellSession(projectId: string, index: number, cwd?: string): She
 const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   shellId: string;
   projectPath: string;
+  sshHost?: string;
   isActive: boolean;
   isFocused: boolean;
   runtimeState: ShellRuntimeState;
   restartNonce: number;
+  existingRunId?: string;
+  handoffSnapshot?: string;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   onReady?: () => void;
   onActiveTermChange?: (term: XTermType | null) => void;
   onLifecycleChange?: (state: ShellRuntimeState, exitCode?: number | null) => void;
+  onRunIdChange?: (runId: string | null) => void;
+  onAgentActivityChange?: (activity: TerminalAgentActivity | null) => void;
+  onTerminalHookEvent?: (event: TerminalHookEvent) => void;
   onCwdChange?: (cwd: string) => void;
   onFocus?: () => void;
   onRestart?: () => void;
+  onAskAgent?: (agent: TerminalAgentId, selection: string) => void;
+  onProxyChange?: (proxy: ShellProxyInfo | null) => void;
+  canZoom?: boolean;
+  isZoomed?: boolean;
+  onZoom?: () => void;
   resizeSuspended?: boolean;
 }>(
   function ShellTerminalInstance(
     {
       shellId,
       projectPath,
+      sshHost,
       isActive,
       isFocused,
       runtimeState,
       restartNonce,
+      existingRunId,
+      handoffSnapshot,
       themeVariant,
       terminalFontSize,
       monoFontFamily,
       onReady,
       onActiveTermChange,
       onLifecycleChange,
+      onRunIdChange,
+      onAgentActivityChange,
+      onTerminalHookEvent,
       onCwdChange,
       onFocus,
       onRestart,
+      onAskAgent,
+      onProxyChange,
+      canZoom = false,
+      isZoomed = false,
+      onZoom,
       resizeSuspended = false,
     },
     ref,
@@ -433,6 +571,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const terminalRef = useRef<XTerm | null>(null);
     const [termCtxMenu, setTermCtxMenu] = useState<{ x: number; y: number } | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
+    const serializeAddonRef = useRef<SerializeAddon | null>(null);
     const themeVariantRef = useRef(themeVariant);
     const isActiveRef = useRef(isActive);
     const isFocusedRef = useRef(isFocused);
@@ -440,9 +579,18 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const monoFontFamilyRef = useRef(monoFontFamily);
     const onReadyRef = useRef(onReady);
     const onLifecycleChangeRef = useRef(onLifecycleChange);
+    const onRunIdChangeRef = useRef(onRunIdChange);
+    const onAgentActivityChangeRef = useRef(onAgentActivityChange);
+    const onTerminalHookEventRef = useRef(onTerminalHookEvent);
     const onCwdChangeRef = useRef(onCwdChange);
     const onFocusRef = useRef(onFocus);
-    const runIdRef = useRef<string | null>(null);
+    const onAskAgentRef = useRef(onAskAgent);
+    const onZoomRef = useRef(onZoom);
+    const runIdRef = useRef<string | null>(existingRunId ?? null);
+    // A run id is only an adoption contract on the initial target mount.
+    // Subsequent state updates from open_shell must never recreate this effect.
+    const initialExistingRunIdRef = useRef<string | null>(existingRunId ?? null);
+    const rendererInstanceIdRef = useRef(createTerminalRendererInstanceId());
     const launchPathStateRef = useRef<ShellLaunchPathState | null>(null);
     const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
     const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -454,9 +602,15 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     monoFontFamilyRef.current = monoFontFamily;
     onReadyRef.current = onReady;
     onLifecycleChangeRef.current = onLifecycleChange;
+    onRunIdChangeRef.current = onRunIdChange;
+    onAgentActivityChangeRef.current = onAgentActivityChange;
+    onTerminalHookEventRef.current = onTerminalHookEvent;
     onCwdChangeRef.current = onCwdChange;
     onFocusRef.current = onFocus;
+    onAskAgentRef.current = onAskAgent;
+    onZoomRef.current = onZoom;
     resizeSuspendedRef.current = resizeSuspended;
+    const initialExistingRunId = initialExistingRunIdRef.current;
     launchPathStateRef.current = advanceShellLaunchPath(
       launchPathStateRef.current,
       projectPath,
@@ -542,6 +696,14 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             text,
           );
         },
+        serializeSnapshot: () => {
+          try {
+            return serializeAddonRef.current?.serialize({ scrollback: 10_000 }) ?? '';
+          } catch (error) {
+            debugError('terminal', 'serialize terminal snapshot failed:', error);
+            return '';
+          }
+        },
       }),
       [sendInput],
     );
@@ -555,6 +717,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let disposeSafeOpen: (() => void) | null = null;
       let unlistenOutput: (() => void) | null = null;
       let unlistenExit: (() => void) | null = null;
+      let unlistenHook: (() => void) | null = null;
       let listenersReady = false;
       let shellStarted = false;
       let startShell: (() => void) | null = null;
@@ -577,16 +740,18 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       let writer: ReturnType<typeof createSmartWriter> | null = null;
       let disposeMacWebKitGuard: (() => void) | null = null;
       let disposeSmartCopy: (() => void) | null = null;
+      let serializeAddon: SerializeAddon | null = null;
       let disposeNativeImagePaste: (() => void) | null = null;
       let disposeOnData: { dispose(): void } | null = null;
       let disposeTermFocus: { dispose(): void } | null = null;
       let disposeOscCwd: { dispose(): void } | null = null;
+      let disposeOscAgentStatus: { dispose(): void } | null = null;
       let resizeObserver: ResizeObserver | null = null;
       let visibilityHandler: (() => void) | null = null;
       let opened = false;
 
       const subscribe = async () => {
-        const [outputUnlisten, exitUnlisten] = await Promise.all([
+        const [outputUnlisten, exitUnlisten, hookUnlisten] = await Promise.all([
           listen<ShellOutputEvent>('shell-output', (event) => {
             if (
               event.payload.shell_id === shellId
@@ -603,15 +768,33 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
               shellStateFromExit(event.payload),
               event.payload.exit_code,
             );
+            onRunIdChangeRef.current?.(null);
+            unregisterTerminalPtyOwner(shellId, rendererInstanceIdRef.current);
+          }),
+          listen<TerminalHookEvent>('terminal-hook', (event) => {
+            const hook = event.payload;
+            if (hook.shellId !== shellId || hook.runId !== runIdRef.current) return;
+            if (hook.kind === 'lifecycle') {
+              if (hook.event === 'ended') onAgentActivityChangeRef.current?.(null);
+              else if (
+                (hook.event === 'running' || hook.event === 'attention')
+                && (hook.agent === 'claude' || hook.agent === 'codex' || hook.agent === 'opencode')
+              ) {
+                onAgentActivityChangeRef.current?.({ agent: hook.agent, state: hook.event });
+              }
+            }
+            onTerminalHookEventRef.current?.(hook);
           }),
         ]);
         if (cleaned) {
           outputUnlisten();
           exitUnlisten();
+          hookUnlisten();
           return;
         }
         unlistenOutput = outputUnlisten;
         unlistenExit = exitUnlisten;
+        unlistenHook = hookUnlisten;
         listenersReady = true;
         startShell?.();
       };
@@ -629,6 +812,9 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         disposeInputFix = attachMacWebKitShiftInputFix(term);
         webglHandle = loadWebglAddon(term);
         writer = createSmartWriter(term);
+        serializeAddon = new SerializeAddon();
+        term.loadAddon(serializeAddon);
+        serializeAddonRef.current = serializeAddon;
         disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
         disposeSmartCopy = attachSmartCopy(term, { onPaste: pasteFromSystemClipboard });
         const handleNativeImagePaste = (event: ClipboardEvent) => {
@@ -651,6 +837,12 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           if (cwd) onCwdChangeRef.current?.(cwd);
           return true;
         });
+        disposeOscAgentStatus = term.parser.registerOscHandler(2, (payload) => {
+          const activity = parseJunqiAgentStatusTitle(payload);
+          if (activity !== undefined) onAgentActivityChangeRef.current?.(activity);
+          // OSC 2 is a private state signal for JunQi, never a tab title.
+          return activity !== undefined;
+        });
 
         const fit = () => {
           if (cleaned) return;
@@ -664,6 +856,38 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         startShell = () => {
           if (!listenersReady || shellStarted || cleaned) return;
           shellStarted = true;
+          if (initialExistingRunId) {
+            // The source pane has already opened this PTY. Reattach to its
+            // process-global Rust registry rather than invoking open_shell,
+            // which intentionally replaces duplicate shell ids.
+            runIdRef.current = initialExistingRunId;
+            registerTerminalPtyOwner(shellId, initialExistingRunId, rendererInstanceIdRef.current);
+            onRunIdChangeRef.current?.(initialExistingRunId);
+            onLifecycleChangeRef.current?.('running');
+            const size = safeFit(fitAddon, term, container);
+            if (size) {
+              lastSizeRef.current = size;
+              sendPtyResize(size);
+            }
+            const restoreHandoffSnapshot = (remainingAttempts: number) => {
+              const snapshot = handoffSnapshot ?? takeTerminalPtyHandoffSnapshot(shellId, initialExistingRunId);
+              if (snapshot !== null) {
+                if (snapshot) term.write(snapshot);
+                return;
+              }
+              // React runs effect cleanups before new effects in the normal
+              // transfer path. Keep one short retry for concurrent commits.
+              if (remainingAttempts > 0) {
+                window.setTimeout(() => restoreHandoffSnapshot(remainingAttempts - 1), 16);
+              }
+            };
+            restoreHandoffSnapshot(2);
+            readyTimeoutId = window.setTimeout(() => {
+              if (!cleaned) onReadyRef.current?.();
+            }, 0);
+            if (isFocusedRef.current) term.focus();
+            return;
+          }
           initTimeoutId = window.setTimeout(() => {
             if (cleaned) return;
             const requestedRunId = createShellRunId();
@@ -674,6 +898,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
             invoke<OpenShellResult>('open_shell', {
               shellId,
               projectPath: launchProjectPath,
+              sshHost,
               cols: size?.cols ?? term.cols,
               rows: size?.rows ?? term.rows,
               runId: requestedRunId,
@@ -681,7 +906,10 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
               .then((result) => {
                 if (cleaned || result.run_id !== requestedRunId) return;
                 runIdRef.current = result.run_id;
+                registerTerminalPtyOwner(shellId, result.run_id, rendererInstanceIdRef.current);
+                onRunIdChangeRef.current?.(result.run_id);
                 onCwdChangeRef.current?.(result.cwd);
+                onProxyChange?.(result.proxy);
                 onLifecycleChangeRef.current?.('running');
                 flushPendingResize();
                 readyTimeoutId = window.setTimeout(() => {
@@ -750,30 +978,51 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         cleaned = true;
         const runId = runIdRef.current;
         runIdRef.current = null;
+        let keepPtyForHandoff = false;
+        if (runId) {
+          let snapshot = '';
+          try {
+            snapshot = serializeAddon?.serialize({ scrollback: 10_000 }) ?? '';
+          } catch (error) {
+            debugError('terminal', 'serialize terminal handoff failed:', error);
+          }
+          keepPtyForHandoff = completeTerminalPtyHandoff(
+            shellId,
+            runId,
+            rendererInstanceIdRef.current,
+            snapshot,
+          );
+          if (!keepPtyForHandoff) {
+            unregisterTerminalPtyOwner(shellId, rendererInstanceIdRef.current);
+          }
+        }
         disposeSafeOpen?.();
         if (initTimeoutId !== null) window.clearTimeout(initTimeoutId);
         if (readyTimeoutId !== null) window.clearTimeout(readyTimeoutId);
         unlistenOutput?.();
         unlistenExit?.();
+        unlistenHook?.();
         disposeSmartCopy?.();
         disposeNativeImagePaste?.();
         disposeOnData?.dispose();
         disposeTermFocus?.dispose();
         disposeOscCwd?.dispose();
+        disposeOscAgentStatus?.dispose();
         resizeObserver?.disconnect();
         if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
         if (isActiveRef.current) onActiveTermChange?.(null);
         terminalRef.current = null;
         fitAddonRef.current = null;
+        serializeAddonRef.current = null;
         disposeCharSizeOverride?.();
         try { webglHandle?.dispose(); } catch { /* addon may not have loaded */ }
         disposeScrollbarAutoHide?.();
         disposeMacWebKitGuard?.();
         disposeInputFix?.();
         try { term.dispose(); } catch { /* already gone — rapid tab close */ }
-        if (runId) invoke('kill_shell', { shellId, runId }).catch(() => {});
+        if (runId && !keepPtyForHandoff) invoke('kill_shell', { shellId, runId }).catch(() => {});
       };
-    }, [flushPendingResize, launchProjectPath, pasteFromSystemClipboard, requestResize, restartNonce, sendInput, shellId]);
+    }, [flushPendingResize, handoffSnapshot, launchProjectPath, pasteFromSystemClipboard, requestResize, restartNonce, sendInput, shellId, sshHost]);
 
     useEffect(() => {
       if (!isActive) return;
@@ -845,6 +1094,18 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       terminalRef.current?.focus();
     };
 
+    const askAgent = (agent: TerminalAgentId) => {
+      const selection = terminalRef.current?.getSelection?.() ?? '';
+      if (selection) onAskAgentRef.current?.(agent, selection);
+      setTermCtxMenu(null);
+    };
+
+    const togglePaneZoom = () => {
+      setTermCtxMenu(null);
+      onFocusRef.current?.();
+      onZoomRef.current?.();
+    };
+
     useEffect(() => {
       if (!terminalRef.current || !fitAddonRef.current || !containerRef.current) return;
       const result = applyTerminalFontFamily(
@@ -878,13 +1139,14 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       width: '100%',
     };
 
+    const selectedText = terminalRef.current?.getSelection?.() ?? '';
     const terminalMenu = termCtxMenu ? createPortal(
       <div
         onMouseDown={(e) => e.stopPropagation()}
         style={{
           position: 'fixed',
           left: Math.max(8, Math.min(termCtxMenu.x, window.innerWidth - 180)),
-          top: Math.max(8, Math.min(termCtxMenu.y, window.innerHeight - 180)),
+          top: Math.max(8, Math.min(termCtxMenu.y, window.innerHeight - 230)),
           zIndex: 2147482000,
           minWidth: 150,
           padding: '4px 0',
@@ -896,10 +1158,20 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           flexDirection: 'column',
         }}
       >
+        {selectedText && <>
+          <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => askAgent('claude')}>Ask Claude Code</button>
+          <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => askAgent('codex')}>Ask Codex</button>
+          <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => askAgent('opencode')}>Ask OpenCode</button>
+          <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
+        </>}
         <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={copySelection}>{t('terminal.copy', 'Copy')}</button>
         <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => void pasteClipboard()}>{t('terminal.paste', 'Paste')}</button>
         <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={selectAllTerminal}>{t('terminal.selectAll', 'Select All')}</button>
         <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
+        {canZoom && <>
+          <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={togglePaneZoom}>{t(isZoomed ? 'terminal.exitZoom' : 'terminal.zoom')}</button>
+          <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
+        </>}
         <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={clearTerminal}>{t('terminal.clear', 'Clear')}</button>
       </div>,
       document.body,
@@ -968,6 +1240,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
   function ShellTerminalPanel(
     {
       projectPath,
+      sshHost,
       projectId,
       isActive = true,
       onClose,
@@ -982,8 +1255,6 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       canZoom,
       isZoomed,
       onZoom,
-      onToggleSidebar,
-      sidebarActive,
       paneFocused = isActive,
       onPaneFocus,
       onDirectoryChange,
@@ -993,10 +1264,19 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
   ) {
     const { t } = useI18n();
     const addToast = useNotificationStore((state) => state.addToast);
+    const isRemoteWorkspace = Boolean(sshHost?.trim());
     const initialStateRef = useRef<{ shells: ShellSession[]; activeShellId: string | null; nextIndex: number } | null>(null);
     if (!initialStateRef.current) {
-      initialStateRef.current = loadShellState(projectId) ?? (() => {
-        const initial = createShellSession(projectId, 1, projectPath);
+      const restored = loadShellState(projectId);
+      initialStateRef.current = restored
+        ? {
+            ...restored,
+            shells: isRemoteWorkspace
+              ? restored.shells.map(({ cwd: _cwd, ...shell }) => shell)
+              : restored.shells,
+          }
+        : (() => {
+        const initial = createShellSession(projectId, 1, isRemoteWorkspace ? undefined : projectPath);
         return { shells: [initial], activeShellId: initial.id, nextIndex: 2 };
       })();
     }
@@ -1010,6 +1290,9 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     const pendingTerminalCommandsRef = useRef<string[]>([]);
     const [shells, setShells] = useState<ShellSession[]>(() => initialStateRef.current!.shells);
     const [activeShellId, setActiveShellId] = useState<string | null>(() => initialStateRef.current!.activeShellId);
+    const [renameShellRequestId, setRenameShellRequestId] = useState<string | null>(null);
+    const [addMenuOpen, setAddMenuOpen] = useState(false);
+    const addMenuRef = useRef<HTMLDivElement>(null);
     const [terminalDropActive, setTerminalDropActive] = useState(false);
     const [workspacePathDropActive, setWorkspacePathDropActive] = useState(false);
     const activeShellIdRef = useRef(activeShellId);
@@ -1017,6 +1300,75 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     const onDirectoryChangeRef = useRef(onDirectoryChange);
     onDirectoryChangeRef.current = onDirectoryChange;
     useTerminalDropTarget(projectId, panelRef);
+
+    const reopenLastClosedShell = useCallback(() => {
+      const closed = takeRecentlyClosedTerminalShell();
+      if (!closed) return false;
+      const reopened = createShellSession(
+        projectId,
+        nextShellIndexRef.current++,
+        isRemoteWorkspace ? undefined : closed.cwd || projectPath,
+      );
+      reopened.generatedTitle = closed.generatedTitle;
+      if (closed.customTitle) reopened.customTitle = closed.customTitle;
+      setShells((previous) => [...previous, reopened]);
+      setActiveShellId(reopened.id);
+      if (!isRemoteWorkspace && reopened.cwd) onDirectoryChangeRef.current?.(reopened.cwd);
+      onPaneFocus?.();
+      return true;
+    }, [isRemoteWorkspace, onPaneFocus, projectId, projectPath]);
+
+    useEffect(() => {
+      const cycleTab = (event: Event) => {
+        if (!paneFocused || shells.length < 2) return;
+        const direction = (event as CustomEvent<{ direction?: unknown }>).detail?.direction === -1 ? -1 : 1;
+        const currentIndex = shells.findIndex((shell) => shell.id === activeShellIdRef.current);
+        const nextIndex = (Math.max(currentIndex, 0) + direction + shells.length) % shells.length;
+        const next = shells[nextIndex];
+        if (!next) return;
+        setActiveShellId(next.id);
+        if (next.cwd) onDirectoryChangeRef.current?.(next.cwd);
+        onPaneFocus?.();
+      };
+      window.addEventListener('junqi:cycle-terminal-tab', cycleTab);
+      return () => window.removeEventListener('junqi:cycle-terminal-tab', cycleTab);
+    }, [onPaneFocus, paneFocused, shells]);
+
+    useEffect(() => {
+      const reopenTab = () => {
+        if (paneFocused) reopenLastClosedShell();
+      };
+      window.addEventListener('junqi:reopen-terminal-tab', reopenTab);
+      return () => window.removeEventListener('junqi:reopen-terminal-tab', reopenTab);
+    }, [paneFocused, reopenLastClosedShell]);
+
+    useEffect(() => {
+      const renameTab = () => {
+        if (paneFocused && activeShellIdRef.current) {
+          setRenameShellRequestId(activeShellIdRef.current);
+        }
+      };
+      window.addEventListener('junqi:rename-terminal-tab', renameTab);
+      return () => window.removeEventListener('junqi:rename-terminal-tab', renameTab);
+    }, [paneFocused]);
+
+    const toggleWindowZoom = useCallback(() => {
+      void import('@tauri-apps/api/webviewWindow')
+        .then(({ getCurrentWebviewWindow }) => getCurrentWebviewWindow().toggleMaximize())
+        .catch((error) => debugError('terminal', 'toggle terminal window zoom failed:', error));
+    }, []);
+
+    const revealShellDirectory = useCallback((cwd: string) => {
+      if (!cwd.trim()) return;
+      void invoke('open_folder', { path: cwd }).catch((error) => {
+        debugError('terminal', 'reveal terminal directory failed:', error);
+        addToast(
+          'error',
+          t('terminal.fileRevealFailedTitle', 'Cannot reveal file'),
+          t('terminal.fileRevealFailed', 'The path could not be revealed in the system file manager.'),
+        );
+      });
+    }, [addToast, t]);
 
     const flushPendingTerminalPaste = useCallback(() => {
       const input = pendingTerminalPasteRef.current;
@@ -1163,14 +1515,52 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       return () => window.removeEventListener("keydown", handler);
     }, [paneFocused]);
 
-    const handleAddShell = useCallback(() => {
-      if (shells.length >= MAX_SHELLS) return;
-      const activeCwd = shells.find((shell) => shell.id === activeShellId)?.cwd || projectPath;
+    const handleAddShell = useCallback((agent?: { command: string; title: string }) => {
+      const activeCwd = isRemoteWorkspace
+        ? undefined
+        : shells.find((shell) => shell.id === activeShellId)?.cwd || projectPath;
       const nextShell = createShellSession(projectId, nextShellIndexRef.current++, activeCwd);
+      if (agent) {
+        nextShell.generatedTitle = agent.title;
+        pendingTerminalCommandsRef.current.push(`${agent.command}\n`);
+      }
       setShells((prev) => [...prev, nextShell]);
       setActiveShellId(nextShell.id);
-      if (activeCwd) onDirectoryChangeRef.current?.(activeCwd);
-    }, [activeShellId, projectId, projectPath, shells]);
+      if (!isRemoteWorkspace && activeCwd) onDirectoryChangeRef.current?.(activeCwd);
+    }, [activeShellId, isRemoteWorkspace, projectId, projectPath, shells]);
+
+    const handleAskAgent = useCallback((agent: TerminalAgentId, selection: string) => {
+      const title = agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : 'OpenCode';
+      handleAddShell({
+        command: terminalAgentLaunchCommand(agent, selection, APP_PLATFORM === 'windows' ? 'windows' : 'posix'),
+        title,
+      });
+    }, [handleAddShell]);
+
+    useEffect(() => {
+      const addTab = () => {
+        if (paneFocused) handleAddShell();
+      };
+      window.addEventListener('junqi:new-terminal-tab', addTab);
+      return () => window.removeEventListener('junqi:new-terminal-tab', addTab);
+    }, [handleAddShell, paneFocused]);
+
+    useEffect(() => {
+      const togglePaneZoom = () => {
+        if (paneFocused) onZoom?.();
+      };
+      window.addEventListener('junqi:toggle-terminal-pane-zoom', togglePaneZoom);
+      return () => window.removeEventListener('junqi:toggle-terminal-pane-zoom', togglePaneZoom);
+    }, [onZoom, paneFocused]);
+
+    useEffect(() => {
+      if (!addMenuOpen) return;
+      const close = (event: MouseEvent) => {
+        if (!addMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
+      };
+      document.addEventListener('mousedown', close);
+      return () => document.removeEventListener('mousedown', close);
+    }, [addMenuOpen]);
 
     const updateShell = useCallback((shellId: string, patch: Partial<ShellSession>) => {
       setShells((previous) => previous.map((shell) => (
@@ -1178,11 +1568,25 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       )));
     }, []);
 
+    useEffect(() => {
+      const sweep = () => {
+        setShells((previous) => previous.map((shell) => {
+          const toolCalls = markStalledTerminalToolCalls(shell.toolCalls);
+          return toolCalls === shell.toolCalls ? shell : { ...shell, toolCalls };
+        }));
+      };
+      const timer = window.setInterval(sweep, 1_000);
+      return () => window.clearInterval(timer);
+    }, []);
+
     const restartShell = useCallback((shellId: string) => {
       setShells((previous) => previous.map((shell) => (
-        shell.id === shellId
-          ? { ...shell, status: 'starting', exitCode: undefined, restartNonce: shell.restartNonce + 1 }
-          : shell
+        (() => {
+          if (shell.id !== shellId) return shell;
+          const next = { ...shell, status: 'starting' as const, exitCode: undefined, restartNonce: shell.restartNonce + 1 };
+          delete next.runId;
+          return next;
+        })()
       )));
     }, []);
 
@@ -1230,6 +1634,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       (shellId: string) => {
         const closingIndex = shells.findIndex((shell) => shell.id === shellId);
         if (closingIndex === -1) return;
+        const closing = shells[closingIndex];
+        if (closing) recordClosedTerminalShell(closing);
 
         const nextShells = shells.filter((shell) => shell.id !== shellId);
         setShells(nextShells);
@@ -1251,6 +1657,165 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       },
       [activeShellId, onClose, shells],
     );
+
+    const moveShellToNewWindow = useCallback(async (shell: ShellSession) => {
+      if (!shell.runId || !prepareTerminalPtyHandoff(shell.id, shell.runId)) {
+        addToast(
+          'error',
+          t('terminal.moveWindowFailedTitle', 'Cannot move terminal'),
+          t('terminal.moveWindowFailed', 'The terminal is not ready to move yet.'),
+        );
+        return;
+      }
+
+      const handoff: TerminalWindowHandoff = {
+        shell: {
+          id: shell.id,
+          generatedTitle: shell.generatedTitle,
+          ...(shell.customTitle ? { customTitle: shell.customTitle } : {}),
+          ...(shell.cwd ? { cwd: shell.cwd } : {}),
+          ...(shell.proxy ? { proxy: shell.proxy } : {}),
+        },
+        runId: shell.runId,
+        snapshot: shellRefs.current[shell.id]?.serializeSnapshot() ?? '',
+        ...(isRemoteWorkspace ? { sshHost: sshHost?.trim() } : {}),
+      };
+      try {
+        await invoke('open_terminal_window', { handoff });
+        window.dispatchEvent(new CustomEvent(TERMINAL_SHELL_MOVED_EVENT, {
+          detail: { sourceProjectId: projectId, sourceShellId: shell.id },
+        }));
+      } catch (error) {
+        cancelTerminalPtyHandoff(shell.id, shell.runId);
+        debugError('terminal', 'open terminal window failed:', error);
+        addToast(
+          'error',
+          t('terminal.moveWindowFailedTitle', 'Cannot move terminal'),
+          t('terminal.moveWindowFailed', 'The terminal window could not be opened.'),
+        );
+      }
+    }, [addToast, isRemoteWorkspace, projectId, sshHost, t]);
+
+    useEffect(() => {
+      const closeTab = () => {
+        if (!paneFocused || !activeShellIdRef.current) return;
+        handleCloseShell(activeShellIdRef.current);
+      };
+      window.addEventListener('junqi:close-terminal-tab', closeTab);
+      return () => window.removeEventListener('junqi:close-terminal-tab', closeTab);
+    }, [handleCloseShell, paneFocused]);
+
+    // Kooky moves a tab between panes without killing its terminal engine.
+    // Keep JunQi's shell id/run id when its renderer has registered ownership;
+    // the target pane then attaches to the existing Rust PTY and restores the
+    // source xterm scrollback snapshot during its own mount.
+    const importTransferredShell = useCallback((
+      payload: TerminalShellTransferPayload,
+      insertIndex: number,
+      options: { replaceExisting?: boolean; snapshot?: string } = {},
+    ) => {
+      if (payload.sourceProjectId === projectId) return false;
+      if (!terminalTransferMatchesRemote(payload.sshHost, sshHost)) return false;
+      const keepsLivePty = Boolean(
+        payload.runId && prepareTerminalPtyHandoff(payload.shell.id, payload.runId),
+      );
+      const importsExternalPty = Boolean(payload.runId && options.snapshot !== undefined);
+      const imported = (keepsLivePty || importsExternalPty) && payload.runId
+        ? {
+            id: payload.shell.id,
+            generatedTitle: payload.shell.generatedTitle,
+            ...(payload.shell.customTitle ? { customTitle: payload.shell.customTitle } : {}),
+            ...(!isRemoteWorkspace && payload.shell.cwd ? { cwd: payload.shell.cwd } : {}),
+            ...(payload.shell.proxy ? { proxy: payload.shell.proxy } : {}),
+            runId: payload.runId,
+            ...(options.snapshot !== undefined ? { handoffSnapshot: options.snapshot } : {}),
+            status: 'running' as const,
+            restartNonce: 0,
+          }
+        : createShellSession(
+          projectId,
+          nextShellIndexRef.current++,
+          isRemoteWorkspace ? undefined : payload.shell.cwd || projectPath,
+        );
+      if (!keepsLivePty && !importsExternalPty) {
+        imported.generatedTitle = payload.shell.generatedTitle;
+        if (payload.shell.customTitle) imported.customTitle = payload.shell.customTitle;
+      }
+      setShells((previous) => {
+        if (options.replaceExisting) return [imported];
+        const next = [...previous];
+        next.splice(Math.max(0, Math.min(insertIndex, next.length)), 0, imported);
+        return next;
+      });
+      setActiveShellId(imported.id);
+      if (!isRemoteWorkspace && imported.cwd) onDirectoryChangeRef.current?.(imported.cwd);
+      onPaneFocus?.();
+      window.dispatchEvent(new CustomEvent(TERMINAL_SHELL_MOVED_EVENT, {
+        detail: { sourceProjectId: payload.sourceProjectId, sourceShellId: payload.shell.id },
+      }));
+      return true;
+    }, [isRemoteWorkspace, onPaneFocus, projectId, projectPath, sshHost]);
+
+    const acceptTransferredShell = useCallback((event: React.DragEvent<HTMLDivElement>, insertIndex: number) => {
+      const payload = parseTerminalShellTransfer(event.dataTransfer.getData(TERMINAL_SHELL_TRANSFER_MIME));
+      if (!payload) return;
+      importTransferredShell(payload, insertIndex);
+    }, [importTransferredShell]);
+
+    useEffect(() => {
+      const handler = (event: Event) => {
+        const detail = (event as CustomEvent<{
+          handoff?: TerminalWindowHandoff;
+          replaceExisting?: boolean;
+        }>).detail;
+        const handoff = detail?.handoff;
+        if (!handoff || typeof handoff.runId !== 'string' || !handoff.runId) return;
+        if (shells.some((shell) => shell.id === handoff.shell.id)) {
+          window.dispatchEvent(new CustomEvent('junqi:terminal-shell-imported', {
+            detail: { shellId: handoff.shell.id },
+          }));
+          return;
+        }
+        const imported = importTransferredShell({
+          sourceProjectId: '__terminal_window__',
+          shell: handoff.shell,
+          runId: handoff.runId,
+          sshHost: handoff.sshHost,
+        }, 0, {
+          replaceExisting: detail?.replaceExisting === true,
+          snapshot: typeof handoff.snapshot === 'string' ? handoff.snapshot : '',
+        });
+        if (imported) {
+          window.dispatchEvent(new CustomEvent('junqi:terminal-shell-imported', {
+            detail: { shellId: handoff.shell.id },
+          }));
+        }
+      };
+      window.addEventListener('junqi:import-terminal-shell', handler);
+      return () => window.removeEventListener('junqi:import-terminal-shell', handler);
+    }, [importTransferredShell, shells]);
+
+    useEffect(() => {
+      const handleTransfer = (event: Event) => {
+        const detail = (event as CustomEvent<{ sourceProjectId?: unknown; sourceShellId?: unknown }>).detail;
+        if (detail?.sourceProjectId !== projectId || typeof detail.sourceShellId !== 'string') return;
+        const sourceShellId = detail.sourceShellId;
+        const sourceIndex = shells.findIndex((shell) => shell.id === sourceShellId);
+        if (sourceIndex < 0) return;
+        const nextShells = shells.filter((shell) => shell.id !== sourceShellId);
+        delete shellRefs.current[sourceShellId];
+        setShells(nextShells);
+        if (nextShells.length === 0) {
+          onClose();
+          return;
+        }
+        if (activeShellIdRef.current === sourceShellId) {
+          setActiveShellId(nextShells[sourceIndex]?.id ?? nextShells[sourceIndex - 1]?.id ?? nextShells[0]?.id ?? null);
+        }
+      };
+      window.addEventListener(TERMINAL_SHELL_MOVED_EVENT, handleTransfer);
+      return () => window.removeEventListener(TERMINAL_SHELL_MOVED_EVENT, handleTransfer);
+    }, [onClose, projectId, shells]);
 
     return (
       <div
@@ -1281,32 +1846,25 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
         )}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           {/* Tab strip — kooky TabBarView 1:1 (chromeBackground = terminal-bg) */}
-          <div style={{ display: "flex", alignItems: "center", height: 32, flexShrink: 0, padding: "0 8px", gap: 2, background: "var(--terminal-bg)" }}>
-            {onToggleSidebar && (
-              <button
-                onClick={onToggleSidebar}
-                title={t('terminal.workspaceToggleSidebar', 'Toggle sidebar')}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 5,
-                  border: 'none',
-                  background: sidebarActive ? 'rgb(var(--aegis-primary)/0.12)' : 'transparent',
-                  color: sidebarActive ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-muted))',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  transition: 'background 0.12s, color 0.12s',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = sidebarActive ? 'rgb(var(--aegis-primary)/0.16)' : 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = sidebarActive ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text))'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = sidebarActive ? 'rgb(var(--aegis-primary)/0.12)' : 'transparent'; (e.currentTarget as HTMLElement).style.color = sidebarActive ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-muted))'; }}
-              >
-                <PanelLeft size={14} />
-              </button>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: 2, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
+          <div
+            onDoubleClick={(event) => {
+              // Kooky zooms the native window only from the tab strip's empty
+              // chrome; controls and tabs retain their own double-click behavior.
+              if (event.target === event.currentTarget) toggleWindowZoom();
+            }}
+            style={{ display: "flex", alignItems: "center", height: 32, flexShrink: 0, padding: "0 8px", gap: 2, background: "var(--terminal-bg)" }}
+          >
+            <div
+              onDragOver={(event) => {
+                if (Array.from(event.dataTransfer.types).includes(TERMINAL_SHELL_TRANSFER_MIME)) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                if (!Array.from(event.dataTransfer.types).includes(TERMINAL_SHELL_TRANSFER_MIME)) return;
+                event.preventDefault();
+                acceptTransferredShell(event, shells.length);
+              }}
+              style={{ display: "flex", alignItems: "center", gap: 2, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}
+            >
               {shells.map((shell, idx) => {
                 const selected = activeShellId === shell.id;
                 const tabTitle = computeShellTitle(shell);
@@ -1315,6 +1873,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                     key={shell.id}
                     title={tabTitle}
                     status={shell.status}
+                    exitCode={shell.exitCode}
                     selected={selected}
                     index={idx}
                     totalCount={shells.length}
@@ -1323,33 +1882,53 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       if (shell.cwd) onDirectoryChangeRef.current?.(shell.cwd);
                       onPaneFocus?.();
                     }}
-                    onClose={(e) => { e.stopPropagation(); handleCloseShell(shell.id); }}
+                    onClose={() => { handleCloseShell(shell.id); }}
                     onCloseOthers={() => {
                       const toClose = shells.filter((s) => s.id !== shell.id);
-                      toClose.forEach((s) => { delete shellRefs.current[s.id]; });
+                      toClose.forEach((s) => {
+                        recordClosedTerminalShell(s);
+                        delete shellRefs.current[s.id];
+                      });
                       setShells([shell]);
                       setActiveShellId(shell.id);
                     }}
                     onCloseToRight={() => {
                       const toClose = shells.slice(idx + 1);
-                      toClose.forEach((s) => { delete shellRefs.current[s.id]; });
+                      toClose.forEach((s) => {
+                        recordClosedTerminalShell(s);
+                        delete shellRefs.current[s.id];
+                      });
                       const next = shells.slice(0, idx + 1);
                       setShells(next);
                       if (activeShellId && toClose.some((s) => s.id === activeShellId)) {
                         setActiveShellId(shell.id);
                       }
                     }}
-                    onCloseAll={() => {
-                      shells.forEach((s) => { delete shellRefs.current[s.id]; });
-                      setShells([]);
-                      onClose();
-                    }}
                     onRename={(name) => {
-                      setShells((prev) => prev.map((s) =>
-                        s.id === shell.id ? { ...s, title: name } : s,
-                      ));
+                      const customTitle = normalizeShellCustomTitle(name);
+                      setShells((prev) => prev.map((s) => {
+                        if (s.id !== shell.id) return s;
+                        const next = { ...s };
+                        if (customTitle) next.customTitle = customTitle;
+                        else delete next.customTitle;
+                        return next;
+                      }));
                     }}
-                    onDragStart={(i) => { dragSrcIdxRef.current = i; }}
+                    onDragStart={(event, i) => {
+                      dragSrcIdxRef.current = i;
+                      event.dataTransfer.setData(TERMINAL_SHELL_TRANSFER_MIME, JSON.stringify({
+                        sourceProjectId: projectId,
+                        shell: {
+                          id: shell.id,
+                          generatedTitle: shell.generatedTitle,
+                          ...(shell.customTitle ? { customTitle: shell.customTitle } : {}),
+                          ...(shell.cwd ? { cwd: shell.cwd } : {}),
+                          ...(shell.proxy ? { proxy: shell.proxy } : {}),
+                        },
+                        ...(shell.runId ? { runId: shell.runId } : {}),
+                        ...(isRemoteWorkspace ? { sshHost: sshHost?.trim() } : {}),
+                      } satisfies TerminalShellTransferPayload));
+                    }}
                     onDragEnter={(i) => { dragDstIdxRef.current = i; }}
                     onDragEnd={() => {
                       const si = dragSrcIdxRef.current;
@@ -1365,12 +1944,21 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       dragSrcIdxRef.current = null;
                       dragDstIdxRef.current = null;
                     }}
+                    onExternalDrop={acceptTransferredShell}
                     onDuplicate={() => {
-                      const dup = createShellSession(projectId, nextShellIndexRef.current++, shell.cwd || projectPath);
-                      setShells((prev) => [...prev, { ...dup, title: shell.title }]);
+                      const dup = createShellSession(
+                        projectId,
+                        nextShellIndexRef.current++,
+                        isRemoteWorkspace ? undefined : shell.cwd || projectPath,
+                      );
+                      setShells((prev) => [...prev, dup]);
                       setActiveShellId(dup.id);
-                      if (shell.cwd) onDirectoryChangeRef.current?.(shell.cwd);
+                      if (!isRemoteWorkspace && shell.cwd) onDirectoryChangeRef.current?.(shell.cwd);
                     }}
+                    onRevealDirectory={isRemoteWorkspace ? undefined : () => revealShellDirectory(shell.cwd || projectPath)}
+                    onMoveToNewWindow={() => { void moveShellToNewWindow(shell); }}
+                    renameRequested={renameShellRequestId === shell.id}
+                    onRenameRequestHandled={() => setRenameShellRequestId(null)}
                     onSplitH={onSplitHorizontal}
                     onSplitV={onSplitVertical}
                   />
@@ -1379,19 +1967,28 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
             </div>
             {/* Trailing split buttons (kooky TabBarView.splitButtons pattern) */}
             <div style={{ display: "flex", gap: 2, paddingRight: 4, flexShrink: 0 }}>
-              <button
-                onClick={handleAddShell}
-                disabled={shells.length >= MAX_SHELLS}
-                title={shells.length >= MAX_SHELLS ? t("terminal.limitReached") : t("terminal.newTerminal")}
-                style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-secondary))", cursor: shells.length >= MAX_SHELLS ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
-                onMouseEnter={(e) => { if (shells.length < MAX_SHELLS) { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; } }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-secondary))'; }}
-              >
-                <Plus size={14} />
-              </button>
+              <div ref={addMenuRef} style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setAddMenuOpen((open) => !open)}
+                  title={t("terminal.newTerminal")}
+                  style={{ width: 32, height: 28, borderRadius: 5, border: "none", background: addMenuOpen ? 'rgb(var(--aegis-overlay)/0.08)' : "transparent", color: "rgb(var(--aegis-text-secondary))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; e.currentTarget.style.color = 'rgb(var(--aegis-text))'; }}
+                  onMouseLeave={(e) => { if (!addMenuOpen) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-secondary))'; } }}
+                >
+                  <Plus size={14} /><ChevronDown size={10} />
+                </button>
+                {addMenuOpen && (
+                  <div role="menu" style={{ position: 'absolute', top: 32, right: 0, zIndex: 200, minWidth: 168, padding: 4, borderRadius: 6, background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(var(--aegis-overlay)/0.12)', boxShadow: '0 8px 24px rgb(0 0 0 / 0.32)' }}>
+                    <TerminalLaunchMenuItem icon={<TerminalIcon size={13} />} label={t('terminal.newTerminal')} onClick={() => { handleAddShell(); setAddMenuOpen(false); }} />
+                    <TerminalLaunchMenuItem icon={<Bot size={13} />} label="Claude Code" onClick={() => { handleAddShell({ command: 'claude', title: 'Claude Code' }); setAddMenuOpen(false); }} />
+                    <TerminalLaunchMenuItem icon={<Code2 size={13} />} label="Codex" onClick={() => { handleAddShell({ command: 'codex', title: 'Codex' }); setAddMenuOpen(false); }} />
+                    <TerminalLaunchMenuItem icon={<Code2 size={13} />} label="OpenCode" onClick={() => { handleAddShell({ command: 'opencode', title: 'OpenCode' }); setAddMenuOpen(false); }} />
+                  </div>
+                )}
+              </div>
               <button
                 onClick={onSplitHorizontal ?? (() => {})}
-                title={APP_PLATFORM === 'macos' ? t('terminal.splitRightShortcutMac', 'Split Right (⌘D)') : t('terminal.splitRightShortcut', 'Split Right (Ctrl+D)')}
+                title={APP_PLATFORM === 'macos' ? t('terminal.splitRightShortcutMac', 'Split Right (⌘D)') : t('terminal.splitRightShortcut', 'Split Right (Ctrl+Alt+D)')}
                 style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-muted))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-muted))'; }}
@@ -1400,7 +1997,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
               </button>
               <button
                 onClick={onSplitVertical ?? (() => {})}
-                title={APP_PLATFORM === 'macos' ? t('terminal.splitDownShortcutMac', 'Split Down (⌘⇧D)') : t('terminal.splitDownShortcut', 'Split Down (Ctrl+Shift+D)')}
+                title={APP_PLATFORM === 'macos' ? t('terminal.splitDownShortcutMac', 'Split Down (⌘⇧D)') : t('terminal.splitDownShortcut', 'Split Down (Ctrl+Alt+Shift+D)')}
                 style={{ width: 28, height: 28, borderRadius: 5, border: "none", background: "transparent", color: "rgb(var(--aegis-text-muted))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-muted))'; }}
@@ -1425,11 +2022,14 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                   shellRefs.current[shell.id] = instance;
                 }}
                 shellId={shell.id}
-                projectPath={shell.cwd || projectPath}
+                projectPath={isRemoteWorkspace ? '' : shell.cwd || projectPath}
+                sshHost={sshHost}
                 isActive={isActive && activeShellId === shell.id}
                 isFocused={paneFocused && activeShellId === shell.id}
                 runtimeState={shell.status}
                 restartNonce={shell.restartNonce}
+                existingRunId={shell.runId}
+                handoffSnapshot={shell.handoffSnapshot}
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}
@@ -1444,7 +2044,14 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 onLifecycleChange={(status, exitCode) => {
                   updateShell(shell.id, { status, ...(exitCode !== undefined ? { exitCode } : {}) });
                 }}
+                onRunIdChange={(runId) => updateShell(shell.id, runId ? { runId } : { runId: undefined })}
+                onAgentActivityChange={(agentActivity) => updateShell(shell.id, { agentActivity: agentActivity ?? undefined })}
+                onTerminalHookEvent={(event) => {
+                  const toolCalls = applyTerminalToolCallEvent(shell.toolCalls, event);
+                  if (toolCalls !== shell.toolCalls) updateShell(shell.id, { toolCalls });
+                }}
                 onCwdChange={(cwd) => {
+                  if (isRemoteWorkspace) return;
                   updateShell(shell.id, { cwd });
                   if (activeShellIdRef.current === shell.id) onDirectoryChangeRef.current?.(cwd);
                 }}
@@ -1453,13 +2060,22 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                   onPaneFocus?.();
                 }}
                 onRestart={() => restartShell(shell.id)}
+                onAskAgent={handleAskAgent}
+                onProxyChange={(proxy) => updateShell(shell.id, { proxy })}
+                canZoom={canZoom}
+                isZoomed={isZoomed}
+                onZoom={onZoom}
                 resizeSuspended={resizeSuspended}
               />
             ))}
           </div>
           {/* kooky PaneStatusBar — 底部状态栏 */}
           <PaneStatusBar
-            projectPath={shells.find((shell) => shell.id === activeShellId)?.cwd || projectPath}
+            projectPath={isRemoteWorkspace ? '' : shells.find((shell) => shell.id === activeShellId)?.cwd || projectPath}
+            proxy={shells.find((shell) => shell.id === activeShellId)?.proxy ?? null}
+            agentActivity={shells.find((shell) => shell.id === activeShellId)?.agentActivity}
+            toolCalls={shells.find((shell) => shell.id === activeShellId)?.toolCalls}
+            remoteHost={isRemoteWorkspace ? sshHost?.trim() : undefined}
             paneId={projectId}
             onToggleComposer={() => setComposerOpen((v) => !v)}
             composerActive={composerOpen}

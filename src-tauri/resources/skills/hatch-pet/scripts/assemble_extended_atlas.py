@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble a standard Codex pet atlas plus 16 look-direction frames."""
+"""Assemble a standard JunQi pet atlas plus 16 look-direction frames."""
 
 from __future__ import annotations
 

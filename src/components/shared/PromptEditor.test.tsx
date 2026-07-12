@@ -74,6 +74,18 @@ test('draftKey prop accepted without error', () => {
   assert.match(html, /draft content/);
 });
 
+test('projectPath prop accepts the current task project for mention lookup', () => {
+  const html = render('review @src/App.tsx', { projectPath: '/repo/current-task' });
+  assert.match(html, /@src\/App\.tsx/);
+});
+
+test('mentionProjects prop accepts cross-project mention sources', () => {
+  const html = render('review @', {
+    mentionProjects: [{ name: 'Shared API', path: '/repo/shared-api' }],
+  });
+  assert.match(html, /<textarea/);
+});
+
 test('ImageAttach type exported from barrel', async () => {
   const mod = await import('@/components/shared/PromptEditor');
   assert.ok(typeof mod.PromptEditor === 'function');

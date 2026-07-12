@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -77,6 +77,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(currentTitle);
   const [renamingInFlight, setRenamingInFlight] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [actionsVisible, setActionsVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const agentId = sessionAgentId(session, sessionKey);
@@ -84,6 +85,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
   const agentLabel = compactMeta(agentName || t('agents.mainAgent', 'Main Agent'), 20);
   const isRunning = isSessionActive(session);
   const timeLabel = formatSidebarTime(sessionActivityTime(session));
+  const canDelete = !/^agent:[^:]+:main$/.test(sessionKey);
 
   const goSession = () => {
     cleanupEmptyActiveSession(sessionKey);
@@ -93,6 +95,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
 
   const startRename = useCallback(() => {
     setRenameValue(currentTitle);
+    setRenameError(null);
     setRenaming(true);
     // Focus after the row re-renders with the input.
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -101,26 +104,26 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
   const cancelRename = useCallback(() => {
     setRenaming(false);
     setRenameValue('');
+    setRenameError(null);
   }, []);
 
   const submitRename = useCallback(async () => {
     if (renamingInFlight) return;
-    if (!renameValue.trim() || renameValue.trim() === currentTitle) {
+    const requestedLabel = renameValue.trim();
+    const nativeLabel = session.label.trim();
+    if (requestedLabel === nativeLabel) {
       cancelRename();
       return;
     }
     setRenamingInFlight(true);
     try {
-      await applySessionRename(sessionKey, renameValue);
-      // Both the sidebar row and the chat tab read from the same
-      // useChatStore.sessions record, so the rename auto-syncs to
-      // the top ChatTabs row without any extra wiring.
-      window.dispatchEvent(new Event('aegis:refresh'));
+      const result = await applySessionRename(sessionKey, renameValue);
+      if (result.ok) cancelRename();
+      else setRenameError(result.error);
     } finally {
       setRenamingInFlight(false);
-      cancelRename();
     }
-  }, [renameValue, currentTitle, renamingInFlight, cancelRename, sessionKey]);
+  }, [renameValue, renamingInFlight, cancelRename, session, sessionKey]);
 
   const handleDelete = useCallback(() => {
     showConfirm(
@@ -140,7 +143,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           value={renameValue}
           onChange={(e) => setRenameValue(e.target.value)}
           onClick={(e) => e.stopPropagation()}
-          onBlur={() => void submitRename()}
+          onBlur={cancelRename}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); void submitRename(); }
             else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
@@ -149,12 +152,26 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           className="h-[26px] min-w-0 flex-1 rounded bg-aegis-bg px-2 text-[12.5px] text-aegis-text outline-none ring-1 ring-aegis-primary/35 focus:ring-aegis-primary"
         />
         <button
+          type="button"
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={(e) => { e.stopPropagation(); void submitRename(); }}
+          disabled={renamingInFlight}
+          className="flex h-7 w-7 items-center justify-center rounded text-aegis-primary hover:bg-aegis-primary/10 disabled:opacity-50"
+          title={t('common.save', '保存')}
+          aria-label={t('common.save', '保存')}
+        >
+          <Check size={12} />
+        </button>
+        <button
+          type="button"
+          onPointerDown={(e) => e.preventDefault()}
           onClick={(e) => { e.stopPropagation(); cancelRename(); }}
           className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover/40 hover:text-aegis-text"
           title={t('common.cancel', '取消')}
         >
           <X size={12} />
         </button>
+        {renameError && <span className="sr-only" role="alert">{renameError}</span>}
       </div>
     );
   }
@@ -183,7 +200,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           }
         }}
         className={clsx(
-          'grid w-full cursor-pointer grid-cols-[4px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-1.5 py-2 text-left transition-colors',
+          'grid w-full cursor-pointer grid-cols-[4px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-1.5 py-2 pr-12 text-left transition-colors',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/55',
           isActive
             ? 'border-aegis-primary/35 bg-aegis-primary/[0.14] text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.14)]'
@@ -236,6 +253,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           >
             <Pencil size={12} />
           </button>
+          {canDelete && (
           <button
             type="button"
             onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -246,6 +264,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           >
             <Trash2 size={12} />
           </button>
+          )}
         </span>
       )}
     </div>
@@ -361,12 +380,14 @@ function WorkbenchPanel() {
           the noun and the icon. Active route gets primary tint. */}
       <div className="px-4 mb-4 flex flex-col gap-1">
         {[
+          { key: 'workspace', to: '/welcome',                 label: t('nav.agentWorkspace', '智能体工作区'), icon: <Layers size={14} /> },
           { key: 'agents',  to: '/agents',                  label: t('sidebar.nav.agents',  '智能体'),   icon: <Bot size={14} /> },
           { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型'),     icon: <Cpu size={14} /> },
           { key: 'channels', to: '/channels',              label: t('sidebar.nav.channels', '通道'),     icon: <MessageSquare size={14} /> },
           { key: 'cron',    to: '/cron?new=1',              label: t('sidebar.nav.cron',    '定时任务'), icon: <Clock size={14} /> },
         ].map((it) => {
           const active = location.pathname === it.to.split('?')[0] && (
+            (it.to === '/welcome' && location.pathname === '/welcome') ||
             (it.to.includes('tab=providers') && location.search.includes('tab=providers')) ||
             (it.to === '/channels' && location.pathname.startsWith('/channels')) ||
             (it.to === '/agents' && location.pathname.startsWith('/agents')) ||
@@ -452,7 +473,7 @@ function ExpandedView({ tab }: { tab: SidebarTab }) {
 function MiniView({ tab }: { tab: SidebarTab }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const items = miniItemsFor(tab);
+  const items = miniItemsFor(tab, t);
   return (
     <nav className="flex flex-col items-center gap-1 px-2">
       {/* Active-tab chip — single text label at top so users always know
@@ -481,7 +502,10 @@ function MiniView({ tab }: { tab: SidebarTab }) {
   );
 }
 
-function miniItemsFor(tab: SidebarTab): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
+function miniItemsFor(
+  tab: SidebarTab,
+  t: ReturnType<typeof useTranslation>['t'],
+): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
   switch (tab) {
     case 'agents': return [
       { to: '/agents?new=1', icon: <Plus size={20} />, label: '新建智能体' },
@@ -501,6 +525,7 @@ function miniItemsFor(tab: SidebarTab): ReadonlyArray<{ to: string; icon: React.
     case 'workbench':
     default: return [
       { to: '/chat', icon: <Plus size={20} />, label: '新建对话' },
+      { to: '/welcome', icon: <Layers size={20} />, label: t('nav.agentWorkspace', '智能体工作区') },
       { to: '/chat', icon: <MessageSquare size={20} />, label: '对话' },
       { to: '/workshop', icon: <Folder size={20} />, label: '工作空间' },
     ];
@@ -513,7 +538,7 @@ function miniItemsFor(tab: SidebarTab): ReadonlyArray<{ to: string; icon: React.
 
 export function NavSidebar() {
   const location = useLocation();
-  const { sidebarMode } = useSettingsStore();
+  const sidebarMode = useSettingsStore((s) => s.sidebarMode);
   const isHidden = sidebarMode === 'hidden';
   const isMini = sidebarMode === 'mini';
   const isExpanded = sidebarMode === 'expanded';

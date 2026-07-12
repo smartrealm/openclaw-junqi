@@ -68,6 +68,15 @@ export function readTerminalGitFileDiff(root: string): Promise<TerminalGitFileDi
   return invoke('git_file_diff_stats', { projectPath: root });
 }
 
+/** Native watches are active only while the terminal file tree is visible. */
+export function setTerminalWorkspaceWatches(watchId: string, generation: number, root: string, paths: string[]): Promise<void> {
+  return invoke('set_terminal_workspace_watches', { watchId, generation, projectPath: root, paths });
+}
+
+export function clearTerminalWorkspaceWatches(watchId: string, generation: number): Promise<void> {
+  return invoke('clear_terminal_workspace_watches', { watchId, generation });
+}
+
 /** Read a text file's content. Throws for binary/oversized files (Rust guards). */
 export function readFileText(path: string, root: string): Promise<string> {
   return invoke('read_file_content', { path, projectPath: root });

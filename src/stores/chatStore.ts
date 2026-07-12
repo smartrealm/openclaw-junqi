@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import type { RenderBlock } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
@@ -16,7 +15,6 @@ import { useSettingsStore } from './settingsStore';
 
 const MAIN_SESSION = 'agent:main:main';
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
-const DELETED_SESSION_PREFS_KEY = 'aegis:deleted-session-keys';
 const OPEN_TABS_PREFS_KEY = 'aegis-open-tabs';
 
 function persistOpenTabs(tabs: string[]): void {
@@ -25,38 +23,6 @@ function persistOpenTabs(tabs: string[]): void {
   } catch {
     // ignore persistence errors
   }
-}
-
-function readDeletedSessionKeys(): Set<string> {
-  try {
-    const raw = localStorage.getItem(DELETED_SESSION_PREFS_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((key): key is string => typeof key === 'string' && key.trim().length > 0));
-  } catch {
-    return new Set();
-  }
-}
-
-function writeDeletedSessionKeys(keys: Set<string>): void {
-  try {
-    localStorage.setItem(DELETED_SESSION_PREFS_KEY, JSON.stringify([...keys]));
-  } catch {
-    // ignore persistence errors
-  }
-}
-
-export function isSessionDeletedLocally(sessionKey: string): boolean {
-  if (!sessionKey || sessionKey === MAIN_SESSION) return false;
-  return readDeletedSessionKeys().has(sessionKey);
-}
-
-export function markSessionDeletedLocally(sessionKey: string): void {
-  if (!sessionKey || sessionKey === MAIN_SESSION) return;
-  const keys = readDeletedSessionKeys();
-  keys.add(sessionKey);
-  writeDeletedSessionKeys(keys);
 }
 
 function readSessionTopicPrefs(): Record<string, string> {
@@ -73,66 +39,6 @@ function readSessionTopicPrefs(): Record<string, string> {
   } catch {
     return {};
   }
-}
-
-// User-renamed session labels are persisted on the Rust side via
-// commands::session_labels (file: ~/.openclaw/session-labels.json).
-// We cache the result in-memory after the first load so per-render
-// merges don't hit the IPC layer. Writers live in
-// src/utils/sessionRename.ts → invoke('upsert_session_label').
-let labelPrefsCache: Record<string, string> | null = null;
-
-async function readSessionLabelPrefs(): Promise<Record<string, string>> {
-  // Try to refresh the cache from Tauri. If the IPC call fails (e.g.
-  // during very early boot before the bridge is ready) fall back to the
-  // previous cache value so the UI still renders. Treat an empty object
-  // as "no overrides" — that's a valid state, not an error.
-  try {
-    const value = await invoke<Record<string, any>>('load_session_labels');
-    if (value && typeof value === 'object') {
-      labelPrefsCache = Object.fromEntries(
-        Object.entries(value).filter((entry): entry is [string, string] => (
-          typeof entry[0] === 'string' && typeof entry[1] === 'string' && entry[1].trim().length > 0
-        )),
-      );
-    } else {
-      labelPrefsCache = {};
-    }
-  } catch {
-    // If we have a previous cache value, keep using it.
-    if (labelPrefsCache === null) labelPrefsCache = {};
-  }
-  return labelPrefsCache;
-}
-
-/** Synchronous accessor for use during setSessions merge. Returns the
- *  cached value if the async load has already completed, otherwise
- *  undefined (caller falls through to in-memory / server label).
- *  Exported so App.tsx can consult the cache at boot before
- *  loadSessions() merges the gateway's reply. */
-export function getSessionLabelPref(sessionKey: string): string | undefined {
-  if (labelPrefsCache === null) return undefined;
-  const label = labelPrefsCache[sessionKey];
-  return typeof label === 'string' && label.trim().length > 0 ? label : undefined;
-}
-
-/** After a rename, refresh the cache for the just-written key so the
- *  next setSessions merge (e.g. triggered by the next sessions.list
- *  poll) doesn't briefly fall back to the server label. */
-export function applyLocalSessionLabelCache(key: string, label: string): void {
-  if (labelPrefsCache === null) labelPrefsCache = {};
-  if (label && label.trim()) {
-    labelPrefsCache[key] = label.trim();
-  } else {
-    delete labelPrefsCache[key];
-  }
-}
-
-/** Eagerly load the label override file. Call once at startup so the
- *  first setSessions merge after the gateway replies already has the
- *  correct overrides (no flash of the server default). */
-export async function primeSessionLabelCache(): Promise<void> {
-  await readSessionLabelPrefs();
 }
 
 function getSessionTopicPref(sessionKey: string): string | undefined {
@@ -1064,10 +970,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messagesPerSession,
     } = get();
     const defs = defaults ?? prev;
-    const deletedSessionKeys = readDeletedSessionKeys();
-    const visibleIncomingSessions = sessions.filter((session) => (
-      session.key === MAIN_SESSION || !deletedSessionKeys.has(session.key)
-    ));
+    const visibleIncomingSessions = sessions;
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
     const incomingKeys = new Set(visibleIncomingSessions.map((session) => session.key));
     const mergedSessions = visibleIncomingSessions.map((session) => {
@@ -1075,27 +978,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const hasCachedMessages = Object.prototype.hasOwnProperty.call(messagesPerSession, session.key);
       const cachedMessages = hasCachedMessages ? messagesPerSession[session.key] ?? [] : [];
       const hydratedTopic = previous?.topic ?? getSessionTopicPref(session.key);
-      // The server's session object is the source of truth for most
-      // fields, but we must NOT clobber user-driven state: a label the
-      // user just set, a pin flag, or an archive flag. We preserve any
-      // previous local override that differs from the server's default.
-      // (The server's `label` for new sessions is just the key-derived
-      // string, so the FIRST poll after rename will bring back the
-      // old default if we don't keep the previous value.)
-      //
-      // The localStorage override (`getSessionLabelPref`) takes
-      // priority over both the in-memory `previous` and the server's
-      // response — that way a rename survives an app restart even when
-      // the gateway has discarded the `label` field.
-      const persistedLabel = getSessionLabelPref(session.key);
       const merged: Session = {
         ...session,
-        // Preserve user-rename: in-memory override → localStorage override
-        // → server-provided label, in that order.
-        label:
-          previous?.label && previous.label !== "" && previous.label !== session.label
-            ? previous.label
-            : (persistedLabel ?? session.label),
+        // OpenClaw's `sessions.list` response is authoritative for labels.
+        // User mutations are only applied locally after `sessions.patch`
+        // confirms them, so no client-side shadow value is needed here.
+        label: typeof session.label === 'string' ? session.label : '',
         // Preserve pin/archive flags (purely local UI state).
         pinned: previous?.pinned ?? session.pinned,
         archived: previous?.archived ?? session.archived,
@@ -1109,7 +997,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
     const localOnlySessions = previousSessions.filter((session) => {
       if (incomingKeys.has(session.key)) return false;
-      if (session.key !== MAIN_SESSION && deletedSessionKeys.has(session.key)) return false;
       if (session.archived) return false;
       const createdAt = session.createdAt;
       const isLocalPlaceholder = typeof createdAt === 'number' || (typeof createdAt === 'string' && createdAt.trim().length > 0);

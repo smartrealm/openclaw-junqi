@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildTerminalGitDiffIndex,
   clampTerminalSidebarWidth,
+  nextTerminalSidebarMode,
   resizeTerminalSidebarWidth,
   terminalWorkspacePathKey,
 } from './terminalWorkspaceTree';
@@ -60,4 +61,10 @@ test('sidebar resize follows its physical edge in LTR and RTL layouts', () => {
 
 test('path keys preserve valid POSIX whitespace', () => {
   assert.equal(terminalWorkspacePathKey('/repo with space/dir '), '/repo with space/dir ');
+});
+
+test('sidebar visibility follows Kooky full, compact, hidden order', () => {
+  assert.equal(nextTerminalSidebarMode('full'), 'compact');
+  assert.equal(nextTerminalSidebarMode('compact'), 'hidden');
+  assert.equal(nextTerminalSidebarMode('hidden'), 'full');
 });

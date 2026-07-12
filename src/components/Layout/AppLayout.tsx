@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { matchPath, Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { TopBar } from '@/components/Layout/TopBar';
 import { TabBar } from '@/components/Layout/TabBar';
@@ -16,7 +16,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { getDirection } from '@/i18n';
 
 /** Pages that work without Gateway connection */
-const OFFLINE_PAGES = ['/settings', '/terminal', '/config'];
+const OFFLINE_PAGES = ['/settings', '/terminal', '/welcome', '/config'];
 const CommandPalette = lazy(() => import('@/components/CommandPalette').then(m => ({ default: m.CommandPalette })));
 const PetBreakOverlay = lazy(() => import('@/pet/PetBreakOverlay').then(m => ({ default: m.PetBreakOverlay })));
 const OfflineOverlay = lazy(() => import('@/components/OfflineOverlay').then(m => ({ default: m.OfflineOverlay })));
@@ -76,10 +76,11 @@ function StatusBarFallback() {
 }
 
 export function AppLayout() {
-  const { language } = useSettingsStore();
+  const language = useSettingsStore((s) => s.language);
   const dir = getDirection(language);
   const location = useLocation();
   const { connected } = useChatStore();
+  const isWorkspacePage = matchPath('/welcome', location.pathname) !== null;
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -87,7 +88,7 @@ export function AppLayout() {
   // Show offline overlay on pages that need Gateway, when not connected.
   // A 600ms grace period prevents the overlay from flashing on brief
   // disconnect/reconnect cycles (e.g. when the user clicks "重连").
-  const isOfflinePage = OFFLINE_PAGES.some(p => location.pathname === p || location.pathname.startsWith(p + '/'));
+  const isOfflinePage = OFFLINE_PAGES.some((path) => matchPath(`${path}/*`, location.pathname) !== null);
   const wantsOffline = !connected && !isOfflinePage;
   const [showOffline, setShowOffline] = useState(false);
   useEffect(() => {
@@ -103,15 +104,17 @@ export function AppLayout() {
       <div className="ambient-glow-purple" />
 
       {/* ── Custom window-chrome top bar ── */}
-      <TopBar />
+      <TopBar hideSidebarToggle={isWorkspacePage} />
 
       {/* ── Navigation tabs ── */}
-      <TabBar />
+      {!isWorkspacePage && <TabBar />}
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
-        <Suspense fallback={<SidebarFallback />}>
-          <NavSidebar />
-        </Suspense>
+        {!isWorkspacePage && (
+          <Suspense fallback={<SidebarFallback />}>
+            <NavSidebar />
+          </Suspense>
+        )}
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
           <div className="flex-1 overflow-y-auto scrollbar-thin h-full">
             <ErrorBoundary>
@@ -135,7 +138,7 @@ export function AppLayout() {
       )}
       {/* Pomodoro break overlay — enlarged pet + countdown, only during break phase */}
       <LazyPetBreakOverlayHost />
-      {/* Bottom status bar — gateway / model / restart */}
+      {/* Keep workspace utilities available at the bottom-right on every route. */}
       <Suspense fallback={<StatusBarFallback />}>
         <StatusBar />
       </Suspense>

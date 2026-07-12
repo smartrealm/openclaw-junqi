@@ -1,5 +1,10 @@
-use crate::commands::{gateway, system};
+use crate::commands::{
+    gateway,
+    npm_registry::{self, NpmRegistry, NpmRegistryKind, NpmRegistrySelection},
+    system,
+};
 use crate::paths;
+use crate::platform;
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode};
 use crate::state::GatewayProcess;
 use serde::{Deserialize, Serialize};
@@ -34,6 +39,8 @@ pub struct OpenclawUpdateStatus {
     pub channel_label: Option<String>,
     pub install_kind: Option<String>,
     pub package_manager: Option<String>,
+    pub npm_registry: Option<String>,
+    pub npm_registry_kind: Option<NpmRegistryKind>,
     pub error: Option<String>,
 }
 
@@ -48,6 +55,8 @@ pub struct OpenclawUpdateResult {
     pub after_version: Option<String>,
     pub gateway_restarted: bool,
     pub gateway_error: Option<String>,
+    pub npm_registry: Option<String>,
+    pub npm_registry_kind: Option<NpmRegistryKind>,
     pub error: Option<String>,
 }
 
@@ -105,19 +114,29 @@ struct RawUpdateResult {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawDryRunUpdateStatus {
+    #[serde(default)]
+    dry_run: bool,
+    install_kind: Option<String>,
+    mode: Option<String>,
+    current_version: Option<String>,
+    target_version: Option<String>,
+    effective_channel: Option<String>,
+    #[serde(default)]
+    downgrade_risk: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct RawVersionMarker {
     version: Option<String>,
 }
 
-fn configure_background_command(command: &mut tokio::process::Command) {
-    #[cfg(windows)]
-    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-
-    #[cfg(not(windows))]
-    let _ = command;
-}
-
-fn build_openclaw_command(binary: &Path, args: &[&str]) -> tokio::process::Command {
+fn build_openclaw_command(
+    binary: &Path,
+    args: &[&str],
+    npm_registry: Option<NpmRegistry>,
+) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(binary);
     command
         .args(args)
@@ -129,7 +148,13 @@ fn build_openclaw_command(binary: &Path, args: &[&str]) -> tokio::process::Comma
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    configure_background_command(&mut command);
+    if let Some(registry) = npm_registry {
+        // Child-process-only config: this must not mutate ~/.npmrc or global npm settings.
+        command
+            .env("npm_config_registry", registry.url)
+            .env("NPM_CONFIG_REGISTRY", registry.url);
+    }
+    platform::configure_background_command(&mut command);
     command
 }
 
@@ -137,13 +162,90 @@ async fn run_openclaw_command(
     binary: &Path,
     args: &[&str],
     command_timeout: Duration,
+    npm_registry: Option<NpmRegistry>,
 ) -> Result<Output, String> {
     let command_name = args.join(" ");
-    let mut command = build_openclaw_command(binary, args);
+    let mut command = build_openclaw_command(binary, args, npm_registry);
     tokio::time::timeout(command_timeout, command.output())
         .await
         .map_err(|_| format!("OpenClaw {} timed out", command_name))?
         .map_err(|error| format!("Failed to run OpenClaw {}: {}", command_name, error))
+}
+
+async fn run_openclaw_command_with_registry_fallback(
+    binary: &Path,
+    args: &[&str],
+    command_timeout: Duration,
+    selection: NpmRegistrySelection,
+) -> (Result<Output, String>, NpmRegistry) {
+    let primary = selection.primary;
+    let output = run_openclaw_command(binary, args, command_timeout, Some(primary)).await;
+    if !is_network_failure(&output) {
+        return (output, primary);
+    }
+
+    let Some(fallback) = selection.fallback else {
+        return (output, primary);
+    };
+    let retry = run_openclaw_command(binary, args, command_timeout, Some(fallback)).await;
+    (retry, fallback)
+}
+
+async fn run_npm_update_dry_run_with_registry_fallback(
+    binary: &Path,
+    selection: NpmRegistrySelection,
+) -> (Result<Output, String>, NpmRegistry) {
+    let args = [
+        "update",
+        "--dry-run",
+        "--no-restart",
+        "--yes",
+        "--json",
+        "--timeout",
+        "15",
+    ];
+    let primary = selection.primary;
+    let output = run_openclaw_command(binary, &args, STATUS_TIMEOUT, Some(primary)).await;
+    if !should_retry_dry_run_with_fallback(&output) {
+        return (output, primary);
+    }
+
+    let Some(fallback) = selection.fallback else {
+        return (output, primary);
+    };
+    let retry = run_openclaw_command(binary, &args, STATUS_TIMEOUT, Some(fallback)).await;
+    (retry, fallback)
+}
+
+fn is_network_failure(result: &Result<Output, String>) -> bool {
+    let diagnostic = match result {
+        Ok(output) if !output.status.success() => output_contains_network_error(output),
+        Err(error) => error.clone(),
+        _ => return false,
+    };
+    contains_network_error(&diagnostic)
+}
+
+fn output_contains_network_error(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    format!("{stderr}\n{stdout}")
+}
+
+fn contains_network_error(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    [
+        "network",
+        "econn",
+        "enotfound",
+        "eai_again",
+        "etimedout",
+        "fetch failed",
+        "socket hang up",
+        "connection reset",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
 }
 
 fn has_required_keys(value: &Value, required_keys: &[&str]) -> bool {
@@ -175,6 +277,23 @@ fn parse_json_object(output: &[u8], required_keys: &[&str]) -> Result<Value, Str
     }
 
     Err("OpenClaw returned an invalid JSON response".to_string())
+}
+
+fn should_retry_dry_run_with_fallback(result: &Result<Output, String>) -> bool {
+    if is_network_failure(result) {
+        return true;
+    }
+
+    let Ok(output) = result else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+
+    parse_dry_run_update_status(&output.stdout)
+        .map(|status| npm_dry_run_needs_registry_fallback(&status))
+        .unwrap_or(false)
 }
 
 fn redact_diagnostic_line(line: &str) -> String {
@@ -230,6 +349,8 @@ fn empty_update_status(current_version: Option<String>, error: String) -> Opencl
         channel_label: None,
         install_kind: None,
         package_manager: None,
+        npm_registry: None,
+        npm_registry_kind: None,
         error: Some(error),
     }
 }
@@ -242,6 +363,8 @@ fn parse_update_status(
     let payload: StatusEnvelope = serde_json::from_value(value)
         .map_err(|error| format!("Invalid OpenClaw update status: {}", error))?;
     let registry = payload.update.registry.unwrap_or_default();
+    let install_kind = payload.update.install_kind;
+    let package_manager = payload.update.package_manager;
 
     Ok(OpenclawUpdateStatus {
         current_version,
@@ -255,10 +378,72 @@ fn parse_update_status(
         git_behind: payload.availability.git_behind,
         channel: payload.channel.value,
         channel_label: payload.channel.label,
-        install_kind: payload.update.install_kind,
-        package_manager: payload.update.package_manager,
+        install_kind,
+        package_manager,
+        npm_registry: None,
+        npm_registry_kind: None,
         error: registry.error.map(|error| redact_diagnostic_line(&error)),
     })
+}
+
+fn parse_dry_run_update_status(output: &[u8]) -> Result<RawDryRunUpdateStatus, String> {
+    let value = parse_json_object(output, &["dryRun", "installKind", "mode"])?;
+    let payload: RawDryRunUpdateStatus = serde_json::from_value(value)
+        .map_err(|error| format!("Invalid OpenClaw update dry-run result: {}", error))?;
+    if !payload.dry_run {
+        return Err("OpenClaw update check did not return a dry-run result".to_string());
+    }
+    Ok(payload)
+}
+
+fn is_npm_package_dry_run(status: &RawDryRunUpdateStatus) -> bool {
+    status.install_kind.as_deref() == Some("package") && status.mode.as_deref() == Some("npm")
+}
+
+fn npm_dry_run_needs_registry_fallback(status: &RawDryRunUpdateStatus) -> bool {
+    is_npm_package_dry_run(status) && status.target_version.is_none()
+}
+
+fn update_status_from_npm_dry_run(
+    payload: RawDryRunUpdateStatus,
+    detected_version: Option<String>,
+    registry: NpmRegistry,
+) -> OpenclawUpdateStatus {
+    let current_version = payload.current_version.or(detected_version);
+    let latest_version = payload.target_version;
+    let available = matches!(
+        (current_version.as_deref(), latest_version.as_deref()),
+        (Some(current), Some(latest)) if current != latest && !payload.downgrade_risk
+    );
+    let error = if payload.downgrade_risk {
+        Some(
+            "The selected OpenClaw update channel would downgrade the installed version"
+                .to_string(),
+        )
+    } else if latest_version.is_none() {
+        Some(format!(
+            "Could not resolve the OpenClaw update target from {}",
+            registry.url
+        ))
+    } else {
+        None
+    };
+
+    OpenclawUpdateStatus {
+        current_version,
+        latest_version,
+        available,
+        has_git_update: false,
+        has_registry_update: available,
+        git_behind: None,
+        channel: payload.effective_channel.clone(),
+        channel_label: payload.effective_channel,
+        install_kind: payload.install_kind,
+        package_manager: payload.mode,
+        npm_registry: Some(registry.url.to_string()),
+        npm_registry_kind: Some(registry.kind),
+        error,
+    }
 }
 
 fn parse_update_result(output: &[u8]) -> Result<OpenclawUpdateResult, String> {
@@ -276,6 +461,8 @@ fn parse_update_result(output: &[u8]) -> Result<OpenclawUpdateResult, String> {
         after_version: payload.after.and_then(|marker| marker.version),
         gateway_restarted: false,
         gateway_error: None,
+        npm_registry: None,
+        npm_registry_kind: None,
         error: (!success).then(|| {
             payload
                 .reason
@@ -295,10 +482,37 @@ pub async fn check_openclaw_update() -> Result<OpenclawUpdateStatus, String> {
     }
     let binary = system::resolve_openclaw_binary()
         .ok_or_else(|| "OpenClaw executable was not found".to_string())?;
+    let selection = npm_registry::select_npm_registry().await;
+    let (dry_run_output, selected_registry) =
+        run_npm_update_dry_run_with_registry_fallback(&binary, selection).await;
+    let dry_run_output = dry_run_output?;
+
+    if !dry_run_output.status.success() {
+        return Ok(empty_update_status(
+            detected.version,
+            output_diagnostic(&dry_run_output)
+                .unwrap_or_else(|| format!("Update check exited with {}", dry_run_output.status)),
+        ));
+    }
+
+    match parse_dry_run_update_status(&dry_run_output.stdout) {
+        Ok(dry_run) if is_npm_package_dry_run(&dry_run) => {
+            return Ok(update_status_from_npm_dry_run(
+                dry_run,
+                detected.version,
+                selected_registry,
+            ));
+        }
+        Ok(_) | Err(_) => {}
+    }
+
+    // OpenClaw's status command internally hard-codes the public npm registry.
+    // Use it only for non-npm installs, where it supplies git-specific state.
     let output = run_openclaw_command(
         &binary,
         &["update", "status", "--json", "--timeout", "15"],
         STATUS_TIMEOUT,
+        None,
     )
     .await?;
 
@@ -385,10 +599,18 @@ pub async fn update_openclaw(
     }
     let binary = system::resolve_openclaw_binary()
         .ok_or_else(|| "OpenClaw executable was not found".to_string())?;
+    // Probe before taking the managed Gateway down so the expected network
+    // decision does not lengthen its maintenance window.
+    let selection = npm_registry::select_npm_registry().await;
     let restore_gateway = stop_managed_gateway(&state).await?;
 
-    let output =
-        run_openclaw_command(&binary, &["update", "--yes", "--json"], UPDATE_TIMEOUT).await;
+    let (output, selected_registry) = run_openclaw_command_with_registry_fallback(
+        &binary,
+        &["update", "--yes", "--json"],
+        UPDATE_TIMEOUT,
+        selection,
+    )
+    .await;
 
     let mut result = match output {
         Ok(output) => match parse_update_result(&output.stdout) {
@@ -410,6 +632,8 @@ pub async fn update_openclaw(
                 after_version: None,
                 gateway_restarted: false,
                 gateway_error: None,
+                npm_registry: None,
+                npm_registry_kind: None,
                 error: output_diagnostic(&output).or(Some(error)),
             },
         },
@@ -422,9 +646,16 @@ pub async fn update_openclaw(
             after_version: None,
             gateway_restarted: false,
             gateway_error: None,
+            npm_registry: None,
+            npm_registry_kind: None,
             error: Some(error),
         },
     };
+
+    if result.mode.as_deref() == Some("npm") {
+        result.npm_registry = Some(selected_registry.url.to_string());
+        result.npm_registry_kind = Some(selected_registry.kind);
+    }
 
     match restore_managed_gateway(app, state.clone(), restore_gateway).await {
         Ok(restarted) => result.gateway_restarted = restarted,
@@ -542,6 +773,51 @@ mod tests {
     }
 
     #[test]
+    fn npm_dry_run_reports_the_selected_registry_version() {
+        let dry_run = parse_dry_run_update_status(
+            br#"npm warn cache bypassed
+            {
+              "dryRun": true,
+              "installKind": "package",
+              "mode": "npm",
+              "currentVersion": "2026.6.11",
+              "targetVersion": "2026.7.1",
+              "effectiveChannel": "stable",
+              "downgradeRisk": false
+            }"#,
+        )
+        .unwrap();
+        let mirror = NpmRegistry {
+            kind: NpmRegistryKind::ChinaMirror,
+            url: "https://registry.npmmirror.com",
+        };
+        let status = update_status_from_npm_dry_run(dry_run, None, mirror);
+
+        assert!(status.available);
+        assert!(status.has_registry_update);
+        assert_eq!(status.latest_version.as_deref(), Some("2026.7.1"));
+        assert_eq!(status.npm_registry_kind, Some(NpmRegistryKind::ChinaMirror));
+        assert_eq!(status.npm_registry.as_deref(), Some(mirror.url));
+    }
+
+    #[test]
+    fn unresolved_npm_dry_run_requests_the_verified_fallback_source() {
+        let dry_run = parse_dry_run_update_status(
+            br#"{
+              "dryRun": true,
+              "installKind": "package",
+              "mode": "npm",
+              "currentVersion": "2026.6.11",
+              "targetVersion": null,
+              "effectiveChannel": "stable"
+            }"#,
+        )
+        .unwrap();
+
+        assert!(npm_dry_run_needs_registry_fallback(&dry_run));
+    }
+
+    #[test]
     fn ignores_nested_plugin_status_objects() {
         let result = parse_update_result(
             br#"{
@@ -572,5 +848,16 @@ mod tests {
             redact_diagnostic_line("network unavailable"),
             "network unavailable"
         );
+    }
+
+    #[test]
+    fn recognizes_npm_network_failures_without_retrying_business_errors() {
+        let network_error = Err("OpenClaw update failed: ECONNRESET".to_string());
+        let business_error = Err("OpenClaw update failed: permission denied".to_string());
+
+        assert!(is_network_failure(&network_error));
+        assert!(!is_network_failure(&business_error));
+        assert!(contains_network_error("step stderr: ECONNRESET"));
+        assert!(!contains_network_error("permission denied"));
     }
 }

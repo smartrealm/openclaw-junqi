@@ -3,16 +3,20 @@
 // Header + filter bar + 2-column session cards grid
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Users, RefreshCw, Loader2, Zap, Clock, Bot, Activity, Search } from 'lucide-react';
+import { Users, RefreshCw, Loader2, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { useGatewayDataStore, refreshGroup } from '@/stores/gatewayDataStore';
 import { formatTokens } from '@/utils/format';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
+import { applySessionRename } from '@/utils/sessionRename';
+import { deleteSessionEverywhere } from '@/utils/sessionDelete';
+import { showConfirm } from '@/components/shared/AlertDialog';
 import type { AgentInfo, SessionInfo } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
+import { IconButton } from '@/components/shared/button';
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -71,8 +75,13 @@ function getAgentId(session: SessionInfo): string | undefined {
   return parts[0] === 'agent' && parts[1] ? parts[1] : undefined;
 }
 
+function isMainSession(sessionKey: string): boolean {
+  const parts = String(sessionKey || '').split(':');
+  return parts[0] === 'agent' && Boolean(parts[1]) && parts.slice(2).join(':') === 'main';
+}
+
 function getSessionKind(session: SessionInfo): 'main' | 'subagent' | 'agent' | 'session' {
-  if (session.key === 'agent:main:main') return 'main';
+  if (isMainSession(session.key)) return 'main';
   if (String(session.key || '').includes(':subagent:')) return 'subagent';
   if (String(session.key || '').startsWith('agent:')) return 'agent';
   return 'session';
@@ -94,6 +103,11 @@ interface SessionCardProps {
 
 function SessionCard({ session, agentNameById }: SessionCardProps) {
   const { t } = useTranslation();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [draftLabel, setDraftLabel] = useState('');
+  const [savingRename, setSavingRename] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const isRunning = session.running === true;
   const kind = getSessionKind(session);
   const isSubAgent = kind === 'subagent';
@@ -106,6 +120,69 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
     genericSessionLabel: t('dashboard.session', 'Session'),
   });
   const isAgentKey  = session.key.startsWith('agent:');
+  const canDelete = !isMainSession(session.key);
+  const inputId = `session-rename-${session.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const errorId = `${inputId}-error`;
+
+  useEffect(() => {
+    if (!editing) return;
+    const frame = window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editing]);
+
+  const startRename = useCallback(() => {
+    setDraftLabel(session.label?.trim() || displayName);
+    setRenameError(null);
+    setEditing(true);
+  }, [displayName, session.label]);
+
+  const cancelRename = useCallback(() => {
+    if (savingRename) return;
+    setEditing(false);
+    setRenameError(null);
+  }, [savingRename]);
+
+  const handleRenameBlur = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      cancelRename();
+    }
+  }, [cancelRename]);
+
+  const submitRename = useCallback(async () => {
+    if (savingRename) return;
+    setSavingRename(true);
+    setRenameError(null);
+    try {
+      const result = await applySessionRename(session.key, draftLabel);
+      if (!result.ok) {
+        setRenameError(result.error || t('chat.renameSessionFailed', 'Could not rename session. Try again.'));
+        return;
+      }
+
+      setEditing(false);
+      setRenameError(null);
+    } catch (error) {
+      const detail = error instanceof Error && error.message
+        ? error.message
+        : t('chat.renameSessionFailed', 'Could not rename session. Try again.');
+      setRenameError(detail);
+    } finally {
+      setSavingRename(false);
+    }
+  }, [draftLabel, savingRename, session.key, t]);
+
+  const handleDelete = useCallback(() => {
+    showConfirm(
+      t('chat.deleteSession', 'Delete session'),
+      t('chat.deleteSessionConfirm', 'Delete this session and its history? This cannot be undone.'),
+      async () => {
+        await deleteSessionEverywhere(session.key);
+      },
+    );
+  }, [session.key, t]);
 
   return (
     <div
@@ -117,9 +194,9 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
           : 'border-[rgb(var(--aegis-overlay)/0.07)] hover:border-[rgb(var(--aegis-overlay)/0.12)]',
       )}
     >
-      {/* ── Row 1: name + status badge ── */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* ── Row 1: name + status + compact icon actions ── */}
+      <div className="flex items-start justify-between gap-2" onBlur={editing ? handleRenameBlur : undefined}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Icon */}
           <div
             className={clsx(
@@ -137,10 +214,40 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
           </div>
 
           {/* Name */}
-          <div className="min-w-0">
-            <div className="text-[13px] font-bold truncate leading-tight">
-              {displayName}
-            </div>
+          <div className="min-w-0 flex-1">
+            {editing ? (
+              <div className="min-w-0">
+                <input
+                  ref={inputRef}
+                  id={inputId}
+                  value={draftLabel}
+                  onChange={(event) => setDraftLabel(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void submitRename();
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault();
+                      cancelRename();
+                    }
+                  }}
+                  disabled={savingRename}
+                  aria-label={t('chat.renameSession', 'Rename session')}
+                  aria-describedby={renameError ? errorId : undefined}
+                  aria-invalid={Boolean(renameError)}
+                  className="h-7 w-full min-w-0 rounded-md border border-aegis-primary/35 bg-aegis-bg px-2 text-[12px] text-aegis-text outline-none transition-colors focus:border-aegis-primary focus:ring-1 focus:ring-aegis-primary/40 disabled:cursor-wait disabled:opacity-60"
+                />
+                {renameError && (
+                  <p id={errorId} role="alert" className="mt-1 max-w-[15rem] text-[10px] leading-4 text-aegis-danger">
+                    {renameError}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="text-[13px] font-bold truncate leading-tight">
+                {displayName}
+              </div>
+            )}
             {/* Show formatted key underneath when label exists OR when key is agent-style */}
             {isAgentKey && (
               <div className="text-[9px] font-mono text-aegis-text-dim truncate leading-tight mt-0.5">
@@ -150,11 +257,65 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
           </div>
         </div>
 
-        {/* Status pill */}
-        <Badge tone={isRunning ? 'running' : 'neutral'} size="sm" variant="soft" className="shrink-0 uppercase tracking-[0.5px]">
-          <StatusDot tone={isRunning ? 'running' : 'idle'} size="sm" live={isRunning} />
-          {isRunning ? t('sessions.statusRunning', 'Running') : t('sessions.statusIdle', 'Idle')}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Status pill */}
+          <Badge tone={isRunning ? 'running' : 'neutral'} size="sm" variant="soft" className="uppercase tracking-[0.5px]">
+            <StatusDot tone={isRunning ? 'running' : 'idle'} size="sm" live={isRunning} />
+            {isRunning ? t('sessions.statusRunning', 'Running') : t('sessions.statusIdle', 'Idle')}
+          </Badge>
+
+          {editing ? (
+            <>
+              <IconButton
+                size="xs"
+                variant="ghost"
+                tone="primary"
+                aria-label={t('common.save', 'Save')}
+                title={t('common.save', 'Save')}
+                loading={savingRename}
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => void submitRename()}
+              >
+                <Check size={13} aria-hidden="true" />
+              </IconButton>
+              <IconButton
+                size="xs"
+                variant="ghost"
+                aria-label={t('common.cancel', 'Cancel')}
+                title={t('common.cancel', 'Cancel')}
+                disabled={savingRename}
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={cancelRename}
+              >
+                <X size={13} aria-hidden="true" />
+              </IconButton>
+            </>
+          ) : (
+            <>
+              <IconButton
+                size="xs"
+                variant="ghost"
+                aria-label={t('chat.renameSession', 'Rename session')}
+                title={t('chat.renameSession', 'Rename session')}
+                onClick={startRename}
+              >
+                <Pencil size={13} aria-hidden="true" />
+              </IconButton>
+              {canDelete && (
+                <IconButton
+                  size="xs"
+                  variant="ghost"
+                  tone="danger"
+                  aria-label={t('chat.deleteSession', 'Delete session')}
+                  title={t('chat.deleteSession', 'Delete session')}
+                  onClick={handleDelete}
+                >
+                  <Trash2 size={13} aria-hidden="true" />
+                </IconButton>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── Row 2: agent + type + model tags ── */}

@@ -5,15 +5,17 @@ use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
+use crate::paths;
+
 const HATCH_PET_ID: &str = "hatch-pet";
 const HATCH_PET_VERSION: u32 = 1;
 const VERSION_FILE: &str = ".junqi-skill-version";
 const HATCH_PET_REQUIRED_FILES: &[&str] = &[
     "LICENSE.txt",
     "SKILL.md",
-    "agents/openai.yaml",
+    "agents/junqi.yaml",
     "references/animation-rows.md",
-    "references/codex-pet-contract.md",
+    "references/junqi-pet-contract.md",
     "references/qa-rubric.md",
     "scripts/assemble_extended_atlas.py",
     "scripts/combine_direction_blind_verdicts.py",
@@ -44,6 +46,14 @@ pub struct BuiltinSkill {
     description: &'static str,
     version: u32,
     root_path: String,
+    skill_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSkillInstallation {
+    skill_name: &'static str,
+    workspace_path: String,
     skill_path: String,
 }
 
@@ -85,6 +95,36 @@ pub fn prepare_builtin_skill(app: AppHandle, skill_id: String) -> Result<Builtin
         version: spec.version,
         skill_path: root.join("SKILL.md").to_string_lossy().into_owned(),
         root_path: root.to_string_lossy().into_owned(),
+    })
+}
+
+/// Install a JunQi-owned skill into the active OpenClaw workspace so the
+/// current chat model can discover it through the normal `@skill` flow.
+/// This deliberately does not route through a provider-specific task runner.
+#[tauri::command]
+pub fn install_builtin_skill_for_chat(
+    app: AppHandle,
+    skill_id: String,
+) -> Result<ChatSkillInstallation, String> {
+    let spec = match skill_id.as_str() {
+        HATCH_PET_ID => BuiltinSkillSpec::hatch_pet(),
+        _ => return Err(format!("Unknown JunQi built-in skill: {skill_id}")),
+    };
+
+    let lock = MATERIALIZE_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock
+        .lock()
+        .map_err(|_| "Built-in skill installer lock is poisoned".to_string())?;
+
+    let source = materialize(&app, &spec)?;
+    let workspace = paths::read_workspace_from_config(&paths::config_path())
+        .unwrap_or_else(paths::default_workspace_dir);
+    let target = install_into_workspace(&source, &workspace, &spec)?;
+
+    Ok(ChatSkillInstallation {
+        skill_name: spec.id,
+        workspace_path: workspace.to_string_lossy().into_owned(),
+        skill_path: target.to_string_lossy().into_owned(),
     })
 }
 
@@ -131,6 +171,63 @@ fn materialize(app: &AppHandle, spec: &BuiltinSkillSpec) -> Result<PathBuf, Stri
         return Err(format!("Cannot activate the built-in skill: {error}"));
     }
 
+    if backup.exists() {
+        let _ = fs::remove_dir_all(backup);
+    }
+    Ok(target)
+}
+
+fn install_into_workspace(
+    source: &Path,
+    workspace: &Path,
+    spec: &BuiltinSkillSpec,
+) -> Result<PathBuf, String> {
+    validate_skill(source)?;
+    let skills_dir = workspace.join("skills");
+    fs::create_dir_all(&skills_dir)
+        .map_err(|error| format!("Cannot create workspace skills directory: {error}"))?;
+
+    let target = skills_dir.join(spec.id);
+    if let Ok(metadata) = fs::symlink_metadata(&target) {
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "Refusing to replace symlinked workspace skill: {}",
+                target.display()
+            ));
+        }
+        if installed_version(&target).is_none() {
+            return Err(format!(
+                "Workspace skill conflicts with JunQi's built-in {}: {}",
+                spec.id,
+                target.display()
+            ));
+        }
+    }
+
+    let operation_id = Uuid::new_v4();
+    let staging = skills_dir.join(format!(".{}-{operation_id}.staging", spec.id));
+    let backup = skills_dir.join(format!(".{}-{operation_id}.backup", spec.id));
+
+    if let Err(error) = copy_directory(source, &staging).and_then(|_| {
+        fs::write(staging.join(VERSION_FILE), spec.version.to_string())
+            .map_err(|error| format!("Cannot write workspace skill version: {error}"))?;
+        validate_skill(&staging)
+    }) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+
+    if target.exists() {
+        fs::rename(&target, &backup)
+            .map_err(|error| format!("Cannot stage the previous workspace skill: {error}"))?;
+    }
+    if let Err(error) = fs::rename(&staging, &target) {
+        if backup.exists() {
+            let _ = fs::rename(&backup, &target);
+        }
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!("Cannot activate workspace skill: {error}"));
+    }
     if backup.exists() {
         let _ = fs::remove_dir_all(backup);
     }
@@ -236,6 +333,30 @@ mod tests {
             fs::read_to_string(destination.join("nested/file.txt")).unwrap(),
             "junqi"
         );
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn workspace_install_rejects_unowned_skill_conflicts() {
+        let base =
+            std::env::temp_dir().join(format!("junqi-workspace-skill-test-{}", Uuid::new_v4()));
+        let source = base.join("source");
+        let workspace = base.join("workspace");
+        fs::create_dir_all(source.join("agents")).unwrap();
+        fs::create_dir_all(source.join("references")).unwrap();
+        fs::create_dir_all(source.join("scripts")).unwrap();
+        for file in HATCH_PET_REQUIRED_FILES {
+            let path = source.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "test").unwrap();
+        }
+        let target = workspace.join("skills").join(HATCH_PET_ID);
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("SKILL.md"), "third-party skill").unwrap();
+
+        let error = install_into_workspace(&source, &workspace, &BuiltinSkillSpec::hatch_pet())
+            .expect_err("an unowned skill must not be replaced");
+        assert!(error.contains("conflicts"));
         let _ = fs::remove_dir_all(base);
     }
 }

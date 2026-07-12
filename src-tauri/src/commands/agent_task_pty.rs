@@ -9,8 +9,11 @@
 //
 // 2026-06-22: Session watcher + push notifications. 2026-06-22: Data-driven refactor.
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::collections::HashMap;
+use std::fs;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -40,9 +43,156 @@ fn cancelled_tasks() -> &'static Mutex<std::collections::HashSet<String>> {
     CANCELLED.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
 }
 
+fn manually_completed_tasks() -> &'static Mutex<std::collections::HashSet<String>> {
+    static COMPLETED: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    COMPLETED.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+}
+
+fn task_output_buffers() -> &'static Mutex<HashMap<String, String>> {
+    static OUTPUTS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    OUTPUTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 const PTY_READ_BUFFER_SIZE: usize = 32 * 1024;
 const PTY_EMIT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const PTY_EMIT_MAX_BATCH_BYTES: usize = 64 * 1024;
+const MAX_TASK_OUTPUT_SNAPSHOT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_TASK_ATTACHMENT_IMAGES: usize = 10;
+const MAX_TASK_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
+const MAX_TASK_TEXT_ATTACHMENTS: usize = 10;
+const MAX_TASK_TEXT_BYTES: usize = 256 * 1024;
+
+fn append_task_output(task_id: &str, output: &str) {
+    let mut buffers = task_output_buffers().lock().unwrap();
+    let buffer = buffers.entry(task_id.to_string()).or_default();
+    buffer.push_str(output);
+    if buffer.len() <= MAX_TASK_OUTPUT_SNAPSHOT_BYTES {
+        return;
+    }
+
+    let mut trim_at = buffer.len() - MAX_TASK_OUTPUT_SNAPSHOT_BYTES;
+    while trim_at < buffer.len() && !buffer.is_char_boundary(trim_at) {
+        trim_at += 1;
+    }
+    buffer.drain(..trim_at);
+}
+
+fn safe_task_id(task_id: &str) -> String {
+    task_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn task_attachments_dir(project_path: &str, task_id: &str) -> PathBuf {
+    PathBuf::from(project_path)
+        .join(".junqi")
+        .join("attachments")
+        .join(safe_task_id(task_id))
+}
+
+fn decode_task_image(data_url: &str) -> Result<(&str, Vec<u8>), String> {
+    let (header, encoded) = data_url
+        .split_once(',')
+        .ok_or_else(|| "attachment image is not a data URL".to_string())?;
+    let extension = match header {
+        "data:image/png;base64" => "png",
+        "data:image/jpeg;base64" => "jpg",
+        "data:image/webp;base64" => "webp",
+        "data:image/gif;base64" => "gif",
+        _ => return Err("unsupported attachment image type".to_string()),
+    };
+    let bytes = STANDARD
+        .decode(encoded)
+        .map_err(|_| "attachment image has invalid base64 data".to_string())?;
+    if bytes.is_empty() || bytes.len() > MAX_TASK_ATTACHMENT_BYTES {
+        return Err("attachment image exceeds the 10 MiB limit".to_string());
+    }
+    Ok((extension, bytes))
+}
+
+fn save_task_attachments(
+    project_path: &str,
+    task_id: &str,
+    images: &[String],
+    texts: &[String],
+) -> Result<(Vec<String>, Vec<String>), String> {
+    if images.len() > MAX_TASK_ATTACHMENT_IMAGES {
+        return Err(format!(
+            "at most {MAX_TASK_ATTACHMENT_IMAGES} image attachments are allowed"
+        ));
+    }
+    if texts.len() > MAX_TASK_TEXT_ATTACHMENTS {
+        return Err(format!(
+            "at most {MAX_TASK_TEXT_ATTACHMENTS} text attachments are allowed"
+        ));
+    }
+    if images.is_empty() && texts.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+
+    let directory = task_attachments_dir(project_path, task_id);
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("create attachment directory: {error}"))?;
+
+    let mut image_paths = Vec::with_capacity(images.len());
+    for (index, image) in images.iter().enumerate() {
+        let (extension, bytes) = decode_task_image(image)?;
+        let path = directory.join(format!("image-{:02}.{extension}", index + 1));
+        fs::write(&path, bytes).map_err(|error| format!("write image attachment: {error}"))?;
+        image_paths.push(path.to_string_lossy().into_owned());
+    }
+
+    let mut text_paths = Vec::with_capacity(texts.len());
+    for (index, text) in texts.iter().enumerate() {
+        if text.is_empty() || text.len() > MAX_TASK_TEXT_BYTES {
+            return Err("text attachment exceeds the 256 KiB limit".to_string());
+        }
+        let path = directory.join(format!("text-{:02}.txt", index + 1));
+        fs::write(&path, text).map_err(|error| format!("write text attachment: {error}"))?;
+        text_paths.push(path.to_string_lossy().into_owned());
+    }
+    Ok((image_paths, text_paths))
+}
+
+fn prompt_with_attachments(
+    prompt: String,
+    image_paths: &[String],
+    text_paths: &[String],
+) -> String {
+    let mut result = prompt;
+    if !image_paths.is_empty() {
+        result.push_str("\n\n[Attached images - inspect these files]\n");
+        result.push_str(&image_paths.join("\n"));
+    }
+    if !text_paths.is_empty() {
+        result.push_str("\n\n[Attached text files - read these for full context]\n");
+        result.push_str(&text_paths.join("\n"));
+    }
+    result
+}
+
+fn task_final_status(
+    manually_completed: bool,
+    closed: bool,
+    child_exited_ok: bool,
+) -> &'static str {
+    if manually_completed {
+        "done"
+    } else if closed {
+        "cancelled"
+    } else if child_exited_ok {
+        "done"
+    } else {
+        "failed"
+    }
+}
 
 // ── run_task ────────────────────────────────────────────────────────────────
 
@@ -216,7 +366,7 @@ fn permission_flag(agent: &str, mode: &str) -> Vec<String> {
         "full_access" => full,
         _ => return Vec::new(),
     };
-    vec![flag.to_string()]
+    flag.split_ascii_whitespace().map(str::to_string).collect()
 }
 
 #[tauri::command]
@@ -227,6 +377,8 @@ pub async fn run_task(
     prompt: String,
     agent: String,
     permission_mode: String,
+    images: Option<Vec<String>>,
+    texts: Option<Vec<String>>,
     cols: Option<u16>,
     rows: Option<u16>,
     on_output: Channel<String>,
@@ -234,6 +386,23 @@ pub async fn run_task(
 ) -> Result<(), String> {
     // Clear any cancellation flag from a previous run.
     let _ = cancelled_tasks().lock().unwrap().remove(&task_id);
+    let _ = manually_completed_tasks().lock().unwrap().remove(&task_id);
+
+    // Browser-side attachments are data URLs. Stage them under the active
+    // project, then pass only their paths to the agent CLI.
+    let attachment_project_path = project_path.clone();
+    let attachment_task_id = task_id.clone();
+    let (image_paths, text_paths) = tokio::task::spawn_blocking(move || {
+        save_task_attachments(
+            &attachment_project_path,
+            &attachment_task_id,
+            &images.unwrap_or_default(),
+            &texts.unwrap_or_default(),
+        )
+    })
+    .await
+    .map_err(|error| format!("stage task attachments: {error}"))??;
+    let prompt = prompt_with_attachments(prompt, &image_paths, &text_paths);
 
     let pair = native_pty_system()
         .openpty(PtySize {
@@ -292,6 +461,10 @@ pub async fn run_task(
         .lock()
         .unwrap()
         .insert(task_id.clone(), handle);
+    task_output_buffers()
+        .lock()
+        .unwrap()
+        .insert(task_id.clone(), String::new());
 
     // Emit "running" so the frontend can update task status without polling.
     let _ = app.emit(
@@ -318,6 +491,7 @@ pub async fn run_task(
         let mut last_flush = std::time::Instant::now();
         let mut reader = reader;
         let mut chunk = vec![0u8; PTY_READ_BUFFER_SIZE];
+        let mut output_receiver_alive = true;
 
         loop {
             let closed_now = closed.load(Ordering::Relaxed);
@@ -340,9 +514,19 @@ pub async fn run_task(
                 let payload = String::from_utf8_lossy(&buffer).into_owned();
                 buffer.clear();
                 last_flush = std::time::Instant::now();
-                if let Err(e) = on_output.send(payload) {
-                    eprintln!("[run_task] on_output.send failed: {e}");
-                    break;
+                append_task_output(&task_id_for_reader, &payload);
+                let _ = app_for_reader.emit(
+                    "task-output",
+                    serde_json::json!({ "task_id": task_id_for_reader.clone(), "output": payload.clone() }),
+                );
+                if output_receiver_alive {
+                    if let Err(e) = on_output.send(payload) {
+                        // A page can unmount while its agent continues in the
+                        // background. Keep draining the PTY so the process,
+                        // task-status, and session watcher remain authoritative.
+                        eprintln!("[run_task] output receiver dropped: {e}");
+                        output_receiver_alive = false;
+                    }
                 }
             }
         }
@@ -350,7 +534,14 @@ pub async fn run_task(
         // Final flush.
         if !buffer.is_empty() {
             let payload = String::from_utf8_lossy(&buffer).into_owned();
-            let _ = on_output.send(payload);
+            append_task_output(&task_id_for_reader, &payload);
+            let _ = app_for_reader.emit(
+                "task-output",
+                serde_json::json!({ "task_id": task_id_for_reader.clone(), "output": payload.clone() }),
+            );
+            if output_receiver_alive {
+                let _ = on_output.send(payload);
+            }
         }
 
         // Determine exit status from the child process result.
@@ -375,16 +566,22 @@ pub async fn run_task(
             }
         };
 
-        let final_status = if closed.load(Ordering::Relaxed) {
-            "cancelled"
-        } else if child_exited_ok {
-            "done"
-        } else {
-            "failed"
-        };
+        let manually_completed = manually_completed_tasks()
+            .lock()
+            .unwrap()
+            .remove(&task_id_for_reader);
+        let final_status = task_final_status(
+            manually_completed,
+            closed.load(Ordering::Relaxed),
+            child_exited_ok,
+        );
 
         // Cleanup on exit.
         pty_registry().lock().unwrap().remove(&task_id_for_reader);
+        task_output_buffers()
+            .lock()
+            .unwrap()
+            .remove(&task_id_for_reader);
         let _ = app_for_reader.emit(
             "task-status",
             serde_json::json!({ "task_id": task_id_for_reader, "status": final_status }),
@@ -757,6 +954,7 @@ pub async fn agent_resize_pty(task_id: String, cols: u16, rows: u16) -> Result<(
 #[tauri::command]
 pub async fn cancel_task(task_id: String) -> Result<(), String> {
     let _ = cancelled_tasks().lock().unwrap().insert(task_id.clone());
+    let _ = manually_completed_tasks().lock().unwrap().remove(&task_id);
     let registry = pty_registry().lock().unwrap();
     if let Some(handle) = registry.get(&task_id) {
         if let Some(handles) = handle.lock().unwrap().as_ref() {
@@ -768,9 +966,116 @@ pub async fn cancel_task(task_id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Mark an active task complete and stop its child process. The reader owns
+/// final cleanup, while the marker prevents its exit code from overriding the
+/// user-confirmed completion with `cancelled` or `failed`.
+#[tauri::command]
+pub async fn complete_task(task_id: String) -> Result<(), String> {
+    manually_completed_tasks()
+        .lock()
+        .unwrap()
+        .insert(task_id.clone());
+    let _ = cancelled_tasks().lock().unwrap().remove(&task_id);
+
+    let registry = pty_registry().lock().unwrap();
+    if let Some(handle) = registry.get(&task_id) {
+        if let Some(handles) = handle.lock().unwrap().as_ref() {
+            let mut child = handles.child.lock().unwrap();
+            let _ = child.kill();
+        }
+    } else {
+        let _ = manually_completed_tasks().lock().unwrap().remove(&task_id);
+    }
+    Ok(())
+}
+
+/// Return a bounded active-task terminal snapshot for a workbench remount.
+#[tauri::command]
+pub fn get_task_output_snapshot(task_id: String) -> String {
+    task_output_buffers()
+        .lock()
+        .unwrap()
+        .get(&task_id)
+        .cloned()
+        .unwrap_or_default()
+}
+
 /// Diagnostic: list all currently live task IDs. Useful for testing and
 /// for the frontend's "active task" indicator.
 #[tauri::command]
 pub fn get_active_task_ids() -> Vec<String> {
     pty_registry().lock().unwrap().keys().cloned().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        append_task_output, decode_task_image, permission_flag, prompt_with_attachments,
+        safe_task_id, task_final_status, task_output_buffers, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+    };
+
+    #[test]
+    fn permission_modes_expand_to_real_cli_arguments() {
+        assert_eq!(
+            permission_flag("claude", "auto_edit"),
+            vec!["--permission-mode", "acceptEdits"],
+        );
+        assert_eq!(
+            permission_flag("codex", "full_access"),
+            vec!["--dangerously-bypass-approvals"],
+        );
+    }
+
+    #[test]
+    fn agents_without_permission_flags_receive_no_arguments() {
+        assert!(permission_flag("pi", "ask").is_empty());
+        assert!(permission_flag("unknown", "ask").is_empty());
+    }
+
+    #[test]
+    fn task_attachment_paths_are_safe_on_windows_and_unix() {
+        assert_eq!(safe_task_id("agent-task:run/1"), "agent-task_run_1");
+    }
+
+    #[test]
+    fn image_data_url_is_validated_before_writing() {
+        let (extension, bytes) = decode_task_image("data:image/png;base64,aGVsbG8=").unwrap();
+        assert_eq!(extension, "png");
+        assert_eq!(bytes, b"hello");
+        assert!(decode_task_image("data:image/svg+xml;base64,aGVsbG8=").is_err());
+    }
+
+    #[test]
+    fn staged_attachment_paths_are_added_to_agent_context() {
+        assert_eq!(
+            prompt_with_attachments(
+                "Review this".to_string(),
+                &["/repo/.junqi/attachments/image-01.png".to_string()],
+                &["/repo/.junqi/attachments/text-01.txt".to_string()],
+            ),
+            "Review this\n\n[Attached images - inspect these files]\n/repo/.junqi/attachments/image-01.png\n\n[Attached text files - read these for full context]\n/repo/.junqi/attachments/text-01.txt",
+        );
+    }
+
+    #[test]
+    fn manual_completion_wins_over_the_process_exit_status() {
+        assert_eq!(task_final_status(true, true, false), "done");
+        assert_eq!(task_final_status(false, true, true), "cancelled");
+        assert_eq!(task_final_status(false, false, false), "failed");
+    }
+
+    #[test]
+    fn output_snapshot_is_bounded_without_breaking_utf8() {
+        let task_id = "task-output-test";
+        task_output_buffers().lock().unwrap().remove(task_id);
+        append_task_output(task_id, &"a".repeat(MAX_TASK_OUTPUT_SNAPSHOT_BYTES + 5));
+        append_task_output(task_id, "你好");
+        let snapshot = task_output_buffers()
+            .lock()
+            .unwrap()
+            .remove(task_id)
+            .unwrap();
+        assert!(snapshot.len() <= MAX_TASK_OUTPUT_SNAPSHOT_BYTES);
+        assert!(snapshot.ends_with("你好"));
+    }
 }

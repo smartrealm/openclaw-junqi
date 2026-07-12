@@ -1,4 +1,4 @@
-# Codex V2 Pet Contract
+# JunQi V2 Pet Contract
 
 ## Sprite Atlas
 
@@ -21,12 +21,12 @@ The 8x9 `1536x1872` atlas is an intermediate assembly artifact only. Never packa
 - `000` means up / 12 o'clock, not neutral/front.
 - Neutral/front is the no-vector deadzone and falls back to idle.
 
-## Local Custom Pet Package
+## Local JunQi Pet Package
 
 Place files under:
 
 ```text
-${CODEX_HOME:-$HOME/.codex}/pets/<pet-name>/
+${JUNQI_PET_HOME:-$HOME/.junqi/pets}/<pet-name>/
 ├── pet.json
 └── spritesheet.webp
 ```
@@ -35,12 +35,10 @@ Required manifest shape:
 
 ```json
 {
-  "id": "pet-name",
-  "displayName": "Pet Name",
-  "description": "One short sentence.",
+  "id": "my-pet",
+  "displayName": "My Pet",
+  "description": "A JunQi companion.",
   "spriteVersionNumber": 2,
   "spritesheetPath": "spritesheet.webp"
 }
 ```
-
-The app derives the 11-row layout and look-direction behavior from `spriteVersionNumber: 2`. Omitting it defaults the pet to v1 and causes the 2288-pixel-tall spritesheet to be rejected.

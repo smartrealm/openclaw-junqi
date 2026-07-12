@@ -46,6 +46,11 @@ export function OpenClawUpdatePanel({
     : status?.installKind === 'package'
       ? (status.packageManager?.toUpperCase() || t('setup.openclawUpdate.installPackage'))
       : null;
+  const npmRegistryKind = status?.npmRegistryKind || update.result?.npmRegistryKind || null;
+  const npmRegistry = status?.npmRegistry || update.result?.npmRegistry || null;
+  const npmRegistryLabel = npmRegistryKind
+    ? t(`setup.openclawUpdate.registry.${npmRegistryKind}`)
+    : npmRegistry;
 
   const handleUpdate = async () => {
     setConfirming(false);
@@ -175,6 +180,9 @@ export function OpenClawUpdatePanel({
         )}
         {channelLabel && <span>{t('setup.openclawUpdate.channelLabel', { channel: channelLabel })}</span>}
         {installLabel && <span>{t('setup.openclawUpdate.installLabel', { install: installLabel })}</span>}
+        {npmRegistryLabel && (
+          <span>{t('setup.openclawUpdate.registryLabel', { registry: npmRegistryLabel })}</span>
+        )}
       </div>
 
       {confirming && !update.updating && (

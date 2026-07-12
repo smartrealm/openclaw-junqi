@@ -88,7 +88,7 @@ STATE_REQUIREMENTS = {
         "Do not draw red X marks, floating symbols, detached stars, separated smoke clouds, falling tear drops, dust, or other loose effects.",
     ],
     "waiting": [
-        "Show that Codex needs approval, help, or user input through an expectant asking pose.",
+        "Show that JunQi needs approval, help, or user input through an expectant asking pose.",
         "Keep the motion patient and readable, without turning it into ordinary idle or review.",
     ],
     "running": [
@@ -204,7 +204,7 @@ def concept_words(value: str) -> list[str]:
         "and",
         "app",
         "based",
-        "codex",
+        "junqi",
         "compact",
         "digital",
         "for",
@@ -264,12 +264,12 @@ def infer_description(args: argparse.Namespace, reference_paths: list[Path]) -> 
     if args.description.strip():
         return sentence(args.description)
     if args.pet_notes.strip():
-        return sentence(f"A compact Codex pet: {args.pet_notes}")
+        return sentence(f"A compact JunQi pet: {args.pet_notes}")
     if args.brand_name.strip():
-        return sentence(f"A compact Codex pet inspired by {args.brand_name}")
+        return sentence(f"A compact JunQi pet inspired by {args.brand_name}")
     if reference_paths:
-        return "A compact Codex pet based on the provided reference image."
-    return "A compact original Codex pet ready for animation."
+        return "A compact JunQi pet based on the provided reference image."
+    return "A compact original JunQi pet ready for animation."
 
 
 def infer_pet_notes(args: argparse.Namespace, reference_paths: list[Path]) -> str:
@@ -281,7 +281,7 @@ def infer_pet_notes(args: argparse.Namespace, reference_paths: list[Path]) -> st
         return f"a compact mascot inspired by {args.brand_name.strip()}"
     if reference_paths:
         return "the pet shown in the reference image(s)"
-    return "a compact original Codex pet"
+    return "a compact original JunQi pet"
 
 
 def default_output_dir(pet_id: str) -> Path:
@@ -516,12 +516,12 @@ def base_pet_prompt(args: argparse.Namespace) -> str:
     brand_block = f"\nBrand inspiration: {brand_line}\n" if brand_line else "\n"
     chroma_key = args.chroma_key["hex"]
     chroma_name = args.chroma_key["name"]
-    return f"""Create one clean full-body reference sprite for Codex pet {args.display_name}.
+    return f"""Create one clean full-body reference sprite for premium 3D-style JunQi pet {args.display_name}.
 
 Pet identity: {pet_notes}.
 Style: {style_contract}
 {brand_block}
-Place a single centered pose on a perfectly flat pure {chroma_name} {chroma_key} chroma-key background. Keep the full pet visible, compact, readable at 192x208, and easy to animate. Preserve approved reference identity cues. No scenery, text, borders, checkerboard transparency, shadows, glows, detached effects, or extra props. Keep {chroma_key} and close colors out of the pet, props, highlights, and effects."""
+Place a single centered pose on a perfectly flat pure {chroma_name} {chroma_key} chroma-key background. Keep the full pet visible, compact, readable at 192x208, and easy to animate. Unless the user explicitly asks for prominent appendages, avoid oversized claws, weapon-like limbs, giant hands, and large carried props. Preserve approved reference identity cues. No scenery, text, borders, checkerboard transparency, shadows, glows, detached effects, or extra props. Keep {chroma_key} and close colors out of the pet, props, highlights, and effects."""
 
 
 def row_prompt(args: argparse.Namespace, state: str, row: int, frames: int, purpose: str) -> str:
@@ -531,7 +531,7 @@ def row_prompt(args: argparse.Namespace, state: str, row: int, frames: int, purp
     chroma_name = args.chroma_key["name"]
     state_prompt = STATE_PROMPTS[state]
     state_requirements = "\n".join(f"- {line}" for line in STATE_REQUIREMENTS[state])
-    return f"""Create one horizontal animation strip for Codex pet `{args.pet_id}`, state `{state}`.
+    return f"""Create one horizontal animation strip for premium 3D-style JunQi pet `{args.pet_id}`, state `{state}`.
 
 Use the attached canonical base for identity. Use the attached layout guide only for slot count, spacing, centering, and padding; do not draw the guide.
 
@@ -557,7 +557,7 @@ def retry_row_prompt(
     chroma_name = args.chroma_key["name"]
     state_prompt = STATE_PROMPTS[state]
     state_requirements = "\n".join(f"- {line}" for line in STATE_REQUIREMENTS[state])
-    return f"""Create Codex pet row `{state}` for `{args.pet_id}`: exactly {frames} full-body frames in one horizontal strip on flat pure {chroma_name} {chroma_key}.
+    return f"""Create premium 3D-style JunQi pet row `{state}` for `{args.pet_id}`: exactly {frames} full-body frames in one horizontal strip on flat pure {chroma_name} {chroma_key}.
 
 Use the attached canonical base for identity and the layout guide only for spacing. Same pet in every frame: {pet_notes}. Preserve silhouette, face, palette, material, proportions, markings, and props.
 
@@ -670,7 +670,7 @@ def look_row_prompt(
         "Use the cardinals for direction meaning and row 9 for cross-row identity, scale, "
         "registration, and continuity."
     )
-    return f"""Create one horizontal look-direction strip for Codex pet `{args.pet_id}`, atlas row {row}.
+    return f"""Create one horizontal look-direction strip for premium 3D-style JunQi pet `{args.pet_id}`, atlas row {row}.
 
 Use the attached canonical base, completed standard contact sheet, layout guide, and approved four-cardinal strip for identity, scale, registration, spacing, direction semantics, and cross-row continuity. Read `qa/look-mechanics.md` and follow its pet-specific movement and eye/prop mechanics. {reference_instruction}
 
@@ -701,7 +701,7 @@ def retry_look_row_prompt(
     direction_list = ", ".join(directions)
     chroma_key = args.chroma_key["hex"]
     chroma_name = args.chroma_key["name"]
-    return f"""Create Codex v2 pet look row {row} for `{args.pet_id}` as exactly 8 full-body frames in this order: {direction_list}.
+    return f"""Create premium 3D-style JunQi v2 pet look row {row} for `{args.pet_id}` as exactly 8 full-body frames in this order: {direction_list}.
 
 Use the canonical base, standard contact sheet, layout guide, approved four-cardinal strip, and `qa/look-mechanics.md`. Draw the complete eight-pose row as one coherent animation family, interpolating even 22.5-degree steps between the cardinal pose families. Keep the same pet identity, face construction, materials, palette, markings, and props. Each direction must read correctly at pet size and join continuously at the 000 and 180 boundaries.
 
@@ -719,7 +719,7 @@ Use a flat pure {chroma_name} {chroma_key} background. One complete unclipped po
 def look_cardinal_prompt(args: argparse.Namespace) -> str:
     chroma_key = args.chroma_key["hex"]
     chroma_name = args.chroma_key["name"]
-    return f"""Create one horizontal four-cardinal anchor strip for Codex pet `{args.pet_id}`.
+    return f"""Create one horizontal four-cardinal anchor strip for premium 3D-style JunQi pet `{args.pet_id}`.
 
 Use the attached canonical base, completed standard contact sheet, and layout guide for exact identity, style, scale, baseline, face construction, materials, palette, markings, props, and spacing. Read `qa/look-mechanics.md` and use the pet's natural gaze mechanism.
 
@@ -745,7 +745,7 @@ def look_cardinal_repair_prompt(
         "180": "Keep the face broadly frontal and point the eyes and natural head mechanism toward the BOTTOM edge.",
         "270": "Put the nose tip, pupils, face surface, or natural aiming feature on the screen-left side of the head center.",
     }[label]
-    return f"""Repair one cardinal anchor for Codex pet `{args.pet_id}`: `{label}` means looking {expected_direction}.
+    return f"""Repair one cardinal anchor for premium 3D-style JunQi pet `{args.pet_id}`: `{label}` means looking {expected_direction}.
 
 Use the canonical base, completed standard contact sheet, approved cardinal-strip cells, and `qa/look-mechanics.md` for identity, scale, registration, and pet-specific gaze mechanics. {screen_rule} Screen coordinates are viewer-relative.
 

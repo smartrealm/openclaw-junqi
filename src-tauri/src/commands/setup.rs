@@ -1,3 +1,4 @@
+use crate::commands::npm_registry;
 use crate::paths;
 use crate::platform;
 use serde::Serialize;
@@ -108,12 +109,6 @@ fn emit_keyed(app: &tauri::AppHandle, step: &str, message: &str, key: &str, prog
 
 const NODE_VERSION: &str = "24.14.0";
 const GIT_WIN_VERSION: &str = "2.47.1";
-
-/// npm registries in priority order: CN mirror first, official fallback.
-const NPM_REGISTRIES: &[(&str, &str)] = &[
-    ("https://registry.npmmirror.com", "npmmirror.com（国内）"),
-    ("https://registry.npmjs.org", "npmjs.org（官方）"),
-];
 
 fn node_filename() -> String {
     let arch = if cfg!(target_arch = "aarch64") {
@@ -446,8 +441,8 @@ fn extract_targz(
 // ─── npm install with registry fallback ───────────────────────────────────────
 
 /// Run `npm install -g <pkg>` against a user-writable global prefix with
-/// live output streaming. Tries each entry in NPM_REGISTRIES in order and
-/// returns Ok on first success.
+/// live output streaming. The registry order is selected from verified package
+/// metadata and current network latency, then returns Ok on first success.
 ///
 /// We deliberately use `-g` plus an `npm_config_prefix` env var rather than
 /// `npm install --prefix <dir>`: `--prefix` is the project-local install
@@ -481,10 +476,12 @@ async fn npm_install_with_fallback(
     // itself; pre-creating the prefix dir avoids races on first run.
     let npm_prefix_str = global_prefix.to_string_lossy().to_string();
 
+    let registries = npm_registry::select_npm_registry().await.candidates();
     let mut last_err = String::new();
-    let total_regs = NPM_REGISTRIES.len();
+    let total_regs = registries.len();
 
-    for (reg_idx, (registry, reg_label)) in NPM_REGISTRIES.iter().enumerate() {
+    for (reg_idx, registry) in registries.into_iter().enumerate() {
+        let reg_label = registry.label();
         emit(
             app,
             step,
@@ -517,13 +514,16 @@ async fn npm_install_with_fallback(
         .env("PATH", &path_env)
         .env("npm_config_prefix", &npm_prefix_str)
         .env("npm_config_cache", &npm_cache)
-        .env("npm_config_registry", *registry)
+        // This is deliberately process-scoped. Do not alter user or global npmrc.
+        .env("npm_config_registry", registry.url)
+        .env("NPM_CONFIG_REGISTRY", registry.url)
         .env("GIT_CONFIG_COUNT", "1")
         .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
         .env("GIT_CONFIG_VALUE_0", "ssh://git@github.com/")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+        platform::configure_background_command(&mut cmd);
 
         let mut child = match cmd.spawn() {
             Ok(c) => c,

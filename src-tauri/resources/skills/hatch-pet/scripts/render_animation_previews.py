@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render lightweight animated QA previews from extracted Codex pet frames."""
+"""Render lightweight animated QA previews from extracted JunQi pet frames."""
 
 from __future__ import annotations
 

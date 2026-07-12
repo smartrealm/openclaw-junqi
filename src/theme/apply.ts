@@ -18,6 +18,7 @@ import { HTML_ATTR, NATIVE_TITLE_BAR_MAP } from './constants';
  * while this class is present.
  */
 const SWITCHING_CLASS = 'theme-switching';
+let lastNativeTheme: AegisTheme | null = null;
 
 /** Writes the data-theme attribute that CSS selectors key on. Synchronous and idempotent. */
 export function applyToDocument(theme: AegisTheme): void {
@@ -36,12 +37,14 @@ export function applyToDocument(theme: AegisTheme): void {
 
   // Defer un-marking to the next frame so the new styles paint without
   // animation, then transitions resume on subsequent user interactions.
-  const schedule = typeof requestAnimationFrame === 'function'
-    ? requestAnimationFrame
-    : (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 16);
-  schedule(() => {
+  const resumeTransitions = () => {
     html.classList.remove(SWITCHING_CLASS);
-  });
+  };
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(resumeTransitions);
+  } else {
+    window.setTimeout(resumeTransitions, 16);
+  }
 }
 
 /**
@@ -54,10 +57,15 @@ export function applyToDocument(theme: AegisTheme): void {
  * console on every theme switch.
  */
 export function syncNativeTitleBar(theme: AegisTheme): void {
+  if (lastNativeTheme === theme) return;
+  lastNativeTheme = theme;
   const nativeMode = NATIVE_TITLE_BAR_MAP[theme];
   import('@tauri-apps/api/window')
     .then((m) => m.getCurrentWindow().setTheme(nativeMode))
-    .catch(() => { /* not running under Tauri — no native chrome to sync */ });
+    .catch(() => {
+      if (lastNativeTheme === theme) lastNativeTheme = null;
+      /* not running under Tauri — no native chrome to sync */
+    });
 }
 
 /** Convenience: apply both the CSS attribute and the native chrome in one call. */

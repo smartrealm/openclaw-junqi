@@ -46,7 +46,7 @@ function usePetCharacterTheme(): PetThemeName {
   return themeName;
 }
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'lobster', customAsset, customPet, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'robot', customAsset, customPet, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;
@@ -74,7 +74,6 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'lobster',
   const palette = resolvePetCharacterPalette(themeName, skin);
   const bodyColor = palette.body;
   const Effect = EFFECT_REGISTRY[cfg.effect];
-
   const [blink, setBlink] = useState(false);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -148,7 +147,7 @@ export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'lobster',
     );
   }
 
-  const Skin = SKIN_REGISTRY[skin] ?? SKIN_REGISTRY.lobster;
+  const Skin = SKIN_REGISTRY[skin] ?? SKIN_REGISTRY.robot;
 
   return (
     <motion.div

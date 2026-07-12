@@ -4,8 +4,7 @@
 // (last 7 days) and sorts by creation time descending.
 //
 // Differences from upstream nezha TimelineView:
-//   - No cross-project grouping (junqi's "Project" is a CLI tool / skill,
-//     not a source-code repository like nezha — different semantics).
+//   - Uses JunQi chat/workshop activity while preserving project labels.
 //   - Uses Tailwind + aegis CSS vars instead of nezha's `s.xxx` styles.
 //   - i18n via react-i18next (junqi's i18n) instead of nezha's useI18n.
 //

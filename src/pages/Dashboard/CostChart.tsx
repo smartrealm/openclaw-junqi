@@ -8,7 +8,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts';
-import { dataColor, themeHex } from '@/utils/theme-colors';
+import { dataColorVar, themeColorVar } from '@/utils/theme-colors';
 import { fmtCost } from './components';
 
 type ChartPoint = {
@@ -65,12 +65,12 @@ export function CostChart({ data }: { data: ChartPoint[] }) {
       <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
         <defs>
           <linearGradient id="gInput" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={themeHex('accent')} stopOpacity={0.25} />
-            <stop offset="100%" stopColor={themeHex('accent')} stopOpacity={0} />
+            <stop offset="0%" stopColor={themeColorVar('accent')} stopOpacity={0.25} />
+            <stop offset="100%" stopColor={themeColorVar('accent')} stopOpacity={0} />
           </linearGradient>
           <linearGradient id="gOutput" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={themeHex('primary')} stopOpacity={0.25} />
-            <stop offset="100%" stopColor={themeHex('primary')} stopOpacity={0} />
+            <stop offset="0%" stopColor={themeColorVar('primary')} stopOpacity={0.25} />
+            <stop offset="100%" stopColor={themeColorVar('primary')} stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--aegis-overlay) / 0.04)" vertical={false} />
@@ -82,10 +82,10 @@ export function CostChart({ data }: { data: ChartPoint[] }) {
           tickFormatter={(v) => (v === 0 ? '' : `$${v.toFixed(2)}`)}
         />
         <Tooltip content={<CostTooltip />} cursor={{ stroke: 'rgb(var(--aegis-overlay) / 0.06)' }} />
-        <Area type="monotone" dataKey="input" stackId="1" stroke={themeHex('accent')} strokeWidth={1.5} fill="url(#gInput)" />
-        <Area type="monotone" dataKey="output" stackId="1" stroke={themeHex('primary')} strokeWidth={1.5} fill="url(#gOutput)" />
-        <Area type="monotone" dataKey="cache" stackId="1" stroke={themeHex('success')} strokeWidth={1.5} fillOpacity={0.18} fill={themeHex('success')} />
-        <Area type="monotone" dataKey="other" stackId="1" stroke={dataColor(9)} strokeWidth={1.5} fillOpacity={0.12} fill={dataColor(9)} />
+        <Area type="monotone" dataKey="input" stackId="1" stroke={themeColorVar('accent')} strokeWidth={1.5} fill="url(#gInput)" isAnimationActive={false} />
+        <Area type="monotone" dataKey="output" stackId="1" stroke={themeColorVar('primary')} strokeWidth={1.5} fill="url(#gOutput)" isAnimationActive={false} />
+        <Area type="monotone" dataKey="cache" stackId="1" stroke={themeColorVar('success')} strokeWidth={1.5} fillOpacity={0.18} fill={themeColorVar('success')} isAnimationActive={false} />
+        <Area type="monotone" dataKey="other" stackId="1" stroke={dataColorVar(9)} strokeWidth={1.5} fillOpacity={0.12} fill={dataColorVar(9)} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );

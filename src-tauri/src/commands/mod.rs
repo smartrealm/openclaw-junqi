@@ -1,6 +1,7 @@
 pub mod cli_tools;
 pub mod font;
 
+pub mod agent_assist;
 pub mod agent_task_pty;
 pub mod app_settings;
 pub mod builtin_skills;
@@ -17,6 +18,7 @@ pub mod git_neu;
 pub mod hooks;
 pub mod managed_files;
 pub mod notification;
+pub mod npm_registry;
 pub mod oauth;
 pub mod openclaw_update;
 pub mod pairing;
@@ -37,8 +39,11 @@ pub mod system_metrics;
 pub mod terminal;
 pub mod terminal_clipboard;
 pub mod terminal_drop;
+pub mod terminal_hooks;
 pub mod terminal_shell_integration;
+pub mod terminal_window;
 pub mod terminal_workspace;
+pub mod terminal_workspace_watch;
 pub mod usage;
 pub mod voice;
 pub mod voice_wake;

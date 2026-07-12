@@ -43,6 +43,7 @@ function agentToolLinks(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
     { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理') },
     { to: '/memory',   icon: <Brain size={14} />,         label: t('nav.memory', '记忆管理') },
     { to: '/agent-run', icon: <Activity size={14} />,     label: t('nav.agentRun', 'Agent 运行') },
+    { to: '/ai-workspace', icon: <Folder size={14} />,     label: t('nav.aiWorkspace', 'AI 工作台') },
     { to: '/agents/live', icon: <Bot size={14} />,        label: t('nav.liveAgents', '多智能体视图') },
   ];
 }

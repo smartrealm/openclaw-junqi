@@ -20,7 +20,6 @@
     "generate:provider-catalog": "node scripts/generate-provider-catalog.js"
   },
   "dependencies": {
-    "@junqi/shared-tokens": "workspace:*",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-go": "^6.0.1",
@@ -43,6 +42,7 @@
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@fontsource/inter": "^5.2.8",
+    "@junqi/shared-tokens": "workspace:*",
     "@noble/ed25519": "3.0.0",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-dialog": "^1.1.17",

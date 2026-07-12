@@ -29,6 +29,14 @@ const MAX_SHELL_RUN_ID_BYTES: usize = 128;
 pub struct OpenShellResult {
     cwd: String,
     run_id: String,
+    proxy: Option<ShellProxyInfo>,
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProxyInfo {
+    summary: String,
+    entries: Vec<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -86,6 +94,53 @@ fn resolve_shell_cwd(project_path: &str) -> PathBuf {
         .filter(|path| path.is_dir())
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn proxy_summary(value: &str) -> String {
+    let source = if value.contains("://") {
+        value.to_string()
+    } else {
+        format!("http://{value}")
+    };
+    let Ok(url) = url::Url::parse(&source) else {
+        return value.to_string();
+    };
+    let Some(host) = url.host_str().filter(|host| !host.is_empty()) else {
+        return value.to_string();
+    };
+    let unwrapped_host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    let display_host = if unwrapped_host.contains(':') {
+        format!("[{unwrapped_host}]")
+    } else {
+        unwrapped_host.to_string()
+    };
+    url.port()
+        .map(|port| format!("{display_host}:{port}"))
+        .unwrap_or(display_host)
+}
+
+/// Capture values from exactly the login environment handed to the PTY. The
+/// full `name=value` pairs stay behind a click-to-copy status popover; only
+/// the host summary is rendered in the terminal chrome.
+fn inherited_shell_proxy() -> Option<ShellProxyInfo> {
+    let environment = crate::platform::login_shell_env();
+    let names = ["https_proxy", "http_proxy", "all_proxy"];
+    let entries = names
+        .into_iter()
+        .filter_map(|name| {
+            environment
+                .iter()
+                .find(|(key, value)| key.eq_ignore_ascii_case(name) && !value.trim().is_empty())
+                .map(|(key, value)| format!("{key}={value}"))
+        })
+        .collect::<Vec<_>>();
+    let summary = entries
+        .first()
+        .and_then(|entry| entry.split_once('=').map(|(_, value)| proxy_summary(value)))?;
+    Some(ShellProxyInfo { summary, entries })
 }
 
 fn run_matches(handle: &PtyHandle, requested_run_id: Option<&str>) -> bool {
@@ -310,6 +365,7 @@ pub fn open_shell(
     app: AppHandle,
     shell_id: String,
     project_path: String,
+    ssh_host: Option<String>,
     cols: Option<u16>,
     rows: Option<u16>,
     run_id: Option<String>,
@@ -333,8 +389,14 @@ pub fn open_shell(
         })
         .map_err(|error| format!("open terminal PTY: {error}"))?;
 
-    let command =
-        crate::commands::terminal_shell_integration::build_interactive_shell_command(&app, &cwd);
+    let command = match ssh_host.as_deref().filter(|host| !host.trim().is_empty()) {
+        Some(host) => {
+            crate::commands::terminal_shell_integration::build_ssh_command(&app, host, &shell_id)?
+        }
+        None => crate::commands::terminal_shell_integration::build_interactive_shell_command(
+            &app, &cwd, &shell_id, &run_id,
+        ),
+    };
     let child = pair
         .slave
         .spawn_command(command)
@@ -375,6 +437,7 @@ pub fn open_shell(
     Ok(OpenShellResult {
         cwd: cwd.to_string_lossy().into_owned(),
         run_id,
+        proxy: inherited_shell_proxy(),
     })
 }
 
@@ -464,7 +527,7 @@ pub fn resize_pty(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalized_run_id, resolve_shell_cwd, take_utf8_ready};
+    use super::{normalized_run_id, proxy_summary, resolve_shell_cwd, take_utf8_ready};
 
     #[test]
     fn utf8_decoder_keeps_incomplete_cjk_until_the_next_read() {
@@ -495,5 +558,15 @@ mod tests {
         assert!(normalized_run_id(Some(" ".to_string())).starts_with("shell-run-"));
         assert!(normalized_run_id(Some("x".repeat(129))).starts_with("shell-run-"));
         assert_eq!(normalized_run_id(Some("run-1".to_string())), "run-1");
+    }
+
+    #[test]
+    fn proxy_summary_hides_credentials_and_normalizes_hosts() {
+        assert_eq!(
+            proxy_summary("https://user:secret@proxy.example.test:8443/path"),
+            "proxy.example.test:8443"
+        );
+        assert_eq!(proxy_summary("127.0.0.1:7890"), "127.0.0.1:7890");
+        assert_eq!(proxy_summary("socks5://[::1]:1080"), "[::1]:1080");
     }
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hatch Pet"
+  short_description: "Hatch premium JunQi animated pets"
+  default_prompt: "Use @hatch-pet to create a premium 3D-style JunQi pet with all standard animations and 16 look directions."

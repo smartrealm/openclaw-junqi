@@ -11,11 +11,20 @@ export interface CustomPetPackage {
   spritesheetDataUrl: string;
 }
 
-export const DEFAULT_PET_SKIN: PetSkin = 'lobster';
+// The legacy lobster was visually dominant in a work surface. Keep it as an
+// opt-in skin, while new and migrated installs start with the quieter robot.
+export const DEFAULT_PET_SKIN: PetSkin = 'robot';
 
 function normalizePersistedPetSkin(skin: unknown): PetSkin {
-  // 保留用户已选择的合法皮肤；只有缺失或旧版非法值才回落到当前默认龙虾。
+  // Preserve valid choices; only missing or invalid values fall back.
   return isPetSkin(skin) ? skin : DEFAULT_PET_SKIN;
+}
+
+function migratePersistedPetSkin(skin: unknown, persistedVersion: number): PetSkin {
+  // v4 and earlier shipped lobster as an indistinguishable default. Migrate it
+  // once rather than continuing to make the oversized claws the first-run pet.
+  if (persistedVersion < 5 && skin === 'lobster') return DEFAULT_PET_SKIN;
+  return normalizePersistedPetSkin(skin);
 }
 
 /** Coarse classification of a drag payload — drives the bubble icon + accent
@@ -183,15 +192,15 @@ export const usePetStore = create<PetSettings>()(
     }),
     {
       name: 'aegis-pet-settings',
-      version: 4,
-      migrate: (persisted) => {
+      version: 5,
+      migrate: (persisted, persistedVersion) => {
         const p = (persisted as Partial<PetSettings>) || {};
         const pomodoro: Partial<PomodoroState> = p.pomodoro || {};
         return {
           enabled: p.enabled ?? true,
           position: p.position ?? null,
           clickThrough: p.clickThrough ?? true,
-          skin: normalizePersistedPetSkin(p.skin),
+          skin: migratePersistedPetSkin(p.skin, persistedVersion),
           pomodoro: {
             enabled: pomodoro.enabled ?? false,
             workMin: pomodoro.workMin ?? 30,

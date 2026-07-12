@@ -26,6 +26,8 @@ export interface OpenclawUpdateStatus {
   channelLabel: string | null;
   installKind: string | null;
   packageManager: string | null;
+  npmRegistry: string | null;
+  npmRegistryKind: 'official' | 'chinaMirror' | null;
   error: string | null;
 }
 export interface OpenclawUpdateResult {
@@ -37,6 +39,8 @@ export interface OpenclawUpdateResult {
   afterVersion: string | null;
   gatewayRestarted: boolean;
   gatewayError: string | null;
+  npmRegistry: string | null;
+  npmRegistryKind: 'official' | 'chinaMirror' | null;
   error: string | null;
 }
 

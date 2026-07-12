@@ -354,6 +354,7 @@ async function fetchSessions() {
     // Skip store update if nothing meaningful changed (avoids unnecessary React re-renders)
     const same = prev.length === list.length
       && prev.every((s, i) => s.key === list[i]?.key
+        && s.label === list[i]?.label
         && s.running === list[i]?.running
         && s.totalTokens === list[i]?.totalTokens
         && s.runningUpdatedAt === list[i]?.runningUpdatedAt);
@@ -666,6 +667,23 @@ function syncRunningSubAgents() {
 // Event Handler — real-time updates from Gateway events
 // ═══════════════════════════════════════════════════════════
 
+let sessionsChangedRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleSessionsChangedRefresh(): void {
+  if (sessionsChangedRefreshTimer) return;
+  sessionsChangedRefreshTimer = setTimeout(() => {
+    sessionsChangedRefreshTimer = null;
+    void fetchSessions();
+    try {
+      window.dispatchEvent(new CustomEvent('aegis:sessions-changed', {
+        detail: { reason: 'gateway-event' },
+      }));
+    } catch {
+      // Non-browser tests do not expose window events.
+    }
+  }, 80);
+}
+
 /**
  * Handle a non-chat gateway event and update the store.
  * Call this from gateway.ts handleEvent for non-chat events.
@@ -674,6 +692,17 @@ export function handleGatewayEvent(event: string, payload: any) {
   const store = useGatewayDataStore.getState();
 
   switch (event) {
+    // OpenClaw emits this after sessions.patch/delete for every client that
+    // subscribed to session events. Refresh both data surfaces instead of
+    // manufacturing a local shadow label.
+    case 'sessions.changed': {
+      const reason = typeof payload?.reason === 'string' ? payload.reason : '';
+      if (['patch', 'plugin-patch', 'delete', 'deleted', 'create', 'new'].includes(reason)) {
+        scheduleSessionsChangedRefresh();
+      }
+      break;
+    }
+
     // ── Session events ──
     case 'session.started':
     case 'session.running': {

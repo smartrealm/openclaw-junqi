@@ -1,45 +1,40 @@
-// ═══════════════════════════════════════════════════════════
-// WelcomePageView — wraps shared WelcomePage with route-level concerns.
-// Tool launch now navigates to /agent-run with pre-filled agent + a default
-// prompt derived from the tool label, so the user can hit Run and the
-// agent_task_pty backend spawns a real PTY.
-// ═══════════════════════════════════════════════════════════
-
-import { WelcomePage } from '@/components/shared';
-import { useTranslation } from 'react-i18next';
+import { invoke } from '@tauri-apps/api/core';
 import { useNavigate } from 'react-router-dom';
-
-interface CLITool {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  cmd: string;
-}
-
-function defaultPromptForTool(tool: CLITool): string {
-  // Reasonable starting prompts per agent — the user can edit before Run.
-  switch (tool.id) {
-    case 'claude':
-    case 'claude-code':
-      return 'List the files in the current directory and summarize what each one does.';
-    case 'codex':
-      return 'Read the project README and suggest three concrete improvements.';
-    default:
-      return `Use ${tool.label} to look around and report what you find.`;
-  }
-}
+import {
+  WelcomePage,
+  type CLITool,
+  type WorkspaceProject,
+} from '@/components/shared/WelcomePage';
+import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { debugWarn } from '@/utils/debugLog';
+import { findWorkspaceForDirectory } from '@/workspace/projectWorkspace';
 
 export default function WelcomePageView() {
   const navigate = useNavigate();
 
   return (
     <WelcomePage
-      onLaunchTool={(tool: CLITool) => {
-        const params = new URLSearchParams({
-          agent: tool.id === 'codex' ? 'codex' : 'claude',
-          prompt: defaultPromptForTool(tool),
+      onOpenProject={async (project: WorkspaceProject) => {
+        const directory = await invoke<WorkspaceProject>('open_terminal_workspace_directory', {
+          path: project.path,
         });
-        navigate(`/agent-run?${params.toString()}`);
+        const store = useWorkspaceStore.getState();
+        const existing = findWorkspaceForDirectory(store.workspaces, directory.path);
+        if (existing) {
+          store.setActive(existing.id);
+        } else {
+          store.createWorkspace(directory.name, directory.path);
+        }
+
+        void invoke('init_project_config', { projectPath: directory.path }).catch((error) => {
+          debugWarn('app', '[WelcomePageView] project config initialization failed', error);
+        });
+        navigate('/terminal');
+      }}
+      onLaunchTool={(tool: CLITool) => {
+        enqueueTerminalCommand({ command: tool.cmd });
+        navigate('/terminal');
       }}
     />
   );

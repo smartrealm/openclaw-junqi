@@ -8,6 +8,8 @@
  *   themeAlpha('primary', 0.1)    → 'rgba(78,201,176,0.1)' / 'rgba(61,184,159,0.1)'
  *   overlay(0.05)                 → 'rgba(255,255,255,0.05)' / 'rgba(0,0,0,0.05)'
  *   dataColor(0)                  → '#4EC9B0' (dark) / '#4EC9B0' (light, same scale)
+ *   themeColorVar('primary')      → 'rgb(var(--aegis-primary))'
+ *   themeColorVar('primary', .1)  → 'rgb(var(--aegis-primary) / 0.1)'
  *
  * Source of truth: primitives.css (--color-teal-400 = 78 201 176 for dark,
  * --color-teal-500 = 61 184 159 for light), wired through aegis-*.css.
@@ -21,8 +23,25 @@ function getVar(name: string): string {
     .getPropertyValue(name).trim();
 }
 
+export type ThemeColorName = 'primary' | 'accent' | 'danger' | 'warning' | 'success';
+
+/**
+ * Returns a live CSS color reference. Unlike themeHex/themeAlpha, this string
+ * is resolved by the browser at paint time, so a mounted SVG or inline style
+ * follows theme changes without requiring a React render.
+ */
+export function themeColorVar(name: ThemeColorName, alpha?: number): string {
+  const opacity = alpha === undefined ? '' : ` / ${alpha}`;
+  return `rgb(var(--aegis-${name})${opacity})`;
+}
+
+/** Live CSS reference for the data-visualization palette. */
+export function dataColorVar(index: number): string {
+  return `var(--aegis-data-${(index % 10) + 1})`;
+}
+
 /** Returns HEX color — for Charts, SVG fill/stroke, style={{}} */
-export function themeHex(name: 'primary' | 'accent' | 'danger' | 'warning' | 'success'): string {
+export function themeHex(name: ThemeColorName): string {
   const rgb = getVar(`--aegis-${name}`);
   const [r, g, b] = rgb.split(' ').map(Number);
   if (isNaN(r) || isNaN(g) || isNaN(b)) return '#888888';

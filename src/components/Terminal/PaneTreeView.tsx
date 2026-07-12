@@ -12,6 +12,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Maximize2, SplitSquareHorizontal, SplitSquareVertical, X } from 'lucide-react';
 import { ShellTerminalPanel } from './ShellTerminalPanel';
 import { useI18n } from './i18n-fallback';
+import { paneNodeContains, resolvePaneSplitLayout } from './paneTreeLayout';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type {
   PaneNode,
@@ -31,8 +32,6 @@ interface PaneTreeViewProps {
   monoFontFamily: FontFamily;
   projectPath: string;
   onClose?: () => void;
-  onToggleSidebar?: () => void;
-  sidebarActive?: boolean;
   resizeSuspended?: boolean;
 }
 
@@ -44,6 +43,7 @@ function PaneNodeRenderer({
   focusedPaneId,
   zoomedPaneId,
   isZoomed,
+  canZoom,
   onFocus,
   onSplit,
   onClose,
@@ -52,8 +52,6 @@ function PaneNodeRenderer({
   terminalFontSize,
   monoFontFamily,
   projectPath,
-  onToggleSidebar,
-  sidebarActive,
   workspaceActive,
   resizeSuspended,
 }: {
@@ -62,6 +60,7 @@ function PaneNodeRenderer({
   focusedPaneId: string;
   zoomedPaneId: string | null;
   isZoomed: boolean;
+  canZoom: boolean;
   onFocus: (id: string) => void;
   onSplit: (leafId: string, direction: SplitDirection) => void;
   onClose: (leafId: string) => void;
@@ -70,14 +69,10 @@ function PaneNodeRenderer({
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   projectPath: string;
-  onToggleSidebar?: () => void;
-  sidebarActive?: boolean;
   workspaceActive: boolean;
   resizeSuspended: boolean;
 }) {
   if (node.type === 'leaf') {
-    // In zoom mode, only the zoomed pane is visible
-    const hidden = isZoomed && node.id !== zoomedPaneId;
     const isFocused = node.id === focusedPaneId;
 
     return (
@@ -86,7 +81,10 @@ function PaneNodeRenderer({
           flex: 1,
           minWidth: 0,
           minHeight: 0,
-          display: hidden ? 'none' : 'flex',
+          // Ancestor split containers own zoom visibility. Keeping every leaf
+          // mounted is essential: xterm retains its canvas, scrollback, and
+          // PTY identity while its sibling is collapsed to zero size.
+          display: 'flex',
           flexDirection: 'column',
           position: 'relative',
           outline: isFocused ? '1px solid rgb(var(--aegis-primary)/0.3)' : 'none',
@@ -99,20 +97,21 @@ function PaneNodeRenderer({
           themeVariant={themeVariant}
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
-          projectPath={node.config.cwd || workspace.workingDirectory || projectPath}
+          projectPath={workspace.sshRemoteHost ? '' : node.config.cwd || workspace.workingDirectory || projectPath}
+          sshHost={workspace.sshRemoteHost}
           projectId={node.id}
           isActive={workspaceActive}
           paneFocused={workspaceActive && isFocused}
           onPaneFocus={() => onFocus(node.id)}
-          onDirectoryChange={(cwd) => useWorkspaceStore.getState().setPaneCwd(node.id, cwd, workspace.id)}
+          onDirectoryChange={(cwd) => {
+            if (!workspace.sshRemoteHost) useWorkspaceStore.getState().setPaneCwd(node.id, cwd, workspace.id);
+          }}
           onClose={() => onClose(node.id)}
           onSplitHorizontal={() => onSplit(node.id, 'horizontal')}
           onSplitVertical={() => onSplit(node.id, 'vertical')}
-          canZoom={true}
+          canZoom={canZoom}
           isZoomed={zoomedPaneId === node.id}
           onZoom={() => onZoom(node.id)}
-          onToggleSidebar={onToggleSidebar}
-          sidebarActive={sidebarActive}
           resizeSuspended={resizeSuspended}
         />
       </div>
@@ -127,6 +126,7 @@ function PaneNodeRenderer({
       focusedPaneId={focusedPaneId}
       zoomedPaneId={zoomedPaneId}
       isZoomed={isZoomed}
+      canZoom={canZoom}
       onFocus={onFocus}
       onSplit={onSplit}
       onClose={onClose}
@@ -135,8 +135,6 @@ function PaneNodeRenderer({
       terminalFontSize={terminalFontSize}
       monoFontFamily={monoFontFamily}
       projectPath={projectPath}
-      onToggleSidebar={onToggleSidebar}
-      sidebarActive={sidebarActive}
       workspaceActive={workspaceActive}
       resizeSuspended={resizeSuspended}
     />
@@ -151,6 +149,7 @@ function SplitRenderer({
   focusedPaneId,
   zoomedPaneId,
   isZoomed,
+  canZoom,
   onFocus,
   onSplit,
   onClose,
@@ -159,8 +158,6 @@ function SplitRenderer({
   terminalFontSize,
   monoFontFamily,
   projectPath,
-  onToggleSidebar,
-  sidebarActive,
   workspaceActive,
   resizeSuspended,
 }: {
@@ -169,6 +166,7 @@ function SplitRenderer({
   focusedPaneId: string;
   zoomedPaneId: string | null;
   isZoomed: boolean;
+  canZoom: boolean;
   onFocus: (id: string) => void;
   onSplit: (leafId: string, direction: SplitDirection) => void;
   onClose: (leafId: string) => void;
@@ -177,8 +175,6 @@ function SplitRenderer({
   terminalFontSize: TerminalFontSize;
   monoFontFamily: FontFamily;
   projectPath: string;
-  onToggleSidebar?: () => void;
-  sidebarActive?: boolean;
   workspaceActive: boolean;
   resizeSuspended: boolean;
 }) {
@@ -187,6 +183,7 @@ function SplitRenderer({
   const [ratio, setRatio] = useState(node.sizes[0]);
   const [dragging, setDragging] = useState(false);
   const [hovering, setHovering] = useState(false);
+  const [containerExtent, setContainerExtent] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const ratioRef = useRef(ratio);
 
@@ -195,6 +192,23 @@ function SplitRenderer({
     setRatio(node.sizes[0]);
     ratioRef.current = node.sizes[0];
   }, [node.sizes[0]]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const updateExtent = () => {
+      const rect = container.getBoundingClientRect();
+      setContainerExtent((previous) => (
+        previous.width === rect.width && previous.height === rect.height
+          ? previous
+          : { width: rect.width, height: rect.height }
+      ));
+    };
+    updateExtent();
+    const observer = new ResizeObserver(updateExtent);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -214,7 +228,7 @@ function SplitRenderer({
       } else {
         newRatio = (e.clientY - rect.top) / rect.height;
       }
-      newRatio = Math.max(0.15, Math.min(0.85, newRatio));
+      newRatio = Math.max(0.1, Math.min(0.9, newRatio));
       ratioRef.current = newRatio;
       setRatio(newRatio);
     };
@@ -231,10 +245,42 @@ function SplitRenderer({
     };
   }, [dragging, isHorizontal, node.id]);
 
-  const splitterSize = 4;
+  // Kooky keeps the chrome hairline at 1px while a transparent 6px handle
+  // overlaps it. Negative margins make the hit target free in layout terms.
+  const splitterSize = 1;
+  const splitterHitSize = 6;
   const descendantsResizeSuspended = resizeSuspended || dragging;
-  const childStyleA = { flex: ratio, minWidth: 0, minHeight: 0, display: 'flex' as const, overflow: 'hidden' as const };
-  const childStyleB = { flex: 1 - ratio, minWidth: 0, minHeight: 0, display: 'flex' as const, overflow: 'hidden' as const };
+  const splitLayout = resolvePaneSplitLayout(node, zoomedPaneId, ratio);
+  const firstContainsZoom = zoomedPaneId ? paneNodeContains(node.children[0], zoomedPaneId) : false;
+  const secondContainsZoom = zoomedPaneId ? paneNodeContains(node.children[1], zoomedPaneId) : false;
+  // Kooky offsets the collapsed sibling by the actual parent geometry, not
+  // its own shrinking dimensions. Percentage transforms would become zero as
+  // flex shrinks, leaving a momentary flash at the split edge.
+  const pushDistance = Math.round(isHorizontal ? containerExtent.width : containerExtent.height);
+  const childStyleA = {
+    flex: splitLayout.firstFlex,
+    minWidth: 0,
+    minHeight: 0,
+    display: splitLayout.firstVisible ? 'flex' as const : 'none' as const,
+    overflow: 'hidden' as const,
+    transform: secondContainsZoom
+      ? (isHorizontal ? `translateX(-${pushDistance}px)` : `translateY(-${pushDistance}px)`)
+      : 'translate(0, 0)',
+    transition: dragging ? 'none' : 'flex 220ms cubic-bezier(0.22, 1, 0.36, 1), transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
+    pointerEvents: firstContainsZoom || !zoomedPaneId ? 'auto' as const : 'none' as const,
+  };
+  const childStyleB = {
+    flex: splitLayout.secondFlex,
+    minWidth: 0,
+    minHeight: 0,
+    display: splitLayout.secondVisible ? 'flex' as const : 'none' as const,
+    overflow: 'hidden' as const,
+    transform: firstContainsZoom
+      ? (isHorizontal ? `translateX(${pushDistance}px)` : `translateY(${pushDistance}px)`)
+      : 'translate(0, 0)',
+    transition: dragging ? 'none' : 'flex 220ms cubic-bezier(0.22, 1, 0.36, 1), transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
+    pointerEvents: secondContainsZoom || !zoomedPaneId ? 'auto' as const : 'none' as const,
+  };
 
   return (
     <div
@@ -245,6 +291,7 @@ function SplitRenderer({
         flexDirection: isHorizontal ? 'row' : 'column',
         minWidth: 0,
         minHeight: 0,
+        overflow: 'hidden',
       }}
     >
       {/* Child A */}
@@ -255,6 +302,7 @@ function SplitRenderer({
           focusedPaneId={focusedPaneId}
           zoomedPaneId={zoomedPaneId}
           isZoomed={isZoomed}
+          canZoom={canZoom}
           onFocus={onFocus}
           onSplit={onSplit}
           onClose={onClose}
@@ -263,8 +311,6 @@ function SplitRenderer({
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
           projectPath={projectPath}
-          onToggleSidebar={onToggleSidebar}
-          sidebarActive={sidebarActive}
           workspaceActive={workspaceActive}
           resizeSuspended={descendantsResizeSuspended}
         />
@@ -276,23 +322,34 @@ function SplitRenderer({
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
         style={{
-          width: isHorizontal ? splitterSize : '100%',
-          height: isHorizontal ? '100%' : splitterSize,
+          width: isHorizontal ? (splitLayout.splitterVisible ? splitterHitSize : 0) : '100%',
+          height: isHorizontal ? '100%' : (splitLayout.splitterVisible ? splitterHitSize : 0),
+          margin: isHorizontal ? `0 -${(splitterHitSize - splitterSize) / 2}px` : `-${(splitterHitSize - splitterSize) / 2}px 0`,
           flexShrink: 0,
           cursor: isHorizontal ? 'col-resize' : 'row-resize',
-          background: dragging
-            ? 'rgb(var(--aegis-primary))'
-            : hovering
-              ? 'rgb(var(--aegis-primary)/0.3)'
-              : 'transparent',
-          transition: dragging ? 'none' : 'background 0.15s',
+          background: 'transparent',
+          transition: dragging ? 'none' : 'width 220ms cubic-bezier(0.22, 1, 0.36, 1), height 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease',
           position: 'relative',
           display: 'flex',
+          opacity: splitLayout.splitterVisible ? 1 : 0,
+          pointerEvents: splitLayout.splitterVisible ? 'auto' : 'none',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 10,
         }}
       >
+        <div style={{
+          position: 'absolute',
+          inset: isHorizontal ? '0 auto 0 50%' : '50% 0 auto 0',
+          width: isHorizontal ? splitterSize : '100%',
+          height: isHorizontal ? '100%' : splitterSize,
+          transform: isHorizontal ? 'translateX(-50%)' : 'translateY(-50%)',
+          background: dragging
+            ? 'rgb(var(--aegis-primary))'
+            : hovering ? 'rgb(var(--aegis-primary)/0.3)' : 'rgb(var(--aegis-overlay)/0.08)',
+          pointerEvents: 'none',
+          transition: 'background 0.15s',
+        }} />
         {/* Hover split buttons (kooky SplitButtonOverlay) */}
         {(hovering || dragging) && (
           <div
@@ -341,6 +398,7 @@ function SplitRenderer({
           focusedPaneId={focusedPaneId}
           zoomedPaneId={zoomedPaneId}
           isZoomed={isZoomed}
+          canZoom={canZoom}
           onFocus={onFocus}
           onSplit={onSplit}
           onClose={onClose}
@@ -349,8 +407,6 @@ function SplitRenderer({
           terminalFontSize={terminalFontSize}
           monoFontFamily={monoFontFamily}
           projectPath={projectPath}
-          onToggleSidebar={onToggleSidebar}
-          sidebarActive={sidebarActive}
           workspaceActive={workspaceActive}
           resizeSuspended={descendantsResizeSuspended}
         />
@@ -415,17 +471,31 @@ export function PaneTreeView({
   monoFontFamily,
   projectPath,
   onClose,
-  onToggleSidebar,
-  sidebarActive,
   resizeSuspended = false,
 }: PaneTreeViewProps) {
   const { t } = useI18n();
-  const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
+  const zoomedPaneId = workspace.zoomedPaneId ?? null;
+  const [zoomAnimating, setZoomAnimating] = useState(false);
+  const zoomAnimationTimer = useRef<number | null>(null);
   const setFocus = useWorkspaceStore((s) => s.setFocus);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
   const closePane = useWorkspaceStore((s) => s.closePane);
+  const toggleZoom = useWorkspaceStore((s) => s.toggleZoom);
 
-  const isZoomed = zoomedPaneId !== null;
+  const hasMultiplePanes = listAllLeafIds(workspace.root).length > 1;
+  const isZoomed = zoomedPaneId !== null && paneNodeContains(workspace.root, zoomedPaneId);
+
+  const beginZoomAnimation = useCallback(() => {
+    if (zoomAnimationTimer.current !== null) window.clearTimeout(zoomAnimationTimer.current);
+    setZoomAnimating(true);
+    zoomAnimationTimer.current = window.setTimeout(() => {
+      zoomAnimationTimer.current = null;
+      setZoomAnimating(false);
+    }, 250);
+  }, []);
+  useEffect(() => () => {
+    if (zoomAnimationTimer.current !== null) window.clearTimeout(zoomAnimationTimer.current);
+  }, []);
 
   // ⌘⇧E toggles pane zoom; Escape must always return to the full tree.
   useEffect(() => {
@@ -433,35 +503,37 @@ export function PaneTreeView({
       if (!isActive) return;
       if (e.key === 'Escape' && zoomedPaneId) {
         e.preventDefault();
-        setZoomedPaneId(null);
+        beginZoomAnimation();
+        toggleZoom(zoomedPaneId, workspace.id);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'E') {
         e.preventDefault();
-        setZoomedPaneId((prev) => {
-          if (prev) return null; // un-zoom
-          return workspace.focusedPaneId; // zoom to focused pane
-        });
+        if (!hasMultiplePanes && !zoomedPaneId) return;
+        beginZoomAnimation();
+        toggleZoom(zoomedPaneId ?? workspace.focusedPaneId, workspace.id);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isActive, workspace.focusedPaneId, zoomedPaneId]);
+  }, [beginZoomAnimation, hasMultiplePanes, isActive, toggleZoom, workspace.focusedPaneId, workspace.id, zoomedPaneId]);
 
   const handleSplit = useCallback(
     (leafId: string, direction: SplitDirection) => {
+      if (zoomedPaneId) beginZoomAnimation();
       splitPane(leafId, direction, undefined, workspace.id);
     },
-    [splitPane, workspace.id],
+    [beginZoomAnimation, splitPane, workspace.id, zoomedPaneId],
   );
 
   const handleClose = useCallback(
     (leafId: string) => {
+      if (zoomedPaneId === leafId) beginZoomAnimation();
       closePane(leafId, workspace.id);
       const leafIds = listAllLeafIds(workspace.root);
       if (leafIds.length <= 1 && onClose) onClose();
     },
-    [closePane, onClose, workspace.id, workspace.root],
+    [beginZoomAnimation, closePane, onClose, workspace.id, workspace.root, zoomedPaneId],
   );
 
   return (
@@ -497,7 +569,10 @@ export function PaneTreeView({
         >
           <Maximize2 size={13} aria-label={t('terminal.zoom', 'Pane zoom')} />
           <button
-            onClick={() => setZoomedPaneId(null)}
+            onClick={() => {
+              beginZoomAnimation();
+              toggleZoom(zoomedPaneId, workspace.id);
+            }}
             title={t('terminal.exitZoom', 'Exit pane zoom')}
             aria-label={t('terminal.exitZoom', 'Exit pane zoom')}
             style={{
@@ -521,21 +596,24 @@ export function PaneTreeView({
         focusedPaneId={workspace.focusedPaneId}
         zoomedPaneId={zoomedPaneId}
         isZoomed={isZoomed}
+        canZoom={hasMultiplePanes || isZoomed}
         onFocus={(id) => {
           setFocus(id, workspace.id);
-          if (zoomedPaneId === id) setZoomedPaneId(null);
+          if (zoomedPaneId && zoomedPaneId !== id) beginZoomAnimation();
         }}
         onSplit={handleSplit}
         onClose={handleClose}
-        onZoom={(id) => setZoomedPaneId((prev) => prev === id ? null : id)}
+        onZoom={(id) => {
+          if (!hasMultiplePanes && zoomedPaneId !== id) return;
+          beginZoomAnimation();
+          toggleZoom(id, workspace.id);
+        }}
         themeVariant={themeVariant}
         terminalFontSize={terminalFontSize}
         monoFontFamily={monoFontFamily}
         projectPath={projectPath}
-        onToggleSidebar={onToggleSidebar}
-        sidebarActive={sidebarActive}
         workspaceActive={isActive}
-        resizeSuspended={resizeSuspended}
+        resizeSuspended={resizeSuspended || zoomAnimating}
       />
     </div>
   );

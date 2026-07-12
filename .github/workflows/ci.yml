@@ -1,14 +1,15 @@
 # ═══════════════════════════════════════════════════════════
 # JunQi Desktop — CI
 #
-# Runs on push and PR to main. Three jobs:
+# Runs on push and PR to main. Four jobs:
 #   1. rust        — cargo check + cargo test --lib (catches backend regressions)
 #   2. frontend    — pnpm install + tsc --noEmit + lint (catches type / style regressions)
 #   3. build       — Vite production build (catches bundler / asset regressions)
+#   4. windows     — native MSVC compile + NSIS installer (catches Windows-only regressions)
 #
-# All jobs run in parallel on ubuntu-latest. Each is independent — a Rust
-# regression doesn't block the frontend job and vice versa. The single
-# required check is the `ci` summary at the bottom.
+# Linux jobs validate the shared code paths; the Windows job compiles and
+# packages natively so platform-specific APIs never wait for a release build.
+# The single required check is the `ci` summary at the bottom.
 #
 # Cache strategy: pnpm via setup-node cache, cargo via Swatinemo cache with
 # a Cargo.lock key (so cache invalidates when deps change).
@@ -140,9 +141,46 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  windows:
+    name: Windows (compile + NSIS)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry & build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile all native targets
+        working-directory: src-tauri
+        run: cargo check --all-targets --target x86_64-pc-windows-msvc
+
+      - name: Build NSIS installer
+        run: pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
+
   ci:
     name: ✅ CI Summary
-    needs: [rust, frontend, build]
+    needs: [rust, frontend, build, windows]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -150,11 +188,13 @@ jobs:
         run: |
           if [ "${{ needs.rust.result }}" != "success" ] || \
              [ "${{ needs.frontend.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ]; then
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.windows.result }}" != "success" ]; then
             echo "::error::One or more jobs failed:"
             echo "  rust:      ${{ needs.rust.result }}"
             echo "  frontend:  ${{ needs.frontend.result }}"
             echo "  build:     ${{ needs.build.result }}"
+            echo "  windows:   ${{ needs.windows.result }}"
             exit 1
           fi
           echo "✅ All jobs passed"

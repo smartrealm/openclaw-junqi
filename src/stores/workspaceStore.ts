@@ -12,6 +12,8 @@ import {
   findLeaf,
   listLeafIds,
   mapLeaves,
+  newPaneId,
+  newSshWorkspace,
   newWorkspace,
   normalizeWorkspaces,
   removeLeaf,
@@ -35,7 +37,11 @@ interface WorkspaceStoreState {
   setDefaultWorkingDirectory: (workingDirectory: string) => void;
   setActive: (id: string) => void;
   createWorkspace: (name?: string, workingDirectory?: string) => Workspace;
+  createSshWorkspace: (host: string) => Workspace | null;
+  createWorktreeWorkspace: (parentId: string, branch: string, workingDirectory: string) => Workspace | null;
   closeWorkspace: (id: string) => void;
+  closeOtherWorkspaces: (id: string) => void;
+  duplicateWorkspace: (id: string) => Workspace | null;
   splitPane: (
     leafId: string,
     direction: SplitDirection,
@@ -44,20 +50,35 @@ interface WorkspaceStoreState {
   ) => string | null;
   closePane: (leafId: string, workspaceId?: string) => void;
   setFocus: (leafId: string, workspaceId?: string) => void;
+  toggleZoom: (paneId?: string, workspaceId?: string) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
   updateLeafConfig: (leafId: string, patch: Partial<LeafConfig>, workspaceId?: string) => void;
   setPaneCwd: (leafId: string, cwd: string, workspaceId?: string) => void;
   addShellPane: () => string | null;
   addAgentPane: (agent?: string) => string | null;
   renameWorkspace: (id: string, name: string) => void;
+  moveWorkspace: (workspaceId: string, targetWorkspaceId: string, position?: 'before' | 'after') => void;
 }
 
-// v3 globally de-duplicates pane ids because inactive workspaces now remain
-// mounted and share the same terminal persistence and PTY registries.
-const WORKSPACE_PERSISTENCE_VERSION = 3;
+// v5 persists Kooky-style worktree ownership alongside the immutable project
+// root. Runtime-only zoom remains deliberately excluded below.
+const WORKSPACE_PERSISTENCE_VERSION = 5;
 
-function nonEmpty(value: string | undefined | null): string {
+function workspacePersistenceKey(): string {
+  if (typeof window === 'undefined') return 'workspace:v1';
+  const label = (window as Window & { __JUNQI_TERMINAL_WINDOW_LABEL__?: unknown })
+    .__JUNQI_TERMINAL_WINDOW_LABEL__;
+  return typeof label === 'string' && label.startsWith('terminal-')
+    ? `workspace:v1:${label}`
+    : 'workspace:v1';
+}
+
+function nonEmptyText(value: string | undefined | null): string {
   return value?.trim() ?? '';
+}
+
+function nonEmptyPath(value: string | undefined | null): string {
+  return value && value.length > 0 ? value : '';
 }
 
 function activeWorkspace(state: Pick<WorkspaceStoreState, 'workspaces' | 'activeWorkspaceId'>): Workspace | null {
@@ -67,19 +88,49 @@ function activeWorkspace(state: Pick<WorkspaceStoreState, 'workspaces' | 'active
 }
 
 function currentPaneCwd(workspace: Workspace, leafId: string, fallback: string): string {
-  return nonEmpty(findLeaf(workspace.root, leafId)?.config.cwd)
-    || nonEmpty(workspace.workingDirectory)
-    || nonEmpty(fallback);
+  if (workspace.sshRemoteHost) return '';
+  return nonEmptyPath(findLeaf(workspace.root, leafId)?.config.cwd)
+    || nonEmptyPath(workspace.workingDirectory)
+    || nonEmptyPath(fallback);
 }
 
 function hydrateWorkspaceCwds(workspace: Workspace, fallback: string): Workspace {
+  // SSH workspace panes have a remote cwd which is neither meaningful nor
+  // safe to persist as a local filesystem path. Older state may have gained a
+  // fallback cwd while activating the workspace; remove it during hydration.
+  if (workspace.sshRemoteHost) {
+    const root = mapLeaves(workspace.root, (leaf) => {
+      if (!leaf.config.cwd) return leaf;
+      const { cwd: _cwd, ...config } = leaf.config;
+      return { ...leaf, config };
+    });
+    const leafIds = listLeafIds(root);
+    const focusedPaneId = leafIds.includes(workspace.focusedPaneId)
+      ? workspace.focusedPaneId
+      : leafIds[0];
+    if (
+      root === workspace.root
+      && workspace.workingDirectory === ''
+      && workspace.projectDirectory === ''
+      && focusedPaneId === workspace.focusedPaneId
+    ) {
+      return workspace;
+    }
+    return {
+      ...workspace,
+      projectDirectory: '',
+      workingDirectory: '',
+      root,
+      focusedPaneId,
+    };
+  }
   const rootLeafId = listLeafIds(workspace.root)[0];
-  const inferred = nonEmpty(workspace.workingDirectory)
-    || nonEmpty(findLeaf(workspace.root, rootLeafId)?.config.cwd)
-    || nonEmpty(fallback);
+  const inferred = nonEmptyPath(workspace.workingDirectory)
+    || nonEmptyPath(findLeaf(workspace.root, rootLeafId)?.config.cwd)
+    || nonEmptyPath(fallback);
   const root = inferred
     ? mapLeaves(workspace.root, (leaf) => (
-      nonEmpty(leaf.config.cwd)
+      nonEmptyPath(leaf.config.cwd)
         ? leaf
         : { ...leaf, config: { ...leaf.config, cwd: inferred } }
     ))
@@ -142,9 +193,9 @@ function makeLeaf(config: Partial<LeafConfig>, cwd: string): PaneLeaf {
   return createLeaf({
     kind,
     ...(kind === 'agent' && config.agent ? { agent: config.agent } : {}),
-    cwd: nonEmpty(config.cwd) || cwd,
-    label: nonEmpty(config.label) || (kind === 'shell' ? 'Shell' : 'Agent'),
-    ...(nonEmpty(config.resumeId) ? { resumeId: nonEmpty(config.resumeId) } : {}),
+    cwd: nonEmptyPath(config.cwd) || cwd,
+    label: nonEmptyText(config.label) || (kind === 'shell' ? 'Shell' : 'Agent'),
+    ...(nonEmptyText(config.resumeId) ? { resumeId: nonEmptyText(config.resumeId) } : {}),
   });
 }
 
@@ -157,7 +208,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
 
       ensureActive: (workingDirectory) => {
         const state = get();
-        const fallback = nonEmpty(workingDirectory) || state.defaultWorkingDirectory;
+        const fallback = nonEmptyPath(workingDirectory) || state.defaultWorkingDirectory;
         const current = activeWorkspace(state);
         if (current) {
           const hydrated = hydrateWorkspaceCwds(current, fallback);
@@ -177,7 +228,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
       },
 
       setDefaultWorkingDirectory: (workingDirectory) => {
-        const normalized = nonEmpty(workingDirectory);
+        const normalized = nonEmptyPath(workingDirectory);
         if (!normalized) return;
         set((state) => {
           const workspaces = state.workspaces.map((workspace) => hydrateWorkspaceCwds(workspace, normalized));
@@ -207,7 +258,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         const inheritedCwd = source
           ? currentPaneCwd(source, source.focusedPaneId, state.defaultWorkingDirectory)
           : state.defaultWorkingDirectory;
-        const fresh = newWorkspace(name, nonEmpty(workingDirectory) || inheritedCwd);
+        const fresh = newWorkspace(name, nonEmptyPath(workingDirectory) || inheritedCwd);
         set((current) => ({
           workspaces: [...current.workspaces, fresh],
           activeWorkspaceId: fresh.id,
@@ -215,10 +266,64 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         return fresh;
       },
 
+      createSshWorkspace: (host) => {
+        const destination = nonEmptyText(host);
+        if (!destination || /[\u0000-\u001f\u007f]/.test(destination)) return null;
+        const fresh = newSshWorkspace(destination);
+        set((current) => ({
+          workspaces: [...current.workspaces, fresh],
+          activeWorkspaceId: fresh.id,
+        }));
+        return fresh;
+      },
+
+      createWorktreeWorkspace: (parentId, branch, workingDirectory) => {
+        const state = get();
+        const parent = state.workspaces.find((workspace) => workspace.id === parentId);
+        const directory = nonEmptyPath(workingDirectory);
+        const normalizedBranch = nonEmptyText(branch);
+        if (!parent || !directory || !normalizedBranch || parent.worktreeParentId) return null;
+        const leaf = defaultLeaf('shell', undefined, directory);
+        const child: Workspace = {
+          id: newPaneId(),
+          name: normalizedBranch,
+          projectDirectory: parent.projectDirectory || parent.workingDirectory,
+          workingDirectory: directory,
+          root: leaf,
+          focusedPaneId: leaf.id,
+          worktreeParentId: parent.id,
+          worktreeBranch: normalizedBranch,
+          worktreePath: directory,
+        };
+        set((current) => {
+          const parentIndex = current.workspaces.findIndex((workspace) => workspace.id === parent.id);
+          const afterFamily = current.workspaces.findIndex((workspace, index) => (
+            index > parentIndex && workspace.worktreeParentId !== parent.id
+          ));
+          const insertAt = afterFamily === -1 ? current.workspaces.length : afterFamily;
+          return {
+            workspaces: [
+              ...current.workspaces.slice(0, insertAt),
+              child,
+              ...current.workspaces.slice(insertAt),
+            ],
+            activeWorkspaceId: child.id,
+          };
+        });
+        return child;
+      },
+
       closeWorkspace: (id) => set((state) => {
         const index = state.workspaces.findIndex((workspace) => workspace.id === id);
         if (index === -1) return {};
-        const remaining = state.workspaces.filter((workspace) => workspace.id !== id);
+        const closingIds = new Set<string>([id]);
+        // A source owns its worktree rows. Closing it from any UI entry point
+        // removes the entire in-memory family rather than leaving an orphan
+        // sidebar row that no longer has a project source.
+        for (const workspace of state.workspaces) {
+          if (workspace.worktreeParentId === id) closingIds.add(workspace.id);
+        }
+        const remaining = state.workspaces.filter((workspace) => !closingIds.has(workspace.id));
         if (remaining.length === 0) {
           const fresh = newWorkspace('Workspace', state.defaultWorkingDirectory);
           return { workspaces: [fresh], activeWorkspaceId: fresh.id };
@@ -226,9 +331,40 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         const next = remaining[Math.min(index, remaining.length - 1)];
         return {
           workspaces: remaining,
-          activeWorkspaceId: state.activeWorkspaceId === id ? next.id : state.activeWorkspaceId,
+          activeWorkspaceId: state.activeWorkspaceId && closingIds.has(state.activeWorkspaceId)
+            ? next.id
+            : state.activeWorkspaceId,
         };
       }),
+
+      closeOtherWorkspaces: (id) => set((state) => {
+        const selected = state.workspaces.find((workspace) => workspace.id === id);
+        if (!selected) return {};
+        const sourceId = selected.worktreeParentId ?? selected.id;
+        const keepIds = new Set(
+          state.workspaces
+            .filter((workspace) => workspace.id === sourceId || workspace.worktreeParentId === sourceId)
+            .map((workspace) => workspace.id),
+        );
+        const workspaces = state.workspaces.filter((workspace) => keepIds.has(workspace.id));
+        return {
+          workspaces,
+          activeWorkspaceId: keepIds.has(state.activeWorkspaceId ?? '') ? state.activeWorkspaceId : sourceId,
+        };
+      }),
+
+      duplicateWorkspace: (id) => {
+        const source = get().workspaces.find((workspace) => workspace.id === id);
+        if (!source) return null;
+        const duplicate = source.sshRemoteHost
+          ? newSshWorkspace(source.sshRemoteHost)
+          : newWorkspace(source.name, source.projectDirectory || source.workingDirectory);
+        set((state) => ({
+          workspaces: [...state.workspaces, duplicate],
+          activeWorkspaceId: duplicate.id,
+        }));
+        return duplicate;
+      },
 
       splitPane: (leafId, direction, newLeafConfig, workspaceId) => {
         const state = get();
@@ -238,13 +374,16 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         if (!workspace) return null;
         const source = findLeaf(workspace.root, leafId);
         if (!source) return null;
-        const cwd = currentPaneCwd(workspace, leafId, state.defaultWorkingDirectory);
+        const cwd = workspace.sshRemoteHost
+          ? ''
+          : currentPaneCwd(workspace, leafId, state.defaultWorkingDirectory);
         const newLeaf = makeLeaf(newLeafConfig ?? {}, cwd);
         set((current) => updateWorkspace(current, workspace.id, (active) => ({
           ...active,
           root: splitLeaf(active.root, leafId, direction, newLeaf),
           focusedPaneId: newLeaf.id,
           workingDirectory: cwd || active.workingDirectory,
+          zoomedPaneId: undefined,
         })));
         return newLeaf.id;
       },
@@ -253,7 +392,11 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         const before = listLeafIds(workspace.root);
         if (!before.includes(leafId)) return workspace;
         const collapsed = removeLeaf(workspace.root, leafId);
-        const root: PaneNode = collapsed ?? defaultLeaf('shell', undefined, workspace.workingDirectory || state.defaultWorkingDirectory);
+        const root: PaneNode = collapsed ?? defaultLeaf(
+          'shell',
+          undefined,
+          workspace.sshRemoteHost ? '' : workspace.workingDirectory || state.defaultWorkingDirectory,
+        );
         const remaining = listLeafIds(root);
         const focusedPaneId = remaining.includes(workspace.focusedPaneId)
           ? workspace.focusedPaneId
@@ -263,7 +406,13 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           focusedPaneId,
           state.defaultWorkingDirectory,
         );
-        return { ...workspace, root, focusedPaneId, workingDirectory };
+        return {
+          ...workspace,
+          root,
+          focusedPaneId,
+          workingDirectory,
+          zoomedPaneId: workspace.zoomedPaneId === leafId ? undefined : workspace.zoomedPaneId,
+        };
       })),
 
       setFocus: (leafId, workspaceId) => set((state) => updateWorkspace(state, workspaceId, (workspace) => {
@@ -272,6 +421,22 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           ...workspace,
           focusedPaneId: leafId,
           workingDirectory: currentPaneCwd(workspace, leafId, state.defaultWorkingDirectory),
+          zoomedPaneId: workspace.zoomedPaneId && workspace.zoomedPaneId !== leafId
+            ? undefined
+            : workspace.zoomedPaneId,
+        };
+      })),
+
+      toggleZoom: (paneId, workspaceId) => set((state) => updateWorkspace(state, workspaceId, (workspace) => {
+        const targetPaneId = paneId ?? workspace.focusedPaneId;
+        if (!findLeaf(workspace.root, targetPaneId)) return workspace;
+        const isCurrent = workspace.zoomedPaneId === targetPaneId;
+        if (!isCurrent && listLeafIds(workspace.root).length < 2) return workspace;
+        return {
+          ...workspace,
+          focusedPaneId: targetPaneId,
+          workingDirectory: currentPaneCwd(workspace, targetPaneId, state.defaultWorkingDirectory),
+          zoomedPaneId: isCurrent ? undefined : targetPaneId,
         };
       })),
 
@@ -284,28 +449,40 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         const leaf = findLeaf(workspace.root, leafId);
         if (!leaf) return workspace;
         const kind = patch.kind ?? leaf.config.kind;
-        const nextConfig: LeafConfig = {
+        const mergedConfig: LeafConfig = {
           ...leaf.config,
           ...patch,
           kind,
           ...(kind === 'shell' ? { agent: undefined } : {}),
         };
+        const nextConfig = workspace.sshRemoteHost
+          ? (() => {
+            const { cwd: _cwd, ...config } = mergedConfig;
+            return config;
+          })()
+          : mergedConfig;
         const root = replaceNode(workspace.root, leafId, {
           type: 'leaf',
           id: leaf.id,
           config: nextConfig,
         });
-        const cwd = nonEmpty(nextConfig.cwd);
+        const cwd = workspace.sshRemoteHost ? '' : nonEmptyPath(mergedConfig.cwd);
         return {
           ...workspace,
           root,
-          workingDirectory: workspace.focusedPaneId === leafId && cwd ? cwd : workspace.workingDirectory,
+          workingDirectory: !workspace.sshRemoteHost && workspace.focusedPaneId === leafId && cwd
+            ? cwd
+            : workspace.workingDirectory,
         };
       })),
 
       setPaneCwd: (leafId, cwd, workspaceId) => {
-        const normalized = nonEmpty(cwd);
+        const normalized = nonEmptyPath(cwd);
         if (!normalized) return;
+        const workspace = workspaceId
+          ? get().workspaces.find((candidate) => candidate.id === workspaceId)
+          : activeWorkspace(get());
+        if (workspace?.sshRemoteHost) return;
         get().updateLeafConfig(leafId, { cwd: normalized }, workspaceId);
       },
 
@@ -326,7 +503,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
       ),
 
       renameWorkspace: (id, name) => {
-        const normalized = nonEmpty(name);
+        const normalized = nonEmptyText(name);
         if (!normalized) return;
         set((state) => ({
           workspaces: state.workspaces.map((workspace) => (
@@ -334,9 +511,40 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           )),
         }));
       },
+
+      moveWorkspace: (workspaceId, targetWorkspaceId, position = 'before') => set((state) => {
+        if (workspaceId === targetWorkspaceId) return {};
+        const moving = state.workspaces.find((workspace) => workspace.id === workspaceId);
+        const target = state.workspaces.find((workspace) => workspace.id === targetWorkspaceId);
+        // Worktree rows stay attached to their source. This mirrors Kooky's
+        // hierarchy and prevents a reordered child from becoming orphaned.
+        if (!moving || !target || moving.worktreeParentId || target.worktreeParentId) return {};
+
+        const movingFamily = state.workspaces.filter((workspace) => (
+          workspace.id === moving.id || workspace.worktreeParentId === moving.id
+        ));
+        const remaining = state.workspaces.filter((workspace) => !movingFamily.includes(workspace));
+        const targetIndex = remaining.findIndex((workspace) => workspace.id === targetWorkspaceId);
+        if (targetIndex < 0) return {};
+        const targetFamilyLength = remaining.filter((workspace, index) => (
+          index > targetIndex && workspace.worktreeParentId === targetWorkspaceId
+        )).length;
+        const insertAt = position === 'after' ? targetIndex + targetFamilyLength + 1 : targetIndex;
+
+        return {
+          workspaces: [
+            ...remaining.slice(0, insertAt),
+            ...movingFamily,
+            ...remaining.slice(insertAt),
+          ],
+        };
+      }),
     }),
     {
-      name: 'workspace:v1',
+      // Kooky creates one WorkspaceStore per native window. Terminal windows
+      // share the same origin in Tauri, so isolate their Zustand persistence
+      // key explicitly instead of letting them mutate the main layout.
+      name: workspacePersistenceKey(),
       version: WORKSPACE_PERSISTENCE_VERSION,
       migrate: (persisted) => {
         const state = (persisted as Partial<WorkspaceStoreState>) ?? {};
@@ -348,7 +556,9 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         return { workspaces, activeWorkspaceId };
       },
       partialize: (state) => ({
-        workspaces: state.workspaces,
+        // Zoom is a transient layout state. Persisting it would reopen the app
+        // with panes hidden and mirrors Kooky's runtime-only zoom ownership.
+        workspaces: state.workspaces.map(({ zoomedPaneId: _zoomedPaneId, ...workspace }) => workspace),
         activeWorkspaceId: state.activeWorkspaceId,
       }),
     },

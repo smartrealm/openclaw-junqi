@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect extracted Codex pet frames before atlas composition."""
+"""Inspect extracted JunQi pet frames before atlas composition."""
 
 from __future__ import annotations
 

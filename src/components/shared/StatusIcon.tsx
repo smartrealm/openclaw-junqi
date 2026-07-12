@@ -38,6 +38,7 @@ export type StatusIconValue =
   | "pending"
   | "running"
   | "input_required"
+  | "awaiting_review"
   | "detached"
   | "interrupted"
   | "done"
@@ -80,6 +81,8 @@ export function StatusIcon({ status, size = 14 }: StatusIconProps) {
     // ── waiting on user / pending ──
     case "input_required":
       return <AlertCircle size={size} style={{ color: "rgb(var(--aegis-warning))" }} />;
+    case "awaiting_review":
+      return <Hourglass size={size} style={{ color: "rgb(var(--aegis-warning))" }} />;
     case "pending":
     case "queued":
       return <Clock size={size} style={{ color: "rgb(var(--aegis-text-muted))" }} />;

@@ -1,18 +1,34 @@
-/**
- * Shared session deletion flow.
- *
- * Gateway session deletion can lag behind sessions.list polling. Once the
- * user confirms deletion, keep a local tombstone so a stale sessions.list
- * response cannot resurrect the row in the sidebar or tab picker.
- */
+/** Shared native OpenClaw session deletion flow. */
 import { gateway } from '@/services/gateway';
-import { applyLocalSessionLabelCache, markSessionDeletedLocally, useChatStore } from '@/stores/chatStore';
+import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { invoke } from '@tauri-apps/api/core';
 import { clearSessionModelPref } from '@/utils/sessionModelPrefs';
 import { debugWarn } from '@/utils/debugLog';
 
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
+
+type SessionDeleteDeps = {
+  deleteRemote: (sessionKey: string) => Promise<any>;
+  warn: (...args: unknown[]) => void;
+  notifyFailure: (detail: string) => void;
+};
+
+const defaultSessionDeleteDeps: SessionDeleteDeps = {
+  deleteRemote: (sessionKey) => gateway.deleteSession(sessionKey),
+  warn: (...args) => debugWarn('app', ...args),
+  notifyFailure: (detail) => {
+    useNotificationStore.getState().addToast('error', '删除会话失败', detail);
+  },
+};
+
+let sessionDeleteDeps: SessionDeleteDeps = defaultSessionDeleteDeps;
+
+export function __setSessionDeleteDepsForTest(overrides?: Partial<SessionDeleteDeps>): void {
+  sessionDeleteDeps = overrides
+    ? { ...defaultSessionDeleteDeps, ...overrides }
+    : defaultSessionDeleteDeps;
+}
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
@@ -39,45 +55,26 @@ function removeLocalStorageMapEntry(storageKey: string, sessionKey: string): voi
 }
 
 function clearDeletedSessionLocalPrefs(sessionKey: string): void {
-  applyLocalSessionLabelCache(sessionKey, '');
   clearSessionModelPref(sessionKey);
   removeLocalStorageMapEntry(SESSION_TOPIC_PREFS_KEY, sessionKey);
-  void invoke('upsert_session_label', { key: sessionKey, label: null }).catch((error) => {
-    debugWarn('app', '[sessionDelete] failed to clear persisted label:', error);
-  });
-}
-
-function emitSessionsChanged(sessionKey: string): void {
-  try {
-    window.dispatchEvent(new CustomEvent('aegis:sessions-changed', {
-      detail: { reason: 'delete', sessionKey },
-    }));
-  } catch {
-    // ignore non-browser tests
-  }
 }
 
 export async function deleteSessionEverywhere(sessionKey: string): Promise<boolean> {
-  if (!sessionKey || sessionKey === 'agent:main:main') return false;
-
-  markSessionDeletedLocally(sessionKey);
-  clearDeletedSessionLocalPrefs(sessionKey);
-  useChatStore.getState().removeSession(sessionKey);
-  emitSessionsChanged(sessionKey);
+  if (!sessionKey || /^agent:[^:]+:main$/.test(sessionKey)) return false;
 
   try {
-    const result = await gateway.deleteSession(sessionKey);
+    const result = await sessionDeleteDeps.deleteRemote(sessionKey);
     if (result?.success === false) {
       throw new Error(result?.error || result?.message || 'Gateway rejected session deletion');
     }
-    emitSessionsChanged(sessionKey);
+    clearDeletedSessionLocalPrefs(sessionKey);
+    useChatStore.getState().removeSession(sessionKey);
+    const gatewayStore = useGatewayDataStore.getState();
+    gatewayStore.setSessions(gatewayStore.sessions.filter((session) => session.key !== sessionKey));
   } catch (error) {
-    debugWarn('app', '[sessionDelete] gateway.deleteSession failed:', error);
-    useNotificationStore.getState().addToast(
-      'error',
-      '会话已从本地移除',
-      `远端历史清理失败：${errorMessage(error)}`,
-    );
+    sessionDeleteDeps.warn('[sessionDelete] gateway.deleteSession failed:', error);
+    sessionDeleteDeps.notifyFailure(errorMessage(error));
+    return false;
   }
 
   return true;

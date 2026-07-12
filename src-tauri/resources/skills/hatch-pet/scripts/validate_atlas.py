@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a Codex pet spritesheet atlas."""
+"""Validate a JunQi pet spritesheet atlas."""
 
 from __future__ import annotations
 

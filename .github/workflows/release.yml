@@ -17,8 +17,8 @@
 # Why use tauri-apps/tauri-action@v1:
 #   - it runs the Tauri build consistently after we install Node/Rust deps
 #   - caches Rust build artifacts across runs (~10x faster rebuilds)
-#   - uses the beforeBuildCommand/bundleConfig from tauri.conf.json
-#     so this file stays in sync with the app's own configuration
+#   - uses beforeBuildCommand from tauri.conf.json while this workflow keeps
+#     target architectures and installer formats explicit
 #
 # Artifact retention: 14 days. GitHub Releases are permanent; main-branch
 # artifacts remain intentionally short-lived.
@@ -42,8 +42,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify-version:
+    name: Verify version consistency
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+
+      - name: Check package.json, Cargo.toml, and tauri.conf.json
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_version="$(jq -r '.version' package.json)"
+          cargo_version="$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' src-tauri/Cargo.toml)"
+          tauri_version="$(jq -r '.version' src-tauri/tauri.conf.json)"
+
+          echo "package.json=$package_version"
+          echo "Cargo.toml=$cargo_version"
+          echo "tauri.conf.json=$tauri_version"
+
+          if [ "$package_version" != "$cargo_version" ] || [ "$package_version" != "$tauri_version" ]; then
+            echo "::error::Version mismatch: package.json ($package_version), Cargo.toml ($cargo_version), and tauri.conf.json ($tauri_version) must match"
+            exit 1
+          fi
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [ "$tag_version" != "$package_version" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match desktop version $package_version"
+              exit 1
+            fi
+          fi
+
   build:
-    name: ${{ matrix.platform }} (${{ matrix.arch }})
+    name: Build ${{ matrix.name }}
+    needs: verify-version
     permissions:
       contents: read
     strategy:
@@ -52,20 +90,36 @@ jobs:
         include:
           # macOS — universal (both arm64 and x86_64 in one .app/.dmg).
           # Pin the image to avoid macos-latest migration drift.
-          - platform: macos-15
-            os: 'macos'
-            arch: 'universal'
+          - name: macOS universal
+            artifact_name: macos-universal
+            platform: macos-15
             target: 'universal-apple-darwin'
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            macos_signing_identity: '-'
+            bundle_args: '--bundles dmg'
             installer_paths: |
-              src-tauri/target/**/release/bundle/**/*.dmg
-          # Windows — MSVC, single arch
-          - platform: windows-latest
-            os: 'windows'
-            arch: 'x64'
+              src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          # Windows — native MSVC runners for both supported architectures.
+          - name: Windows x64
+            artifact_name: windows-x86_64
+            platform: windows-latest
             target: 'x86_64-pc-windows-msvc'
+            rust_targets: 'x86_64-pc-windows-msvc'
+            macos_signing_identity: ''
+            bundle_args: '--bundles nsis,msi'
             installer_paths: |
-              src-tauri/target/**/release/bundle/**/*.msi
-              src-tauri/target/**/release/bundle/**/*-setup.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          - name: Windows ARM64
+            artifact_name: windows-arm64
+            platform: windows-11-arm
+            target: 'aarch64-pc-windows-msvc'
+            rust_targets: 'aarch64-pc-windows-msvc'
+            macos_signing_identity: ''
+            bundle_args: '--bundles nsis,msi'
+            installer_paths: |
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -87,7 +141,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.os == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Cache cargo registry & build
         uses: Swatinem/rust-cache@v2
@@ -101,11 +155,37 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Prefer a configured Developer ID; keep certificate-free builds
+          # internally valid by sealing the complete app with an ad-hoc identity.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || matrix.macos_signing_identity }}
         with:
-          # Tauri reads tauri.conf.json for everything else (productName,
-          # bundle targets, icon, etc.). We only need to override
-          # --target when building for a specific arch.
-          args: ${{ matrix.target == 'universal-apple-darwin' && '--target universal-apple-darwin' || format('--target {0}', matrix.target) }}
+          args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+
+      - name: Verify macOS disk image and app signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          dmgs=(src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
+          if [[ ${#dmgs[@]} -ne 1 ]]; then
+            echo "Expected exactly one DMG, found ${#dmgs[@]}" >&2
+            exit 1
+          fi
+
+          mount_point="$RUNNER_TEMP/junqi-dmg-verify"
+          mkdir -p "$mount_point"
+          hdiutil verify "${dmgs[0]}"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" "${dmgs[0]}"
+          trap 'hdiutil detach "$mount_point"' EXIT
+
+          apps=("$mount_point"/*.app)
+          if [[ ${#apps[@]} -ne 1 ]]; then
+            echo "Expected exactly one app bundle, found ${#apps[@]}" >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "${apps[0]}"
 
       - name: List built artifacts
         if: always()
@@ -118,7 +198,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: junqi-desktop-${{ matrix.os }}-${{ matrix.target }}
+          name: junqi-desktop-${{ matrix.artifact_name }}
           path: ${{ matrix.installer_paths }}
           retention-days: 14
           if-no-files-found: error
@@ -187,12 +267,9 @@ jobs:
         run: |
           echo "## JunQi Desktop — Release Build" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Platform | Status |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
-          for job in $(echo "${{ needs.build.result }}"); do :; done
-          echo "| macOS (universal) | ${{ needs.build.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          # The 'needs' array gives a single result string; for per-platform
-          # detail, the Actions tab UI shows each matrix leg's status.
+          echo "| Build matrix | Targets | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------------|---------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Desktop installers | macOS universal, Windows x64, Windows ARM64 | ${{ needs.build.result }} |" >> "$GITHUB_STEP_SUMMARY"
 
           if [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::One or more platform builds failed"

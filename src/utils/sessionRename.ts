@@ -1,38 +1,33 @@
 /**
- * sessionRename — shared helper for renaming sessions from any UI
- * surface (sidebar row, chat tab, new-session picker, etc).
+ * Native OpenClaw session-label mutations.
  *
- * Two surfaces (NavSidebar session list + ChatTabs tab strip) currently
- * display the same session.label. They read from the same
- * `useChatStore` Session record, so any rename action that mutates the
- * store auto-syncs both displays. Centralizing the gateway + store
- * write here keeps that contract in one place.
- *
- * Persistence: the openclaw gateway may not honor the `label` field in
- * sessions.patch on every build, so we mirror every rename to a Tauri-
- * managed JSON file (default location `~/.openclaw/session-labels.json`).
- * The chatStore reads this file at startup so renames survive a restart
- * and a webview cache wipe.
+ * `sessions.patch({ key, label })` is the persistent source of truth.  The
+ * renderer only updates its stores after the Gateway confirms the mutation;
+ * this prevents a disconnected client from showing a name that was never
+ * saved.
  */
-import { invoke } from '@tauri-apps/api/core';
 import { gateway } from '@/services/gateway';
-import { useChatStore, applyLocalSessionLabelCache } from '@/stores/chatStore';
+import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { debugWarn } from '@/utils/debugLog';
 
+export type SessionRenameResult =
+  | { ok: true; label: string }
+  | { ok: false; error: string };
+
 type SessionRenameDeps = {
-  persistLabel: (sessionKey: string, label: string) => Promise<void>;
-  syncGatewayLabel: (sessionKey: string, label: string) => Promise<void>;
+  patchLabel: (sessionKey: string, label: string | null) => Promise<unknown>;
   warn: (...args: unknown[]) => void;
+  notifyFailure: (detail: string) => void;
 };
 
 const defaultSessionRenameDeps: SessionRenameDeps = {
-  persistLabel: async (sessionKey, label) => {
-    await invoke('upsert_session_label', { key: sessionKey, label: label.trim() });
-  },
-  syncGatewayLabel: async (sessionKey, label) => {
-    await gateway.setSessionLabel(label, sessionKey);
-  },
+  patchLabel: (sessionKey, label) => gateway.setSessionLabel(label, sessionKey),
   warn: (...args) => debugWarn('app', ...args),
+  notifyFailure: (detail) => {
+    useNotificationStore.getState().addToast('error', '重命名会话失败', detail);
+  },
 };
 
 let sessionRenameDeps: SessionRenameDeps = defaultSessionRenameDeps;
@@ -43,57 +38,51 @@ export function __setSessionRenameDepsForTest(overrides?: Partial<SessionRenameD
     : defaultSessionRenameDeps;
 }
 
-/** Persist a single label override via the Tauri backend. Fire-and-forget
- *  from the caller's perspective — the local store is already updated by
- *  the time this returns to the UI, so a slow disk write never blocks a
- *  rename. We still `await` so a single rename truly finishes its write
- *  before a second rename starts (preserves order in the file). */
-async function writeSessionLabelPref(sessionKey: string, label: string): Promise<void> {
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
   try {
-    await sessionRenameDeps.persistLabel(sessionKey, label);
-  } catch (err) {
-    sessionRenameDeps.warn('[sessionRename] Tauri persist failed (label still in live store):', err);
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function confirmedLabel(response: unknown, requestedLabel: string): string {
+  const entry = (response as { entry?: { label?: unknown } } | null)?.entry;
+  return typeof entry?.label === 'string' ? entry.label.trim() : requestedLabel;
+}
+
+function applyConfirmedLabel(sessionKey: string, label: string): void {
+  useChatStore.getState().setSessionLabel(sessionKey, label);
+
+  const gatewayStore = useGatewayDataStore.getState();
+  if (gatewayStore.sessions.some((session) => session.key === sessionKey)) {
+    gatewayStore.setSessions(gatewayStore.sessions.map((session) => (
+      session.key === sessionKey ? { ...session, label } : session
+    )));
   }
 }
 
 /**
- * Apply a rename via gateway.setSessionLabel + chatStore.setSessionLabel.
- * Returns true on success, false on no-op (empty or unchanged).
- *
- * The local store update is OUTSIDE the gateway try/catch — if the
- * backend write fails (gateway offline, sessions.patch rejects the
- * payload, etc.) we still want the UI to reflect the user's choice
- * immediately. The gateway sync is a best-effort secondary write; a
- * failed sync just means the server-side label is out of date until
- * the next sessions.list refresh, but the user sees their rename
- * instantly. Pre-fix: setSessionLabel was inside the try, so any
- * gateway error silently blocked the rename from ever showing up.
- *
- * The localStorage mirror is the canonical source of truth across
- * restarts: the openclaw gateway may strip `label` from sessions.patch
- * in some builds, so we keep a per-key override that the chatStore
- * merge logic (in setSessions) reads back at startup.
+ * Rename a session through the Gateway. Passing an empty value clears the
+ * custom label (`label: null`), allowing OpenClaw to return to its own
+ * display-name fallback.
  */
-export async function applySessionRename(key: string, next: string): Promise<boolean> {
-  const trimmed = next.trim();
-  if (!trimmed) return false;
-  const current = useChatStore.getState().sessions.find((session) => session.key === key)?.label?.trim();
-  if (current === trimmed) return true;
-  // 1. Persist the override to disk FIRST so a crash mid-rename still
-  //    leaves a recoverable override. Tauri write is best-effort — the
-  //    in-memory store is always the source of truth for the running UI.
-  await writeSessionLabelPref(key, trimmed);
-  // 1b. Mirror the new label into the chatStore's in-memory cache so the
-  //     very next setSessions merge (e.g. the next sessions.list poll)
-  //     sees the override without round-tripping back to Tauri.
-  applyLocalSessionLabelCache(key, trimmed);
-  // 2. Local store update — always, even if gateway fails.
-  useChatStore.getState().setSessionLabel(key, trimmed);
-  // 3. Backend notification — best effort. Log and continue on failure.
+export async function applySessionRename(key: string, next: string): Promise<SessionRenameResult> {
+  const sessionKey = key.trim();
+  const requestedLabel = next.trim();
+  if (!sessionKey) return { ok: false, error: 'Missing session key' };
+
   try {
-    await sessionRenameDeps.syncGatewayLabel(key, trimmed);
-  } catch (err) {
-    sessionRenameDeps.warn('[sessionRename] gateway.setSessionLabel failed (local label still applied):', err);
+    const response = await sessionRenameDeps.patchLabel(sessionKey, requestedLabel || null);
+    const label = confirmedLabel(response, requestedLabel);
+    applyConfirmedLabel(sessionKey, label);
+    return { ok: true, label };
+  } catch (error) {
+    const message = errorMessage(error);
+    sessionRenameDeps.warn('[sessionRename] Gateway rejected session label mutation:', error);
+    sessionRenameDeps.notifyFailure(message);
+    return { ok: false, error: message };
   }
-  return true;
 }

@@ -16,6 +16,7 @@ import {
   AlertCircle, Loader2, ArrowLeft,
   User, Sparkles, Bot, Download, Braces,
   MessageSquare, Clock, FileDown,
+  Play,
 } from 'lucide-react';
 import { debugError } from '@/utils/debugLog';
 
@@ -267,9 +268,21 @@ function AssistantMessageBlock({ content, timestamp }: { content: SessionContent
 // Page
 // ═══════════════════════════════════════════════════════════
 
-export function SessionViewPage() {
+export interface SessionViewPageProps {
+  sessionPath?: string;
+  embedded?: boolean;
+  onBack?: () => void;
+  onRun?: () => void;
+}
+
+export function SessionViewPage({
+  sessionPath: providedSessionPath,
+  embedded = false,
+  onBack,
+  onRun,
+}: SessionViewPageProps = {}) {
   const [params] = useSearchParams();
-  const sessionPath = params.get('path') ?? '';
+  const sessionPath = providedSessionPath ?? params.get('path') ?? '';
 
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -342,11 +355,16 @@ export function SessionViewPage() {
       {/* ── Header ── */}
       <div className="px-5 py-2.5 border-b flex items-center gap-3 shrink-0"
         style={{ borderColor: 'rgb(var(--aegis-border))' }}>
-        <button type="button" onClick={() => window.history.back()}
-          className="p-1.5 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted transition-colors"
-          title="Back">
-          <ArrowLeft size={15} />
-        </button>
+        {!embedded && (
+          <button type="button" onClick={() => {
+            if (onBack) onBack();
+            else window.history.back();
+          }}
+            className="p-1.5 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted transition-colors"
+            title="Back">
+            <ArrowLeft size={15} />
+          </button>
+        )}
 
         <div className="flex items-center gap-2.5">
           <div className="p-1.5 rounded-lg" style={{ background: 'rgb(var(--aegis-primary) / 0.08)' }}>
@@ -363,6 +381,13 @@ export function SessionViewPage() {
 
         {/* Stats pills */}
         <div className="flex items-center gap-2 ml-auto">
+          {onRun && (
+            <button onClick={onRun}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
+              title="Run task again">
+              <Play size={13} fill="currentColor" />
+            </button>
+          )}
           {messages.length > 0 && (
             <>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"

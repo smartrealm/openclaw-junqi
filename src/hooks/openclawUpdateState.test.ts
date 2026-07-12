@@ -14,6 +14,8 @@ const status: OpenclawUpdateStatus = {
   channelLabel: 'stable (default)',
   installKind: 'package',
   packageManager: 'npm',
+  npmRegistry: 'https://registry.npmjs.org',
+  npmRegistryKind: 'official',
   error: null,
 };
 
@@ -43,6 +45,8 @@ test('successful update retains the refreshed runtime status', () => {
     afterVersion: '2026.7.1',
     gatewayRestarted: true,
     gatewayError: null,
+    npmRegistry: 'https://registry.npmjs.org',
+    npmRegistryKind: 'official',
     error: null,
   };
   const next = openclawUpdateReducer(

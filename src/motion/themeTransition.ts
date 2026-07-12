@@ -29,7 +29,6 @@ export function setThemeWithTransition(theme: ThemeSetting, origin?: TransitionO
     origin,
     direction: themeTransitionDirection(current, target),
     durationMs: 680,
-    fallbackClass: 'aegis-theme-transition-fallback',
     update: () => useSettingsStore.getState().setTheme(theme),
   });
 }

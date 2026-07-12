@@ -98,7 +98,7 @@ export function SettingsPageFull() {
       if (!selected) {
         const picked = await openDialog({
           multiple: false,
-          filters: [{ name: 'Codex Pet', extensions: ['json'] }],
+          filters: [{ name: 'JunQi Pet', extensions: ['json'] }],
         });
         if (!picked || Array.isArray(picked)) return;
         selected = picked;
@@ -113,10 +113,10 @@ export function SettingsPageFull() {
       setPetUploadError(e instanceof Error ? e.message : String(e));
     }
   };
-  const refreshCodexPets = async () => {
+  const refreshPetPackages = async () => {
     setPetUploadError(null);
     try {
-      const pets = await invoke<typeof availablePets>('list_codex_pet_packages');
+      const pets = await invoke<typeof availablePets>('list_pet_packages');
       setAvailablePets(pets);
       setSelectedPetManifest((current) => current || pets[0]?.manifestPath || '');
     } catch (e) {
@@ -132,13 +132,17 @@ export function SettingsPageFull() {
     setPetUploadError(null);
     setPreparingPetSkill(true);
     try {
-      const skill = await invoke<{ skillPath: string; rootPath: string }>('prepare_builtin_skill', {
+      // PetWindow uses this timestamp to promote only the package generated
+      // by this chat request, never an older library item the user selected.
+      localStorage.setItem('junqi:pet-package-pending-after', String(Date.now()));
+      await invoke('install_builtin_skill_for_chat', {
         skillId: 'hatch-pet',
       });
-      const prompt = `Use JunQi's built-in hatch-pet skill. Read and follow this exact skill file: ${skill.skillPath}\nDo not discover or use a hatch-pet skill from ~/.codex/skills or the current project. Treat ${skill.rootPath} as SKILL_DIR for every bundled script and reference. Create a pet based on what you know about me. My additional request: ${idea}. Complete the full v2 workflow, install the validated package under ~/.codex/pets/, and return the final pet.json path.`;
-      const params = new URLSearchParams({ agent: 'codex', prompt });
-      navigate(`/agent-run?${params.toString()}`);
+      const { activeSessionKey, setDraft } = useChatStore.getState();
+      setDraft(activeSessionKey, `@hatch-pet ${idea}`);
+      navigate('/chat');
     } catch (error) {
+      localStorage.removeItem('junqi:pet-package-pending-after');
       setPetUploadError(t('pet.settings.builtinSkillError', {
         error: error instanceof Error ? error.message : String(error),
       }));
@@ -171,7 +175,7 @@ export function SettingsPageFull() {
         if (pet) setPetCustomAsset(null);
       })
       .catch(() => undefined);
-    void refreshCodexPets();
+    void refreshPetPackages();
   // The pet tab is the ownership boundary for loading package metadata.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
@@ -790,11 +794,11 @@ export function SettingsPageFull() {
             <button onClick={() => void createAnimatedPet()} disabled={preparingPetSkill}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] bg-aegis-primary text-white hover:opacity-90 transition-opacity disabled:cursor-wait disabled:opacity-60">
               {preparingPetSkill ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-              {preparingPetSkill ? t('pet.settings.preparingBuiltinSkill') : t('pet.settings.createWithCodex')}
+              {preparingPetSkill ? t('pet.settings.preparingBuiltinSkill') : t('pet.settings.createInChat')}
             </button>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => void refreshCodexPets()}
+            <button onClick={() => void refreshPetPackages()}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] border border-aegis-border/30 text-aegis-text-dim hover:text-aegis-text">
               <RefreshCw size={12} />{t('pet.settings.refreshLibrary')}
             </button>

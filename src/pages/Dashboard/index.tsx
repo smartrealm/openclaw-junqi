@@ -19,7 +19,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, ensureGroupFresh } from '@/stores/gatewayDataStore';
 import { sessionActivityTime, sortSessionsByActivity } from '@/components/Layout/sidebarUtils';
 import clsx from 'clsx';
-import { themeHex, themeAlpha } from '@/utils/theme-colors';
+import { themeColorVar } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { formatTokens } from '@/utils/format';
 
@@ -311,7 +311,7 @@ export function DashboardPage() {
 
   // Activity feed items
   const feedItems = useMemo(() => {
-    const items: { color: string; text: string; time: string; sessionKey: string; agentName: string }[] = [];
+    const items: { color: string; glowColor: string; text: string; time: string; sessionKey: string; agentName: string }[] = [];
     activeSessions.slice(0, 6).forEach((s: any) => {
       const key    = s.key || 'unknown';
       const isMain = key === 'agent:main:main';
@@ -321,7 +321,8 @@ export function DashboardPage() {
         genericSessionLabel: t('dashboard.session', 'Session'),
       });
       items.push({
-        color: isMain ? themeHex('primary') : themeHex('accent'),
+        color: isMain ? themeColorVar('primary') : themeColorVar('accent'),
+        glowColor: isMain ? themeColorVar('primary', 0.38) : themeColorVar('accent', 0.38),
         text:  t('dashboard.feedTokens', { label, n: formatTokens(s.totalTokens || 0) }),
         time:  timeAgo(s.lastActive),
         sessionKey: key,
@@ -330,7 +331,7 @@ export function DashboardPage() {
     });
     const totalCompactions = sessions.reduce((n: number, s: any) => n + (s.compactions || 0), 0);
     if (totalCompactions > 0) {
-      items.unshift({ color: themeHex('warning'), text: t('dashboardExtra.contextCompacted', { n: totalCompactions }), time: '—', sessionKey: '', agentName: '' });
+      items.unshift({ color: themeColorVar('warning'), glowColor: themeColorVar('warning', 0.38), text: t('dashboardExtra.contextCompacted', { n: totalCompactions }), time: '—', sessionKey: '', agentName: '' });
     }
     return items;
   }, [activeSessions, sessions, chatSessionByKey]);
@@ -344,7 +345,7 @@ export function DashboardPage() {
         <div className="flex items-center gap-3">
           <div
             className="w-10 h-10 rounded-xl bg-gradient-to-br from-aegis-primary/15 to-aegis-primary/5 border border-aegis-primary/20 flex items-center justify-center"
-            style={{ boxShadow: `0 0 18px ${themeAlpha('primary', 0.16)}` }}
+            style={{ boxShadow: `0 0 18px ${themeColorVar('primary', 0.16)}` }}
           >
             <Shield size={20} className="text-aegis-primary" />
           </div>
@@ -468,7 +469,7 @@ export function DashboardPage() {
             {Math.abs(changePercent).toFixed(0)}% {t('dashboard.vsYesterday')}
           </div>
           {spark7.length > 0 && (
-            <Sparkline data={spark7} color={themeHex('primary')} width={120} height={30} />
+            <Sparkline data={spark7} color={themeColorVar('primary')} width={120} height={30} />
           )}
         </GlassCard>
 
@@ -485,7 +486,7 @@ export function DashboardPage() {
             {t('dashboard.monthBudget')}
           </div>
           {spark30.length > 0 && (
-            <Sparkline data={spark30} color={themeHex('accent')} width={120} height={30} />
+            <Sparkline data={spark30} color={themeColorVar('accent')} width={120} height={30} />
           )}
         </GlassCard>
 
@@ -652,10 +653,10 @@ export function DashboardPage() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <QuickAction icon={RefreshCw} label={t('dashboard.compact')}
-              glowColor={themeAlpha('warning', 0.08)} bgColor={themeAlpha('warning', 0.1)} iconColor={themeHex('warning')}
+              glowColor={themeColorVar('warning', 0.08)} bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
               onClick={() => handleQuickAction('compact')}   loading={quickActionLoading === 'compact'} />
             <QuickAction icon={BarChart3} label={t('dashboard.systemStatus')}
-              glowColor={themeAlpha('accent', 0.08)} bgColor={themeAlpha('accent', 0.1)} iconColor={themeHex('accent')}
+              glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
               onClick={() => handleQuickAction('status')}    loading={quickActionLoading === 'status'} />
           </div>
         </GlassCard>
@@ -697,8 +698,8 @@ export function DashboardPage() {
                   model={sModel}
                   detail={isMain ? t('dashboard.compactCount', { n: s.compactions || s.compactionCount || 0 }) : timeAgo(lastActiveIso)}
                   tokens={formatTokens(s.totalTokens || 0)}
-                  avatarBg={isMain ? themeAlpha('primary', 0.12) : themeAlpha('accent', 0.1)}
-                  avatarColor={isMain ? themeHex('primary') : themeHex('accent')}
+                  avatarBg={isMain ? themeColorVar('primary', 0.12) : themeColorVar('accent', 0.1)}
+                  avatarColor={isMain ? themeColorVar('primary') : themeColorVar('accent')}
                   icon={isMain ? Shield : Bot}
                   pinned={Boolean(merged.pinned)}
                   onPinToggle={() => useChatStore.getState().togglePinSession(key)}
@@ -732,6 +733,7 @@ export function DashboardPage() {
                 <FeedItem
                   key={i}
                   color={item.color}
+                  glowColor={item.glowColor}
                   text={item.text}
                   time={item.time}
                   isLast={i === feedItems.length - 1}

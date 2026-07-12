@@ -6,7 +6,7 @@
 
 import { Loader2, Pin, PinOff } from 'lucide-react';
 import clsx from 'clsx';
-import { themeHex } from '@/utils/theme-colors';
+import { themeColorVar } from '@/utils/theme-colors';
 import { Badge, StatusDot } from '@/components/shared/badge';
 
 // ── Format helpers (shared with index.tsx) ──────────────────
@@ -41,9 +41,11 @@ export function ContextRing({ percentage }: { percentage: number }) {
   const r    = (size - sw) / 2;
   const c    = 2 * Math.PI * r;
   const offset = c - (Math.min(100, percentage) / 100) * c;
-  const color  = percentage > 85 ? themeHex('danger')
-               : percentage > 60 ? themeHex('warning')
-               : themeHex('primary');
+  const tone = percentage > 85 ? 'danger'
+             : percentage > 60 ? 'warning'
+             : 'primary';
+  const color = themeColorVar(tone);
+  const shadowColor = themeColorVar(tone, 0.25);
 
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
@@ -64,7 +66,7 @@ export function ContextRing({ percentage }: { percentage: number }) {
           style={{ transition: 'stroke-dashoffset 1.5s ease' }} />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-[20px] font-extrabold" style={{ color, textShadow: `0 0 12px ${color}40` }}>
+        <span className="text-[20px] font-extrabold" style={{ color, textShadow: `0 0 12px ${shadowColor}` }}>
           {Math.round(percentage)}%
         </span>
       </div>
@@ -106,7 +108,7 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
       ) : (
         <div
           className="w-9 h-9 rounded-[10px] flex items-center justify-center relative z-10 transition-transform duration-250 group-hover:scale-110"
-          style={{ background: bgColor, border: `1px solid ${iconColor}25` }}
+          style={{ background: bgColor, border: `1px solid ${bgColor}` }}
         >
           <Icon size={18} style={{ color: iconColor }} />
         </div>
@@ -188,8 +190,9 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
 // ═══════════════════════════════════════════════════════════
 // FeedItem — Activity feed entry with connector line
 // ═══════════════════════════════════════════════════════════
-export function FeedItem({ color, text, time, isLast, agentName, onClick }: {
+export function FeedItem({ color, glowColor, text, time, isLast, agentName, onClick }: {
   color: string;
+  glowColor: string;
   text: string;
   time: string;
   isLast?: boolean;
@@ -205,7 +208,7 @@ export function FeedItem({ color, text, time, isLast, agentName, onClick }: {
       <div className="flex flex-col items-center pt-1.5">
         <div
           className="w-[7px] h-[7px] rounded-full flex-shrink-0"
-          style={{ background: color, boxShadow: `0 0 6px ${color}60` }}
+          style={{ background: color, boxShadow: `0 0 6px ${glowColor}` }}
         />
         {!isLast && (
           <div className="w-px flex-1 mt-1 bg-gradient-to-b from-white/[0.06] to-transparent" />
@@ -238,7 +241,9 @@ export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, s
 }) {
   const barPct = maxTokens > 0 ? Math.min(100, (tokenCount / maxTokens) * 100) : 0;
   const tone = barPct > 70 ? 'err' : barPct > 40 ? 'warn' : 'info';
-  const barColor = tone === 'err' ? themeHex('danger') : tone === 'warn' ? themeHex('warning') : themeHex('primary');
+  const colorName = tone === 'err' ? 'danger' : tone === 'warn' ? 'warning' : 'primary';
+  const barColor = themeColorVar(colorName);
+  const barShadow = themeColorVar(colorName, 0.25);
 
   return (
     <div className="flex items-center gap-3 py-2.5 border-b border-[rgb(var(--aegis-overlay)/0.04)] last:border-b-0">
@@ -255,7 +260,7 @@ export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, s
           <div className="flex-1 h-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${barPct}%`, background: barColor, boxShadow: `0 0 4px ${barColor}40` }}
+              style={{ width: `${barPct}%`, background: barColor, boxShadow: `0 0 4px ${barShadow}` }}
             />
           </div>
           <span className="text-[9px] text-aegis-text-muted font-mono flex-shrink-0 truncate max-w-[96px]">{model}</span>

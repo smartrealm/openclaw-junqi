@@ -9,6 +9,7 @@ import { useBootSequenceStore, getBootProgressSummary } from '@/stores/bootSeque
 import { usePetStore } from '@/stores/petStore';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { useSetupProgress } from '@/hooks/useSetupProgress';
+import { APP_VERSION } from '@/hooks/useAppVersion';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { GatewaySelfRescuePanel } from '@/components/GatewaySelfRescuePanel';
@@ -223,85 +224,88 @@ export function StatusBar() {
         </span>
       )}
 
-      <span className="min-w-0 shrink" />
+      {/* This consumes the remaining width so utility controls stay physically right-aligned. */}
+      <span className="min-w-0 flex-1" aria-hidden="true" />
 
-      {uiScale && uiScale !== 100 && <span className="px-2 text-aegis-text-dim opacity-50 font-mono text-[10px]">{uiScale}%</span>}
+      {uiScale && uiScale !== 100 && <span className="shrink-0 px-2 text-aegis-text-dim opacity-50 font-mono text-[10px]">{uiScale}%</span>}
 
       {/* ── Bottom-right cluster: theme cycle | pet toggle | pomodoro toggle ── */}
       {/* Each button shows a single semantic icon + a short label so the
        *  control is self-describing without relying on hover tooltips.
        *  The pet/pomodoro buttons reflect state via color (primary when on,
        *  warning when running, dim when off). */}
-      <button
-        onClick={(event) => handleThemeCycle(event.currentTarget)}
-        title={t('theme.cycle', 'Cycle theme') + `: ${themeLabel}`}
-        aria-label={t('theme.cycle', 'Cycle theme')}
-        className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
-      >
-        {isDarkish ? <Moon size={11} /> : <Sun size={11} />}
-        <span className="text-[10.5px]">{themeLabel}</span>
-      </button>
+      <div className="flex h-full shrink-0 items-stretch">
+        <button
+          onClick={(event) => handleThemeCycle(event.currentTarget)}
+          title={t('theme.cycle', 'Cycle theme') + `: ${themeLabel}`}
+          aria-label={t('theme.cycle', 'Cycle theme')}
+          className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
+        >
+          {isDarkish ? <Moon size={11} /> : <Sun size={11} />}
+          <span className="text-[10.5px]">{themeLabel}</span>
+        </button>
 
-      <button
-        onClick={() => setPetEnabled(!petEnabled)}
-        title={petEnabled ? t('statusBar.petOnTip', '点击关闭桌面宠物') : t('statusBar.petOffTip', '点击开启桌面宠物')}
-        aria-label={t('statusBar.petToggle', 'Toggle pet')}
-        className={clsx(
-          'flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 transition-colors',
-          petEnabled
-            ? 'text-aegis-primary hover:bg-aegis-hover/30'
-            : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
-        )}
-      >
-        <PawPrint size={11} />
-        <span className="text-[10.5px]">
-          {petEnabled ? t('statusBar.petOn', '宠物') : t('statusBar.petOff', '隐藏')}
-        </span>
-      </button>
+        <button
+          onClick={() => setPetEnabled(!petEnabled)}
+          title={petEnabled ? t('statusBar.petOnTip', '点击关闭桌面宠物') : t('statusBar.petOffTip', '点击开启桌面宠物')}
+          aria-label={t('statusBar.petToggle', 'Toggle pet')}
+          className={clsx(
+            'flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 transition-colors',
+            petEnabled
+              ? 'text-aegis-primary hover:bg-aegis-hover/30'
+              : 'text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30',
+          )}
+        >
+          <PawPrint size={11} />
+          <span className="text-[10.5px]">
+            {petEnabled ? t('statusBar.petOn', '宠物') : t('statusBar.petOff', '隐藏')}
+          </span>
+        </button>
 
-      {pomoEnabled ? (
-        pomoRunning ? (
-          <button
-            onClick={() => togglePausePomodoro()}
-            title={pomoPaused ? t('statusBar.pomoResume', '继续') : t('statusBar.pomoPause', '暂停')}
-            aria-label={t('statusBar.pomoToggle', 'Toggle pomodoro')}
-            className={clsx(
-              'flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 transition-colors',
-              pomoPaused
-                ? 'text-aegis-text-secondary hover:bg-aegis-hover/30'
-                : 'text-aegis-warning hover:bg-aegis-hover/30',
-            )}
-          >
-            {pomoPaused ? <Play size={11} /> : <Pause size={11} />}
-            <span className="text-[10.5px] font-mono tabular-nums">
-              {t('statusBar.pomo', '番茄')}
-              {pomoPhase === 'work' ? ' · 专注' : pomoPhase === 'break' ? ' · 休息' : ''}
-            </span>
-          </button>
+        {pomoEnabled ? (
+          pomoRunning ? (
+            <button
+              onClick={() => togglePausePomodoro()}
+              title={pomoPaused ? t('statusBar.pomoResume', '继续') : t('statusBar.pomoPause', '暂停')}
+              aria-label={t('statusBar.pomoToggle', 'Toggle pomodoro')}
+              className={clsx(
+                'flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 transition-colors',
+                pomoPaused
+                  ? 'text-aegis-text-secondary hover:bg-aegis-hover/30'
+                  : 'text-aegis-warning hover:bg-aegis-hover/30',
+              )}
+            >
+              {pomoPaused ? <Play size={11} /> : <Pause size={11} />}
+              <span className="text-[10.5px] font-mono tabular-nums">
+                {t('statusBar.pomo', '番茄')}
+                {pomoPhase === 'work' ? ' · 专注' : pomoPhase === 'break' ? ' · 休息' : ''}
+              </span>
+            </button>
+          ) : (
+            <button
+              onClick={() => startPomodoro()}
+              title={t('statusBar.pomoStart', '开始番茄')}
+              aria-label={t('statusBar.pomoStart', '开始番茄')}
+              className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
+            >
+              <Timer size={11} />
+              <span className="text-[10.5px]">{t('statusBar.pomoStartShort', '番茄')}</span>
+            </button>
+          )
         ) : (
           <button
-            onClick={() => startPomodoro()}
-            title={t('statusBar.pomoStart', '开始番茄')}
-            aria-label={t('statusBar.pomoStart', '开始番茄')}
+            onClick={() => setPomodoro({ enabled: true })}
+            title={t('statusBar.togglePomodoro', '开启番茄钟')}
+            aria-label={t('statusBar.togglePomodoro', '开启番茄钟')}
             className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
           >
             <Timer size={11} />
-            <span className="text-[10.5px]">{t('statusBar.pomoStartShort', '番茄')}</span>
+            <span className="text-[10.5px]">{t('statusBar.togglePomodoroShort', '番茄')}</span>
           </button>
-        )
-      ) : (
-        <button
-          onClick={() => setPomodoro({ enabled: true })}
-          title={t('statusBar.togglePomodoro', '开启番茄钟')}
-          aria-label={t('statusBar.togglePomodoro', '开启番茄钟')}
-          className="flex items-center gap-1.5 px-2 h-full border-l border-aegis-border/50 text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/30 transition-colors"
-        >
-          <Timer size={11} />
-          <span className="text-[10.5px]">{t('statusBar.togglePomodoroShort', '番茄')}</span>
-        </button>
-      )}
+        )}
 
-      <span className="px-3 text-aegis-text-dim opacity-40 font-mono text-[10px] border-l border-aegis-border/50">v0.5.0</span>
+        <span className="flex items-center px-3 text-aegis-text-dim opacity-40 font-mono text-[10px] border-l border-aegis-border/50">v{APP_VERSION}</span>
+      </div>
     </footer>
   );
 }

@@ -32,7 +32,11 @@ type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
  * Layout: [traffic-light gap] collapse-toggle · AI status (center) · notifications (right).
  * The bar itself is a Tauri drag region; interactive children are not.
  */
-export function TopBar() {
+interface TopBarProps {
+  hideSidebarToggle?: boolean;
+}
+
+export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const isMac = APP_PLATFORM === 'macos';
@@ -198,15 +202,17 @@ export function TopBar() {
       )}
     >
       {/* Left — collapse toggle (kooky: 28x28, cornerRadius 5, icon 12pt) */}
-      <button
-        type="button"
-        onClick={() => cycleSidebar()}
-        title={collapseTitle}
-        aria-label={collapseTitle}
-        className="w-[28px] h-[28px] flex items-center justify-center rounded-[5px] text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors shrink-0"
-      >
-        {collapseIcon}
-      </button>
+      {!hideSidebarToggle && (
+        <button
+          type="button"
+          onClick={() => cycleSidebar()}
+          title={collapseTitle}
+          aria-label={collapseTitle}
+          className="w-[28px] h-[28px] flex items-center justify-center rounded-[5px] text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors shrink-0"
+        >
+          {collapseIcon}
+        </button>
+      )}
 
       {/* Center — AI status */}
       <button

@@ -17,6 +17,7 @@ const SkillHubManagerPage = lazy(() => import('@/pages/SkillHubManager').then(m 
 const TimelinePage = lazy(() => import('@/pages/TimelinePage').then(m => ({ default: m.TimelinePage })));
 const WelcomePageView = lazy(() => import('@/pages/WelcomePageView').then(m => ({ default: m.default })));
 const AgentRunView = lazy(() => import('@/pages/AgentRunView').then(m => ({ default: m.default })));
+const AgentWorkspacePage = lazy(() => import('@/pages/AgentWorkspace').then(m => ({ default: m.AgentWorkspacePage })));
 const SessionViewPage = lazy(() => import('@/pages/SessionViewPage').then(m => ({ default: m.default })));
 const TerminalPage = lazy(() => import('@/pages/TerminalPage').then(m => ({ default: m.TerminalPage })));
 const SettingsPageFull = lazy(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPageFull })));
@@ -50,6 +51,7 @@ export default function AppRouteTree() {
         <Route path="/timeline" element={<FeatureRoute feature="workshop"><TimelinePage /></FeatureRoute>} />
         <Route path="/welcome" element={<FeatureRoute feature="dashboard"><WelcomePageView /></FeatureRoute>} />
         <Route path="/agent-run" element={<FeatureRoute feature="agentRun"><AgentRunView /></FeatureRoute>} />
+        <Route path="/ai-workspace" element={<FeatureRoute feature="agentRun"><AgentWorkspacePage /></FeatureRoute>} />
         <Route path="/session" element={<FeatureRoute feature="dashboard"><SessionViewPage /></FeatureRoute>} />
         <Route path="/terminal" element={<FeatureRoute feature="terminal"><TerminalPage /></FeatureRoute>} />
         <Route path="/memory" element={<FeatureRoute feature="memory"><MemoryExplorerPage /></FeatureRoute>} />

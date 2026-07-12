@@ -15,12 +15,15 @@ import {
   SquareTerminal,
 } from 'lucide-react';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { listen } from '@tauri-apps/api/event';
 import {
   openWithSystemDefault,
   readTerminalGitFileDiff,
   readTerminalWorkspaceDir,
   revealTerminalWorkspacePath,
   terminalPathInput,
+  clearTerminalWorkspaceWatches,
+  setTerminalWorkspaceWatches,
   type FsEntry,
 } from '@/services/workspaceFs';
 import { debugError } from '@/utils/debugLog';
@@ -52,6 +55,7 @@ interface TreeNodeProps {
   onReveal: (entry: FsEntry) => void;
   onCopyPath: (entry: FsEntry) => void;
   onInsertPath: (entry: FsEntry) => void;
+  onExpandedDirectoryChange: (path: string, expanded: boolean) => void;
 }
 
 function terminalWorkspaceEntryKey(entry: FsEntry): string {
@@ -71,6 +75,7 @@ function TerminalWorkspaceFileNode({
   onReveal,
   onCopyPath,
   onInsertPath,
+  onExpandedDirectoryChange,
 }: TreeNodeProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -84,6 +89,12 @@ function TerminalWorkspaceFileNode({
   // Keep every symlink leaf-only. An in-project link can point back to an
   // ancestor, and expanding it would make an unbounded tree representable.
   const canExpand = entry.is_dir && !entry.is_symlink;
+
+  useEffect(() => {
+    if (!canExpand || !expanded) return;
+    onExpandedDirectoryChange(entry.path, true);
+    return () => onExpandedDirectoryChange(entry.path, false);
+  }, [canExpand, entry.path, expanded, onExpandedDirectoryChange]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -219,6 +230,7 @@ function TerminalWorkspaceFileNode({
           onReveal={onReveal}
           onCopyPath={onCopyPath}
           onInsertPath={onInsertPath}
+          onExpandedDirectoryChange={onExpandedDirectoryChange}
         />
       ))}
 
@@ -306,7 +318,14 @@ function TerminalWorkspaceFileMenuItem({
   );
 }
 
-export function TerminalWorkspaceFiles({ root, refreshVersion = 0 }: { root: string; refreshVersion?: number }) {
+export interface TerminalWorkspaceFilesProps {
+  root: string;
+  refreshVersion?: number;
+  /** Optional in-app file target. Without it, double-click keeps opening with the system default app. */
+  onFileOpen?: (entry: FsEntry) => void;
+}
+
+export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }: TerminalWorkspaceFilesProps) {
   const { t } = useTranslation();
   const addToast = useNotificationStore((state) => state.addToast);
   const [entries, setEntries] = useState<FsEntry[] | null>(null);
@@ -320,6 +339,75 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0 }: { root: str
   const requestIdRef = useRef(0);
   const gitRequestIdRef = useRef(0);
   const lastRefreshVersionRef = useRef(refreshVersion);
+  const watchIdRef = useRef(
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? `terminal-files-${crypto.randomUUID()}`
+      : `terminal-files-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  );
+  const watchGenerationRef = useRef(0);
+  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
+  const maxWatchedDirectories = 64;
+  const [nativeRefreshVersion, setNativeRefreshVersion] = useState(0);
+  const watchedPaths = useMemo(() => {
+    const normalizedRoot = terminalWorkspacePathKey(root);
+    const rootPrefix = normalizedRoot === '/' ? '/' : `${normalizedRoot}/`;
+    const visibleExpanded = [...expandedDirectories].filter((path) => {
+      const normalizedPath = terminalWorkspacePathKey(path);
+      return normalizedPath === normalizedRoot || normalizedPath.startsWith(rootPrefix);
+    });
+    // Match Kooky: root plus the most recently expanded visible directories.
+    // Keeping the native watcher set bounded avoids exhausting file handles in
+    // monorepos with deep, permanently expanded trees.
+    return [root, ...visibleExpanded.slice(-(maxWatchedDirectories - 1))];
+  }, [expandedDirectories, root]);
+
+  const setDirectoryExpanded = useCallback((path: string, expanded: boolean) => {
+    setExpandedDirectories((current) => {
+      const has = current.has(path);
+      if (has === expanded) return current;
+      const next = new Set(current);
+      if (expanded) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let refreshTimer: number | null = null;
+    let unlisten: (() => void) | undefined;
+    const watchId = watchIdRef.current;
+    const generation = ++watchGenerationRef.current;
+    const scheduleRefresh = () => {
+      if (refreshTimer !== null) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        setNativeRefreshVersion((version) => version + 1);
+      }, 120);
+    };
+    const register = async () => {
+      try {
+        await setTerminalWorkspaceWatches(watchId, generation, root, watchedPaths);
+      } catch (error) {
+        if (!disposed) debugError('terminal', '[terminal] unable to watch workspace tree:', error);
+      }
+    };
+    void listen<{ watchId?: unknown }>('terminal-workspace-files-changed', (event) => {
+      if (event.payload?.watchId === watchId) scheduleRefresh();
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch((error) => {
+      if (!disposed) debugError('terminal', '[terminal] unable to listen for workspace tree changes:', error);
+    });
+    void register();
+    return () => {
+      disposed = true;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      unlisten?.();
+      void clearTerminalWorkspaceWatches(watchId, generation);
+    };
+  }, [root, watchedPaths]);
 
   const refresh = useCallback(async (showLoading = true) => {
     const requestId = ++requestIdRef.current;
@@ -353,11 +441,13 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0 }: { root: str
     () => buildTerminalGitDiffIndex(gitDiffs.root, gitDiffs.files),
     [gitDiffs],
   );
+  const treeRefreshVersion = refreshVersion + nativeRefreshVersion;
 
   useEffect(() => {
     setEntries(null);
     setGitDiffs({ root, files: [] });
     setSelectedPath(null);
+    setExpandedDirectories(new Set());
     void refresh();
     void refreshGitDiff();
     return () => {
@@ -373,18 +463,28 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0 }: { root: str
     void refreshGitDiff();
   }, [refresh, refreshGitDiff, refreshVersion]);
 
+  useEffect(() => {
+    if (nativeRefreshVersion === 0) return;
+    void refresh(false);
+    void refreshGitDiff();
+  }, [nativeRefreshVersion, refresh, refreshGitDiff]);
+
   const reportFailure = useCallback((titleKey: string, bodyKey: string, error: unknown) => {
     debugError('terminal', `[terminal] ${titleKey}:`, error);
     addToast('error', t(titleKey), t(bodyKey));
   }, [addToast, t]);
 
   const handleOpen = useCallback(async (entry: FsEntry) => {
+    if (onFileOpen) {
+      onFileOpen(entry);
+      return;
+    }
     try {
       await openWithSystemDefault(entry.path, root);
     } catch (error) {
       reportFailure('terminal.fileOpenFailedTitle', 'terminal.fileOpenFailed', error);
     }
-  }, [reportFailure, root]);
+  }, [onFileOpen, reportFailure, root]);
 
   const handleReveal = useCallback(async (entry: FsEntry) => {
     try {
@@ -440,7 +540,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0 }: { root: str
           entry={entry}
           root={root}
           depth={0}
-          refreshVersion={refreshVersion}
+          refreshVersion={treeRefreshVersion}
           diffIndex={gitDiffIndex}
           selectedPath={selectedPath}
           onSelect={(selected) => setSelectedPath(selected.path)}
@@ -448,6 +548,7 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0 }: { root: str
           onReveal={(selected) => { void handleReveal(selected); }}
           onCopyPath={(selected) => { void handleCopyPath(selected); }}
           onInsertPath={(selected) => { void handleInsertPath(selected); }}
+          onExpandedDirectoryChange={setDirectoryExpanded}
         />
       ))}
     </div>

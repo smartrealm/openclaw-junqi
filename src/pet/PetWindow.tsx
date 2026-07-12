@@ -28,6 +28,11 @@ const PET_H = 154;
 const SNAP_THRESHOLD = 90;
 /** Gap left between the pet and the edge after snapping. */
 const SNAP_MARGIN = 6;
+const PENDING_PACKAGE_AFTER_KEY = 'junqi:pet-package-pending-after';
+
+const createPositionScheduler = () => new PetPositionScheduler((point) =>
+  invoke('set_pet_position', { x: point.x, y: point.y }),
+);
 
 /**
  * Root of the transparent floating pet window — a thin client.
@@ -71,10 +76,18 @@ export default function PetWindow() {
   positionRef.current = position;
   const positionSchedulerRef = useRef<PetPositionScheduler | null>(null);
   if (!positionSchedulerRef.current) {
-    positionSchedulerRef.current = new PetPositionScheduler((point) =>
-      invoke('set_pet_position', { x: point.x, y: point.y }),
-    );
+    positionSchedulerRef.current = createPositionScheduler();
   }
+  useEffect(() => {
+    const scheduler = positionSchedulerRef.current ?? createPositionScheduler();
+    positionSchedulerRef.current = scheduler;
+    return () => {
+      scheduler.dispose();
+      if (positionSchedulerRef.current === scheduler) {
+        positionSchedulerRef.current = null;
+      }
+    };
+  }, []);
 
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean; native: boolean } | null>(null);
   // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
@@ -152,12 +165,36 @@ export default function PetWindow() {
       invoke('set_pet_position', initialPosition).catch(() => undefined);
     }
     // Animated v2 packages take precedence over legacy single-image skins.
+    const activatePendingPackage = async () => {
+      const after = Number(localStorage.getItem(PENDING_PACKAGE_AFTER_KEY));
+      if (!Number.isFinite(after) || after <= 0) return false;
+      const latest = await invoke<import('@/stores/petStore').CustomPetPackage | null>('activate_latest_pet_package', {
+        newerThanUnixMs: Math.trunc(after),
+      });
+      if (!latest) return false;
+      setCustomPet(latest);
+      setCustomAsset(null);
+      localStorage.removeItem(PENDING_PACKAGE_AFTER_KEY);
+      return true;
+    };
+
     invoke<import('@/stores/petStore').CustomPetPackage | null>('load_pet_package')
       .then((pet) => {
-        setCustomPet(pet);
-        if (pet) setCustomAsset(null);
+        if (pet) {
+          setCustomPet(pet);
+          setCustomAsset(null);
+        } else {
+          setCustomPet(null);
+        }
+        return activatePendingPackage();
       })
       .catch(() => undefined);
+    // A chat can finish after this always-on-top window is already open.
+    // Poll only while there is a pending request, and stop as soon as its
+    // validated v2 package becomes active.
+    const pendingTimer = window.setInterval(() => {
+      void activatePendingPackage().catch(() => undefined);
+    }, 5_000);
     invoke<string | null>('load_pet_asset')
       .then((url) => {
         if (url && !usePetStore.getState().customPet) setCustomAsset(url);
@@ -231,12 +268,16 @@ export default function PetWindow() {
           .catch(() => undefined);
       }),
     );
-    return combineUnlisteners(unlistens);
+    return () => {
+      window.clearInterval(pendingTimer);
+      return combineUnlisteners(unlistens)();
+    };
   }, [cancelSnap, setCustomAsset, setCustomPet]);
 
   // Global mouse listeners so dragging keeps tracking even after the cursor
   // leaves the small pet window.
   useEffect(() => {
+    let active = true;
     const onMove = (e: MouseEvent) => {
       const d = drag.current;
       if (!d || !d.ready) return;
@@ -301,6 +342,7 @@ export default function PetWindow() {
         : invoke<{ x: number; y: number }>('get_pet_position');
       Promise.all([positionPromise, invoke<PetBounds>('get_pet_bounds')])
         .then(([pos, b]) => {
+          if (!active) return;
           const target = computeSnapTarget({ x: pos.x, y: pos.y, w: PET_W, h: PET_H }, b, SNAP_THRESHOLD, SNAP_MARGIN);
           if (!target || (Math.abs(target.x - pos.x) < 1 && Math.abs(target.y - pos.y) < 1)) {
             setSnapping(false);
@@ -312,7 +354,9 @@ export default function PetWindow() {
             setPosition(target);
           });
         })
-        .catch(() => setSnapping(false));
+        .catch(() => {
+          if (active) setSnapping(false);
+        });
     };
     const onUp = () => {
       const d = drag.current;
@@ -335,6 +379,7 @@ export default function PetWindow() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
+      active = false;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       cancelSnap();

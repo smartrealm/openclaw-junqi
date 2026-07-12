@@ -46,11 +46,23 @@ export type PaneNode = PaneLeaf | PaneSplit;
 export interface Workspace {
   id: string;
   name: string;
-  /** Project root / fallback cwd for new panes and sessions. */
+  /** Stable project root selected when the workspace was created. */
+  projectDirectory: string;
+  /** Current focused-pane cwd / fallback cwd for new panes and sessions. */
   workingDirectory: string;
   root: PaneNode;
   /** Currently focused leaf id. */
   focusedPaneId: string;
+  /** Runtime-only pane zoom. It is intentionally not persisted. */
+  zoomedPaneId?: string;
+  /** Source workspace for a git worktree. Undefined means a top-level project. */
+  worktreeParentId?: string;
+  /** Branch captured when the worktree workspace was created. */
+  worktreeBranch?: string;
+  /** Immutable on-disk worktree root, separate from an active terminal cwd. */
+  worktreePath?: string;
+  /** SSH destination for a remote-only workspace (for example user@host). */
+  sshRemoteHost?: string;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -63,6 +75,10 @@ function asRecord(value: unknown): UnknownRecord | null {
 
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function nonEmptyPathString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function normalizeLeafKind(value: unknown): LeafKind {
@@ -80,7 +96,7 @@ function normalizeSplitDirection(value: unknown): SplitDirection {
 function normalizeSizes(value: unknown): [number, number] {
   const first = Array.isArray(value) ? Number(value[0]) : Number.NaN;
   if (!Number.isFinite(first)) return [0.5, 0.5];
-  const ratio = Math.max(0.15, Math.min(0.85, first));
+  const ratio = Math.max(0.1, Math.min(0.9, first));
   return [ratio, 1 - ratio];
 }
 
@@ -109,7 +125,7 @@ export function createLeaf(config: LeafConfig, id = newPaneId()): PaneLeaf {
     config: {
       kind,
       ...(agent ? { agent } : {}),
-      ...(nonEmptyString(config.cwd) ? { cwd: nonEmptyString(config.cwd) } : {}),
+      ...(nonEmptyPathString(config.cwd) ? { cwd: nonEmptyPathString(config.cwd) } : {}),
       ...(nonEmptyString(config.label) ? { label: nonEmptyString(config.label) } : {}),
       ...(nonEmptyString(config.resumeId) ? { resumeId: nonEmptyString(config.resumeId) } : {}),
     },
@@ -127,13 +143,30 @@ export function defaultLeaf(kind: LeafKind = 'shell', label?: string, cwd = ''):
 
 /** Build a fresh single-pane workspace. */
 export function newWorkspace(name = 'Workspace', workingDirectory = ''): Workspace {
-  const leaf = defaultLeaf('shell', undefined, workingDirectory);
+  const directory = nonEmptyPathString(workingDirectory) ?? '';
+  const leaf = defaultLeaf('shell', undefined, directory);
   return {
     id: newPaneId(),
     name: nonEmptyString(name) ?? 'Workspace',
-    workingDirectory: nonEmptyString(workingDirectory) ?? '',
+    projectDirectory: directory,
+    workingDirectory: directory,
     root: leaf,
     focusedPaneId: leaf.id,
+  };
+}
+
+/** A remote workspace owns panes but deliberately has no local project root. */
+export function newSshWorkspace(host: string): Workspace {
+  const destination = nonEmptyString(host) ?? 'ssh';
+  const leaf = defaultLeaf('shell', undefined, '');
+  return {
+    id: newPaneId(),
+    name: destination,
+    projectDirectory: '',
+    workingDirectory: '',
+    root: leaf,
+    focusedPaneId: leaf.id,
+    sshRemoteHost: destination,
   };
 }
 
@@ -239,7 +272,7 @@ function normalizeNode(
   const agent = kind === 'agent' ? normalizeAgentType(config.agent) : undefined;
   // `projectPath` is the pre-v2 persisted field. Read it once during
   // migration, then retain only `cwd` in the in-memory model.
-  const cwd = nonEmptyString(config.cwd) ?? nonEmptyString(config.projectPath) ?? fallbackCwd;
+  const cwd = nonEmptyPathString(config.cwd) ?? nonEmptyPathString(config.projectPath) ?? fallbackCwd;
   const persistedPaneId = nonEmptyString(source?.id);
   const id = uniqueId(persistedPaneId, usedIds);
   if (persistedPaneId && !persistedLeafIds.has(persistedPaneId)) {
@@ -281,11 +314,32 @@ function normalizeWorkspaceWithPaneIds(
     : leafIds[0];
   const focusedLeaf = findLeaf(root, focusedPaneId);
   const firstLeaf = findLeaf(root, leafIds[0]);
-  const workingDirectory = nonEmptyString(source.workingDirectory)
+  const workingDirectory = nonEmptyPathString(source.workingDirectory)
     ?? focusedLeaf?.config.cwd
     ?? firstLeaf?.config.cwd
-    ?? nonEmptyString(fallbackCwd)
+    ?? nonEmptyPathString(fallbackCwd)
     ?? '';
+  const projectDirectory = nonEmptyPathString(source.projectDirectory) ?? workingDirectory;
+  const worktreeParentId = nonEmptyString(source.worktreeParentId);
+  const worktreeBranch = nonEmptyString(source.worktreeBranch);
+  const worktreePath = nonEmptyPathString(source.worktreePath);
+  const sshRemoteHost = nonEmptyString(source.sshRemoteHost);
+  if (sshRemoteHost) {
+    const remoteRoot = mapLeaves(root, (leaf) => {
+      if (!leaf.config.cwd) return leaf;
+      const { cwd: _cwd, ...config } = leaf.config;
+      return { ...leaf, config };
+    });
+    return {
+      id: nonEmptyString(source.id) ?? newPaneId(),
+      name: nonEmptyString(source.name) ?? sshRemoteHost,
+      projectDirectory: '',
+      workingDirectory: '',
+      root: remoteRoot,
+      focusedPaneId,
+      sshRemoteHost,
+    };
+  }
   const hydratedRoot = mapLeaves(root, (leaf) => (
     leaf.config.cwd ? leaf : { ...leaf, config: { ...leaf.config, cwd: workingDirectory } }
   ));
@@ -293,9 +347,13 @@ function normalizeWorkspaceWithPaneIds(
   return {
     id: nonEmptyString(source.id) ?? newPaneId(),
     name: nonEmptyString(source.name) ?? 'Workspace',
+    projectDirectory,
     workingDirectory,
     root: hydratedRoot,
     focusedPaneId,
+    ...(worktreeParentId ? { worktreeParentId } : {}),
+    ...(worktreeBranch ? { worktreeBranch } : {}),
+    ...(worktreePath ? { worktreePath } : {}),
   };
 }
 

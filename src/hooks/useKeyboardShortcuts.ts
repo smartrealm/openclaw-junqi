@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
+import { APP_PLATFORM } from '@/components/Terminal/_nezha-platform';
 
 // ═══════════════════════════════════════════════════════════
 // Keyboard Shortcuts — Global hotkeys for OpenClaw Desktop
@@ -36,7 +37,9 @@ export function useKeyboardShortcuts() {
       // Ctrl+L → Multi-line composer (kooky-style prompt editor)
       if (ctrl && e.key === 'l') {
         // Don't hijack if user is selecting text outside chat/agent contexts.
-        const onComposerHost = location.pathname === '/chat' || location.pathname === '/agent-run';
+        const onComposerHost = location.pathname === '/chat'
+          || location.pathname === '/agent-run'
+          || location.pathname === '/ai-workspace';
         if (onComposerHost) {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('aegis:open-multi-line-composer'));
@@ -52,6 +55,28 @@ export function useKeyboardShortcuts() {
           return;
         }
         window.dispatchEvent(new CustomEvent('aegis:escape'));
+        return;
+      }
+
+      // Kooky uses Cmd+D / Cmd+Shift+D, which macOS does not pass through as
+      // terminal EOF. On Windows and Linux, Ctrl+D is shell EOF, so require
+      // Alt as the platform-safe equivalent. Handle this before the input
+      // guard: xterm owns a textarea and used to swallow the advertised split
+      // shortcut before the workspace store saw it.
+      const onTerminalWorkspace = location.pathname === '/terminal' || location.pathname === '/agent-run';
+      const splitModifier = APP_PLATFORM === 'macos'
+        ? e.metaKey && !e.ctrlKey && !e.altKey
+        : e.ctrlKey && e.altKey && !e.metaKey;
+      if (onTerminalWorkspace && splitModifier && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        const direction = e.shiftKey ? 'vertical' : 'horizontal';
+        import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+          const { workspaces, activeWorkspaceId, splitPane } = useWorkspaceStore.getState();
+          const workspace = workspaces.find((candidate) => candidate.id === activeWorkspaceId);
+          if (workspace?.focusedPaneId) {
+            splitPane(workspace.focusedPaneId, direction);
+          }
+        });
         return;
       }
 
@@ -78,22 +103,30 @@ export function useKeyboardShortcuts() {
       // Ctrl+N → New chat tab (navigate to chat + open picker)
       if (ctrl && e.key === 'n') {
         e.preventDefault();
+        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+          window.dispatchEvent(new CustomEvent('junqi:new-terminal-workspace'));
+          return;
+        }
         navigate('/chat');
         return;
       }
 
-      // Ctrl+W → Close current chat tab OR close focused pane (kooky-style)
-      if (ctrl && e.key === 'w') {
+      // Ctrl+O → Open a project directory in the terminal workspace.
+      if (ctrl && e.key === 'o') {
+        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('junqi:open-terminal-folder'));
+          return;
+        }
+      }
+
+      // Ctrl+W → close the current terminal tab (kooky ⌘W). Closing a pane
+      // is structural and remains behind an explicit pane control.
+      if (ctrl && e.key === 'w' && !shift) {
         e.preventDefault();
-        // Workspace-mode: close the focused pane
         const wsPath = location.pathname;
         if (wsPath === '/terminal' || wsPath === '/agent-run') {
-          // Lazy import to keep this hook lean
-          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
-            const { workspaces, activeWorkspaceId, closePane } = useWorkspaceStore.getState();
-            const ws = workspaces.find((w: { id: string }) => w.id === activeWorkspaceId);
-            if (ws?.focusedPaneId) closePane(ws.focusedPaneId);
-          });
+          window.dispatchEvent(new CustomEvent('junqi:close-terminal-tab'));
           return;
         }
         if (activeSessionKey !== 'agent:main:main') {
@@ -102,42 +135,36 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+D / Ctrl+Shift+D → Split focused pane (kooky ⌘D / ⌘⇧D)
-      if (ctrl && (e.key === 'd' || e.key === 'D')) {
-        e.preventDefault();
-        const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
-          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
-            const { workspaces, activeWorkspaceId, splitPane } = useWorkspaceStore.getState();
-            const ws = workspaces.find((w: { id: string }) => w.id === activeWorkspaceId);
-            if (ws?.focusedPaneId) {
-              splitPane(ws.focusedPaneId, shift ? 'vertical' : 'horizontal');
-            }
-          });
-          return;
-        }
-      }
-
-      // Ctrl+T → New shell pane in current workspace (kooky ⌘T)
+      // Ctrl+T → New terminal tab in the focused pane (kooky ⌘T).
       if (ctrl && e.key === 't' && !shift) {
         const wsPath = location.pathname;
         if (wsPath === '/terminal' || wsPath === '/agent-run') {
           e.preventDefault();
-          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
-            useWorkspaceStore.getState().addShellPane();
-          });
+          window.dispatchEvent(new CustomEvent('junqi:new-terminal-tab'));
           return;
         }
       }
 
-      // Ctrl+E → New agent pane in current workspace (kooky ⌘E)
-      if (ctrl && e.key === 'e' && !shift) {
+      // Ctrl+Shift+T → Reopen the last closed terminal tab. The focused pane
+      // claims this runtime-only history and spawns a fresh PTY with the same
+      // title and cwd, matching Kooky's reopen fallback semantics.
+      if (ctrl && e.key === 't' && shift) {
         const wsPath = location.pathname;
         if (wsPath === '/terminal' || wsPath === '/agent-run') {
           e.preventDefault();
-          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
-            useWorkspaceStore.getState().addAgentPane('claude');
-          });
+          window.dispatchEvent(new CustomEvent('junqi:reopen-terminal-tab'));
+          return;
+        }
+      }
+
+      // Ctrl+Shift+E → toggle the focused pane's zoom (kooky ⌘⇧E).
+      // Plain Ctrl+E remains available to the terminal as its native
+      // line-end editing shortcut.
+      if (ctrl && e.key === 'e' && shift) {
+        const wsPath = location.pathname;
+        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('junqi:toggle-terminal-pane-zoom'));
           return;
         }
       }
@@ -145,6 +172,12 @@ export function useKeyboardShortcuts() {
       // Ctrl+Tab / Ctrl+Shift+Tab → Cycle tabs
       if (ctrl && e.key === 'Tab') {
         e.preventDefault();
+        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+          window.dispatchEvent(new CustomEvent('junqi:cycle-terminal-tab', {
+            detail: { direction: shift ? -1 : 1 },
+          }));
+          return;
+        }
         const idx = openTabs.indexOf(activeSessionKey);
         if (shift) {
           const prev = idx > 0 ? openTabs[idx - 1] : openTabs[openTabs.length - 1];
@@ -157,8 +190,12 @@ export function useKeyboardShortcuts() {
       }
 
       // Ctrl+R → Refresh
-      if (ctrl && e.key === 'r') {
+      if (ctrl && e.key === 'r' && !shift) {
         e.preventDefault();
+        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+          window.dispatchEvent(new CustomEvent('junqi:rename-terminal-tab'));
+          return;
+        }
         window.dispatchEvent(new CustomEvent('aegis:refresh'));
         return;
       }

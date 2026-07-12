@@ -9,6 +9,8 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import { APP_PLATFORM } from "./_nezha-platform";
 import { invoke } from "@tauri-apps/api/core";
 import { debugError } from "@/utils/debugLog";
+import { Bot, Server, Wrench } from 'lucide-react';
+import { formatTerminalToolDuration, type ShellProxyInfo, type TerminalAgentActivity, type TerminalToolCall } from './shellLifecycle';
 
 // ── Shared pill style (kooky StatusSegment / bracket-bordered pill) ───────
 const pillBase: React.CSSProperties = {
@@ -68,10 +70,18 @@ function GitBranchSlot({ projectPath }: { projectPath: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    invoke<{ name: string; current: boolean }[]>("git_list_branches", { projectPath })
-      .then((list) => { if (!cancelled) { const cur = list.find((b) => b.current); if (cur) setBranch(cur.name); } })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const refresh = () => {
+      invoke<{ name: string; current: boolean }[]>("git_list_branches", { projectPath })
+        .then((list) => {
+          if (cancelled) return;
+          setBranch(list.find((item) => item.current)?.name ?? null);
+        })
+        .catch(() => { if (!cancelled) setBranch(null); });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 8_000);
+    window.addEventListener('focus', refresh);
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, [projectPath]);
 
   const handleToggle = useCallback(() => {
@@ -158,8 +168,13 @@ function GitDiffSlot({ projectPath }: { projectPath: string }) {
         .catch(() => {});
     };
     fetchDiff();
-    const timerId = setInterval(fetchDiff, 30_000);
-    return () => { cancelled = true; clearInterval(timerId); };
+    const timerId = window.setInterval(fetchDiff, 30_000);
+    window.addEventListener('focus', fetchDiff);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timerId);
+      window.removeEventListener('focus', fetchDiff);
+    };
   }, [projectPath]);
 
   if (!stat || stat.files_changed === 0) return null;
@@ -207,6 +222,136 @@ function GoVersionSlot({ version }: { version: string }) {
   );
 }
 
+function ProxySlot({ proxy }: { proxy: ShellProxyInfo }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const pill = usePillHover();
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const copyEntry = async (entry: string) => {
+    try { await navigator.clipboard.writeText(entry); } catch {}
+    setOpen(false);
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <button title="Show proxy environment" onClick={() => setOpen((value) => !value)} style={{ ...pillBase, ...pill.style }} {...pill.handlers}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.65, flexShrink: 0 }}>
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M4.93 4.93l2.12 2.12m9.9 9.9 2.12 2.12M2 12h3m14 0h3M4.93 19.07l2.12-2.12m9.9-9.9 2.12-2.12"/>
+        </svg>
+        {proxy.summary}
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', right: 0, bottom: 30, zIndex: 200, width: 330, maxHeight: 220, overflowY: 'auto', padding: 4, borderRadius: 6, background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(var(--aegis-overlay)/0.14)', boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)' }}>
+          {proxy.entries.map((entry) => (
+            <button key={entry} type="button" onClick={() => void copyEntry(entry)} style={{ display: 'block', width: '100%', border: 'none', borderRadius: 4, background: 'transparent', padding: '6px 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left', color: 'rgb(var(--aegis-text))', cursor: 'pointer', fontFamily: '"JetBrains Mono", monospace', fontSize: 11 }} onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; }} onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}>
+              {entry}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentActivitySlot({ activity }: { activity: TerminalAgentActivity }) {
+  const pill = usePillHover();
+  const label = activity.agent === 'claude' ? 'Claude Code'
+    : activity.agent === 'codex' ? 'Codex' : 'OpenCode';
+  const needsAttention = activity.state === 'attention';
+  return (
+    <span title={`${label} ${needsAttention ? 'needs attention' : 'running'}`} style={{ ...pillBase, ...pill.style, color: 'rgb(var(--aegis-text))', cursor: 'default' }} {...pill.handlers}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: needsAttention ? 'rgb(245 158 11)' : 'rgb(34 197 94)', boxShadow: `0 0 0 2px ${needsAttention ? 'rgb(245 158 11 / 0.12)' : 'rgb(34 197 94 / 0.12)'}`, flexShrink: 0 }} />
+      <Bot size={11} strokeWidth={1.8} style={{ color: 'rgb(var(--aegis-text-dim))', flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+}
+
+function ToolCallSlot({ calls }: { calls: TerminalToolCall[] }) {
+  const [open, setOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const pill = usePillHover();
+  const latest = calls.at(-1);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  useEffect(() => {
+    if (!calls.some((call) => call.state === 'running')) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [calls]);
+  if (!latest) return null;
+  const active = latest.state === 'running';
+  const presentation = (state: TerminalToolCall['state']) => state === 'running'
+    ? { color: 'rgb(59 130 246)', glyph: '...' }
+    : state === 'failed' ? { color: 'rgb(239 68 68)', glyph: 'x' }
+      : state === 'stalled' ? { color: 'rgb(var(--aegis-text-dim))', glyph: 'o' }
+        : { color: 'rgb(34 197 94)', glyph: 'check' };
+  const latestPresentation = presentation(latest.state);
+  const counts = calls.reduce((acc, call) => {
+    const key = call.toolName.toLowerCase();
+    if (key === 'bash') acc.bash += 1;
+    else if (key === 'edit' || key === 'write' || key === 'multiedit') acc.edit += 1;
+    else if (key === 'read') acc.read += 1;
+    else acc.other += 1;
+    return acc;
+  }, { bash: 0, edit: 0, read: 0, other: 0 });
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', minWidth: 0 }}>
+      <button type="button" title={`${latest.toolName}${latest.identifier ? `: ${latest.identifier}` : ''}`} onClick={() => setOpen((value) => !value)} style={{ ...pillBase, ...pill.style, color: 'rgb(var(--aegis-text))', maxWidth: 260 }} {...pill.handlers}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: latestPresentation.color, flexShrink: 0 }} />
+        <Wrench size={11} strokeWidth={1.8} style={{ color: latestPresentation.color, flexShrink: 0 }} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.toolName}{latest.identifier ? ` ${latest.identifier}` : ''}</span>
+        <span style={{ color: 'rgb(var(--aegis-text-dim))', flexShrink: 0 }}>· {formatTerminalToolDuration(latest, now)} · {latestPresentation.glyph}</span>
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', bottom: 30, left: 0, zIndex: 200, width: 520, maxWidth: 'calc(100vw - 32px)', maxHeight: 360, overflowY: 'auto', borderRadius: 6, background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(var(--aegis-overlay)/0.14)', boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)' }}>
+          <div style={{ display: 'flex', gap: 12, padding: '10px 14px', borderBottom: '1px solid rgb(var(--aegis-overlay)/0.12)', color: 'rgb(var(--aegis-text-dim))', fontFamily: '"JetBrains Mono", monospace', fontSize: 11 }}>
+            <span>{counts.bash} Bash</span><span>{counts.edit} Edit</span><span>{counts.read} Read</span>{counts.other > 0 && <span>{counts.other} Other</span>}
+          </div>
+          {[...calls].reverse().map((call) => {
+            const item = presentation(call.state);
+            return (
+            <div key={call.id} title={call.identifier} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', color: 'rgb(var(--aegis-text))', fontFamily: '"JetBrains Mono", monospace', fontSize: 11 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+              <Wrench size={11} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+              <span style={{ width: 64, flexShrink: 0, color: item.color }}>{call.toolName}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{call.identifier || '-'}</span>
+              <span style={{ width: 52, textAlign: 'right', color: 'rgb(var(--aegis-text-dim))' }}>{formatTerminalToolDuration(call, now)}</span>
+              <span style={{ width: 24, textAlign: 'center', color: item.color }}>{item.glyph}</span>
+            </div>
+          );})}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RemoteHostSlot({ host }: { host: string }) {
+  const pill = usePillHover();
+  return (
+    <span title={`SSH ${host}`} style={{ ...pillBase, ...pill.style, maxWidth: 220, cursor: 'default' }} {...pill.handlers}>
+      <Server size={11} strokeWidth={1.8} style={{ color: 'rgb(var(--aegis-text-dim))', flexShrink: 0 }} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{host}</span>
+    </span>
+  );
+}
+
 interface TerminalEnvInfo { node_version: string | null; python_venv: string | null; go_version: string | null; }
 
 function EnvPills({ projectPath }: { projectPath: string }) {
@@ -214,10 +359,15 @@ function EnvPills({ projectPath }: { projectPath: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    invoke<TerminalEnvInfo>("get_terminal_env", { projectPath })
-      .then((r) => { if (!cancelled) setEnv(r); })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const refresh = () => {
+      invoke<TerminalEnvInfo>("get_terminal_env", { projectPath })
+        .then((result) => { if (!cancelled) setEnv(result); })
+        .catch(() => { if (!cancelled) setEnv(null); });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 15_000);
+    window.addEventListener('focus', refresh);
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, [projectPath]);
 
   if (!env) return null;
@@ -239,10 +389,15 @@ export interface PaneStatusBarProps {
   canZoom?: boolean;
   isZoomed?: boolean;
   onZoom?: () => void;
+  proxy?: ShellProxyInfo | null;
+  agentActivity?: TerminalAgentActivity;
+  toolCalls?: TerminalToolCall[];
+  /** SSH workspace address. Remote sessions must never query local Git/env. */
+  remoteHost?: string;
 }
 
 export function PaneStatusBar({
-  projectPath, paneId, onToggleComposer, composerActive, canZoom, isZoomed, onZoom,
+  projectPath, paneId, onToggleComposer, composerActive, canZoom, isZoomed, onZoom, proxy, agentActivity, toolCalls, remoteHost,
 }: PaneStatusBarProps) {
 
   useEffect(() => {
@@ -262,12 +417,12 @@ export function PaneStatusBar({
 
   return (
     <div style={{
-      height: 32, flexShrink: 0,
+      minHeight: 32, flexShrink: 0,
       display: "flex", alignItems: "center",
-      padding: "0 8px", gap: 4,
+      padding: "5px 8px", gap: 4,
       borderTop: "1px solid rgb(255 255 255 / 0.06)",
       background: "rgb(var(--aegis-surface))",
-      overflow: "hidden",
+      overflow: "visible",
     }}>
       {/* LEFT — zoom (conditional) + compose (always present) */}
       {canZoom && onZoom && (
@@ -286,13 +441,14 @@ export function PaneStatusBar({
       </StatusBarIconButton>
 
       {/* Spacer — FlowLayout maxWidth:infinity equivalent */}
-      <div style={{ flex: 1 }} />
-
       {/* RIGHT — env pills + git pills (trailing, wraps on narrow panes) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
-        <EnvPills      projectPath={projectPath} />
-        <GitBranchSlot projectPath={projectPath} />
-        <GitDiffSlot   projectPath={projectPath} />
+      <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        {remoteHost ? <RemoteHostSlot host={remoteHost} /> : <EnvPills projectPath={projectPath} />}
+        {agentActivity && <AgentActivitySlot activity={agentActivity} />}
+        {toolCalls && toolCalls.length > 0 && <ToolCallSlot calls={toolCalls} />}
+        {!remoteHost && proxy && <ProxySlot proxy={proxy} />}
+        {!remoteHost && <GitBranchSlot projectPath={projectPath} />}
+        {!remoteHost && <GitDiffSlot projectPath={projectPath} />}
       </div>
     </div>
   );

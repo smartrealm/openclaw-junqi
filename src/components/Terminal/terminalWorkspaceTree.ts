@@ -17,6 +17,14 @@ export interface TerminalGitDiffIndex {
 export const TERMINAL_SIDEBAR_MIN_WIDTH = 220;
 export const TERMINAL_SIDEBAR_MAX_WIDTH = 480;
 
+export type TerminalSidebarMode = 'full' | 'compact' | 'hidden';
+
+export function nextTerminalSidebarMode(mode: TerminalSidebarMode): TerminalSidebarMode {
+  if (mode === 'full') return 'compact';
+  if (mode === 'compact') return 'hidden';
+  return 'full';
+}
+
 export function clampTerminalSidebarWidth(value: number): number {
   if (!Number.isFinite(value)) return TERMINAL_SIDEBAR_MIN_WIDTH;
   return Math.round(Math.min(TERMINAL_SIDEBAR_MAX_WIDTH, Math.max(TERMINAL_SIDEBAR_MIN_WIDTH, value)));

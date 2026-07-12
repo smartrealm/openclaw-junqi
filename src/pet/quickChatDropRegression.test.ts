@@ -51,7 +51,7 @@ test('new pet and QuickChat strings exist in both visible languages', async () =
   ]);
   const paths = [
     ['pet', 'settings', 'animatedTitle'],
-    ['pet', 'settings', 'createWithCodex'],
+    ['pet', 'settings', 'createInChat'],
     ['pet', 'settings', 'preparingBuiltinSkill'],
     ['pet', 'settings', 'builtinSkillError'],
     ['pet', 'quickChat', 'dropTitle'],
@@ -66,19 +66,46 @@ test('new pet and QuickChat strings exist in both visible languages', async () =
   }
 });
 
-test('pet creation uses the JunQi-bundled hatch-pet skill', async () => {
+test('pet creation installs the JunQi-bundled skill into the current chat workspace', async () => {
   const [settings, tauriConfig, backend, skill] = await Promise.all([
     read('../pages/SettingsPage.tsx'),
     read('../../src-tauri/tauri.conf.json').then(JSON.parse),
     read('../../src-tauri/src/commands/builtin_skills.rs'),
     read('../../src-tauri/resources/skills/hatch-pet/SKILL.md'),
   ]);
-  assert.match(settings, /prepare_builtin_skill/);
-  assert.doesNotMatch(settings, /`\$hatch-pet/);
+  assert.match(settings, /install_builtin_skill_for_chat/);
+  assert.match(settings, /@hatch-pet/);
+  assert.doesNotMatch(settings, /agent-run\?\$\{params/);
   assert.equal(
     tauriConfig.bundle.resources['resources/skills/hatch-pet'],
     'skills/hatch-pet',
   );
   assert.match(backend, /HATCH_PET_REQUIRED_FILES/);
+  assert.match(backend, /install_into_workspace/);
   assert.match(skill, /## JunQi Deployment/);
+});
+
+test('pet generation promotes only a validated, newly-created v2 package', async () => {
+  const [settings, petWindow, backend] = await Promise.all([
+    read('../pages/SettingsPage.tsx'),
+    read('../pet/PetWindow.tsx'),
+    read('../../src-tauri/src/commands/pet.rs'),
+  ]);
+  assert.match(settings, /junqi:pet-package-pending-after/);
+  assert.match(petWindow, /activate_latest_pet_package/);
+  assert.match(petWindow, /newerThanUnixMs/);
+  assert.match(backend, /validate_pet_manifest/);
+  assert.match(backend, /newer_than_unix_ms/);
+});
+
+test('the legacy lobster remains optional rather than the default pet', async () => {
+  const [store, character, skill] = await Promise.all([
+    read('../stores/petStore.ts'),
+    read('../pet/PetCharacter.tsx'),
+    read('../../src-tauri/resources/skills/hatch-pet/SKILL.md'),
+  ]);
+  assert.match(store, /DEFAULT_PET_SKIN: PetSkin = 'robot'/);
+  assert.match(store, /persistedVersion < 5 && skin === 'lobster'/);
+  assert.match(character, /skin = 'robot'/);
+  assert.match(skill, /Do not make oversized claws/);
 });

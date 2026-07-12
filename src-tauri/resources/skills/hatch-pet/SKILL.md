@@ -1,19 +1,27 @@
 ---
 name: hatch-pet
-description: Create, repair, validate, visually QA, and package Codex-compatible v2 animated pets from character art, generated images, company or prospect brand cues, or visual references. Use for any new Codex pet, custom mascot, non-pixel pet style, brand-inspired pet, existing-pet repair, or 8x11 spritesheet workflow requiring all 9 standard animation rows, 16 look directions, deterministic assembly, QA artifacts, and spriteVersionNumber 2 packaging.
+description: Create, repair, validate, visually QA, and package JunQi v2 animated pets from character art, generated images, company or prospect brand cues, or visual references. Use for any new JunQi pet, custom mascot, non-pixel pet style, brand-inspired pet, existing-pet repair, or 8x11 spritesheet workflow requiring all 9 standard animation rows, 16 look directions, deterministic assembly, QA artifacts, and spriteVersionNumber 2 packaging.
 ---
 
 # Hatch Pet
 
 ## JunQi Deployment
 
-This copy is shipped inside JunQi. The launch prompt provides the absolute path to this `SKILL.md`. Treat its parent directory as `SKILL_DIR`; never look for or install another copy under `${CODEX_HOME:-$HOME/.codex}/skills`. Use every script and reference through that supplied directory so the workflow remains portable across JunQi installations.
+This copy is shipped inside JunQi. It is installed into the active OpenClaw workspace by JunQi and invoked by the current chat model with `@hatch-pet`. Treat this skill directory as `SKILL_DIR`; never substitute a similarly named third-party skill. Use every script and reference through this supplied directory so the workflow remains portable across JunQi installations.
 
 ## Overview
 
-Create a Codex-compatible v2 animated pet from a concept, brand cue, company/prospect name, one or more reference images, or any combination of those inputs. Every newly hatched pet is an 8x11 atlas with the 9 standard animation rows plus 16 clockwise look directions and is packaged with `spriteVersionNumber: 2`. The intermediate 8x9 atlas exists only to assemble and review rows 0-8; never package it as a new pet.
+Create a JunQi v2 animated pet from a concept, brand cue, company/prospect name, one or more reference images, or any combination of those inputs. Every newly hatched pet is an 8x11 atlas with the 9 standard animation rows plus 16 clockwise look directions and is packaged with `spriteVersionNumber: 2`. The intermediate 8x9 atlas exists only to assemble and review rows 0-8; never package it as a new pet.
 
 User-facing inputs are optional. If the user omits a pet name, infer one from the concept, brand, company, or reference filenames; if that is not possible, choose a short friendly name. If the user omits a description, infer one from the concept or references. If the user omits reference images, generate the base pet from text first, then use that base as the canonical reference for every animation row.
+
+## JunQi 3D Art Direction
+
+All new JunQi pets use a premium `3d-toy` visual language unless the user explicitly requests a different style. Design a complete, charming character with a readable silhouette, intentional anatomy, tactile materials, controlled palette, expressive face, and state-specific physical motion. Think polished collectible figure or game companion, not a primitive diagram.
+
+Unless the user explicitly requests another species or visual language, create a compact 3D desktop companion: rounded, calm, readable at pet size, with balanced proportions and small expressive hands or appendages. It must support idle, attention, work, celebrate, wait, failure, and directional-look poses without its silhouette blocking the desktop. Do not make oversized claws, weapon-like limbs, aggressive pincers, giant hands, or large carried props the default focal point. A lobster or another character with prominent appendages is allowed only when the user explicitly asks for it; then keep those appendages compact enough that every action state remains readable and unobtrusive.
+
+Reject and regenerate any design that reads as a stack of spheres, boxes, tubes, flat emoji art, a generic placeholder mascot, or low-detail plastic geometry. Never use a real-time primitive renderer as a substitute for generated character art. At normal desktop-pet size, the eyes, face, limbs, primary material, and action must remain recognizable; texture noise, floating effects, and decorative scenery must not carry the identity.
 
 ## Existing Inputs And Upgrades
 
@@ -30,11 +38,7 @@ Treat character art, generated images, standard or v2 atlases, contact sheets, a
 
 Use `$imagegen` for all normal visual generation.
 
-Before generating base art, row strips, or repair rows, load and follow the installed image generation skill:
-
-```text
-${CODEX_HOME:-$HOME/.codex}/skills/.system/imagegen/SKILL.md
-```
+Before generating base art, row strips, or repair rows, load and follow the image-generation capability available to the current JunQi chat runtime. Use `$imagegen` when it is available.
 
 Do not call the Image API, image CLI, or any other image-generation path directly. Let `$imagegen` choose its own built-in-first path and fallback rules. If `$imagegen` says a fallback requires confirmation, ask the user before continuing.
 
@@ -48,12 +52,12 @@ Before running any bundled script, call `load_workspace_dependencies`. Set `PYTH
 
 ## Storage Controls
 
-The built-in `$imagegen` path stores generated PNG bytes in the rollout that invokes it, even when it also writes a file under `${CODEX_HOME:-$HOME/.codex}/generated_images`. Deleting files later reduces filesystem use, but it does not shrink an already-written rollout. Keep image generation isolated and bounded:
+The available image-generation capability can retain generated PNG bytes in its own runtime history. Deleting output files later reduces filesystem use, but it does not shrink already-stored history. Keep image generation isolated and bounded:
 
 - Use one lightweight generation worker per visual job. Do not batch multiple base/row jobs into the same worker.
 - Workers must return only `selected_source=...` and `qa_note=...`; they must not include Markdown image previews, base64, or extra visual attachments in their final response.
 - The parent must not open every generated PNG visually. Use worker QA for each job and inspect only the final contact sheet.
-- After copying the selected generated output into `decoded/`, remove the selected original from `${CODEX_HOME:-$HOME/.codex}/generated_images` when it lives there, then remove its now-empty generation directory if possible.
+- After copying the selected generated output into `decoded/`, remove the selected original from the runtime's generated-output directory when that location is known and owned by this run.
 - For storage-sensitive full runs, ask the user whether to use the `$imagegen` CLI fallback when available. That path requires local API credentials and explicit user confirmation, but it can avoid built-in image payloads being embedded in rollout events.
 
 ## Brand Discovery
@@ -172,7 +176,7 @@ State-specific guidance:
 - `waving`: show the wave through paw, hand, wing, or limb pose only. Do not draw wave marks, motion arcs, lines, sparkles, symbols, or floating effects around the gesture.
 - `jumping`: show vertical motion through body position only. Do not draw shadows, dust, landing marks, impact bursts, bounce pads, or floor cues.
 - `failed`: tears, attached smoke puffs, or attached stars are allowed if they obey the allowed-effects rules; do not use red X marks, floating symbols, detached smoke, detached stars, or separate tear droplets.
-- `waiting`: show that Codex needs approval, help, or user input through an expectant asking pose. Keep it distinct from ordinary idle and review.
+- `waiting`: show that JunQi needs approval, help, or user input through an expectant asking pose. Keep it distinct from ordinary idle and review.
 - `running`: show active task work, processing, thinking, scanning, typing, or focused effort. Do not show literal foot-running, jogging, sprinting, treadmill motion, raised knees, long steps, pumping arms, directional travel, speed lines, dust clouds, floor shadows, motion trails, or detached motion effects.
 - `review`: show focus through lean, blink, eyes, head tilt, or paw/hand position. Do not add magnifying glasses, papers, code, UI, punctuation, symbols, or other new props unless they already exist in the base pet identity.
 - `running-right` and `running-left`: show directional drag movement through body, limb, and prop movement only. `running-right` must face and travel right; `running-left` must face and travel left. Their cadence must visibly alternate across the loop rather than repeating one nearly static stride. Do not draw speed lines, dust clouds, floor shadows, motion trails, or detached motion effects.
@@ -341,16 +345,18 @@ mv "$TMP_MANIFEST" "$RUN_DIR/imagegen-jobs.json"
 
 After `decoded/look-anchors-approved.png` exists and all four cardinals have passed semantic review, mark `look-cardinals` complete. Row 9 then becomes ready immediately.
 
-If the copied source is under `${CODEX_HOME:-$HOME/.codex}/generated_images`, delete the original generated file after the decoded copy exists:
+If `JUNQI_GENERATED_IMAGES_DIR` identifies the current runtime's generated-output directory, delete the original after the decoded copy exists:
 
 ```bash
-GENERATED_ROOT="${CODEX_HOME:-$HOME/.codex}/generated_images"
-case "$SOURCE" in
-  "$GENERATED_ROOT"/*)
-    rm -f "$SOURCE"
-    rmdir "$(dirname "$SOURCE")" 2>/dev/null || true
-    ;;
-esac
+GENERATED_ROOT="${JUNQI_GENERATED_IMAGES_DIR:-}"
+if [ -n "$GENERATED_ROOT" ]; then
+  case "$SOURCE" in
+    "$GENERATED_ROOT"/*)
+      rm -f "$SOURCE"
+      rmdir "$(dirname "$SOURCE")" 2>/dev/null || true
+      ;;
+  esac
+fi
 ```
 
 5. Derive `running-left` only when it is visually safe:
@@ -659,7 +665,7 @@ Only after all deterministic and visual QA passes, package the approved extended
 PET_ID=$(jq -r '.pet_id' "$RUN_DIR/pet_request.json")
 DISPLAY_NAME=$(jq -r '.display_name' "$RUN_DIR/pet_request.json")
 DESCRIPTION=$(jq -r '.description' "$RUN_DIR/pet_request.json")
-PET_DIR="${CODEX_HOME:-$HOME/.codex}/pets/$PET_ID"
+PET_DIR="${JUNQI_PET_HOME:-$HOME/.junqi/pets}/$PET_ID"
 mkdir -p "$PET_DIR"
 cp "$RUN_DIR/final/spritesheet-extended.webp" "$PET_DIR/spritesheet.webp"
 jq -n --arg id "$PET_ID" --arg displayName "$DISPLAY_NAME" --arg description "$DESCRIPTION" \
@@ -726,7 +732,7 @@ Blind direction QA worker responsibilities:
 Final visual QA worker responsibilities:
 
 - inspect the standard and extended contact sheets, direction QA sheet, row GIFs, semantic verdicts, continuity results, and v2 validation
-- verify all 11 rows match the Codex app contract and the same pet identity
+- verify all 11 rows match the JunQi pet contract and the same pet identity
 - return a compact result: `visual_qa=pass` or `visual_qa=fail`, plus row-specific repair notes when failing
 - do not edit files, queue repairs, package, or clean up
 
@@ -921,8 +927,8 @@ If frame inspection or final visual QA fails, read `qa/review.json`, regenerate 
 - `qa/direction-semantics.json` records verdicts for all 16 directions from an independent visual QA worker or explicit user inspection, including review notes for accepted warnings.
 - `qa/look-continuity.json` has been reviewed; metric warnings are acceptable when the normal-size ordered loop has no visible snap, pop, identity change, or semantic discontinuity.
 - `qa/review.json` has no errors.
-- Row-by-row review confirms the animation cycles are complete enough for the Codex app.
+- Row-by-row review confirms the animation cycles are complete enough for JunQi.
 - Motion previews do not show unintended size popping, reversed directional cadence, or wrong row semantics.
 - Look directions follow the fixed clockwise order and form a cohesive, readable loop at normal pet size. Cardinals must be unmistakable. Intermediate blind uncertainty is acceptable as a reviewed warning when labeled normal-size review confirms the intended direction and the loop does not reverse.
 - Non-pixel styles are accepted when readable at pet size and consistent across rows.
-- `${CODEX_HOME:-$HOME/.codex}/pets/<pet-name>/pet.json` and `${CODEX_HOME:-$HOME/.codex}/pets/<pet-name>/spritesheet.webp` are staged together for custom pets.
+- `${JUNQI_PET_HOME:-$HOME/.junqi/pets}/<pet-name>/pet.json` and `${JUNQI_PET_HOME:-$HOME/.junqi/pets}/<pet-name>/spritesheet.webp` are staged together for custom pets.
