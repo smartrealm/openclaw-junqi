@@ -2468,6 +2468,7 @@ dependencies = [
  "image",
  "notify",
  "open",
+ "parking_lot",
  "portable-pty",
  "rand 0.8.5",
  "reqwest 0.12.28",

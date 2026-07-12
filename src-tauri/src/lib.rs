@@ -209,6 +209,8 @@ pub fn run() {
             commands::fs_neu::reveal_terminal_workspace_path,
             commands::fs_neu::list_project_files,
             commands::fs_neu::search_project_files,
+            commands::fs_watcher::watch_dir,
+            commands::fs_watcher::unwatch_dir,
             // Session analytics (ported from nezha analytics.rs)
             commands::session_analytics::read_session_metrics,
             commands::session_analytics::read_session_messages,
@@ -255,6 +257,7 @@ pub fn run() {
             commands::agent_workspace_storage::save_agent_workspace_tasks,
         ])
         .setup(|app| {
+            commands::fs_watcher::init(app);
             // Use the default (Regular) activation policy so JunQi gets a Dock
             // tile with its icon and a Cmd+Tab entry — the whole point of
             // shipping a branded .app. The pet window is still skip_taskbar

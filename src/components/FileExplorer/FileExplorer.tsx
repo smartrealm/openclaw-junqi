@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { RotateCcw, FolderOpen, ChevronsUpDown } from "lucide-react";
@@ -52,6 +53,7 @@ export function FileExplorer({
   const [compactEmptyFolders, setCompactEmptyFolders] = useState(() =>
     localStorage.getItem("junqi.fileExplorer.compactEmptyFolders") === "true",
   );
+  const [watcherFailed, setWatcherFailed] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(500);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -190,18 +192,79 @@ export function FileExplorer({
     void refresh(true);
   }, [active, projectPath, refresh]);
 
-  // Auto-refresh timer
+  const refreshDir = useCallback(async (dirPath: string) => {
+    if (dirPath === projectPath) {
+      await refresh();
+      return;
+    }
+    const current = findNode(nodesRef.current, dirPath);
+    if (!current?.expanded) return;
+    const nextChildren = await loadTreeNodes(dirPath, current.children ?? [], readEntries);
+    if (nextChildren === null) return;
+    setNodes((previous) => updateNode(previous, dirPath, (node) => ({ ...node, children: nextChildren })));
+  }, [projectPath, readEntries, refresh]);
+
+  const watchedDirectories = useMemo(() => {
+    const directories = [projectPath];
+    const collect = (items: TreeNode[]) => {
+      for (const node of items) {
+        if (!node.is_dir || !node.expanded) continue;
+        directories.push(node.path);
+        if (node.children) collect(node.children);
+      }
+    };
+    collect(nodes);
+    return directories;
+  }, [nodes, projectPath]);
+
   useEffect(() => {
     if (!active) return;
+    let disposed = false;
+    const registrations = watchedDirectories.map((path) =>
+      invoke<boolean>("watch_dir", { path, projectPath }).then((available) => {
+        if (!disposed && !available) setWatcherFailed(true);
+      }).catch(() => {
+        if (!disposed) setWatcherFailed(true);
+      }),
+    );
+    return () => {
+      disposed = true;
+      for (let index = 0; index < watchedDirectories.length; index += 1) {
+        const path = watchedDirectories[index];
+        void registrations[index].then(() => invoke("unwatch_dir", { path })).catch(() => undefined);
+      }
+    };
+  }, [active, projectPath, watchedDirectories]);
+
+  useEffect(() => {
+    if (!active) return;
+    const subscription = listen<{ dir: string }>("fs-changed", (event) => {
+      void refreshDir(event.payload.dir);
+    });
+    return () => { void subscription.then((unlisten) => unlisten()); };
+  }, [active, refreshDir]);
+
+  // Auto-refresh timer
+  useEffect(() => {
+    if (!active || !watcherFailed) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void refresh();
     }, AUTO_REFRESH_MS);
-    window.addEventListener("focus", () => void refresh());
+    const handleFocus = () => void refresh();
+    window.addEventListener("focus", handleFocus);
     return () => {
       window.clearInterval(timer);
+      window.removeEventListener("focus", handleFocus);
     };
-  }, [active, refresh]);
+  }, [active, refresh, watcherFailed]);
+
+  useEffect(() => {
+    if (!active || watcherFailed) return;
+    const handleFocus = () => void refresh();
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [active, refresh, watcherFailed]);
 
   // ── Viewport measurement ──
   useEffect(() => {

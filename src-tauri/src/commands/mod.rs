@@ -11,6 +11,7 @@ pub mod console;
 pub mod docker;
 pub mod ensure;
 pub mod fs_neu;
+pub mod fs_watcher;
 pub mod gateway;
 pub mod gateway_logs;
 pub mod gateway_rescue;
