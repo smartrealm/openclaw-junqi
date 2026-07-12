@@ -71,10 +71,11 @@ jobs:
             exit 1
           fi
 
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            tag_version="${GITHUB_REF_NAME#v}"
+          release_ref="${{ github.event.inputs.ref || github.ref_name }}"
+          if [[ "$release_ref" == v* ]]; then
+            tag_version="${release_ref#v}"
             if [ "$tag_version" != "$package_version" ]; then
-              echo "::error::Tag $GITHUB_REF_NAME does not match desktop version $package_version"
+              echo "::error::Tag $release_ref does not match desktop version $package_version"
               exit 1
             fi
           fi
@@ -238,20 +239,24 @@ jobs:
     needs: build
     # Main builds remain Actions artifacts. A v* tag is the explicit signal
     # that a tested build should be public and permanent.
-    if: needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/v')
+    if: needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
 
       - name: Verify tag matches the desktop version
         shell: bash
         run: |
           version="$(node -p "require('./package.json').version")"
-          tag_version="${GITHUB_REF_NAME#v}"
+          tag_version="${RELEASE_TAG#v}"
           if [ "$version" != "$tag_version" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package version $version"
+            echo "::error::Tag $RELEASE_TAG does not match package version $version"
             exit 1
           fi
 
@@ -276,7 +281,7 @@ jobs:
             exit 1
           fi
 
-          tag="$GITHUB_REF_NAME"
+          tag="$RELEASE_TAG"
           title="JunQi Desktop ${tag#v}"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
