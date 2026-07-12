@@ -6,9 +6,6 @@ import { pomodoroIcon, pomodoroColor } from './pomodoroView';
 import { computeSnapTarget, easeOutCubic, type PetBounds } from './snap';
 import { PetCharacter } from './PetCharacter';
 import { PetBubble } from './PetBubble';
-import { resolvePetRenderMode } from './petRenderMode';
-import { ThreePetCharacter } from './three/ThreePetCharacter';
-import { resolvePetCharacterPalette, type PetThemeName } from './petTheme';
 import { DEFAULT_PET_STATE, type PetState } from './pet-states';
 import type { PetMenuItem } from './petActions';
 import { usePetStore } from '@/stores/petStore';
@@ -59,10 +56,6 @@ export default function PetWindow() {
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
-  // A transparent WebView can lose WebGL on Windows (driver change, RDP,
-  // power saver). Keep the existing SVG renderer ready as a per-window fallback.
-  const [webglAvailable, setWebglAvailable] = useState(true);
-  const [petWindowVisible, setPetWindowVisible] = useState(true);
   // True while the magnetic-snap glide is moving the window. The window moving
   // under a still cursor makes hovered flicker (mouseenter/leave), which would
   // make the tip bubble strobe — so we suppress hover-driven tips while snapping.
@@ -124,7 +117,6 @@ export default function PetWindow() {
   // soundEnabled is read on demand inside the effect — no React re-render
   // is required when the user toggles sound in settings.
   const dragActive = usePetStore((s) => s.dragActive);
-  const [petThemeName, setPetThemeName] = useState<PetThemeName>(() => resolveTheme(theme, detectOSPreference()));
   const snapCancelRef = useRef<(() => void) | null>(null);
   const cancelSnap = useCallback(() => {
     snapCancelRef.current?.();
@@ -133,9 +125,7 @@ export default function PetWindow() {
   }, []);
   useLayoutEffect(() => {
     const applyResolved = (setting: ThemeSetting) => {
-      const resolved = resolveTheme(setting, detectOSPreference());
-      applyTheme(resolved);
-      setPetThemeName(resolved);
+      applyTheme(resolveTheme(setting, detectOSPreference()));
       const accent = readPersistedAccentColor();
       if (accent) applyAccentColor(accent);
     };
@@ -213,7 +203,6 @@ export default function PetWindow() {
 
     const unlistens = [
       subscribeTauriEvent<PetState>('pet-state', (e) => setState(e.payload)),
-      subscribeTauriEvent<{ visible: boolean }>('pet-visibility', (e) => setPetWindowVisible(e.payload.visible)),
       subscribeTauriEvent<{ x: number; y: number }>('pet-moved', (e) => {
         const previous = petPosRef.current;
         if (drag.current?.native && previous) {
@@ -641,7 +630,6 @@ export default function PetWindow() {
   const pomoBadge = state.pomodoro?.enabled && state.pomodoro.running ? state.pomodoro : null;
   const BadgeIcon = pomoBadge ? pomodoroIcon(pomoBadge) : null;
   const badgeColor = pomoBadge ? pomodoroColor(pomoBadge) : '';
-  const renderMode = resolvePetRenderMode({ customAsset, customPet, webglAvailable });
 
   return (
     <div
@@ -672,35 +660,20 @@ export default function PetWindow() {
     >
       <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} />
       <div style={{ position: 'relative' }}>
-        {renderMode === 'three' ? (
-          <ThreePetCharacter
-            emotion={state.emotion}
-            skin={state.skin ?? skin}
-            palette={resolvePetCharacterPalette(petThemeName, state.skin ?? skin)}
-            dragging={dragging}
-            hovered={hovered && !snapping && !dragging}
-            walkDir={walkDir}
-            dragDx={dragOffset.dx}
-            dragDy={dragOffset.dy}
-            active={petWindowVisible}
-            onUnavailable={() => setWebglAvailable(false)}
-          />
-        ) : (
-          <PetCharacter
-            emotion={state.emotion}
-            progress={state.progress ?? 0}
-            skin={state.skin ?? skin}
-            customAsset={customAsset}
-            customPet={customPet}
-            dragging={dragging}
-            hovered={hovered && !snapping && !dragging}
-            walkDir={walkDir}
-            celebrating={state.emotion === 'celebrate'}
-            dragDx={dragOffset.dx}
-            dragDy={dragOffset.dy}
-            dragRotation={dragOffset.rot}
-          />
-        )}
+        <PetCharacter
+          emotion={state.emotion}
+          progress={state.progress ?? 0}
+          skin={state.skin ?? skin}
+          customAsset={customAsset}
+          customPet={customPet}
+          dragging={dragging}
+          hovered={hovered && !snapping && !dragging}
+          walkDir={walkDir}
+          celebrating={state.emotion === 'celebrate'}
+          dragDx={dragOffset.dx}
+          dragDy={dragOffset.dy}
+          dragRotation={dragOffset.rot}
+        />
         {BadgeIcon && (
           <motion.span
             style={{ position: 'absolute', top: -22, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'none' }}

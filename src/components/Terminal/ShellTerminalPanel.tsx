@@ -182,7 +182,17 @@ function TabShellItem({
       <div
         draggable
         onClick={onSelect}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          startRename();
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelect();
+          setCtxMenu({ x: e.clientX, y: e.clientY });
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => { setHovered(false); setDragOver(false); }}
         onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(e, index); }}
@@ -268,9 +278,10 @@ function TabShellItem({
         </button>
       </div>
 
-      {ctxMenu && (
+      {ctxMenu && createPortal(
         <div
           ref={contextMenuRef}
+          role="menu"
           onMouseDown={(event) => event.stopPropagation()}
           style={{
           position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 220), top: Math.min(ctxMenu.y, window.innerHeight - 280), zIndex: 2147482000,
@@ -279,39 +290,40 @@ function TabShellItem({
           padding: '4px 0', minWidth: 180, display: 'flex', flexDirection: 'column',
           }}
         >
-          <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+          <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
             onClick={() => { onClose(); setCtxMenu(null); }}>{t('terminal.close', 'Close')}</button>
-          <button disabled={!onCloseOthers || totalCount <= 1} style={{ ...menuItemStyle, opacity: onCloseOthers && totalCount > 1 ? 1 : 0.45, cursor: onCloseOthers && totalCount > 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+          <button type="button" role="menuitem" disabled={!onCloseOthers || totalCount <= 1} style={{ ...menuItemStyle, opacity: onCloseOthers && totalCount > 1 ? 1 : 0.45, cursor: onCloseOthers && totalCount > 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
             onClick={() => { if (onCloseOthers && totalCount > 1) { onCloseOthers(); setCtxMenu(null); } }}>{t('terminal.closeOthers', 'Close Others')}</button>
-          <button disabled={!onCloseToRight || index >= totalCount - 1} style={{ ...menuItemStyle, opacity: onCloseToRight && index < totalCount - 1 ? 1 : 0.45, cursor: onCloseToRight && index < totalCount - 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+          <button type="button" role="menuitem" disabled={!onCloseToRight || index >= totalCount - 1} style={{ ...menuItemStyle, opacity: onCloseToRight && index < totalCount - 1 ? 1 : 0.45, cursor: onCloseToRight && index < totalCount - 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
             onClick={() => { if (onCloseToRight && index < totalCount - 1) { onCloseToRight(); setCtxMenu(null); } }}>{t('terminal.closeTabsToRight', 'Close Tabs to the Right')}</button>
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onSplitH && (
-            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={() => { onSplitH(); setCtxMenu(null); }}>{t('terminal.splitRight', 'Split Right')}</button>
           )}
           {onSplitV && (
-            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={() => { onSplitV(); setCtxMenu(null); }}>{t('terminal.splitDown', 'Split Down')}</button>
           )}
           {onMoveToNewWindow && (
-            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={() => { onMoveToNewWindow(); setCtxMenu(null); }}>{t('terminal.moveToNewWindow', 'Move to New Window')}</button>
           )}
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onRename && (
-            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={startRename}>{t('terminal.rename', 'Rename...')}</button>
           )}
           {onDuplicate && (
-            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={() => { onDuplicate(); setCtxMenu(null); }}>{t('terminal.duplicateTab', 'Duplicate Tab')}</button>
           )}
           {onRevealDirectory && (
-            <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
               onClick={() => { onRevealDirectory(); setCtxMenu(null); }}>{t('terminal.revealInFileManager', 'Reveal in file manager')}</button>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
