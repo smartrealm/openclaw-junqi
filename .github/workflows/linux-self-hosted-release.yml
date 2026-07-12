@@ -1,0 +1,142 @@
+name: Linux Self-hosted Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Version tag to build and append to an existing release, for example v0.5.2.'
+        required: true
+        type: string
+
+concurrency:
+  group: linux-self-hosted-release-${{ inputs.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build and publish Linux x64
+    # Keep this static: a matching runner must carry every label below.
+    runs-on: [self-hosted, linux, x64, junqi-linux-x64]
+    env:
+      RELEASE_TAG: ${{ inputs.ref }}
+    steps:
+      - name: Validate requested tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${RELEASE_TAG:-}"
+          if [[ "$tag" != v* || ${#tag} -le 1 ]]; then
+            echo "::error::ref must be a non-empty version tag beginning with v (for example v0.5.2)"
+            exit 1
+          fi
+
+          if ! git check-ref-format --allow-onelevel "refs/tags/$tag"; then
+            echo "::error::ref is not a valid Git tag name: $tag"
+            exit 1
+          fi
+
+      - name: Checkout requested tag
+        uses: actions/checkout@v7
+        with:
+          # A fully-qualified tag ref prevents a same-named branch from being built.
+          ref: refs/tags/${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Verify checked-out tag and desktop version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="$RELEASE_TAG"
+          if ! git show-ref --verify --quiet "refs/tags/$tag"; then
+            echo "::error::Requested tag was not fetched: $tag"
+            exit 1
+          fi
+
+          tag_commit="$(git rev-parse "refs/tags/$tag^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "$tag_commit" != "$head_commit" ]]; then
+            echo "::error::Checked-out commit does not match tag $tag"
+            exit 1
+          fi
+
+          package_version="$(node -p "require('./package.json').version")"
+          if [[ -z "$package_version" || "$package_version" != "${tag#v}" ]]; then
+            echo "::error::Tag $tag does not match package.json version $package_version"
+            exit 1
+          fi
+
+      # The CentOS host is bootstrapped separately; do not install distro
+      # packages inside an untrusted repository workflow.
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Linux installers
+        run: pnpm tauri build --target x86_64-unknown-linux-gnu --bundles appimage,deb
+
+      - name: Verify Linux installers
+        id: installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          appimages=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage)
+          debs=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb)
+
+          if [[ ${#appimages[@]} -ne 1 || ${#debs[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one AppImage and one deb package"
+            find src-tauri/target -path '*/release/bundle/*' \( -name '*.AppImage' -o -name '*.deb' \) -type f -print | sort
+            exit 1
+          fi
+
+          printf 'appimage=%s\n' "${appimages[0]}" >> "$GITHUB_OUTPUT"
+          printf 'deb=%s\n' "${debs[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Linux installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: junqi-desktop-linux-x86_64-${{ inputs.ref }}
+          path: |
+            ${{ steps.installers.outputs.appimage }}
+            ${{ steps.installers.outputs.deb }}
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Append Linux installers to tagged release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPIMAGE_PATH: ${{ steps.installers.outputs.appimage }}
+          DEB_PATH: ${{ steps.installers.outputs.deb }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG does not exist; refusing to create an unintended release"
+            exit 1
+          fi
+
+          gh release upload "$RELEASE_TAG" "$APPIMAGE_PATH" "$DEB_PATH" \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"
