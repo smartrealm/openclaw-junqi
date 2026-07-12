@@ -29,7 +29,6 @@ jobs:
       # This label is permanently assigned to the domestic build host. Keep
       # the mirror process-scoped so no global user/npm configuration changes.
       NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
-      npm_config_registry: https://registry.npmmirror.com
     steps:
       # This runs before JavaScript actions because the minimal Ubuntu image
       # needs Git for checkout and gh for the release upload.
