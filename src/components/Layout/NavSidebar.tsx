@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, Layers } from 'lucide-react';
+import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -380,14 +380,12 @@ function WorkbenchPanel() {
           the noun and the icon. Active route gets primary tint. */}
       <div className="px-4 mb-4 flex flex-col gap-1">
         {[
-          { key: 'workspace', to: '/welcome',                 label: t('nav.agentWorkspace', '智能体工作区'), icon: <Layers size={14} /> },
           { key: 'agents',  to: '/agents',                  label: t('sidebar.nav.agents',  '智能体'),   icon: <Bot size={14} /> },
           { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型'),     icon: <Cpu size={14} /> },
           { key: 'channels', to: '/channels',              label: t('sidebar.nav.channels', '通道'),     icon: <MessageSquare size={14} /> },
           { key: 'cron',    to: '/cron?new=1',              label: t('sidebar.nav.cron',    '定时任务'), icon: <Clock size={14} /> },
         ].map((it) => {
           const active = location.pathname === it.to.split('?')[0] && (
-            (it.to === '/welcome' && location.pathname === '/welcome') ||
             (it.to.includes('tab=providers') && location.search.includes('tab=providers')) ||
             (it.to === '/channels' && location.pathname.startsWith('/channels')) ||
             (it.to === '/agents' && location.pathname.startsWith('/agents')) ||
@@ -513,6 +511,7 @@ function miniItemsFor(
       { to: '/memory', icon: <Brain size={20} />, label: '记忆' },
     ];
     case 'tools': return [
+      { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.aiWorkspace', 'AI 工作台') },
       { to: '/terminal', icon: <Terminal size={20} />, label: '终端' },
       { to: '/files', icon: <Folder size={20} />, label: '文件' },
       { to: '/tools', icon: <Cpu size={20} />, label: 'MCP 工具' },
@@ -525,7 +524,6 @@ function miniItemsFor(
     case 'workbench':
     default: return [
       { to: '/chat', icon: <Plus size={20} />, label: '新建对话' },
-      { to: '/welcome', icon: <Layers size={20} />, label: t('nav.agentWorkspace', '智能体工作区') },
       { to: '/chat', icon: <MessageSquare size={20} />, label: '对话' },
       { to: '/workshop', icon: <Folder size={20} />, label: '工作空间' },
     ];

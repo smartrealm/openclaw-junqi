@@ -4,7 +4,7 @@ export type SidebarTab = 'workbench' | 'agents' | 'tools' | 'settings';
 const TAB_ROUTE_MAP: [SidebarTab, string[]][] = [
   ['workbench', ['/', '/chat', '/welcome', '/session']],
   ['agents',    ['/agents', '/agent-run', '/agents/live', '/memory', '/config', '/sessions', '/skills', '/skill-hub']],
-  ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools', '/kanban', '/timeline', '/workshop']],
+  ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools', '/kanban', '/timeline', '/workshop', '/ai-workspace']],
   ['settings',  ['/settings', '/logs', '/perf', '/analytics', '/ui-showcase']],
 ];
 

@@ -12,6 +12,7 @@ import { SidebarRow, SidebarSection } from './SidebarRow';
 function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
   return [
     { to: '/workshop', icon: <Folder size={14} />,    label: t('nav.workspace', '工作空间') },
+    { to: '/ai-workspace', icon: <Bot size={14} />,    label: t('nav.aiWorkspace', 'AI 工作台') },
     { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端') },
     { to: '/files',    icon: <FileText size={14} />,  label: t('nav.files', '文件管理') },
     { to: '/tools',    icon: <Database size={14} />,  label: t('nav.mcpTools', 'MCP 工具') },
@@ -43,7 +44,6 @@ function agentToolLinks(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
     { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理') },
     { to: '/memory',   icon: <Brain size={14} />,         label: t('nav.memory', '记忆管理') },
     { to: '/agent-run', icon: <Activity size={14} />,     label: t('nav.agentRun', 'Agent 运行') },
-    { to: '/ai-workspace', icon: <Folder size={14} />,     label: t('nav.aiWorkspace', 'AI 工作台') },
     { to: '/agents/live', icon: <Bot size={14} />,        label: t('nav.liveAgents', '多智能体视图') },
   ];
 }
