@@ -296,7 +296,7 @@ function TabShellItem({
           )}
           {onMoveToNewWindow && (
             <button style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={() => { onMoveToNewWindow(); setCtxMenu(null); }}>Move to New Window</button>
+              onClick={() => { onMoveToNewWindow(); setCtxMenu(null); }}>{t('terminal.moveToNewWindow', 'Move to New Window')}</button>
           )}
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onRename && (

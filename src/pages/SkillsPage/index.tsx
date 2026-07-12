@@ -1779,7 +1779,7 @@ function SkillsHubCliBanner({ installed, onCheckDone }: {
             px-2 py-1.5 rounded border border-[rgb(var(--aegis-overlay)/0.06)]">
             <code className="flex-1 truncate">{SKILLSHUB_CLI_INSTALL_CMD}</code>
             <button onClick={handleCopy} className="shrink-0 text-aegis-text-dim hover:text-aegis-primary transition-colors">
-              {copied ? <CheckCircle2 size={11} /> : <span>Copy</span>}
+              {copied ? <CheckCircle2 size={11} /> : <span>{t('contextMenu.copy', 'Copy')}</span>}
             </button>
           </div>
         </div>

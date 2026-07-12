@@ -8,20 +8,23 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { gateway } from '@/services/gateway';
 import { SidebarRow, SidebarSection } from './SidebarRow';
+import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 
-function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
+type NavigationItem = FeatureLinkedItem & { to: string; icon: React.ReactNode; label: string };
+
+function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<NavigationItem> {
   return [
-    { to: '/workshop', icon: <Folder size={14} />,    label: t('nav.workspace', '工作空间') },
-    { to: '/ai-workspace', icon: <Bot size={14} />,    label: t('nav.aiWorkspace', 'AI 工作台') },
-    { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端') },
-    { to: '/files',    icon: <FileText size={14} />,  label: t('nav.files', '文件管理') },
-    { to: '/tools',    icon: <Database size={14} />,  label: t('nav.mcpTools', 'MCP 工具') },
-    { to: '/cron',     icon: <Clock size={14} />,     label: t('nav.cron', '定时任务') },
-    { to: '/calendar', icon: <Calendar size={14} />,  label: t('nav.calendar', '日历') },
-    { to: '/sandbox',  icon: <Wrench size={14} />,   label: t('nav.sandbox', '代码沙盒') },
-    { to: '/git',      icon: <Cpu size={14} />,       label: t('nav.gitRepo', 'Git 仓库') },
-    { to: '/kanban',   icon: <ListChecks size={14} />, label: t('nav.kanban', '看板') },
-    { to: '/timeline', icon: <History size={14} />,   label: t('nav.timeline', '时间线') },
+    { to: '/workshop', icon: <Folder size={14} />,    label: t('nav.workspace', '工作空间'), feature: 'workshop' },
+    { to: '/ai-workspace', icon: <Bot size={14} />,   label: t('nav.aiWorkspace', 'AI 工作台'), feature: 'agentRun' },
+    { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端'), feature: 'terminal' },
+    { to: '/files',    icon: <FileText size={14} />,  label: t('nav.files', '文件管理'), feature: 'files' },
+    { to: '/tools',    icon: <Database size={14} />,  label: t('nav.mcpTools', 'MCP 工具'), feature: 'tools' },
+    { to: '/cron',     icon: <Clock size={14} />,     label: t('nav.cron', '定时任务'), feature: 'cron' },
+    { to: '/calendar', icon: <Calendar size={14} />,  label: t('nav.calendar', '日历'), feature: 'calendar' },
+    { to: '/sandbox',  icon: <Wrench size={14} />,    label: t('nav.sandbox', '代码沙盒'), feature: 'sandbox' },
+    { to: '/git',      icon: <Cpu size={14} />,       label: t('nav.gitRepo', 'Git 仓库'), feature: 'git' },
+    { to: '/kanban',   icon: <ListChecks size={14} />, label: t('nav.kanban', '看板'), feature: 'workshop' },
+    { to: '/timeline', icon: <History size={14} />,    label: t('nav.timeline', '时间线'), feature: 'workshop' },
   ];
 }
 
@@ -38,13 +41,13 @@ function settingsGroups(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
   ];
 }
 
-function agentToolLinks(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
+function agentToolLinks(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<NavigationItem> {
   return [
-    { to: '/config',   icon: <Bot size={14} />,           label: t('nav.agentConfig', '智能体配置') },
-    { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理') },
-    { to: '/memory',   icon: <Brain size={14} />,         label: t('nav.memory', '记忆管理') },
-    { to: '/agent-run', icon: <Activity size={14} />,     label: t('nav.agentRun', 'Agent 运行') },
-    { to: '/agents/live', icon: <Bot size={14} />,        label: t('nav.liveAgents', '多智能体视图') },
+    { to: '/config',   icon: <Bot size={14} />,           label: t('nav.agentConfig', '智能体配置'), feature: 'configManager' },
+    { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理'), feature: 'sessions' },
+    { to: '/memory',   icon: <Brain size={14} />,         label: t('nav.memory', '记忆管理'), feature: 'memory' },
+    { to: '/agent-run', icon: <Activity size={14} />,     label: t('nav.agentRun', 'Agent 运行'), feature: 'agentRun' },
+    { to: '/agents/live', icon: <Bot size={14} />,        label: t('nav.liveAgents', '多智能体视图'), feature: 'liveAgents' },
   ];
 }
 
@@ -198,7 +201,7 @@ export function AgentsPanel() {
           </SidebarSection>
         )}
         <SidebarSection label={t('nav.agentTools', '智能体工具')}>
-          {agentToolLinks(t).map((it) => (
+          {filterEnabledNavigationItems(agentToolLinks(t)).map((it) => (
             <SidebarRow key={it.to} icon={it.icon} title={it.label} onClick={() => navigate(it.to)} />
           ))}
         </SidebarSection>
@@ -252,7 +255,7 @@ export function ToolsPanel() {
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
         <SidebarSection label={t('sidebar.toolCategories', '工具分类')}>
-          {toolCategories(t).map((it) => (
+          {filterEnabledNavigationItems(toolCategories(t)).map((it) => (
             <SidebarRow key={it.to} icon={it.icon} title={it.label} active={location.pathname === it.to} onClick={() => navigate(it.to)} />
           ))}
         </SidebarSection>

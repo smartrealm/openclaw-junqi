@@ -29,6 +29,8 @@
     "config": "إعدادات المزود",
     "settings": "الإعدادات",
     "terminal": "الطرفية",
+    "agentRun": "تشغيل الوكيل",
+    "aiWorkspace": "مساحة عمل الذكاء الاصطناعي",
     "notifications": "الإشعارات",
     "calendar": "التقويم",
     "files": "إدارة الملفات",
@@ -41,6 +43,7 @@
     "sidebarExpand": "توسيع الشريط الجانبي",
     "liveAgents": "عرض الوكلاء المتعددين",
     "workspace": "مساحة العمل",
+    "agentWorkspace": "مشغل المشاريع",
     "mcpTools": "أدوات MCP",
     "sandbox": "صندوق الرمل",
     "gitRepo": "مستودع Git",
@@ -61,7 +64,7 @@
     "tools": "أدوات"
   },
   "welcome": {
-    "agentWorkspace": "مساحة عمل الوكلاء",
+    "agentWorkspace": "مشغل المشاريع",
     "workspace": "مساحة العمل",
     "projects": "المشاريع",
     "timeline": "الخط الزمني",

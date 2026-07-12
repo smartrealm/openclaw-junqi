@@ -483,7 +483,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
         <div className="flex items-center gap-1.5 text-[10px] text-aegis-text-muted"><div className="w-2.5 h-2.5 rounded-sm" style={{ background: dataColor(7) }} /> {t('agentHub.cron', 'Cron')}</div>
         <div className="flex items-center gap-1.5 text-[10px] text-aegis-text-dim ms-auto">
           <svg width={20} height={8}><line x1={0} y1={4} x2={20} y2={4} stroke="rgb(var(--aegis-overlay) / 0.2)" strokeWidth={1} strokeDasharray="3,2" /></svg>
-          spawn
+          {t('agentHub.spawnLink', '派生关系')}
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-aegis-text-dim">
           <svg width={12} height={12}><circle cx={6} cy={6} r={4} fill={mainColor()} opacity={0.5} /></svg>
@@ -931,7 +931,7 @@ export function AgentHubPage() {
             {([
               { key: 'tree' as const, label: t('agentHubExtra.treeView') },
               { key: 'grid' as const, label: t('agentHubExtra.gridView') },
-              { key: 'activity' as const, label: '⚡ Activity' },
+              { key: 'activity' as const, label: t('agentHubExtra.activityView', '⚡ Activity') },
             ]).map(v => (
               <button key={v.key} onClick={() => setViewMode(v.key)}
                 className={clsx(

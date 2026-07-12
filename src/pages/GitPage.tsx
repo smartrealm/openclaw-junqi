@@ -1,6 +1,7 @@
 // ── GitPage — standalone git management page ──────────────────────────────────
 // Provides working-tree changes view for a project path.
 import { useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { GitChanges, GitDiffViewer } from "@/components/Git";
 
 function getProjectPath(): string {
@@ -23,6 +24,7 @@ function setProjectPath(path: string) {
 }
 
 export default function GitPage() {
+  const { t } = useTranslation();
   const [projectPath, setProjectPathState] = useState(getProjectPath);
   const [pathInput, setPathInput] = useState(projectPath);
   const [diffView, setDiffView] = useState<{
@@ -62,16 +64,16 @@ export default function GitPage() {
           padding: 40,
         }}
       >
-        <h2 style={{ fontSize: 18, fontWeight: 650, margin: 0 }}>Git Management</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 650, margin: 0 }}>{t('gitPage.title', 'Git Management')}</h2>
         <p style={{ fontSize: 13, color: "var(--aegis-text-dim)", margin: 0 }}>
-          Enter a project path to view and manage its git repository.
+          {t('gitPage.pathPrompt', 'Enter a project path to view and manage its git repository.')}
         </p>
         <div style={{ display: "flex", gap: 8, width: 400 }}>
           <input
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleSetPath(); }}
-            placeholder="/path/to/your/project"
+            placeholder={t('gitPage.pathPlaceholder', '/path/to/your/project')}
             style={{
               flex: 1,
               padding: "8px 14px",
@@ -97,7 +99,7 @@ export default function GitPage() {
               cursor: "pointer",
             }}
           >
-            Open
+            {t('gitPage.open', 'Open')}
           </button>
         </div>
       </div>
@@ -140,9 +142,9 @@ export default function GitPage() {
           gap: 8,
         }}
       >
-        <span>Select a file from the Changes panel to view its diff.</span>
+        <span>{t('gitPage.selectFile', 'Select a file from the Changes panel to view its diff.')}</span>
         <span style={{ fontSize: 12, color: "var(--aegis-text-dim)" }}>
-          Project: {projectPath}
+          {t('gitPage.project', 'Project')}: {projectPath}
         </span>
       </div>
       <GitChanges

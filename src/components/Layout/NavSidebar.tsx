@@ -21,6 +21,7 @@ import {
 } from './sidebarUtils';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
+import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const ToolsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.ToolsPanel })));
@@ -471,7 +472,7 @@ function ExpandedView({ tab }: { tab: SidebarTab }) {
 function MiniView({ tab }: { tab: SidebarTab }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const items = miniItemsFor(tab, t);
+  const items = filterEnabledNavigationItems(miniItemsFor(tab, t));
   return (
     <nav className="flex flex-col items-center gap-1 px-2">
       {/* Active-tab chip — single text label at top so users always know
@@ -503,29 +504,29 @@ function MiniView({ tab }: { tab: SidebarTab }) {
 function miniItemsFor(
   tab: SidebarTab,
   t: ReturnType<typeof useTranslation>['t'],
-): ReadonlyArray<{ to: string; icon: React.ReactNode; label: string }> {
+): ReadonlyArray<FeatureLinkedItem & { to: string; icon: React.ReactNode; label: string }> {
   switch (tab) {
     case 'agents': return [
-      { to: '/agents?new=1', icon: <Plus size={20} />, label: '新建智能体' },
-      { to: '/agents', icon: <Bot size={20} />, label: '智能体' },
-      { to: '/memory', icon: <Brain size={20} />, label: '记忆' },
+      { to: '/agents?new=1', icon: <Plus size={20} />, label: t('sidebar.newAgent', 'New agent'), feature: 'agents' },
+      { to: '/agents', icon: <Bot size={20} />, label: t('nav.agents', 'Agents'), feature: 'agents' },
+      { to: '/memory', icon: <Brain size={20} />, label: t('nav.memory', 'Memory'), feature: 'memory' },
     ];
     case 'tools': return [
-      { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.aiWorkspace', 'AI 工作台') },
-      { to: '/terminal', icon: <Terminal size={20} />, label: '终端' },
-      { to: '/files', icon: <Folder size={20} />, label: '文件' },
-      { to: '/tools', icon: <Cpu size={20} />, label: 'MCP 工具' },
+      { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.aiWorkspace', 'AI 工作台'), feature: 'agentRun' },
+      { to: '/terminal', icon: <Terminal size={20} />, label: t('nav.terminal', 'Terminal'), feature: 'terminal' },
+      { to: '/files', icon: <Folder size={20} />, label: t('nav.files', 'Files'), feature: 'files' },
+      { to: '/tools', icon: <Cpu size={20} />, label: t('nav.mcpTools', 'MCP Tools'), feature: 'tools' },
     ];
     case 'settings': return [
-      { to: '/settings', icon: <Settings size={20} />, label: '设置' },
-      { to: '/config', icon: <Bot size={20} />, label: '提供方配置' },
-      { to: '/logs', icon: <FileText size={20} />, label: '日志' },
+      { to: '/settings', icon: <Settings size={20} />, label: t('nav.settings', 'Settings'), feature: 'settings' },
+      { to: '/config', icon: <Bot size={20} />, label: t('nav.agentConfig', 'Provider configuration'), feature: 'configManager' },
+      { to: '/logs', icon: <FileText size={20} />, label: t('nav.logs', 'Logs'), feature: 'logs' },
     ];
     case 'workbench':
     default: return [
-      { to: '/chat', icon: <Plus size={20} />, label: '新建对话' },
-      { to: '/chat', icon: <MessageSquare size={20} />, label: '对话' },
-      { to: '/workshop', icon: <Folder size={20} />, label: '工作空间' },
+      { to: '/chat', icon: <Plus size={20} />, label: t('sidebar.newChat', 'New chat'), feature: 'chat' },
+      { to: '/chat', icon: <MessageSquare size={20} />, label: t('nav.chat', 'Chat'), feature: 'chat' },
+      { to: '/workshop', icon: <Folder size={20} />, label: t('nav.workspace', 'Workspace'), feature: 'workshop' },
     ];
   }
 }

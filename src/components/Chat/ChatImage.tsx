@@ -186,25 +186,25 @@ function Lightbox({ src, alt, onClose }: LightboxProps) {
         </span>
         <div className="flex items-center gap-1">
           <button onClick={() => setZoom(z => Math.min(z + 0.25, 5))}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title="Zoom in">
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.zoomIn', 'Zoom in')}>
             <ZoomIn size={16} />
           </button>
           <button onClick={() => setZoom(z => Math.max(z - 0.25, 0.25))}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title="Zoom out">
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.zoomOut', 'Zoom out')}>
             <ZoomOut size={16} />
           </button>
           <button onClick={() => setRotation(r => r + 90)}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title="Rotate">
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.rotate', 'Rotate')}>
             <RotateCw size={16} />
           </button>
           <div className="w-px h-5 bg-[rgb(var(--aegis-overlay)/0.1)] mx-1" />
           <button onClick={handleSave}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title="Save">
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.save', 'Save')}>
             <Download size={16} />
           </button>
           <div className="w-px h-5 bg-[rgb(var(--aegis-overlay)/0.1)] mx-1" />
           <button onClick={onClose}
-            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title="Close (Esc)">
+            className="p-2 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-secondary hover:text-aegis-text transition-all" title={t('media.closeEsc', 'Close (Esc)')}>
             <X size={16} />
           </button>
         </div>

@@ -43,7 +43,6 @@ type NavKey = 'general' | 'theme' | 'fonts' | 'shortcuts' | 'connect' | 'notify'
 interface NavItem { key: NavKey; label: string; icon: React.ReactNode; section: NavSection; }
 
 const SECTION_ORDER: NavSection[] = ['application', 'connectivity', 'agents', 'about'];
-const SECTION_LABELS: Record<NavSection, string> = { application: 'Application', connectivity: 'Connectivity', agents: 'Agents', about: 'About' };
 const THEME_I18N: Record<AegisTheme, string> = { 'aegis-dark': 'theme.dark', 'aegis-light': 'theme.light', 'aegis-eyecare': 'theme.eyecare', 'aegis-midnight': 'theme.midnight' };
 
 // ── Shell ───────────────────────────────────────────────────────────────────
@@ -53,6 +52,12 @@ export interface AppSettingsDialogProps { onClose: () => void; }
 export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
   const { t } = useTranslation();
   const [activeNav, setActiveNav] = useState<NavKey>('general');
+  const sectionLabels: Record<NavSection, string> = {
+    application: t('appSettings.sectionApplication', 'Application'),
+    connectivity: t('appSettings.sectionConnectivity', 'Connectivity'),
+    agents: t('appSettings.sectionAgents', 'Agents'),
+    about: t('appSettings.sectionAbout', 'About'),
+  };
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -92,7 +97,7 @@ export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
           <nav className="flex-1 overflow-y-auto p-2 flex flex-col gap-0.5">
             {SECTION_ORDER.map((section) => (
               <div key={section} className="flex flex-col gap-0.5 mb-2">
-                <div className="text-[9.5px] font-bold uppercase tracking-wider px-2 pt-1 pb-1" style={{ color: 'rgb(var(--aegis-text-dim))' }}>{SECTION_LABELS[section]}</div>
+                <div className="text-[9.5px] font-bold uppercase tracking-wider px-2 pt-1 pb-1" style={{ color: 'rgb(var(--aegis-text-dim))' }}>{sectionLabels[section]}</div>
                 {grouped[section].map((item) => {
                   const active = activeNav === item.key;
                   return <button key={item.key} type="button" onClick={() => setActiveNav(item.key)}
@@ -199,6 +204,7 @@ function ThemePanel() {
 }
 
 function FontsPanel() {
+  const { t } = useTranslation();
   const uiFont = useSettingsStore((s) => s.uiFont);
   const monoFont = useSettingsStore((s) => s.monoFont);
   const setUiFont = useSettingsStore((s) => s.setUiFont);
@@ -208,18 +214,18 @@ function FontsPanel() {
   const monoSuggestions = ['', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'IBM Plex Mono'];
   return (
     <div className="p-6">
-      <h2 className="text-[16px] font-bold text-aegis-text mb-1">Fonts</h2>
-      <p className="text-[12px] text-aegis-text-dim mb-5">Customize UI and code font families.</p>
-      {[['UI Font', 'aegis-font-ui', uiFont, setUiFont, suggestions], ['Mono Font', 'aegis-font-mono', monoFont, setMonoFont, monoSuggestions]].map(([label, key, value, setter, list]: any[]) => (
+      <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.fonts', 'Fonts')}</h2>
+      <p className="text-[12px] text-aegis-text-dim mb-5">{t('appSettings.fontsDesc', 'Customize UI and code font families.')}</p>
+      {[[t('appSettings.uiFont', 'UI Font'), 'aegis-font-ui', uiFont, setUiFont, suggestions], [t('appSettings.monoFont', 'Mono Font'), 'aegis-font-mono', monoFont, setMonoFont, monoSuggestions]].map(([label, key, value, setter, list]: any[]) => (
         <div key={key} className="mb-4">
           <label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{label}</label>
-          <input value={value} onChange={(e) => apply(key, e.target.value, setter)} placeholder="system default" spellCheck={false}
+          <input value={value} onChange={(e) => apply(key, e.target.value, setter)} placeholder={t('appSettings.systemDefault', 'system default')} spellCheck={false}
             className="px-3 py-2 rounded-md text-[13px] font-mono w-full mb-1.5" style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }} />
           <div className="flex flex-wrap gap-1">
             {list.map((s: string) => <button key={s} type="button" onClick={() => apply(key, s ? `'${s}', sans-serif` : '', setter)}
               className="px-2 py-1 rounded-md text-[10px] transition-colors"
               style={{ background: value === (s ? `'${s}', sans-serif` : '') ? 'rgb(var(--aegis-primary)/0.12)' : 'rgb(var(--aegis-overlay)/0.03)', color: value === (s ? `'${s}', sans-serif` : '') ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))', border: value === (s ? `'${s}', sans-serif` : '') ? '1px solid rgb(var(--aegis-primary)/0.2)' : '1px solid transparent' }}>
-              {s || 'Default'}</button>)}
+              {s || t('appSettings.default', 'Default')}</button>)}
           </div>
         </div>
       ))}
@@ -228,6 +234,7 @@ function FontsPanel() {
 }
 
 function ShortcutsPanel() {
+  const { t } = useTranslation();
   const [send, setSend] = useState('mod_enter');
   const [shiftEnter, setShiftEnter] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -238,16 +245,16 @@ function ShortcutsPanel() {
   const save = async () => { setSaving(true); try { await invoke('save_app_settings',{settings:{send_shortcut:send,terminal_shift_enter_newline:shiftEnter}}); setSaved(true); setTimeout(()=>setSaved(false),1500); } catch {} finally { setSaving(false); } };
   return loading ? <div className="p-6"><Loader2 size={14} className="animate-spin text-aegis-text-dim"/></div> : (
     <div className="p-6">
-      <h2 className="text-[16px] font-bold text-aegis-text mb-1">Shortcuts</h2>
-      <p className="text-[12px] text-aegis-text-dim mb-5">Customize keyboard shortcuts.</p>
+      <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.shortcuts', 'Shortcuts')}</h2>
+      <p className="text-[12px] text-aegis-text-dim mb-5">{t('appSettings.shortcutsDesc', 'Customize keyboard shortcuts.')}</p>
       <div className="flex flex-col gap-4">
-        <div><label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">Send prompt shortcut</label>
+        <div><label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{t('appSettings.sendPromptShortcut', 'Send prompt shortcut')}</label>
           <select value={send} onChange={e=>setSend(e.target.value)} className="px-3 py-2 rounded-md text-[13px] w-[240px]" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}>
-            <option value="mod_enter">{isMac?'⌘+Enter':'Ctrl+Enter'}</option><option value="enter">Enter</option></select></div>
-        <div><label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">Terminal newline</label>
-          <div className="flex items-center gap-2"><Toggle enabled={shiftEnter} onChange={setShiftEnter}/><span className="text-[12px] text-aegis-text-dim">Shift+Enter inserts newline</span></div></div>
+            <option value="mod_enter">{isMac?'⌘+Enter':'Ctrl+Enter'}</option><option value="enter">{t('appSettings.enter', 'Enter')}</option></select></div>
+        <div><label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{t('appSettings.terminalNewline', 'Terminal newline')}</label>
+          <div className="flex items-center gap-2"><Toggle enabled={shiftEnter} onChange={setShiftEnter}/><span className="text-[12px] text-aegis-text-dim">{t('appSettings.shiftEnterNewline', 'Shift+Enter inserts newline')}</span></div></div>
         <button onClick={save} disabled={saving} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold transition-all w-fit" style={{background:'rgb(var(--aegis-primary))',color:'rgb(var(--aegis-on-primary))',opacity:saving?0.5:1}}>
-          {saved?<CheckCircle2 size={13}/>:<Save size={13}/>}{saving?'Saving…':saved?'Saved':'Save'}</button>
+          {saved?<CheckCircle2 size={13}/>:<Save size={13}/>}{saving?t('appSettings.saving', 'Saving…'):saved?t('appSettings.saved', 'Saved'):t('appSettings.save', 'Save')}</button>
       </div>
     </div>
   );
@@ -277,10 +284,10 @@ function ConnectPanel() {
           <span className={connected?'text-aegis-success':connecting?'text-aegis-warning':'text-aegis-danger'}>{connected?t('connection.connected'):connecting?t('connection.connecting'):t('connection.disconnected')}</span></span>
       </div>
       <div className="flex flex-col gap-3">
-        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">WebSocket URL</label><input value={editUrl} onChange={e=>setEditUrl(e.target.value)} placeholder="ws://127.0.0.1:18789" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
-        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">Token</label><input type="password" value={editToken} onChange={e=>setEditToken(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
+        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.webSocketUrl', 'WebSocket URL')}</label><input value={editUrl} onChange={e=>setEditUrl(e.target.value)} placeholder="ws://127.0.0.1:18789" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
+        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.token', 'Token')}</label><input type="password" value={editToken} onChange={e=>setEditToken(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
         <div className="flex items-center gap-2">
-          {dirty && <button onClick={handleSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/25">Save & Reconnect</button>}
+          {dirty && <button onClick={handleSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/25">{t('appSettings.saveReconnect', 'Save & Reconnect')}</button>}
           <button onClick={handleTest} disabled={testing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text">{testing?<Loader2 size={13} className="animate-spin"/>:<Wifi size={13}/>}{t('settings.testConnection')}</button>
           {testOk!==null && <span className={testOk?'text-aegis-success':'text-aegis-danger'}>{testOk?'✓':'✗'}</span>}
         </div>
@@ -342,8 +349,8 @@ function PetPanel() {
             {(petCustomAsset||customPet)&&<button onClick={async()=>{setUploadErr(null);await Promise.all([invoke('clear_pet_asset').catch(()=>undefined),invoke('clear_pet_package').catch(()=>undefined)]);setPetCustomAsset(null);setCustomPet(null);}} className="text-[12px] px-3 py-1.5 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-danger">{t('pet.settings.clear')}</button>}</div></div>
         {uploadErr&&<div className="text-[11px] text-aegis-danger">{uploadErr}</div>}
         <div className="border-t pt-4" style={{borderColor:'rgb(var(--aegis-border))'}}><div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">🍅 {t('pet.pomodoro.title')}</div></div><Toggle enabled={petPomodoro.enabled} onChange={v=>setPetPomodoro({enabled:v})}/></div>
-          <div className="flex items-center gap-2 mt-3"><input type="number" min={1} max={120} value={petPomodoro.workMin} disabled={petPomodoro.running} onChange={e=>setPetPomodoro({workMin:Math.max(1,Math.min(120,Number(e.target.value)||30))})} className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center"/><span className="text-[11px] text-aegis-text-dim">min work</span>
-            <input type="number" min={1} max={60} value={petPomodoro.breakMin} disabled={petPomodoro.running} onChange={e=>setPetPomodoro({breakMin:Math.max(1,Math.min(60,Number(e.target.value)||5))})} className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center ml-2"/><span className="text-[11px] text-aegis-text-dim">min break</span></div>
+          <div className="flex items-center gap-2 mt-3"><input type="number" min={1} max={120} value={petPomodoro.workMin} disabled={petPomodoro.running} onChange={e=>setPetPomodoro({workMin:Math.max(1,Math.min(120,Number(e.target.value)||30))})} className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center"/><span className="text-[11px] text-aegis-text-dim">{t('appSettings.workMinutes', 'min work')}</span>
+            <input type="number" min={1} max={60} value={petPomodoro.breakMin} disabled={petPomodoro.running} onChange={e=>setPetPomodoro({breakMin:Math.max(1,Math.min(60,Number(e.target.value)||5))})} className="w-16 px-2 py-1 rounded-lg text-[12px] bg-[rgb(var(--aegis-overlay)/0.05)] border border-aegis-border/30 text-aegis-text text-center ml-2"/><span className="text-[11px] text-aegis-text-dim">{t('appSettings.breakMinutes', 'min break')}</span></div>
           <div className="flex items-center gap-2 mt-3">
             <button disabled={!petPomodoro.enabled} onClick={()=>petPomodoro.running?stopPomodoro():startPomodoro()} className={clsx('text-[12px] px-4 py-2 rounded-xl border transition-colors',petPomodoro.running?'border-aegis-danger/30 text-aegis-danger hover:bg-aegis-danger/10':'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10',!petPomodoro.enabled&&'opacity-40 cursor-not-allowed')}>{petPomodoro.running?t('pet.pomodoro.stop'):t('pet.pomodoro.start')}</button>
             {petPomodoro.running&&<button onClick={()=>togglePausePomodoro()} className="text-[12px] px-3 py-2 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text">{petPomodoro.paused?t('pet.pomodoro.resume'):t('pet.pomodoro.pause')}</button>}
@@ -358,17 +365,18 @@ function PetPanel() {
 
 interface HookReadiness { agent: string; usable: boolean; reason: string|null; detectedVersion: string|null; minVersion: string|null; }
 export function HooksPanel() {
+  const { t } = useTranslation();
   const [r, setR] = useState<HookReadiness[]|null>(null); const [l,setL]=useState(true);
   useEffect(()=>{let c=false;invoke<HookReadiness[]>('get_hook_readiness').then(x=>{if(!c)setR(x);}).catch(()=>{if(!c)setR([]);}).finally(()=>{if(!c)setL(false);});return()=>{c=true};},[]);
   return (
-    <div className="p-6"><h2 className="text-[16px] font-bold text-aegis-text mb-1">Hooks</h2><p className="text-[12px] text-aegis-text-dim mb-6">Detected agent versions and hook readiness.</p>
-      {l?<div className="flex items-center gap-2 text-[12px] text-aegis-text-dim"><Loader2 size={14} className="animate-spin"/>Checking…</div>
-        :!r||r.length===0?<div className="text-[13px] text-aegis-text-dim py-4">No agent data available.</div>
+    <div className="p-6"><h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.hooks', 'Hooks')}</h2><p className="text-[12px] text-aegis-text-dim mb-6">{t('appSettings.hooksDesc', 'Detected agent versions and hook readiness.')}</p>
+      {l?<div className="flex items-center gap-2 text-[12px] text-aegis-text-dim"><Loader2 size={14} className="animate-spin"/>{t('appSettings.checking', 'Checking…')}</div>
+        :!r||r.length===0?<div className="text-[13px] text-aegis-text-dim py-4">{t('appSettings.noAgentData', 'No agent data available.')}</div>
         :<div className="flex flex-col gap-3">{r.map(x=><div key={x.agent} className="rounded-xl p-4 flex items-start gap-3" style={{background:'rgb(var(--aegis-overlay)/0.04)',border:'1px solid rgb(var(--aegis-border))'}}>
           {x.usable?<CheckCircle2 size={18} style={{color:'rgb(var(--aegis-success))',marginTop:2}}/>:<AlertCircle size={18} style={{color:'rgb(var(--aegis-warning))',marginTop:2}}/>}
           <div className="flex-1 min-w-0"><div className="text-[13px] font-semibold text-aegis-text">{x.agent==='claude'?'Claude Code':x.agent==='codex'?'Codex':x.agent}</div>
-            <div className="text-[11.5px] mt-0.5" style={{color:x.usable?'rgb(var(--aegis-success))':'rgb(var(--aegis-warning))'}}>{x.usable?'Ready':x.reason??'Unavailable'}</div>
-            <div className="text-[11px] text-aegis-text-dim mt-1.5 font-mono">{x.detectedVersion?`detected ${x.detectedVersion}`:'not found'}{x.minVersion?` · min ${x.minVersion}`:''}</div></div>
+            <div className="text-[11.5px] mt-0.5" style={{color:x.usable?'rgb(var(--aegis-success))':'rgb(var(--aegis-warning))'}}>{x.usable?t('appSettings.ready', 'Ready'):x.reason??t('appSettings.unavailable', 'Unavailable')}</div>
+            <div className="text-[11px] text-aegis-text-dim mt-1.5 font-mono">{x.detectedVersion?t('appSettings.detectedVersion', 'detected {{version}}', { version: x.detectedVersion }):t('appSettings.notFound', 'not found')}{x.minVersion?t('appSettings.minimumVersion', ' · min {{version}}', { version: x.minVersion }):''}</div></div>
         </div>)}</div>}</div>);
 }
 

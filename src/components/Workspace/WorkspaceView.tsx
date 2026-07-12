@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { lazy, Suspense, useEffect, useRef, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { Plus, X, Terminal as TerminalIcon, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -29,14 +30,16 @@ const LazyAgentRunView = lazy(() =>
 );
 
 function PaneContentFallback() {
+  const { t } = useTranslation();
   return (
     <div className="flex h-full w-full items-center justify-center text-[11px] text-aegis-text-dim">
-      Loading pane...
+      {t('terminal.loadingPane', 'Loading pane...')}
     </div>
   );
 }
 
 export function WorkspaceView() {
+  const { t } = useTranslation();
   const workspace = useWorkspaceStore((s) => {
     const id = s.activeWorkspaceId;
     return id ? s.workspaces.find((w) => w.id === id) ?? null : null;
@@ -49,7 +52,7 @@ export function WorkspaceView() {
   if (!workspace) {
     return (
       <div className="flex items-center justify-center h-full text-aegis-text-dim">
-        Loading workspace…
+        {t('terminal.loadingWorkspace', 'Loading workspace…')}
       </div>
     );
   }
@@ -78,6 +81,7 @@ function PaneNodeView({ node, workspaceId }: PaneNodeViewProps) {
 }
 
 function SplitPaneView({ split, workspaceId }: { split: PaneSplit; workspaceId: string }) {
+  const { t } = useTranslation();
   const resizeSplit = useWorkspaceStore((s) => s.resizeSplit);
   const [a, b] = split.children;
   const isHorizontal = split.direction === 'horizontal';
@@ -148,7 +152,7 @@ function SplitPaneView({ split, workspaceId }: { split: PaneSplit; workspaceId: 
             : 'h-1 w-full cursor-row-resize hover:bg-aegis-primary/40',
         )}
         style={{ background: 'transparent' }}
-        title="Drag to resize"
+        title={t('terminal.resizePane', 'Drag to resize')}
         data-splitter={split.id}
       />
 
@@ -191,6 +195,7 @@ function ShellPaneHost({ leaf }: { leaf: PaneLeaf }) {
 }
 
 function LeafPaneView({ leaf }: { leaf: PaneLeaf }) {
+  const { t } = useTranslation();
   const setFocus = useWorkspaceStore((s) => s.setFocus);
   const closePane = useWorkspaceStore((s) => s.closePane);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
@@ -215,7 +220,7 @@ function LeafPaneView({ leaf }: { leaf: PaneLeaf }) {
           <Sparkles size={11} className="text-aegis-primary shrink-0" />
         )}
         <span className="font-medium text-aegis-text-secondary truncate">
-          {leaf.config.label ?? (leaf.config.kind === 'shell' ? 'Shell' : (leaf.config.agent ?? 'Agent'))}
+          {leaf.config.label ?? (leaf.config.kind === 'shell' ? t('terminal.shell', 'Shell') : (leaf.config.agent ?? t('common.agent', 'Agent')))}
         </span>
         {leaf.config.kind === 'agent' && leaf.config.agent && (
           <span className="text-aegis-text-dim">· {leaf.config.agent}</span>
@@ -228,7 +233,7 @@ function LeafPaneView({ leaf }: { leaf: PaneLeaf }) {
         <span className="ml-auto flex items-center gap-0.5">
           <button
             type="button"
-            title="Split horizontally"
+            title={t('terminal.splitRight', 'Split Right')}
             onClick={(e) => { e.stopPropagation(); splitPane(leaf.id, 'horizontal'); }}
             className="p-1 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-overlay/5"
           >
@@ -236,7 +241,7 @@ function LeafPaneView({ leaf }: { leaf: PaneLeaf }) {
           </button>
           <button
             type="button"
-            title="Split vertically"
+            title={t('terminal.splitDown', 'Split Down')}
             onClick={(e) => { e.stopPropagation(); splitPane(leaf.id, 'vertical'); }}
             className="p-1 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-overlay/5"
           >
@@ -244,7 +249,7 @@ function LeafPaneView({ leaf }: { leaf: PaneLeaf }) {
           </button>
           <button
             type="button"
-            title="Close pane"
+            title={t('terminal.close', 'Close')}
             onClick={(e) => { e.stopPropagation(); closePane(leaf.id); }}
             className="p-1 rounded text-aegis-text-dim hover:text-aegis-danger hover:bg-aegis-overlay/5"
           >

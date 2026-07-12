@@ -126,18 +126,22 @@ export function useTerminalDropTarget(
     if (element) observer.observe(element);
     window.addEventListener('resize', scheduleSync);
 
-    const appWindow = getCurrentWindow();
-    void Promise.all([
-      appWindow.onScaleChanged(scheduleSync),
-    ]).then((registered) => {
-      if (disposed) {
-        registered.forEach((unlisten) => unlisten());
-        return;
-      }
-      unlisteners.push(...registered);
-    }).catch((error) => {
-      if (!disposed) debugError('terminal', '[terminal] unable to observe window bounds:', error);
-    });
+    try {
+      const appWindow = getCurrentWindow();
+      void Promise.all([
+        appWindow.onScaleChanged(scheduleSync),
+      ]).then((registered) => {
+        if (disposed) {
+          registered.forEach((unlisten) => unlisten());
+          return;
+        }
+        unlisteners.push(...registered);
+      }).catch((error) => {
+        if (!disposed) debugError('terminal', '[terminal] unable to observe window bounds:', error);
+      });
+    } catch (error) {
+      if (!disposed) debugError('terminal', '[terminal] unable to access the current window:', error);
+    }
 
     scheduleSync();
 

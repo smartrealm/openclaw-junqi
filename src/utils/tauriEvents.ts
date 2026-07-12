@@ -1,5 +1,13 @@
 import { listen, type EventCallback, type UnlistenFn } from '@tauri-apps/api/event';
 
+export function hasTauriEventBridge(): boolean {
+  const internals = (window as Window & {
+    __TAURI_INTERNALS__?: { transformCallback?: unknown; invoke?: unknown };
+  }).__TAURI_INTERNALS__;
+  return typeof internals?.transformCallback === 'function'
+    && typeof internals?.invoke === 'function';
+}
+
 /**
  * Tauri's listen() resolves asynchronously. If a React effect unmounts before the
  * promise resolves, a naive `.then(unlistens.push)` leaks the subscription.
@@ -9,6 +17,8 @@ export function subscribeTauriEvent<T>(
   handler: EventCallback<T>,
   onError?: (error: unknown) => void,
 ): UnlistenFn {
+  if (!hasTauriEventBridge()) return () => {};
+
   let disposed = false;
   let unlisten: UnlistenFn | null = null;
 

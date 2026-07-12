@@ -65,7 +65,7 @@ export default function AppRouteTree() {
         <Route path="/sandbox" element={<FeatureRoute feature="sandbox"><CodeInterpreterPage /></FeatureRoute>} />
         <Route path="/tools" element={<FeatureRoute feature="tools"><McpToolsPage /></FeatureRoute>} />
         <Route path="/perf" element={<PerformancePage />} />
-        <Route path="/kanban" element={<KanbanPage />} />
+        <Route path="/kanban" element={<FeatureRoute feature="workshop"><KanbanPage /></FeatureRoute>} />
         <Route path="/ui-showcase" element={<UIShowcase />} />
         <Route path="/settings" element={<FeatureRoute feature="settings"><SettingsPageFull /></FeatureRoute>} />
       </Route>

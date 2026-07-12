@@ -6,6 +6,9 @@ import { pomodoroIcon, pomodoroColor } from './pomodoroView';
 import { computeSnapTarget, easeOutCubic, type PetBounds } from './snap';
 import { PetCharacter } from './PetCharacter';
 import { PetBubble } from './PetBubble';
+import { resolvePetRenderMode } from './petRenderMode';
+import { ThreePetCharacter } from './three/ThreePetCharacter';
+import { resolvePetCharacterPalette, type PetThemeName } from './petTheme';
 import { DEFAULT_PET_STATE, type PetState } from './pet-states';
 import type { PetMenuItem } from './petActions';
 import { usePetStore } from '@/stores/petStore';
@@ -56,6 +59,10 @@ export default function PetWindow() {
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
+  // A transparent WebView can lose WebGL on Windows (driver change, RDP,
+  // power saver). Keep the existing SVG renderer ready as a per-window fallback.
+  const [webglAvailable, setWebglAvailable] = useState(true);
+  const [petWindowVisible, setPetWindowVisible] = useState(true);
   // True while the magnetic-snap glide is moving the window. The window moving
   // under a still cursor makes hovered flicker (mouseenter/leave), which would
   // make the tip bubble strobe — so we suppress hover-driven tips while snapping.
@@ -117,6 +124,7 @@ export default function PetWindow() {
   // soundEnabled is read on demand inside the effect — no React re-render
   // is required when the user toggles sound in settings.
   const dragActive = usePetStore((s) => s.dragActive);
+  const [petThemeName, setPetThemeName] = useState<PetThemeName>(() => resolveTheme(theme, detectOSPreference()));
   const snapCancelRef = useRef<(() => void) | null>(null);
   const cancelSnap = useCallback(() => {
     snapCancelRef.current?.();
@@ -125,7 +133,9 @@ export default function PetWindow() {
   }, []);
   useLayoutEffect(() => {
     const applyResolved = (setting: ThemeSetting) => {
-      applyTheme(resolveTheme(setting, detectOSPreference()));
+      const resolved = resolveTheme(setting, detectOSPreference());
+      applyTheme(resolved);
+      setPetThemeName(resolved);
       const accent = readPersistedAccentColor();
       if (accent) applyAccentColor(accent);
     };
@@ -203,6 +213,7 @@ export default function PetWindow() {
 
     const unlistens = [
       subscribeTauriEvent<PetState>('pet-state', (e) => setState(e.payload)),
+      subscribeTauriEvent<{ visible: boolean }>('pet-visibility', (e) => setPetWindowVisible(e.payload.visible)),
       subscribeTauriEvent<{ x: number; y: number }>('pet-moved', (e) => {
         const previous = petPosRef.current;
         if (drag.current?.native && previous) {
@@ -415,13 +426,6 @@ export default function PetWindow() {
   // Current pet window position in screen coords. Cached locally so the
   // spring loop can advance it without a Rust round-trip per frame.
   const petPosRef = useRef<{ x: number; y: number } | null>(null);
-  // Whether auto-chase is currently running — disabled when user is hand-
-  // dragging the pet, or when drag isn't active.
-  const autoChaseRef = useRef(false);
-  useEffect(() => {
-    autoChaseRef.current = dragActive && !dragging;
-  }, [dragActive, dragging]);
-
   // Refresh pet position every 250ms so the spring loop has a fresh starting
   // point. Cheaper than a per-frame Rust call.
   useEffect(() => {
@@ -460,66 +464,67 @@ export default function PetWindow() {
     return () => { alive = false; clearInterval(id); };
   }, [dragActive]);
 
-  // Auto-chase spring loop. Runs every animation frame; only mutates the
-  // pet window's screen position when auto-chase is enabled.
+  // Auto-chase spring loop. It exists only while an external file drag is in
+  // flight. Keeping a permanent RAF here made the transparent pet window do
+  // work while idle and compounded WebGL rendering on lower-end Windows PCs.
   useEffect(() => {
+    if (!dragActive || dragging) {
+      const current = dragOffsetRef.current;
+      if (Math.hypot(current.dx, current.dy) > 0.2 || Math.abs(current.rot) > 0.2) {
+        const reset = { dx: 0, dy: 0, rot: 0 };
+        dragOffsetRef.current = reset;
+        setDragOffset(reset);
+      }
+      return;
+    }
+
     let raf = 0;
     let prevT = performance.now();
     const tick = (t: number) => {
       const dt = Math.max(8, Math.min(48, t - prevT));
       prevT = t;
 
-      if (autoChaseRef.current) {
-        const cur = dragCursorRef.current;
-        const pos = petPosRef.current;
-        if (cur && pos) {
-          const dx = cur.gx - (pos.x + 54); // 54 = PET_W/2
-          const dy = cur.gy - (pos.y + 77); // 77 = PET_H/2
-          const dist = Math.hypot(dx, dy);
-          const clamped = Math.min(dist, 600);
-          // Spring factor: faster when far, gentler when close.
-          const k = clamped > 220 ? 0.22 : clamped > 90 ? 0.15 : 0.08;
-          // Sinusoidal "eager" wobble — grows with proximity so the motion
-          // looks alive, not robotic.
-          const eagerness = Math.min(1, clamped / 320);
-          const wobble = Math.sin(t / 110) * 6 * eagerness;
-          const len = Math.max(1, dist);
-          const perpX = -dy / len;
-          const perpY = dx / len;
-          const step = clamped * k * (dt / 16);
-          const next = {
-            x: pos.x + (dx / len) * step + perpX * wobble,
-            y: pos.y + (dy / len) * step + perpY * wobble,
-          };
-          petPosRef.current = next;
-          positionSchedulerRef.current?.enqueue(next);
-          // Tilt toward chase direction — cap ±10°.
-          const targetRot = Math.max(-10, Math.min(10, dx / 28));
-          const cur2 = dragOffsetRef.current;
-          const k2 = 1 - Math.pow(0.001, dt / 1000);
-          const tilt = {
-            dx: cur2.dx + (dx * 0.06 - cur2.dx) * k2,
-            dy: cur2.dy + (dy * 0.06 - cur2.dy) * k2,
-            rot: cur2.rot + (targetRot - cur2.rot) * k2,
-          };
-          dragOffsetRef.current = tilt;
-          setDragOffset(tilt);
-        }
-      } else {
-        // Not chasing — smoothly decay the visual tilt.
+      const cur = dragCursorRef.current;
+      const pos = petPosRef.current;
+      if (cur && pos) {
+        const dx = cur.gx - (pos.x + 54); // 54 = PET_W/2
+        const dy = cur.gy - (pos.y + 77); // 77 = PET_H/2
+        const dist = Math.hypot(dx, dy);
+        const clamped = Math.min(dist, 600);
+        // Spring factor: faster when far, gentler when close.
+        const k = clamped > 220 ? 0.22 : clamped > 90 ? 0.15 : 0.08;
+        // Sinusoidal "eager" wobble — grows with proximity so the motion
+        // looks alive, not robotic.
+        const eagerness = Math.min(1, clamped / 320);
+        const wobble = Math.sin(t / 110) * 6 * eagerness;
+        const len = Math.max(1, dist);
+        const perpX = -dy / len;
+        const perpY = dx / len;
+        const step = clamped * k * (dt / 16);
+        const next = {
+          x: pos.x + (dx / len) * step + perpX * wobble,
+          y: pos.y + (dy / len) * step + perpY * wobble,
+        };
+        petPosRef.current = next;
+        positionSchedulerRef.current?.enqueue(next);
+        // Tilt toward chase direction — cap ±10°.
+        const targetRot = Math.max(-10, Math.min(10, dx / 28));
         const cur2 = dragOffsetRef.current;
-        if (Math.hypot(cur2.dx, cur2.dy) > 0.2 || Math.abs(cur2.rot) > 0.2) {
-          const next = { dx: cur2.dx * 0.85, dy: cur2.dy * 0.85, rot: cur2.rot * 0.85 };
-          dragOffsetRef.current = next;
-          setDragOffset(next);
-        }
+        const k2 = 1 - Math.pow(0.001, dt / 1000);
+        const tilt = {
+          dx: cur2.dx + (dx * 0.06 - cur2.dx) * k2,
+          dy: cur2.dy + (dy * 0.06 - cur2.dy) * k2,
+          rot: cur2.rot + (targetRot - cur2.rot) * k2,
+        };
+        dragOffsetRef.current = tilt;
+        setDragOffset(tilt);
       }
 
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [dragActive, dragging]);
 
   // On drop (swallow emotion enters), the pet SPRINTS the remaining distance
   // to the cursor — the "leap to catch the falling morsel" gesture.
@@ -636,6 +641,7 @@ export default function PetWindow() {
   const pomoBadge = state.pomodoro?.enabled && state.pomodoro.running ? state.pomodoro : null;
   const BadgeIcon = pomoBadge ? pomodoroIcon(pomoBadge) : null;
   const badgeColor = pomoBadge ? pomodoroColor(pomoBadge) : '';
+  const renderMode = resolvePetRenderMode({ customAsset, customPet, webglAvailable });
 
   return (
     <div
@@ -666,20 +672,35 @@ export default function PetWindow() {
     >
       <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} />
       <div style={{ position: 'relative' }}>
-        <PetCharacter
-          emotion={state.emotion}
-          progress={state.progress ?? 0}
-          skin={state.skin ?? skin}
-          customAsset={customAsset}
-          customPet={customPet}
-          dragging={dragging}
-          hovered={hovered && !snapping && !dragging}
-          walkDir={walkDir}
-          celebrating={state.emotion === 'celebrate'}
-          dragDx={dragOffset.dx}
-          dragDy={dragOffset.dy}
-          dragRotation={dragOffset.rot}
-        />
+        {renderMode === 'three' ? (
+          <ThreePetCharacter
+            emotion={state.emotion}
+            skin={state.skin ?? skin}
+            palette={resolvePetCharacterPalette(petThemeName, state.skin ?? skin)}
+            dragging={dragging}
+            hovered={hovered && !snapping && !dragging}
+            walkDir={walkDir}
+            dragDx={dragOffset.dx}
+            dragDy={dragOffset.dy}
+            active={petWindowVisible}
+            onUnavailable={() => setWebglAvailable(false)}
+          />
+        ) : (
+          <PetCharacter
+            emotion={state.emotion}
+            progress={state.progress ?? 0}
+            skin={state.skin ?? skin}
+            customAsset={customAsset}
+            customPet={customPet}
+            dragging={dragging}
+            hovered={hovered && !snapping && !dragging}
+            walkDir={walkDir}
+            celebrating={state.emotion === 'celebrate'}
+            dragDx={dragOffset.dx}
+            dragDy={dragOffset.dy}
+            dragRotation={dragOffset.rot}
+          />
+        )}
         {BadgeIcon && (
           <motion.span
             style={{ position: 'absolute', top: -22, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'none' }}

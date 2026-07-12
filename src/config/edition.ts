@@ -152,6 +152,7 @@ export function getFirstEnabledAppPath(): string {
 const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/agents/live', feature: 'liveAgents' },
   { prefix: '/analytics', feature: 'analytics' },
+  { prefix: '/channels', feature: 'configManager' },
   { prefix: '/config', feature: 'configManager' },
   { prefix: '/sessions', feature: 'sessions' },
   { prefix: '/logs', feature: 'logs' },
@@ -163,11 +164,14 @@ const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/settings', feature: 'settings' },
   { prefix: '/chat', feature: 'chat' },
   { prefix: '/workshop', feature: 'workshop' },
+  { prefix: '/timeline', feature: 'workshop' },
+  { prefix: '/kanban', feature: 'workshop' },
   { prefix: '/cron', feature: 'cron' },
   { prefix: '/agents', feature: 'agents' },
   { prefix: '/skills', feature: 'skills' },
   { prefix: '/terminal', feature: 'terminal' },
   { prefix: '/agent-run', feature: 'agentRun' },
+  { prefix: '/ai-workspace', feature: 'agentRun' },
   { prefix: '/memory', feature: 'memory' },
   { prefix: '/', feature: 'dashboard' },
 ];

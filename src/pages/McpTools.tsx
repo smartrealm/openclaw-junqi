@@ -21,38 +21,38 @@ import clsx from 'clsx';
 // ─── Known Tools Catalog ────────────────────────────────────
 
 const KNOWN_TOOLS = [
-  { name: 'exec',           icon: <TerminalWindow size={14} weight="regular" />, desc: 'Execute shell commands',           category: 'System'        },
-  { name: 'process',        icon: <Gear size={14} weight="regular" />,           desc: 'Manage background processes',       category: 'System'        },
-  { name: 'Read',           icon: <FileText size={14} weight="regular" />,       desc: 'Read file contents',               category: 'Files'         },
-  { name: 'Write',          icon: <PencilSimple size={14} weight="regular" />,   desc: 'Write to files',                   category: 'Files'         },
-  { name: 'Edit',           icon: <PencilSimple size={14} weight="regular" />,   desc: 'Edit files with precise replacements', category: 'Files'     },
-  { name: 'web_search',     icon: <MagnifyingGlass size={14} weight="regular" />, desc: 'Search the web',                  category: 'Web'           },
-  { name: 'web_fetch',      icon: <Globe size={14} weight="regular" />,          desc: 'Fetch URL content',                category: 'Web'           },
-  { name: 'browser',        icon: <Monitor size={14} weight="regular" />,        desc: 'Browser automation',               category: 'Web'           },
-  { name: 'memory_search',  icon: <Brain size={14} weight="regular" />,          desc: 'Search agent memory',              category: 'Memory'        },
-  { name: 'memory_get',     icon: <Brain size={14} weight="regular" />,          desc: 'Get memory snippets',              category: 'Memory'        },
-  { name: 'sessions_spawn', icon: <Robot size={14} weight="regular" />,          desc: 'Spawn sub-agents',                 category: 'Agents'        },
-  { name: 'sessions_send',  icon: <PaperPlaneRight size={14} weight="regular" />, desc: 'Send to sessions',                category: 'Agents'        },
-  { name: 'session_status', icon: <ChartBar size={14} weight="regular" />,       desc: 'Session status',                   category: 'Agents'        },
-  { name: 'image',          icon: <Image size={14} weight="regular" />,          desc: 'Analyze images',                   category: 'Media'         },
-  { name: 'tts',            icon: <SpeakerHigh size={14} weight="regular" />,    desc: 'Text to speech',                   category: 'Media'         },
-  { name: 'message',        icon: <ChatCircle size={14} weight="regular" />,     desc: 'Send messages',                    category: 'Communication' },
-  { name: 'nodes',          icon: <DeviceMobile size={14} weight="regular" />,   desc: 'Control paired devices',           category: 'Devices'       },
-  { name: 'canvas',         icon: <Palette size={14} weight="regular" />,        desc: 'Canvas control',                   category: 'UI'            },
+  { name: 'exec',           icon: <TerminalWindow size={14} weight="regular" />, category: 'system'        },
+  { name: 'process',        icon: <Gear size={14} weight="regular" />,           category: 'system'        },
+  { name: 'Read',           icon: <FileText size={14} weight="regular" />,       category: 'files'         },
+  { name: 'Write',          icon: <PencilSimple size={14} weight="regular" />,   category: 'files'         },
+  { name: 'Edit',           icon: <PencilSimple size={14} weight="regular" />,   category: 'files'         },
+  { name: 'web_search',     icon: <MagnifyingGlass size={14} weight="regular" />, category: 'web'           },
+  { name: 'web_fetch',      icon: <Globe size={14} weight="regular" />,          category: 'web'           },
+  { name: 'browser',        icon: <Monitor size={14} weight="regular" />,        category: 'web'           },
+  { name: 'memory_search',  icon: <Brain size={14} weight="regular" />,          category: 'memory'        },
+  { name: 'memory_get',     icon: <Brain size={14} weight="regular" />,          category: 'memory'        },
+  { name: 'sessions_spawn', icon: <Robot size={14} weight="regular" />,          category: 'agents'        },
+  { name: 'sessions_send',  icon: <PaperPlaneRight size={14} weight="regular" />, category: 'agents'        },
+  { name: 'session_status', icon: <ChartBar size={14} weight="regular" />,       category: 'agents'        },
+  { name: 'image',          icon: <Image size={14} weight="regular" />,          category: 'media'         },
+  { name: 'tts',            icon: <SpeakerHigh size={14} weight="regular" />,    category: 'media'         },
+  { name: 'message',        icon: <ChatCircle size={14} weight="regular" />,     category: 'communication' },
+  { name: 'nodes',          icon: <DeviceMobile size={14} weight="regular" />,   category: 'devices'       },
+  { name: 'canvas',         icon: <Palette size={14} weight="regular" />,        category: 'ui'            },
 ];
 
 // ─── Category badge color map ───────────────────────────────
 
 const CATEGORY_COLORS: Record<string, string> = {
-  System:        'bg-orange-500/10 text-orange-400',
-  Files:         'bg-blue-500/10 text-blue-400',
-  Web:           'bg-cyan-500/10 text-cyan-400',
-  Memory:        'bg-purple-500/10 text-purple-400',
-  Agents:        'bg-green-500/10 text-green-400',
-  Media:         'bg-pink-500/10 text-pink-400',
-  Communication: 'bg-yellow-500/10 text-yellow-400',
-  Devices:       'bg-teal-500/10 text-teal-400',
-  UI:            'bg-rose-500/10 text-rose-400',
+  system:        'bg-orange-500/10 text-orange-400',
+  files:         'bg-blue-500/10 text-blue-400',
+  web:           'bg-cyan-500/10 text-cyan-400',
+  memory:        'bg-purple-500/10 text-purple-400',
+  agents:        'bg-green-500/10 text-green-400',
+  media:         'bg-pink-500/10 text-pink-400',
+  communication: 'bg-yellow-500/10 text-yellow-400',
+  devices:       'bg-teal-500/10 text-teal-400',
+  ui:            'bg-rose-500/10 text-rose-400',
 };
 
 // ─── ToolCard ───────────────────────────────────────────────
@@ -60,7 +60,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 interface ToolCardProps {
   name: string;
   icon: React.ReactNode;
-  desc: string;
+  desc?: string;
   category: string;
   count?: number;
   errors?: number;
@@ -94,11 +94,11 @@ function ToolCard({ name, icon, desc, category, count, errors, totalMs, dimmed }
           <span className="text-xl leading-none flex-shrink-0">{icon}</span>
           <div className="min-w-0">
             <p className="text-[13px] font-semibold text-aegis-text-primary truncate">{name}</p>
-            <p className="text-[11px] text-aegis-text-dim truncate">{desc}</p>
+            <p className="text-[11px] text-aegis-text-dim truncate">{desc ?? t(`mcpTools.toolDescription.${name}`, name)}</p>
           </div>
         </div>
         <span className={clsx('text-[10px] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0', catColor)}>
-          {category}
+          {t(`mcpTools.category.${category}`, category)}
         </span>
       </div>
 

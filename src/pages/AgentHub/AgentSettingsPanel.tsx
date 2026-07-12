@@ -1315,7 +1315,7 @@ export function AgentSettingsPanel({
                           <FolderOpen size={11} className="text-aegis-text-dim shrink-0" />
                           <div className="min-w-0 flex-1">
                             <div className="text-[8px] text-aegis-text-dim uppercase tracking-wider mb-0.5">
-                              Workspace
+                              {t('agentSettings.workspace', 'Workspace')}
                             </div>
                             <div className="text-[10px] text-aegis-text font-mono truncate">
                               {agent.workspace}
@@ -1330,7 +1330,7 @@ export function AgentSettingsPanel({
                           <Clock size={11} className="text-aegis-text-dim shrink-0" />
                           <div className="min-w-0 flex-1">
                             <div className="text-[8px] text-aegis-text-dim uppercase tracking-wider mb-0.5">
-                              Last Activity
+                              {t('agentSettings.lastActivity', 'Last Activity')}
                             </div>
                             <div className="flex items-center gap-1.5">
                               <div

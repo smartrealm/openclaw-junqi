@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { save } from '@tauri-apps/plugin-dialog';
 import { marked } from 'marked';
 import {
@@ -41,6 +42,7 @@ interface SessionMessage {
 // ═══════════════════════════════════════════════════════════
 
 function ToolUseCard({ name, input }: { name: string; input: string }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -71,7 +73,7 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
         </span>
         <span className="font-mono font-semibold text-aegis-text flex-1 truncate">{name}</span>
         <span className="text-[10px] text-aegis-text-dim font-mono shrink-0">
-          {input.length > 100 ? `${Math.round(input.length / 100) * 100}+ chars` : `${input.length} chars`}
+          {t('sessionPlayback.chars', '{{value}} chars', { value: input.length > 100 ? `${Math.round(input.length / 100) * 100}+` : input.length })}
         </span>
       </button>
       {expanded && (
@@ -88,7 +90,7 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
           </pre>
           <button onClick={handleCopyInput}
             className="absolute top-2 right-2 p-1.5 rounded-md transition-all hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text"
-            title="Copy tool input">
+            title={t('sessionPlayback.copyToolInput', 'Copy tool input')}>
             {copied ? <Check size={13} className="text-aegis-success" /> : <Copy size={13} />}
           </button>
         </div>
@@ -102,6 +104,7 @@ function ToolUseCard({ name, input }: { name: string; input: string }) {
 // ═══════════════════════════════════════════════════════════
 
 function ThinkingBlock({ thinking }: { thinking: string }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="mb-1.5">
@@ -110,7 +113,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
         style={{ color: 'rgb(var(--aegis-text-dim))' }}>
         {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <BrainIcon />
-        <span>thinking</span>
+        <span>{t('sessionPlayback.thinking', 'Thinking')}</span>
       </button>
       {expanded && (
         <div className="px-3 py-2 text-[12px] italic border-l-2 mt-1 ml-1 whitespace-pre-wrap break-words rounded-r-md"
@@ -142,6 +145,7 @@ function BrainIcon() {
 // ═══════════════════════════════════════════════════════════
 
 function UserMessageBubble({ text, timestamp }: { text: string; timestamp?: string }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -183,7 +187,7 @@ function UserMessageBubble({ text, timestamp }: { text: string; timestamp?: stri
               hovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1 pointer-events-none',
             )}
             style={{ background: 'rgb(var(--aegis-bg))', border: '1px solid rgb(var(--aegis-border))' }}
-            title="Copy">
+            title={t('sessionPlayback.copy', 'Copy')}>
             {copied ? <Check size={13} className="text-aegis-success" /> : <Copy size={13} className="text-aegis-text-muted" />}
           </button>
         </div>
@@ -281,6 +285,7 @@ export function SessionViewPage({
   onBack,
   onRun,
 }: SessionViewPageProps = {}) {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const sessionPath = providedSessionPath ?? params.get('path') ?? '';
 
@@ -361,7 +366,7 @@ export function SessionViewPage({
             else window.history.back();
           }}
             className="p-1.5 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted transition-colors"
-            title="Back">
+            title={t('sessionPlayback.back', 'Back')}>
             <ArrowLeft size={15} />
           </button>
         )}
@@ -371,10 +376,10 @@ export function SessionViewPage({
             <MessageSquare size={15} className="text-aegis-primary" />
           </div>
           <div>
-            <div className="text-[13px] font-bold text-aegis-text">Session playback</div>
+            <div className="text-[13px] font-bold text-aegis-text">{t('sessionPlayback.title', 'Session playback')}</div>
             <div className="text-[10px] font-mono text-aegis-text-dim truncate max-w-[400px]"
               title={sessionPath}>
-              {sessionPath || '(no path)'}
+              {sessionPath || t('sessionPlayback.noPath', '(no path)')}
             </div>
           </div>
         </div>
@@ -384,7 +389,7 @@ export function SessionViewPage({
           {onRun && (
             <button onClick={onRun}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
-              title="Run task again">
+              title={t('sessionPlayback.runAgain', 'Run task again')}>
               <Play size={13} fill="currentColor" />
             </button>
           )}
@@ -393,18 +398,18 @@ export function SessionViewPage({
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
                 style={{ background: 'rgb(var(--aegis-overlay) / 0.04)', color: 'rgb(var(--aegis-text-dim))' }}>
                 <MessageSquare size={10} />
-                {messages.length} msgs
+                {t('sessionPlayback.messages', '{{count}} msgs', { count: messages.length })}
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
                 style={{ background: 'rgb(var(--aegis-overlay) / 0.04)', color: 'rgb(var(--aegis-text-dim))' }}>
                 <User size={10} />
-                {userCount} prompts
+                {t('sessionPlayback.prompts', '{{count}} prompts', { count: userCount })}
               </span>
               {toolCount > 0 && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
                   style={{ background: 'rgb(var(--aegis-overlay) / 0.04)', color: 'rgb(var(--aegis-text-dim))' }}>
                   <Wrench size={10} />
-                  {toolCount} tools
+                  {t('sessionPlayback.tools', '{{count}} tools', { count: toolCount })}
                 </span>
               )}
             </>
@@ -415,17 +420,17 @@ export function SessionViewPage({
               <button onClick={handleCopyAll}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all
                   hover:bg-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted hover:text-aegis-text"
-                title="Copy all as Markdown">
+                title={t('sessionPlayback.copyAllMarkdown', 'Copy all as Markdown')}>
                 {copiedAll ? <Check size={13} className="text-aegis-success" /> : <Copy size={13} />}
-                <span className="hidden sm:inline">{copiedAll ? 'Copied' : 'Copy'}</span>
+                <span className="hidden sm:inline">{copiedAll ? t('sessionPlayback.copied', 'Copied') : t('sessionPlayback.copy', 'Copy')}</span>
               </button>
               <button onClick={handleExportFile}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all
                   bg-[rgb(var(--aegis-primary)/0.08)] border border-[rgb(var(--aegis-primary)/0.15)]
                   text-aegis-primary hover:bg-[rgb(var(--aegis-primary)/0.15)]"
-                title="Save as .md file">
+                title={t('sessionPlayback.saveMarkdown', 'Save as .md file')}>
                 <FileDown size={13} />
-                <span className="hidden sm:inline">Save .md</span>
+                <span className="hidden sm:inline">{t('sessionPlayback.saveMarkdownShort', 'Save .md')}</span>
               </button>
             </>
           )}
@@ -437,7 +442,7 @@ export function SessionViewPage({
         {loading && (
           <div className="flex items-center gap-2.5 text-[13px] text-aegis-text-dim py-4">
             <Loader2 size={15} className="animate-spin text-aegis-primary" />
-            <span>Loading session…</span>
+            <span>{t('sessionPlayback.loading', 'Loading session…')}</span>
           </div>
         )}
 
@@ -446,7 +451,7 @@ export function SessionViewPage({
             style={{ background: 'rgb(var(--aegis-danger) / 0.08)', color: 'rgb(var(--aegis-danger))', border: '1px solid rgb(var(--aegis-danger) / 0.15)' }}>
             <AlertCircle size={15} className="mt-[1px] shrink-0" />
             <div>
-              <div className="font-semibold mb-0.5">Failed to load session</div>
+              <div className="font-semibold mb-0.5">{t('sessionPlayback.loadFailed', 'Failed to load session')}</div>
               <div className="font-mono text-[11px] opacity-80">{error}</div>
             </div>
           </div>
@@ -458,7 +463,7 @@ export function SessionViewPage({
               <Braces size={24} className="text-aegis-text-dim opacity-40" />
             </div>
             <div className="text-[13px] text-aegis-text-dim">
-              No messages in this session.
+              {t('sessionPlayback.empty', 'No messages in this session.')}
             </div>
             <div className="text-[11px] text-aegis-text-dim opacity-60 font-mono max-w-md truncate">
               {sessionPath}
