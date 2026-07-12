@@ -91,6 +91,12 @@ jobs:
       - name: Download requested tag source
         env:
           GH_TOKEN: ${{ github.token }}
+          # Go-based gh prefers upper-case proxy keys. The Runner injects
+          # host-local values into containers, so override them here.
+          HTTP_PROXY: http://172.17.0.1:7890
+          HTTPS_PROXY: http://172.17.0.1:7890
+          ALL_PROXY: http://172.17.0.1:7890
+          NO_PROXY: 127.0.0.1,localhost,172.17.0.1,mirrors.tencent.com
         shell: bash
         run: |
           set -euo pipefail
@@ -220,6 +226,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APPIMAGE_PATH: ${{ steps.installers.outputs.appimage }}
           DEB_PATH: ${{ steps.installers.outputs.deb }}
+          HTTP_PROXY: http://172.17.0.1:7890
+          HTTPS_PROXY: http://172.17.0.1:7890
+          ALL_PROXY: http://172.17.0.1:7890
+          NO_PROXY: 127.0.0.1,localhost,172.17.0.1,mirrors.tencent.com
         shell: bash
         run: |
           set -euo pipefail
