@@ -3,6 +3,7 @@ pub mod font;
 
 pub mod agent_assist;
 pub mod agent_task_pty;
+pub mod agent_workspace_storage;
 pub mod app_settings;
 pub mod builtin_skills;
 pub mod config;

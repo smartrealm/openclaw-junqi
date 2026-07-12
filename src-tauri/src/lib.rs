@@ -247,8 +247,11 @@ pub fn run() {
             commands::agent_task_pty::agent_resize_pty,
             commands::agent_task_pty::cancel_task,
             commands::agent_task_pty::complete_task,
+            commands::agent_task_pty::reset_task_process,
             commands::agent_task_pty::get_task_output_snapshot,
             commands::agent_task_pty::get_active_task_ids,
+            commands::agent_workspace_storage::load_agent_workspace_tasks,
+            commands::agent_workspace_storage::save_agent_workspace_tasks,
         ])
         .setup(|app| {
             // Use the default (Regular) activation policy so JunQi gets a Dock

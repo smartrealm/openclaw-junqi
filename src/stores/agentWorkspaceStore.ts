@@ -39,11 +39,16 @@ export interface AgentWorkspaceTask {
   status: AgentWorkspaceTaskStatus;
   createdAt: number;
   updatedAt: number;
+  attentionRequestedAt?: number;
   /** Nezha-style unsent new-task view. It stays out of the history until saved or run. */
   isDraft?: boolean;
   starred?: boolean;
   sessionId?: string;
   sessionPath?: string;
+  claudeSessionId?: string;
+  claudeSessionPath?: string;
+  codexSessionId?: string;
+  codexSessionPath?: string;
   worktreePath?: string;
   worktreeBranch?: string;
   baseBranch?: string;
@@ -56,11 +61,14 @@ export interface AgentWorkspaceTask {
 interface AgentWorkspaceState {
   tasks: AgentWorkspaceTask[];
   selectedTaskId: string | null;
+  selectedTaskIds: Record<string, string | null>;
   selectTask: (id: string | null) => void;
+  selectProjectTask: (projectPath: string, id: string | null) => void;
   createTask: (task: Omit<AgentWorkspaceTask, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { status?: AgentWorkspaceTaskStatus }) => AgentWorkspaceTask;
   updateTask: (id: string, patch: Partial<Omit<AgentWorkspaceTask, 'id' | 'createdAt'>>) => void;
   removeTask: (id: string) => void;
   clearProjectTasks: (projectPath: string) => void;
+  replaceProjectTasks: (projectPath: string, tasks: AgentWorkspaceTask[]) => void;
 }
 
 function createTaskId(): string {
@@ -74,7 +82,18 @@ export const useAgentWorkspaceStore = create<AgentWorkspaceState>()(
     (set) => ({
       tasks: [],
       selectedTaskId: null,
-      selectTask: (selectedTaskId) => set({ selectedTaskId }),
+      selectedTaskIds: {},
+      selectTask: (selectedTaskId) => set((state) => {
+        const projectPath = state.tasks.find((task) => task.id === selectedTaskId)?.projectPath;
+        return {
+          selectedTaskId,
+          ...(projectPath ? { selectedTaskIds: { ...state.selectedTaskIds, [projectPath]: selectedTaskId } } : {}),
+        };
+      }),
+      selectProjectTask: (projectPath, selectedTaskId) => set((state) => ({
+        selectedTaskId,
+        selectedTaskIds: { ...state.selectedTaskIds, [projectPath]: selectedTaskId },
+      })),
       createTask: (input) => {
         const now = Date.now();
         const task: AgentWorkspaceTask = {
@@ -84,7 +103,11 @@ export const useAgentWorkspaceStore = create<AgentWorkspaceState>()(
           createdAt: now,
           updatedAt: now,
         };
-        set((state) => ({ tasks: [task, ...state.tasks], selectedTaskId: task.id }));
+        set((state) => ({
+          tasks: [task, ...state.tasks],
+          selectedTaskId: task.id,
+          selectedTaskIds: { ...state.selectedTaskIds, [task.projectPath]: task.id },
+        }));
         return task;
       },
       updateTask: (id, patch) => set((state) => ({
@@ -93,14 +116,42 @@ export const useAgentWorkspaceStore = create<AgentWorkspaceState>()(
       removeTask: (id) => set((state) => ({
         tasks: state.tasks.filter((task) => task.id !== id),
         selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
+        selectedTaskIds: Object.fromEntries(Object.entries(state.selectedTaskIds).map(([path, selected]) => [path, selected === id ? null : selected])),
       })),
       clearProjectTasks: (projectPath) => set((state) => ({
         tasks: state.tasks.filter((task) => task.projectPath !== projectPath),
         selectedTaskId: state.tasks.find((task) => task.id === state.selectedTaskId)?.projectPath === projectPath
           ? null
           : state.selectedTaskId,
+        selectedTaskIds: { ...state.selectedTaskIds, [projectPath]: null },
       })),
+      replaceProjectTasks: (projectPath, tasks) => set((state) => {
+        const nextTasks = [...tasks, ...state.tasks.filter((task) => task.projectPath !== projectPath)];
+        const selectedStillExists = nextTasks.some((task) => task.id === state.selectedTaskId);
+        return {
+          tasks: nextTasks,
+          selectedTaskId: selectedStillExists ? state.selectedTaskId : null,
+          selectedTaskIds: {
+            ...state.selectedTaskIds,
+            [projectPath]: nextTasks.some((task) => task.id === state.selectedTaskIds[projectPath])
+              ? state.selectedTaskIds[projectPath]
+              : null,
+          },
+        };
+      }),
     }),
-    { name: 'junqi:agent-workspace:v1', version: 1 },
+    {
+      name: 'junqi:agent-workspace:v1',
+      version: 2,
+      migrate: (persisted, version) => {
+        const state = persisted as Partial<AgentWorkspaceState>;
+        if (version >= 2 || state.selectedTaskIds) return state as AgentWorkspaceState;
+        const selectedTask = state.tasks?.find((task) => task.id === state.selectedTaskId);
+        return {
+          ...state,
+          selectedTaskIds: selectedTask ? { [selectedTask.projectPath]: selectedTask.id } : {},
+        } as AgentWorkspaceState;
+      },
+    },
   ),
 );

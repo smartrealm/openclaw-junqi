@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { confirm, open } from '@tauri-apps/plugin-dialog';
 import {
   Bot,
-  CircleDot,
-  Check,
-  ChevronDown,
+  Code2,
   FileText,
   Files,
   GitBranch,
@@ -16,8 +14,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  Play,
   Plus,
   Search,
+  Settings,
   Star,
   TerminalSquare,
   Trash2,
@@ -27,16 +27,20 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { GitChanges, GitDiffViewer, GitHistory } from '@/components/Git';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
+import { FileExplorer } from '@/components/FileExplorer';
 import { ShellTerminalPanel } from '@/components/Terminal';
-import { TerminalWorkspaceFiles } from '@/components/Terminal/TerminalWorkspaceFiles';
 import { DEFAULT_TERMINAL_FONT_SIZE, getDefaultMonoFont, type FontFamily, type TerminalFontSize, type ThemeVariant } from '@/_nezha_root/types';
 import { AgentRunView } from '@/pages/AgentRunView';
-import { SessionViewPage } from '@/pages/SessionViewPage';
 import { AgentWorkspaceFileSearchDialog } from './FileSearchDialog';
+import { AgentWorkspaceTaskEditDialog } from './TaskEditDialog';
+import { ProjectAvatar } from './ProjectAvatar';
+import { AgentWorkspaceBranchBar } from './BranchBar';
 import { useAgentWorkspaceStore, type AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { findWorkspaceForDirectory } from '@/workspace/projectWorkspace';
 import { useTheme } from '@/theme/useTheme';
+import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
+import { StatusIcon } from '@/components/shared/StatusIcon';
 
 type RightPanel = 'files' | 'changes' | 'history' | null;
 type DiffTarget =
@@ -77,19 +81,6 @@ function findTaskRowIndex(offsets: number[], offset: number): number {
   return low;
 }
 
-const statusColor: Record<AgentWorkspaceTask['status'], string> = {
-  todo: 'rgb(var(--aegis-text-dim))',
-  pending: 'rgb(var(--aegis-primary))',
-  running: 'rgb(34 197 94)',
-  input_required: 'rgb(245 158 11)',
-  awaiting_review: 'rgb(245 158 11)',
-  detached: 'rgb(245 158 11)',
-  interrupted: 'rgb(239 68 68)',
-  done: 'rgb(34 197 94)',
-  failed: 'rgb(239 68 68)',
-  cancelled: 'rgb(var(--aegis-text-dim))',
-};
-
 function taskStatusLabel(status: AgentWorkspaceTask['status']): string {
   const labels: Record<AgentWorkspaceTask['status'], string> = {
     todo: '待开始',
@@ -117,6 +108,7 @@ export function AgentWorkspacePage() {
   const terminalFontSize = DEFAULT_TERMINAL_FONT_SIZE as TerminalFontSize;
   const monoFontFamily = getDefaultMonoFont() as FontFamily;
   const workspaces = useWorkspaceStore((state) => state.workspaces);
+  useAgentWorkspacePersistence(workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((state) => state.setActive);
   const createWorkspace = useWorkspaceStore((state) => state.createWorkspace);
@@ -127,20 +119,22 @@ export function AgentWorkspacePage() {
   const projectPath = workspacePath(workspace);
 
   const tasks = useAgentWorkspaceStore((state) => state.tasks);
-  const selectedTaskId = useAgentWorkspaceStore((state) => state.selectedTaskId);
-  const selectTask = useAgentWorkspaceStore((state) => state.selectTask);
+  const selectedTaskIds = useAgentWorkspaceStore((state) => state.selectedTaskIds);
+  const selectedTaskId = selectedTaskIds[projectPath] ?? null;
+  const selectProjectTask = useAgentWorkspaceStore((state) => state.selectProjectTask);
+  const selectTask = useCallback((id: string | null) => selectProjectTask(projectPath, id), [projectPath, selectProjectTask]);
   const createTask = useAgentWorkspaceStore((state) => state.createTask);
   const updateTask = useAgentWorkspaceStore((state) => state.updateTask);
   const removeTask = useAgentWorkspaceStore((state) => state.removeTask);
-  const clearProjectTasks = useAgentWorkspaceStore((state) => state.clearProjectTasks);
 
   const [query, setQuery] = useState('');
   const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(readTaskDisplayWindow);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskDetailsId, setEditingTaskDetailsId] = useState<string | null>(null);
   const [editingTaskTitle, setEditingTaskTitle] = useState('');
   const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
-  const [rerunTaskId, setRerunTaskId] = useState<string | null>(null);
+  const [autoStartTaskId, setAutoStartTaskId] = useState<string | null>(null);
   const [mountedRunTaskIds, setMountedRunTaskIds] = useState<Set<string>>(() => new Set());
   const [rightPanel, setRightPanel] = useState<RightPanel>('files');
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
@@ -153,19 +147,11 @@ export function AgentWorkspacePage() {
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(260);
   const [resizingTerminal, setResizingTerminal] = useState(false);
-  const [currentBranch, setCurrentBranch] = useState('');
-  const [branches, setBranches] = useState<{ name: string; current: boolean; remote: string | null }[]>([]);
-  const [branchPickerOpen, setBranchPickerOpen] = useState(false);
-  const [branchQuery, setBranchQuery] = useState('');
-  const [newBranchName, setNewBranchName] = useState('');
-  const [branchBusy, setBranchBusy] = useState(false);
-  const [branchError, setBranchError] = useState<string | null>(null);
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
   const [projectDrawerQuery, setProjectDrawerQuery] = useState('');
   const [draggedWorkspaceId, setDraggedWorkspaceId] = useState<string | null>(null);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [editingWorkspaceName, setEditingWorkspaceName] = useState('');
-  const branchRequestRef = useRef(0);
   const taskListRef = useRef<HTMLDivElement>(null);
   const [taskListViewportHeight, setTaskListViewportHeight] = useState(0);
   const [taskListScrollTop, setTaskListScrollTop] = useState(0);
@@ -273,14 +259,8 @@ export function AgentWorkspacePage() {
     taskListRef.current?.scrollTo({ top: 0 });
     setTaskListScrollTop(0);
   }, [taskDisplayWindow]);
-  const selectedShowsHistory = Boolean(
-    selected?.sessionPath
-    && ['done', 'failed', 'cancelled'].includes(selected.status)
-    && rerunTaskId !== selected.id,
-  );
   const selectedRunVisible = Boolean(
     selected
-    && !selectedShowsHistory
     && !openDiff
     && !(activeFilePath && openFiles.length > 0),
   );
@@ -291,23 +271,61 @@ export function AgentWorkspacePage() {
     || task.status === 'detached'
     || task.status === 'interrupted'
   ), []);
+  const deleteTasks = useCallback(async (deletingTasks: AgentWorkspaceTask[]) => {
+    for (const task of deletingTasks) {
+      if (isActiveTask(task)) {
+        await invoke('cancel_task', { taskId: task.id }).catch(() => undefined);
+      }
+      if (task.worktreePath && task.worktreeBranch && !task.worktreeDiscarded) {
+        await invoke('remove_task_worktree', {
+          projectPath: task.projectPath,
+          worktreePath: task.worktreePath,
+          branch: task.worktreeBranch,
+        }).catch((error) => setTaskActionError(String(error)));
+      }
+      removeTask(task.id);
+    }
+  }, [isActiveTask, removeTask]);
+  const requestDeleteTask = useCallback(async (task: AgentWorkspaceTask) => {
+    const preview = task.prompt.length > 100 ? `${task.prompt.slice(0, 100)}...` : task.prompt;
+    const accepted = await confirm(`确定删除任务“${task.title || preview}”吗？`, {
+      title: '删除任务',
+      kind: 'warning',
+    });
+    if (accepted) await deleteTasks([task]);
+  }, [deleteTasks]);
+  const requestClearProjectTasks = useCallback(async () => {
+    if (projectTasks.length === 0) return;
+    const accepted = await confirm(`确定清空“${workspace?.name || projectPath}”中的 ${projectTasks.length} 个任务吗？`, {
+      title: '清空任务',
+      kind: 'warning',
+    });
+    if (accepted) await deleteTasks(projectTasks);
+  }, [deleteTasks, projectPath, projectTasks, workspace?.name]);
+  const requestCloseProject = useCallback(async (closingWorkspace: typeof workspaces[number]) => {
+    const sourceId = closingWorkspace.worktreeParentId || closingWorkspace.id;
+    const familyPaths = new Set(workspaces
+      .filter((candidate) => candidate.id === sourceId || candidate.worktreeParentId === sourceId)
+      .map(workspacePath));
+    const relatedTasks = tasks.filter((task) => familyPaths.has(task.projectPath));
+    const accepted = await confirm(`确定从工作台移除“${closingWorkspace.name}”吗？${relatedTasks.length ? ` 该项目的 ${relatedTasks.length} 个任务也会删除。` : ''}`, {
+      title: '移除项目',
+      kind: 'warning',
+    });
+    if (!accepted) return;
+    await deleteTasks(relatedTasks);
+    closeWorkspace(closingWorkspace.id);
+  }, [closeWorkspace, deleteTasks, tasks, workspaces]);
   const renderedRunTasks = useMemo(() => tasks.filter((task) => (
-    (selected?.id === task.id && !selectedShowsHistory)
+    selected?.id === task.id
     || (mountedRunTaskIds.has(task.id) && isActiveTask(task))
-  )), [isActiveTask, mountedRunTaskIds, selected?.id, selectedShowsHistory, tasks]);
+  )), [isActiveTask, mountedRunTaskIds, selected?.id, tasks]);
   const hasAttention = projectTasks.some((task) => (
     task.status === 'input_required'
     || task.status === 'awaiting_review'
     || task.status === 'detached'
     || task.status === 'interrupted'
   ));
-
-  useEffect(() => {
-    if (!selected || rerunTaskId !== selected.id) return;
-    if (selected.status === 'done' || selected.status === 'failed' || selected.status === 'cancelled') {
-      setRerunTaskId(null);
-    }
-  }, [rerunTaskId, selected]);
 
   useEffect(() => {
     if (!selected || !isActiveTask(selected)) return;
@@ -371,7 +389,6 @@ export function AgentWorkspacePage() {
     setOpenDiff(null);
     setOpenFiles([]);
     setActiveFilePath(null);
-    setRerunTaskId(null);
   }, [projectPath]);
 
   const startNewTask = useCallback(() => {
@@ -506,99 +523,11 @@ export function AgentWorkspacePage() {
     ? selected.worktreePath
     : projectPath;
 
-  const refreshBranches = useCallback(async () => {
-    const requestId = ++branchRequestRef.current;
-    if (!currentGitPath) {
-      setCurrentBranch('');
-      setBranches([]);
-      return;
-    }
-    try {
-      const nextBranches = await invoke<{ name: string; current: boolean; remote: string | null }[]>('git_list_branches', { projectPath: currentGitPath });
-      if (requestId !== branchRequestRef.current) return;
-      setBranches(nextBranches);
-      setCurrentBranch(nextBranches.find((branch) => branch.current)?.name ?? '');
-    } catch {
-      if (requestId !== branchRequestRef.current) return;
-      setCurrentBranch('');
-      setBranches([]);
-    }
-  }, [currentGitPath]);
-
-  useEffect(() => {
-    if (!currentGitPath) {
-      branchRequestRef.current += 1;
-      setCurrentBranch('');
-      return;
-    }
-    void refreshBranches();
-    return undefined;
-  }, [currentGitPath, refreshBranches]);
-
-  const checkoutBranch = useCallback(async (branch: { name: string; current: boolean; remote: string | null }) => {
-    if (!currentGitPath || branch.current || branchBusy) return;
-    setBranchBusy(true);
-    setBranchError(null);
-    try {
-      await invoke('git_checkout_branch', {
-        projectPath: currentGitPath,
-        branchName: branch.name,
-        isRemote: Boolean(branch.remote),
-      });
-      await refreshBranches();
-      setBranchPickerOpen(false);
-      setBranchQuery('');
-    } catch (reason) {
-      setBranchError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setBranchBusy(false);
-    }
-  }, [branchBusy, currentGitPath, refreshBranches]);
-
-  const createAndCheckoutBranch = useCallback(async () => {
-    const branchName = newBranchName.trim();
-    if (!currentGitPath || !branchName || branchBusy) return;
-    setBranchBusy(true);
-    setBranchError(null);
-    try {
-      await invoke('git_create_branch', {
-        projectPath: currentGitPath,
-        branchName,
-        fromBranch: currentBranch || 'HEAD',
-        checkout: true,
-      });
-      await refreshBranches();
-      setNewBranchName('');
-      setBranchPickerOpen(false);
-      setBranchQuery('');
-    } catch (reason) {
-      setBranchError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setBranchBusy(false);
-    }
-  }, [branchBusy, currentBranch, currentGitPath, newBranchName, refreshBranches]);
-
-  const filteredBranches = useMemo(() => {
-    const normalized = branchQuery.trim().toLowerCase();
-    return normalized
-      ? branches.filter((branch) => branch.name.toLowerCase().includes(normalized))
-      : branches;
-  }, [branchQuery, branches]);
-
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-aegis-bg text-aegis-text">
       <aside className="relative flex w-12 shrink-0 flex-col items-center gap-1 border-r border-aegis-border bg-aegis-surface py-2">
-        <button
-          type="button"
-          title="终端工作台"
-          onClick={() => navigate('/terminal')}
-          className="mb-2 flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
-        >
-          <TerminalSquare size={16} />
-        </button>
         {railWorkspaces.map((item) => {
           const active = item.id === activeRailWorkspaceId;
-          const label = (item.name || 'W').trim().slice(0, 1).toUpperCase();
           const activity = workspaceActivity(item);
           return (
             <button
@@ -627,9 +556,9 @@ export function AgentWorkspacePage() {
                 setActiveWorkspace(item.id);
                 setProjectDrawerOpen(false);
               }}
-              className={`relative flex h-8 w-8 items-center justify-center rounded text-[11px] font-semibold ${active ? 'bg-aegis-primary text-white' : 'text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text'} ${draggedWorkspaceId === item.id ? 'opacity-30' : ''}`}
+              className={`relative flex h-9 w-9 items-center justify-center rounded-md ${active ? 'bg-aegis-primary/15 ring-1 ring-inset ring-aegis-primary/35' : 'hover:bg-aegis-hover'} ${draggedWorkspaceId === item.id ? 'opacity-30' : ''}`}
             >
-              {label}
+              <ProjectAvatar name={item.name || 'Workspace'} size={28} />
               {activity.attention > 0 ? (
                 <span className="absolute -right-1 -top-1 min-w-3 rounded-full border border-aegis-surface bg-amber-400 px-0.5 text-center text-[8px] leading-3 text-black">
                   {activity.attention > 9 ? '9+' : activity.attention}
@@ -721,7 +650,7 @@ export function AgentWorkspacePage() {
                         className="min-w-0 flex-1 text-left"
                       >
                         <span className="flex items-center gap-2">
-                          <span className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded text-[10px] font-semibold ${active ? 'bg-aegis-primary text-white' : 'bg-aegis-bg text-aegis-text-dim'}`}>{(item.name || 'W').slice(0, 1).toUpperCase()}</span>
+                          <ProjectAvatar name={item.name || 'Workspace'} size={24} />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-xs font-medium">{item.name || '工作区'}</span>
                             <span className="block truncate font-mono text-[10px] text-aegis-text-dim">{workspacePath(item) || '未设置目录'}</span>
@@ -744,7 +673,7 @@ export function AgentWorkspacePage() {
                     <button
                       type="button"
                       title="关闭项目"
-                      onClick={() => closeWorkspace(item.id)}
+                      onClick={() => void requestCloseProject(item)}
                       className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim opacity-0 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 focus:opacity-100"
                     >
                       <X size={12} />
@@ -783,6 +712,7 @@ export function AgentWorkspacePage() {
               className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-aegis-text-dim"
             />
           </div>
+          {projectPath && <AgentWorkspaceBranchBar projectPath={currentGitPath} active />}
           <button
             type="button"
             onClick={startNewTask}
@@ -809,7 +739,7 @@ export function AgentWorkspacePage() {
               <button
                 type="button"
                 title="清空此项目任务"
-                onClick={() => clearProjectTasks(projectPath)}
+                onClick={() => void requestClearProjectTasks()}
                 className="flex h-6 w-6 items-center justify-center rounded hover:bg-aegis-hover hover:text-aegis-text"
               >
                 <Trash2 size={13} />
@@ -853,7 +783,7 @@ export function AgentWorkspacePage() {
                   >
                 {editingTaskId === task.id ? (
                   <div className="flex min-w-0 flex-1 items-start gap-2 px-2 py-1">
-                    <CircleDot size={12} className="mt-0.5 shrink-0" style={{ color: statusColor[task.status] }} />
+                    <span className="mt-0.5 shrink-0"><StatusIcon status={task.status} size={13} /></span>
                     <span className="min-w-0 flex-1">
                       <input
                         autoFocus
@@ -882,18 +812,28 @@ export function AgentWorkspacePage() {
                       setOpenDiff(null);
                       setOpenFiles([]);
                       setActiveFilePath(null);
-                      setRerunTaskId(null);
                       selectTask(task.id);
                     }}
                     className="flex min-w-0 flex-1 items-start gap-2 px-2 py-1 text-left"
                   >
-                    <CircleDot size={12} className="mt-0.5 shrink-0" style={{ color: statusColor[task.status] }} />
+                    <span className="mt-0.5 shrink-0"><StatusIcon status={task.status} size={13} /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs">{task.title || task.prompt}</span>
-                      <span className="block truncate pt-0.5 text-[10px] text-aegis-text-dim">
-                        {task.agent} · {taskStatusLabel(task.status)}
-                        {task.worktreeBranch && !task.worktreeDiscarded && ` · ${task.worktreeBranch}`}
+                      <span className="flex min-w-0 items-center gap-1 pt-0.5 text-[10px] text-aegis-text-dim">
+                        <span>{taskStatusLabel(task.status)}</span>
+                        {task.status === 'done' && task.additions !== undefined && task.deletions !== undefined && (
+                          <span className="flex items-center gap-1 font-mono font-semibold">
+                            <span className="text-emerald-500">+{task.additions}</span>
+                            <span className="text-red-400">-{task.deletions}</span>
+                          </span>
+                        )}
+                        {task.worktreeBranch && !task.worktreeDiscarded && (
+                          <span className="flex min-w-0 items-center gap-0.5 truncate"><GitBranch size={9} />{task.worktreeBranch}</span>
+                        )}
                       </span>
+                    </span>
+                    <span title={task.agent === 'codex' ? 'Codex' : 'Claude Code'} className="shrink-0 text-aegis-text-dim transition-opacity group-hover:opacity-0">
+                      {task.agent === 'codex' ? <Code2 size={12} /> : <Bot size={12} />}
                     </span>
                   </button>
                 )}
@@ -906,13 +846,26 @@ export function AgentWorkspacePage() {
                   >
                     <Star size={12} fill={task.starred ? 'currentColor' : 'none'} />
                   </button>
+                  {task.status === 'todo' && (
+                    <button
+                      type="button"
+                      title="立即运行"
+                      onClick={() => {
+                        setOpenDiff(null);
+                        setOpenFiles([]);
+                        setActiveFilePath(null);
+                        setAutoStartTaskId(task.id);
+                        selectTask(task.id);
+                      }}
+                      className="flex h-6 w-6 items-center justify-center rounded text-aegis-primary hover:bg-aegis-hover"
+                    >
+                      <Play size={11} fill="currentColor" />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    title="重命名任务"
-                    onClick={() => {
-                      setEditingTaskId(task.id);
-                      setEditingTaskTitle(task.title || task.prompt.split('\n')[0]);
-                    }}
+                    title="编辑任务"
+                    onClick={() => setEditingTaskDetailsId(task.id)}
                     className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
                   >
                     <Pencil size={12} />
@@ -931,7 +884,7 @@ export function AgentWorkspacePage() {
                   <button
                     type="button"
                     title="删除任务"
-                    onClick={() => removeTask(task.id)}
+                    onClick={() => void requestDeleteTask(task)}
                     className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-red-400"
                   >
                     <Trash2 size={12} />
@@ -944,7 +897,7 @@ export function AgentWorkspacePage() {
           </div>
         </aside>
       ) : (
-        <aside className="flex w-10 shrink-0 flex-col items-center border-r border-aegis-border bg-aegis-surface pt-2">
+        <aside className="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-aegis-border bg-aegis-surface py-2">
           <button
             type="button"
             title="展开任务栏"
@@ -954,6 +907,15 @@ export function AgentWorkspacePage() {
             <PanelLeftOpen size={15} />
             {hasAttention && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />}
           </button>
+          {workspace && <ProjectAvatar name={workspace.name || 'Workspace'} size={24} />}
+          <button
+            type="button"
+            title="新建任务"
+            onClick={startNewTask}
+            className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+          >
+            <Plus size={15} />
+          </button>
         </aside>
       )}
 
@@ -962,96 +924,9 @@ export function AgentWorkspacePage() {
           <div className="flex min-w-0 items-center gap-2 text-xs text-aegis-text-dim">
             <GitBranch size={14} className="shrink-0" />
             <span className="truncate">{workspace?.name || '项目工作台'}</span>
-            {currentBranch && (
-              <div className="relative">
-                <button
-                  type="button"
-                  title={`当前分支：${currentBranch}`}
-                  onClick={() => {
-                    setBranchPickerOpen((open) => !open);
-                    setBranchError(null);
-                    void refreshBranches();
-                  }}
-                  className="flex max-w-48 items-center gap-1 truncate rounded px-1.5 py-0.5 font-mono text-[11px] text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
-                >
-                  <span className="truncate">{currentBranch}</span>
-                  <ChevronDown size={12} className="shrink-0" />
-                </button>
-                {branchPickerOpen && (
-                  <div className="absolute left-0 z-50 mt-1 w-72 overflow-hidden rounded-md border border-aegis-border bg-aegis-surface shadow-xl">
-                    <div className="border-b border-aegis-border p-2">
-                      <input
-                        autoFocus
-                        value={branchQuery}
-                        onChange={(event) => setBranchQuery(event.target.value)}
-                        placeholder="搜索分支"
-                        className="h-7 w-full rounded border border-aegis-border bg-aegis-bg px-2 text-xs outline-none focus:border-aegis-primary"
-                      />
-                    </div>
-                    <div className="max-h-52 overflow-y-auto py-1">
-                      {filteredBranches.map((branch) => (
-                        <button
-                          key={branch.name}
-                          type="button"
-                          disabled={branchBusy}
-                          onClick={() => void checkoutBranch(branch)}
-                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-aegis-hover disabled:cursor-wait"
-                        >
-                          <GitBranch size={12} className="shrink-0 text-aegis-text-dim" />
-                          <span className="min-w-0 flex-1 truncate font-mono">{branch.name}</span>
-                          {branch.current && <Check size={12} className="shrink-0 text-aegis-primary" />}
-                          {branch.remote && <span className="text-[10px] text-aegis-text-dim">remote</span>}
-                        </button>
-                      ))}
-                      {!filteredBranches.length && <p className="px-3 py-4 text-center text-xs text-aegis-text-dim">未找到分支</p>}
-                    </div>
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void createAndCheckoutBranch();
-                      }}
-                      className="flex gap-1.5 border-t border-aegis-border p-2"
-                    >
-                      <input
-                        value={newBranchName}
-                        onChange={(event) => setNewBranchName(event.target.value)}
-                        placeholder="新建分支"
-                        className="min-w-0 flex-1 rounded border border-aegis-border bg-aegis-bg px-2 py-1 text-xs outline-none focus:border-aegis-primary"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!newBranchName.trim() || branchBusy}
-                        className="rounded bg-aegis-primary px-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        新建
-                      </button>
-                    </form>
-                    {branchError && <p className="border-t border-red-500/20 px-2.5 py-2 text-[11px] text-red-400">{branchError}</p>}
-                  </div>
-                )}
-              </div>
-            )}
             {openDiff && <span className="truncate text-aegis-text">/ {openDiff.title}</span>}
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled={!projectPath}
-              title="搜索文件 (Cmd/Ctrl+P)"
-              onClick={() => setShowFileSearch(true)}
-              className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Search size={15} />
-            </button>
-            <button
-              type="button"
-              title={showShellTerminal ? '关闭底部终端' : '打开底部终端'}
-              onClick={() => setShowShellTerminal((visible) => !visible)}
-              className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
-            >
-              <TerminalSquare size={15} />
-            </button>
-          </div>
+          <span />
         </header>
 
         <div className="relative min-h-0 flex-1">
@@ -1122,15 +997,6 @@ export function AgentWorkspacePage() {
                 <Plus size={14} />新建任务
               </button>
             </section>
-          ) : selectedShowsHistory && selected?.sessionPath ? (
-            <SessionViewPage
-              sessionPath={selected.sessionPath}
-              embedded
-              onRun={() => {
-                updateTask(selected.id, { status: 'todo', failureReason: undefined });
-                setRerunTaskId(selected.id);
-              }}
-            />
           ) : null}
 
           {renderedRunTasks.map((task) => (
@@ -1147,11 +1013,14 @@ export function AgentWorkspacePage() {
                 initialStatus={task.status}
                 initialSessionPath={task.sessionPath}
                 initialWorktreePath={task.worktreePath}
+                initialWorktreeBranch={task.worktreeBranch}
                 initialWorktreeDiscarded={task.worktreeDiscarded}
                 initialBaseBranch={task.baseBranch}
                 initialPlanMode={task.planMode}
                 initialLaunchMode={task.launchMode}
                 initialIsDraft={task.isDraft}
+                autoStart={autoStartTaskId === task.id}
+                onTaskStarted={() => setAutoStartTaskId((current) => current === task.id ? null : current)}
               />
             </div>
           ))}
@@ -1188,11 +1057,12 @@ export function AgentWorkspacePage() {
             className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize bg-transparent"
           />
           {rightPanel === 'files' && (
-            <TerminalWorkspaceFiles
-              root={projectPath}
-              onFileOpen={(entry) => {
-                if (!entry.is_dir) openFile(entry.path, entry.name);
-              }}
+            <FileExplorer
+              projectPath={projectPath}
+              projectName={workspace?.name || 'Project'}
+              onFileSelect={openFile}
+              active
+              width={rightPanelWidth}
             />
           )}
           {rightPanel === 'changes' && (
@@ -1214,7 +1084,7 @@ export function AgentWorkspacePage() {
         </aside>
       )}
 
-      <nav className="flex w-10 shrink-0 flex-col items-center gap-1 border-l border-aegis-border bg-aegis-surface py-2">
+      <nav className="flex w-11 shrink-0 flex-col items-center gap-1 border-l border-aegis-border bg-aegis-surface py-2">
         <button
           type="button"
           title="文件"
@@ -1239,16 +1109,33 @@ export function AgentWorkspacePage() {
         >
           <History size={15} />
         </button>
-        {openDiff && (
-          <button
-            type="button"
-            title="关闭 Diff"
-            onClick={closeDiff}
-            className="mt-auto flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
-          >
-            <X size={15} />
-          </button>
-        )}
+        <button
+          type="button"
+          title={showShellTerminal ? '关闭终端' : '打开终端'}
+          onClick={() => setShowShellTerminal((visible) => !visible)}
+          className={`flex h-8 w-8 items-center justify-center rounded ${showShellTerminal ? 'bg-aegis-primary/15 text-aegis-primary' : 'text-aegis-text-dim hover:bg-aegis-hover'}`}
+        >
+          <TerminalSquare size={15} />
+        </button>
+        <div className="my-1 h-px w-5 bg-aegis-border" />
+        <button
+          type="button"
+          disabled={!projectPath}
+          title="搜索文件 (Cmd/Ctrl+P)"
+          onClick={() => setShowFileSearch(true)}
+          className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Search size={15} />
+        </button>
+        <span className="flex-1" />
+        <button
+          type="button"
+          title="设置"
+          onClick={() => navigate('/settings')}
+          className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+        >
+          <Settings size={15} />
+        </button>
       </nav>
 
       {showFileSearch && projectPath && (
@@ -1258,6 +1145,19 @@ export function AgentWorkspacePage() {
           onClose={() => setShowFileSearch(false)}
         />
       )}
+      {editingTaskDetailsId && (() => {
+        const task = tasks.find((item) => item.id === editingTaskDetailsId);
+        return task ? (
+          <AgentWorkspaceTaskEditDialog
+            task={task}
+            onClose={() => setEditingTaskDetailsId(null)}
+            onSave={(patch) => {
+              updateTask(task.id, patch);
+              setEditingTaskDetailsId(null);
+            }}
+          />
+        ) : null;
+      })()}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { isAgentWorkspaceTaskStatus, useAgentWorkspaceStore } from './agentWorkspaceStore';
 
 function resetStore() {
-  useAgentWorkspaceStore.setState({ tasks: [], selectedTaskId: null });
+  useAgentWorkspaceStore.setState({ tasks: [], selectedTaskId: null, selectedTaskIds: {} });
 }
 
 test('agent workspace status guard rejects unknown backend values', () => {
@@ -108,4 +108,30 @@ test('removing the selected task clears the current selection', () => {
   const state = useAgentWorkspaceStore.getState();
   assert.equal(state.tasks.length, 0);
   assert.equal(state.selectedTaskId, null);
+});
+
+test('replacing one project after disk hydration preserves other project tasks', () => {
+  resetStore();
+  const store = useAgentWorkspaceStore.getState();
+  const old = store.createTask({ projectPath: '/repo-a', prompt: 'old', agent: 'codex', permissionMode: 'ask' });
+  const other = useAgentWorkspaceStore.getState().createTask({ projectPath: '/repo-b', prompt: 'keep', agent: 'claude', permissionMode: 'ask' });
+  const loaded = { ...old, prompt: 'loaded from disk', updatedAt: old.updatedAt + 10 };
+
+  useAgentWorkspaceStore.getState().replaceProjectTasks('/repo-a', [loaded]);
+
+  const state = useAgentWorkspaceStore.getState();
+  assert.equal(state.tasks.find((task) => task.id === old.id)?.prompt, 'loaded from disk');
+  assert.equal(state.tasks.find((task) => task.id === other.id)?.prompt, 'keep');
+  assert.equal(state.selectedTaskId, other.id);
+});
+
+test('each project retains its own selected task', () => {
+  resetStore();
+  const first = useAgentWorkspaceStore.getState().createTask({ projectPath: '/repo-a', prompt: 'A', agent: 'claude', permissionMode: 'ask' });
+  const second = useAgentWorkspaceStore.getState().createTask({ projectPath: '/repo-b', prompt: 'B', agent: 'codex', permissionMode: 'ask' });
+  useAgentWorkspaceStore.getState().selectProjectTask('/repo-a', first.id);
+
+  const state = useAgentWorkspaceStore.getState();
+  assert.equal(state.selectedTaskIds['/repo-a'], first.id);
+  assert.equal(state.selectedTaskIds['/repo-b'], second.id);
 });

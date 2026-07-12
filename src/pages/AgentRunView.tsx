@@ -53,9 +53,11 @@ import {
 } from '@/stores/agentWorkspaceStore';
 import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
 import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
+import { SessionViewPage } from '@/pages/SessionViewPage';
 import { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from '@/components/shared/ToolCallHistoryPopover';
 import { useSessionHistoryStore } from '@/stores/sessionHistoryStore';
 import { debugError, debugWarn } from '@/utils/debugLog';
+import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktreeDiffStatsArgs } from './agentWorktreeCommands';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -421,11 +423,13 @@ export interface AgentRunViewProps {
   initialSessionPath?: string;
   /** Persisted worktree for a task reopened after a project switch or restart. */
   initialWorktreePath?: string;
+  initialWorktreeBranch?: string;
   initialWorktreeDiscarded?: boolean;
   initialBaseBranch?: string;
   initialPlanMode?: boolean;
   initialLaunchMode?: LaunchMode;
   initialIsDraft?: boolean;
+  autoStart?: boolean;
   onTaskStarted?: () => void;
   onTaskSaved?: () => void;
 }
@@ -439,11 +443,13 @@ export function AgentRunView({
   initialStatus: providedInitialStatus,
   initialSessionPath: providedInitialSessionPath,
   initialWorktreePath: providedInitialWorktreePath,
+  initialWorktreeBranch: providedInitialWorktreeBranch,
   initialWorktreeDiscarded = false,
   initialBaseBranch: providedInitialBaseBranch,
   initialPlanMode: providedInitialPlanMode = false,
   initialLaunchMode: providedInitialLaunchMode,
   initialIsDraft = false,
+  autoStart = false,
   onTaskStarted,
   onTaskSaved,
 }: AgentRunViewProps = {}) {
@@ -511,7 +517,13 @@ export function AgentRunView({
   const updateWorkspaceTaskState = useCallback(
     (nextStatus: AgentWorkspaceTaskStatus, patch: AgentWorkspaceTaskPatch = {}) => {
       if (!workspaceTaskId) return;
-      updateWorkspaceTask(workspaceTaskId, { status: nextStatus, ...patch });
+      updateWorkspaceTask(workspaceTaskId, {
+        status: nextStatus,
+        attentionRequestedAt: nextStatus === 'input_required' || nextStatus === 'awaiting_review'
+          ? Date.now()
+          : undefined,
+        ...patch,
+      });
     },
     [updateWorkspaceTask, workspaceTaskId],
   );
@@ -521,8 +533,9 @@ export function AgentRunView({
   const [status, setStatus] = useState<StatusIconValue>(initiallyActive ? providedInitialStatus! : 'idle');
   const [error, setError] = useState<string | null>(null);
   const restoredWorktreePath = initialWorktreeDiscarded ? null : providedInitialWorktreePath ?? null;
-  const [worktreeBranch, setWorktreeBranch] = useState<string | null>(restoredWorktreePath);
-  const worktreeBranchRef = useRef<string | null>(restoredWorktreePath);
+  const [worktreePath, setWorktreePath] = useState<string | null>(restoredWorktreePath);
+  const worktreePathRef = useRef<string | null>(restoredWorktreePath);
+  const [worktreeBranch, setWorktreeBranch] = useState<string | null>(initialWorktreeDiscarded ? null : providedInitialWorktreeBranch ?? null);
   const [diffStats, setDiffStats] = useState<{ additions: number; deletions: number } | null>(null);
   const [sessionPath, setSessionPath] = useState<string | null>(providedInitialSessionPath ?? null);
   const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
@@ -810,6 +823,11 @@ export function AgentRunView({
         updateWorkspaceTask(workspaceTaskId, {
           sessionId: e.payload.session_id,
           sessionPath: e.payload.session_path,
+          ...(agent === 'codex'
+            ? { codexSessionId: e.payload.session_id, codexSessionPath: e.payload.session_path }
+            : agent === 'claude'
+              ? { claudeSessionId: e.payload.session_id, claudeSessionPath: e.payload.session_path }
+              : {}),
         });
       }
     });
@@ -858,17 +876,16 @@ export function AgentRunView({
       );
       updateWorkspaceTaskState(nextStatus);
 
-      if (nextStatus !== 'done' || !worktreeBranchRef.current) return;
+      if (nextStatus !== 'done' || !worktreePathRef.current) return;
       void invoke<{ additions: number; deletions: number }>('worktree_diff_stats', {
-        worktreePath: worktreeBranchRef.current,
-        baseBranch: baseBranch || 'main',
+        ...worktreeDiffStatsArgs(projectPath, worktreePathRef.current, baseBranch),
       }).then((stats) => {
         setDiffStats(stats);
         if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, stats);
       }).catch(() => undefined);
     });
     return () => { void listener.then((unlisten) => unlisten()); };
-  }, [baseBranch, taskId, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId]);
+  }, [baseBranch, projectPath, taskId, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId]);
 
   useEffect(() => {
     if (!sessionPath || !running) return;
@@ -908,10 +925,11 @@ export function AgentRunView({
     try {
       let actualPath = projectPath || '.';
       if (launchMode === 'worktree') {
-        const result = await invoke<{ path: string; branch: string }>('create_task_worktree', { projectPath: actualPath, taskId, baseBranch: baseBranch || undefined });
+        const result = await invoke<{ path: string; branch: string }>('create_task_worktree', createTaskWorktreeArgs(actualPath, taskId, baseBranch));
         actualPath = result.path;
-        setWorktreeBranch(result.path);
-        worktreeBranchRef.current = result.path;
+        setWorktreePath(result.path);
+        worktreePathRef.current = result.path;
+        setWorktreeBranch(result.branch);
         if (workspaceTaskId) {
           updateWorkspaceTask(workspaceTaskId, {
             worktreePath: result.path,
@@ -943,6 +961,13 @@ export function AgentRunView({
     }
   }, [prompt, running, agent, perm, projectPath, launchMode, baseBranch, taskId, writeTerm, clearTerm, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId, onTaskStarted, planMode, attachedImages, textAttachments]);
 
+  const autoStartHandledRef = useRef(false);
+  useEffect(() => {
+    if (!autoStart || autoStartHandledRef.current || running || !prompt.trim()) return;
+    autoStartHandledRef.current = true;
+    void handleStart();
+  }, [autoStart, handleStart, prompt, running]);
+
   const handleCancel = useCallback(async () => {
     try {
       await invoke('cancel_task', { taskId });
@@ -968,20 +993,21 @@ export function AgentRunView({
 
   // ── Worktree actions ─────────────────────────────────────────────────────
   const mergeWorktree = async () => {
-    if (!worktreeBranch) return;
+    if (!worktreePath || !worktreeBranch) return;
     try {
-      await invoke('merge_task_worktree', { projectPath: projectPath || '.', taskWorktreePath: worktreeBranch });
+      await invoke('merge_task_worktree', mergeTaskWorktreeArgs(projectPath, worktreePath, worktreeBranch, baseBranch));
       setDiffStats(null);
       if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { additions: 0, deletions: 0 });
     } catch (e) { setError(String(e)); }
   };
   const discardWorktree = async () => {
-    if (!worktreeBranch) return;
+    if (!worktreePath || !worktreeBranch) return;
     try {
-      await invoke('remove_task_worktree', { taskWorktreePath: worktreeBranch });
+      await invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch));
       setDiffStats(null);
+      setWorktreePath(null);
+      worktreePathRef.current = null;
       setWorktreeBranch(null);
-      worktreeBranchRef.current = null;
       if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { worktreeDiscarded: true, additions: 0, deletions: 0 });
     } catch (e) { setError(String(e)); }
   };
@@ -1030,18 +1056,15 @@ export function AgentRunView({
   // A running task receives diff stats from the status event. A persisted task
   // does not replay that event after navigation, so restore the same data here.
   useEffect(() => {
-    if (!isDone || !worktreeBranch) return;
+    if (!isDone || !worktreePath) return;
     let cancelled = false;
-    void invoke<{ additions: number; deletions: number }>('worktree_diff_stats', {
-      worktreePath: worktreeBranch,
-      baseBranch: baseBranch || 'main',
-    }).then((stats) => {
+    void invoke<{ additions: number; deletions: number }>('worktree_diff_stats', worktreeDiffStatsArgs(projectPath, worktreePath, baseBranch)).then((stats) => {
       if (!cancelled) setDiffStats(stats);
     }).catch(() => {
       if (!cancelled) setDiffStats(null);
     });
     return () => { cancelled = true; };
-  }, [baseBranch, isDone, worktreeBranch]);
+  }, [baseBranch, isDone, projectPath, worktreePath]);
 
   // Mark running tool events as done/error on task end (kooky PreToolUse/PostToolUse pattern)
   useEffect(() => {
@@ -1371,9 +1394,18 @@ export function AgentRunView({
                 <RotateCcw size={11} /> resume: {resumeIdRef.current}
               </div>
             )}
-            {/* Terminal — separate instance with distinct key */}
-            <div key="done" ref={termRef} className="flex-1 overflow-hidden"
-              style={{ background: "var(--terminal-bg)", border: "1px solid var(--terminal-border)", minHeight: 200 }} />
+            {sessionPath ? (
+              <div className="min-h-[200px] flex-1 overflow-hidden border border-aegis-border">
+                <SessionViewPage
+                  sessionPath={sessionPath}
+                  embedded
+                  onRun={canResume ? handleResume : undefined}
+                />
+              </div>
+            ) : (
+              <div key="done" ref={termRef} className="flex-1 overflow-hidden"
+                style={{ background: "var(--terminal-bg)", border: "1px solid var(--terminal-border)", minHeight: 200 }} />
+            )}
             {/* Status bar (kooky PaneStatusBar) */}
             <div className="flex items-center gap-3 px-2.5 h-8 shrink-0"
               style={{ background: 'var(--aegis-surface)', border: '1px solid var(--aegis-border)' }}>
@@ -1405,7 +1437,7 @@ export function AgentRunView({
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>
                   </>
                 )}
-                {worktreeBranch && diffStats && (
+                {worktreePath && diffStats && (
                   <>
                     <span className="text-[rgb(var(--aegis-success))]">+{diffStats.additions}</span>
                     <span className="text-[rgb(var(--aegis-danger))]">−{diffStats.deletions}</span>

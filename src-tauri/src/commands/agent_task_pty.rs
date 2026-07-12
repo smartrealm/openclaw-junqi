@@ -48,6 +48,19 @@ fn manually_completed_tasks() -> &'static Mutex<std::collections::HashSet<String
     COMPLETED.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
 }
 
+fn reset_task_process_inner(task_id: &str) {
+    let _ = cancelled_tasks().lock().unwrap().remove(task_id);
+    let _ = manually_completed_tasks().lock().unwrap().remove(task_id);
+    let handle = pty_registry().lock().unwrap().remove(task_id);
+    if let Some(handle) = handle {
+        if let Some(handles) = handle.lock().unwrap().as_ref() {
+            handles.closed.store(true, Ordering::Relaxed);
+            let _ = handles.child.lock().unwrap().kill();
+        }
+    }
+    task_output_buffers().lock().unwrap().remove(task_id);
+}
+
 fn task_output_buffers() -> &'static Mutex<HashMap<String, String>> {
     static OUTPUTS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
     OUTPUTS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -384,9 +397,9 @@ pub async fn run_task(
     on_output: Channel<String>,
     resume_id: Option<String>,
 ) -> Result<(), String> {
-    // Clear any cancellation flag from a previous run.
-    let _ = cancelled_tasks().lock().unwrap().remove(&task_id);
-    let _ = manually_completed_tasks().lock().unwrap().remove(&task_id);
+    // A retry reuses the task id. Retire the previous PTY generation before
+    // installing the new one so its reader cannot remain alive in parallel.
+    reset_task_process_inner(&task_id);
 
     // Browser-side attachments are data URLs. Stage them under the active
     // project, then pass only their paths to the agent CLI.
@@ -460,7 +473,7 @@ pub async fn run_task(
     pty_registry()
         .lock()
         .unwrap()
-        .insert(task_id.clone(), handle);
+        .insert(task_id.clone(), handle.clone());
     task_output_buffers()
         .lock()
         .unwrap()
@@ -484,6 +497,7 @@ pub async fn run_task(
     // ── Background reader: batched flush via Channel ─────────────────────────
     let app_for_reader = app.clone();
     let task_id_for_reader = task_id.clone();
+    let handle_for_reader = handle.clone();
     std::thread::spawn(move || {
         let mut buffer = Vec::with_capacity(PTY_EMIT_MAX_BATCH_BYTES);
         let mut last_flush = std::time::Instant::now();
@@ -544,21 +558,16 @@ pub async fn run_task(
 
         // Determine exit status from the child process result.
         let child_exited_ok = {
-            let registry = pty_registry().lock().unwrap();
-            if let Some(handle) = registry.get(&task_id_for_reader) {
-                if let Some(handles) = handle.lock().unwrap().as_ref() {
-                    handles
-                        .child
-                        .lock()
-                        .unwrap()
-                        .try_wait()
-                        .ok()
-                        .flatten()
-                        .map(|s| s.success())
-                        .unwrap_or(true)
-                } else {
-                    true
-                }
+            if let Some(handles) = handle_for_reader.lock().unwrap().as_ref() {
+                handles
+                    .child
+                    .lock()
+                    .unwrap()
+                    .try_wait()
+                    .ok()
+                    .flatten()
+                    .map(|s| s.success())
+                    .unwrap_or(true)
             } else {
                 true
             }
@@ -574,8 +583,21 @@ pub async fn run_task(
             child_exited_ok,
         );
 
-        // Cleanup on exit.
-        pty_registry().lock().unwrap().remove(&task_id_for_reader);
+        // Cleanup and status emission belong only to this PTY generation. A
+        // retry may already have installed another handle under the same id.
+        let owns_registry = {
+            let mut registry = pty_registry().lock().unwrap();
+            let owns = registry
+                .get(&task_id_for_reader)
+                .is_some_and(|current| Arc::ptr_eq(current, &handle_for_reader));
+            if owns {
+                registry.remove(&task_id_for_reader);
+            }
+            owns
+        };
+        if !owns_registry {
+            return;
+        }
         task_output_buffers()
             .lock()
             .unwrap()
@@ -963,6 +985,12 @@ pub async fn complete_task(task_id: String) -> Result<(), String> {
     } else {
         let _ = manually_completed_tasks().lock().unwrap().remove(&task_id);
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reset_task_process(task_id: String) -> Result<(), String> {
+    reset_task_process_inner(&task_id);
     Ok(())
 }
 
