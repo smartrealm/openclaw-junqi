@@ -18,6 +18,41 @@ export function joinPath(parent: string, child: string): string {
   return parent + pathSeparator(parent) + child;
 }
 
+function compactNode(node: TreeNode): TreeNode {
+  if (!node.is_dir || !node.expanded || !node.children || node.children.length !== 1) {
+    const children = node.children ? compactTreeNodes(node.children) : node.children;
+    return children === node.children ? node : { ...node, children };
+  }
+  const chain = [node];
+  let target = node;
+  while (
+    target.expanded
+    && target.children?.length === 1
+    && target.children[0].is_dir
+    && !target.children[0].is_gitignored
+  ) {
+    target = target.children[0];
+    chain.push(target);
+  }
+  const children = target.children ? compactTreeNodes(target.children) : target.children;
+  if (chain.length === 1 && children === target.children) return node;
+  return {
+    ...target,
+    name: chain.map((part) => part.name).join("/"),
+    children,
+  };
+}
+
+export function compactTreeNodes(nodes: TreeNode[]): TreeNode[] {
+  let changed = false;
+  const next = nodes.map((node) => {
+    const compacted = compactNode(node);
+    if (compacted !== node) changed = true;
+    return compacted;
+  });
+  return changed ? next : nodes;
+}
+
 /**
  * Find a node in the tree by path, depth-first.
  */

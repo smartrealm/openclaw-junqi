@@ -196,6 +196,7 @@ pub fn run() {
             commands::git_neu::git_file_diff_stats,
             // Nezha-style file system commands
             commands::fs_neu::read_dir_entries,
+            commands::fs_neu::read_compact_dir_entries,
             commands::fs_neu::read_file_content,
             commands::fs_neu::read_image_preview,
             commands::fs_neu::write_file_content,

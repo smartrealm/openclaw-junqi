@@ -489,9 +489,47 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
         .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+pub async fn read_compact_dir_entries(
+    path: String,
+    project_path: String,
+) -> Result<Vec<FsEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let entries = read_directory_entries(&path, &project_path, true)?;
+        entries
+            .into_iter()
+            .map(|entry| compact_directory_entry(entry, &project_path))
+            .collect()
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn compact_directory_entry(mut entry: FsEntry, project_path: &str) -> Result<FsEntry, String> {
+    if !entry.is_dir || entry.is_gitignored {
+        return Ok(entry);
+    }
+    let mut names = vec![entry.name.clone()];
+    loop {
+        let mut children = read_directory_entries(&entry.path, project_path, true)?;
+        if children.len() != 1 || !children[0].is_dir || children[0].is_gitignored {
+            entry.name = names.join("/");
+            return Ok(entry);
+        }
+        let child = children.remove(0);
+        names.push(child.name.clone());
+        entry.path = child.path;
+        entry.extension = child.extension;
+        entry.is_symlink = child.is_symlink;
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{git_check_ignore_key, parse_git_check_ignore_z, read_directory_entries};
+    use super::{
+        compact_directory_entry, git_check_ignore_key, parse_git_check_ignore_z,
+        read_directory_entries,
+    };
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
@@ -500,6 +538,30 @@ mod tests {
         let paths = parse_git_check_ignore_z("/tmp/项目.txt\0C:\\Work\\ignored.txt\0".as_bytes());
         assert!(paths.contains(&git_check_ignore_key("/tmp/项目.txt")));
         assert!(paths.contains(&git_check_ignore_key("C:\\Work\\ignored.txt")));
+    }
+
+    #[test]
+    fn compact_directory_entry_stops_at_the_first_branch() {
+        let root = std::env::temp_dir().join(format!("junqi-compact-dir-{}", uuid::Uuid::new_v4()));
+        let first = root.join("src");
+        let second = first.join("features");
+        std::fs::create_dir_all(&second).unwrap();
+        std::fs::write(second.join("index.ts"), "export {};").unwrap();
+        std::fs::write(second.join("types.ts"), "export {};").unwrap();
+
+        let entry = read_directory_entries(&root.to_string_lossy(), &root.to_string_lossy(), true)
+            .unwrap()
+            .remove(0);
+        let compacted = compact_directory_entry(entry, &root.to_string_lossy()).unwrap();
+
+        assert_eq!(compacted.name, "src/features");
+        assert_eq!(
+            std::path::Path::new(&compacted.path)
+                .canonicalize()
+                .unwrap(),
+            second.canonicalize().unwrap(),
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[cfg(windows)]

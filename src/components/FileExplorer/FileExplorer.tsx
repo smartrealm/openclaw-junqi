@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import { RotateCcw, FolderOpen } from "lucide-react";
+import { RotateCcw, FolderOpen, ChevronsUpDown } from "lucide-react";
 import { FileExplorerContextMenu } from "./ContextMenu";
 import { CreateInputRow } from "./CreateInputRow";
 import { TreeItem } from "./TreeItem";
@@ -24,6 +24,7 @@ import {
 import {
   findNode,
   flattenVisible,
+  compactTreeNodes,
   joinPath,
   loadTreeNodes,
   parentPathOf,
@@ -48,6 +49,9 @@ export function FileExplorer({
   const [nodes, setNodes] = useState<TreeNode[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [compactEmptyFolders, setCompactEmptyFolders] = useState(() =>
+    localStorage.getItem("junqi.fileExplorer.compactEmptyFolders") === "true",
+  );
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(500);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -152,9 +156,13 @@ export function FileExplorer({
   }, [nodes]);
 
   const readEntries = useCallback(
-    (path: string) => safeInvoke("read_dir_entries", { path, projectPath }) as Promise<FsEntry[] | null>,
-    [projectPath, safeInvoke],
+    (path: string) => safeInvoke(compactEmptyFolders ? "read_compact_dir_entries" : "read_dir_entries", { path, projectPath }) as Promise<FsEntry[] | null>,
+    [compactEmptyFolders, projectPath, safeInvoke],
   );
+
+  useEffect(() => {
+    localStorage.setItem("junqi.fileExplorer.compactEmptyFolders", String(compactEmptyFolders));
+  }, [compactEmptyFolders]);
 
   const refresh = useCallback(
     async (showLoading = false) => {
@@ -205,9 +213,13 @@ export function FileExplorer({
     return () => ro.disconnect();
   }, []);
 
+  const displayNodes = useMemo(
+    () => compactEmptyFolders ? compactTreeNodes(nodes) : nodes,
+    [compactEmptyFolders, nodes],
+  );
   const flat = useMemo(
-    () => flattenVisible(nodes, projectPath, creating),
-    [nodes, projectPath, creating],
+    () => flattenVisible(displayNodes, projectPath, creating),
+    [displayNodes, projectPath, creating],
   );
 
   const creatingPlacement = useMemo(() => {
@@ -468,6 +480,23 @@ export function FileExplorer({
         >
           {t("file.files", "Files")}
         </span>
+        <button
+          type="button"
+          onClick={() => setCompactEmptyFolders((value) => !value)}
+          title={t("file.compactEmptyFolders", "Compact single-folder chains")}
+          aria-pressed={compactEmptyFolders}
+          style={{
+            background: compactEmptyFolders ? "var(--aegis-hover)" : "none",
+            border: "none",
+            cursor: "pointer",
+            color: compactEmptyFolders ? "var(--aegis-primary)" : "var(--aegis-text-dim)",
+            padding: 4,
+            borderRadius: 4,
+            display: "flex",
+          }}
+        >
+          <ChevronsUpDown size={13} />
+        </button>
         <button
           onClick={() => void refresh()}
           title={t("common.refresh", "Refresh")}
