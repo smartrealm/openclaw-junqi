@@ -3,7 +3,10 @@ use crate::paths;
 use crate::platform;
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tauri::Emitter;
+
+static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 // ─── Platform helpers ──────────────────────────────────────────────────────────
 
@@ -1065,9 +1068,77 @@ fn try_use_prefix(path: &std::path::Path) -> bool {
     }
 }
 
+fn openclaw_node_modules_dir(prefix: &std::path::Path) -> PathBuf {
+    if cfg!(windows) {
+        prefix.join("node_modules")
+    } else {
+        prefix.join("lib").join("node_modules")
+    }
+}
+
+/// Remove only a broken npm package payload before reinstalling it. User data
+/// lives under `~/.openclaw`, outside every npm prefix selected above.
+fn remove_broken_openclaw_install(prefix: &std::path::Path) -> Result<(), String> {
+    let node_modules = openclaw_node_modules_dir(prefix);
+    let package_dir = node_modules.join("openclaw");
+    if package_dir.exists() {
+        std::fs::remove_dir_all(&package_dir).map_err(|error| {
+            format!(
+                "Cannot remove the incomplete OpenClaw package at {}: {}. Close running OpenClaw processes and retry.",
+                package_dir.display(),
+                error
+            )
+        })?;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&node_modules) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if name.starts_with(".openclaw-") {
+                let path = entry.path();
+                let result = if path.is_dir() {
+                    std::fs::remove_dir_all(&path)
+                } else {
+                    std::fs::remove_file(&path)
+                };
+                result.map_err(|error| {
+                    format!(
+                        "Cannot remove the incomplete npm staging path {}: {}. Close running OpenClaw processes and retry.",
+                        path.display(),
+                        error
+                    )
+                })?;
+            }
+        }
+    }
+
+    let shim_dir = if cfg!(windows) {
+        prefix.to_path_buf()
+    } else {
+        prefix.join("bin")
+    };
+    for shim in ["openclaw", "openclaw.cmd", "openclaw.ps1"] {
+        let path = shim_dir.join(shim);
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|error| {
+                format!(
+                    "Cannot remove the stale OpenClaw launcher at {}: {}. Close running OpenClaw processes and retry.",
+                    path.display(),
+                    error
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     let step = "openclaw";
+    let install_lock = OPENCLAW_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
+    let _install_guard = install_lock.lock().await;
 
     emit_keyed(
         &app,
@@ -1163,6 +1234,7 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         0.08,
     );
     std::fs::create_dir_all(&openclaw_prefix).ok();
+    remove_broken_openclaw_install(&openclaw_prefix)?;
 
     // ③ npm install（CN 源优先，官方兜底，全程输出实时日志）
     emit_keyed(
