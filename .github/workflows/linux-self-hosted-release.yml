@@ -29,6 +29,8 @@ jobs:
       # This label is permanently assigned to the domestic build host. Keep
       # the mirror process-scoped so no global user/npm configuration changes.
       NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
+      RUSTUP_DIST_SERVER: https://rsproxy.cn
+      RUSTUP_UPDATE_ROOT: https://rsproxy.cn/rustup
     steps:
       # This runs before JavaScript actions because the minimal Ubuntu image
       # needs Git for checkout and gh for the release upload.
@@ -152,6 +154,19 @@ jobs:
           node-version: '20'
           mirror: 'https://npmmirror.com/mirrors/node'
           cache: pnpm
+
+      - name: Configure Cargo registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cargo"
+          printf '%s\n' \
+            '[source.crates-io]' \
+            'replace-with = "rsproxy-sparse"' \
+            '' \
+            '[source.rsproxy-sparse]' \
+            'registry = "sparse+https://rsproxy.cn/index/"' \
+            > "$HOME/.cargo/config.toml"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
