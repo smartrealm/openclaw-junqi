@@ -35,6 +35,7 @@ import { AgentWorkspaceFileSearchDialog } from './FileSearchDialog';
 import { AgentWorkspaceTaskEditDialog } from './TaskEditDialog';
 import { ProjectAvatar } from './ProjectAvatar';
 import { AgentWorkspaceBranchBar } from './BranchBar';
+import { AgentWorkspaceProjectSettingsDialog } from './ProjectSettingsDialog';
 import { useAgentWorkspaceStore, type AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { findWorkspaceForDirectory } from '@/workspace/projectWorkspace';
@@ -145,6 +146,7 @@ export function AgentWorkspacePage() {
   const [resizingRightPanel, setResizingRightPanel] = useState(false);
   const [showShellTerminal, setShowShellTerminal] = useState(false);
   const [showFileSearch, setShowFileSearch] = useState(false);
+  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(260);
   const [resizingTerminal, setResizingTerminal] = useState(false);
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
@@ -1132,7 +1134,7 @@ export function AgentWorkspacePage() {
         <button
           type="button"
           title="设置"
-          onClick={() => navigate('/settings')}
+          onClick={() => setShowProjectSettings(true)}
           className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
         >
           <Settings size={15} />
@@ -1144,6 +1146,12 @@ export function AgentWorkspacePage() {
           projectPath={projectPath}
           onFileOpen={openFile}
           onClose={() => setShowFileSearch(false)}
+        />
+      )}
+      {showProjectSettings && projectPath && (
+        <AgentWorkspaceProjectSettingsDialog
+          projectPath={projectPath}
+          onClose={() => setShowProjectSettings(false)}
         />
       )}
       {editingTaskDetailsId && (() => {

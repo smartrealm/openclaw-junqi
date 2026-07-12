@@ -191,6 +191,20 @@ fn prompt_with_attachments(
     result
 }
 
+fn prompt_with_project_prefix(prompt: String, project_path: &str) -> String {
+    let prefix = crate::commands::project_config::read_project_config(project_path.to_string())
+        .map(|config| config.agent.prompt_prefix)
+        .unwrap_or_default();
+    let prefix = prefix.trim();
+    if prefix.is_empty() {
+        prompt
+    } else if prompt.trim().is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}\n{prompt}")
+    }
+}
+
 fn task_final_status(
     manually_completed: bool,
     closed: bool,
@@ -415,6 +429,7 @@ pub async fn run_task(
     })
     .await
     .map_err(|error| format!("stage task attachments: {error}"))??;
+    let prompt = prompt_with_project_prefix(prompt, &project_path);
     let prompt = prompt_with_attachments(prompt, &image_paths, &text_paths);
 
     let pair = native_pty_system()
@@ -1016,8 +1031,8 @@ pub fn get_active_task_ids() -> Vec<String> {
 mod tests {
     use super::{
         append_task_output, claude_project_directory_name, decode_task_image, permission_flag,
-        prompt_with_attachments, safe_task_id, task_final_status, task_output_buffers,
-        MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+        prompt_with_attachments, prompt_with_project_prefix, safe_task_id, task_final_status,
+        task_output_buffers, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
     };
 
     #[test]
@@ -1084,6 +1099,31 @@ mod tests {
             ),
             "Review this\n\n[Attached images - inspect these files]\n/repo/.junqi/attachments/image-01.png\n\n[Attached text files - read these for full context]\n/repo/.junqi/attachments/text-01.txt",
         );
+    }
+
+    #[test]
+    fn project_prompt_prefix_is_prepended_to_task_content() {
+        let root =
+            std::env::temp_dir().join(format!("junqi-prompt-prefix-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        crate::commands::project_config::write_project_config(
+            root.to_string_lossy().into_owned(),
+            crate::commands::project_config::ProjectConfig {
+                agent: crate::commands::project_config::AgentConfig {
+                    default: "claude".to_string(),
+                    default_permission_mode: "ask".to_string(),
+                    prompt_prefix: "请使用中文回复。".to_string(),
+                },
+                git: crate::commands::project_config::GitConfig::default(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            prompt_with_project_prefix("检查项目".to_string(), &root.to_string_lossy()),
+            "请使用中文回复。\n检查项目",
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
