@@ -31,10 +31,11 @@ function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryPro
   const language = useSettingsStore((state) => state.language);
   const [hov, setHov] = useState(false);
   const body = language === 'zh' && item.bodyZh ? item.bodyZh : item.body;
+  const actionableUrl = resolveNotificationTarget(item.url) ? item.url : null;
 
   const handleClick = () => {
     if (!item.isRead) onMarkRead(item.id);
-    if (item.url) onOpenUrl(item.url);
+    if (actionableUrl) onOpenUrl(actionableUrl);
   };
 
   return (
@@ -42,7 +43,7 @@ function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryPro
       onClick={handleClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      className={`px-3 py-2.5 border-b flex items-start gap-2.5 transition-colors ${item.url ? 'cursor-pointer' : 'cursor-default'}`}
+      className={`px-3 py-2.5 border-b flex items-start gap-2.5 transition-colors ${actionableUrl ? 'cursor-pointer' : 'cursor-default'}`}
       style={{
         borderColor: 'rgb(var(--aegis-overlay) / 0.06)',
         background: hov ? 'rgb(var(--aegis-overlay) / 0.04)' : item.isRead ? 'transparent' : 'rgb(var(--aegis-primary) / 0.06)',
@@ -60,7 +61,7 @@ function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryPro
           >
             {item.title}
           </span>
-          {item.url && (
+          {actionableUrl && (
             <ExternalLink size={11} className="text-aegis-text-dim shrink-0" />
           )}
         </div>

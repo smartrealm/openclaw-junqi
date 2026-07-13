@@ -201,11 +201,12 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
 
   const openNotification = useCallback((item: NotificationPanelItem) => {
     void markRead(item.id);
-    setPanelOpen(false);
     const target = resolveNotificationTarget(item.url);
+    if (!target) return;
+    setPanelOpen(false);
     if (target?.kind === 'internal') {
       navigate(target.value);
-    } else if (target?.kind === 'external') {
+    } else {
       try {
         window.open(target.value, '_blank', 'noopener,noreferrer');
       } catch {
