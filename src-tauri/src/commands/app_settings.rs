@@ -196,7 +196,8 @@ fn load_settings_unlocked() -> AppSettings {
 fn agent_program_from_settings(settings: &AppSettings, agent: &str) -> String {
     let configured = match agent {
         "codex" => settings.codex_path.trim(),
-        _ => settings.claude_path.trim(),
+        "claude" => settings.claude_path.trim(),
+        _ => "",
     };
     crate::platform::resolve_spawn_program(if configured.is_empty() {
         agent
@@ -325,6 +326,12 @@ mod tests {
             agent_program_from_settings(&settings, "codex"),
             "/custom/bin/codex"
         );
+        let gemini = agent_program_from_settings(&settings, "gemini");
+        assert_ne!(gemini, settings.claude_path);
+        assert!(std::path::Path::new(&gemini)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.to_ascii_lowercase().starts_with("gemini")));
     }
 
     #[test]
