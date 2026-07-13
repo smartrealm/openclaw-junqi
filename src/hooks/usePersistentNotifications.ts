@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { NotificationOperationGate } from './notificationOperationGate';
 
 export const PERSISTENT_NOTIFICATIONS_CHANGED_EVENT = 'junqi:notifications-changed';
 
@@ -54,7 +55,8 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  const requestGenerationRef = useRef(0);
+  const operationGateRef = useRef(new NotificationOperationGate());
+  const mutationErrorRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!hasTauriRuntime()) {
@@ -65,16 +67,17 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
       }
       return;
     }
-    const generation = ++requestGenerationRef.current;
+    const generation = operationGateRef.current.beginRefresh();
+    if (generation === null) return;
     setLoading(true);
     setError(null);
     try {
       const next = await invoke<PersistentNotificationResult>('get_notifications');
-      if (mountedRef.current && generation === requestGenerationRef.current) setResult(next);
+      if (mountedRef.current && operationGateRef.current.canCommitRefresh(generation)) setResult(next);
     } catch (cause) {
-      if (mountedRef.current && generation === requestGenerationRef.current) setError(String(cause));
+      if (mountedRef.current && operationGateRef.current.canCommitRefresh(generation)) setError(String(cause));
     } finally {
-      if (mountedRef.current && generation === requestGenerationRef.current) setLoading(false);
+      if (mountedRef.current && operationGateRef.current.canCommitRefresh(generation)) setLoading(false);
     }
   }, []);
 
@@ -90,7 +93,7 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     }
     return () => {
       mountedRef.current = false;
-      requestGenerationRef.current += 1;
+      operationGateRef.current.invalidate();
       if (timer !== undefined) window.clearInterval(timer);
       if (typeof window.removeEventListener === 'function') {
         window.removeEventListener(PERSISTENT_NOTIFICATIONS_CHANGED_EVENT, handleChanged);
@@ -98,41 +101,55 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     };
   }, [pollIntervalMs, refresh]);
 
-  const markRead = useCallback(async (id: string) => {
-    setResult((current) => withNotificationRead(current, id));
+  const runMutation = useCallback(async (
+    command: string,
+    args: Record<string, unknown> | undefined,
+    optimisticUpdate: () => void,
+  ) => {
+    operationGateRef.current.beginMutation();
+    setLoading(false);
+    setError(null);
+    optimisticUpdate();
+    let succeeded = false;
     try {
-      await invoke('mark_notification_read', { id });
+      await invoke(command, args);
+      succeeded = true;
     } catch (cause) {
-      if (mountedRef.current) {
-        setError(String(cause));
+      mutationErrorRef.current = String(cause);
+    } finally {
+      const shouldRepair = operationGateRef.current.finishMutation(succeeded);
+      if (shouldRepair && mountedRef.current) {
+        const mutationError = mutationErrorRef.current;
+        mutationErrorRef.current = null;
         await refresh();
+        if (mountedRef.current && mutationError) setError(mutationError);
       }
     }
   }, [refresh]);
+
+  const markRead = useCallback(async (id: string) => {
+    await runMutation(
+      'mark_notification_read',
+      { id },
+      () => setResult((current) => withNotificationRead(current, id)),
+    );
+  }, [runMutation]);
 
   const markAllRead = useCallback(async () => {
-    setResult((current) => withAllNotificationsRead(current));
-    try {
-      await invoke('mark_all_notifications_read');
-    } catch (cause) {
-      if (mountedRef.current) {
-        setError(String(cause));
-        await refresh();
-      }
-    }
-  }, [refresh]);
+    await runMutation(
+      'mark_all_notifications_read',
+      undefined,
+      () => setResult((current) => withAllNotificationsRead(current)),
+    );
+  }, [runMutation]);
 
   const clear = useCallback(async () => {
-    setResult({ notifications: [], unreadCount: 0 });
-    try {
-      await invoke('clear_notifications');
-    } catch (cause) {
-      if (mountedRef.current) {
-        setError(String(cause));
-        await refresh();
-      }
-    }
-  }, [refresh]);
+    await runMutation(
+      'clear_notifications',
+      undefined,
+      () => setResult({ notifications: [], unreadCount: 0 }),
+    );
+  }, [runMutation]);
 
   return { result, loading, error, refresh, markRead, markAllRead, clear };
 }
