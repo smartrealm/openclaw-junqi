@@ -30,3 +30,11 @@ test('AI task terminal applies live font and theme settings', () => {
   assert.match(source, /applyTerminalThemeOnPanel/);
   assert.match(source, /agent_resize_pty/);
 });
+
+test('worktree actions are mutually exclusive while running', () => {
+  assert.match(source, /worktreeBusy/);
+  assert.match(source, /disabled=\{worktreeBusy !== null\}/);
+  assert.match(source, /finally \{ setWorktreeBusy\(null\); \}/);
+  assert.match(source, /合并中\.\.\./);
+  assert.match(source, /丢弃中\.\.\./);
+});

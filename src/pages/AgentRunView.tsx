@@ -577,6 +577,7 @@ export function AgentRunView({
   const worktreePathRef = useRef<string | null>(restoredWorktreePath);
   const [worktreeBranch, setWorktreeBranch] = useState<string | null>(initialWorktreeDiscarded ? null : providedInitialWorktreeBranch ?? null);
   const [diffStats, setDiffStats] = useState<{ additions: number; deletions: number } | null>(null);
+  const [worktreeBusy, setWorktreeBusy] = useState<'merge' | 'discard' | null>(null);
   const [sessionPath, setSessionPath] = useState<string | null>(providedInitialSessionPath ?? null);
   const [sessionId, setSessionId] = useState<string | null>(providedInitialSessionId ?? null);
   const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
@@ -1115,7 +1116,8 @@ export function AgentRunView({
 
   // ── Worktree actions ─────────────────────────────────────────────────────
   const mergeWorktree = async () => {
-    if (!worktreePath || !worktreeBranch) return;
+    if (!worktreePath || !worktreeBranch || worktreeBusy) return;
+    setWorktreeBusy('merge');
     try {
       await invoke('merge_task_worktree', mergeTaskWorktreeArgs(projectPath, worktreePath, worktreeBranch, baseBranch));
       await invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch)).catch(() => undefined);
@@ -1124,15 +1126,16 @@ export function AgentRunView({
       worktreePathRef.current = null;
       setWorktreeBranch(null);
       if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { worktreeDiscarded: true, additions: 0, deletions: 0 });
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); } finally { setWorktreeBusy(null); }
   };
   const discardWorktree = async () => {
-    if (!worktreePath || !worktreeBranch) return;
+    if (!worktreePath || !worktreeBranch || worktreeBusy) return;
     const accepted = await confirm(`确定丢弃工作树“${worktreeBranch}”及其中的所有修改吗？`, {
       title: '丢弃工作树',
       kind: 'warning',
     });
     if (!accepted) return;
+    setWorktreeBusy('discard');
     try {
       await invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch));
       setDiffStats(null);
@@ -1140,7 +1143,7 @@ export function AgentRunView({
       worktreePathRef.current = null;
       setWorktreeBranch(null);
       if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { worktreeDiscarded: true, additions: 0, deletions: 0 });
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); } finally { setWorktreeBusy(null); }
   };
 
   const isDone = status === 'done' || status === 'failed' || status === 'cancelled';
@@ -1635,8 +1638,14 @@ export function AgentRunView({
                   <>
                     <span className="text-[rgb(var(--aegis-success))]">+{diffStats.additions}</span>
                     <span className="text-[rgb(var(--aegis-danger))]">−{diffStats.deletions}</span>
-                    <button onClick={mergeWorktree} className="hover:text-[rgb(var(--aegis-success))] transition-colors">{t('agent.worktree.merge', 'merge')}</button>
-                    <button onClick={discardWorktree} className="hover:text-[rgb(var(--aegis-danger))] transition-colors">{t('agent.worktree.discard', 'discard')}</button>
+                    <button type="button" disabled={worktreeBusy !== null} onClick={() => void mergeWorktree()}
+                      className="hover:text-[rgb(var(--aegis-success))] transition-colors disabled:cursor-wait disabled:opacity-50">
+                      {worktreeBusy === 'merge' ? '合并中...' : t('agent.worktree.merge', 'merge')}
+                    </button>
+                    <button type="button" disabled={worktreeBusy !== null} onClick={() => void discardWorktree()}
+                      className="hover:text-[rgb(var(--aegis-danger))] transition-colors disabled:cursor-wait disabled:opacity-50">
+                      {worktreeBusy === 'discard' ? '丢弃中...' : t('agent.worktree.discard', 'discard')}
+                    </button>
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>
                   </>
                 )}
