@@ -118,3 +118,12 @@ test('worktree branch loading is stable across parent renders', () => {
   assert.match(source, /\}, \[projectPath\]\);/);
   assert.match(source, /baseBranch \|\| '选择基础分支'/);
 });
+
+test('completed tasks cannot be reset into a new task with the same id', () => {
+  assert.doesNotMatch(source, /setStatus\('idle'\); setRunning\(false\); setError\(null\); setMetrics\(null\); setSessionPath\(null\)/);
+});
+
+test('worktree actions remain available when diff statistics are unavailable', () => {
+  assert.match(source, /worktreePath && worktreeBranch && !worktreeDiscarded/);
+  assert.match(source, /\{diffStats && <>/);
+});

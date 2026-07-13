@@ -1569,10 +1569,12 @@ export function AgentRunView({
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>
                   </>
                 )}
-                {worktreePath && diffStats && (
+                {worktreePath && worktreeBranch && !worktreeDiscarded && (
                   <>
-                    <span className="text-[rgb(var(--aegis-success))]">+{diffStats.additions}</span>
-                    <span className="text-[rgb(var(--aegis-danger))]">−{diffStats.deletions}</span>
+                    {diffStats && <>
+                      <span className="text-[rgb(var(--aegis-success))]">+{diffStats.additions}</span>
+                      <span className="text-[rgb(var(--aegis-danger))]">−{diffStats.deletions}</span>
+                    </>}
                     <button type="button" disabled={worktreeBusy !== null} onClick={() => void mergeWorktree()}
                       className="hover:text-[rgb(var(--aegis-success))] transition-colors disabled:cursor-wait disabled:opacity-50">
                       {worktreeBusy === 'merge' ? '合并中...' : t('agent.worktree.merge', 'merge')}
@@ -1609,11 +1611,6 @@ export function AgentRunView({
                   </>
                 )}
               </span>
-              {/* Right: new task */}
-              <button type="button" onClick={() => { setStatus('idle'); setRunning(false); setError(null); setMetrics(null); setSessionPath(null); setDiffStats(null); clearTerm(); }}
-                className="flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-[var(--aegis-hover)] text-[rgb(var(--aegis-text-dim))] hover:text-[rgb(var(--aegis-text))]">
-                <RotateCcw size={12} />
-              </button>
             </div>
           </div>
         )}
