@@ -13,30 +13,17 @@
 //
 // Source: nezha/src/components/nezha/NotificationBell.tsx
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Bell, X, Check, CheckCheck, Info, AlertTriangle, AlertCircle, ExternalLink,
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '@/stores/settingsStore';
-
-interface NotificationItem {
-  id: string;
-  level: string;
-  title: string;
-  body: string;
-  bodyZh: string | null;
-  url: string | null;
-  createdAt: string;
-  isRead: boolean;
-}
-
-interface NotificationResult {
-  notifications: NotificationItem[];
-  unreadCount: number;
-}
+import {
+  usePersistentNotifications,
+  type PersistentNotificationItem,
+} from '@/hooks/usePersistentNotifications';
 
 function LevelIcon({ level }: { level: string }) {
   switch (level) {
@@ -47,7 +34,7 @@ function LevelIcon({ level }: { level: string }) {
 }
 
 interface NotificationEntryProps {
-  item: NotificationItem;
+  item: PersistentNotificationItem;
   onMarkRead: (id: string) => void;
   onOpenUrl: (url: string) => void;
 }
@@ -135,48 +122,7 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [result, setResult] = useState<NotificationResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchNotifications = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await invoke<NotificationResult>('get_notifications');
-      setResult(r);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchNotifications();
-    if (pollIntervalMs > 0) {
-      const timer = window.setInterval(fetchNotifications, pollIntervalMs);
-      return () => window.clearInterval(timer);
-    }
-  }, [fetchNotifications, pollIntervalMs]);
-
-  const handleMarkRead = useCallback(async (id: string) => {
-    try {
-      await invoke('mark_notification_read', { id });
-      await fetchNotifications();
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [fetchNotifications]);
-
-  const handleMarkAllRead = useCallback(async () => {
-    try {
-      await invoke('mark_all_notifications_read');
-      await fetchNotifications();
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [fetchNotifications]);
+  const { result, loading, error, markRead, markAllRead } = usePersistentNotifications(pollIntervalMs);
 
   const handleOpenUrl = useCallback((url: string) => {
     setOpen(false);
@@ -248,7 +194,7 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
                 <button
                   type="button"
                   title={t('notification.markAllAsRead', 'Mark all as read')}
-                  onClick={handleMarkAllRead}
+                  onClick={() => void markAllRead()}
                   className="p-0.5 rounded hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted"
                 >
                   <CheckCheck size={14} />
@@ -281,7 +227,7 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
                   <NotificationEntry
                     key={item.id}
                     item={item}
-                    onMarkRead={handleMarkRead}
+                    onMarkRead={(id) => void markRead(id)}
                     onOpenUrl={handleOpenUrl}
                   />
                 ))
