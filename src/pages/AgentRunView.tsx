@@ -30,18 +30,6 @@ import {
 import {
   Sparkle,
   Robot,
-  Pi,
-  Diamond,
-  CursorClick,
-  Lightning,
-  Hexagon,
-  XLogo,
-  Cloud,
-  ArrowCircleUp,
-  Moon as MoonPh,
-  BracketsCurly,
-  Wrench as WrenchPh,
-  Brain as BrainPh,
 } from '@phosphor-icons/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { PromptEditor, type ImageAttach } from '@/components/shared/PromptEditor';
@@ -78,6 +66,8 @@ import {
 } from '@/_nezha_root/shortcuts';
 import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktreeDiffStatsArgs } from './agentWorktreeCommands';
 import { applyPlanModePrompt } from './agentPrompt';
+import claudeGif from '@/assets/gif/claude.gif';
+import codexGif from '@/assets/gif/codex.gif';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -125,31 +115,17 @@ function isActiveWorkspaceTaskStatus(status: AgentWorkspaceTaskStatus | undefine
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-// Agent banner icons (phosphor regular — polished, SF-Symbol-grade, 24px)
-const AGENT_BRANDS: Record<string, { bg: string; icon: React.ReactNode; label: string }> = {
-  claude:     { bg: 'linear-gradient(135deg, #d97757, #a84e32)', icon: <Sparkle size={24} weight="regular" className="text-amber-200" />, label: 'Claude Code' },
-  codex:      { bg: 'linear-gradient(135deg, #7a9dff, #3a5dc0)', icon: <Robot size={24} weight="regular" className="text-blue-200" />, label: 'Codex' },
-  pi:         { bg: 'linear-gradient(135deg, #c2c5ce, #80838c)', icon: <Pi size={24} weight="regular" className="text-gray-200" />, label: 'Pi' },
-  gemini:     { bg: 'linear-gradient(135deg, #3186ff, #1a47b8)', icon: <Diamond size={24} weight="regular" className="text-blue-200" />, label: 'Gemini CLI' },
-  'cursor-agent': { bg: 'linear-gradient(135deg, #f54e00, #b83800)', icon: <CursorClick size={24} weight="regular" className="text-orange-200" />, label: 'Cursor CLI' },
-  amp:        { bg: 'linear-gradient(135deg, #e8b168, #c4852e)', icon: <Lightning size={24} weight="regular" className="text-amber-200" />, label: 'Amp' },
-  copilot:    { bg: 'linear-gradient(135deg, #6e40c9, #4520a0)', icon: <Hexagon size={24} weight="regular" className="text-purple-200" />, label: 'Copilot CLI' },
-  grok:       { bg: 'linear-gradient(135deg, #e8e8e8, #999)', icon: <XLogo size={24} weight="regular" className="text-gray-200" />, label: 'Grok Build' },
-  'kiro-cli': { bg: 'linear-gradient(135deg, #9046ff, #6020cc)', icon: <Cloud size={24} weight="regular" className="text-purple-200" />, label: 'Kiro CLI' },
-  agy:        { bg: 'linear-gradient(135deg, #4285f4, #1a50c0)', icon: <ArrowCircleUp size={24} weight="regular" className="text-blue-200" />, label: 'Antigravity CLI' },
-  kimi:       { bg: 'linear-gradient(135deg, #c9c3d6, #8a7fa0)', icon: <MoonPh size={24} weight="regular" className="text-violet-200" />, label: 'Kimi Code' },
-  opencode:   { bg: 'linear-gradient(135deg, #b0b0b0, #707070)', icon: <BracketsCurly size={24} weight="regular" className="text-gray-200" />, label: 'OpenCode' },
-  aider:      { bg: 'linear-gradient(135deg, #44aa44, #228822)', icon: <WrenchPh size={24} weight="regular" className="text-green-200" />, label: 'Aider' },
-  qwen:       { bg: 'linear-gradient(135deg, #6600cc, #4400aa)', icon: <BrainPh size={24} weight="regular" className="text-purple-200" />, label: 'Qwen CLI' },
-};
-
 function AgentHeader({ agent }: { agent: AgentType }) {
   const { t } = useTranslation();
-  const brand = AGENT_BRANDS[agent] ?? AGENT_BRANDS.claude;
   return (
-    <div className="flex items-center justify-center w-full py-6" style={{ background: brand.bg }}>
-      <span className="text-[28px] font-bold text-white tracking-tight flex items-center gap-2">
-        {brand.icon} {brand.label}
+    <div className="flex w-full shrink-0 flex-col items-center justify-center pb-2 pt-5">
+      <img
+        src={agent === 'codex' ? codexGif : claudeGif}
+        alt=""
+        className="mb-2 h-auto w-[min(112px,28vw)] object-contain"
+      />
+      <span className="text-xl font-bold text-aegis-text">
+        {t('newTask.title', '新建任务')}
       </span>
     </div>
   );

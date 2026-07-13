@@ -66,6 +66,9 @@ test('workspace-owned tasks cannot change their project path', () => {
 });
 
 test('new task composition follows the Nezha card and launch-bar hierarchy', () => {
+  assert.match(source, /claudeGif from '@\/assets\/gif\/claude\.gif'/);
+  assert.match(source, /codexGif from '@\/assets\/gif\/codex\.gif'/);
+  assert.match(source, /agent === 'codex' \? codexGif : claudeGif/);
   assert.match(source, /rounded-lg border border-aegis-border bg-aegis-card/);
   assert.match(source, /border-t border-aegis-border px-3 py-2/);
   assert.match(source, /保存为待办/);
