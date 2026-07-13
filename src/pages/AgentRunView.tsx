@@ -383,59 +383,6 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
   );
 }
 
-// ── Session history strip (kooky-style recent sessions) ─────────────────────
-//
-// Renders a compact horizontal list of recent sessions for the same agent +
-// project. Each chip is a one-click "resume" target that hydrates the prompt
-// editor with the corresponding --resume/--session flag and the saved ID.
-function SessionHistoryStrip({ agent, projectPath, onResume }: {
-  agent: AgentType;
-  projectPath: string;
-  onResume: (cmd: string) => void;
-}) {
-  const { t } = useTranslation();
-  const list = useSessionHistoryStore((s) => s.listForProject);
-  const sessions = list(projectPath, 6).filter((e) => e.agent === agent);
-  if (sessions.length === 0) return null;
-
-  const timeAgo = (ms: number) => {
-    const diff = Date.now() - ms;
-    const min = Math.floor(diff / 60_000);
-    if (min < 1) return t('session.justNow', 'just now');
-    if (min < 60) return t('session.minAgo', `${min}m ago`);
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return t('session.hrAgo', `${hr}h ago`);
-    return t('session.dayAgo', `${Math.floor(hr / 24)}d ago`);
-  };
-
-  return (
-    <div className="mx-4 mt-3 px-3 py-2 rounded-lg flex items-center gap-2 flex-wrap"
-      style={{ background: 'rgb(var(--aegis-surface))', border: '1px solid rgb(var(--aegis-border))' }}>
-      <span className="text-[10px] uppercase tracking-wider text-aegis-text-dim font-semibold mr-1">
-        {t('session.recent', 'Recent')}
-      </span>
-      {sessions.map((s) => (
-        <button key={s.key}
-          onClick={() => s.resumeCommand && onResume(s.resumeCommand)}
-          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-colors"
-          style={{
-            background: 'rgb(var(--aegis-overlay)/0.04)',
-            border: '1px solid rgb(var(--aegis-border))',
-            color: 'rgb(var(--aegis-text-secondary))',
-          }}
-          title={s.sessionPath}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.10)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.04)'; }}>
-          <RotateCcw size={10} />
-          <span className="font-mono">{s.sessionId.slice(0, 8)}</span>
-          <span className="text-aegis-text-dim">·</span>
-          <span className="text-aegis-text-dim">{timeAgo(s.lastSeen)}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export interface AgentRunViewProps {
@@ -1371,16 +1318,6 @@ export function AgentRunView({
     <div className="flex flex-col h-full overflow-hidden" style={{ background: 'rgb(var(--aegis-bg))' }}>
       {/* ── Header: agent GIF + status ────────────────────────────────── */}
       {!running && !isDone && <AgentHeader agent={agent} />}
-      {/* ── Session history (kooky-style recent list) ─────────────────── */}
-      {!running && !isDone && <SessionHistoryStrip agent={agent} projectPath={projectPath} onResume={(cmd) => {
-        const m = cmd.match(/^(?:claude|pi)\s+(?:--resume|--session)\s+(\S+)|^codex\s+resume\s+(\S+)/);
-        const resumeSessionId = m?.[1] ?? m?.[2];
-        if (resumeSessionId) {
-          resumeIdRef.current = resumeSessionId;
-          setError(null);
-          void handleStart(`[Resuming ${agent} session ${resumeSessionId}]`);
-        }
-      }} />}
       {(running || isDone) && (
         <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0" style={{ background: 'rgb(var(--aegis-primary)/0.06)', borderColor: 'rgb(var(--aegis-border))' }}>
           <StatusBadge state={needsRecovery ? 'idle' : status === 'done' ? 'ended' : status === 'failed' ? 'failed' : status === 'cancelled' ? 'idle' : 'running'} size={10} />
@@ -1448,28 +1385,82 @@ export function AgentRunView({
 
       {/* ── Scrollable body ───────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        {/* ── Config bar (nezha-style toolbar) ────────────────────────── */}
         {!running && !isDone && (
-          <div className="px-4 py-3 flex flex-col gap-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <AgentToggle agent={agent} allowPi={providedProjectPath === undefined} onChange={(next) => {
-                draftUserEditedRef.current = true;
-                setAgent(next);
-              }} disabled={running} />
-              <PermissionSelector perm={perm} onChange={(next) => {
-                draftUserEditedRef.current = true;
-                setPerm(next);
-              }} disabled={running} />
-            </div>
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
             {providedProjectPath === undefined && (
-              <div className="flex items-center gap-2">
-                <input value={projectPath} onChange={(e) => setProjectPath(e.target.value)}
-                  placeholder="Project path (cwd if empty)" disabled={running}
-                  className="flex-1 px-2.5 py-1.5 rounded-md text-[12px] font-mono"
-                  style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }} />
-              </div>
+              <input value={projectPath} onChange={(event) => setProjectPath(event.target.value)}
+                placeholder="项目路径（留空使用当前目录）"
+                className="h-9 w-full rounded-md border border-aegis-border bg-aegis-bg px-3 font-mono text-xs text-aegis-text outline-none focus:border-aegis-primary" />
             )}
-            <div className="flex items-center gap-3 flex-wrap">
+
+            <div className="overflow-visible rounded-lg border border-aegis-border bg-aegis-card shadow-sm">
+              <div className="p-3 pb-1">
+                <PromptEditor
+                  value={prompt} onChange={(next) => {
+                    draftUserEditedRef.current = true;
+                    setPrompt(next);
+                  }} onSubmit={handleStart} submitHint=""
+                  placeholder="描述你的任务... 输入 @ 引用文件"
+                  rows={4} disabled={running} draftKey={`agent-run:${taskId}`}
+                  projectPath={projectPath}
+                  mentionProjects={mentionProjects}
+                  expanded={composerExpanded} onExpandedChange={setComposerExpanded}
+                  images={attachedImages} onAttachImages={setAttachedImages}
+                  onRemoveImage={(i) => setAttachedImages((previous) => previous.filter((_, index) => index !== i))}
+                  onLargePaste={(text) => setTextAttachments((previous) => [...previous, { text, chars: text.length }])} />
+              </div>
+
+              {textAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+                  {textAttachments.map((attachment, index) => (
+                    <div key={index} className="flex items-center gap-1.5 rounded border border-aegis-border bg-aegis-surface px-2.5 py-1 text-[11px] text-aegis-text-dim">
+                      <FileText size={11} />
+                      <span>文本附件 · {attachment.chars > 1000 ? `${(attachment.chars / 1000).toFixed(1)}K` : attachment.chars} 字符</span>
+                      <button type="button" title="移除附件" onClick={() => setTextAttachments((previous) => previous.filter((_, itemIndex) => itemIndex !== index))} className="ml-1 rounded p-0.5 hover:bg-red-500/10 hover:text-red-400">
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex min-h-12 flex-wrap items-center gap-2 border-t border-aegis-border px-3 py-2">
+                <AgentToggle agent={agent} allowPi={providedProjectPath === undefined} onChange={(next) => {
+                  draftUserEditedRef.current = true;
+                  setAgent(next);
+                }} disabled={running} />
+                <PermissionSelector perm={perm} onChange={(next) => {
+                  draftUserEditedRef.current = true;
+                  setPerm(next);
+                }} disabled={running} />
+                <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-aegis-text-dim">
+                  <input type="checkbox" checked={planMode} onChange={(event) => {
+                    draftUserEditedRef.current = true;
+                    setPlanMode(event.target.checked);
+                  }} className="h-3.5 w-3.5 accent-aegis-primary" />
+                  计划模式
+                </label>
+                <div className="min-w-2 flex-1" />
+                {attachedImages.length > 0 && (
+                  <button type="button" title="清空图片" onClick={() => setAttachedImages([])} className="flex h-8 items-center gap-1 rounded px-2 text-[11px] text-aegis-text-dim hover:bg-aegis-hover hover:text-red-400">
+                    <X size={12} />{attachedImages.length}
+                  </button>
+                )}
+                <button type="button" onClick={handleSaveTodo}
+                  disabled={launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)}
+                  title={launchMode === 'worktree' ? '工作树任务需要直接启动' : '保存为待办'}
+                  className="flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40">
+                  <Bookmark size={13} />保存为待办
+                </button>
+                <button type="button" title="发送任务" onClick={() => void handleStart()}
+                  disabled={!prompt.trim() && textAttachments.length === 0 && attachedImages.length === 0}
+                  className="flex h-8 w-8 items-center justify-center rounded bg-aegis-primary text-white disabled:cursor-not-allowed disabled:opacity-40">
+                  <Play size={14} fill="currentColor" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex min-h-10 items-center rounded-md border border-aegis-border bg-aegis-surface px-3">
               <LaunchSelector mode={launchMode} baseBranch={baseBranch}
                 onMode={(next) => {
                   draftUserEditedRef.current = true;
@@ -1478,75 +1469,7 @@ export function AgentRunView({
                   draftUserEditedRef.current = true;
                   setBaseBranch(next);
                 }} disabled={running} projectPath={projectPath} />
-              <label className="flex items-center gap-1.5 text-[12px] text-aegis-text-dim cursor-pointer select-none">
-                <input type="checkbox" checked={planMode} onChange={(e) => {
-                  draftUserEditedRef.current = true;
-                  setPlanMode(e.target.checked);
-                }} disabled={running}
-                  className="w-3.5 h-3.5 rounded accent-aegis-primary" />
-                Plan mode
-              </label>
             </div>
-          </div>
-        )}
-
-        {/* ── Prompt editor ───────────────────────────────────────────── */}
-        {!running && !isDone && (
-          <div className="px-4 pb-3">
-            <PromptEditor
-              value={prompt} onChange={(next) => {
-                draftUserEditedRef.current = true;
-                setPrompt(next);
-              }} onSubmit={handleStart} submitHint=""
-              placeholder="What should the agent do? type @ to mention a file, drag images here (⌘L expands)"
-              rows={4} disabled={running} draftKey={`agent-run:${taskId}`}
-              projectPath={projectPath}
-              mentionProjects={mentionProjects}
-              expanded={composerExpanded} onExpandedChange={setComposerExpanded}
-              images={attachedImages} onAttachImages={setAttachedImages}
-              onRemoveImage={(i) => setAttachedImages((p) => p.filter((_, idx) => idx !== i))}
-              onLargePaste={(text) => setTextAttachments((prev) => [...prev, { text, chars: text.length }])} />
-          </div>
-        )}
-
-        {/* ── Text attachments ──────────────────────────────────────── */}
-        {!running && !isDone && textAttachments.length > 0 && (
-          <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-            {textAttachments.map((ta, i) => (
-              <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px]"
-                style={{ background: 'rgb(var(--aegis-overlay)/0.05)', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text-secondary))' }}>
-                <FileText size={11} className="text-aegis-text-dim" />
-                <span>Text attachment · {ta.chars > 1000 ? `${(ta.chars/1000).toFixed(1)}K` : ta.chars} chars</span>
-                <button type="button" onClick={() => setTextAttachments((p) => p.filter((_, idx) => idx !== i))}
-                  className="ml-1 p-0.5 rounded hover:bg-[rgb(var(--aegis-danger)/0.1)] text-aegis-text-dim hover:text-aegis-danger">
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── Send / Cancel bar ───────────────────────────────────────── */}
-        {!running && !isDone && (
-          <div className="px-4 pb-4 flex items-center gap-2 flex-wrap">
-            <button type="button" onClick={() => void handleStart()}
-              disabled={!prompt.trim() && textAttachments.length === 0 && attachedImages.length === 0}
-              className="flex items-center gap-2 px-5 py-2 rounded-lg text-[13px] font-bold transition-all"
-              style={{ background: 'rgb(var(--aegis-primary))', color: 'rgb(var(--aegis-on-primary))', opacity: prompt.trim() || textAttachments.length > 0 || attachedImages.length > 0 ? 1 : 0.4 }}>
-              <Play size={14} fill="currentColor" /> Send
-            </button>
-            <button type="button" onClick={handleSaveTodo}
-              disabled={launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)}
-              title={launchMode === 'worktree' ? '工作树任务需要直接启动' : undefined}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium text-aegis-text-dim hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors">
-              <Bookmark size={13} /> Save as Todo
-            </button>
-            {attachedImages.length > 0 && (
-              <button type="button" onClick={() => setAttachedImages([])}
-                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-aegis-text-dim hover:text-aegis-danger">
-                <X size={12} /> Clear images ({attachedImages.length})
-              </button>
-            )}
           </div>
         )}
 

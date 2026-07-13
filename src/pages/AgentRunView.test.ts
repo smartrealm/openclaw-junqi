@@ -62,7 +62,15 @@ test('failed and cancelled sessions can resume when a session id exists', () => 
 
 test('workspace-owned tasks cannot change their project path', () => {
   assert.match(source, /providedProjectPath === undefined && \(/);
-  assert.match(source, /placeholder="Project path \(cwd if empty\)"/);
+  assert.match(source, /placeholder="项目路径（留空使用当前目录）"/);
+});
+
+test('new task composition follows the Nezha card and launch-bar hierarchy', () => {
+  assert.match(source, /rounded-lg border border-aegis-border bg-aegis-card/);
+  assert.match(source, /border-t border-aegis-border px-3 py-2/);
+  assert.match(source, /保存为待办/);
+  assert.match(source, /rounded-md border border-aegis-border bg-aegis-surface px-3/);
+  assert.doesNotMatch(source, /<SessionHistoryStrip agent=/);
 });
 
 test('workspace task agent choices match Nezha while standalone runs may use Pi', () => {
