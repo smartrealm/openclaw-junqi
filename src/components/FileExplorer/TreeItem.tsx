@@ -74,8 +74,9 @@ export const TreeItem = memo(function TreeItem({
       onClick={() => {
         if (isDir) {
           onToggle(node.path);
+        } else {
+          onSelect(node);
         }
-        onSelect(node);
       }}
       onContextMenu={(e) => onContextMenu(e, node)}
       onPointerDown={(event) => onPointerDown?.(event, node)}
