@@ -243,7 +243,7 @@ pub fn run() {
             commands::notification::get_notifications,
             commands::notification::mark_notification_read,
             commands::notification::mark_all_notifications_read,
-            // Usage snapshot stub (PR-0.6b — unavailable for both agents)
+            // Claude OAuth and persistent Codex app-server usage snapshots
             commands::usage::read_usage_snapshot,
             // Agent task PTY (PR-0.3 — minimal port)
             commands::agent_task_pty::run_task,
