@@ -1109,7 +1109,7 @@ export function AgentRunView({
 
   const handleCancel = useCallback(async () => {
     try {
-      await invoke('cancel_task', { taskId });
+      await invoke('cancel_task', { taskId, projectPath: worktreePath || projectPath });
       setStatus('cancelled');
       updateWorkspaceTaskState('cancelled');
     } catch (e) {
@@ -1117,7 +1117,7 @@ export function AgentRunView({
       setError(failureReason);
       updateWorkspaceTaskState('failed', { failureReason });
     } finally { setRunning(false); }
-  }, [taskId, updateWorkspaceTaskState]);
+  }, [projectPath, taskId, updateWorkspaceTaskState, worktreePath]);
 
   const handleMarkDone = useCallback(async () => {
     try {

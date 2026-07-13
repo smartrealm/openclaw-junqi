@@ -310,7 +310,7 @@ export function AgentWorkspacePage() {
     const deletingIds = new Set(deletingTasks.map((task) => task.id));
     for (const task of deletingTasks) {
       if (isActiveTask(task)) {
-        await invoke('cancel_task', { taskId: task.id }).catch((error) => setTaskActionError(`取消任务失败：${String(error)}`));
+        await invoke('cancel_task', { taskId: task.id, projectPath: task.worktreePath || task.projectPath }).catch((error) => setTaskActionError(`取消任务失败：${String(error)}`));
       }
       if (task.worktreePath && task.worktreeBranch && !task.worktreeDiscarded) {
         await invoke('remove_task_worktree', {

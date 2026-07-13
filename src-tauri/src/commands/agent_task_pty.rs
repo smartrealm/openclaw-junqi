@@ -110,6 +110,10 @@ fn task_attachments_dir(project_path: &str, task_id: &str) -> PathBuf {
         .join(safe_task_id(task_id))
 }
 
+fn cleanup_task_attachments(project_path: &str, task_id: &str) {
+    let _ = fs::remove_dir_all(task_attachments_dir(project_path, task_id));
+}
+
 fn decode_task_image(data_url: &str) -> Result<(&str, Vec<u8>), String> {
     let (header, encoded) = data_url
         .split_once(',')
@@ -979,7 +983,7 @@ pub async fn agent_resize_pty(task_id: String, cols: u16, rows: u16) -> Result<(
 }
 
 #[tauri::command]
-pub async fn cancel_task(task_id: String) -> Result<(), String> {
+pub async fn cancel_task(task_id: String, project_path: Option<String>) -> Result<(), String> {
     let _ = cancelled_tasks().lock().unwrap().insert(task_id.clone());
     let _ = manually_completed_tasks().lock().unwrap().remove(&task_id);
     let registry = pty_registry().lock().unwrap();
@@ -989,6 +993,9 @@ pub async fn cancel_task(task_id: String) -> Result<(), String> {
             let mut child = handles.child.lock().unwrap();
             let _ = child.kill();
         }
+    }
+    if let Some(project_path) = project_path.filter(|path| !path.trim().is_empty()) {
+        cleanup_task_attachments(&project_path, &task_id);
     }
     Ok(())
 }
@@ -1043,9 +1050,10 @@ pub fn get_active_task_ids() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_task_output, claude_project_directory_name, decode_task_image, permission_flag,
-        prompt_with_attachments, prompt_with_project_prefix, resume_arguments, safe_task_id,
-        task_final_status, task_output_buffers, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+        append_task_output, claude_project_directory_name, cleanup_task_attachments,
+        decode_task_image, permission_flag, prompt_with_attachments, prompt_with_project_prefix,
+        resume_arguments, safe_task_id, task_final_status, task_output_buffers,
+        MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
     };
 
     #[test]
@@ -1105,6 +1113,20 @@ mod tests {
     #[test]
     fn task_attachment_paths_are_safe_on_windows_and_unix() {
         assert_eq!(safe_task_id("agent-task:run/1"), "agent-task_run_1");
+    }
+
+    #[test]
+    fn cancelling_a_task_removes_its_staged_attachments() {
+        let root =
+            std::env::temp_dir().join(format!("junqi-cancel-attachments-{}", uuid::Uuid::new_v4()));
+        let directory = super::task_attachments_dir(&root.to_string_lossy(), "task:1");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("image-01.png"), b"data").unwrap();
+
+        cleanup_task_attachments(&root.to_string_lossy(), "task:1");
+
+        assert!(!directory.exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
