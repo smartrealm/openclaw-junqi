@@ -83,6 +83,12 @@ test('expanded and collapsed task panels expose Nezha footer actions', () => {
   assert.match(source, /visible=\{selected\?\.id === task\.id && selectedRunVisible\}/);
 });
 
+test('closing the active file tab follows Nezha adjacent-tab fallback', () => {
+  assert.match(source, /if \(index === -1\) return current;/);
+  assert.match(source, /next\[Math\.min\(index, next\.length - 1\)\]\?\.path \?\? null/);
+  assert.doesNotMatch(source, /next\[index - 1\]\?\.path \?\? next\[index\]\?\.path/);
+});
+
 test('task notification deep links select their project and task', () => {
   assert.match(source, /new URLSearchParams\(location\.search\)\.get\('task'\)/);
   assert.match(source, /findWorkspaceForDirectory\(workspaces, task\.projectPath\)/);

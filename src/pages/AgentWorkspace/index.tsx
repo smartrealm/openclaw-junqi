@@ -564,8 +564,9 @@ export function AgentWorkspacePage() {
   const closeFile = useCallback((path: string) => {
     setOpenFiles((current) => {
       const index = current.findIndex((file) => file.path === path);
+      if (index === -1) return current;
       const next = current.filter((file) => file.path !== path);
-      if (activeFilePath === path) setActiveFilePath(next[index - 1]?.path ?? next[index]?.path ?? null);
+      if (activeFilePath === path) setActiveFilePath(next[Math.min(index, next.length - 1)]?.path ?? null);
       return next;
     });
   }, [activeFilePath]);
