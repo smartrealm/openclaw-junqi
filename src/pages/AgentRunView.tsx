@@ -1259,12 +1259,9 @@ export function AgentRunView({
     }
   }, [agent, generatingTitle, projectPath, prompt, running, updateWorkspaceTask, workspaceTaskId]);
 
-  // ── Save as Todo (localStorage) ─────────────────────────────────────────
+  // ── Save as Todo ────────────────────────────────────────────────────────
   const handleSaveTodo = useCallback(() => {
     if (launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)) return;
-    const todos = JSON.parse(localStorage.getItem('junqi:saved-todos') || '[]');
-    todos.push({ at: Date.now(), agent, prompt, perm, textChars: textAttachments.map(t => t.text) });
-    localStorage.setItem('junqi:saved-todos', JSON.stringify(todos.slice(-20)));
     if (workspaceTaskId) {
       updateWorkspaceTask(workspaceTaskId, {
         prompt,

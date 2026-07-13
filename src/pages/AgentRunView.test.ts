@@ -105,6 +105,12 @@ test('generated task names cannot overwrite concurrent task edits', () => {
   assert.match(source, /taskStillMatchesNameSnapshot\(currentTask, snapshot\)/);
 });
 
+test('workspace todos use the project task store as their only source of truth', () => {
+  assert.doesNotMatch(source, /junqi:saved-todos/);
+  assert.match(source, /status: 'todo'/);
+  assert.match(source, /isDraft: false/);
+});
+
 test('worktree branch loading is stable across parent renders', () => {
   assert.match(source, /baseBranchRef\.current = baseBranch/);
   assert.match(source, /onBranchRef\.current = onBranch/);
