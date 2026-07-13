@@ -5,8 +5,7 @@
 // other modules (e.g. agent_task_pty) can push to.
 //
 // Architecture:
-//   - `get_notifications` — returns mock items + local pushed items, merged with
-//     read state
+//   - `get_notifications` — returns persisted local items merged with read state
 //   - `push_local_notification` — called by other Rust modules to push a
 //     notification (e.g. "task failed", "task needs input")
 //   - `mark_notification_read` / `mark_all_notifications_read` — persist read state
@@ -123,68 +122,7 @@ fn sanitize_text(s: &str, max_len: usize) -> String {
     cleaned
 }
 
-/// Return the current notification list with `isRead` merged from local store,
-/// plus the unread count.
-///
-/// Mock: returns a fixed set of demo items so the frontend bell has real
-/// content to render. Replace `_mock_items()` with a real fetch
-/// (HTTP / gateway.call / etc.) when a notification source is ready.
-/// `store.read_ids` is still meaningful — items the user marks read will
-/// report `is_read: true` on the next fetch.
-fn mock_items() -> Vec<NotificationItem> {
-    vec![
-        NotificationItem {
-            id: "welcome-v1".to_string(),
-            level: "info".to_string(),
-            title: "Welcome to JunQi".to_string(),
-            body: "Nezha-style skill hub + worktree support is now available. Open /skill-hub to get started.".to_string(),
-            body_zh: Some("已支持 Nezha 风格的 skill hub + worktree。打开 /skill-hub 开始使用。".to_string()),
-            url: None,
-            created_at: "2026-06-22 10:00".to_string(),
-            is_read: false,
-        },
-        NotificationItem {
-            id: "make-target".to_string(),
-            level: "info".to_string(),
-            title: "New: Run Make targets in one click".to_string(),
-            body: "Open a Makefile in the file viewer and click any target button to run it in the terminal.".to_string(),
-            body_zh: Some("在文件查看器打开 Makefile，点击 target 按钮即可在终端运行。".to_string()),
-            url: None,
-            created_at: "2026-06-22 09:30".to_string(),
-            is_read: false,
-        },
-        NotificationItem {
-            id: "agent-task-pty".to_string(),
-            level: "info".to_string(),
-            title: "Agent task PTY is ready".to_string(),
-            body: "Claude Code and Codex can now run in a managed PTY. Future updates will add session resume and worktree merge.".to_string(),
-            body_zh: Some("Claude Code 和 Codex 现在可以在托管的 PTY 中运行。后续会接入 session 续接和 worktree 合并。".to_string()),
-            url: None,
-            created_at: "2026-06-22 09:00".to_string(),
-            is_read: false,
-        },
-        NotificationItem {
-            id: "usage-mock".to_string(),
-            level: "warning".to_string(),
-            title: "Usage data is mocked".to_string(),
-            body: "Claude/Codex usage windows currently show demo values. Real OAuth / codex app-server integration is on the roadmap.".to_string(),
-            body_zh: Some("Claude/Codex 用量窗口目前显示的是演示数据。真实 OAuth / codex app-server 接入在路线图中。".to_string()),
-            url: None,
-            created_at: "2026-06-22 08:30".to_string(),
-            is_read: false,
-        },
-        NotificationItem {
-            id: "docs".to_string(),
-            level: "info".to_string(),
-            title: "Port plan document".to_string(),
-            body: "See docs/NEZHA-PORT-PLAN.md for the full migration status and architecture notes.".to_string(),
-            body_zh: None,
-            url: Some("https://github.com/hanshuaikang/nezha".to_string()),
-            created_at: "2026-06-21 18:00".to_string(),
-            is_read: false,
-        },
-    ]
-}
+/// Return persisted notifications with `isRead` merged from the local store.
 
 /// Push a notification from another backend module (e.g. agent_task_pty).
 /// These are persisted to `~/.nezha/local-notifications.json` and merged
@@ -253,9 +191,8 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
             .map(|p| load_local_notifications(&p))
             .unwrap_or_default();
 
-        // Merge: mock items first (pinned to top), then local items (newest first)
-        let mock = mock_items();
-        let mut all: Vec<NotificationItem> = mock.into_iter().chain(local).collect();
+        let mut all = local;
+        all.reverse();
 
         // Mark read state
         for item in &mut all {
@@ -363,22 +300,12 @@ mod tests {
     }
 
     #[test]
-    fn mock_items_have_unique_ids() {
-        let items = mock_items();
-        let mut ids: Vec<&String> = items.iter().map(|i| &i.id).collect();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), items.len(), "mock IDs must be unique");
-    }
-
-    #[test]
-    fn mock_items_levels_are_valid() {
-        for item in mock_items() {
-            assert!(
-                matches!(item.level.as_str(), "info" | "warning" | "error"),
-                "invalid level: {}",
-                item.level
-            );
-        }
+    fn notification_source_contains_no_pinned_demo_items() {
+        let source = include_str!("notification.rs");
+        let removed_mock = ["mock_", "items"].concat();
+        let removed_demo = ["usage-", "mock"].concat();
+        assert!(!source.contains(&removed_mock));
+        assert!(!source.contains(&removed_demo));
+        assert!(source.contains("all.reverse()"));
     }
 }
