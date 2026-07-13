@@ -122,7 +122,7 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const { result, loading, error, markRead, markAllRead } = usePersistentNotifications(pollIntervalMs);
+  const { result, loading, error, refresh, markRead, markAllRead } = usePersistentNotifications(pollIntervalMs);
 
   const handleOpenUrl = useCallback((url: string) => {
     setOpen(false);
@@ -146,7 +146,11 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
     <>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen((value) => {
+          const next = !value;
+          if (next) void refresh();
+          return next;
+        })}
         title={t('notification.title', 'Notifications')}
         aria-label={t('notification.title', 'Notifications')}
         className="relative w-[28px] h-[28px] flex items-center justify-center rounded-[5px] transition-colors"

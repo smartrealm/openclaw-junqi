@@ -246,8 +246,10 @@ pub fn run() {
             commands::workspace::get_workspace_path,
             // Notification local store (PR-0.6a — local read state only)
             commands::notification::get_notifications,
+            commands::notification::push_notification,
             commands::notification::mark_notification_read,
             commands::notification::mark_all_notifications_read,
+            commands::notification::clear_notifications,
             // Claude OAuth and persistent Codex app-server usage snapshots
             commands::usage::read_usage_snapshot,
             // Agent task PTY (PR-0.3 — minimal port)

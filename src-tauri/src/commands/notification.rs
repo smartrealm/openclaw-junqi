@@ -38,6 +38,28 @@ pub struct NotificationResult {
     pub unread_count: usize,
 }
 
+fn create_notification(
+    level: &str,
+    title: &str,
+    body: &str,
+    url: Option<&str>,
+) -> NotificationItem {
+    let level = match level {
+        "warning" | "error" => level,
+        _ => "info",
+    };
+    NotificationItem {
+        id: format!("local-{}", uuid::Uuid::new_v4()),
+        level: level.to_string(),
+        title: sanitize_text(title, 200),
+        body: sanitize_text(body, 4_000),
+        body_zh: None,
+        url: url.map(|value| sanitize_text(value, 2_000)),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        is_read: false,
+    }
+}
+
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 struct LocalStore {
     /// IDs the user has explicitly marked as read.
@@ -128,6 +150,20 @@ fn repository_gate() -> &'static Mutex<()> {
     GATE.get_or_init(|| Mutex::new(()))
 }
 
+fn persist_notification(item: NotificationItem) -> Result<NotificationItem, String> {
+    let _guard = repository_gate()
+        .lock()
+        .map_err(|_| "Notification repository lock is poisoned".to_string())?;
+    let repository = NotificationRepository::discover()?;
+    let mut existing = repository.load_items();
+    if existing.len() >= 50 {
+        existing.drain(0..existing.len() - 49);
+    }
+    existing.push(item.clone());
+    repository.save_items(&existing)?;
+    Ok(item)
+}
+
 /// Pure helper: read a store from the given path. Missing/empty file
 /// returns default. Used by tests to inject temp paths.
 fn load_store_at(path: &Path) -> LocalStore {
@@ -168,32 +204,7 @@ fn sanitize_text(s: &str, max_len: usize) -> String {
 
 /// Push a notification from another backend module (e.g. agent_task_pty).
 pub fn push_local_notification(level: &str, title: &str, body: &str, url: Option<&str>) {
-    let level = match level {
-        "warning" | "error" => level,
-        _ => "info",
-    };
-    let item = NotificationItem {
-        id: format!("local-{}", uuid::Uuid::new_v4()),
-        level: level.to_string(),
-        title: sanitize_text(title, 200),
-        body: sanitize_text(body, 4_000),
-        body_zh: None,
-        url: url.map(|value| sanitize_text(value, 2_000)),
-        created_at: chrono::Utc::now().to_rfc3339(),
-        is_read: false,
-    };
-    let Ok(_guard) = repository_gate().lock() else {
-        return;
-    };
-    let Ok(repository) = NotificationRepository::discover() else {
-        return;
-    };
-    let mut existing = repository.load_items();
-    if existing.len() >= 50 {
-        existing.drain(0..existing.len() - 49);
-    }
-    existing.push(item);
-    let _ = repository.save_items(&existing);
+    let _ = persist_notification(create_notification(level, title, body, url));
 }
 
 fn load_local_notifications(path: &Path) -> Vec<NotificationItem> {
@@ -241,6 +252,23 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
 }
 
 #[tauri::command]
+pub async fn push_notification(
+    level: String,
+    title: String,
+    body: String,
+    url: Option<String>,
+) -> Result<NotificationItem, String> {
+    tokio::task::spawn_blocking(move || {
+        if title.trim().is_empty() {
+            return Err("Notification title is required".to_string());
+        }
+        persist_notification(create_notification(&level, &title, &body, url.as_deref()))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub async fn mark_notification_read(id: String) -> Result<(), String> {
     let sanitized_id = sanitize_text(&id, 100);
     if sanitized_id.is_empty() {
@@ -279,6 +307,20 @@ pub async fn mark_all_notifications_read() -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn clear_notifications() -> Result<(), String> {
+    tokio::task::spawn_blocking(|| {
+        let _guard = repository_gate()
+            .lock()
+            .map_err(|_| "Notification repository lock is poisoned".to_string())?;
+        let repository = NotificationRepository::discover()?;
+        repository.save_items(&[])?;
+        repository.save_store(&LocalStore::default())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]
@@ -324,6 +366,17 @@ mod tests {
     #[test]
     fn sanitize_text_on_empty_returns_empty() {
         assert_eq!(sanitize_text("", 100), "");
+    }
+
+    #[test]
+    fn frontend_notification_payload_is_sanitized_before_persistence() {
+        let created =
+            create_notification("unexpected", "title\0", "body\x07", Some("/ai-workspace\0"));
+        assert_eq!(created.level, "info");
+        assert_eq!(created.title, "title");
+        assert_eq!(created.body, "body");
+        assert_eq!(created.url.as_deref(), Some("/ai-workspace"));
+        assert!(!created.is_read);
     }
 
     #[test]

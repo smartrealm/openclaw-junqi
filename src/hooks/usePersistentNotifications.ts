@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
+export const PERSISTENT_NOTIFICATIONS_CHANGED_EVENT = 'junqi:notifications-changed';
+
 export interface PersistentNotificationItem {
   id: string;
   level: string;
@@ -82,10 +84,17 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     const timer = pollIntervalMs > 0 && hasTauriRuntime()
       ? window.setInterval(() => void refresh(), pollIntervalMs)
       : undefined;
+    const handleChanged = () => void refresh();
+    if (typeof window.addEventListener === 'function') {
+      window.addEventListener(PERSISTENT_NOTIFICATIONS_CHANGED_EVENT, handleChanged);
+    }
     return () => {
       mountedRef.current = false;
       requestGenerationRef.current += 1;
       if (timer !== undefined) window.clearInterval(timer);
+      if (typeof window.removeEventListener === 'function') {
+        window.removeEventListener(PERSISTENT_NOTIFICATIONS_CHANGED_EVENT, handleChanged);
+      }
     };
   }, [pollIntervalMs, refresh]);
 
@@ -113,5 +122,17 @@ export function usePersistentNotifications(pollIntervalMs = 60_000) {
     }
   }, [refresh]);
 
-  return { result, loading, error, refresh, markRead, markAllRead };
+  const clear = useCallback(async () => {
+    setResult({ notifications: [], unreadCount: 0 });
+    try {
+      await invoke('clear_notifications');
+    } catch (cause) {
+      if (mountedRef.current) {
+        setError(String(cause));
+        await refresh();
+      }
+    }
+  }, [refresh]);
+
+  return { result, loading, error, refresh, markRead, markAllRead, clear };
 }

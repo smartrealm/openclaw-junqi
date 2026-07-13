@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +8,11 @@ import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import { useNotificationStore } from '@/stores/notificationStore';
+import type { NotificationItem, NotificationType } from '@/stores/notificationStore';
+import {
+  usePersistentNotifications,
+  type PersistentNotificationItem,
+} from '@/hooks/usePersistentNotifications';
 import { APP_PLATFORM } from '@/components/Terminal/_nezha-platform';
 import {
   readTerminalSidebarMode,
@@ -20,6 +24,24 @@ import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspac
 const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPanel').then(m => ({ default: m.NotificationPanel })));
 
 type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
+
+function persistentNotificationType(level: string): NotificationType {
+  return level === 'error' || level === 'warning' ? 'error' : 'info';
+}
+
+export function toNotificationPanelItem(
+  item: PersistentNotificationItem,
+  language: string,
+): NotificationItem {
+  return {
+    id: item.id,
+    type: persistentNotificationType(item.level),
+    title: item.title,
+    body: language === 'zh' && item.bodyZh ? item.bodyZh : item.body,
+    timestamp: item.createdAt,
+    read: item.isRead,
+  };
+}
 
 /**
  * TopBar — custom window-chrome strip (macOS Overlay title bar).
@@ -147,13 +169,23 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
   const statusClickable = status === 'working' || status === 'disconnected';
 
   // ── Notifications ──
-  const history = useNotificationStore((s) => s.history);
-  const markRead = useNotificationStore((s) => s.markRead);
-  const markAllRead = useNotificationStore((s) => s.markAllRead);
-  const clearHistory = useNotificationStore((s) => s.clearHistory);
+  const language = useSettingsStore((s) => s.language);
+  const {
+    result: persistentNotifications,
+    refresh: refreshNotifications,
+    markRead,
+    markAllRead,
+    clear: clearNotifications,
+  } = usePersistentNotifications();
+  const history = useMemo(
+    () => (persistentNotifications?.notifications ?? []).map((item) => (
+      toNotificationPanelItem(item, language)
+    )),
+    [language, persistentNotifications?.notifications],
+  );
   const dndMode = useSettingsStore((s) => s.dndMode);
   const setDndMode = useSettingsStore((s) => s.setDndMode);
-  const unread = history.reduce((n, h) => (h.read ? n : n + 1), 0);
+  const unread = persistentNotifications?.unreadCount ?? 0;
 
   const toggleDnd = useCallback(() => {
     const next = !dndMode;
@@ -263,7 +295,11 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
       <div ref={notifRef} className="ml-auto relative shrink-0">
         <button
           type="button"
-          onClick={() => setPanelOpen((o) => !o)}
+          onClick={() => setPanelOpen((value) => {
+            const next = !value;
+            if (next) void refreshNotifications();
+            return next;
+          })}
           title={t('notifications.title', 'Notifications')}
           aria-label={t('notifications.title', 'Notifications')}
           aria-expanded={panelOpen}
@@ -288,9 +324,9 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
               items={history}
               dndMode={dndMode}
               onToggleDnd={toggleDnd}
-              onMarkAllRead={markAllRead}
-              onClear={clearHistory}
-              onItemClick={(id) => markRead(id)}
+              onMarkAllRead={() => void markAllRead()}
+              onClear={() => void clearNotifications()}
+              onItemClick={(id) => void markRead(id)}
             />
           </Suspense>
         )}
