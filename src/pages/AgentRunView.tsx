@@ -57,6 +57,9 @@ import { SessionViewPage } from '@/pages/SessionViewPage';
 import { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from '@/components/shared/ToolCallHistoryPopover';
 import { useSessionHistoryStore } from '@/stores/sessionHistoryStore';
 import { debugError, debugWarn } from '@/utils/debugLog';
+import { attachSmartCopy } from '@/components/Terminal/terminalCopyHelper';
+import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from '@/components/Terminal/terminalInputFix';
+import { attachTerminalScrollbarAutoHide, loadWebglAddon } from '@/components/Terminal/terminalShared';
 import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktreeDiffStatsArgs } from './agentWorktreeCommands';
 
 async function loadTerminalDeps() {
@@ -638,6 +641,10 @@ export function AgentRunView({
     let fit: FitAddon | null = null;
     let sizeRo: ResizeObserver | null = null;
     let dataDisp: { dispose(): void } | null = null;
+    let disposeSmartCopy: (() => void) | null = null;
+    let disposeMacInputFix: (() => void) | null = null;
+    let disposeScrollbar: (() => void) | null = null;
+    let webglHandle: { dispose(): void } | null = null;
     let bootstrapping = false;
 
     const bootstrap = async () => {
@@ -670,6 +677,7 @@ export function AgentRunView({
           })(),
           rows: 30,
           cols: 120,
+          scrollback: 1000,
         });
         fit = new deps.FitAddon();
         term.loadAddon(fit);
@@ -678,14 +686,17 @@ export function AgentRunView({
         unicode11.activate(term);
         term.open(container);
 
-        // ── Plan A: xterm is read-only ──────────────────────────────────
-        dataDisp = term.onData((data) => {
+        const sendTerminalInput = (data: string) => {
           if (!runningRef.current) return;
-          if (data.length <= 3 && /^[\x00-\x7F]$/.test(data)) return;
           invoke('agent_send_input', { taskId, data }).catch((err) => {
-            debugWarn('terminal', '[AgentRunView] paste-forward failed:', err);
+            debugWarn('terminal', '[AgentRunView] terminal input failed:', err);
           });
-        });
+        };
+        dataDisp = attachLinuxIMEFix(term, sendTerminalInput);
+        disposeMacInputFix = attachMacWebKitShiftInputFix(term);
+        disposeSmartCopy = attachSmartCopy(term);
+        disposeScrollbar = attachTerminalScrollbarAutoHide(term, container);
+        webglHandle = loadWebglAddon(term);
 
         // Dimension guard: only fit when the container has real size.
         // xterm.js "dimensions" / "syncScrollArea" errors fire when
@@ -751,6 +762,10 @@ export function AgentRunView({
       cancelled = true;
       sizeRo?.disconnect();
       if (dataDisp) { try { dataDisp.dispose(); } catch { /* */ } }
+      try { disposeSmartCopy?.(); } catch { /* */ }
+      try { disposeMacInputFix?.(); } catch { /* */ }
+      try { disposeScrollbar?.(); } catch { /* */ }
+      try { webglHandle?.dispose(); } catch { /* */ }
       for (const d of termDisposersRef.current) { try { d(); } catch { /* */ } }
       termDisposersRef.current = [];
       try { term?.dispose(); } catch { /* */ }
