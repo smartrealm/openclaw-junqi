@@ -80,5 +80,9 @@
 
 - Rust formatting: `cargo fmt --check`
 - Rust tests: 214 passed, 2 ignored
+- Frontend tests: 586 passed; architecture boundary tests: 15 passed
+- TypeScript and production frontend build: `npm run build`
+- Clippy completed with no new warnings in the window controller modules
 - Release build: `npx tauri build --bundles dmg`
 - Disk image verification: `hdiutil verify`
+- Windows cross-compilation is unavailable in the asdf-managed macOS toolchain; Windows real-machine validation remains a release gate
