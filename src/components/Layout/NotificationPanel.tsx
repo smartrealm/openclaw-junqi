@@ -11,7 +11,7 @@ interface NotificationPanelProps {
   onToggleDnd: () => void;
   onMarkAllRead: () => void;
   onClear: () => void;
-  onItemClick: (id: string) => void;
+  onItemClick: (item: NotificationItem) => void;
 }
 
 const TYPE_ICON: Record<NotificationType, typeof Info> = {
@@ -94,7 +94,7 @@ export function NotificationPanel({
               <button
                 key={n.id}
                 type="button"
-                onClick={() => onItemClick(n.id)}
+                onClick={() => onItemClick(n)}
                 className={clsx(
                   'w-full flex items-start gap-2.5 px-3 py-2 text-start transition-colors border-b border-aegis-border/50 last:border-b-0',
                   'hover:bg-[rgb(var(--aegis-overlay)/0.04)]',

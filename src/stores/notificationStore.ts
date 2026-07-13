@@ -26,6 +26,7 @@ export interface NotificationItem {
   body: string;
   timestamp: string;
   read: boolean;
+  url?: string | null;
 }
 
 /** Max items retained in the notification-center history. */

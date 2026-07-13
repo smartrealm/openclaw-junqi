@@ -21,6 +21,7 @@ test('TopBar maps persisted notification fields and localized body', () => {
   assert.equal(mapped.body, '中文内容');
   assert.equal(mapped.timestamp, item.createdAt);
   assert.equal(mapped.read, false);
+  assert.equal(mapped.url, '/ai-workspace');
 });
 
 test('TopBar and notification service use the persistent notification contract', () => {
@@ -31,4 +32,5 @@ test('TopBar and notification service use the persistent notification contract',
   assert.doesNotMatch(topBar, /useNotificationStore/);
   assert.match(service, /invoke\('push_notification'/);
   assert.match(service, /PERSISTENT_NOTIFICATIONS_CHANGED_EVENT/);
+  assert.match(topBar, /resolveNotificationTarget\(item\.url\)/);
 });

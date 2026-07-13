@@ -24,6 +24,7 @@ import {
   usePersistentNotifications,
   type PersistentNotificationItem,
 } from '@/hooks/usePersistentNotifications';
+import { resolveNotificationTarget } from '@/utils/notificationTarget';
 
 function LevelIcon({ level }: { level: string }) {
   switch (level) {
@@ -125,12 +126,18 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
   const { result, loading, error, refresh, markRead, markAllRead } = usePersistentNotifications(pollIntervalMs);
 
   const handleOpenUrl = useCallback((url: string) => {
+    const target = resolveNotificationTarget(url);
+    if (!target) return;
     setOpen(false);
-    if (url.startsWith('/')) {
-      navigate(url);
-      return;
+    if (target.kind === 'internal') {
+      navigate(target.value);
+    } else {
+      try {
+        window.open(target.value, '_blank', 'noopener,noreferrer');
+      } catch {
+        // Keep the notification dialog usable if the WebView blocks popups.
+      }
     }
-    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch { /* ignore */ }
   }, [navigate]);
 
   const unreadCount = result?.unreadCount ?? 0;

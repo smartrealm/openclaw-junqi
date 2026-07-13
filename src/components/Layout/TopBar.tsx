@@ -20,6 +20,7 @@ import {
   TERMINAL_SIDEBAR_MODE_EVENT,
 } from '@/components/Terminal/terminalSidebarEvents';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
+import { resolveNotificationTarget } from '@/utils/notificationTarget';
 
 const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPanel').then(m => ({ default: m.NotificationPanel })));
 
@@ -40,6 +41,7 @@ export function toNotificationPanelItem(
     body: language === 'zh' && item.bodyZh ? item.bodyZh : item.body,
     timestamp: item.createdAt,
     read: item.isRead,
+    url: item.url,
   };
 }
 
@@ -196,6 +198,21 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
   const [panelOpen, setPanelOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
+  const openNotification = useCallback((item: NotificationItem) => {
+    void markRead(item.id);
+    setPanelOpen(false);
+    const target = resolveNotificationTarget(item.url);
+    if (target?.kind === 'internal') {
+      navigate(target.value);
+    } else if (target?.kind === 'external') {
+      try {
+        window.open(target.value, '_blank', 'noopener,noreferrer');
+      } catch {
+        // External navigation failures must not break notification state.
+      }
+    }
+  }, [markRead, navigate]);
+
   useEffect(() => {
     if (!panelOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -326,7 +343,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
               onToggleDnd={toggleDnd}
               onMarkAllRead={() => void markAllRead()}
               onClear={() => void clearNotifications()}
-              onItemClick={(id) => void markRead(id)}
+              onItemClick={openNotification}
             />
           </Suspense>
         )}
