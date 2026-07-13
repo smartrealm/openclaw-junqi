@@ -2,16 +2,26 @@ import { useTranslation } from 'react-i18next';
 import { MessageSquare, CheckCircle2, Info, AlertCircle, BellOff, CheckCheck, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 
-import type { NotificationItem, NotificationType } from '@/stores/notificationStore';
+import type { NotificationType } from '@/stores/notificationStore';
 import { formatNotificationTime } from '@/utils/notificationTime';
 
+export interface NotificationPanelItem {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  timestamp: string;
+  read: boolean;
+  url?: string | null;
+}
+
 interface NotificationPanelProps {
-  items: NotificationItem[];
+  items: NotificationPanelItem[];
   dndMode: boolean;
   onToggleDnd: () => void;
   onMarkAllRead: () => void;
   onClear: () => void;
-  onItemClick: (item: NotificationItem) => void;
+  onItemClick: (item: NotificationPanelItem) => void;
 }
 
 const TYPE_ICON: Record<NotificationType, typeof Info> = {

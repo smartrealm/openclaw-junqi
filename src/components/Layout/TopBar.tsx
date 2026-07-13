@@ -8,7 +8,8 @@ import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import type { NotificationItem, NotificationType } from '@/stores/notificationStore';
+import type { NotificationType } from '@/stores/notificationStore';
+import type { NotificationPanelItem } from '@/components/Layout/NotificationPanel';
 import {
   usePersistentNotifications,
   type PersistentNotificationItem,
@@ -33,7 +34,7 @@ function persistentNotificationType(level: string): NotificationType {
 export function toNotificationPanelItem(
   item: PersistentNotificationItem,
   language: string,
-): NotificationItem {
+): NotificationPanelItem {
   return {
     id: item.id,
     type: persistentNotificationType(item.level),
@@ -198,7 +199,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
   const [panelOpen, setPanelOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
-  const openNotification = useCallback((item: NotificationItem) => {
+  const openNotification = useCallback((item: NotificationPanelItem) => {
     void markRead(item.id);
     setPanelOpen(false);
     const target = resolveNotificationTarget(item.url);
