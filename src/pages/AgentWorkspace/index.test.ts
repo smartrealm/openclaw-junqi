@@ -28,3 +28,12 @@ test('pending tasks stay mounted and participate in active-task cleanup', () => 
   assert.match(source, /task\.status === 'pending'\s*\n\s*\|\| task\.status === 'running'/);
   assert.match(source, /mountedRunTaskIds\.has\(task\.id\) && isActiveTask\(task\)/);
 });
+
+test('task list actions match Nezha ownership boundaries', () => {
+  const start = source.indexOf("title={task.starred ? '取消收藏'");
+  const end = source.indexOf('title="删除任务"', start);
+  const taskActions = source.slice(start, end);
+  assert.match(taskActions, /title="立即运行"/);
+  assert.doesNotMatch(taskActions, /编辑任务/);
+  assert.doesNotMatch(taskActions, /生成任务名称/);
+});

@@ -21,7 +21,6 @@ import {
   Star,
   TerminalSquare,
   Trash2,
-  WandSparkles,
   X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -161,7 +160,6 @@ export function AgentWorkspacePage() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTaskDetailsId, setEditingTaskDetailsId] = useState<string | null>(null);
   const [editingTaskTitle, setEditingTaskTitle] = useState('');
-  const [generatingTaskId, setGeneratingTaskId] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const [autoStartTaskId, setAutoStartTaskId] = useState<string | null>(null);
   const [mountedRunTaskIds, setMountedRunTaskIds] = useState<Set<string>>(() => new Set());
@@ -516,24 +514,6 @@ export function AgentWorkspacePage() {
     setEditingTaskId(null);
     setEditingTaskTitle('');
   }, [editingTaskId, editingTaskTitle, updateTask]);
-
-  const generateTaskTitle = useCallback(async (task: AgentWorkspaceTask) => {
-    if (generatingTaskId || (task.agent !== 'claude' && task.agent !== 'codex')) return;
-    setGeneratingTaskId(task.id);
-    setTaskActionError(null);
-    try {
-      const title = await invoke<string>('generate_task_name', {
-        projectPath: task.projectPath,
-        agent: task.agent,
-        originalPrompt: task.prompt,
-      });
-      if (title.trim()) updateTask(task.id, { title: title.trim() });
-    } catch (reason) {
-      setTaskActionError(`生成任务名称失败：${String(reason)}`);
-    } finally {
-      setGeneratingTaskId(null);
-    }
-  }, [generatingTaskId, updateTask]);
 
   const showDiff = useCallback((target: DiffTarget) => {
     setOpenDiff(target);
@@ -922,25 +902,6 @@ export function AgentWorkspacePage() {
                       className="flex h-6 w-6 items-center justify-center rounded text-aegis-primary hover:bg-aegis-hover"
                     >
                       <Play size={11} fill="currentColor" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    title="编辑任务"
-                    onClick={() => setEditingTaskDetailsId(task.id)}
-                    className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
-                  >
-                    <Pencil size={12} />
-                  </button>
-                  {(task.agent === 'claude' || task.agent === 'codex') && (
-                    <button
-                      type="button"
-                      disabled={generatingTaskId !== null}
-                      title={generatingTaskId === task.id ? '正在生成任务名称' : '生成任务名称'}
-                      onClick={() => void generateTaskTitle(task)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50"
-                    >
-                      <WandSparkles size={12} className={generatingTaskId === task.id ? 'animate-pulse' : undefined} />
                     </button>
                   )}
                   <button
