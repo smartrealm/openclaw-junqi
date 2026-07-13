@@ -49,6 +49,12 @@ test('detached and interrupted tasks perform a real session recovery', () => {
 test('worktree session recovery reuses the existing worktree and blocks discarded worktrees', () => {
   assert.match(source, /resumeIdRef\.current && worktreePathRef\.current/);
   assert.match(source, /actualPath = worktreePathRef\.current/);
-  assert.match(source, /status === 'done' && !worktreeDiscarded/);
+  assert.match(source, /!!resumeFlag && !worktreeDiscarded/);
   assert.match(source, /if \(worktreeDiscarded\) return/);
+});
+
+test('failed and cancelled sessions can resume when a session id exists', () => {
+  assert.match(source, /isDone && !!recoverySessionId && !!resumeFlag && !worktreeDiscarded/);
+  assert.doesNotMatch(source, /status === 'done' && !worktreeDiscarded/);
+  assert.match(source, /\{\(sessionPath \|\| canResume\) && \(/);
 });

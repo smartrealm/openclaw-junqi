@@ -1218,9 +1218,9 @@ export function AgentRunView({
 
   // ── Resume support ──────────────────────────────────────────────────────
   const resumeFlag = agent === 'codex' ? 'resume' : agent === 'claude' ? '--resume' : agent === 'pi' ? '--session' : null;
-  const canResume = !running && isDone && !!sessionPath && !!resumeFlag && status === 'done' && !worktreeDiscarded;
   const resumeIdRef = useRef<string | null>(null);
   const recoverySessionId = sessionId ?? sessionPath?.split(/[\\/]/).pop()?.replace(/\.jsonl$/, '') ?? '';
+  const canResume = !running && isDone && !!recoverySessionId && !!resumeFlag && !worktreeDiscarded;
 
   const handleResume = useCallback(() => {
     if (worktreeDiscarded) return;
@@ -1655,24 +1655,26 @@ export function AgentRunView({
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>
                   </>
                 )}
-                {sessionPath && (
+                {(sessionPath || canResume) && (
                   <>
-                    <button type="button" onClick={() => void copySessionPath()} title={sessionPath}
-                      className="inline-flex items-center gap-1 hover:text-[rgb(var(--aegis-primary))] transition-colors">
-                      {sessionPathCopied ? <Check size={10} /> : <Copy size={10} />}
-                      {sessionPathCopied ? '已复制路径' : '会话文件'}
-                    </button>
-                    <button onClick={() => navigate(`/session?path=${encodeURIComponent(sessionPath)}`)} title={sessionPath}
-                      className="hover:text-[rgb(var(--aegis-primary))] transition-colors">{t('agent.session.view', 'session')}</button>
-                    <button
-                      type="button"
-                      disabled={exportingSession}
-                      onClick={() => void handleExportSession()}
-                      title="导出会话 Markdown"
-                      className="flex h-5 w-5 items-center justify-center rounded hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50"
-                    >
-                      <Download size={11} />
-                    </button>
+                    {sessionPath && <>
+                      <button type="button" onClick={() => void copySessionPath()} title={sessionPath}
+                        className="inline-flex items-center gap-1 hover:text-[rgb(var(--aegis-primary))] transition-colors">
+                        {sessionPathCopied ? <Check size={10} /> : <Copy size={10} />}
+                        {sessionPathCopied ? '已复制路径' : '会话文件'}
+                      </button>
+                      <button onClick={() => navigate(`/session?path=${encodeURIComponent(sessionPath)}`)} title={sessionPath}
+                        className="hover:text-[rgb(var(--aegis-primary))] transition-colors">{t('agent.session.view', 'session')}</button>
+                      <button
+                        type="button"
+                        disabled={exportingSession}
+                        onClick={() => void handleExportSession()}
+                        title="导出会话 Markdown"
+                        className="flex h-5 w-5 items-center justify-center rounded hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50"
+                      >
+                        <Download size={11} />
+                      </button>
+                    </>}
                     {canResume && <button onClick={handleResume} className="hover:text-[rgb(var(--aegis-success))] transition-colors">{t('agent.session.resume', 'resume')}</button>}
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>
                   </>
