@@ -2208,6 +2208,35 @@
     "nextStep": "下一步",
     "workshop": "工作台"
   },
+  "storage": {
+    "title": "选择 OpenClaw 数据位置",
+    "subtitle": "配置、会话、认证、工作区和 JunQi 管理的运行时将使用此位置。",
+    "chooseParent": "选择 OpenClaw 数据所在文件夹",
+    "continue": "继续",
+    "createAndContinue": "创建并继续",
+    "customLocation": "选择其他位置",
+    "customLocationHint": "其他磁盘或文件夹",
+    "defaultLocation": "使用当前位置",
+    "existingData": "检测到现有 OpenClaw 数据",
+    "loadFailed": "无法读取存储配置",
+    "loading": "正在读取存储信息…",
+    "migrate": "迁移现有数据",
+    "migrateAndContinue": "迁移并继续",
+    "migrateHint": "保留配置、认证、会话和工作区，源目录不会自动删除。",
+    "preparing": "正在准备新存储位置…",
+    "activating": "正在确认存储位置…",
+    "startFresh": "创建全新环境",
+    "startFreshHint": "旧目录保持不变，新位置从空配置开始。",
+    "progress": {
+      "stoppingGateway": "正在停止旧 Gateway…",
+      "copying": "正在复制 OpenClaw 数据…",
+      "preparingFresh": "正在准备全新的 OpenClaw 环境…",
+      "verifying": "正在校验迁移数据…",
+      "switching": "正在切换存储位置…",
+      "startingGateway": "正在从新存储位置启动 Gateway…",
+      "complete": "存储位置已更新"
+    }
+  },
   "setup": {
     "title": "欢迎使用 JunQi Desktop",
     "companyLabel": "出品公司",

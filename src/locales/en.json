@@ -2214,6 +2214,35 @@
     "nextStep": "Next step",
     "workshop": "Workshop"
   },
+  "storage": {
+    "title": "Choose OpenClaw data location",
+    "subtitle": "Configuration, sessions, credentials, workspaces, and JunQi-managed runtimes will use this location.",
+    "chooseParent": "Choose the folder that will contain OpenClaw data",
+    "continue": "Continue",
+    "createAndContinue": "Create and continue",
+    "customLocation": "Choose another location",
+    "customLocationHint": "Another disk or folder",
+    "defaultLocation": "Use current location",
+    "existingData": "Existing OpenClaw data detected",
+    "loadFailed": "Could not read storage configuration",
+    "loading": "Reading storage information…",
+    "migrate": "Migrate existing data",
+    "migrateAndContinue": "Migrate and continue",
+    "migrateHint": "Keep configuration, credentials, sessions, and workspaces. The source directory will not be deleted automatically.",
+    "preparing": "Preparing the new storage location…",
+    "activating": "Confirming the storage location…",
+    "startFresh": "Create a fresh environment",
+    "startFreshHint": "Keep the old directory unchanged and start with an empty configuration in the new location.",
+    "progress": {
+      "stoppingGateway": "Stopping the previous Gateway…",
+      "copying": "Copying OpenClaw data…",
+      "preparingFresh": "Preparing a new OpenClaw environment…",
+      "verifying": "Verifying migrated data…",
+      "switching": "Switching the storage location…",
+      "startingGateway": "Starting Gateway from the new storage location…",
+      "complete": "Storage location updated"
+    }
+  },
   "setup": {
     "title": "Welcome to JunQi Desktop",
     "companyLabel": "Company",

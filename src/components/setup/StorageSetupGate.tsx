@@ -19,6 +19,7 @@ interface StorageSetupStatus {
 }
 
 interface MigrationProgress {
+  key?: string;
   message: string;
   progress: number;
 }
@@ -77,13 +78,18 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
   useEffect(() => {
     let cancelled = false;
     const unlisten = subscribeTauriEvent<MigrationProgress>('storage-migration-progress', (event) => {
-      if (!cancelled) setProgress(event.payload);
+      if (cancelled) return;
+      const payload = event.payload;
+      setProgress({
+        ...payload,
+        message: payload.key ? t(payload.key, payload.message) : payload.message,
+      });
     });
     return () => {
       cancelled = true;
       unlisten();
     };
-  }, []);
+  }, [t]);
 
   const usingLegacy = useMemo(
     () => Boolean(status && targetDir === status.legacyDir),

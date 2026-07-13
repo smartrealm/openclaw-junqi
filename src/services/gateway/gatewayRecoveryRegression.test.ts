@@ -125,6 +125,50 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   assert.doesNotMatch(main, /DesktopRoot/);
 });
 
+test('BUG-ST03 storage migration waits for a free gateway port before copying', () => {
+  const storage = source('src-tauri/src/commands/storage.rs');
+  const configure = storage.slice(storage.indexOf('pub async fn configure_storage'));
+  const stop = configure.indexOf('stop_all_locked(');
+  const waitForPort = configure.indexOf('wait_for_port_free(');
+  const prepare = configure.indexOf('prepare_storage_target(');
+
+  assert.ok(stop >= 0, 'migration must stop every managed runtime');
+  assert.ok(waitForPort > stop, 'migration must wait after requesting shutdown');
+  assert.ok(prepare > waitForPort, 'migration must not copy until the gateway port is free');
+  assert.match(configure, /rollback_storage_transaction\(/);
+});
+
+test('BUG-ST04 storage progress is localized by stable keys in every locale', () => {
+  const storage = source('src-tauri/src/commands/storage.rs');
+  const gate = source('src/components/setup/StorageSetupGate.tsx');
+  const locales = ['zh', 'en', 'ar'] as const;
+  const progressKeys = [
+    'storage.progress.stoppingGateway',
+    'storage.progress.copying',
+    'storage.progress.preparingFresh',
+    'storage.progress.verifying',
+    'storage.progress.switching',
+    'storage.progress.startingGateway',
+    'storage.progress.complete',
+  ];
+  const valueAt = (messages: Record<string, unknown>, key: string): unknown => {
+    if (key in messages) return messages[key];
+    return key.split('.').reduce<unknown>((value, segment) => {
+      if (!value || typeof value !== 'object') return undefined;
+      return (value as Record<string, unknown>)[segment];
+    }, messages);
+  };
+
+  assert.match(gate, /payload\.key \? t\(payload\.key, payload\.message\)/);
+  for (const key of progressKeys) {
+    assert.match(storage, new RegExp(`"${key.replaceAll('.', '\\.')}"`));
+    for (const locale of locales) {
+      const messages = JSON.parse(source(`src/locales/${locale}.json`)) as Record<string, unknown>;
+      assert.equal(typeof valueAt(messages, key), 'string', `${locale} is missing ${key}`);
+    }
+  }
+});
+
 test('BUG-02 service restart failures use the managed gateway fallback', () => {
   const rust = source('src-tauri/src/commands/gateway.rs');
   assert.match(rust, /async fn start_managed_gateway_fallback/);

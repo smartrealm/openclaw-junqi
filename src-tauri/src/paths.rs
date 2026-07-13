@@ -3,7 +3,8 @@
 //! 任何模块需要路径时都应从这里导入，不要在业务代码里临时拼路径。
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
 
 const STORAGE_BOOTSTRAP_VERSION: u32 = 1;
 
@@ -65,14 +66,62 @@ pub fn save_storage_bootstrap(bootstrap: &StorageBootstrap) -> Result<(), String
         return Err("Storage paths must be absolute".to_string());
     }
     let path = storage_bootstrap_path();
+    write_storage_bootstrap(&path, bootstrap)
+}
+
+fn write_storage_bootstrap(path: &Path, bootstrap: &StorageBootstrap) -> Result<(), String> {
     let parent = path.parent().ok_or("Invalid bootstrap path")?;
     std::fs::create_dir_all(parent)
         .map_err(|e| format!("Failed to create bootstrap directory: {}", e))?;
-    let tmp = parent.join(format!(".bootstrap-{}.tmp", std::process::id()));
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp = parent.join(format!(".bootstrap-{}-{}.tmp", std::process::id(), suffix));
     let raw = serde_json::to_string_pretty(bootstrap)
         .map_err(|e| format!("Failed to serialize bootstrap: {}", e))?;
-    std::fs::write(&tmp, raw).map_err(|e| format!("Failed to write bootstrap: {}", e))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("Failed to activate bootstrap: {}", e))
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(raw.as_bytes())?;
+        file.sync_all()
+    })();
+    if let Err(error) = write_result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("Failed to write bootstrap: {}", error));
+    }
+    if let Err(error) = replace_file(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("Failed to activate bootstrap: {}", error));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    std::fs::rename(source, target)
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source_wide: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target_wide: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+    let moved = unsafe {
+        MoveFileExW(
+            source_wide.as_ptr(),
+            target_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 pub fn remove_storage_bootstrap() -> Result<(), String> {
@@ -285,10 +334,115 @@ mod storage_bootstrap_tests {
         assert_eq!(layout.config_path, state.join("openclaw.json"));
         assert_eq!(layout.workspace_dir, state.join("workspace"));
     }
+
+    #[test]
+    fn bug_st06_bootstrap_replaces_an_existing_layout() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-bootstrap-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("bootstrap.json");
+        let first = StorageBootstrap::for_state_dir(root.join("first"), None);
+        let second = StorageBootstrap::for_state_dir(root.join("second"), None);
+
+        write_storage_bootstrap(&path, &first).unwrap();
+        write_storage_bootstrap(&path, &second).unwrap();
+
+        let saved: StorageBootstrap =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved, second);
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bug_st06_failed_bootstrap_activation_removes_temporary_file() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-bootstrap-failure-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let path = root.join("bootstrap.json");
+        std::fs::create_dir_all(&path).unwrap();
+        let layout = StorageBootstrap::for_state_dir(root.join("state"), None);
+
+        assert!(write_storage_bootstrap(&path, &layout).is_err());
+        let entries = std::fs::read_dir(&root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(entries, vec![std::ffi::OsString::from("bootstrap.json")]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bug_st07_workspace_paths_match_openclaw_resolution() {
+        let home = Path::new("/users/tester");
+        let cwd = Path::new("/work/junqi");
+
+        assert_eq!(
+            resolve_openclaw_user_path_from(" ~/agents/main ", home, cwd).unwrap(),
+            home.join("agents/main")
+        );
+        assert_eq!(
+            resolve_openclaw_user_path_from("./workspace/../agent-data", home, cwd).unwrap(),
+            cwd.join("agent-data")
+        );
+    }
 }
 
-/// 从 openclaw.json 读取用户配置的工作区路径。
-/// 配置不存在或未指定工作区时返回 None。
+fn normalize_absolute_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
+fn resolve_openclaw_user_path_from(raw: &str, home: &Path, cwd: &Path) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("OpenClaw path cannot be empty".to_string());
+    }
+
+    let expanded = if trimmed == "~" {
+        home.to_path_buf()
+    } else if trimmed.starts_with("~/") || trimmed.starts_with("~\\") {
+        home.join(trimmed[2..].trim_start_matches(['/', '\\']))
+    } else {
+        PathBuf::from(trimmed)
+    };
+    let absolute = if expanded.is_absolute() {
+        expanded
+    } else {
+        cwd.join(expanded)
+    };
+    Ok(normalize_absolute_path(&absolute))
+}
+
+/// Match OpenClaw's `resolveUserPath`: trim, expand `~`, then resolve relative
+/// paths from the process working directory without requiring the path to exist.
+pub fn resolve_openclaw_user_path(raw: &str) -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Unable to resolve the user home directory")?;
+    let cwd = std::env::current_dir()
+        .map_err(|error| format!("Unable to resolve the current directory: {}", error))?;
+    resolve_openclaw_user_path_from(raw, &home, &cwd)
+}
+
+/// 从 openclaw.json 读取并解析用户配置的工作区路径。
+/// 配置不存在、无效或未指定工作区时返回 None。
 pub fn read_workspace_from_config(config_path: &std::path::Path) -> Option<PathBuf> {
     let raw = std::fs::read_to_string(config_path).ok()?;
     let config: serde_json::Value = serde_json::from_str(&raw).ok()?;
@@ -297,7 +451,7 @@ pub fn read_workspace_from_config(config_path: &std::path::Path) -> Option<PathB
         .get("defaults")?
         .get("workspace")?
         .as_str()?;
-    Some(PathBuf::from(workspace))
+    resolve_openclaw_user_path(workspace).ok()
 }
 
 // ── 设备 ───────────────────────────────────────────────────────

@@ -34,3 +34,14 @@
 - Rust：门闩唯一所有者、bootstrap 优先级、迁移校验与失败不切换。
 - 前端：首次启动门禁、迁移参数和已配置时直接进入。
 - 完整 `cargo test --lib`、前端测试、生产构建、格式检查。
+
+## Phase F：2026-07-14 事务安全复审
+
+| Bug | 文件 | 实施 |
+| --- | --- | --- |
+| BUG-ST03 | `storage.rs` | 停止后等待端口释放，未释放则禁止复制 |
+| BUG-ST04 | `storage.rs` | 记录原运行模式，失败时恢复 Gateway 并清理目标 |
+| BUG-ST05 | `storage.rs` | 临时目录激活前可靠更新 workspace 路径 |
+| BUG-ST06 | `paths.rs`、`Cargo.toml` | Windows 原子替换已有 bootstrap |
+| BUG-ST07 | `storage.rs`、`StorageSetupGate.tsx`、locales | 结构化多语言迁移进度 |
+| BUG-ST08 | `storage.rs` | 解引用状态根链接后复制，禁止迁移补丁反写源目录 |
