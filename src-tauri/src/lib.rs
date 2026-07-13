@@ -3,138 +3,11 @@ mod paths;
 mod platform;
 mod state;
 mod tray;
+mod window_adaptation;
 mod window_sizing;
 
 use state::GatewayProcess;
 use tauri::{Emitter, Manager, RunEvent};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WindowAdaptationOutcome {
-    Applied,
-    Unchanged,
-}
-
-fn adapt_main_window(
-    window: &tauri::WebviewWindow,
-    mode: window_sizing::SizingMode,
-) -> Result<WindowAdaptationOutcome, String> {
-    let current_monitor = window
-        .current_monitor()
-        .map_err(|error| format!("cannot query current monitor: {error}"))?;
-    let monitor_is_fallback = current_monitor.is_none();
-    let monitor = match current_monitor {
-        Some(monitor) => monitor,
-        None => window
-            .primary_monitor()
-            .map_err(|error| format!("cannot query primary monitor: {error}"))?
-            .ok_or_else(|| "no active monitor is available".to_string())?,
-    };
-    let work_area = monitor.work_area();
-    let inner_size = window
-        .inner_size()
-        .map_err(|error| format!("cannot query inner window size: {error}"))?;
-    let outer_size = window
-        .outer_size()
-        .map_err(|error| format!("cannot query outer window size: {error}"))?;
-    let outer_position = window
-        .outer_position()
-        .map_err(|error| format!("cannot query outer window position: {error}"))?;
-    let maximized = window
-        .is_maximized()
-        .map_err(|error| format!("cannot query maximized state: {error}"))?;
-    let plan = window_sizing::plan_window_adjustment(
-        window_sizing::WindowSnapshot {
-            work_area: window_sizing::PhysicalRect {
-                position: window_sizing::PhysicalPosition {
-                    x: work_area.position.x,
-                    y: work_area.position.y,
-                },
-                size: window_sizing::PhysicalSize {
-                    width: work_area.size.width,
-                    height: work_area.size.height,
-                },
-            },
-            inner_size: window_sizing::PhysicalSize {
-                width: inner_size.width,
-                height: inner_size.height,
-            },
-            outer_size: window_sizing::PhysicalSize {
-                width: outer_size.width,
-                height: outer_size.height,
-            },
-            outer_position: window_sizing::PhysicalPosition {
-                x: outer_position.x,
-                y: outer_position.y,
-            },
-            monitor_scale_factor: monitor.scale_factor(),
-            monitor_is_fallback,
-            maximized,
-        },
-        mode,
-    )
-    .map_err(|error| format!("cannot plan window adaptation: {error}"))?;
-
-    window
-        .set_min_size(Some(tauri::PhysicalSize::new(
-            plan.minimum_inner_size.width,
-            plan.minimum_inner_size.height,
-        )))
-        .map_err(|error| format!("cannot set minimum window size: {error}"))?;
-    if let Some(size) = plan.target_inner_size {
-        window
-            .set_size(tauri::PhysicalSize::new(size.width, size.height))
-            .map_err(|error| format!("cannot resize main window: {error}"))?;
-    }
-    if let Some(position) = plan.target_outer_position {
-        window
-            .set_position(tauri::PhysicalPosition::new(position.x, position.y))
-            .map_err(|error| format!("cannot reposition main window: {error}"))?;
-    }
-
-    if plan.target_inner_size.is_some() || plan.target_outer_position.is_some() {
-        Ok(WindowAdaptationOutcome::Applied)
-    } else {
-        Ok(WindowAdaptationOutcome::Unchanged)
-    }
-}
-
-fn start_window_adaptation_controller(window: tauri::WebviewWindow) {
-    const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(180);
-    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<()>(1);
-    let worker_window = window.clone();
-    tauri::async_runtime::spawn(async move {
-        while event_rx.recv().await.is_some() {
-            loop {
-                match tokio::time::timeout(DEBOUNCE, event_rx.recv()).await {
-                    Ok(Some(())) => continue,
-                    Ok(None) => return,
-                    Err(_) => break,
-                }
-            }
-            if let Err(error) =
-                adapt_main_window(&worker_window, window_sizing::SizingMode::Preserve)
-            {
-                eprintln!("[window-adaptation] {error}");
-            }
-        }
-    });
-
-    window.on_window_event(move |event| {
-        if matches!(
-            event,
-            tauri::WindowEvent::Moved(_)
-                | tauri::WindowEvent::ScaleFactorChanged { .. }
-                | tauri::WindowEvent::Focused(true)
-        ) {
-            match event_tx.try_send(()) {
-                Ok(()) | Err(tokio::sync::mpsc::error::TrySendError::Full(())) => {}
-                Err(tokio::sync::mpsc::error::TrySendError::Closed(())) => {
-                    eprintln!("[window-adaptation] event worker is no longer available");
-                }
-            }
-        }
-    });
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -560,34 +433,10 @@ pub fn run() {
             // sizing. Later launches preserve the window-state plugin's restored size,
             // unless it no longer fits the current display.
             let first_run_marker = paths::desktop_dir().join(".junqi-window-initialized");
-            let is_first_run = !first_run_marker.exists();
             if let Some(window) = app.get_webview_window("main") {
-                let mode = if is_first_run {
-                    window_sizing::SizingMode::Initial
-                } else {
-                    window_sizing::SizingMode::Preserve
-                };
-                match adapt_main_window(&window, mode) {
-                    Ok(_) if is_first_run => {
-                        let marker_result = first_run_marker
-                            .parent()
-                            .map(std::fs::create_dir_all)
-                            .transpose()
-                            .and_then(|_| std::fs::write(&first_run_marker, "1"));
-                        if let Err(error) = marker_result {
-                            eprintln!(
-                                "[window-adaptation] cannot persist first-run marker at {}: {}",
-                                first_run_marker.display(),
-                                error
-                            );
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        eprintln!("[window-adaptation] initial adaptation failed: {error}")
-                    }
-                }
-                start_window_adaptation_controller(window);
+                window_adaptation::initialize(window, first_run_marker);
+            } else {
+                eprintln!("[window-adaptation] main window is unavailable during setup");
             }
             // Emit gateway config to frontend before it loads (no invoke needed)
             let handle = app.handle().clone();
