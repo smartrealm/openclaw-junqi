@@ -73,6 +73,7 @@ test('hidden projects remain available in the drawer and active project stays on
 });
 
 test('expanded and collapsed task panels expose Nezha footer actions', () => {
+  assert.equal((source.match(/<NotificationBell \/>/g) ?? []).length, 2);
   assert.match(source, /setSettingsOpen\(true\)/);
   assert.match(source, /setTheme\(darkTheme \? 'aegis-light' : 'aegis-dark'\)/);
   assert.match(source, /切换到浅色主题/);
