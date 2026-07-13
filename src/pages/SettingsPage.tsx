@@ -4,11 +4,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X, Sparkles, FolderOpen,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X, Sparkles, FolderOpen, TerminalSquare,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -32,14 +32,19 @@ import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';
+import { TerminalSettingsPanel } from '@/components/settings/TerminalSettingsPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 
+type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'pet' | 'connect' | 'storage' | 'about';
+const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'pet', 'connect', 'storage', 'about'];
+
 export function SettingsPageFull() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     theme, setTheme,
     uiScale, setUiScale,
@@ -165,7 +170,23 @@ export function SettingsPageFull() {
   const [editUrl, setEditUrl] = useState(gatewayUrl);
   const [editToken, setEditToken] = useState(gatewayToken);
   const [connectionDirty, setConnectionDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => (
+    SETTINGS_TABS.includes(requestedTab as SettingsTab) ? requestedTab as SettingsTab : 'appearance'
+  ));
+
+  useEffect(() => {
+    if (SETTINGS_TABS.includes(requestedTab as SettingsTab)) setActiveTab(requestedTab as SettingsTab);
+  }, [requestedTab]);
+
+  const selectTab = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('tab', tab);
+      return next;
+    }, { replace: true });
+  };
 
   useEffect(() => {
     if (activeTab !== 'pet') return;
@@ -459,16 +480,17 @@ export function SettingsPageFull() {
       </div>
 
       {/* Horizontal tab bar */}
-      <div className="flex gap-1 border-b border-aegis-border pb-0 overflow-x-auto">
+      <div className="flex gap-1 border-b border-aegis-border pb-0 overflow-x-auto" role="tablist" aria-label={t('settings.title')}>
         {([
           ['appearance', t('settings.tab.appearance', '外观'), Sun],
+          ['terminal', t('settings.tab.terminal', '终端'), TerminalSquare],
           ['notify', t('settings.tab.notify', '通知'), Bell],
           ['pet', t('settings.tab.pet', '萌宠'), PawPrint],
           ['connect', t('settings.tab.connect', '连接'), Wifi],
           ['storage', t('settings.tab.storage', '存储'), HardDrive],
           ['about', t('settings.tab.about', '关于'), Info],
         ] as const).map(([key, label, Icon]) => (
-          <button key={key} onClick={() => setActiveTab(key)}
+          <button key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => selectTab(key)}
             className={clsx(
               'flex items-center gap-1.5 px-3.5 py-2 rounded-t-lg text-[13px] font-medium transition-colors border-b-2 -mb-[1px] whitespace-nowrap',
               activeTab === key
@@ -481,6 +503,8 @@ export function SettingsPageFull() {
         ))}
       </div>
       <div className="space-y-6">
+
+      {activeTab === 'terminal' && <TerminalSettingsPanel />}
 
       {activeTab === 'appearance' && (
         <>

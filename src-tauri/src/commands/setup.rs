@@ -1,13 +1,12 @@
 use crate::commands::npm_registry;
+use crate::commands::setup_progress::{emit, emit_keyed};
 use crate::paths;
 use crate::platform;
-use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, OnceLock,
 };
-use tauri::Emitter;
 
 static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
@@ -75,48 +74,6 @@ pub fn find_git_in_default_paths() -> Option<PathBuf> {
         }
     }
     None
-}
-
-// ─── Progress event ────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SetupProgress {
-    pub step: String,
-    pub message: String,
-    /// Optional i18n key. When present, the frontend uses it to localize
-    /// the message; falls back to the raw `message` field otherwise.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub key: Option<String>,
-    pub progress: Option<f64>,
-    pub error: Option<String>,
-}
-
-fn emit(app: &tauri::AppHandle, step: &str, message: &str, progress: f64) {
-    let _ = app.emit(
-        "setup-progress",
-        SetupProgress {
-            step: step.into(),
-            message: message.into(),
-            key: None,
-            progress: Some(progress.clamp(0.0, 1.0)),
-            error: None,
-        },
-    );
-}
-
-/// Emit a progress event tagged with an i18n key. Frontend renders the
-/// localized copy when the key resolves; otherwise falls back to `message`.
-fn emit_keyed(app: &tauri::AppHandle, step: &str, message: &str, key: &str, progress: f64) {
-    let _ = app.emit(
-        "setup-progress",
-        SetupProgress {
-            step: step.into(),
-            message: message.into(),
-            key: Some(key.into()),
-            progress: Some(progress.clamp(0.0, 1.0)),
-            error: None,
-        },
-    );
 }
 
 // ─── Download sources ──────────────────────────────────────────────────────────

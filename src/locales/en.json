@@ -488,6 +488,9 @@
   },
   "settings": {
     "title": "Settings",
+    "tab": {
+      "terminal": "Terminal"
+    },
     "language": "Language",
     "notifications": "Notifications",
     "enableNotifications": "Enable Notifications",
@@ -2556,6 +2559,25 @@
     "fiveHour": "5h",
     "sevenDay": "7d"
   },
+  "terminalSettings": {
+    "title": "Terminal settings",
+    "description": "Configure display and input behavior for the main, split, and agent terminals.",
+    "saving": "Saving",
+    "saved": "Saved",
+    "reset": "Restore defaults",
+    "fontSize": "Font size",
+    "fontSizeHint": "Applies immediately to open terminals.",
+    "decreaseFont": "Decrease font size",
+    "increaseFont": "Increase font size",
+    "fontFamily": "Monospace font",
+    "fontFamilyHint": "Also used by terminals, code blocks, and file previews.",
+    "systemDefault": "System default",
+    "scrollback": "Scrollback lines",
+    "scrollbackHint": "Applies to new terminals; larger values use more memory in long sessions.",
+    "shiftEnter": "Shift+Enter newline",
+    "shiftEnterHint": "Insert a newline in interactive terminals without executing the current input.",
+    "saveFailed": "Could not save terminal settings: {{error}}"
+  },
   "appSettings": {
     "general": "General",
     "generalDesc": "Application-wide preferences.",
@@ -2913,5 +2935,23 @@
   "setup.openclawUpdate.channel.dev": "Development",
   "setup.openclawUpdate.registryLabel": "Update source: {{registry}}",
   "setup.openclawUpdate.registry.official": "npm official registry",
-  "setup.openclawUpdate.registry.chinaMirror": "China mirror"
+  "setup.openclawUpdate.registry.chinaMirror": "China mirror",
+  "settings.tab.terminal": "Terminal",
+  "terminalSettings.title": "Terminal settings",
+  "terminalSettings.description": "Use one display and input configuration across main, split, and agent terminals.",
+  "terminalSettings.saving": "Saving",
+  "terminalSettings.saved": "Saved",
+  "terminalSettings.reset": "Reset defaults",
+  "terminalSettings.fontSize": "Font size",
+  "terminalSettings.fontSizeHint": "Applies immediately to open terminals.",
+  "terminalSettings.decreaseFont": "Decrease font size",
+  "terminalSettings.increaseFont": "Increase font size",
+  "terminalSettings.fontFamily": "Monospace font",
+  "terminalSettings.fontFamilyHint": "Also used by terminals, code blocks, and file previews.",
+  "terminalSettings.systemDefault": "System default",
+  "terminalSettings.scrollback": "Scrollback lines",
+  "terminalSettings.scrollbackHint": "Applies to newly opened terminals. Larger buffers use more memory in long sessions.",
+  "terminalSettings.shiftEnter": "Shift+Enter newline",
+  "terminalSettings.shiftEnterHint": "Insert a newline in interactive terminals without executing the current input.",
+  "terminalSettings.saveFailed": "Could not save terminal settings: {{error}}"
 }

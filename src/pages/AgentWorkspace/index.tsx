@@ -28,6 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { GitChanges, GitDiffViewer, GitHistory } from '@/components/Git';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { FileExplorer } from '@/components/FileExplorer';
@@ -49,6 +50,7 @@ import { UsagePopover } from '@/components/shared/UsagePopover';
 import { ENABLE_USAGE_INSIGHTS } from '@/components/Terminal/_nezha-platform';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
 import { agentTaskNeedsAttention, compareAgentWorkspaceTasks } from './taskListModel';
 import {
   readAttentionBadge,
@@ -113,6 +115,7 @@ function workspacePath(workspace: { projectDirectory?: string; workingDirectory?
 }
 
 export function AgentWorkspacePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const resolvedTheme = useTheme();
@@ -120,10 +123,9 @@ export function AgentWorkspacePage() {
   const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
   const configuredMonoFont = useSettingsStore((state) => state.monoFont);
   const setTheme = useSettingsStore((state) => state.setTheme);
-  const setSettingsOpen = useSettingsStore((state) => state.setSettingsOpen);
   const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
   const darkTheme = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
-  const [terminalScrollback, setTerminalScrollback] = useState(1000);
+  const { scrollback: terminalScrollback, shiftEnterNewline: terminalShiftEnterNewline } = useTerminalPreferences();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((state) => state.setActive);
@@ -134,18 +136,6 @@ export function AgentWorkspacePage() {
   const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
   const workspace = workspaces.find((item) => item.id === activeWorkspaceId);
   const projectPath = workspacePath(workspace);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      void invoke<{ terminal_scrollback?: number }>('load_app_settings').then((settings) => {
-        if (!cancelled) setTerminalScrollback(settings.terminal_scrollback ?? 1000);
-      }).catch(() => undefined);
-    };
-    load();
-    window.addEventListener('nezha:app-settings-changed', load);
-    return () => { cancelled = true; window.removeEventListener('nezha:app-settings-changed', load); };
-  }, []);
 
   const tasks = useAgentWorkspaceStore((state) => state.tasks);
   const selectedTaskIds = useAgentWorkspaceStore((state) => state.selectedTaskIds);
@@ -958,7 +948,7 @@ export function AgentWorkspacePage() {
           </div>
           <footer className="flex h-10 shrink-0 items-center justify-end gap-1 border-t border-aegis-border px-2">
             <NotificationBell />
-            <button type="button" title="应用设置" onClick={() => setSettingsOpen(true)} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"><Settings size={14} /></button>
+            <button type="button" title={t('terminalSettings.title', '终端设置')} onClick={() => navigate('/settings?tab=terminal')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"><Settings size={14} /></button>
             <button type="button" title={darkTheme ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(darkTheme ? 'aegis-light' : 'aegis-dark')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{darkTheme ? <Sun size={14} /> : <Moon size={14} />}</button>
             {ENABLE_USAGE_INSIGHTS && <UsagePopover />}
           </footer>
@@ -985,7 +975,7 @@ export function AgentWorkspacePage() {
           </button>
           <span className="flex-1" />
           <NotificationBell />
-          <button type="button" title="应用设置" onClick={() => setSettingsOpen(true)} className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"><Settings size={14} /></button>
+          <button type="button" title={t('terminalSettings.title', '终端设置')} onClick={() => navigate('/settings?tab=terminal')} className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"><Settings size={14} /></button>
           <button type="button" title={darkTheme ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(darkTheme ? 'aegis-light' : 'aegis-dark')} className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{darkTheme ? <Sun size={14} /> : <Moon size={14} />}</button>
         </aside>
       )}
@@ -1132,6 +1122,8 @@ export function AgentWorkspacePage() {
               onClose={() => setShowShellTerminal(false)}
               themeVariant={themeVariant}
               terminalFontSize={terminalFontSize}
+              terminalScrollback={terminalScrollback}
+              terminalShiftEnterNewline={terminalShiftEnterNewline}
               monoFontFamily={monoFontFamily}
               height={terminalHeight}
             />

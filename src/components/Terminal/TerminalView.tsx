@@ -37,6 +37,7 @@ interface TerminalViewProps {
   onReady?: (generation: number) => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback?: number;
   monoFontFamily: FontFamily;
   isActive?: boolean;
   initialData?: string;
@@ -51,6 +52,7 @@ export function TerminalView({
   onReady,
   themeVariant,
   terminalFontSize,
+  terminalScrollback = 1000,
   monoFontFamily,
   isActive = true,
   initialData,
@@ -70,6 +72,7 @@ export function TerminalView({
   const initialConfigRef = useRef({
     themeVariant,
     terminalFontSize,
+    terminalScrollback,
     monoFontFamily,
     initialData,
     initialSnapshot,
@@ -98,7 +101,7 @@ export function TerminalView({
 
     const { term, fitAddon, whenFontsReady } = initTerminal(
       initialConfig.themeVariant,
-      1000,
+      initialConfig.terminalScrollback,
       initialConfig.terminalFontSize,
       initialConfig.monoFontFamily,
     );

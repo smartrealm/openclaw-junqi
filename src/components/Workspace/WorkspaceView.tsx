@@ -11,10 +11,11 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { Plus, X, Terminal as TerminalIcon, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
 import type { PaneLeaf, PaneNode, PaneSplit } from '@/workspace/types';
 import { useTheme } from '@/theme/useTheme';
 import {
-  DEFAULT_TERMINAL_FONT_SIZE,
   getDefaultMonoFont,
   type ThemeVariant,
   type TerminalFontSize,
@@ -180,12 +181,18 @@ function ShellPaneHost({ leaf }: { leaf: PaneLeaf }) {
   const closePane = useWorkspaceStore((s) => s.closePane);
   const resolvedTheme = useTheme();
   const themeVariant: ThemeVariant = resolvedTheme.replace('aegis-', '') as ThemeVariant;
+  const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
+  const configuredMonoFont = useSettingsStore((state) => state.monoFont);
+  const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
+  const { scrollback: terminalScrollback, shiftEnterNewline: terminalShiftEnterNewline } = useTerminalPreferences();
   return (
     <Suspense fallback={<PaneContentFallback />}>
       <LazyShellTerminalPanel
         themeVariant={themeVariant}
-        terminalFontSize={DEFAULT_TERMINAL_FONT_SIZE as TerminalFontSize}
-        monoFontFamily={getDefaultMonoFont() as FontFamily}
+        terminalFontSize={terminalFontSize}
+        terminalScrollback={terminalScrollback}
+        terminalShiftEnterNewline={terminalShiftEnterNewline}
+        monoFontFamily={monoFontFamily}
         projectPath={leaf.config.cwd ?? ''}
         projectId={leaf.id}
         onClose={() => closePane(leaf.id)}

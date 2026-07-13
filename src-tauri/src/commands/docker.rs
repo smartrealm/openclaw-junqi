@@ -1,11 +1,152 @@
 use crate::commands::gateway::{ensure_config_with_token, GatewayStatus};
+use crate::commands::setup_progress::{emit, emit_error};
 use crate::paths;
 use crate::platform;
 use serde::Serialize;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const OPENCLAW_IMAGE: &str = "ghcr.io/openclaw/openclaw";
+
+#[derive(Default)]
+struct DockerPullProgress {
+    layers: HashMap<String, f64>,
+    furthest: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum DockerLayerPhase {
+    Queued,
+    Downloading(f64),
+    Verifying,
+    Downloaded,
+    Extracting(f64),
+    Complete,
+}
+
+impl DockerLayerPhase {
+    fn fraction(self) -> f64 {
+        match self {
+            Self::Queued => 0.02,
+            Self::Downloading(ratio) => 0.05 + ratio * 0.5,
+            Self::Verifying => 0.58,
+            Self::Downloaded => 0.62,
+            Self::Extracting(ratio) => 0.62 + ratio * 0.36,
+            Self::Complete => 1.0,
+        }
+    }
+}
+
+const FIXED_DOCKER_PHASES: &[(&str, DockerLayerPhase)] = &[
+    ("Pull complete", DockerLayerPhase::Complete),
+    ("Download complete", DockerLayerPhase::Downloaded),
+    ("Verifying Checksum", DockerLayerPhase::Verifying),
+    ("Pulling fs layer", DockerLayerPhase::Queued),
+    ("Waiting", DockerLayerPhase::Queued),
+];
+
+#[derive(Clone, Copy)]
+struct TransferPhaseRule {
+    prefix: &'static str,
+    build: fn(f64) -> DockerLayerPhase,
+}
+
+const TRANSFER_DOCKER_PHASES: &[TransferPhaseRule] = &[
+    TransferPhaseRule {
+        prefix: "Downloading",
+        build: DockerLayerPhase::Downloading,
+    },
+    TransferPhaseRule {
+        prefix: "Extracting",
+        build: DockerLayerPhase::Extracting,
+    },
+];
+
+fn parse_docker_layer_phase(state: &str) -> Option<DockerLayerPhase> {
+    FIXED_DOCKER_PHASES
+        .iter()
+        .find_map(|(prefix, phase)| state.strip_prefix(prefix).map(|_| *phase))
+        .or_else(|| {
+            TRANSFER_DOCKER_PHASES.iter().find_map(|rule| {
+                state.strip_prefix(rule.prefix)?;
+                transfer_ratio(state).map(rule.build)
+            })
+        })
+}
+
+impl DockerPullProgress {
+    fn observe(&mut self, line: &str) -> f64 {
+        let Some((layer, state)) = line.trim().split_once(": ") else {
+            return self.furthest;
+        };
+        let Some(phase) = parse_docker_layer_phase(state) else {
+            return self.furthest;
+        };
+        let layer_progress = phase.fraction();
+        self.layers
+            .entry(layer.to_owned())
+            .and_modify(|current| *current = current.max(layer_progress))
+            .or_insert(layer_progress);
+        let aggregate = self.layers.values().sum::<f64>() / self.layers.len() as f64;
+        self.furthest = self.furthest.max(aggregate).clamp(0.0, 0.98);
+        self.furthest
+    }
+}
+
+fn transfer_ratio(state: &str) -> Option<f64> {
+    let pair = state.split_whitespace().find(|part| part.contains('/'))?;
+    let (current, total) = pair.split_once('/')?;
+    let total = parse_transfer_size(total)?;
+    if total <= 0.0 {
+        return None;
+    }
+    Some((parse_transfer_size(current)? / total).clamp(0.0, 1.0))
+}
+
+fn parse_transfer_size(value: &str) -> Option<f64> {
+    let split = value.find(|ch: char| !ch.is_ascii_digit() && ch != '.')?;
+    let number = value[..split].parse::<f64>().ok()?;
+    let unit = value[split..].trim().to_ascii_lowercase();
+    let multiplier = match unit.as_str() {
+        "b" => 1.0,
+        "kb" | "kib" => 1024.0,
+        "mb" | "mib" => 1024.0 * 1024.0,
+        "gb" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some(number * multiplier)
+}
+
+async fn stream_docker_output<R>(
+    reader: R,
+    app: AppHandle,
+    tracker: Arc<Mutex<DockerPullProgress>>,
+    tail: Arc<Mutex<VecDeque<String>>>,
+) where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let mut lines = BufReader::new(reader).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        let line = line.trim().trim_matches('\r');
+        if line.is_empty() {
+            continue;
+        }
+        let progress = tracker
+            .lock()
+            .map(|mut state| state.observe(line))
+            .unwrap_or(0.0);
+        if let Ok(mut entries) = tail.lock() {
+            if entries.len() == 20 {
+                entries.pop_front();
+            }
+            entries.push_back(line.to_owned());
+        }
+        emit(&app, "pull", line, progress);
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct DockerStatus {
@@ -179,21 +320,64 @@ pub async fn pull_openclaw_image(app: AppHandle, tag: Option<String>) -> Result<
     let tag = tag.unwrap_or_else(|| "latest".to_string());
     let image = format!("{}:{}", OPENCLAW_IMAGE, tag);
 
-    let _ = app.emit("setup-progress", format!("Pulling {}...", image));
+    emit(&app, "pull", &format!("Pulling {}...", image), 0.0);
 
     let docker_bin = resolve_docker_bin().await?;
-    let output = tokio::process::Command::new(&docker_bin)
+    let mut command = tokio::process::Command::new(&docker_bin);
+    command
         .args(["pull", &image])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run docker pull: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("docker pull failed: {}", stderr));
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    platform::configure_background_command(&mut command);
+    let mut child = command.spawn().map_err(|error| {
+        let message = format!("Failed to run docker pull: {}", error);
+        emit_error(&app, "pull", &message, Some(0.0));
+        message
+    })?;
+    let tracker = Arc::new(Mutex::new(DockerPullProgress::default()));
+    let tail = Arc::new(Mutex::new(VecDeque::new()));
+    let stdout_task = child.stdout.take().map(|stdout| {
+        tokio::spawn(stream_docker_output(
+            stdout,
+            app.clone(),
+            Arc::clone(&tracker),
+            Arc::clone(&tail),
+        ))
+    });
+    let stderr_task = child.stderr.take().map(|stderr| {
+        tokio::spawn(stream_docker_output(
+            stderr,
+            app.clone(),
+            Arc::clone(&tracker),
+            Arc::clone(&tail),
+        ))
+    });
+    let status = match child.wait().await {
+        Ok(status) => status,
+        Err(error) => {
+            let message = format!("docker pull process failed: {}", error);
+            emit_error(&app, "pull", &message, None);
+            return Err(message);
+        }
+    };
+    if let Some(task) = stdout_task {
+        let _ = task.await;
+    }
+    if let Some(task) = stderr_task {
+        let _ = task.await;
+    }
+    if !status.success() {
+        let detail = tail
+            .lock()
+            .map(|entries| entries.iter().cloned().collect::<Vec<_>>().join("\n"))
+            .unwrap_or_default();
+        let message = format!("docker pull failed: {}", detail);
+        emit_error(&app, "pull", &message, None);
+        return Err(message);
     }
 
-    let _ = app.emit("setup-progress", "Image pulled successfully");
+    emit(&app, "pull", "Image pulled successfully", 1.0);
     Ok(format!("Pulled {}", image))
 }
 
@@ -269,7 +453,7 @@ pub(crate) async fn start_docker_gateway_locked(
         .output()
         .await;
 
-    let _ = app.emit("setup-progress", "Starting Docker container...");
+    emit(&app, "container", "Starting Docker container...", 0.15);
 
     let config_mount = format!(
         "{}:/home/node/.openclaw",
@@ -309,21 +493,34 @@ pub(crate) async fn start_docker_gateway_locked(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("docker run failed: {}", stderr));
+        let message = format!("docker run failed: {}", stderr);
+        emit_error(&app, "container", &message, Some(0.2));
+        return Err(message);
     }
 
     // Wait for the gateway to be ready (TCP connect check, up to 30s)
     // Use the same readiness contract as native mode: the mapped local port
     // must accept a TCP connection.
-    let _ = app.emit("setup-progress", "Waiting for gateway to be ready...");
+    emit(
+        &app,
+        "container",
+        "Waiting for gateway to be ready...",
+        0.55,
+    );
     let addr = format!("127.0.0.1:{}", port);
     let mut healthy = false;
-    for _ in 0..30 {
+    for attempt in 0..30 {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         if tokio::net::TcpStream::connect(&addr).await.is_ok() {
             healthy = true;
             break;
         }
+        emit(
+            &app,
+            "container",
+            &format!("Waiting for gateway health check ({}/30)...", attempt + 1),
+            0.55 + (attempt as f64 / 30.0) * 0.4,
+        );
     }
 
     if !healthy {
@@ -356,16 +553,17 @@ pub(crate) async fn start_docker_gateway_locked(
                 })
                 .unwrap_or_default();
 
-            return Err(format!(
-                "Container exited unexpectedly. Logs:\n{}",
-                log_text
-            ));
+            let message = format!("Container exited unexpectedly. Logs:\n{}", log_text);
+            emit_error(&app, "container", &message, Some(0.95));
+            return Err(message);
         }
 
-        return Err("Gateway health check timed out after 30s".into());
+        let message = "Gateway health check timed out after 30s";
+        emit_error(&app, "container", message, Some(0.95));
+        return Err(message.into());
     }
 
-    let _ = app.emit("setup-progress", "Gateway is ready!");
+    emit(&app, "container", "Gateway is ready", 1.0);
 
     // SPEC M10: tail the container's log stream into the Rust-side circular
     // buffer so the Settings → Storage panel can show what just happened.
@@ -435,6 +633,51 @@ fn spawn_docker_log_tailer(app: AppHandle) {
             });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        parse_docker_layer_phase, parse_transfer_size, transfer_ratio, DockerLayerPhase,
+        DockerPullProgress,
+    };
+
+    #[test]
+    fn parses_docker_transfer_sizes_and_ratios() {
+        assert_eq!(parse_transfer_size("1kB"), Some(1024.0));
+        assert_eq!(parse_transfer_size("2MB"), Some(2.0 * 1024.0 * 1024.0));
+        assert_eq!(transfer_ratio("Downloading 1MB/2MB"), Some(0.5));
+    }
+
+    #[test]
+    fn docker_layer_progress_is_monotonic() {
+        let mut tracker = DockerPullProgress::default();
+        let first = tracker.observe("abc123: Downloading 1MB/2MB");
+        let second = tracker.observe("abc123: Extracting 1MB/2MB");
+        let delayed_layer = tracker.observe("def456: Pulling fs layer");
+        let complete = tracker.observe("abc123: Pull complete");
+        assert!(second > first);
+        assert!(delayed_layer >= second);
+        assert!(complete >= delayed_layer);
+        assert!(complete <= 0.98);
+    }
+
+    #[test]
+    fn docker_output_maps_to_explicit_layer_phases() {
+        assert_eq!(
+            parse_docker_layer_phase("Downloading 1MB/2MB"),
+            Some(DockerLayerPhase::Downloading(0.5))
+        );
+        assert_eq!(
+            parse_docker_layer_phase("Extracting 2MB/2MB"),
+            Some(DockerLayerPhase::Extracting(1.0))
+        );
+        assert_eq!(
+            parse_docker_layer_phase("Pull complete"),
+            Some(DockerLayerPhase::Complete)
+        );
+        assert_eq!(parse_docker_layer_phase("Digest: sha256:abc"), None);
+    }
 }
 
 /// Stop the OpenClaw Docker container (without removing it).

@@ -35,6 +35,7 @@ import type { Workspace } from "@/workspace/types";
 import { getDefaultMonoFont } from "@/_nezha_root/types";
 import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
 
 interface TerminalWorkspaceDirectory {
   path: string;
@@ -55,6 +56,7 @@ export function TerminalPage() {
   const themeVariant: ThemeVariant = resolvedTheme.replace("aegis-", "") as ThemeVariant;
 
   const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
+  const { scrollback: terminalScrollback, shiftEnterNewline: terminalShiftEnterNewline } = useTerminalPreferences();
   const configuredMonoFont = useSettingsStore((state) => state.monoFont);
   const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
   const [projectPath, setProjectPath] = useState(".");
@@ -394,6 +396,8 @@ export function TerminalPage() {
                     isActive={candidateActive}
                     themeVariant={themeVariant}
                     terminalFontSize={terminalFontSize}
+                    terminalScrollback={terminalScrollback}
+                    terminalShiftEnterNewline={terminalShiftEnterNewline}
                     monoFontFamily={monoFontFamily}
                     projectPath={candidate.sshRemoteHost ? projectPath : candidate.projectDirectory || candidate.workingDirectory || projectPath}
                     resizeSuspended={sidebarResizeActive}
@@ -405,6 +409,8 @@ export function TerminalPage() {
               <ShellTerminalPanel
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
+                terminalScrollback={terminalScrollback}
+                terminalShiftEnterNewline={terminalShiftEnterNewline}
                 monoFontFamily={monoFontFamily}
                 projectPath={projectPath}
                 projectId="default"

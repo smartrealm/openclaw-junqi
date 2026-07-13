@@ -74,11 +74,11 @@ test('hidden projects remain available in the drawer and active project stays on
 
 test('expanded and collapsed task panels expose Nezha footer actions', () => {
   assert.equal((source.match(/<NotificationBell \/>/g) ?? []).length, 2);
-  assert.match(source, /setSettingsOpen\(true\)/);
+  assert.match(source, /navigate\('\/settings\?tab=terminal'\)/);
+  assert.match(source, /terminalSettings\.title/);
   assert.match(source, /setTheme\(darkTheme \? 'aegis-light' : 'aegis-dark'\)/);
   assert.match(source, /切换到浅色主题/);
   assert.match(source, /切换到深色主题/);
-  assert.match(source, /应用设置/);
   assert.match(source, /ENABLE_USAGE_INSIGHTS && <UsagePopover \/>/);
   assert.match(source, /visible=\{selected\?\.id === task\.id && selectedRunVisible\}/);
 });

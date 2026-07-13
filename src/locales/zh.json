@@ -488,6 +488,9 @@
   },
   "settings": {
     "title": "设置",
+    "tab": {
+      "terminal": "终端"
+    },
     "language": "语言",
     "notifications": "通知",
     "enableNotifications": "启用通知",
@@ -2550,6 +2553,25 @@
     "fiveHour": "5小时",
     "sevenDay": "7天"
   },
+  "terminalSettings": {
+    "title": "终端设置",
+    "description": "统一设置主终端、分屏终端和智能体终端的显示与输入行为。",
+    "saving": "正在保存",
+    "saved": "已保存",
+    "reset": "恢复默认",
+    "fontSize": "字号",
+    "fontSizeHint": "立即应用到已打开的终端。",
+    "decreaseFont": "减小字号",
+    "increaseFont": "增大字号",
+    "fontFamily": "等宽字体",
+    "fontFamilyHint": "同时用于终端、代码块和文件预览。",
+    "systemDefault": "系统默认",
+    "scrollback": "回滚行数",
+    "scrollbackHint": "应用于新打开的终端；数值越大，长时会话占用的内存越多。",
+    "shiftEnter": "Shift+Enter 换行",
+    "shiftEnterHint": "在交互式终端中插入换行，不立即执行当前输入。",
+    "saveFailed": "终端设置保存失败：{{error}}"
+  },
   "appSettings": {
     "general": "通用",
     "generalDesc": "应用全局设置。",
@@ -2937,5 +2959,23 @@
   "setup.openclawUpdate.channel.dev": "开发版",
   "setup.openclawUpdate.registryLabel": "更新源：{{registry}}",
   "setup.openclawUpdate.registry.official": "npm 官方源",
-  "setup.openclawUpdate.registry.chinaMirror": "国内镜像"
+  "setup.openclawUpdate.registry.chinaMirror": "国内镜像",
+  "settings.tab.terminal": "终端",
+  "terminalSettings.title": "终端设置",
+  "terminalSettings.description": "统一设置主终端、分屏终端和智能体终端的显示与输入行为。",
+  "terminalSettings.saving": "正在保存",
+  "terminalSettings.saved": "已保存",
+  "terminalSettings.reset": "恢复默认",
+  "terminalSettings.fontSize": "字号",
+  "terminalSettings.fontSizeHint": "立即应用到已打开的终端。",
+  "terminalSettings.decreaseFont": "减小字号",
+  "terminalSettings.increaseFont": "增大字号",
+  "terminalSettings.fontFamily": "等宽字体",
+  "terminalSettings.fontFamilyHint": "同时用于终端、代码块和文件预览。",
+  "terminalSettings.systemDefault": "系统默认",
+  "terminalSettings.scrollback": "回滚行数",
+  "terminalSettings.scrollbackHint": "应用于新打开的终端；数值越大，长时会话占用的内存越多。",
+  "terminalSettings.shiftEnter": "Shift+Enter 换行",
+  "terminalSettings.shiftEnterHint": "在交互式终端中插入换行，不立即执行当前输入。",
+  "terminalSettings.saveFailed": "终端设置保存失败：{{error}}"
 }

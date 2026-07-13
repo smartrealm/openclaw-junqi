@@ -48,3 +48,11 @@ test('npm setup step is translated in every supported locale', () => {
     }
   }
 });
+
+test('visual setup commits keep the synchronous step reference current', () => {
+  assert.match(
+    setupFlow,
+    /const commitSteps = useCallback\([\s\S]*?stepsRef\.current = next;[\s\S]*?setSteps\(next\)/,
+  );
+  assert.doesNotMatch(setupFlow, /(?<!const )setSteps\((?!next\))/);
+});

@@ -25,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/stores/app-store";
 import { combineUnlisteners, subscribeTauriEvent } from "@/utils/tauriEvents";
 import type { SetupLog, SetupStep } from "@/stores/app-store";
+import { classifySetupMessage, normalizeSetupProgressPayload } from "@/hooks/setupProgressEvents";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changeLanguage } from "@/i18n";
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from "@/i18n/languages";
@@ -113,15 +114,6 @@ function useSetupNavigation() {
     setSetupStatus(t(setupStepMessageKey(step)), setupStepProgress(step));
     setSetupStep(step);
   };
-}
-
-function payloadMessage(payload: unknown): string | null {
-  if (typeof payload === "string") return payload;
-  if (payload && typeof payload === "object" && "message" in payload) {
-    const message = (payload as { message?: unknown }).message;
-    return typeof message === "string" ? message : null;
-  }
-  return null;
 }
 
 function LanguageThemeControls() {
@@ -393,7 +385,8 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isInstallComplete ? t("setup.installCompleteSubtitle", "安装与配置已完成。请确认后手动启动 Gateway。") : t("setup.subtitle")}
       logs={logs}
       wide
-      previousAction={setupStep === "ready" ? undefined : { onClick: () => flow.goBack() }}
+      showLogToggle={false}
+      previousAction={setupStep === "error" || isInstallComplete ? { onClick: () => flow.goBack() } : undefined}
       nextAction={
         setupStep === "ready"
           ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
@@ -652,12 +645,23 @@ export function SetupPage() {
 
   useEffect(() => {
     const unlistenSetup = subscribeTauriEvent("setup-progress", (event) => {
-      const message = payloadMessage(event.payload);
-      if (message) appendSetupLog({ source: "setup", message });
+      const detail = normalizeSetupProgressPayload(event.payload);
+      if (!detail) return;
+      appendSetupLog({
+        source: "setup",
+        message: detail.message,
+        step: detail.step ?? undefined,
+        level: classifySetupMessage(detail.message, detail.error),
+        progress: detail.progress ?? undefined,
+      });
     });
 
     const unlistenGateway = subscribeTauriEvent<string>("gateway-log", (event) => {
-      if (event.payload) appendSetupLog({ source: "gateway", message: event.payload });
+      if (event.payload) appendSetupLog({
+        source: "gateway",
+        message: event.payload,
+        level: classifySetupMessage(event.payload),
+      });
     });
 
     return combineUnlisteners([unlistenSetup, unlistenGateway]);

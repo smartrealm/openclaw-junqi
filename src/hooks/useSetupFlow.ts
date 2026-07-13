@@ -20,10 +20,10 @@ import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import { setupProgressI18nParams } from "./setupProgressParams";
 import {
   advanceSetupProgress,
-  phaseForSetupEvent,
-  progressForPhase,
+  progressForSetupEvent,
   type SetupProgressPhase,
 } from "./setupProgressModel";
+import { normalizeSetupProgressPayload } from "./setupProgressEvents";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { gateway } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
@@ -41,6 +41,7 @@ export interface StepState {
   label: string;
   status: StepStatus;
   detail?: string;
+  progress?: number;
 }
 
 export type InstallTargetTier = "user" | "xdg" | "sandbox" | "existing";
@@ -187,6 +188,12 @@ export function useSetupFlow(
   }
   const progressRef = useRef(progress);
   progressRef.current = progress;
+  const stepsRef = useRef(steps);
+  stepsRef.current = steps;
+  const commitSteps = useCallback((next: StepState[]) => {
+    stepsRef.current = next;
+    setSteps(next);
+  }, [setSteps]);
   const activeRunRef = useRef(0);
   const beginRun = useCallback(() => {
     activeRunRef.current += 1;
@@ -286,7 +293,7 @@ export function useSetupFlow(
           const reachable: boolean = await invoke("probe_gateway_port", {});
           if (reachable) {
             setGatewayRunning(true);
-            setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
+            commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
             setPostStorageStep(onboardingRequired ? "configure-openclaw" : "ready");
             report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
             setSetupStep("storage");
@@ -305,7 +312,7 @@ export function useSetupFlow(
         setSetupStep("storage");
       }
     })();
-  }, [setupStep, report, t, setGatewayRunning, setPostStorageStep, setSetupStep, setSteps]);
+  }, [setupStep, report, t, setGatewayRunning, setPostStorageStep, setSetupStep, commitSteps]);
 
   // ── Docker detect after the welcome step ──
   useEffect(() => {
@@ -324,17 +331,17 @@ export function useSetupFlow(
   }, [setupStep, dockerStatus, setCheckingDocker, setDockerStatus]);
 
   // ── setup-progress event listener (granular per-step progress from Rust) ──
-  const stepsRef = useRef(steps);
-  stepsRef.current = steps;
   useEffect(() => {
     const unlisten = subscribeTauriEvent<{ step: string; message: string; progress: number | null; error: string | null; key?: string } | string>(
       "setup-progress",
       (event) => {
-        if (typeof event.payload === "string") {
-          report(event.payload);
+        const normalized = normalizeSetupProgressPayload(event.payload);
+        if (!normalized) return;
+        const { step, message, progress: localProgress, error, key } = normalized;
+        if (!step) {
+          report(message);
           return;
         }
-        const { step, message, progress: p, error, key } = event.payload as any;
         // Prefer i18n-resolved text; fall back to the raw Rust message.
         const translated = key
           ? String(t(key as string, { defaultValue: message, ...setupProgressI18nParams(key, message) }))
@@ -346,10 +353,8 @@ export function useSetupFlow(
         // path is byte-identical to what's in the progress message.
         const resolvedTarget = pickInstallTargetFromProgress(String(key ?? ""), message);
         if (resolvedTarget) setInstallTarget(resolvedTarget);
-        const localProgress = p != null ? Math.round(p * 100) : undefined;
-        const eventPhase = phaseForSetupEvent(step);
-        const nextProgress = eventPhase && typeof localProgress === "number"
-          ? progressForPhase(eventPhase, localProgress)
+        const nextProgress = typeof localProgress === "number"
+          ? progressForSetupEvent(step, localProgress, installMode) ?? undefined
           : undefined;
 
         // Keep the primary onboarding copy coarse and calm.
@@ -374,21 +379,40 @@ export function useSetupFlow(
         if (sid) {
           const newSteps = stepsRef.current.map((s) =>
             s.id === sid
-              ? { ...s, status: (error ? "error" : "running") as StepStatus, detail: display }
+              ? {
+                  ...s,
+                  status: (error ? "error" : "running") as StepStatus,
+                  detail: display,
+                  progress: typeof localProgress === "number"
+                    ? Math.max(s.progress ?? 0, localProgress)
+                    : s.progress,
+                }
               : s
           );
-          setSteps(newSteps);
+          commitSteps(newSteps);
         }
       }
     );
     return unlisten;
-  }, [t, report]);
+  }, [t, report, installMode, setInstallTarget, commitSteps]);
 
   // ── Helpers ──
   function patchStep(id: string, status: StepStatus, detail?: string) {
-    setSteps(stepsRef.current.map((s) =>
-      s.id === id ? { ...s, status, detail } : s
+    commitSteps(stepsRef.current.map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            status,
+            detail,
+            progress: status === "done" ? 100 : status === "pending" ? undefined : s.progress,
+          }
+        : s
     ));
+  }
+
+  function failRunningStep(message: string) {
+    const running = stepsRef.current.find((step) => step.status === "running");
+    if (running) patchStep(running.id, "error", message);
   }
 
   const waitForGatewayConnection = useCallback(async (timeoutMs = 20_000) => {
@@ -486,7 +510,7 @@ export function useSetupFlow(
     if (stepsRef.current.some((s) => s.id === "gateway")) {
       patchStep("gateway", "running", t("setup.startingGateway"));
     } else {
-      setSteps([{ id: "gateway", label: "Gateway", status: "running", detail: t("setup.startingGateway") }]);
+      commitSteps([{ id: "gateway", label: "Gateway", status: "running", detail: t("setup.startingGateway") }]);
     }
     try {
       const status: any = await gatewayManager.startForSetup();
@@ -499,7 +523,7 @@ export function useSetupFlow(
       if (stepsRef.current.some((s) => s.id === "gateway")) {
         patchStep("gateway", "done");
       } else {
-        setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
+        commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
       }
       reportPhase("ready", t("setup.gatewayConnected", "Gateway 已连接"));
       if (!isRunActive(runId)) return;
@@ -515,20 +539,20 @@ export function useSetupFlow(
       if (stepsRef.current.some((s) => s.id === "gateway")) {
         patchStep("gateway", "error", String(e?.message ?? e));
       } else {
-        setSteps([{ id: "gateway", label: "Gateway", status: "error", detail: String(e?.message ?? e) }]);
+        commitSteps([{ id: "gateway", label: "Gateway", status: "error", detail: String(e?.message ?? e) }]);
       }
       setSetupError(e?.message || String(e));
       report(e?.message || String(e));
       setSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, report, reportPhase, t, setSteps, waitForGatewayReady, setGatewayRunning, setSetupError, needsOnboarding, startOfficialOnboarding]);
+  }, [beginRun, isRunActive, setSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setSetupError, needsOnboarding, startOfficialOnboarding]);
 
   const runNativeSetup = useCallback(async () => {
     const runId = beginRun();
     resetProgress();
     clearSetupLogs();
     const s = [...INITIAL_NATIVE_STEPS];
-    setSteps(s);
+    commitSteps(s);
     try {
       setSetupStep("checking");
 
@@ -629,18 +653,19 @@ export function useSetupFlow(
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       const msg = err?.message || String(err);
+      failRunningStep(msg);
       setSetupError(msg);
       report(msg);
       setSetupStep("error");
     }
-  }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, reportPhase, setNeedsGit, setSteps,
+  }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
       waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
     resetProgress();
     clearSetupLogs();
-    setSteps([...INITIAL_DOCKER_STEPS]);
+    commitSteps([...INITIAL_DOCKER_STEPS]);
     try {
       setSetupStep("checking");
 
@@ -672,23 +697,25 @@ export function useSetupFlow(
       }
     } catch (err: any) {
       if (!isRunActive(runId)) return;
-      setSetupError(err?.message || String(err));
-      report(err?.message || String(err));
+      const message = err?.message || String(err);
+      failRunningStep(message);
+      setSetupError(message);
+      report(message);
       setSetupStep("error");
     }
-  }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, setSteps,
+  }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, commitSteps,
       waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, needsOnboarding, startOfficialOnboarding]);
 
   const selectMode = useCallback((mode: "native" | "docker") => {
     setInstallMode(mode);
     if (mode === "native") {
-      setSteps([...INITIAL_NATIVE_STEPS]);
+      commitSteps([...INITIAL_NATIVE_STEPS]);
       runNativeSetup();
     } else {
-      setSteps([...INITIAL_DOCKER_STEPS]);
+      commitSteps([...INITIAL_DOCKER_STEPS]);
       runDockerSetup();
     }
-  }, [setInstallMode, runNativeSetup, runDockerSetup, setSteps]);
+  }, [setInstallMode, runNativeSetup, runDockerSetup, commitSteps]);
 
   const retrySetup = useCallback(async () => {
     setSetupError(null);
@@ -709,10 +736,10 @@ export function useSetupFlow(
     setSetupError(null);
     setProgress(0);
     setNeedsGit(false);
-    setSteps([]);
+    commitSteps([]);
     report(t("setup.chooseMode"), 18);
     setSetupStep("choosing-mode");
-  }, [cancelActiveRun, setSetupError, setProgress, setNeedsGit, setSteps, report, t, setSetupStep]);
+  }, [cancelActiveRun, setSetupError, setProgress, setNeedsGit, commitSteps, report, t, setSetupStep]);
 
   const retryGit = useCallback(() => {
     setNeedsGit(false);
@@ -751,14 +778,14 @@ export function useSetupFlow(
     setGatewayRunning(gatewayRunning);
     const currentSteps = stepsRef.current;
     if (currentSteps.some((step) => step.id === "gateway")) {
-      setSteps(currentSteps.map((step) => step.id === "gateway"
+      commitSteps(currentSteps.map((step) => step.id === "gateway"
         ? { ...step, status: gatewayRunning ? "done" : "pending" }
         : step));
     } else if (gatewayRunning) {
-      setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
+      commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
     }
     return { status, gatewayRunning };
-  }, [setGatewayRunning, setSteps]);
+  }, [setGatewayRunning, commitSteps]);
 
   return {
     progress, statusMessage, dockerStatus, openclawStatus, checkingDocker, needsGit, steps,

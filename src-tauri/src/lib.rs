@@ -3,9 +3,60 @@ mod paths;
 mod platform;
 mod state;
 mod tray;
+mod window_sizing;
 
 use state::GatewayProcess;
 use tauri::{Emitter, Manager, RunEvent};
+
+fn adapt_main_window(window: &tauri::WebviewWindow, use_initial_size: bool) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+    let scale = monitor.scale_factor().max(0.1);
+    let work_area = monitor.work_area();
+    let sizing = window_sizing::sizing_for_work_area(
+        work_area.size.width as f64 / scale,
+        work_area.size.height as f64 / scale,
+    );
+    let _ = window.set_min_size(Some(tauri::LogicalSize::new(
+        sizing.minimum.width,
+        sizing.minimum.height,
+    )));
+
+    if window.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let desired = if use_initial_size {
+        sizing.initial
+    } else {
+        let Ok(current) = window.inner_size() else {
+            return;
+        };
+        let window_scale = window.scale_factor().unwrap_or(scale).max(0.1);
+        window_sizing::fit_restored_size(
+            window_sizing::WindowSize {
+                width: current.width as f64 / window_scale,
+                height: current.height as f64 / window_scale,
+            },
+            sizing,
+        )
+    };
+    let Ok(current) = window.inner_size() else {
+        return;
+    };
+    let window_scale = window.scale_factor().unwrap_or(scale).max(0.1);
+    let current_width = current.width as f64 / window_scale;
+    let current_height = current.height as f64 / window_scale;
+    if (current_width - desired.width).abs() > 1.0 || (current_height - desired.height).abs() > 1.0
+    {
+        let _ = window.set_size(tauri::LogicalSize::new(desired.width, desired.height));
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -226,6 +277,7 @@ pub fn run() {
             // App settings (ported from nezha app_settings.rs, simplified)
             commands::app_settings::load_app_settings,
             commands::app_settings::save_terminal_scrollback,
+            commands::app_settings::save_terminal_shift_enter_newline,
             commands::app_settings::save_app_settings,
             commands::app_settings::detect_agent_paths,
             // Hooks (minimal port of nezha hooks.rs)
@@ -426,36 +478,35 @@ pub fn run() {
                     }
                 });
             }
-            // First launch only: size the window to ~80% of the primary monitor and
-            // center it. On later launches the window-state plugin restores the user's
-            // last size/position, so we must NOT override it. A marker file under the
-            // app dir distinguishes first run from subsequent ones.
+            // Use the monitor work area (excluding taskbar/menu bar) for first-launch
+            // sizing. Later launches preserve the window-state plugin's restored size,
+            // unless it no longer fits the current display.
             let first_run_marker = paths::desktop_dir().join(".junqi-window-initialized");
-            if !first_run_marker.exists() {
-                if let Some(window) = app.get_webview_window("main") {
-                    if let (Ok(Some(monitor)), Ok(scale)) =
-                        (window.primary_monitor(), window.scale_factor())
-                    {
-                        let phys = monitor.size();
-                        // Convert physical → logical; clamp between min (960×640)
-                        // and max (1600×1000) so the window never gets absurdly large
-                        // on 4K/5K displays nor unusably small on laptops.
-                        let logical_w = phys.width as f64 / scale;
-                        let logical_h = phys.height as f64 / scale;
-                        let w = (logical_w * 0.72).clamp(1100.0, 1600.0);
-                        let h = (logical_h * 0.80).clamp(720.0, 1000.0);
-                        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
-                            width: w,
-                            height: h,
-                        }));
-                    }
+            let is_first_run = !first_run_marker.exists();
+            if let Some(window) = app.get_webview_window("main") {
+                adapt_main_window(&window, is_first_run);
+                if is_first_run {
                     let _ = window.center();
                 }
+
+                // Re-evaluate only when the display context changes. Manual window
+                // resizing remains fully user-controlled and is saved across launches.
+                let adaptive_window = window.clone();
+                window.on_window_event(move |event| {
+                    if matches!(
+                        event,
+                        tauri::WindowEvent::Moved(_)
+                            | tauri::WindowEvent::ScaleFactorChanged { .. }
+                            | tauri::WindowEvent::Focused(true)
+                    ) {
+                        adapt_main_window(&adaptive_window, false);
+                    }
+                });
+            }
+            if is_first_run {
                 if let Some(parent) = first_run_marker.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                // Non-critical: if the marker can't be written, we re-apply default
-                // sizing next launch — harmless.
                 let _ = std::fs::write(&first_run_marker, "1");
             }
             // Emit gateway config to frontend before it loads (no invoke needed)

@@ -8,6 +8,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { attachSmartCopy, smartCopy } from "./terminalCopyHelper";
+import { matchesTerminalNewline, TERMINAL_NEWLINE_SEQUENCE } from "@/_nezha_root/shortcuts";
 import { TERMINAL_CONTEXT_MENU_STYLE } from "./terminalMenuStyles";
 import { Icon } from '@/components/shared/icons';
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "./_nezha-types";
@@ -499,6 +500,8 @@ interface Props {
   onClose: () => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: number;
+  terminalShiftEnterNewline: boolean;
   monoFontFamily: FontFamily;
   onReady?: () => void;
   height?: number;
@@ -590,6 +593,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   handoffSnapshot?: string;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: number;
+  terminalShiftEnterNewline: boolean;
   monoFontFamily: FontFamily;
   onReady?: () => void;
   onActiveTermChange?: (term: XTermType | null) => void;
@@ -620,6 +625,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       handoffSnapshot,
       themeVariant,
       terminalFontSize,
+      terminalScrollback,
+      terminalShiftEnterNewline,
       monoFontFamily,
       onReady,
       onActiveTermChange,
@@ -649,6 +656,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const isActiveRef = useRef(isActive);
     const isFocusedRef = useRef(isFocused);
     const terminalFontSizeRef = useRef(terminalFontSize);
+    const terminalScrollbackRef = useRef(terminalScrollback);
+    const terminalShiftEnterNewlineRef = useRef(terminalShiftEnterNewline);
     const monoFontFamilyRef = useRef(monoFontFamily);
     const onReadyRef = useRef(onReady);
     const onLifecycleChangeRef = useRef(onLifecycleChange);
@@ -672,6 +681,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     isActiveRef.current = isActive;
     isFocusedRef.current = isFocused;
     terminalFontSizeRef.current = terminalFontSize;
+    terminalScrollbackRef.current = terminalScrollback;
+    terminalShiftEnterNewlineRef.current = terminalShiftEnterNewline;
     monoFontFamilyRef.current = monoFontFamily;
     onReadyRef.current = onReady;
     onLifecycleChangeRef.current = onLifecycleChange;
@@ -797,7 +808,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       const { term, fitAddon, whenFontsReady } = initTerminal(
         themeVariantRef.current,
-        5000,
+        terminalScrollbackRef.current,
         terminalFontSizeRef.current,
         monoFontFamilyRef.current,
       );
@@ -899,7 +910,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         term.loadAddon(serializeAddon);
         serializeAddonRef.current = serializeAddon;
         disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
-        disposeSmartCopy = attachSmartCopy(term, { onPaste: pasteFromSystemClipboard });
+        disposeSmartCopy = attachSmartCopy(term, {
+          onPaste: pasteFromSystemClipboard,
+          matchesNewline: (event) => matchesTerminalNewline(event, terminalShiftEnterNewlineRef.current),
+          onNewline: () => { sendInput(TERMINAL_NEWLINE_SEQUENCE); },
+        });
         const handleNativeImagePaste = (event: ClipboardEvent) => {
           if (!imageFromClipboardEvent(event)) return;
           event.preventDefault();
@@ -1141,6 +1156,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     }, [requestResize, terminalFontSize]);
 
     useEffect(() => {
+      if (!terminalRef.current) return;
+      terminalRef.current.options.scrollback = terminalScrollback;
+    }, [terminalScrollback]);
+
+    useEffect(() => {
       if (!termCtxMenu) return;
       const close = () => setTermCtxMenu(null);
       const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
@@ -1327,6 +1347,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       onClose,
       themeVariant,
       terminalFontSize,
+      terminalScrollback,
+      terminalShiftEnterNewline,
       monoFontFamily,
       onReady,
       onSplitHorizontal,
@@ -2225,6 +2247,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 handoffSnapshot={shell.handoffSnapshot}
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
+                terminalScrollback={terminalScrollback}
+                terminalShiftEnterNewline={terminalShiftEnterNewline}
                 monoFontFamily={monoFontFamily}
                 onReady={() => {
                   flushPendingTerminalPaste();
