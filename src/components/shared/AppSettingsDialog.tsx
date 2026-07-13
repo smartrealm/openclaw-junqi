@@ -34,6 +34,14 @@ import { APP_LANGUAGE_OPTIONS, type SupportedLanguage } from '@/i18n/languages';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { APP_VERSION } from '@/version';
 import clsx from 'clsx';
+import {
+  readAttentionBadge,
+  readTaskDisplayWindow,
+  TASK_DISPLAY_WINDOWS,
+  type TaskDisplayWindow,
+  writeAttentionBadge,
+  writeTaskDisplayWindow,
+} from '@/workspace/agentWorkspacePreferences';
 
 // ── Nav ─────────────────────────────────────────────────────────────────────
 
@@ -144,6 +152,8 @@ function GeneralPanel() {
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const [terminalScrollback, setTerminalScrollback] = useState(1000);
   const [savingScrollback, setSavingScrollback] = useState(false);
+  const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(readTaskDisplayWindow);
+  const [attentionBadge, setAttentionBadge] = useState(readAttentionBadge);
   useEffect(() => {
     let cancelled = false;
     void invoke<{ terminal_scrollback?: number }>('load_app_settings').then((settings) => {
@@ -197,6 +207,31 @@ function GeneralPanel() {
           </div>
           <p className="mt-1 text-[11px] text-aegis-text-dim">{t('appSettings.terminalScrollbackHint', '500–5000 lines. Applies to newly opened terminals.')}</p>
           {terminalScrollback > 3000 && <p className="mt-1 text-[11px] text-aegis-warning">{t('appSettings.terminalScrollbackWarning', 'Large buffers use more memory.')}</p>}
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold text-aegis-text-secondary">任务展示范围</label>
+          <select
+            value={taskDisplayWindow}
+            onChange={(event) => {
+              const value = event.target.value === 'all' ? 'all' : Number(event.target.value) as TaskDisplayWindow;
+              setTaskDisplayWindow(value);
+              writeTaskDisplayWindow(value);
+            }}
+            className="w-[200px] rounded-md border border-aegis-border bg-aegis-input px-3 py-2 text-[13px] text-aegis-text"
+          >
+            {TASK_DISPLAY_WINDOWS.map((value) => <option key={value} value={value}>{value === 'all' ? '全部' : `${value} 天`}</option>)}
+          </select>
+          <p className="mt-1 text-[11px] text-aegis-text-dim">限制普通历史任务的展示时间，需要关注、待合并、收藏和待办任务始终显示。</p>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold text-aegis-text-secondary">待确认角标</div>
+            <p className="mt-1 text-[11px] text-aegis-text-dim">在项目栏显示等待输入或审阅的任务数量。</p>
+          </div>
+          <Toggle enabled={attentionBadge} onChange={(enabled) => {
+            setAttentionBadge(enabled);
+            writeAttentionBadge(enabled);
+          }} />
         </div>
       </div>
     </div>

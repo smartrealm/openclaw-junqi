@@ -47,6 +47,11 @@ import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersisten
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { useSettingsStore } from '@/stores/settingsStore';
+import {
+  readAttentionBadge,
+  readTaskDisplayWindow,
+  type TaskDisplayWindow,
+} from '@/workspace/agentWorkspacePreferences';
 
 type RightPanel = 'files' | 'changes' | 'history' | null;
 type DiffTarget =
@@ -71,20 +76,6 @@ interface ProjectUiState {
 const TASK_GROUP_ROW_HEIGHT = 29;
 const TASK_ROW_HEIGHT = 48;
 const TASK_LIST_OVERSCAN_ROWS = 8;
-const TASK_DISPLAY_WINDOWS = [3, 7, 15, 30, 'all'] as const;
-type TaskDisplayWindow = typeof TASK_DISPLAY_WINDOWS[number];
-
-function readTaskDisplayWindow(): TaskDisplayWindow {
-  try {
-    const value = localStorage.getItem('junqi:agent-workspace:task-display-window');
-    if (value === 'all') return 'all';
-    const days = Number(value);
-    return TASK_DISPLAY_WINDOWS.includes(days as TaskDisplayWindow) ? days as TaskDisplayWindow : 3;
-  } catch {
-    return 3;
-  }
-}
-
 function findTaskRowIndex(offsets: number[], offset: number): number {
   if (offsets.length <= 1) return 0;
 
@@ -164,6 +155,7 @@ export function AgentWorkspacePage() {
 
   const [query, setQuery] = useState('');
   const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(readTaskDisplayWindow);
+  const [attentionBadge, setAttentionBadge] = useState(readAttentionBadge);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const [autoStartTaskId, setAutoStartTaskId] = useState<string | null>(null);
   const [mountedRunTaskIds, setMountedRunTaskIds] = useState<Set<string>>(() => new Set());
@@ -308,12 +300,18 @@ export function AgentWorkspacePage() {
   const visibleTaskListRows = taskListRows.slice(taskListStartIndex, taskListEndIndex);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('junqi:agent-workspace:task-display-window', String(taskDisplayWindow));
-    } catch { /* local persistence is best effort */ }
     taskListRef.current?.scrollTo({ top: 0 });
     setTaskListScrollTop(0);
   }, [taskDisplayWindow]);
+
+  useEffect(() => {
+    const reloadWorkspacePreferences = () => {
+      setTaskDisplayWindow(readTaskDisplayWindow());
+      setAttentionBadge(readAttentionBadge());
+    };
+    window.addEventListener('nezha:app-settings-changed', reloadWorkspacePreferences);
+    return () => window.removeEventListener('nezha:app-settings-changed', reloadWorkspacePreferences);
+  }, []);
   const selectedRunVisible = Boolean(
     selected
     && !openDiff
@@ -663,7 +661,7 @@ export function AgentWorkspacePage() {
               className={`relative flex h-9 w-9 touch-none items-center justify-center rounded-md ${active ? 'bg-aegis-primary/15 ring-1 ring-inset ring-aegis-primary/35' : 'hover:bg-aegis-hover'} ${draggedWorkspaceId === item.id ? 'opacity-30' : ''} ${workspaceDropTarget?.id === item.id ? workspaceDropTarget.position === 'before' ? 'before:absolute before:-top-0.5 before:h-0.5 before:w-8 before:bg-aegis-primary' : 'after:absolute after:-bottom-0.5 after:h-0.5 after:w-8 after:bg-aegis-primary' : ''}`}
             >
               <ProjectAvatar name={item.name || 'Workspace'} size={28} />
-              {activity.attention > 0 ? (
+              {attentionBadge && activity.attention > 0 ? (
                 <span className="absolute -right-1 -top-1 min-w-3 rounded-full border border-aegis-surface bg-amber-400 px-0.5 text-center text-[8px] leading-3 text-black">
                   {activity.attention > 9 ? '9+' : activity.attention}
                 </span>
@@ -760,7 +758,7 @@ export function AgentWorkspacePage() {
                             <span className="block truncate font-mono text-[10px] text-aegis-text-dim">{workspacePath(item) || '未设置目录'}</span>
                           </span>
                           {item.hiddenFromRail && <span className="rounded bg-aegis-hover px-1.5 py-0.5 text-[9px] text-aegis-text-dim">已隐藏</span>}
-                          {activity.attention > 0 && <span className="rounded bg-amber-400/20 px-1 text-[10px] text-amber-500">{activity.attention}</span>}
+                          {attentionBadge && activity.attention > 0 && <span className="rounded bg-amber-400/20 px-1 text-[10px] text-amber-500">{activity.attention}</span>}
                         </span>
                       </button>
                     )}
@@ -835,27 +833,14 @@ export function AgentWorkspacePage() {
           </button>
           <div className="mt-3 flex items-center border-y border-aegis-border px-3 py-2 text-[11px] text-aegis-text-dim">
             <span className="flex-1">{projectTasks.length} 个任务</span>
-            <select
-              value={taskDisplayWindow}
-              onChange={(event) => setTaskDisplayWindow(event.target.value === 'all' ? 'all' : Number(event.target.value) as TaskDisplayWindow)}
-              aria-label="任务历史范围"
-              title="任务历史范围"
-              className="mr-1 max-w-20 bg-transparent text-[10px] text-aegis-text-dim outline-none hover:text-aegis-text"
-            >
-              {TASK_DISPLAY_WINDOWS.map((windowValue) => (
-                <option key={windowValue} value={windowValue}>
-                  {windowValue === 'all' ? '全部' : `${windowValue} 天`}
-                </option>
-              ))}
-            </select>
             {projectTasks.length > 0 && (
               <button
                 type="button"
                 title="清空此项目任务"
                 onClick={() => void requestClearProjectTasks()}
-                className="flex h-6 w-6 items-center justify-center rounded hover:bg-aegis-hover hover:text-aegis-text"
+                className="flex h-6 items-center gap-1 rounded px-1.5 hover:bg-aegis-hover hover:text-aegis-text"
               >
-                <Trash2 size={13} />
+                <Trash2 size={12} />清空
               </button>
             )}
           </div>
@@ -979,7 +964,7 @@ export function AgentWorkspacePage() {
             className="relative flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
           >
             <PanelLeftOpen size={15} />
-            {hasAttention && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />}
+            {attentionBadge && hasAttention && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />}
           </button>
           {workspace && <ProjectAvatar name={workspace.name || 'Workspace'} size={24} />}
           <button

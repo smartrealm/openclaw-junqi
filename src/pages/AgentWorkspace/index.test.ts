@@ -79,3 +79,11 @@ test('expanded and collapsed task panels expose Nezha footer actions', () => {
   assert.match(source, /切换到深色主题/);
   assert.match(source, /应用设置/);
 });
+
+test('task history and attention badge preferences live in Nezha app settings', () => {
+  assert.match(source, /readAttentionBadge/);
+  assert.match(source, /attentionBadge && activity\.attention > 0/);
+  assert.match(source, /attentionBadge && hasAttention/);
+  assert.doesNotMatch(source, /aria-label="任务历史范围"/);
+  assert.match(source, /<Trash2 size=\{12\} \/>清空/);
+});
