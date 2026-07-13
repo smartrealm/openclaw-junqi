@@ -1437,12 +1437,14 @@ export function AgentRunView({
                 setPerm(next);
               }} disabled={running} />
             </div>
-            <div className="flex items-center gap-2">
-              <input value={projectPath} onChange={(e) => setProjectPath(e.target.value)}
-                placeholder="Project path (cwd if empty)" disabled={running}
-                className="flex-1 px-2.5 py-1.5 rounded-md text-[12px] font-mono"
-                style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }} />
-            </div>
+            {providedProjectPath === undefined && (
+              <div className="flex items-center gap-2">
+                <input value={projectPath} onChange={(e) => setProjectPath(e.target.value)}
+                  placeholder="Project path (cwd if empty)" disabled={running}
+                  className="flex-1 px-2.5 py-1.5 rounded-md text-[12px] font-mono"
+                  style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }} />
+              </div>
+            )}
             <div className="flex items-center gap-3 flex-wrap">
               <LaunchSelector mode={launchMode} baseBranch={baseBranch}
                 onMode={(next) => {

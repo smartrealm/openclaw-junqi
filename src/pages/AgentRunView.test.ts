@@ -58,3 +58,8 @@ test('failed and cancelled sessions can resume when a session id exists', () => 
   assert.doesNotMatch(source, /status === 'done' && !worktreeDiscarded/);
   assert.match(source, /\{\(sessionPath \|\| canResume\) && \(/);
 });
+
+test('workspace-owned tasks cannot change their project path', () => {
+  assert.match(source, /providedProjectPath === undefined && \(/);
+  assert.match(source, /placeholder="Project path \(cwd if empty\)"/);
+});
