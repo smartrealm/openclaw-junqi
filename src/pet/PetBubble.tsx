@@ -369,9 +369,48 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       : t(p.phase === 'work' ? 'pet.pomodoro.focusing' : 'pet.pomodoro.resting', p.phase === 'work' ? '专注中' : '休息中');
     const PomoIcon = pomodoroIcon(p);
     body = (
-      <span style={{ fontWeight: 700, ...readableText(textPalette.primary), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0, color: pomodoroColor(p, isDark) }} />
-        {p.paused ? phaseLabel : `${phaseLabel} ${fmtClock(p.remainingMs)}`}
+      <span
+        data-pet-pomodoro-status
+        style={{
+          display: 'inline-grid',
+          gridTemplateColumns: '14px minmax(0, 1fr)',
+          alignItems: 'center',
+          columnGap: 5,
+          maxWidth: 104,
+          ...readableText(textPalette.primary),
+        }}
+      >
+        <PomoIcon
+          size={14}
+          strokeWidth={2.2}
+          aria-hidden="true"
+          style={{ color: pomodoroColor(p, isDark) }}
+        />
+        <span
+          style={{
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            textAlign: 'start',
+            lineHeight: 1.12,
+          }}
+        >
+          <span style={{ fontSize: 10.5, fontWeight: 650, whiteSpace: 'normal' }}>
+            {phaseLabel}
+          </span>
+          <span
+            style={{
+              marginTop: 1,
+              fontSize: 13,
+              fontWeight: 760,
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {fmtClock(p.remainingMs)}
+          </span>
+        </span>
       </span>
     );
   } else if (e === 'sleep' || e === 'sleepy') {

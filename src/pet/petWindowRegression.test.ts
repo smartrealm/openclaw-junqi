@@ -24,3 +24,10 @@ test('drag feedback scales the character instead of the transparent window root'
   assert.doesNotMatch(petWindow, /transform: dragging \? 'scale\(1\.08\)'/);
   assert.match(petWindow, /dragging=\{dragging\}/);
 });
+
+test('pomodoro status owns one icon in the bubble without a duplicate head badge', () => {
+  const petBubble = readFileSync(new URL('./PetBubble.tsx', import.meta.url), 'utf8');
+  assert.match(petBubble, /data-pet-pomodoro-status/);
+  assert.match(petBubble, /fontVariantNumeric: 'tabular-nums'/);
+  assert.doesNotMatch(petWindow, /BadgeIcon|Pomodoro badge over the character/);
+});

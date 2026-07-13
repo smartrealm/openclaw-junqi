@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import { motion } from 'framer-motion';
-import { pomodoroIcon, pomodoroColor } from './pomodoroView';
 import { computeSnapTarget, easeOutCubic, type PetBounds } from './snap';
 import { PetCharacter } from './PetCharacter';
 import { PetBubble } from './PetBubble';
@@ -635,11 +633,6 @@ export default function PetWindow() {
     invoke('pet_show_context_menu', { items: compactItems(items) }).catch(() => undefined);
   };
 
-  // Pomodoro badge over the character's head — vector Lucide icon, not emoji.
-  const pomoBadge = state.pomodoro?.enabled && state.pomodoro.running ? state.pomodoro : null;
-  const BadgeIcon = pomoBadge ? pomodoroIcon(pomoBadge) : null;
-  const badgeColor = pomoBadge ? pomodoroColor(pomoBadge) : '';
-
   return (
     <div
       onMouseDown={onMouseDown}
@@ -659,7 +652,7 @@ export default function PetWindow() {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'flex-end',
-        gap: 10,
+        gap: 6,
         background: 'transparent',
         cursor: dragging ? 'grabbing' : 'grab',
         WebkitUserSelect: 'none',
@@ -682,15 +675,6 @@ export default function PetWindow() {
           dragDy={dragOffset.dy}
           dragRotation={dragOffset.rot}
         />
-        {BadgeIcon && (
-          <motion.span
-            style={{ position: 'absolute', top: -22, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'none' }}
-            animate={{ y: [0, -2, 0] }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          >
-            <BadgeIcon size={15} strokeWidth={2.4} />
-          </motion.span>
-        )}
       </div>
     </div>
   );
