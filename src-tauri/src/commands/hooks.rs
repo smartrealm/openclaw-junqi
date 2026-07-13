@@ -427,8 +427,8 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
     tokio::task::spawn_blocking(|| {
         let node_present = detect_node().is_some();
 
-        let claude_version = detect_agent_version("claude");
-        let codex_version = detect_agent_version("codex");
+        let claude_version = super::app_settings::detect_claude_version();
+        let codex_version = super::app_settings::detect_codex_version();
 
         let claude_min = "2.1.87";
         let codex_min = "0.131.0";
@@ -516,22 +516,6 @@ fn detect_node() -> Option<String> {
                 .and_then(|s| s.lines().next().map(|l| l.trim().to_string()))
         })
         .filter(|s| !s.is_empty())
-}
-
-fn detect_agent_version(binary: &str) -> Option<String> {
-    std::process::Command::new(binary)
-        .arg("--version")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() {
-                String::from_utf8_lossy(&o.stderr).trim().to_string().into()
-            } else {
-                Some(s)
-            }
-        })
 }
 
 /// Loose semver-ish compare: returns true if `have < min`.

@@ -265,37 +265,12 @@ pub async fn detect_agent_paths() -> Result<AppSettings, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Detect Claude Code version by running `claude --version`.
-/// Result is cached per-process.
 pub fn detect_claude_version() -> Option<String> {
-    static CACHE: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    {
-        let guard = cache.lock().expect("version cache poisoned");
-        if let Some(v) = guard.as_ref() {
-            return v.clone();
-        }
-    }
-    let version = run_version_command("claude");
-    let mut guard = cache.lock().expect("version cache poisoned");
-    *guard = Some(version.clone());
-    version
+    run_version_command(&get_agent_program("claude"))
 }
 
-/// Detect Codex version by running `codex --version`.
 pub fn detect_codex_version() -> Option<String> {
-    static CACHE: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    {
-        let guard = cache.lock().expect("version cache poisoned");
-        if let Some(v) = guard.as_ref() {
-            return v.clone();
-        }
-    }
-    let version = run_version_command("codex");
-    let mut guard = cache.lock().expect("version cache poisoned");
-    *guard = Some(version.clone());
-    version
+    run_version_command(&get_agent_program("codex"))
 }
 
 fn run_version_command(binary: &str) -> Option<String> {
@@ -359,5 +334,12 @@ mod tests {
         );
         assert!(include_str!("agent_assist.rs").contains("app_settings::get_agent_program(&agent)"));
         assert!(include_str!("git_neu.rs").contains("app_settings::get_agent_program(\"codex\")"));
+    }
+
+    #[test]
+    fn version_detection_uses_the_same_configured_agent_program() {
+        let source = include_str!("app_settings.rs");
+        assert!(source.contains("run_version_command(&get_agent_program(\"claude\"))"));
+        assert!(source.contains("run_version_command(&get_agent_program(\"codex\"))"));
     }
 }
