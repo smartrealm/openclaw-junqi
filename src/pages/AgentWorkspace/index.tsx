@@ -176,6 +176,7 @@ export function AgentWorkspacePage() {
   const [resizingTerminal, setResizingTerminal] = useState(false);
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
   const [projectDrawerQuery, setProjectDrawerQuery] = useState('');
+  const projectRailRef = useRef<HTMLElement>(null);
   const [draggedWorkspaceId, setDraggedWorkspaceId] = useState<string | null>(null);
   const [workspaceDropTarget, setWorkspaceDropTarget] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
   const workspaceDragCleanupRef = useRef<(() => void) | null>(null);
@@ -616,10 +617,20 @@ export function AgentWorkspacePage() {
   }, [moveWorkspace]);
 
   useEffect(() => () => workspaceDragCleanupRef.current?.(), []);
+  useEffect(() => {
+    if (!projectDrawerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (projectRailRef.current?.contains(event.target as Node)) return;
+      setProjectDrawerOpen(false);
+      setProjectDrawerQuery('');
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [projectDrawerOpen]);
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-aegis-bg text-aegis-text">
-      <aside className="relative flex w-12 shrink-0 flex-col items-center gap-1 border-r border-aegis-border bg-aegis-surface py-2">
+      <aside ref={projectRailRef} className="relative flex w-12 shrink-0 flex-col items-center gap-1 border-r border-aegis-border bg-aegis-surface py-2">
         {railWorkspaces.map((item) => {
           const active = item.id === activeRailWorkspaceId;
           const activity = workspaceActivity(item);
@@ -734,6 +745,7 @@ export function AgentWorkspacePage() {
                             <span className="block truncate text-xs font-medium">{item.name || '工作区'}</span>
                             <span className="block truncate font-mono text-[10px] text-aegis-text-dim">{workspacePath(item) || '未设置目录'}</span>
                           </span>
+                          {item.hiddenFromRail && <span className="rounded bg-aegis-hover px-1.5 py-0.5 text-[9px] text-aegis-text-dim">已隐藏</span>}
                           {activity.attention > 0 && <span className="rounded bg-amber-400/20 px-1 text-[10px] text-amber-500">{activity.attention}</span>}
                         </span>
                       </button>

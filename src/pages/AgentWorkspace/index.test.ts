@@ -54,4 +54,8 @@ test('hidden projects remain available in the drawer and active project stays on
   assert.match(source, /toggleWorkspaceHidden\(item\.id\)/);
   assert.match(source, /从项目栏隐藏/);
   assert.match(source, /固定到项目栏/);
+  assert.match(source, /projectRailRef\.current\?\.contains/);
+  assert.match(source, /document\.addEventListener\('pointerdown', onPointerDown, true\)/);
+  assert.match(source, /setProjectDrawerQuery\(''\)/);
+  assert.match(source, /已隐藏/);
 });
