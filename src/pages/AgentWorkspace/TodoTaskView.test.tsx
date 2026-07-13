@@ -19,8 +19,8 @@ test("todo task view exposes summary, edit, and immediate run controls", () => {
   };
   const html = renderToStaticMarkup(createElement(AgentWorkspaceTodoTaskView, {
     task,
-    onEdit: () => {},
     onRun: () => {},
+    onUpdate: () => {},
   }));
 
   assert.match(html, /待办任务/);

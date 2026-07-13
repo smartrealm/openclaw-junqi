@@ -31,7 +31,6 @@ import { ShellTerminalPanel } from '@/components/Terminal';
 import { getDefaultMonoFont, type FontFamily, type TerminalFontSize, type ThemeVariant } from '@/_nezha_root/types';
 import { AgentRunView } from '@/pages/AgentRunView';
 import { AgentWorkspaceFileSearchDialog } from './FileSearchDialog';
-import { AgentWorkspaceTaskEditDialog } from './TaskEditDialog';
 import { ProjectAvatar } from './ProjectAvatar';
 import { AgentWorkspaceBranchBar } from './BranchBar';
 import { AgentWorkspaceProjectSettingsDialog } from './ProjectSettingsDialog';
@@ -158,7 +157,6 @@ export function AgentWorkspacePage() {
   const [query, setQuery] = useState('');
   const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(readTaskDisplayWindow);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [editingTaskDetailsId, setEditingTaskDetailsId] = useState<string | null>(null);
   const [editingTaskTitle, setEditingTaskTitle] = useState('');
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const [autoStartTaskId, setAutoStartTaskId] = useState<string | null>(null);
@@ -444,7 +442,6 @@ export function AgentWorkspacePage() {
     setResizingTerminal(false);
     setResizingRightPanel(false);
     setEditingTaskId(null);
-    setEditingTaskDetailsId(null);
     setTaskActionError(null);
     previousProjectPathRef.current = projectPath;
   }, [projectPath]);
@@ -1024,7 +1021,7 @@ export function AgentWorkspacePage() {
           ) : selected.status === 'todo' ? (
             <AgentWorkspaceTodoTaskView
               task={selected}
-              onEdit={() => setEditingTaskDetailsId(selected.id)}
+              onUpdate={(patch) => updateTask(selected.id, patch)}
               onRun={() => {
                 setAutoStartTaskId(selected.id);
                 setMountedRunTaskIds((current) => new Set([...current, selected.id]));
@@ -1200,19 +1197,6 @@ export function AgentWorkspacePage() {
           onClose={() => setShowProjectSettings(false)}
         />
       )}
-      {editingTaskDetailsId && (() => {
-        const task = tasks.find((item) => item.id === editingTaskDetailsId);
-        return task ? (
-          <AgentWorkspaceTaskEditDialog
-            task={task}
-            onClose={() => setEditingTaskDetailsId(null)}
-            onSave={(patch) => {
-              updateTask(task.id, patch);
-              setEditingTaskDetailsId(null);
-            }}
-          />
-        ) : null;
-      })()}
     </div>
   );
 }
