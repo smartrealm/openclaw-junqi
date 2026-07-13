@@ -1243,6 +1243,7 @@ export function AgentRunView({
       const nextTitle = await invoke<string>('generate_task_name', {
         projectPath,
         agent,
+        sessionPath: snapshot.sessionPath,
         originalPrompt: prompt,
       });
       const title = nextTitle.trim();

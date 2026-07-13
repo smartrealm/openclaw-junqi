@@ -102,6 +102,7 @@ test('plan mode prompt handling remains idempotent during session recovery', () 
 
 test('generated task names cannot overwrite concurrent task edits', () => {
   assert.match(source, /captureTaskNameSnapshot\(expectedTask\)/);
+  assert.match(source, /sessionPath: snapshot\.sessionPath/);
   assert.match(source, /taskStillMatchesNameSnapshot\(currentTask, snapshot\)/);
 });
 
