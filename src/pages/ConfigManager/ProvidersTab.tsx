@@ -3238,11 +3238,11 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
           <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-aegis-primary/20 rounded-xl">
             <div
               className={clsx(
-                'w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0',
-                'bg-aegis-primary/10 border border-aegis-primary/20'
+                'w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0',
+                'bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary'
               )}
             >
-              ⭐
+              <Star size={19} aria-hidden="true" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
@@ -3265,11 +3265,11 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
           <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-blue-500/20 rounded-xl">
             <div
               className={clsx(
-                'w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0',
-                'bg-blue-500/10 border border-blue-500/20'
+                'w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0',
+                'bg-blue-500/10 border border-blue-500/20 text-blue-400'
               )}
             >
-              🖼
+              <Image size={19} aria-hidden="true" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
