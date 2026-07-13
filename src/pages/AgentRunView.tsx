@@ -1021,9 +1021,9 @@ export function AgentRunView({
   }, [sessionPath]);
 
   // ── Start / Cancel ───────────────────────────────────────────────────────
-  const handleStart = useCallback(async (promptOverride?: string) => {
+  const handleStart = useCallback(async (promptOverride?: string, forceResume = false) => {
     const basePrompt = (promptOverride ?? prompt).trim();
-    if ((!basePrompt && attachedImages.length === 0 && textAttachments.length === 0 && !resumeIdRef.current) || running) return;
+    if ((!basePrompt && attachedImages.length === 0 && textAttachments.length === 0 && !resumeIdRef.current) || (running && !forceResume)) return;
     const taskPrompt = planMode && basePrompt ? `${basePrompt}\n\nPlease use plan mode.` : basePrompt;
     setError(null); clearTerm(); setStatus('running'); setRunning(true); setMetrics(null); setDiffStats(null);
     if (workspaceTaskId) {
@@ -1212,29 +1212,28 @@ export function AgentRunView({
   const resumeFlag = agent === 'codex' ? 'resume' : agent === 'claude' ? '--resume' : agent === 'pi' ? '--session' : null;
   const canResume = !running && isDone && !!sessionPath && !!resumeFlag && status === 'done';
   const resumeIdRef = useRef<string | null>(null);
+  const recoverySessionId = sessionId ?? sessionPath?.split(/[\\/]/).pop()?.replace(/\.jsonl$/, '') ?? '';
 
   const handleResume = useCallback(() => {
-    const resumeSessionId = sessionId ?? sessionPath?.split('/').pop()?.replace('.jsonl', '') ?? '';
+    const resumeSessionId = recoverySessionId;
     if (!resumeSessionId) return;
     resumeIdRef.current = resumeSessionId;
     setError(null);
     setMetrics(null);
     setDiffStats(null);
-    void handleStart(prompt);
-  }, [handleStart, prompt, sessionId, sessionPath]);
+    void handleStart(prompt, true);
+  }, [handleStart, prompt, recoverySessionId]);
 
-  const handleReconnect = useCallback(() => {
-    setStatus('running');
-    setRunning(true);
+  const handleReconnect = useCallback(async () => {
+    if (!recoverySessionId) return;
     setError(null);
-    if (workspaceTaskId) {
-      updateWorkspaceTask(workspaceTaskId, {
-        status: 'running',
-        failureReason: undefined,
-        attentionRequestedAt: undefined,
-      });
+    try {
+      await invoke('reset_task_process', { taskId });
+      handleResume();
+    } catch (reason) {
+      setError(`重置任务进程失败：${String(reason)}`);
     }
-  }, [updateWorkspaceTask, workspaceTaskId]);
+  }, [handleResume, recoverySessionId, taskId]);
 
   const handleExportSession = useCallback(async () => {
     if (!sessionPath || exportingSession) return;
@@ -1529,17 +1528,15 @@ export function AgentRunView({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={!recoverySessionId}
+                    title={!recoverySessionId ? '未保存会话 ID，无法恢复' : undefined}
                     onClick={() => {
-                      if (status === 'detached') handleReconnect();
-                      else if (sessionPath) handleResume();
-                      else {
-                        setStatus('idle');
-                        setRunning(false);
-                      }
+                      if (status === 'detached') void handleReconnect();
+                      else handleResume();
                     }}
-                    className="inline-flex items-center gap-1.5 rounded bg-aegis-primary px-3 py-1.5 text-xs font-semibold text-white"
+                    className="inline-flex items-center gap-1.5 rounded bg-aegis-primary px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
                   >
-                    <RotateCcw size={12} />{status === 'detached' ? '重新连接' : sessionPath ? '继续会话' : '编辑并重试'}
+                    <RotateCcw size={12} />{status === 'detached' ? '重新连接' : '继续会话'}
                   </button>
                   <button
                     type="button"

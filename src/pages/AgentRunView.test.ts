@@ -38,3 +38,10 @@ test('worktree actions are mutually exclusive while running', () => {
   assert.match(source, /合并中\.\.\./);
   assert.match(source, /丢弃中\.\.\./);
 });
+
+test('detached and interrupted tasks perform a real session recovery', () => {
+  assert.match(source, /reset_task_process/);
+  assert.match(source, /handleStart\(prompt, true\)/);
+  assert.match(source, /disabled=\{!recoverySessionId\}/);
+  assert.match(source, /未保存会话 ID，无法恢复/);
+});
