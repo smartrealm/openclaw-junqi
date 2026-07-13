@@ -268,23 +268,24 @@ function PermissionSelector({ perm, onChange, disabled }: { perm: PermissionMode
   );
 }
 
-function AgentToggle({ agent, onChange, disabled }: { agent: AgentType; onChange: (a: AgentType) => void; disabled?: boolean }) {
+function AgentToggle({ agent, onChange, disabled, allowPi = false }: { agent: AgentType; onChange: (a: AgentType) => void; disabled?: boolean; allowPi?: boolean }) {
+  const agents: AgentType[] = allowPi ? ['claude', 'codex', 'pi'] : ['claude', 'codex'];
   return (
     <div className="flex items-center gap-2">
       <span className="text-[10px] uppercase tracking-wider text-aegis-text-dim font-semibold">Agent</span>
       <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'rgb(var(--aegis-border))' }}>
-        {(['claude', 'codex', 'pi'] as AgentType[]).map((a) => (
+        {agents.map((a) => (
           <button key={a} type="button" disabled={disabled}
             onClick={() => onChange(a)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold transition-all"
             style={{
               background: agent === a ? 'rgb(var(--aegis-primary) / 0.10)' : 'transparent',
               color: agent === a ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))',
-              borderRight: a === 'claude' ? '1px solid rgb(var(--aegis-border))' : 'none',
+              borderRight: a !== agents.at(-1) ? '1px solid rgb(var(--aegis-border))' : 'none',
               opacity: disabled ? 0.5 : 1,
             }}>
             {a === 'claude' ? <Sparkle size={13} weight="regular" /> : <Robot size={13} weight="regular" />}
-            {a === 'claude' ? 'Claude' : 'Codex'}
+            {a === 'claude' ? 'Claude' : a === 'codex' ? 'Codex' : 'Pi'}
           </button>
         ))}
       </div>
@@ -1437,7 +1438,7 @@ export function AgentRunView({
         {!running && !isDone && (
           <div className="px-4 py-3 flex flex-col gap-3">
             <div className="flex items-center gap-3 flex-wrap">
-              <AgentToggle agent={agent} onChange={(next) => {
+              <AgentToggle agent={agent} allowPi={providedProjectPath === undefined} onChange={(next) => {
                 draftUserEditedRef.current = true;
                 setAgent(next);
               }} disabled={running} />

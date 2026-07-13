@@ -64,6 +64,12 @@ test('workspace-owned tasks cannot change their project path', () => {
   assert.match(source, /placeholder="Project path \(cwd if empty\)"/);
 });
 
+test('workspace task agent choices match Nezha while standalone runs may use Pi', () => {
+  assert.match(source, /allowPi \? \['claude', 'codex', 'pi'\] : \['claude', 'codex'\]/);
+  assert.match(source, /allowPi=\{providedProjectPath === undefined\}/);
+  assert.match(source, /a === 'codex' \? 'Codex' : 'Pi'/);
+});
+
 test('new worktree tasks require an explicit base branch', () => {
   assert.match(source, /launchMode === 'worktree' && !resumingExistingWorktree && !baseBranch\.trim\(\)/);
   assert.match(source, /请选择工作树的基础分支/);
