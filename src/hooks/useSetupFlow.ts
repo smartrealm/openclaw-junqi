@@ -25,6 +25,14 @@ import {
   type SetupProgressPhase,
 } from "./setupProgressModel";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
+import { gateway } from "@/services/gateway";
+import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
+import {
+  OpenClawWizardClient,
+  isOpenClawWizardSessionLost,
+  requiresOpenClawOnboarding,
+  type OpenClawWizardStep,
+} from "@/services/openclawWizard";
 
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
@@ -106,7 +114,13 @@ export interface SetupFlow {
   needsGit: boolean;
   steps: StepState[];
   installTarget: InstallTarget | null;
+  wizardStep: OpenClawWizardStep | null;
+  wizardSubmitting: boolean;
+  wizardError: string | null;
+  needsOnboarding: boolean;
   startGateway: () => Promise<void>;
+  submitWizardStep: (stepId: string, value?: unknown) => Promise<void>;
+  retryWizard: () => Promise<void>;
   runNativeSetup: () => Promise<void>;
   runDockerSetup: () => Promise<void>;
   retrySetup: () => Promise<void>;
@@ -162,6 +176,14 @@ export function useSetupFlow(
   const { t } = useTranslation();
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
   const [openclawStatus, setOpenclawStatus] = useState<OpenclawStatus | null>(null);
+  const [wizardStep, setWizardStep] = useState<OpenClawWizardStep | null>(null);
+  const [wizardSubmitting, setWizardSubmitting] = useState(false);
+  const [wizardError, setWizardError] = useState<string | null>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(true);
+  const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
+  if (!wizardClientRef.current) {
+    wizardClientRef.current = new OpenClawWizardClient((method, params) => gateway.call(method, params));
+  }
   const progressRef = useRef(progress);
   progressRef.current = progress;
   const activeRunRef = useRef(0);
@@ -244,6 +266,15 @@ export function useSetupFlow(
           setSetupStep("storage");
           return;
         }
+        let onboardingRequired = true;
+        try {
+          const detected = await window.aegis.config.detect();
+          const loaded = await window.aegis.config.read(detected.path);
+          onboardingRequired = requiresOpenClawOnboarding(detected.exists, loaded.data);
+          setNeedsOnboarding(onboardingRequired);
+        } catch {
+          setNeedsOnboarding(true);
+        }
         if (oclaw.path) {
           setInstallTarget({ tier: "existing", path: oclaw.path, version: oclaw.version ?? undefined });
         }
@@ -255,7 +286,7 @@ export function useSetupFlow(
           if (reachable) {
             setGatewayRunning(true);
             setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
-            setPostStorageStep("ready");
+            setPostStorageStep(onboardingRequired ? "configure-openclaw" : "ready");
             report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
             setSetupStep("storage");
             return;
@@ -360,6 +391,94 @@ export function useSetupFlow(
     ));
   }
 
+  const waitForGatewayConnection = useCallback(async (timeoutMs = 20_000) => {
+    gatewayManager.reconnect();
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (gateway.getStatus().connected) return;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。"));
+  }, [t]);
+
+  const refreshGatewayConnectionTarget = useCallback(async () => {
+    try {
+      const target = await invoke<{ port: number; token: string | null }>("detect_gateway_config");
+      cacheGatewayTarget(target.port, target.token);
+      gateway.disconnect();
+      gatewayManager.reconnect();
+    } catch {
+      // The normal connection resolver can still read settings/config later.
+    }
+  }, []);
+
+  const applyWizardResult = useCallback(async (result: { done: boolean; status?: string; step?: OpenClawWizardStep; error?: string }) => {
+    if (result.error || result.status === "error") {
+      throw new Error(result.error || t("setup.wizard.failed", "OpenClaw 配置向导执行失败。"));
+    }
+    if (result.done || result.status === "done") {
+      setWizardStep(null);
+      setNeedsOnboarding(false);
+      await refreshGatewayConnectionTarget();
+      report(t("setup.ready"), 100);
+      setSetupStep("ready");
+      return;
+    }
+    if (!result.step) {
+      throw new Error(t("setup.wizard.missingStep", "OpenClaw 配置向导没有返回下一步。"));
+    }
+    setWizardStep(result.step);
+    report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
+    setSetupStep("configure-openclaw");
+  }, [refreshGatewayConnectionTarget, report, setSetupStep, t]);
+
+  const startOfficialOnboarding = useCallback(async () => {
+    setWizardError(null);
+    setWizardSubmitting(true);
+    try {
+      await waitForGatewayConnection();
+      const result = await wizardClientRef.current!.start();
+      await applyWizardResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWizardError(message);
+      setSetupError(message);
+      setSetupStep("configure-openclaw");
+    } finally {
+      setWizardSubmitting(false);
+    }
+  }, [applyWizardResult, setSetupError, setSetupStep, waitForGatewayConnection]);
+
+  const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
+    if (wizardSubmitting) return;
+    setWizardError(null);
+    setWizardSubmitting(true);
+    try {
+      const result = await wizardClientRef.current!.next(stepId, value);
+      await applyWizardResult(result);
+    } catch (error) {
+      if (isOpenClawWizardSessionLost(error)) {
+        await startOfficialOnboarding();
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      setWizardError(message);
+      setSetupError(message);
+    } finally {
+      setWizardSubmitting(false);
+    }
+  }, [applyWizardResult, setSetupError, startOfficialOnboarding, wizardSubmitting]);
+
+  const wizardAutoStartRef = useRef(false);
+  useEffect(() => {
+    if (setupStep !== "configure-openclaw" || wizardStep || wizardSubmitting || wizardError) return;
+    if (wizardAutoStartRef.current) return;
+    wizardAutoStartRef.current = true;
+    void startOfficialOnboarding().finally(() => {
+      wizardAutoStartRef.current = false;
+    });
+  }, [setupStep, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
+
   // ── Actions ──
   const startGatewayAction = useCallback(async () => {
     const runId = beginRun();
@@ -384,9 +503,14 @@ export function useSetupFlow(
         setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
       }
       reportPhase("ready", t("setup.gatewayConnected", "Gateway 已连接"));
-      await new Promise((r) => setTimeout(r, 600));
       if (!isRunActive(runId)) return;
-      setSetupStep("ready");
+      if (needsOnboarding) {
+        await startOfficialOnboarding();
+      } else {
+        await new Promise((r) => setTimeout(r, 600));
+        if (!isRunActive(runId)) return;
+        setSetupStep("ready");
+      }
     } catch (e: any) {
       if (!isRunActive(runId)) return;
       if (stepsRef.current.some((s) => s.id === "gateway")) {
@@ -398,7 +522,7 @@ export function useSetupFlow(
       report(e?.message || String(e));
       setSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, report, reportPhase, t, setSteps, waitForGatewayReady, setGatewayRunning, setSetupError]);
+  }, [beginRun, isRunActive, setSetupStep, report, reportPhase, t, setSteps, waitForGatewayReady, setGatewayRunning, setSetupError, needsOnboarding, startOfficialOnboarding]);
 
   const runNativeSetup = useCallback(async () => {
     const runId = beginRun();
@@ -447,6 +571,7 @@ export function useSetupFlow(
       setOpenclawStatus(oclawStatus);
       if (!isRunActive(runId)) return;
       if (!oclawStatus.installed) {
+        setNeedsOnboarding(true);
         patchStep("openclaw", "running", t("setup.installingOpenclaw"));
         setSetupStep("install-openclaw");
         reportPhase("openclaw", t("setup.installingOpenclaw"), 10);
@@ -520,8 +645,12 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return;
       patchStep("gateway", "done");
 
-      report(t("setup.ready"), 100);
-      setSetupStep("ready");
+      if (needsOnboarding) {
+        await startOfficialOnboarding();
+      } else {
+        report(t("setup.ready"), 100);
+        setSetupStep("ready");
+      }
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       setSetupError(err?.message || String(err));
@@ -529,7 +658,7 @@ export function useSetupFlow(
       setSetupStep("error");
     }
   }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, setSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs]);
+      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, needsOnboarding, startOfficialOnboarding]);
 
   const selectMode = useCallback((mode: "native" | "docker") => {
     setInstallMode(mode);
@@ -554,6 +683,9 @@ export function useSetupFlow(
   }, [installMode, setSetupError, setProgress, setNeedsGit, runDockerSetup, runNativeSetup]);
 
   const goBack = useCallback(() => {
+    void wizardClientRef.current?.cancel().catch(() => {});
+    setWizardStep(null);
+    setWizardError(null);
     cancelActiveRun();
     setSetupError(null);
     setProgress(0);
@@ -612,7 +744,13 @@ export function useSetupFlow(
   return {
     progress, statusMessage, dockerStatus, openclawStatus, checkingDocker, needsGit, steps,
     installTarget,
+    wizardStep,
+    wizardSubmitting,
+    wizardError,
+    needsOnboarding,
     startGateway: startGatewayAction,
+    submitWizardStep,
+    retryWizard: startOfficialOnboarding,
     runNativeSetup,
     runDockerSetup,
     retrySetup,

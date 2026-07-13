@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 pub struct ConfigData {
     pub raw: String,
     pub path: String,
+    pub exists: bool,
 }
 
 #[tauri::command]
@@ -17,11 +18,13 @@ pub async fn read_config() -> Result<ConfigData, String> {
         return Ok(ConfigData {
             raw,
             path: path.to_string_lossy().to_string(),
+            exists: true,
         });
     }
     Ok(ConfigData {
         raw: "{}".into(),
         path: path.to_string_lossy().to_string(),
+        exists: false,
     })
 }
 

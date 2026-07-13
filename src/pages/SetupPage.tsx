@@ -43,6 +43,7 @@ import {
 import clsx from "clsx";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
 import { OpenClawUpdatePanel } from "@/components/shared/OpenClawUpdatePanel";
+import type { OpenClawWizardStep } from "@/services/openclawWizard";
 
 function setupStepMessageKey(step: SetupStep): string {
   switch (step) {
@@ -68,6 +69,8 @@ function setupStepMessageKey(step: SetupStep): string {
     case "install-openclaw":
     case "install-complete":
       return "setup.installComplete";
+    case "configure-openclaw":
+      return "setup.wizard.title";
     default:
       return "setup.settingUp";
   }
@@ -92,6 +95,8 @@ function setupStepProgress(step: SetupStep): number {
       return 52;
     case "install-complete":
       return 68;
+    case "configure-openclaw":
+      return 82;
     case "ready":
       return 100;
     default:
@@ -418,6 +423,131 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   );
 }
 
+function wizardInitialValue(step: OpenClawWizardStep): unknown {
+  if (step.type === "confirm") return Boolean(step.initialValue);
+  if (step.type === "multiselect") return Array.isArray(step.initialValue) ? step.initialValue : [];
+  if (step.type === "select") return step.initialValue ?? step.options?.[0]?.value;
+  if (step.type === "text") return typeof step.initialValue === "string" ? step.initialValue : "";
+  if (step.type === "action") return true;
+  return undefined;
+}
+
+function wizardValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  try { return JSON.stringify(left) === JSON.stringify(right); } catch { return false; }
+}
+
+function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
+  const { t } = useTranslation();
+  const step = flow.wizardStep;
+  const [value, setValue] = useState<unknown>(() => step ? wizardInitialValue(step) : undefined);
+
+  useEffect(() => {
+    setValue(step ? wizardInitialValue(step) : undefined);
+  }, [step?.id]);
+
+  if (!step) {
+    return (
+      <SetupShell
+        active={2}
+        title={t("setup.wizard.title", "配置 OpenClaw")}
+        subtitle={t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
+        logs={logs}
+        previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
+        nextAction={{
+          label: flow.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
+          onClick: () => void flow.retryWizard(),
+          disabled: flow.wizardSubmitting && !flow.wizardError,
+          loading: flow.wizardSubmitting,
+          icon: "none",
+        }}
+      >
+        <div className={clsx("rounded-lg border p-4 text-sm leading-6", flow.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
+          {flow.wizardError || t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
+        </div>
+      </SetupShell>
+    );
+  }
+
+  const options = step.options ?? [];
+  const selectedValues = Array.isArray(value) ? value : [];
+  const toggleMulti = (optionValue: unknown) => {
+    setValue((current: unknown) => {
+      const values = Array.isArray(current) ? current : [];
+      return values.some((item) => wizardValuesEqual(item, optionValue))
+        ? values.filter((item) => !wizardValuesEqual(item, optionValue))
+        : [...values, optionValue];
+    });
+  };
+  const blocked = (step.type === "select" || step.type === "multiselect") && options.length === 0;
+
+  return (
+    <SetupShell
+      active={2}
+      title={step.title || t("setup.wizard.title", "配置 OpenClaw")}
+      subtitle={step.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")}
+      logs={logs}
+      previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
+      nextAction={{
+        label: step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
+        onClick: () => void flow.submitWizardStep(step.id, value),
+        disabled: flow.wizardSubmitting || blocked,
+        loading: flow.wizardSubmitting,
+        icon: "next",
+      }}
+    >
+      <div className="space-y-4" dir="auto">
+        {step.type === "text" && (
+          <input
+            type={step.sensitive ? "password" : "text"}
+            value={typeof value === "string" ? value : ""}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder={step.placeholder}
+            autoComplete={step.sensitive ? "new-password" : "off"}
+            className="w-full rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5 text-sm text-aegis-text outline-none focus:border-aegis-primary"
+          />
+        )}
+        {step.type === "confirm" && (
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-aegis-border bg-aegis-surface p-4 text-sm text-aegis-text">
+            <input type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} className="h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
+            <span>{step.message || t("setup.wizard.confirm", "确认并继续")}</span>
+          </label>
+        )}
+        {step.type === "select" && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {options.map((option, index) => {
+              const selected = wizardValuesEqual(value, option.value);
+              return (
+                <button key={`${step.id}-${index}`} type="button" onClick={() => setValue(option.value)} className={clsx("flex min-h-[64px] items-start gap-3 rounded-lg border p-3 text-start transition", selected ? "border-aegis-primary bg-aegis-primary/8" : "border-aegis-border bg-aegis-surface hover:border-aegis-primary/40")}>
+                  {selected ? <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-aegis-primary" /> : <Circle size={17} className="mt-0.5 shrink-0 text-aegis-text-dim" />}
+                  <span><span className="block text-sm font-semibold text-aegis-text">{option.label}</span>{option.hint && <span className="mt-1 block text-xs leading-5 text-aegis-text-muted">{option.hint}</span>}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {step.type === "multiselect" && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {options.map((option, index) => {
+              const selected = selectedValues.some((item) => wizardValuesEqual(item, option.value));
+              return (
+                <label key={`${step.id}-${index}`} className={clsx("flex cursor-pointer items-start gap-3 rounded-lg border p-3", selected ? "border-aegis-primary bg-aegis-primary/8" : "border-aegis-border bg-aegis-surface")}>
+                  <input type="checkbox" checked={selected} onChange={() => toggleMulti(option.value)} className="mt-0.5 h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
+                  <span><span className="block text-sm font-semibold text-aegis-text">{option.label}</span>{option.hint && <span className="mt-1 block text-xs leading-5 text-aegis-text-muted">{option.hint}</span>}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        {(step.type === "note" || step.type === "progress" || step.type === "action") && (
+          <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">{step.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</div>
+        )}
+        {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}
+      </div>
+    </SetupShell>
+  );
+}
+
 function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const navigateSetup = useSetupNavigation();
@@ -541,11 +671,13 @@ export function SetupPage() {
 
   const sharedLogs = useMemo(() => logs, [logs]);
   const finishStorage = (result?: { createdFresh: boolean }) => {
-    const nextStep = postStorageStep === "ready" && result?.createdFresh
+    const nextStep = result?.createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
       ? "gateway-stopped"
       : postStorageStep;
     if (nextStep === "ready") {
       setSetupStatus(t("setup.ready"), 100);
+    } else if (nextStep === "configure-openclaw") {
+      setSetupStatus(t("setup.wizard.title", "配置 OpenClaw"), 82);
     } else if (nextStep === "gateway-stopped") {
       setSetupStatus(t("setup.gatewayNotRunning"), 30);
     } else {
@@ -567,6 +699,7 @@ export function SetupPage() {
     case "install-openclaw":
     case "install-complete":
     case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
+    case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
     case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
     default: return <DetectingScreen flow={flow} logs={sharedLogs} />;
   }

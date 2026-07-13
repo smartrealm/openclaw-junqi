@@ -12,11 +12,12 @@ export type SetupStep =
   | "install-node"
   | "install-openclaw"
   | "install-complete"
+  | "configure-openclaw"
   | "ready"
   | "error";
 
 type InstallMode = "native" | "docker";
-export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "ready";
+export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "configure-openclaw" | "ready";
 export type SetupLog = { source: "setup" | "gateway"; message: string; ts: number };
 
 interface AppState {

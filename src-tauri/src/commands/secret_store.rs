@@ -1,11 +1,11 @@
-//! Provider secret store — macOS Keychain + file-based fallback.
+//! Provider secret store backed by the operating system credential vault.
 //!
 //! Stores API keys and OAuth tokens outside `openclaw.json` so the
 //! config file never contains credentials in plaintext. Matches
 //! JunQi's `electron/services/secrets/` pattern.
 //!
-//! On macOS: uses the built-in Keychain via `security` CLI.
-//! On Linux/Windows: falls back to JSON file with 600 permissions.
+//! macOS uses Keychain, Windows uses Credential Manager, and Linux uses
+//! Secret Service. There is deliberately no plaintext file fallback.
 //!
 //! Frontend calls:
 //!   store_secret   — save a credential for an account
@@ -14,7 +14,6 @@
 //!   list_secrets   — enumerate stored credential labels
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 /// A secret stored in the keychain. The id is the ProviderAccount id;
 /// the label is a human-readable name shown in the macOS Keychain UI.
@@ -43,155 +42,48 @@ fn mask_secret(value: &str) -> String {
     format!("…{}", &value[value.len() - 4..])
 }
 
-#[cfg(target_os = "macos")]
 fn keychain_service_name() -> &'static str {
     "junqi-desktop-provider-secrets"
 }
 
-/// Store a secret using macOS Keychain.
-#[cfg(target_os = "macos")]
-async fn store_in_keychain(account_id: &str, label: &str, value: &str) -> Result<(), String> {
-    let service = keychain_service_name();
-    let output = tokio::process::Command::new("security")
-        .args([
-            "add-generic-password",
-            "-a",
-            account_id,
-            "-s",
-            service,
-            "-l",
-            label,
-            "-w",
-            value,
-            "-U", // update if exists
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("spawn security: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Exit code 45 = "password already exists" when `-U` is not
-        // passed; we pass `-U` so this shouldn't happen, but if it
-        // does, delete first and retry.
-        if output.status.code() == Some(45) {
-            let _ = tokio::process::Command::new("security")
-                .args(["delete-generic-password", "-a", account_id, "-s", service])
-                .output()
-                .await;
-            return Box::pin(store_in_keychain(account_id, label, value)).await;
-        }
-        return Err(format!("security add-generic-password failed: {stderr}"));
-    }
-    Ok(())
+fn credential_entry(account_id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(keychain_service_name(), account_id)
+        .map_err(|error| format!("open system credential store: {error}"))
 }
 
-/// Retrieve a secret from macOS Keychain.
-#[cfg(target_os = "macos")]
+async fn store_in_keychain(account_id: &str, _label: &str, value: &str) -> Result<(), String> {
+    let account_id = account_id.to_string();
+    let value = value.to_string();
+    tokio::task::spawn_blocking(move || {
+        credential_entry(&account_id)?
+            .set_password(&value)
+            .map_err(|error| format!("store credential in system vault: {error}"))
+    })
+    .await
+    .map_err(|error| format!("credential store task failed: {error}"))?
+}
+
 async fn get_from_keychain(account_id: &str) -> Result<String, String> {
-    let service = keychain_service_name();
-    let output = tokio::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-a",
-            account_id,
-            "-s",
-            service,
-            "-w",
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("spawn security: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "security find-generic-password failed: {}",
-            String::from_utf8_lossy(&output.stderr),
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let account_id = account_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        credential_entry(&account_id)?
+            .get_password()
+            .map_err(|error| format!("read credential from system vault: {error}"))
+    })
+    .await
+    .map_err(|error| format!("credential read task failed: {error}"))?
 }
 
-/// Delete a secret from macOS Keychain.
-#[cfg(target_os = "macos")]
 async fn delete_from_keychain(account_id: &str) -> Result<(), String> {
-    let service = keychain_service_name();
-    let output = tokio::process::Command::new("security")
-        .args(["delete-generic-password", "-a", account_id, "-s", service])
-        .output()
-        .await
-        .map_err(|e| format!("spawn security: {e}"))?;
-    // Exit status 44 = "item not found" — not an error for delete.
-    if !output.status.success() && output.status.code() != Some(44) {
-        return Err(format!(
-            "security delete-generic-password failed: {}",
-            String::from_utf8_lossy(&output.stderr),
-        ));
-    }
-    Ok(())
-}
-
-// ── File-based fallback (non-macOS) ──────────────────────────────────────
-
-fn secrets_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
-    let dir = home.join(".openclaw").join("secrets");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create secrets dir: {e}"))?;
-    Ok(dir.join("provider-secrets.json"))
-}
-
-#[cfg(not(target_os = "macos"))]
-async fn store_in_keychain(account_id: &str, label: &str, value: &str) -> Result<(), String> {
-    let path = secrets_file_path()?;
-    let mut entries: serde_json::Map<String, serde_json::Value> = if path.exists() {
-        let raw = std::fs::read_to_string(&path).unwrap_or_default();
-        serde_json::from_str(&raw).unwrap_or_default()
-    } else {
-        Default::default()
-    };
-    entries.insert(
-        account_id.to_string(),
-        serde_json::json!({
-            "label": label,
-            "value": value,
-        }),
-    );
-    let json = serde_json::to_string_pretty(&entries).map_err(|e| format!("serialize: {e}"))?;
-    std::fs::write(&path, &json).map_err(|e| format!("write: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-async fn get_from_keychain(account_id: &str) -> Result<String, String> {
-    let path = secrets_file_path()?;
-    let raw = std::fs::read_to_string(&path).map_err(|e| format!("read secrets file: {e}"))?;
-    let entries: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(&raw).map_err(|e| format!("parse secrets file: {e}"))?;
-    let entry = entries
-        .get(account_id)
-        .ok_or_else(|| "secret not found".to_string())?;
-    entry["value"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "invalid secret entry".to_string())
-}
-
-#[cfg(not(target_os = "macos"))]
-async fn delete_from_keychain(account_id: &str) -> Result<(), String> {
-    let path = secrets_file_path()?;
-    let mut entries: serde_json::Map<String, serde_json::Value> = if path.exists() {
-        let raw = std::fs::read_to_string(&path).unwrap_or_default();
-        serde_json::from_str(&raw).unwrap_or_default()
-    } else {
-        return Ok(());
-    };
-    entries.remove(account_id);
-    let json = serde_json::to_string_pretty(&entries).map_err(|e| format!("serialize: {e}"))?;
-    std::fs::write(&path, &json).map_err(|e| format!("write: {e}"))?;
-    Ok(())
+    let account_id = account_id.to_string();
+    tokio::task::spawn_blocking(
+        move || match credential_entry(&account_id)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(format!("delete credential from system vault: {error}")),
+        },
+    )
+    .await
+    .map_err(|error| format!("credential delete task failed: {error}"))?
 }
 
 // ── Tauri commands ───────────────────────────────────────────────────────

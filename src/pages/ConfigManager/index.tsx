@@ -326,12 +326,13 @@ export function ConfigManagerPage() {
         setConfigPath(detected.path);
         setConfigExists(detected.exists);
 
-        if (detected.exists) {
-          const { data } = await window.aegis.config.read(detected.path);
-          const normalized = normalizeConfig(data);
-          setConfig(normalized);
-          setOriginalConfig(structuredClone(normalized));
-        }
+        // A missing openclaw.json is a valid first-run state. The backend read
+        // contract returns an empty object for that case, so keep the editor
+        // usable and let the first save create the file atomically.
+        const { data } = await window.aegis.config.read(detected.path);
+        const normalized = normalizeConfig(data ?? {});
+        setConfig(normalized);
+        setOriginalConfig(structuredClone(normalized));
       } catch (err: any) {
         setError(err.message || 'Unknown error');
       } finally {
@@ -421,7 +422,11 @@ export function ConfigManagerPage() {
       const mergedWithPreferredProviders = applyPreferredWebProviders(merged);
       const toWrite = normalizeConfigForDisk(mergedWithPreferredProviders);
       const savedPrimaryModel = toWrite.agents?.defaults?.model?.primary ?? null;
-      await window.aegis.config.write(configPath, toWrite);
+      const writeResult = await window.aegis.config.write(configPath, toWrite);
+      if (!writeResult.success) {
+        throw new Error(writeResult.error || t('config.saveFailed'));
+      }
+      setConfigExists(true);
 
       // 3.5 Keep main agent runtime state clean:
       // normalize alias-drifted auth-profiles and force models.json rebuild.
@@ -1261,7 +1266,7 @@ export function ConfigManagerPage() {
         </div>
 
         {/* Quick stats (only when config loaded) */}
-        {!detecting && configExists && config && (
+        {!detecting && config && (
           <div className="grid grid-cols-3 gap-3 mb-5">
             {[
               { val: providerCount, label: t('config.providers'), color: 'text-aegis-primary' },
@@ -1284,7 +1289,7 @@ export function ConfigManagerPage() {
           <div className="flex items-center justify-center py-20 text-aegis-text-muted text-sm animate-pulse">
             {t('config.detecting')}
           </div>
-        ) : !configExists || !config ? (
+        ) : !config ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
             <AlertCircle size={32} className="text-aegis-text-muted" />
             <p className="text-sm text-aegis-text-secondary">{t('config.noFile')}</p>
