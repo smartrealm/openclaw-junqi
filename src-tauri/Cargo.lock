@@ -2518,7 +2518,7 @@ dependencies = [
 
 [[package]]
 name = "junqi-desktop"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2531,6 +2531,8 @@ dependencies = [
  "image",
  "keyring",
  "notify",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
  "open",
  "parking_lot",
  "portable-pty",

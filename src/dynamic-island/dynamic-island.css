@@ -1,0 +1,503 @@
+.junqi-dynamic-island-document,
+.junqi-dynamic-island-root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent !important;
+  color-scheme: dark;
+}
+
+.junqi-dynamic-island-root {
+  font-family: var(--font-ui, "SF Pro Display", "Segoe UI Variable", "Segoe UI", sans-serif);
+}
+
+.junqi-island-shell {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.junqi-island-shell button {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.junqi-island-compact,
+.junqi-island-panel {
+  width: 100%;
+  color: #f5f7f9;
+  background: rgba(5, 6, 7, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(26px) saturate(1.18);
+  -webkit-backdrop-filter: blur(26px) saturate(1.18);
+}
+
+.junqi-island-compact {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  height: 48px;
+  padding: 6px 12px 6px 7px;
+  border-radius: 0 0 23px 23px;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+
+[data-tauri-platform="windows"] .junqi-island-compact {
+  border-radius: 24px;
+}
+
+.junqi-island-compact:hover {
+  background: rgba(12, 14, 16, 0.99);
+}
+
+.junqi-island-compact:active {
+  transform: scale(0.985);
+}
+
+.junqi-island-compact:focus-visible,
+.junqi-island-shell button:focus-visible {
+  outline: 2px solid rgba(92, 211, 176, 0.9);
+  outline-offset: -3px;
+}
+
+.junqi-island-orb {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #15191c;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+.junqi-island-orb::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  margin: -27px -27px 0 0;
+  border-radius: 50%;
+  background: #58d6a8;
+  box-shadow: 0 0 9px rgba(88, 214, 168, 0.8);
+}
+
+.junqi-island-orb.is-attention::after {
+  background: #ffb654;
+  box-shadow: 0 0 10px rgba(255, 182, 84, 0.86);
+}
+
+.junqi-island-orb img {
+  width: 23px;
+  height: 23px;
+  object-fit: contain;
+}
+
+.junqi-island-compact-copy,
+.junqi-island-task-copy,
+.junqi-island-title > span:last-child,
+.junqi-island-empty > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.junqi-island-compact-copy strong {
+  overflow: hidden;
+  color: #f6f8f9;
+  font-size: 11.5px;
+  font-weight: 620;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.junqi-island-compact-copy small {
+  color: rgba(224, 231, 235, 0.42);
+  font-size: 7.5px;
+  font-weight: 700;
+  line-height: 10px;
+  letter-spacing: 0.08em;
+}
+
+.junqi-island-compact-metrics {
+  min-width: 28px;
+  color: rgba(235, 240, 242, 0.72);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.junqi-island-timer,
+.junqi-island-running {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.junqi-island-connection {
+  display: block;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #ef6b65;
+  box-shadow: 0 0 8px rgba(239, 107, 101, 0.5);
+}
+
+.junqi-island-connection.is-online {
+  background: #58d6a8;
+  box-shadow: 0 0 8px rgba(88, 214, 168, 0.6);
+}
+
+.junqi-island-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  border: 1.5px solid rgba(88, 214, 168, 0.24);
+  border-top-color: #58d6a8;
+  border-radius: 50%;
+  animation: junqi-island-spin 0.8s linear infinite;
+}
+
+@keyframes junqi-island-spin {
+  to { transform: rotate(360deg); }
+}
+
+.junqi-island-panel {
+  height: 248px;
+  overflow: hidden;
+  border-radius: 0 0 20px 20px;
+}
+
+[data-tauri-platform="windows"] .junqi-island-panel {
+  border-radius: 18px;
+}
+
+.junqi-island-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 59px;
+  padding: 10px 11px 9px 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.junqi-island-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+}
+
+.junqi-island-brandmark {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  color: #64d8ae;
+  background: rgba(88, 214, 168, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(88, 214, 168, 0.14);
+}
+
+.junqi-island-title strong {
+  overflow: hidden;
+  max-width: 270px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.junqi-island-title small {
+  overflow: hidden;
+  max-width: 270px;
+  color: rgba(229, 235, 238, 0.46);
+  font-size: 9.5px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.junqi-island-window-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+}
+
+.junqi-island-window-actions button {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  color: rgba(235, 240, 242, 0.45);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.junqi-island-window-actions button:hover {
+  color: #f5f7f9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.junqi-island-window-actions button:active,
+.junqi-island-controls button:active,
+.junqi-island-task:active {
+  transform: scale(0.96);
+}
+
+.junqi-island-content {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 46px;
+  height: 189px;
+}
+
+.junqi-island-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  padding: 7px 8px 5px;
+  overflow: hidden;
+}
+
+.junqi-island-task {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 15px;
+  align-items: center;
+  gap: 8px;
+  min-height: 39px;
+  padding: 4px 7px 4px 5px;
+  border: 0;
+  border-radius: 8px;
+  color: #edf1f3;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.junqi-island-task:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.junqi-island-task-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: #65d8ae;
+  background: rgba(88, 214, 168, 0.09);
+}
+
+.junqi-island-task-icon.is-attention {
+  color: #ffbd67;
+  background: rgba(255, 182, 84, 0.11);
+}
+
+.junqi-island-task-icon.is-error {
+  color: #f17b74;
+  background: rgba(239, 107, 101, 0.11);
+}
+
+.junqi-island-task-icon.is-success {
+  color: #7bd7af;
+  background: rgba(88, 214, 168, 0.09);
+}
+
+.junqi-island-task-copy strong {
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 580;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.junqi-island-task-copy small {
+  color: rgba(229, 235, 238, 0.4);
+  font-size: 8.5px;
+  line-height: 11px;
+  text-transform: capitalize;
+}
+
+.junqi-island-task-open {
+  color: rgba(229, 235, 238, 0.24);
+  transform: rotate(90deg);
+}
+
+.junqi-island-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  color: rgba(226, 233, 236, 0.35);
+}
+
+.junqi-island-empty strong {
+  color: rgba(236, 241, 243, 0.68);
+  font-size: 10.5px;
+  font-weight: 570;
+  line-height: 15px;
+}
+
+.junqi-island-empty small {
+  font-size: 8.5px;
+  line-height: 12px;
+}
+
+.junqi-island-drop {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  grid-template-rows: 1fr 3px;
+  column-gap: 12px;
+  align-items: center;
+  height: 100%;
+  padding: 12px 14px 9px;
+}
+
+.junqi-island-drop-visual {
+  position: relative;
+  display: grid;
+  grid-row: 1;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  color: #74dfb8;
+  background: rgba(88, 214, 168, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(88, 214, 168, 0.17);
+}
+
+.junqi-island-drop-visual i {
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(88, 214, 168, 0.18);
+  border-radius: 17px;
+  animation: junqi-island-drop-pulse 1.35s ease-in-out infinite;
+}
+
+.junqi-island-drop.is-received .junqi-island-drop-visual i {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes junqi-island-drop-pulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.15; }
+  50% { transform: scale(1.04); opacity: 0.7; }
+}
+
+.junqi-island-drop-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.junqi-island-drop-copy strong {
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 16px;
+}
+
+.junqi-island-drop-copy small {
+  overflow: hidden;
+  color: rgba(229, 235, 238, 0.44);
+  font-size: 9px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.junqi-island-drop-progress {
+  grid-column: 1 / -1;
+  align-self: end;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.junqi-island-drop-progress span {
+  display: block;
+  width: 45%;
+  height: 100%;
+  border-radius: inherit;
+  background: #64d8ae;
+  animation: junqi-island-drop-scan 1.1s ease-in-out infinite alternate;
+}
+
+.junqi-island-drop.is-received .junqi-island-drop-progress span {
+  width: 100%;
+  animation: none;
+}
+
+@keyframes junqi-island-drop-scan {
+  from { transform: translateX(-80%); }
+  to { transform: translateX(205%); }
+}
+
+.junqi-island-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.junqi-island-controls button {
+  display: flex;
+  min-width: 0;
+  height: 31px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: rgba(235, 240, 242, 0.62);
+  background: rgba(255, 255, 255, 0.055);
+  font-size: 9.5px;
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.junqi-island-controls button:hover {
+  color: #f6f8f9;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.junqi-island-controls button.is-active {
+  color: #75ddb8;
+  background: rgba(88, 214, 168, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .junqi-island-shell *,
+  .junqi-island-shell *::before,
+  .junqi-island-shell *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

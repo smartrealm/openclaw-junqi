@@ -120,6 +120,15 @@ pub fn run() {
             commands::quickchat::close_quickchat,
             commands::quickchat::get_quickchat_visible,
             commands::quickchat::get_quickchat_seed,
+            // Dynamic Island — top-center agent status and quick actions
+            commands::dynamic_island::open_dynamic_island,
+            commands::dynamic_island::close_dynamic_island,
+            commands::dynamic_island::toggle_dynamic_island,
+            commands::dynamic_island::get_dynamic_island_visible,
+            commands::dynamic_island::set_dynamic_island_expanded,
+            commands::dynamic_island::set_dynamic_island_click_through,
+            commands::dynamic_island::reposition_dynamic_island,
+            commands::dynamic_island::dynamic_island_focus_main,
             commands::pet::set_pet_click_through,
             commands::pet::set_pet_position,
             commands::pet::start_pet_dragging,
@@ -441,6 +450,13 @@ pub fn run() {
                 window_adaptation::initialize(window, first_run_marker, preferred_size_marker);
             } else {
                 eprintln!("[window-adaptation] main window is unavailable during setup");
+            }
+            if let Some(main_window) = app.get_webview_window("main") {
+                commands::dynamic_island::remember_main_monitor(&main_window);
+                let tracked_window = main_window.clone();
+                main_window.on_window_event(move |_| {
+                    commands::dynamic_island::remember_main_monitor(&tracked_window);
+                });
             }
             // Emit gateway config to frontend before it loads (no invoke needed)
             let handle = app.handle().clone();

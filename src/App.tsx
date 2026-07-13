@@ -13,6 +13,7 @@ const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => 
 const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
 const BootTimelineOverlay = lazy(() => import('@/components/BootTimelineOverlay').then(m => ({ default: m.BootTimelineOverlay })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
+const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
@@ -26,6 +27,7 @@ import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPr
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
+import { hasTauriEventBridge } from '@/utils/tauriEvents';
 
 function RouteLoadingFallback() {
   return (
@@ -894,6 +896,11 @@ export default function App() {
     <>
       <ThemeRuntime />
       <LazyPetRuntimeHost />
+      {hasTauriEventBridge() && (
+        <Suspense fallback={null}>
+          <DynamicIslandRuntime />
+        </Suspense>
+      )}
 
       {/* Gateway process error overlay — shown when the gateway failed to start.
           Takes priority over everything; user must recover before using the app. */}

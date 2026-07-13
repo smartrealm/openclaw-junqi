@@ -26,6 +26,7 @@ const PET_H = 154;
 const SNAP_THRESHOLD = 90;
 /** Gap left between the pet and the edge after snapping. */
 const SNAP_MARGIN = 6;
+const DROP_CATCH_MEMORY_MS = 1_200;
 const PENDING_PACKAGE_AFTER_KEY = 'junqi:pet-package-pending-after';
 
 const createPositionScheduler = () => new PetPositionScheduler((point) =>
@@ -94,6 +95,7 @@ export default function PetWindow() {
   // listener and read by the magnetic-pull RAF loop. Module-level state
   // (the listener may not have fired yet when the effect mounts).
   const dragCursorRef = useRef<null | { x: number; y: number; gx: number; gy: number; win_w: number; win_h: number }>(null);
+  const preserveDropTargetUntilRef = useRef(0);
   const timeoutsRef = useRef<number[]>([]);
 
   const defer = (fn: () => void, ms: number) => {
@@ -234,6 +236,7 @@ export default function PetWindow() {
     unlistens.push(
       subscribeTauriEvent<string[]>('aegis:drag-active', (e) => {
         const paths = e.payload ?? [];
+        preserveDropTargetUntilRef.current = 0;
         dragCursorRef.current = { x: 0, y: 0, gx: window.screenX + 540, gy: window.screenY + 360, win_w: 1080, win_h: 720 };
         petStore.setDragActive(true, paths);
         cancelSnap();
@@ -242,18 +245,29 @@ export default function PetWindow() {
         dragCursorRef.current = e.payload;
         cancelSnap();
       }),
+      subscribeTauriEvent<string[]>('aegis:file-dropped', () => {
+        preserveDropTargetUntilRef.current = Date.now() + DROP_CATCH_MEMORY_MS;
+      }),
       subscribeTauriEvent('aegis:drag-inactive', () => {
-        dragCursorRef.current = null;
+        const remainingCatchMs = preserveDropTargetUntilRef.current - Date.now();
+        if (remainingCatchMs > 0) {
+          defer(() => {
+            if (Date.now() >= preserveDropTargetUntilRef.current) {
+              dragCursorRef.current = null;
+              preserveDropTargetUntilRef.current = 0;
+            }
+          }, remainingCatchMs);
+        } else {
+          dragCursorRef.current = null;
+        }
         petStore.setDragActive(false);
         petStore.setDragOver(false);
         if (petPosRef.current) petStore.setPosition(petPosRef.current);
       }),
     );
-    // NB: we deliberately do NOT listen for `aegis:file-dropped` here. The
-    // swallow emotion (and the leap-to-catch sprint) arrives via the broadcast
-    // `pet-state`, and drop also emits `aegis:drag-inactive` which stops the
-    // chase — so bumping this window's local swallowTick would be a no-op (the
-    // local store isn't read during derivation). The main window owns the drop.
+    // The main window still owns swallow state. This window only remembers the
+    // final cursor position long enough for the broadcast emotion to trigger
+    // the catch sprint after drag-inactive stops the chase.
     // Custom asset changed in the main window (upload/clear) → reload from disk.
     unlistens.push(
       subscribeTauriEvent('pet-asset-changed', () => {
@@ -402,7 +416,7 @@ export default function PetWindow() {
   useEffect(() => {
     const was = prevEmotionRef.current;
     const now = state.emotion;
-    if (was !== 'swallow' && now === 'swallow') {
+    if (was !== 'swallow' && was !== 'rapidSwallow' && (now === 'swallow' || now === 'rapidSwallow')) {
       playPetSfx('munch', useSettingsStore.getState().soundEnabled);
     }
     prevEmotionRef.current = now;
@@ -525,7 +539,7 @@ export default function PetWindow() {
   // On drop (swallow emotion enters), the pet SPRINTS the remaining distance
   // to the cursor — the "leap to catch the falling morsel" gesture.
   useEffect(() => {
-    if (state.emotion !== 'swallow') return;
+    if (state.emotion !== 'swallow' && state.emotion !== 'rapidSwallow') return;
     cancelSnap();
     const cur = dragCursorRef.current;
     const pos = petPosRef.current;

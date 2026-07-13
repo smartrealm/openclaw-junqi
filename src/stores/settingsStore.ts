@@ -50,6 +50,8 @@ interface SettingsState {
   notificationsEnabled: boolean;
   soundEnabled: boolean;
   dndMode: boolean;
+  dynamicIslandEnabled: boolean;
+  dynamicIslandAutoExpand: boolean;
   budgetLimit: number;
   commandPaletteOpen: boolean;
   memoryExplorerEnabled: boolean;
@@ -85,6 +87,8 @@ interface SettingsState {
   setNotificationsEnabled: (enabled: boolean) => void;
   setSoundEnabled: (enabled: boolean) => void;
   setDndMode: (dnd: boolean) => void;
+  setDynamicIslandEnabled: (enabled: boolean) => void;
+  setDynamicIslandAutoExpand: (enabled: boolean) => void;
   setBudgetLimit: (n: number) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setMemoryExplorerEnabled: (enabled: boolean) => void;
@@ -168,7 +172,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   language: savedLang,
   notificationsEnabled: localStorage.getItem('aegis-notifications') !== 'false',
   soundEnabled: localStorage.getItem('aegis-sound') !== 'false',
-  dndMode: false,
+  dndMode: localStorage.getItem('aegis-dnd-mode') === 'true',
+  dynamicIslandEnabled: localStorage.getItem('junqi:dynamic-island-enabled') !== 'false',
+  dynamicIslandAutoExpand: localStorage.getItem('junqi:dynamic-island-auto-expand') !== 'false',
   budgetLimit: parseFloat(localStorage.getItem('aegis-budget-limit') || '0') || 0,
   commandPaletteOpen: false,
   memoryExplorerEnabled: localStorage.getItem('aegis-memory-explorer') === 'true',
@@ -235,7 +241,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setNotificationsEnabled: (enabled) => { localStorage.setItem('aegis-notifications', String(enabled)); set({ notificationsEnabled: enabled }); },
   setSoundEnabled: (enabled) => { localStorage.setItem('aegis-sound', String(enabled)); set({ soundEnabled: enabled }); },
-  setDndMode: (dnd) => set({ dndMode: dnd }),
+  setDndMode: (dnd) => { localStorage.setItem('aegis-dnd-mode', String(dnd)); set({ dndMode: dnd }); },
+  setDynamicIslandEnabled: (enabled) => { localStorage.setItem('junqi:dynamic-island-enabled', String(enabled)); set({ dynamicIslandEnabled: enabled }); },
+  setDynamicIslandAutoExpand: (enabled) => { localStorage.setItem('junqi:dynamic-island-auto-expand', String(enabled)); set({ dynamicIslandAutoExpand: enabled }); },
   setBudgetLimit: (n) => { localStorage.setItem('aegis-budget-limit', String(n)); set({ budgetLimit: n }); },
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setMemoryExplorerEnabled: (enabled) => { localStorage.setItem('aegis-memory-explorer', String(enabled)); set({ memoryExplorerEnabled: enabled }); },

@@ -10,6 +10,7 @@ pub mod builtin_skills;
 pub mod config;
 pub mod console;
 pub mod docker;
+pub mod dynamic_island;
 pub mod ensure;
 pub mod fs_neu;
 pub mod fs_watcher;

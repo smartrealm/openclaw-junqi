@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hasTauriEventBridge, subscribeTauriEvent } from './tauriEvents';
+import { emitTauriEvent, hasTauriEventBridge, subscribeTauriEvent } from './tauriEvents';
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -24,6 +24,7 @@ test('plain browser previews do not register Tauri listeners', () => {
   try {
     assert.equal(hasTauriEventBridge(), false);
     assert.doesNotThrow(() => subscribeTauriEvent('task-status', () => {}));
+    assert.doesNotThrow(() => emitTauriEvent('dynamic-island:ready'));
   } finally {
     host.__TAURI_INTERNALS__ = previous;
   }

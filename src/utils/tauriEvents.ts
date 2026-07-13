@@ -1,4 +1,4 @@
-import { listen, type EventCallback, type UnlistenFn } from '@tauri-apps/api/event';
+import { emit, listen, type EventCallback, type UnlistenFn } from '@tauri-apps/api/event';
 
 export function hasTauriEventBridge(): boolean {
   const internals = (window as Window & {
@@ -39,6 +39,12 @@ export function subscribeTauriEvent<T>(
     unlisten?.();
     unlisten = null;
   };
+}
+
+/** Emit across Tauri windows while remaining a safe no-op in browser previews. */
+export async function emitTauriEvent<T>(event: string, payload?: T): Promise<void> {
+  if (!hasTauriEventBridge()) return;
+  await emit(event, payload);
 }
 
 export function combineUnlisteners(unlisteners: UnlistenFn[]): UnlistenFn {

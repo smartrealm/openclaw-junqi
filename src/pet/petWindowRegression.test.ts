@@ -31,3 +31,10 @@ test('pomodoro status owns one icon in the bubble without a duplicate head badge
   assert.match(petBubble, /fontVariantNumeric: 'tabular-nums'/);
   assert.doesNotMatch(petWindow, /BadgeIcon|Pomodoro badge over the character/);
 });
+
+test('a successful file drop preserves the cursor target for the swallow catch sprint', () => {
+  assert.match(petWindow, /subscribeTauriEvent<string\[]>\('aegis:file-dropped'/);
+  assert.match(petWindow, /preserveDropTargetUntilRef\.current = Date\.now\(\) \+ DROP_CATCH_MEMORY_MS/);
+  assert.match(petWindow, /remainingCatchMs > 0/);
+  assert.match(petWindow, /state\.emotion !== 'swallow' && state\.emotion !== 'rapidSwallow'/);
+});

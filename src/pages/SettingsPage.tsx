@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X, Sparkles, FolderOpen, TerminalSquare,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X, Sparkles, FolderOpen, TerminalSquare, PanelTop,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -52,6 +52,8 @@ export function SettingsPageFull() {
     notificationsEnabled, setNotificationsEnabled,
     soundEnabled, setSoundEnabled,
     dndMode, setDndMode,
+    dynamicIslandEnabled, setDynamicIslandEnabled,
+    dynamicIslandAutoExpand, setDynamicIslandAutoExpand,
     gatewayUrl, setGatewayUrl,
     budgetLimit, setBudgetLimit,
     gatewayToken, setGatewayToken,
@@ -695,6 +697,44 @@ export function SettingsPageFull() {
             className="text-[12px] px-4 py-2 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors"
           >
             🔔 {t('settings.testSound')}
+          </button>
+        </div>
+      </GlassCard>
+
+      <GlassCard delay={0.12}>
+        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
+          <PanelTop size={16} className="text-aegis-primary" />
+          {t('settings.dynamicIsland', '灵动岛')}
+        </h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('settings.dynamicIslandEnabled', '启用灵动岛')}</div>
+              <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandDesc', '主窗口最小化且会话正在执行时显示；拖入文件时临时显示接收状态。')}</div>
+            </div>
+            <Toggle enabled={dynamicIslandEnabled} onChange={setDynamicIslandEnabled} />
+          </div>
+
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('settings.dynamicIslandAutoExpand', '重要状态自动展开')}</div>
+              <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandAutoExpandDesc', '等待输入、执行完成、失败或接收文件时短暂展开，随后自动收起。')}</div>
+            </div>
+            <Toggle enabled={dynamicIslandAutoExpand} onChange={setDynamicIslandAutoExpand} disabled={!dynamicIslandEnabled} />
+          </div>
+
+          <button
+            type="button"
+            disabled={!dynamicIslandEnabled}
+            onClick={() => invoke('open_dynamic_island').catch(() => undefined)}
+            className={clsx(
+              'text-[12px] px-4 py-2 rounded-lg border transition-colors',
+              dynamicIslandEnabled
+                ? 'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10'
+                : 'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed',
+            )}
+          >
+            {t('settings.dynamicIslandPreview', '预览灵动岛')}
           </button>
         </div>
       </GlassCard>
