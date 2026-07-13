@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { formatDistanceToNow } from 'date-fns';
 import { MessageSquare, CheckCircle2, Info, AlertCircle, BellOff, CheckCheck, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 
 import type { NotificationItem, NotificationType } from '@/stores/notificationStore';
+import { formatNotificationTime } from '@/utils/notificationTime';
 
 interface NotificationPanelProps {
   items: NotificationItem[];
@@ -28,14 +28,6 @@ const TYPE_COLOR: Record<NotificationType, string> = {
   error: 'text-aegis-danger',
 };
 
-function relativeTime(iso: string): string {
-  try {
-    return formatDistanceToNow(new Date(iso), { addSuffix: true });
-  } catch {
-    return '';
-  }
-}
-
 /**
  * Notification center dropdown — rendered by TopBar under the bell icon.
  * Presentational: all state/handlers come from props.
@@ -48,7 +40,7 @@ export function NotificationPanel({
   onClear,
   onItemClick,
 }: NotificationPanelProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const hasItems = items.length > 0;
   const hasUnread = items.some((n) => !n.read);
 
@@ -108,7 +100,9 @@ export function NotificationPanel({
                     {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary shrink-0" />}
                   </div>
                   {n.body && <p className="text-[11px] text-aegis-text-muted line-clamp-2 mt-0.5">{n.body}</p>}
-                  <span className="text-[9px] text-aegis-text-dim">{relativeTime(n.timestamp)}</span>
+                  <span className="text-[9px] text-aegis-text-dim">
+                    {formatNotificationTime(n.timestamp, i18n.resolvedLanguage ?? i18n.language)}
+                  </span>
                 </div>
               </button>
             );

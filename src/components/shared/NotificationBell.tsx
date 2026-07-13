@@ -1,18 +1,3 @@
-// ── NotificationBell — minimal port of nezha's NotificationBell ──────────────
-//
-// Frontend component that:
-//   1. Polls `get_notifications` Tauri command (stub backend: returns empty list)
-//   2. Shows a bell icon in the title bar with an unread count badge
-//   3. Opens a popover with the notification list + mark-read actions
-//
-// Adapted differences from nezha:
-//   - Calls `invoke()` directly instead of a useNotifications hook (junqi
-//     doesn't have an equivalent hook yet — would be a follow-up refactor).
-//   - Uses `react-i18next` (junqi's i18n) instead of nezha's useI18n.
-//   - Style uses inline JSX (Tailwind) instead of nezha's `s.xxx` CSS-in-JS.
-//
-// Source: nezha/src/components/nezha/NotificationBell.tsx
-
 import { useCallback, useState } from 'react';
 import {
   Bell, X, Check, CheckCheck, Info, AlertTriangle, AlertCircle, ExternalLink,
@@ -25,6 +10,7 @@ import {
   type PersistentNotificationItem,
 } from '@/hooks/usePersistentNotifications';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
+import { formatNotificationTime } from '@/utils/notificationTime';
 
 function LevelIcon({ level }: { level: string }) {
   switch (level) {
@@ -91,7 +77,7 @@ function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryPro
           {body}
         </div>
         <div className="text-[10.5px] text-aegis-text-dim mt-1">
-          {item.createdAt}
+          {formatNotificationTime(item.createdAt, language)}
         </div>
       </div>
       {!item.isRead && (
