@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { save } from '@tauri-apps/plugin-dialog';
+import { confirm, save } from '@tauri-apps/plugin-dialog';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import {
@@ -1009,12 +1009,21 @@ export function AgentRunView({
     if (!worktreePath || !worktreeBranch) return;
     try {
       await invoke('merge_task_worktree', mergeTaskWorktreeArgs(projectPath, worktreePath, worktreeBranch, baseBranch));
+      await invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch)).catch(() => undefined);
       setDiffStats(null);
-      if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { additions: 0, deletions: 0 });
+      setWorktreePath(null);
+      worktreePathRef.current = null;
+      setWorktreeBranch(null);
+      if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { worktreeDiscarded: true, additions: 0, deletions: 0 });
     } catch (e) { setError(String(e)); }
   };
   const discardWorktree = async () => {
     if (!worktreePath || !worktreeBranch) return;
+    const accepted = await confirm(`确定丢弃工作树“${worktreeBranch}”及其中的所有修改吗？`, {
+      title: '丢弃工作树',
+      kind: 'warning',
+    });
+    if (!accepted) return;
     try {
       await invoke('remove_task_worktree', taskWorktreeArgs(projectPath, worktreePath, worktreeBranch));
       setDiffStats(null);
