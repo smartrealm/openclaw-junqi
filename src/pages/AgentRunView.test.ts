@@ -68,3 +68,10 @@ test('new worktree tasks require an explicit base branch', () => {
   assert.match(source, /launchMode === 'worktree' && !resumingExistingWorktree && !baseBranch\.trim\(\)/);
   assert.match(source, /请选择工作树的基础分支/);
 });
+
+test('worktree branch loading is stable across parent renders', () => {
+  assert.match(source, /baseBranchRef\.current = baseBranch/);
+  assert.match(source, /onBranchRef\.current = onBranch/);
+  assert.match(source, /\}, \[projectPath\]\);/);
+  assert.match(source, /baseBranch \|\| '选择基础分支'/);
+});

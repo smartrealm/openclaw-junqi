@@ -301,6 +301,10 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const baseBranchRef = useRef(baseBranch);
+  const onBranchRef = useRef(onBranch);
+  baseBranchRef.current = baseBranch;
+  onBranchRef.current = onBranch;
 
   const load = useCallback(async () => {
     if (!projectPath) return;
@@ -308,13 +312,13 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
     try {
       const list = await invoke<{ name: string; current: boolean; remote: string | null }[]>('git_list_branches', { projectPath });
       setBranches(list);
-      if (!baseBranch) {
+      if (!baseBranchRef.current) {
         const cur = list.find((b) => b.current);
-        if (cur) onBranch(cur.name);
+        if (cur) onBranchRef.current(cur.name);
       }
     } catch { /* not a git repo */ }
     finally { setLoading(false); }
-  }, [projectPath, baseBranch, onBranch]);
+  }, [projectPath]);
 
   useEffect(() => { if (mode === 'worktree') load(); }, [mode, load]);
 
@@ -343,7 +347,7 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
             onClick={() => { setOpen(!open); if (!open) load(); }}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[12px] font-mono"
             style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }}>
-            <GitBranch size={11} /> {baseBranch || 'main'}
+            <GitBranch size={11} /> {baseBranch || '选择基础分支'}
             {loading ? <Loader2 size={11} className="animate-spin" /> : <ChevronDown size={11} />}
           </button>
           {open && (
