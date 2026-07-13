@@ -3153,6 +3153,34 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
     setShowModal(true);
   }, []);
 
+  const setDefaultTextModel = useCallback((modelId: string) => {
+    onChange((prev) => ({
+      ...prev,
+      agents: {
+        ...prev.agents,
+        defaults: buildDefaultsWithResolvedModels({
+          defaults: prev.agents?.defaults,
+          models: prev.agents?.defaults?.models ?? {},
+          primary: modelId || undefined,
+        }),
+      },
+    }));
+  }, [onChange]);
+
+  const setDefaultImageModel = useCallback((modelId: string) => {
+    onChange((prev) => ({
+      ...prev,
+      agents: {
+        ...prev.agents,
+        defaults: buildDefaultsWithResolvedModels({
+          defaults: prev.agents?.defaults,
+          models: prev.agents?.defaults?.models ?? {},
+          imagePrimary: modelId || undefined,
+        }),
+      },
+    }));
+  }, [onChange]);
+
   useEffect(() => {
     if (addRequestId > 0) openModal();
   }, [addRequestId, openModal]);
@@ -3220,13 +3248,18 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
               <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
                 {t('config.primaryModel')}
               </div>
-              <div className="text-sm font-bold text-aegis-primary truncate mt-0.5">
-                {primaryModel ?? (
-                  <span className="text-aegis-text-muted font-normal italic">
-                    {t('config.notSet', 'Not set')}
-                  </span>
-                )}
-              </div>
+              <select
+                value={primaryModel && allModels[primaryModel] ? primaryModel : ''}
+                disabled={saving || modelCount === 0}
+                onChange={(event) => setDefaultTextModel(event.target.value)}
+                aria-label={t('config.defaultTextModel', 'Default Text Model')}
+                className="mt-1 w-full min-w-0 rounded border border-aegis-border bg-aegis-elevated px-2 py-1.5 text-xs font-semibold text-aegis-primary outline-none focus:border-aegis-primary disabled:opacity-50"
+              >
+                <option value="">{t('config.notSet', 'Not set')}</option>
+                {Object.entries(allModels).map(([id, entry]) => (
+                  <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="flex items-center gap-3 p-3.5 bg-aegis-surface border border-blue-500/20 rounded-xl">
@@ -3242,13 +3275,20 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
               <div className="text-[10px] text-aegis-text-muted uppercase tracking-wider font-bold">
                 {t('config.imageModel', 'Image Model')}
               </div>
-              <div className="text-sm font-bold text-blue-400 truncate mt-0.5">
-                {imagePrimaryModel ?? (
-                  <span className="text-aegis-text-muted font-normal italic">
-                    {t('config.notSet', 'Not set')}
-                  </span>
-                )}
-              </div>
+              <select
+                value={imagePrimaryModel && isModelImageCapable(imagePrimaryModel, allModelImageSupportMap) ? imagePrimaryModel : ''}
+                disabled={saving || modelCount === 0}
+                onChange={(event) => setDefaultImageModel(event.target.value)}
+                aria-label={t('config.defaultImageModel', 'Default Image Model')}
+                className="mt-1 w-full min-w-0 rounded border border-aegis-border bg-aegis-elevated px-2 py-1.5 text-xs font-semibold text-blue-400 outline-none focus:border-blue-400 disabled:opacity-50"
+              >
+                <option value="">{t('config.notSet', 'Not set')}</option>
+                {Object.entries(allModels)
+                  .filter(([id]) => isModelImageCapable(id, allModelImageSupportMap))
+                  .map(([id, entry]) => (
+                    <option key={id} value={id}>{modelDisplayLabel(id, entry)}</option>
+                  ))}
+              </select>
             </div>
           </div>
         </div>
@@ -3406,32 +3446,8 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
               imageModel={imagePrimaryModel}
               imageSupportMap={allModelImageSupportMap}
               disabled={saving}
-              onSetPrimary={(id) => {
-                onChange((prev) => ({
-                  ...prev,
-                  agents: {
-                    ...prev.agents,
-                    defaults: buildDefaultsWithResolvedModels({
-                      defaults: prev.agents?.defaults,
-                      models: prev.agents?.defaults?.models ?? {},
-                      primary: id,
-                    }),
-                  },
-                }));
-              }}
-              onSetImageModel={(id) => {
-                onChange((prev) => ({
-                  ...prev,
-                  agents: {
-                    ...prev.agents,
-                    defaults: buildDefaultsWithResolvedModels({
-                      defaults: prev.agents?.defaults,
-                      models: prev.agents?.defaults?.models ?? {},
-                      imagePrimary: id,
-                    }),
-                  },
-                }));
-              }}
+              onSetPrimary={setDefaultTextModel}
+              onSetImageModel={setDefaultImageModel}
             />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 my-4">
               <div className="rounded-lg border border-aegis-border bg-aegis-surface p-3">
