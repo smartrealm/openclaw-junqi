@@ -48,10 +48,11 @@ import { PromptEditor, type ImageAttach } from '@/components/shared/PromptEditor
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import {
   useAgentWorkspaceStore,
+  shouldIgnoreAgentWorkspaceTaskStatusTransition,
   type AgentWorkspaceTask,
   type AgentWorkspaceTaskStatus,
 } from '@/stores/agentWorkspaceStore';
-import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
+import { StatusIcon } from '@/components/shared/StatusIcon';
 import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
 import { SessionViewPage } from '@/pages/SessionViewPage';
 import { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from '@/components/shared/ToolCallHistoryPopover';
@@ -576,7 +577,9 @@ export function AgentRunView({
 
   // ── Execution state ──────────────────────────────────────────────────────
   const [running, setRunning] = useState(initiallyActive);
-  const [status, setStatus] = useState<StatusIconValue>(initiallyActive ? providedInitialStatus! : 'idle');
+  const [status, setStatus] = useState<AgentWorkspaceTaskStatus | 'idle'>(initiallyActive ? providedInitialStatus! : 'idle');
+  const statusRef = useRef(status);
+  statusRef.current = status;
   const [error, setError] = useState<string | null>(null);
   const restoredWorktreePath = initialWorktreeDiscarded ? null : providedInitialWorktreePath ?? null;
   const [worktreePath, setWorktreePath] = useState<string | null>(restoredWorktreePath);
@@ -972,6 +975,12 @@ export function AgentRunView({
         && nextStatus !== 'done'
         && nextStatus !== 'failed'
         && nextStatus !== 'cancelled'
+      ) return;
+
+      const currentStatus = statusRef.current;
+      if (
+        currentStatus !== 'idle'
+        && shouldIgnoreAgentWorkspaceTaskStatusTransition(currentStatus, nextStatus)
       ) return;
 
       setStatus(nextStatus);

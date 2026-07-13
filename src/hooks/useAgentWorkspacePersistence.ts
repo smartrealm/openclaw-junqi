@@ -26,19 +26,22 @@ export function normalizeLoadedAgentWorkspaceTasks(
 ): AgentWorkspaceTask[] {
   const recoveredAt = Date.now();
   return tasks.map((task) => {
-    const activeStatus = task.status === 'pending'
+    const hasLiveProcess = activeTaskIds.has(task.id);
+    const recoverableStatus = task.status === 'pending'
       || task.status === 'running'
       || task.status === 'input_required'
-      || task.status === 'awaiting_review';
-    const recoveredStatus = activeStatus
-      ? activeTaskIds.has(task.id) ? 'detached' as const : 'interrupted' as const
+      || task.status === 'awaiting_review'
+      || task.status === 'detached'
+      || (task.status === 'interrupted' && hasLiveProcess);
+    const recoveredStatus = recoverableStatus
+      ? hasLiveProcess ? 'detached' as const : 'interrupted' as const
       : task.status;
     return {
       ...task,
       projectPath,
       status: recoveredStatus,
-      updatedAt: activeStatus ? recoveredAt : Number.isFinite(task.updatedAt) ? task.updatedAt : task.createdAt,
-      ...(activeStatus ? { attentionRequestedAt: task.attentionRequestedAt ?? recoveredAt } : {}),
+      updatedAt: recoverableStatus ? recoveredAt : Number.isFinite(task.updatedAt) ? task.updatedAt : task.createdAt,
+      ...(recoverableStatus ? { attentionRequestedAt: task.attentionRequestedAt ?? recoveredAt } : {}),
     };
   });
 }
