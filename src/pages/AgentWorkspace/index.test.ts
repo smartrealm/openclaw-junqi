@@ -35,6 +35,12 @@ test('new task drafts open the full editor instead of the todo detail view', () 
   assert.match(source, /initialIsDraft=\{task\.isDraft\}/);
 });
 
+test('opening a local project initializes the Nezha project configuration', () => {
+  assert.match(source, /invoke\('init_project_config', \{ projectPath \}\)/);
+  assert.match(source, /workspace\?\.sshRemoteHost/);
+  assert.match(source, /初始化项目配置失败/);
+});
+
 test('task list actions match Nezha ownership boundaries', () => {
   const start = source.indexOf("title={task.starred ? '取消收藏'");
   const end = source.indexOf('title="删除任务"', start);

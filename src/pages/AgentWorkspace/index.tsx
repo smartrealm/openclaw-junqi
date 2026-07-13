@@ -193,6 +193,15 @@ export function AgentWorkspacePage() {
   const [taskListScrollTop, setTaskListScrollTop] = useState(0);
   const projectUiStatesRef = useRef<Record<string, ProjectUiState>>({});
   const previousProjectPathRef = useRef(projectPath);
+
+  useEffect(() => {
+    if (!projectPath || workspace?.sshRemoteHost) return;
+    let cancelled = false;
+    void invoke('init_project_config', { projectPath }).catch((reason) => {
+      if (!cancelled) setTaskActionError(`初始化项目配置失败：${String(reason)}`);
+    });
+    return () => { cancelled = true; };
+  }, [projectPath, workspace?.sshRemoteHost]);
   const currentProjectUiRef = useRef<ProjectUiState>({
     openDiff, openFiles, activeFilePath, rightPanel, rightPanelWidth,
     taskPanelCollapsed, showShellTerminal, terminalHeight,
