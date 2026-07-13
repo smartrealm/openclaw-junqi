@@ -21,6 +21,7 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
       <img
         src={emblemUrl}
         alt={title}
+        data-brand="daxia-group"
         className={clsx('block object-contain', className)}
         style={style}
         draggable={false}
@@ -32,6 +33,7 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
     <span
       role="img"
       aria-label={title}
+      data-brand="daxia-group"
       className={clsx(
         'relative block min-w-0',
         variant === 'lockup' ? 'h-8 w-full' : 'aspect-[4001/1151] w-full',
@@ -43,6 +45,7 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
         src={lightLogoUrl}
         alt=""
         aria-hidden="true"
+        data-theme-role="light"
         className={clsx(
           'absolute inset-0 block h-full w-full object-contain dark:hidden',
           variant === 'lockup' ? 'object-left' : 'object-center',
@@ -53,6 +56,7 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
         src={darkLogoUrl}
         alt=""
         aria-hidden="true"
+        data-theme-role="dark"
         className={clsx(
           'absolute inset-0 hidden h-full w-full object-contain dark:block',
           variant === 'lockup' ? 'object-left' : 'object-center',
