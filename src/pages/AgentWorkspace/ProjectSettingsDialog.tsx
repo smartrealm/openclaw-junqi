@@ -5,8 +5,12 @@ import { FolderOpen, X } from "lucide-react";
 
 interface ProjectConfig {
   agent: { default: string; default_permission_mode: string; prompt_prefix: string };
-  git: { commit_prompt: string; commit_message_timeout_secs: number };
+  git: { commit_prompt: string; commit_message_timeout_secs?: number };
 }
+
+const MIN_COMMIT_MESSAGE_TIMEOUT_SECS = 1;
+const MAX_COMMIT_MESSAGE_TIMEOUT_SECS = 120;
+const DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS = 15;
 
 export function AgentWorkspaceProjectSettingsDialog({
   projectPath,
@@ -18,11 +22,17 @@ export function AgentWorkspaceProjectSettingsDialog({
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [commitMessageTimeoutSecs, setCommitMessageTimeoutSecs] = useState(String(DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS));
 
   useEffect(() => {
     let disposed = false;
     void invoke<ProjectConfig>("read_project_config", { projectPath })
-      .then((value) => { if (!disposed) setConfig(value); })
+      .then((value) => {
+        if (disposed) return;
+        setConfig(value);
+        const timeout = value.git.commit_message_timeout_secs ?? DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS;
+        setCommitMessageTimeoutSecs(String(Math.min(MAX_COMMIT_MESSAGE_TIMEOUT_SECS, Math.max(MIN_COMMIT_MESSAGE_TIMEOUT_SECS, timeout))));
+      })
       .catch((reason) => { if (!disposed) setError(String(reason)); });
     return () => { disposed = true; };
   }, [projectPath]);
@@ -35,15 +45,18 @@ export function AgentWorkspaceProjectSettingsDialog({
 
   const save = async () => {
     if (!config || saving) return;
-    const timeout = Number(config.git.commit_message_timeout_secs);
-    if (!Number.isInteger(timeout) || timeout < 1 || timeout > 120) {
+    const timeout = Number(commitMessageTimeoutSecs);
+    if (!Number.isInteger(timeout) || timeout < MIN_COMMIT_MESSAGE_TIMEOUT_SECS || timeout > MAX_COMMIT_MESSAGE_TIMEOUT_SECS) {
       setError("提交消息生成超时必须在 1 到 120 秒之间。");
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await invoke("write_project_config", { projectPath, config });
+      await invoke("write_project_config", {
+        projectPath,
+        config: { ...config, git: { ...config.git, commit_message_timeout_secs: timeout } },
+      });
       onClose();
     } catch (reason) {
       setError(String(reason));
@@ -87,7 +100,25 @@ export function AgentWorkspaceProjectSettingsDialog({
               </SettingsSection>
               <SettingsSection title="Git">
                 <Field label="生成超时" hint="AI 生成提交消息的最长等待时间（秒）">
-                  <input type="number" min={1} max={120} value={config.git.commit_message_timeout_secs} onChange={(event) => setConfig({ ...config, git: { ...config.git, commit_message_timeout_secs: Number(event.target.value) } })} className="w-28 rounded border border-aegis-border bg-aegis-bg px-3 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary" />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={commitMessageTimeoutSecs}
+                      onChange={(event) => {
+                        const value = event.target.value.trim();
+                        if (!value) { setCommitMessageTimeoutSecs(''); return; }
+                        if (!/^\d+$/.test(value)) return;
+                        const timeout = Number(value);
+                        if (!Number.isSafeInteger(timeout)) return;
+                        setCommitMessageTimeoutSecs(String(Math.min(MAX_COMMIT_MESSAGE_TIMEOUT_SECS, Math.max(MIN_COMMIT_MESSAGE_TIMEOUT_SECS, timeout))));
+                      }}
+                      onBlur={() => { if (!commitMessageTimeoutSecs) setCommitMessageTimeoutSecs(String(MIN_COMMIT_MESSAGE_TIMEOUT_SECS)); }}
+                      className="w-28 rounded border border-aegis-border bg-aegis-bg px-3 py-2 text-xs text-aegis-text outline-none focus:border-aegis-primary"
+                    />
+                    <span className="text-[11px] text-aegis-text-dim">秒</span>
+                  </div>
                 </Field>
                 <Field label="提交消息提示词" hint="用于根据 Git diff 生成提交消息">
                   <textarea rows={8} value={config.git.commit_prompt} onChange={(event) => setConfig({ ...config, git: { ...config.git, commit_prompt: event.target.value } })} className="w-full resize-y rounded border border-aegis-border bg-aegis-bg px-3 py-2 font-mono text-[11px] text-aegis-text outline-none focus:border-aegis-primary" />
