@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import {
   Blocks, FolderOpen, Trash2, Plus, AlertTriangle, Loader2,
   CheckCircle2, XCircle, Link2, Settings, X,
@@ -44,10 +45,18 @@ interface SkillInstallation {
   health?: string;
 }
 
+interface SkillConflict {
+  existingKind: string;
+  existingTarget?: string | null;
+  linkPath: string;
+}
+
 interface InstallResult {
   ok: boolean;
-  conflict?: { existingKind: string; linkPath: string } | null;
+  conflict?: SkillConflict | null;
   alreadyInstalled?: boolean;
+  skipped?: boolean;
+  cancelled?: boolean;
   installation?: SkillInstallation | null;
 }
 
@@ -89,6 +98,13 @@ export function SkillHubManager() {
   const [manageInstallations, setManageInstallations] = useState<SkillInstallation[]>([]);
   const [manageProject, setManageProject] = useState('');
   const [manageAgent, setManageAgent] = useState<'claude' | 'codex'>('claude');
+  const [installConflict, setInstallConflict] = useState<{
+    skill: Skill;
+    projectId: string;
+    agent: 'claude' | 'codex';
+    conflict: SkillConflict;
+    refreshManage: boolean;
+  } | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -151,8 +167,13 @@ export function SkillHubManager() {
     }
   };
 
-  const handleInstall = async (skill: Skill) => {
-    if (!targetProjectId.trim()) {
+  const requestInstall = async (
+    skill: Skill,
+    projectId: string,
+    agent: 'claude' | 'codex',
+    refreshManage: boolean,
+  ) => {
+    if (!projectId.trim()) {
       setError('Set a target project ID first');
       return;
     }
@@ -162,14 +183,23 @@ export function SkillHubManager() {
       const res = await invoke<InstallResult>('install_skill', {
         skillName: skill.name,
         skillPath: skill.path,
-        projectId: targetProjectId.trim(),
-        agent: targetAgent,
-        strategy: 'overwrite',
+        projectId: projectId.trim(),
+        agent,
+        strategy: 'detect',
       });
+      if (res.conflict) {
+        setInstallConflict({ skill, projectId: projectId.trim(), agent, conflict: res.conflict, refreshManage });
+        return;
+      }
       if (!res.ok) {
-        setError(`Install failed: conflict ${res.conflict?.existingKind ?? 'unknown'} at ${res.conflict?.linkPath ?? ''}`);
+        setError('Install failed');
+        return;
       }
       await refresh();
+      if (refreshManage) {
+        const next = await invoke<SkillInstallation[]>('list_skill_installations', { skillName: skill.name });
+        setManageInstallations(next);
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -177,7 +207,14 @@ export function SkillHubManager() {
     }
   };
 
+  const handleInstall = (skill: Skill) => requestInstall(skill, targetProjectId, targetAgent, false);
+
   const handleDelete = async (skill: Skill) => {
+    const accepted = await confirm(`Delete skill "${skill.displayName ?? skill.name}" and remove all of its project links?`, {
+      title: 'Delete skill',
+      kind: 'warning',
+    });
+    if (!accepted) return;
     setPending(true);
     setError(null);
     try {
@@ -205,30 +242,47 @@ export function SkillHubManager() {
 
   const handleManageInstall = async () => {
     if (!manageSkill || !manageProject.trim()) return;
+    await requestInstall(manageSkill, manageProject, manageAgent, true);
+  };
+
+  const resolveInstallConflict = async (strategy: 'skip' | 'overwrite' | 'cancel') => {
+    const pendingConflict = installConflict;
+    if (!pendingConflict) return;
+    setInstallConflict(null);
+    if (strategy === 'cancel') return;
     setPending(true);
+    setError(null);
     try {
-      await invoke<InstallResult>('install_skill', {
-        skillName: manageSkill.name,
-        skillPath: manageSkill.path,
-        projectId: manageProject.trim(),
-        agent: manageAgent,
-        strategy: 'overwrite',
+      const result = await invoke<InstallResult>('install_skill', {
+        skillName: pendingConflict.skill.name,
+        skillPath: pendingConflict.skill.path,
+        projectId: pendingConflict.projectId,
+        agent: pendingConflict.agent,
+        strategy,
       });
+      if (!result.ok) {
+        setError('Install conflict could not be resolved');
+        return;
+      }
       await refresh();
-      // Refresh manage dialog installations
-      const ins = await invoke<SkillInstallation[]>('list_skill_installations', { skillName: manageSkill.name });
-      setManageInstallations(ins);
-    } catch (e) { setError(String(e)); }
-    finally { setPending(false); }
+      if (pendingConflict.refreshManage) {
+        const next = await invoke<SkillInstallation[]>('list_skill_installations', { skillName: pendingConflict.skill.name });
+        setManageInstallations(next);
+      }
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setPending(false);
+    }
   };
 
   const handleManageRemove = async (ins: SkillInstallation) => {
     setPending(true);
     try {
-      await invoke<DeleteResult>('delete_skill', {
+      await invoke('uninstall_skill', {
         skillName: ins.skillName,
-        skillPath: ins.targetPath,
         projectId: ins.projectId,
+        agent: ins.agent,
       });
       await refresh();
       const updated = await invoke<SkillInstallation[]>('list_skill_installations', { skillName: ins.skillName });
@@ -485,6 +539,27 @@ export function SkillHubManager() {
       )}
 
       {/* ── SkillManageDialog ──────────────────────────────────────────── */}
+      {installConflict && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 px-4" onClick={() => setInstallConflict(null)}>
+          <div role="dialog" aria-modal="true" aria-label="Skill install conflict" className="w-full max-w-[460px] overflow-hidden rounded-lg border border-aegis-border bg-aegis-card shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center gap-2 border-b border-aegis-border px-4 py-3">
+              <AlertTriangle size={16} className="text-aegis-warning" />
+              <span className="text-sm font-semibold text-aegis-text">Installation conflict</span>
+            </div>
+            <div className="space-y-2 px-4 py-4 text-xs text-aegis-text-dim">
+              <p>A {installConflict.conflict.existingKind} already exists at the target path.</p>
+              <p className="break-all rounded bg-aegis-surface px-2 py-1.5 font-mono text-[11px] text-aegis-text">{installConflict.conflict.linkPath}</p>
+              {installConflict.conflict.existingTarget && <p className="break-all font-mono text-[11px]">Current target: {installConflict.conflict.existingTarget}</p>}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-aegis-border px-4 py-3">
+              <button type="button" onClick={() => void resolveInstallConflict('cancel')} className="rounded border border-aegis-border px-3 py-1.5 text-xs text-aegis-text-dim hover:bg-aegis-hover">Cancel</button>
+              <button type="button" onClick={() => void resolveInstallConflict('skip')} className="rounded border border-aegis-border px-3 py-1.5 text-xs text-aegis-text hover:bg-aegis-hover">Skip</button>
+              <button type="button" onClick={() => void resolveInstallConflict('overwrite')} className="rounded bg-aegis-danger px-3 py-1.5 text-xs font-semibold text-white">Overwrite</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {manageSkill && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center"
           style={{ background: 'rgb(0 0 0 / 0.5)' }}

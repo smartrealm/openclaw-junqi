@@ -1,21 +1,10 @@
-// ── Skill hub (minimal port of nezha skills.rs) ──────────────────────────────
+// ── Skill hub ────────────────────────────────────────────────────────────────
 //
 // Manages a directory of "skills" (folders with a `SKILL.md` frontmatter) and
 // per-project installations (symlinks into the project's agent skills dir).
 //
-// Adapted differences from nezha:
-//   - No `crate::storage` integration — SkillHubConfig and InstallationsFile
-//     are read/written directly to `~/.nezha/skill-hub.json` and
-//     `~/.nezha/skill-installations.json` via `atomic_write` (inlined here).
-//   - Conflict detection strategy is simplified to "always overwrite" —
-//     the user-facing strategy enum (detect/skip/overwrite/cancel) is
-//     preserved but only `overwrite` is wired; `detect` returns the existing
-//     type without prompting. Full UX is out of scope here.
-//   - Cleanup-on-project-delete is skipped (junqi has no project-delete flow
-//     that fires automatically).
-//
-// This file is the minimum viable shape for `SkillHubView` /
-// `SkillManageDialog` / `SkillInstallDialog` to call.
+// JunQi stores hub configuration directly and treats project_id as the local
+// project path, while retaining Nezha's validation, conflict, and symlink rules.
 
 use std::collections::HashSet;
 use std::fs;
@@ -74,7 +63,7 @@ pub struct ConflictInfo {
     pub link_path: String,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallResult {
     pub ok: bool,
@@ -432,10 +421,20 @@ pub async fn list_skills() -> Result<Vec<Skill>, String> {
 // ── Installations ────────────────────────────────────────────────────────────
 
 fn symlink_points_to(link: &Path, expected: &Path) -> bool {
-    match fs::read_link(link) {
-        Ok(target) => target == expected,
-        Err(_) => false,
-    }
+    let Ok(target) = fs::read_link(link) else {
+        return false;
+    };
+    let resolved = if target.is_absolute() {
+        target
+    } else {
+        link.parent()
+            .map(|parent| parent.join(&target))
+            .unwrap_or(target)
+    };
+    resolved
+        .canonicalize()
+        .map(|actual| actual == expected)
+        .unwrap_or(false)
 }
 
 fn health_for(link_path: &str, target_path: &str) -> String {
@@ -487,160 +486,299 @@ fn agent_skills_dir(project_path: &str, agent: &str) -> Result<PathBuf, String> 
     }
 }
 
+fn validate_skill_name(skill_name: &str) -> Result<(), String> {
+    if skill_name.is_empty() || skill_name == "." || skill_name == ".." {
+        return Err(format!("Invalid skill name: {skill_name}"));
+    }
+    if skill_name.contains('/') || skill_name.contains('\\') || skill_name.contains('\0') {
+        return Err(format!(
+            "Skill name must not contain path separators: {skill_name}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_skill_source(skill_name: &str, skill_path: &str) -> Result<PathBuf, String> {
+    validate_skill_name(skill_name)?;
+    let skill_dir = Path::new(skill_path);
+    if !skill_dir.is_dir() {
+        return Err(format!(
+            "Skill '{skill_name}' not found at path: {skill_path}"
+        ));
+    }
+    if !skill_dir.join("SKILL.md").is_file() {
+        return Err(format!("Skill '{skill_name}' has no SKILL.md"));
+    }
+    if skill_dir.file_name().and_then(|name| name.to_str()) != Some(skill_name) {
+        return Err(format!(
+            "Skill path '{skill_path}' does not match skill name '{skill_name}'"
+        ));
+    }
+    let hub_path = load_hub_config()
+        .hub_path
+        .ok_or_else(|| "Skill Hub is not configured".to_string())?;
+    let hub_canonical = Path::new(&hub_path)
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve hub path '{hub_path}': {error}"))?;
+    let skill_canonical = skill_dir
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve skill path '{skill_path}': {error}"))?;
+    if !skill_canonical.starts_with(&hub_canonical) {
+        return Err(format!(
+            "Skill path '{skill_path}' is not inside hub '{hub_path}'"
+        ));
+    }
+    Ok(skill_canonical)
+}
+
+#[cfg(unix)]
+fn create_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
+}
+
+fn classify_existing(path: &Path) -> Option<(String, Option<String>)> {
+    let meta = fs::symlink_metadata(path).ok()?;
+    let kind = if meta.file_type().is_symlink() {
+        "symlink"
+    } else if meta.is_dir() {
+        "directory"
+    } else {
+        "file"
+    };
+    let target = meta
+        .file_type()
+        .is_symlink()
+        .then(|| fs::read_link(path).ok())
+        .flatten()
+        .map(|target| target.to_string_lossy().into_owned());
+    Some((kind.to_string(), target))
+}
+
+fn remove_existing(path: &Path) -> Result<(), String> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    if meta.file_type().is_symlink() || meta.is_file() {
+        fs::remove_file(path).map_err(|error| error.to_string())
+    } else {
+        fs::remove_dir_all(path).map_err(|error| error.to_string())
+    }
+}
+
+fn upsert_installation(
+    skill_name: &str,
+    project_id: &str,
+    agent: &str,
+    link_path: &Path,
+    target_path: &Path,
+) -> Result<SkillInstallation, String> {
+    let mut file = load_installations();
+    if file.version == 0 {
+        file.version = 1;
+    }
+    let installation = SkillInstallation {
+        skill_name: skill_name.to_string(),
+        project_id: project_id.to_string(),
+        agent: agent.to_string(),
+        installed_at: now_ms(),
+        link_path: link_path.to_string_lossy().into_owned(),
+        target_path: target_path.to_string_lossy().into_owned(),
+        health: Some("ok".to_string()),
+    };
+    if let Some(existing) = file.installations.iter_mut().find(|item| {
+        item.skill_name == skill_name && item.project_id == project_id && item.agent == agent
+    }) {
+        *existing = installation.clone();
+    } else {
+        file.installations.push(installation.clone());
+    }
+    save_installations(&file)?;
+    Ok(installation)
+}
+
 #[tauri::command]
 pub async fn install_skill(
     skill_name: String,
     skill_path: String,
     project_id: String,
     agent: String,
-    _strategy: String, // kept for API compat; this minimal port always overwrites
+    strategy: String,
 ) -> Result<InstallResult, String> {
     tokio::task::spawn_blocking(move || -> Result<InstallResult, String> {
-        if skill_name.trim().is_empty() {
-            return Err("Skill name is required".into());
+        if !matches!(
+            strategy.as_str(),
+            "detect" | "skip" | "overwrite" | "cancel"
+        ) {
+            return Err(format!("Unsupported strategy: {strategy}"));
         }
-        let skills_dir = agent_skills_dir(&project_id, &agent)?;
-        fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
-        let link_path = skills_dir.join(&skill_name);
-
-        let mut file = load_installations();
-        if let Some(existing) = file
-            .installations
-            .iter()
-            .find(|i| i.project_id == project_id && i.agent == agent && i.skill_name == skill_name)
-            .cloned()
-        {
-            // Already installed — return existing record.
+        if strategy == "cancel" {
             return Ok(InstallResult {
-                ok: true,
-                conflict: None,
-                already_installed: Some(true),
-                skipped: None,
-                cancelled: None,
-                installation: Some(existing),
+                ok: false,
+                cancelled: Some(true),
+                ..Default::default()
             });
         }
 
-        // Detect conflicts (existing file/dir at link path).
-        let conflict = match fs::symlink_metadata(&link_path) {
-            Err(_) => None,
-            Ok(meta) => {
-                let kind = if meta.file_type().is_symlink() {
-                    "symlink"
-                } else if meta.is_dir() {
-                    "directory"
-                } else {
-                    "file"
-                };
-                let existing_target = if meta.file_type().is_symlink() {
-                    fs::read_link(&link_path)
-                        .ok()
-                        .map(|p| p.to_string_lossy().into_owned())
-                } else {
-                    None
-                };
-                Some(ConflictInfo {
-                    existing_kind: kind.to_string(),
-                    existing_target,
-                    link_path: link_path.to_string_lossy().into_owned(),
-                })
-            }
-        };
+        let skill_canonical = validate_skill_source(&skill_name, &skill_path)?;
+        let skills_dir = agent_skills_dir(&project_id, &agent)?;
+        fs::create_dir_all(&skills_dir)
+            .map_err(|error| format!("Failed to create {}: {error}", skills_dir.display()))?;
+        let link_path = skills_dir.join(&skill_name);
 
-        // Minimal policy: if conflict exists, report and let caller decide.
-        // For simplicity this port only resolves symlink-vs-target conflicts.
-        if let Some(ref c) = conflict {
-            if c.existing_kind == "symlink" {
-                let _ = fs::remove_file(&link_path);
-            } else {
-                return Ok(InstallResult {
-                    ok: false,
-                    conflict: Some(c.clone()),
-                    already_installed: None,
-                    skipped: None,
-                    cancelled: None,
-                    installation: None,
-                });
-            }
+        if strategy == "skip" {
+            return Ok(InstallResult {
+                ok: true,
+                skipped: Some(true),
+                ..Default::default()
+            });
         }
 
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&skill_path, &link_path).map_err(|e| e.to_string())?;
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_dir(&skill_path, &link_path).map_err(|e| e.to_string())?;
+        if let Some((kind, existing_target)) = classify_existing(&link_path) {
+            if kind == "symlink" && symlink_points_to(&link_path, &skill_canonical) {
+                let installation = upsert_installation(
+                    &skill_name,
+                    &project_id,
+                    &agent,
+                    &link_path,
+                    &skill_canonical,
+                )?;
+                return Ok(InstallResult {
+                    ok: true,
+                    already_installed: Some(true),
+                    installation: Some(installation),
+                    ..Default::default()
+                });
+            }
+            if strategy == "detect" {
+                return Ok(InstallResult {
+                    ok: false,
+                    conflict: Some(ConflictInfo {
+                        existing_kind: kind,
+                        existing_target,
+                        link_path: link_path.to_string_lossy().into_owned(),
+                    }),
+                    ..Default::default()
+                });
+            }
+            remove_existing(&link_path)?;
+        }
 
-        let installation = SkillInstallation {
-            skill_name: skill_name.clone(),
-            project_id: project_id.clone(),
-            agent: agent.clone(),
-            installed_at: now_ms(),
-            link_path: link_path.to_string_lossy().into_owned(),
-            target_path: skill_path.clone(),
-            health: Some("ok".to_string()),
-        };
-
-        file.installations.push(installation.clone());
-        save_installations(&file)?;
-
+        create_symlink(&skill_canonical, &link_path).map_err(|error| {
+            format!(
+                "Failed to create symlink {} -> {}: {error}",
+                link_path.display(),
+                skill_canonical.display()
+            )
+        })?;
+        let installation = upsert_installation(
+            &skill_name,
+            &project_id,
+            &agent,
+            &link_path,
+            &skill_canonical,
+        )?;
         Ok(InstallResult {
             ok: true,
-            conflict: None,
-            already_installed: None,
-            skipped: None,
-            cancelled: None,
             installation: Some(installation),
+            ..Default::default()
         })
     })
     .await
-    .map_err(|e| format!("install_skill join error: {}", e))?
+    .map_err(|error| format!("install_skill join error: {error}"))?
 }
 
 #[tauri::command]
-pub async fn delete_skill(
+pub async fn uninstall_skill(
     skill_name: String,
-    _skill_path: String, // accepted but unused in this minimal port
-) -> Result<DeleteResult, String> {
+    project_id: String,
+    agent: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        validate_skill_name(&skill_name)?;
+        let mut file = load_installations();
+        let recorded_link = file
+            .installations
+            .iter()
+            .find(|item| {
+                item.skill_name == skill_name
+                    && item.project_id == project_id
+                    && item.agent == agent
+            })
+            .map(|item| PathBuf::from(&item.link_path));
+        let link_path = match recorded_link {
+            Some(path) => path,
+            None => agent_skills_dir(&project_id, &agent)?.join(&skill_name),
+        };
+        if fs::symlink_metadata(&link_path)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            fs::remove_file(&link_path).map_err(|error| error.to_string())?;
+        }
+        file.installations.retain(|item| {
+            !(item.skill_name == skill_name && item.project_id == project_id && item.agent == agent)
+        });
+        save_installations(&file)
+    })
+    .await
+    .map_err(|error| format!("uninstall_skill join error: {error}"))?
+}
+
+#[tauri::command]
+pub async fn delete_skill(skill_name: String, skill_path: String) -> Result<DeleteResult, String> {
     tokio::task::spawn_blocking(move || -> Result<DeleteResult, String> {
+        let skill_canonical = validate_skill_source(&skill_name, &skill_path)?;
         let mut file = load_installations();
         let targets: Vec<SkillInstallation> = file
             .installations
             .iter()
-            .filter(|i| i.skill_name == skill_name)
+            .filter(|item| {
+                item.skill_name == skill_name
+                    && Path::new(&item.target_path)
+                        .canonicalize()
+                        .map(|target| target == skill_canonical)
+                        .unwrap_or(false)
+            })
             .cloned()
             .collect();
-        if targets.is_empty() {
-            return Ok(DeleteResult {
-                ok: true,
-                removed_links: 0,
-            });
-        }
 
-        let mut removed = 0usize;
-        let mut seen_paths: HashSet<String> = HashSet::new();
-        for ins in &targets {
-            // Remove symlink if present.
-            if seen_paths.insert(ins.link_path.clone()) {
-                if let Ok(meta) = fs::symlink_metadata(&ins.link_path) {
-                    if meta.file_type().is_symlink() {
-                        if fs::remove_file(&ins.link_path).is_ok() {
-                            removed += 1;
-                        }
-                    }
-                }
+        let mut removed_links = 0;
+        let mut seen = HashSet::new();
+        for installation in &targets {
+            let link_path = PathBuf::from(&installation.link_path);
+            if seen.insert(link_path.clone())
+                && symlink_points_to(&link_path, &skill_canonical)
+                && fs::remove_file(&link_path).is_ok()
+            {
+                removed_links += 1;
             }
         }
 
-        // Drop the rows for this skill from installations.json.
-        file.installations.retain(|i| i.skill_name != skill_name);
+        fs::remove_dir_all(&skill_canonical)
+            .map_err(|error| format!("Failed to delete skill directory: {error}"))?;
+        file.installations.retain(|item| {
+            !targets.iter().any(|target| {
+                target.skill_name == item.skill_name
+                    && target.project_id == item.project_id
+                    && target.agent == item.agent
+            })
+        });
         save_installations(&file)?;
 
         Ok(DeleteResult {
             ok: true,
-            removed_links: removed,
+            removed_links,
         })
     })
     .await
-    .map_err(|e| format!("delete_skill join error: {}", e))?
+    .map_err(|error| format!("delete_skill join error: {error}"))?
 }
 #[cfg(test)]
 mod tests {
@@ -723,5 +861,23 @@ mod tests {
             "broken"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn skill_names_cannot_escape_the_agent_skills_directory() {
+        assert!(validate_skill_name("review-code").is_ok());
+        assert!(validate_skill_name("../outside").is_err());
+        assert!(validate_skill_name("nested/skill").is_err());
+        assert!(validate_skill_name("nested\\skill").is_err());
+    }
+
+    #[test]
+    fn skill_commands_keep_install_uninstall_and_delete_semantics_separate() {
+        let source = include_str!("skills.rs");
+        assert!(source.contains("Unsupported strategy"));
+        assert!(source.contains("pub async fn uninstall_skill"));
+        assert!(source.contains("remove_dir_all(&skill_canonical)"));
+        let removed_policy = ["always ", "overwrites"].concat();
+        assert!(!source.contains(&removed_policy));
     }
 }

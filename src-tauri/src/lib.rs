@@ -236,6 +236,7 @@ pub fn run() {
             commands::skills::list_skills,
             commands::skills::list_skill_installations,
             commands::skills::install_skill,
+            commands::skills::uninstall_skill,
             commands::skills::delete_skill,
             // Workspace path accessor (PR-15 @ file mention support)
             commands::workspace::get_workspace_path,
