@@ -14,7 +14,7 @@ import {
   Save, RefreshCw, ExternalLink, Loader2,
   Sun, Moon, Eye, Palette, Type, Keyboard,
   Wifi, Bell, BellOff, Volume2, VolumeX, PawPrint,
-  CheckCircle2, AlertCircle, Upload, Trash2,
+  CheckCircle2, AlertCircle, Upload, Trash2, Blocks, FolderOpen, RotateCcw,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -46,7 +46,7 @@ import {
 // ── Nav ─────────────────────────────────────────────────────────────────────
 
 type NavSection = 'application' | 'connectivity' | 'agents' | 'about';
-type NavKey = 'general' | 'theme' | 'fonts' | 'shortcuts' | 'connect' | 'notify' | 'pet' | 'hooks' | 'claude' | 'codex' | 'about';
+type NavKey = 'general' | 'theme' | 'fonts' | 'shortcuts' | 'skills' | 'connect' | 'notify' | 'pet' | 'hooks' | 'claude' | 'codex' | 'about';
 
 interface NavItem { key: NavKey; label: string; icon: React.ReactNode; section: NavSection; }
 
@@ -77,6 +77,7 @@ export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
     { key: 'theme', label: t('appSettings.theme', 'Theme'), icon: <Palette size={14} />, section: 'application' },
     { key: 'fonts', label: t('appSettings.fonts', 'Fonts'), icon: <Type size={14} />, section: 'application' },
     { key: 'shortcuts', label: t('appSettings.shortcuts', 'Shortcuts'), icon: <Keyboard size={14} />, section: 'application' },
+    { key: 'skills', label: t('skill.settings.navLabel', 'Skills'), icon: <Blocks size={14} />, section: 'application' },
     { key: 'connect', label: t('appSettings.connect', 'Connect'), icon: <Wifi size={14} />, section: 'connectivity' },
     { key: 'notify', label: t('appSettings.notify', 'Notifications'), icon: <Bell size={14} />, section: 'connectivity' },
     { key: 'pet', label: t('appSettings.pet', 'Pet'), icon: <PawPrint size={14} />, section: 'connectivity' },
@@ -123,6 +124,7 @@ export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
           {activeNav === 'theme' && <ThemePanel />}
           {activeNav === 'fonts' && <FontsPanel />}
           {activeNav === 'shortcuts' && <ShortcutsPanel />}
+          {activeNav === 'skills' && <SkillsPanel />}
           {activeNav === 'connect' && <ConnectPanel />}
           {activeNav === 'notify' && <NotifyPanel />}
           {activeNav === 'pet' && <PetPanel />}
@@ -132,6 +134,78 @@ export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
           {activeNav === 'about' && <AboutPanel />}
         </main>
       </div>
+    </div>
+  );
+}
+
+interface SkillHubConfig {
+  hubPath?: string | null;
+}
+
+function SkillsPanel() {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState<SkillHubConfig | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<SkillHubConfig>('get_skill_hub_config')
+      .then((next) => { if (!cancelled) setConfig(next); })
+      .catch((reason) => { if (!cancelled) setError(String(reason)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const notifyChanged = () => window.dispatchEvent(new Event('nezha:skill-hub-changed'));
+  const chooseHub = async () => {
+    setError(null);
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (typeof selected !== 'string') return;
+    setBusy(true);
+    try {
+      const result = await invoke<{ config: SkillHubConfig }>('set_skill_hub_path', { path: selected });
+      setConfig(result.config);
+      notifyChanged();
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const clearHub = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await invoke('clear_skill_hub');
+      setConfig(null);
+      notifyChanged();
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hubPath = config?.hubPath ?? '';
+  return (
+    <div className="p-6">
+      <h2 className="mb-1 text-[16px] font-bold text-aegis-text">{t('skill.settings.navLabel', 'Skills')}</h2>
+      <p className="mb-5 text-[12px] text-aegis-text-dim">{t('skill.settings.hubPathHint', 'Choose the folder that stores shared skills.')}</p>
+      <label className="mb-1.5 block text-[11px] font-semibold text-aegis-text-secondary">{t('skill.settings.hubPath', 'Skill hub path')}</label>
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 truncate rounded-md border border-aegis-border bg-aegis-input px-3 py-2 font-mono text-[12px] text-aegis-text" title={hubPath}>
+          {hubPath || <span className="font-sans text-aegis-text-dim">{t('skill.settings.notConfigured', 'Not configured')}</span>}
+        </div>
+        <button type="button" onClick={() => void chooseHub()} disabled={busy} className="flex h-9 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[12px] text-aegis-text-secondary hover:bg-aegis-hover disabled:opacity-50">
+          <FolderOpen size={13} />{t('skill.settings.choose', 'Choose')}
+        </button>
+        {hubPath && (
+          <button type="button" title={t('skill.settings.reset', 'Reset')} onClick={() => void clearHub()} disabled={busy} className="flex h-9 w-9 items-center justify-center rounded-md border border-aegis-border text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-50">
+            <RotateCcw size={13} />
+          </button>
+        )}
+      </div>
+      {error && <div className="mt-3 text-[12px] text-aegis-danger" role="alert">{error}</div>}
     </div>
   );
 }
