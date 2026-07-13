@@ -29,6 +29,12 @@ test('pending tasks stay mounted and participate in active-task cleanup', () => 
   assert.match(source, /mountedRunTaskIds\.has\(task\.id\) && isActiveTask\(task\)/);
 });
 
+test('new task drafts open the full editor instead of the todo detail view', () => {
+  assert.match(source, /task\.isDraft \|\| task\.status !== 'todo'/);
+  assert.match(source, /selected\.status === 'todo' && !selected\.isDraft/);
+  assert.match(source, /initialIsDraft=\{task\.isDraft\}/);
+});
+
 test('task list actions match Nezha ownership boundaries', () => {
   const start = source.indexOf("title={task.starred ? '取消收藏'");
   const end = source.indexOf('title="删除任务"', start);

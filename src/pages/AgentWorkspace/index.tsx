@@ -367,7 +367,7 @@ export function AgentWorkspacePage() {
     closeWorkspace(closingWorkspace.id);
   }, [closeWorkspace, deleteTasks, tasks, workspaces]);
   const renderedRunTasks = useMemo(() => tasks.filter((task) => (
-    (selected?.id === task.id && task.status !== 'todo')
+    (selected?.id === task.id && (task.isDraft || task.status !== 'todo'))
     || (mountedRunTaskIds.has(task.id) && isActiveTask(task))
   )), [isActiveTask, mountedRunTaskIds, selected?.id, tasks]);
   const hasAttention = projectTasks.some((task) => (
@@ -1066,7 +1066,7 @@ export function AgentWorkspacePage() {
                 <Plus size={14} />新建任务
               </button>
             </section>
-          ) : selected.status === 'todo' ? (
+          ) : selected.status === 'todo' && !selected.isDraft ? (
             <AgentWorkspaceTodoTaskView
               task={selected}
               onUpdate={(patch) => updateTask(selected.id, patch)}
