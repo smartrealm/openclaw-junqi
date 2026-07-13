@@ -269,9 +269,9 @@ static AGENTS: &[AgentSpec] = &[
         bin: "codex",
         label: "Codex",
         perm_flags: Some((
-            "--permission-mode default",
-            "--permission-mode auto",
-            "--dangerously-bypass-approvals",
+            "",
+            "--sandbox workspace-write -a on-request",
+            "--dangerously-bypass-approvals-and-sandbox",
         )),
         prompt_flag: Some("--"),
         resume_flag: None,
@@ -1127,9 +1127,14 @@ mod tests {
             permission_flag("claude", "auto_edit"),
             vec!["--permission-mode", "acceptEdits"],
         );
+        assert_eq!(permission_flag("codex", "ask"), Vec::<String>::new(),);
+        assert_eq!(
+            permission_flag("codex", "auto_edit"),
+            vec!["--sandbox", "workspace-write", "-a", "on-request"],
+        );
         assert_eq!(
             permission_flag("codex", "full_access"),
-            vec!["--dangerously-bypass-approvals"],
+            vec!["--dangerously-bypass-approvals-and-sandbox"],
         );
     }
 
