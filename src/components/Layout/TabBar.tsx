@@ -25,7 +25,7 @@ export function TabBar() {
   return (
     <div className="flex h-[44px] shrink-0 items-center gap-0.5 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 204px)' }}>
       <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,204px)] flex items-center px-2.5 pointer-events-none overflow-hidden">
-        <JunQiLogo variant="lockup" className="h-[38px] w-full" title="陕西凌启智境科技有限公司" />
+        <JunQiLogo variant="lockup" className="h-[38px] w-full" title="陕西浚启智境科技有限公司" />
       </div>
       <div className="flex min-w-0 items-center gap-0.5">
         {TABS.map((tab) => {

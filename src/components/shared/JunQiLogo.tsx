@@ -1,9 +1,6 @@
 import type { CSSProperties } from 'react';
 import clsx from 'clsx';
-import emblemUrl from '@/assets/brand/daxia-group-emblem.png';
-import lightLogoUrl from '@/assets/brand/daxia-group-light.png';
-import darkLogoUrl from '@/assets/brand/daxia-group-dark.png';
-import companyLogoUrl from '@/assets/brand/junqi-company-logo.png';
+import emblemUrl from '@/assets/brand/junqi-emblem.svg';
 
 type JunQiLogoVariant = 'full' | 'emblem' | 'lockup' | 'company-emblem';
 
@@ -14,7 +11,7 @@ interface JunQiLogoProps {
   title?: string;
 }
 
-const BRAND_TITLE = '大夏集团 DAXIA GROUP';
+const BRAND_TITLE = '陕西浚启智境科技有限公司';
 
 export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TITLE }: JunQiLogoProps) {
   if (variant === 'emblem') {
@@ -37,16 +34,9 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
         className={clsx('flex min-w-0 items-center gap-2', className)}
         style={style}
       >
-        <span className="block h-8 w-8 shrink-0 overflow-hidden" aria-hidden="true">
-          <img
-            src={companyLogoUrl}
-            alt=""
-            className="block h-full w-auto max-w-none object-left"
-            draggable={false}
-          />
-        </span>
+        <img src={emblemUrl} alt="" className="block h-7 w-10 shrink-0 object-contain" draggable={false} />
         <span className="min-w-0 leading-none">
-          <span className="block truncate text-[12px] font-semibold text-aegis-text">凌启智境</span>
+          <span className="block truncate text-[12px] font-semibold text-aegis-text">浚启智境</span>
           <span className="mt-1 block truncate text-[7.5px] font-medium text-aegis-text-muted">
             JUNQI INTELLIGENCE
           </span>
@@ -64,10 +54,10 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
         style={style}
       >
         <img
-          src={companyLogoUrl}
+          src={emblemUrl}
           alt=""
           aria-hidden="true"
-          className="block h-full w-auto max-w-none object-left dark:brightness-125"
+          className="block h-full w-full object-contain"
           draggable={false}
         />
       </span>
@@ -79,32 +69,26 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
       role="img"
       aria-label={title}
       className={clsx(
-        'relative block min-w-0',
-        'aspect-[4001/1151] w-full',
+        'flex min-w-0 items-center justify-center gap-3',
         className,
       )}
       style={style}
     >
       <img
-        src={lightLogoUrl}
+        src={emblemUrl}
         alt=""
         aria-hidden="true"
-        className={clsx(
-          'absolute inset-0 block h-full w-full object-contain dark:hidden',
-          'object-center',
-        )}
+        className="block h-[76%] w-auto max-w-[28%] shrink-0 object-contain"
         draggable={false}
       />
-      <img
-        src={darkLogoUrl}
-        alt=""
-        aria-hidden="true"
-        className={clsx(
-          'absolute inset-0 hidden h-full w-full object-contain dark:block',
-          'object-center',
-        )}
-        draggable={false}
-      />
+      <span className="min-w-0 text-left leading-none">
+        <span className="block truncate text-[15px] font-bold text-[#245C9F] dark:text-aegis-text">
+          陕西浚启智境科技有限公司
+        </span>
+        <span className="mt-2 block truncate text-[9px] font-semibold text-[#245C9F]/80 dark:text-aegis-text-muted">
+          JunQi&nbsp;&nbsp;·&nbsp;&nbsp;深浚其智，广启其途
+        </span>
+      </span>
     </span>
   );
 }

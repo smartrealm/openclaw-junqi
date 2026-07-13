@@ -1170,7 +1170,7 @@ export function SettingsPageFull() {
               <JunQiLogo
                 variant="full"
                 className="h-[64px] w-[320px] max-w-full"
-                title="大夏集团 DAXIA GROUP"
+                title="陕西浚启智境科技有限公司"
               />
             </div>
           </div>
