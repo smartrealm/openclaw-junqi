@@ -31,13 +31,27 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
 
   if (variant === 'lockup') {
     return (
-      <img
-        src={companyLogoUrl}
-        alt={title}
-        className={clsx('block h-full w-full object-contain object-left dark:brightness-150 dark:saturate-75', className)}
+      <span
+        role="img"
+        aria-label={title}
+        className={clsx('flex min-w-0 items-center gap-2', className)}
         style={style}
-        draggable={false}
-      />
+      >
+        <span className="block h-8 w-8 shrink-0 overflow-hidden" aria-hidden="true">
+          <img
+            src={companyLogoUrl}
+            alt=""
+            className="block h-full w-auto max-w-none object-left"
+            draggable={false}
+          />
+        </span>
+        <span className="min-w-0 leading-none">
+          <span className="block truncate text-[12px] font-semibold text-aegis-text">凌启智境</span>
+          <span className="mt-1 block truncate text-[7.5px] font-medium text-aegis-text-muted">
+            JUNQI INTELLIGENCE
+          </span>
+        </span>
+      </span>
     );
   }
 
