@@ -156,8 +156,6 @@ export function AgentWorkspacePage() {
 
   const [query, setQuery] = useState('');
   const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(readTaskDisplayWindow);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [editingTaskTitle, setEditingTaskTitle] = useState('');
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const [autoStartTaskId, setAutoStartTaskId] = useState<string | null>(null);
   const [mountedRunTaskIds, setMountedRunTaskIds] = useState<Set<string>>(() => new Set());
@@ -441,7 +439,6 @@ export function AgentWorkspacePage() {
     setShowProjectSettings(false);
     setResizingTerminal(false);
     setResizingRightPanel(false);
-    setEditingTaskId(null);
     setTaskActionError(null);
     previousProjectPathRef.current = projectPath;
   }, [projectPath]);
@@ -503,14 +500,6 @@ export function AgentWorkspacePage() {
     setActiveWorkspace(created.id);
     setProjectDrawerOpen(false);
   }, [createWorkspace, setActiveWorkspace, workspaces]);
-
-  const commitTaskRename = useCallback(() => {
-    if (!editingTaskId) return;
-    const title = editingTaskTitle.trim();
-    if (title) updateTask(editingTaskId, { title });
-    setEditingTaskId(null);
-    setEditingTaskTitle('');
-  }, [editingTaskId, editingTaskTitle, updateTask]);
 
   const showDiff = useCallback((target: DiffTarget) => {
     setOpenDiff(target);
@@ -818,31 +807,6 @@ export function AgentWorkspacePage() {
                     className={`group absolute left-0 right-0 flex items-start px-1 py-1 hover:bg-aegis-hover/50 ${selected?.id === task.id ? 'bg-aegis-primary/10' : ''}`}
                     style={{ top, height: TASK_ROW_HEIGHT }}
                   >
-                {editingTaskId === task.id ? (
-                  <div className="flex min-w-0 flex-1 items-start gap-2 px-2 py-1">
-                    <span className="mt-0.5 shrink-0"><StatusIcon status={task.status} size={13} /></span>
-                    <span className="min-w-0 flex-1">
-                      <input
-                        autoFocus
-                        value={editingTaskTitle}
-                        onChange={(event) => setEditingTaskTitle(event.target.value)}
-                        onBlur={commitTaskRename}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') commitTaskRename();
-                          if (event.key === 'Escape') {
-                            setEditingTaskId(null);
-                            setEditingTaskTitle('');
-                          }
-                        }}
-                        className="h-5 w-full rounded border border-aegis-primary bg-aegis-bg px-1 text-xs outline-none"
-                      />
-                      <span className="block truncate pt-0.5 text-[10px] text-aegis-text-dim">
-                        {task.agent} · {taskStatusLabel(task.status)}
-                        {task.worktreeBranch && !task.worktreeDiscarded && ` · ${task.worktreeBranch}`}
-                      </span>
-                    </span>
-                  </div>
-                ) : (
                   <button
                     type="button"
                     onClick={() => {
@@ -873,7 +837,6 @@ export function AgentWorkspacePage() {
                       {task.agent === 'codex' ? <Code2 size={12} /> : <Bot size={12} />}
                     </span>
                   </button>
-                )}
                 <div className="flex shrink-0 items-center gap-0.5 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                   <button
                     type="button"

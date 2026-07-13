@@ -36,4 +36,5 @@ test('task list actions match Nezha ownership boundaries', () => {
   assert.match(taskActions, /title="立即运行"/);
   assert.doesNotMatch(taskActions, /编辑任务/);
   assert.doesNotMatch(taskActions, /生成任务名称/);
+  assert.doesNotMatch(source, /editingTaskId|commitTaskRename/);
 });
