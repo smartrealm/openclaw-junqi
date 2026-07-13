@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Activity, BarChart3, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Pencil, Plus, Power, PowerOff, Puzzle, Settings, Terminal, Wrench, ChevronDown, ChevronRight } from 'lucide-react';
+import { Activity, BarChart3, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, KeyRound, ListChecks, MessageSquare, Pencil, Plus, Power, PowerOff, Puzzle, Server, Settings, Terminal, Wrench, ChevronDown, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
@@ -149,7 +149,7 @@ export function AgentsPanel() {
               const isLoadingSkills = loadingAgentSkills === a.id;
               return (
                 <div key={a.id} className="mb-1">
-                  <div className="flex items-center gap-1 px-3 py-1.5 hover:bg-aegis-hover/30 transition-colors">
+                  <div className="flex items-center px-3 py-1.5 hover:bg-aegis-hover/30 transition-colors">
                     <button
                       type="button"
                       onClick={() => setExpandedAgentId((prev) => prev === a.id ? null : a.id)}
@@ -162,17 +162,17 @@ export function AgentsPanel() {
                         <span className="block truncate text-[11px] leading-4 text-aegis-text-dim">{typeof a.model === 'string' ? a.model.split('/').pop() : a.id}</span>
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/agents?agent=${encodeURIComponent(a.id)}`)}
-                      className="shrink-0 rounded p-1 text-aegis-text-dim hover:bg-aegis-primary/10 hover:text-aegis-primary"
-                      title={t('common.edit', 'Edit')}
-                    >
-                      <Pencil size={11} />
-                    </button>
                   </div>
                   {isExpanded && (
                     <div className="ms-7 me-3 mb-1 rounded-lg border border-aegis-border/40 bg-aegis-surface/35 py-1">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/agents?agent=${encodeURIComponent(a.id)}`)}
+                        className="w-full flex items-center gap-2 border-b border-aegis-border/35 px-3 py-2 text-left text-[11.5px] font-medium text-aegis-text-muted hover:bg-aegis-primary/10 hover:text-aegis-primary"
+                      >
+                        <Pencil size={11} className="shrink-0" />
+                        <span>{t('sidebar.editAgent', '编辑智能体')}</span>
+                      </button>
                       {isLoadingSkills && (
                         <div className="px-3 py-2 text-[11.5px] text-aegis-text-dim">
                           {t('common.loading', 'Loading...')}
@@ -261,6 +261,61 @@ export function ToolsPanel() {
         </SidebarSection>
       </div>
     </>
+  );
+}
+
+const COMMAND_CATEGORY_LINKS = [
+  { id: 'all', count: 55, Icon: BookOpenText },
+  { id: 'setup', count: 5, Icon: Settings },
+  { id: 'gateway', count: 9, Icon: Server },
+  { id: 'diagnostics', count: 9, Icon: Activity },
+  { id: 'models', count: 13, Icon: Bot },
+  { id: 'auth', count: 7, Icon: KeyRound },
+  { id: 'channels', count: 5, Icon: MessageSquare },
+  { id: 'automation', count: 7, Icon: Clock },
+] as const;
+
+export function CommandsPanel() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const requestedCategory = new URLSearchParams(location.search).get('category') ?? 'all';
+  const selectedCategory = COMMAND_CATEGORY_LINKS.some((item) => item.id === requestedCategory)
+    ? requestedCategory
+    : 'all';
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="border-b border-aegis-border px-4 pb-3 pt-1">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-aegis-primary/12 text-aegis-primary">
+            <BookOpenText size={16} />
+          </span>
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-semibold leading-4 text-aegis-text">
+              {t('openclawCommands.title')}
+            </div>
+            <div className="text-[11px] tabular-nums text-aegis-text-dim">
+              {t('openclawCommands.resultCount', { count: 55 })}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto py-2">
+        <SidebarSection label={t('openclawCommands.categoryLabel')}>
+          {COMMAND_CATEGORY_LINKS.map(({ id, count, Icon }) => (
+            <SidebarRow
+              key={id}
+              icon={<Icon size={14} />}
+              title={t(`openclawCommands.categories.${id}`)}
+              meta={t('openclawCommands.resultCount', { count })}
+              active={selectedCategory === id}
+              onClick={() => navigate(id === 'all' ? '/openclaw-commands' : `/openclaw-commands?category=${id}`)}
+            />
+          ))}
+        </SidebarSection>
+      </div>
+    </div>
   );
 }
 

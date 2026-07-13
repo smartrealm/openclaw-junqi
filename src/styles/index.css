@@ -170,6 +170,9 @@
   ::-webkit-scrollbar-thumb { background: var(--aegis-scrollbar); border-radius: 10px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--aegis-scrollbar-hover); }
 
+  /* Main route viewport: slim overlay scrollbar without a reserved gutter. */
+  .route-scrollbar::-webkit-scrollbar { width: 4px; }
+
   ::selection { background: var(--aegis-selection); color: var(--aegis-selection-text); }
 
   select {
@@ -515,19 +518,15 @@
 }
 .btn-secondary:hover { border-color: var(--aegis-border-hover); color: var(--aegis-text); }
 
-/* Mission Control (CronMonitor) */
+/* Scheduled task maintenance */
 @keyframes mc-err-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 @keyframes mc-bar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 @keyframes mc-dot-ping { 0%, 100% { transform: scale(1); opacity: .8; } 50% { transform: scale(1.5); opacity: 0; } }
 
-.mc-grid-main { grid-template-columns: 1fr 1fr 320px; }
-@media (max-width: 1100px) {
-  .mc-grid-main { grid-template-columns: 1fr 320px; }
-  .mc-grid-main > :nth-child(2) { display: none; }
-}
+.mc-grid-main { grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.35fr); }
 @media (max-width: 768px) {
   .mc-grid-main { grid-template-columns: 1fr; }
-  .mc-grid-main > :nth-child(2) { display: none; }
+  .mc-grid-main > :nth-child(2) { min-height: 520px; border-top: 1px solid rgb(var(--aegis-overlay) / 0.06); }
 }
 
 

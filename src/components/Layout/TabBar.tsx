@@ -1,22 +1,22 @@
 // TabBar — 顶部标签导航
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { SidebarTab } from './tab-utils';
-import { LayoutDashboard, Bot, Wrench, Settings } from 'lucide-react';
+import { LayoutDashboard, BookOpenText, Bot, Wrench, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 
 const TABS = [
   { id: 'workbench', labelKey: 'nav.dashboard', labelFallback: '仪表盘', path: '/', Icon: LayoutDashboard },
   { id: 'agents',    labelKey: 'nav.agents',     labelFallback: '智能体', path: '/agents', Icon: Bot },
-  { id: 'tools',     labelKey: 'nav.tools',      labelFallback: '工具',   path: '/terminal', Icon: Wrench },
+  { id: 'tools',     labelKey: 'nav.tools',      labelFallback: '工具',   path: '/tools', Icon: Wrench },
+  { id: 'commands',  labelKey: 'nav.openclawCommands', labelFallback: '常用命令', path: '/openclaw-commands', Icon: BookOpenText },
   { id: 'settings',  labelKey: 'nav.settings',   labelFallback: '设置',   path: '/settings', Icon: Settings },
 ] as const;
 
 export function TabBar() {
   const { t } = useTranslation();
-  const location = useLocation();
   const navigate = useNavigate();
 
   const activeTab = useSettingsStore((s) => s.activeSidebarTab);
@@ -24,29 +24,29 @@ export function TabBar() {
 
   return (
     <div className="flex h-[44px] shrink-0 items-center gap-0.5 chrome-bg border-b border-aegis-border pr-2 relative" style={{ paddingLeft: 'var(--aegis-sidebar-expanded, 204px)' }}>
-      <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,204px)] flex items-center px-3 pointer-events-none">
-        <JunQiLogo variant="lockup" className="w-full" title="大夏集团 DAXIA GROUP" />
+      <div className="absolute inset-y-0 left-0 w-[var(--aegis-sidebar-expanded,204px)] flex items-center px-2.5 pointer-events-none overflow-hidden">
+        <JunQiLogo variant="lockup" className="h-[38px] w-full" title="陕西凌启智境科技有限公司" />
       </div>
       <div className="flex min-w-0 items-center gap-0.5">
-      {TABS.map((tab) => {
-        const active = activeTab === (tab.id as SidebarTab);
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => { setActiveTab(tab.id as SidebarTab); navigate(tab.path); }}
-            className={clsx(
-              'h-[32px] px-2.5 rounded text-[11.5px] font-medium transition-colors flex items-center gap-1.5',
-              active
-                ? 'bg-aegis-primary/10 text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.18)]'
-                : 'text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40',
-            )}
-          >
-            <tab.Icon size={13} />
-            {t(tab.labelKey, tab.labelFallback)}
-          </button>
-        );
-      })}
+        {TABS.map((tab) => {
+          const active = activeTab === (tab.id as SidebarTab);
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => { setActiveTab(tab.id as SidebarTab); navigate(tab.path); }}
+              className={clsx(
+                'h-[32px] whitespace-nowrap px-2.5 rounded text-[11.5px] font-medium transition-colors flex items-center gap-1.5',
+                active
+                  ? 'bg-aegis-primary/10 text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.18)]'
+                  : 'text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40',
+              )}
+            >
+              <tab.Icon size={13} />
+              {t(tab.labelKey, tab.labelFallback)}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

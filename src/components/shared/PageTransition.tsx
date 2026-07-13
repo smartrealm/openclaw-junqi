@@ -12,7 +12,7 @@ interface PageTransitionProps {
 
 export function PageTransition({ children, className = '' }: PageTransitionProps) {
   return (
-    <div className={`animate-slide-up ${className}`}>
+    <div className={`animate-fade-in ${className}`}>
       {children}
     </div>
   );

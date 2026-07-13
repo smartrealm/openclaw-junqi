@@ -33,6 +33,7 @@ const PerformancePage = lazy(() => import('@/pages/Performance').then(m => ({ de
 const KanbanPage = lazy(() => import('@/pages/Kanban').then(m => ({ default: m.Kanban })));
 const GitPage = lazy(() => import('@/pages/GitPage'));
 const UIShowcase = lazy(() => import('@/pages/UIShowcase'));
+const OpenClawCommandsPage = lazy(() => import('@/pages/OpenClawCommands').then(m => ({ default: m.OpenClawCommandsPage })));
 
 export default function AppRouteTree() {
   return (
@@ -64,6 +65,7 @@ export default function AppRouteTree() {
         <Route path="/calendar" element={<FeatureRoute feature="calendar"><CalendarPage /></FeatureRoute>} />
         <Route path="/sandbox" element={<FeatureRoute feature="sandbox"><CodeInterpreterPage /></FeatureRoute>} />
         <Route path="/tools" element={<FeatureRoute feature="tools"><McpToolsPage /></FeatureRoute>} />
+        <Route path="/openclaw-commands" element={<FeatureRoute feature="tools"><OpenClawCommandsPage /></FeatureRoute>} />
         <Route path="/perf" element={<PerformancePage />} />
         <Route path="/kanban" element={<FeatureRoute feature="workshop"><KanbanPage /></FeatureRoute>} />
         <Route path="/ui-showcase" element={<UIShowcase />} />

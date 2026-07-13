@@ -7,7 +7,7 @@
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -987,14 +987,12 @@ function maskPreviewSecrets(value: any, path = ''): any {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ProviderIcon({ providerId, size = 'md' }: { providerId: string; size?: 'sm' | 'md' }) {
-  const tmpl = getTemplateById(providerId);
   const providerIcon = Icon.provider[providerId] ?? Icon.provider[normalizeProviderIdForCatalog(providerId)] ?? Icon.provider.other;
   const sizeClass = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm';
   return (
     <div
       className={clsx(
-        'flex items-center justify-center rounded-lg font-semibold text-aegis-btn-primary-text flex-shrink-0',
-        `bg-gradient-to-br ${tmpl?.colorClass ?? 'from-slate-500 to-gray-600'}`,
+        'flex flex-shrink-0 items-center justify-center rounded-md border border-aegis-border bg-aegis-elevated font-semibold text-aegis-text-secondary',
         sizeClass
       )}
     >
@@ -1965,90 +1963,93 @@ function PickStep({ onPick, onClose: _onClose }: PickStepProps) {
   const isSearching = Boolean(search.trim());
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Search */}
+    <div className="flex min-h-0 flex-col gap-4">
       <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-aegis-text-muted" />
+        <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-aegis-text-dim" />
         <input
           autoFocus
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t('config.searchProviders')}
           className={clsx(
-            'w-full bg-aegis-surface border border-aegis-border rounded-lg pl-9 pr-3 py-2',
-            'text-aegis-text text-sm placeholder:text-aegis-text-muted',
-            'outline-none focus:border-aegis-primary transition-colors duration-200'
+            'h-10 w-full rounded-md border border-aegis-border bg-aegis-surface ps-9 pe-9',
+            'text-[13px] text-aegis-text placeholder:text-aegis-text-dim',
+            'outline-none transition-colors focus:border-aegis-primary/60 focus:ring-2 focus:ring-aegis-primary/15'
           )}
         />
         {search && (
           <button
+            type="button"
             onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-aegis-text-muted hover:text-aegis-text"
+            className="absolute end-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded text-aegis-text-dim hover:bg-aegis-hover/40 hover:text-aegis-text"
+            aria-label={t('common.clear', 'Clear')}
           >
             <X size={13} />
           </button>
         )}
       </div>
 
-      {/* Tab bar — hidden while searching */}
-      {!isSearching && (
-        <div className="flex gap-0 border-b border-aegis-border -mx-5 px-5">
+      <div className="grid min-h-[360px] grid-cols-[148px_minmax(0,1fr)] overflow-hidden rounded-md border border-aegis-border bg-aegis-surface/35">
+        <nav className="border-e border-aegis-border bg-aegis-surface/55 p-2" aria-label={t('config.pickProviderStep')}>
           {PICK_TAB_IDS.map((tabId) => (
             <button
+              type="button"
               key={tabId}
               onClick={() => setTab(tabId)}
+              disabled={isSearching}
               className={clsx(
-                'px-3 py-2 text-[11px] font-semibold border-b-2 whitespace-nowrap transition-colors',
+                'mb-0.5 flex h-9 w-full items-center rounded px-2.5 text-start text-[11.5px] font-medium transition-colors',
                 tab === tabId
-                  ? 'border-aegis-primary text-aegis-primary'
-                  : 'border-transparent text-aegis-text-muted hover:text-aegis-text'
+                  ? 'bg-aegis-primary/10 text-aegis-primary shadow-[inset_2px_0_0_rgb(var(--aegis-primary))]'
+                  : 'text-aegis-text-muted hover:bg-aegis-hover/35 hover:text-aegis-text',
+                isSearching && 'cursor-default opacity-45'
               )}
             >
               {t(`config.pickTab.${tabId}` as const)}
             </button>
           ))}
-        </div>
-      )}
+        </nav>
 
-      {/* Tab-level advisories */}
-      {!isSearching && tab === 'coding' && (
-        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 leading-snug">
-          <span className="flex-shrink-0 mt-0.5"><AlertTriangle size={14} strokeWidth={1.75} />️</span>
-          <span>{t('config.codingPlanAdvisory')}</span>
-        </div>
-      )}
-      {!isSearching && tab === 'local' && (
-        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300 leading-snug">
-          <span className="flex-shrink-0 mt-0.5"><Monitor size={14} strokeWidth={1.75} /></span>
-          <span>{t('config.localProviderAdvisory')}</span>
-        </div>
-      )}
+        <div className="flex min-h-0 flex-col">
+          {!isSearching && tab === 'coding' && (
+            <div className="flex items-start gap-2 border-b border-aegis-border px-3 py-2.5 text-[11px] leading-4 text-aegis-warning">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span>{t('config.codingPlanAdvisory')}</span>
+            </div>
+          )}
+          {!isSearching && tab === 'local' && (
+            <div className="flex items-start gap-2 border-b border-aegis-border px-3 py-2.5 text-[11px] leading-4 text-aegis-text-muted">
+              <Monitor size={13} className="mt-0.5 shrink-0 text-aegis-primary" />
+              <span>{t('config.localProviderAdvisory')}</span>
+            </div>
+          )}
 
-      {/* Entry grid */}
-      <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-        {entries.map((entry) => (
-          <CatalogCard key={entry.catalogId} entry={entry} onPick={handleEntryPick} />
-        ))}
-        {entries.length === 0 && (
-          <p className="col-span-2 text-center text-xs text-aegis-text-muted py-6">
-            {t('config.noProvidersFound')}
-          </p>
-        )}
+          <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-1 overflow-y-auto p-2.5 sm:grid-cols-2">
+            {entries.map((entry) => (
+              <CatalogCard key={entry.catalogId} entry={entry} onPick={handleEntryPick} />
+            ))}
+            {entries.length === 0 && (
+              <p className="col-span-full py-14 text-center text-xs text-aegis-text-muted">
+                {t('config.noProvidersFound')}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-/** Region badge colors */
+/** Region labels stay deliberately neutral in the service picker. */
 const REGION_STYLE: Record<string, string> = {
-  cn:     'bg-red-500/15 text-red-400 border-red-500/20',
-  global: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+  cn:     'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-muted',
+  global: 'border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-muted',
 };
 
-/** Plan badge colors */
+/** Plan labels use one semantic accent instead of provider-specific colors. */
 const PLAN_STYLE: Record<string, string> = {
-  coding:        'bg-amber-500/15 text-amber-400 border-amber-500/20',
-  'oauth-portal':'bg-violet-500/15 text-violet-400 border-violet-500/20',
+  coding:        'border-aegis-warning/25 bg-aegis-warning/10 text-aegis-warning',
+  'oauth-portal':'border-aegis-primary/20 bg-aegis-primary/[0.08] text-aegis-primary',
 };
 
 function CatalogCard({
@@ -2062,50 +2063,34 @@ function CatalogCard({
   const tmpl = getTemplateById(entry.templateId);
   if (!tmpl) return null;
   const displayLabel = t(`config.providerCatalog.${entry.catalogId}`, entry.label);
+  const providerIcon = Icon.provider[tmpl.id] ?? Icon.provider[normalizeProviderIdForCatalog(tmpl.id)] ?? Icon.provider.other;
+  const metadata = [
+    entry.region === 'cn' ? 'CN' : entry.region === 'global' ? 'Global' : null,
+    entry.plan === 'coding' ? t('config.codingPlan') : entry.plan === 'oauth-portal' ? 'OAuth' : null,
+    entry.region === 'none' && entry.plan === 'general' ? tmpl.envKey : null,
+  ].filter(Boolean).join(' · ');
 
   return (
     <button
+      type="button"
       onClick={() => onPick(entry)}
       className={clsx(
-        'flex items-start gap-2.5 p-2.5 rounded-xl text-left',
-        'border border-aegis-border bg-aegis-elevated',
-        'hover:border-aegis-border-hover hover:bg-white/[0.03]',
-        'transition-all duration-200 group'
+        'group grid min-h-[58px] grid-cols-[34px_minmax(0,1fr)_20px] items-center gap-2 rounded-md border border-transparent px-2.5 py-2 text-start',
+        'hover:border-aegis-border hover:bg-aegis-hover/30 active:translate-y-px',
+        'transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-aegis-primary/35'
       )}
     >
-      {/* Icon */}
-      <div
-        className={clsx(
-          'flex items-center justify-center w-7 h-7 rounded-lg font-black text-aegis-btn-primary-text flex-shrink-0 text-xs mt-0.5',
-          `bg-gradient-to-br ${tmpl.colorClass}`
-        )}
-      >
-        {tmpl.icon}
+      <div className="grid size-[34px] shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-elevated text-[12px] font-semibold text-aegis-text-secondary">
+        {providerIcon.icon}
       </div>
 
-      {/* Label + badges */}
       <div className="min-w-0 flex-1">
-        <div className="font-semibold text-xs text-aegis-text group-hover:text-aegis-primary transition-colors truncate leading-tight">
+        <div className="truncate text-[12px] font-semibold leading-4 text-aegis-text transition-colors group-hover:text-aegis-primary">
           {displayLabel}
         </div>
-        <div className="flex items-center gap-1 mt-1 flex-wrap">
-          {entry.region !== 'none' && (
-            <span className={clsx('text-[9px] font-bold px-1.5 py-0.5 rounded-full border', REGION_STYLE[entry.region])}>
-              {entry.region === 'cn' ? 'CN' : 'Global'}
-            </span>
-          )}
-          {entry.plan !== 'general' && (
-            <span className={clsx('text-[9px] font-bold px-1.5 py-0.5 rounded-full border', PLAN_STYLE[entry.plan] ?? 'bg-gray-500/15 text-gray-400 border-gray-500/20')}>
-              {entry.plan === 'coding' ? t('config.codingPlan') : t('config.authModeOption.oauth')}
-            </span>
-          )}
-          {entry.region === 'none' && entry.plan === 'general' && (
-            <span className="text-[9px] text-aegis-text-muted font-mono truncate">
-              {tmpl.envKey}
-            </span>
-          )}
-        </div>
+        {metadata && <div className="mt-0.5 truncate text-[9.5px] text-aegis-text-dim">{metadata}</div>}
       </div>
+      <ChevronRight size={13} className="text-aegis-text-dim transition-transform group-hover:translate-x-0.5 group-hover:text-aegis-primary" />
     </button>
   );
 }
@@ -2560,28 +2545,21 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Provider header — includes region/plan badges when driven by a catalog entry */}
-      <div className="flex items-center gap-3 p-3 bg-aegis-elevated border border-aegis-border rounded-xl">
-        <div
-          className={clsx(
-            'flex items-center justify-center w-10 h-10 rounded-xl font-black text-aegis-btn-primary-text text-base flex-shrink-0',
-            `bg-gradient-to-br ${tmpl.colorClass}`
-          )}
-        >
-          {tmpl.icon}
-        </div>
+      {/* Selected service context */}
+      <div className="flex items-center gap-3 border-b border-aegis-border pb-4">
+        <ProviderIcon providerId={tmpl.id} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-bold text-sm text-aegis-text">
+            <span className="text-sm font-semibold text-aegis-text">
               {catalogLabel ?? tmpl.name}
             </span>
             {hasCatalogRegion && (
-              <span className={clsx('text-[9px] font-bold px-1.5 py-0.5 rounded-full border', REGION_STYLE[catalogEntry.region])}>
+              <span className={clsx('rounded border px-1.5 py-0.5 text-[9px] font-medium', REGION_STYLE[catalogEntry.region])}>
                 {catalogEntry.region === 'cn' ? 'CN' : 'Global'}
               </span>
             )}
             {hasCatalogPlan && (
-              <span className={clsx('text-[9px] font-bold px-1.5 py-0.5 rounded-full border', PLAN_STYLE[catalogEntry.plan] ?? 'bg-gray-500/15 text-gray-400 border-gray-500/20')}>
+              <span className={clsx('rounded border px-1.5 py-0.5 text-[9px] font-medium', PLAN_STYLE[catalogEntry.plan] ?? 'border-aegis-border text-aegis-text-muted')}>
                 {catalogEntry.plan === 'coding' ? t('config.codingPlan') : t('config.authModeOption.oauth')}
               </span>
             )}
@@ -2591,9 +2569,9 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
               href={tmpl.docsUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-[10px] text-aegis-primary hover:underline"
+              className="mt-0.5 inline-flex text-[10px] text-aegis-text-dim hover:text-aegis-primary"
             >
-              Docs ↗
+              {t('openclawCommands.docsLink', 'Official docs')} ↗
             </a>
           )}
         </div>
@@ -2944,25 +2922,28 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
       )}
 
       {/* Footer */}
-      <div className="flex gap-2 pt-1 border-t border-aegis-border">
+      <div className="sticky -bottom-5 -mx-5 flex gap-2 border-t border-aegis-border bg-aegis-card-solid px-5 pb-1 pt-3">
         <button
+          type="button"
           onClick={onBack}
           className={clsx(
-            'px-4 py-2 rounded-lg text-sm font-medium',
+            'inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium',
             'border border-aegis-border text-aegis-text-secondary',
-            'hover:bg-white/[0.03] hover:border-aegis-border-hover',
-            'transition-all duration-200'
+            'hover:border-aegis-border-hover hover:bg-aegis-hover/30',
+            'transition-colors duration-150'
           )}
         >
-          {t('config.back')}
+          <ChevronLeft size={14} />
+          {t('common.back', 'Back')}
         </button>
         <button
+          type="button"
           onClick={() => void handleSubmit()}
           disabled={!canSubmit || saving}
           className={clsx(
-            'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg',
-            'text-sm font-bold bg-aegis-primary text-aegis-btn-primary-text',
-            'hover:brightness-110 transition-all duration-200',
+            'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2',
+            'bg-aegis-primary text-sm font-semibold text-aegis-btn-primary-text',
+            'hover:bg-aegis-primary-hover active:translate-y-px transition-colors duration-150',
             'disabled:opacity-40 disabled:cursor-not-allowed'
           )}
         >
@@ -3013,41 +2994,51 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
   };
 
   return (
-    /* backdrop — allow close on pick step; block on configure/confirm to avoid losing form data */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
       onClick={(e) => { if (e.target === e.currentTarget && step === 'pick') onClose(); }}
     >
-      {/* modal */}
       <div
         className={clsx(
-          'bg-aegis-card-solid border border-aegis-border rounded-2xl w-full max-w-lg',
-          'max-h-[90vh] overflow-hidden flex flex-col',
-          'shadow-[0_8px_30px_rgba(0,0,0,0.5)]',
-          'animate-[pop-in_0.15s_ease-out]'
+          'flex max-h-[min(760px,calc(100vh-32px))] w-full max-w-[780px] flex-col overflow-hidden rounded-lg',
+          'border border-aegis-border bg-aegis-card-solid shadow-[0_18px_50px_rgba(0,0,0,0.42)]',
+          'animate-fade-in'
         )}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-model-service-title"
       >
-        {/* header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-aegis-border">
-          <h3 className="text-sm font-bold text-aegis-text">
-            {step === 'pick'
-              ? t('config.addProvider')
-              : t('config.configureProvider', {
-                name: selectedEntry
-                  ? t(`config.providerCatalog.${selectedEntry.catalogId}`, selectedEntry.label)
-                  : selectedTmpl?.name ?? t('config.providers'),
-              })}
-          </h3>
+        <div className="flex items-center gap-4 border-b border-aegis-border px-5 py-3.5">
+          <div className="grid size-8 shrink-0 place-items-center rounded-md border border-aegis-primary/20 bg-aegis-primary/10 text-aegis-primary">
+            <Plug size={15} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 id="add-model-service-title" className="truncate text-[13px] font-semibold text-aegis-text">
+              {step === 'pick'
+                ? t('config.addModelService')
+                : t('config.configureProvider', {
+                  name: selectedEntry
+                    ? t(`config.providerCatalog.${selectedEntry.catalogId}`, selectedEntry.label)
+                    : selectedTmpl?.name ?? t('config.providers'),
+                })}
+            </h3>
+            <div className="mt-1 flex items-center gap-2 text-[10px] text-aegis-text-dim">
+              <span className={step === 'pick' ? 'text-aegis-primary' : 'text-aegis-text-muted'}>1 {t('config.pickProviderStep')}</span>
+              <span className="h-px w-5 bg-aegis-border" />
+              <span className={step === 'configure' ? 'text-aegis-primary' : 'text-aegis-text-dim'}>2 {t('config.configureProviderStep')}</span>
+            </div>
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-aegis-text-muted hover:text-aegis-text transition-colors p-1"
+            className="grid size-8 shrink-0 place-items-center rounded text-aegis-text-dim transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text"
+            aria-label={t('common.close', 'Close')}
           >
-            <X size={16} />
+            <X size={14} />
           </button>
         </div>
 
-        {/* body */}
-        <div className="p-5 overflow-y-auto flex-1">
+        <div className="flex-1 overflow-y-auto p-5">
           {step === 'pick' ? (
             <PickStep onPick={handlePick} onClose={onClose} />
           ) : selectedTmpl ? (
@@ -3221,7 +3212,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
               'hover:brightness-110 transition-all duration-200'
             )}
           >
-            <Plus size={12} /> {t('config.addProvider')}
+            <Plus size={12} /> {t('config.addModelService')}
           </button>
         </div>
 
@@ -3364,7 +3355,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
                   'transition-all duration-200'
                 )}
               >
-                <Plus size={14} /> {t('config.addProvider')}
+                <Plus size={14} /> {t('config.addModelService')}
               </button>
             </div>
           ) : (
@@ -3424,7 +3415,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
                   'transition-all duration-200 cursor-pointer'
                 )}
               >
-                <Plus size={13} /> {t('config.addProvider')}
+                <Plus size={13} /> {t('config.addModelService')}
               </button>
             </>
           )}
