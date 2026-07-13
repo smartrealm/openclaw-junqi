@@ -1,4 +1,6 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::window_sizing::{
@@ -11,32 +13,62 @@ const EVENT_DEBOUNCE: Duration = Duration::from_millis(180);
 enum AdaptationOutcome {
     Applied,
     Unchanged,
+    Deferred,
 }
 
-pub(crate) fn initialize(window: tauri::WebviewWindow, first_run_marker: PathBuf) {
+#[derive(Debug)]
+struct PendingSizing {
+    mode: SizingMode,
+    markers: Vec<PathBuf>,
+}
+
+pub(crate) fn initialize(
+    window: tauri::WebviewWindow,
+    first_run_marker: PathBuf,
+    preferred_size_marker: PathBuf,
+) {
     let is_first_run = !first_run_marker.exists();
-    let mode = if is_first_run {
-        SizingMode::Initial
-    } else {
-        SizingMode::Preserve
-    };
+    let needs_size_upgrade = !preferred_size_marker.exists();
+    let mode = initial_sizing_mode(is_first_run, needs_size_upgrade);
+    let mut pending = (mode != SizingMode::Preserve).then(|| PendingSizing {
+        mode,
+        markers: [
+            is_first_run.then_some(first_run_marker),
+            needs_size_upgrade.then_some(preferred_size_marker),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
+    });
     match adapt(&window, mode) {
-        Ok(_) if is_first_run => {
-            if let Err(error) = persist_first_run_marker(&first_run_marker) {
-                eprintln!(
-                    "[window-adaptation] cannot persist first-run marker at {}: {}",
-                    first_run_marker.display(),
-                    error
-                );
+        Ok(outcome) if completes_sizing_mode(mode, outcome) => {
+            if let Some(sizing) = pending.as_ref() {
+                if let Err(error) = persist_markers(&sizing.markers) {
+                    eprintln!("[window-adaptation] {error}");
+                } else {
+                    pending = None;
+                }
             }
         }
         Ok(_) => {}
         Err(error) => eprintln!("[window-adaptation] initial adaptation failed: {error}"),
     }
-    start_event_controller(window);
+    start_event_controller(window, pending);
 }
 
-fn persist_first_run_marker(marker: &Path) -> Result<(), String> {
+fn initial_sizing_mode(is_first_run: bool, needs_size_upgrade: bool) -> SizingMode {
+    match (is_first_run, needs_size_upgrade) {
+        (true, _) => SizingMode::Initial,
+        (false, true) => SizingMode::Upgrade,
+        (false, false) => SizingMode::Preserve,
+    }
+}
+
+fn completes_sizing_mode(mode: SizingMode, outcome: AdaptationOutcome) -> bool {
+    mode != SizingMode::Preserve && outcome != AdaptationOutcome::Deferred
+}
+
+fn persist_marker(marker: &Path) -> Result<(), String> {
     if let Some(parent) = marker.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -47,6 +79,18 @@ fn persist_first_run_marker(marker: &Path) -> Result<(), String> {
     }
     std::fs::write(marker, "1")
         .map_err(|error| format!("cannot write marker {}: {error}", marker.display()))
+}
+
+fn persist_markers(markers: &[PathBuf]) -> Result<(), String> {
+    for marker in markers {
+        persist_marker(marker).map_err(|error| {
+            format!(
+                "cannot persist sizing marker at {}: {error}",
+                marker.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn adapt(window: &tauri::WebviewWindow, mode: SizingMode) -> Result<AdaptationOutcome, String> {
@@ -123,6 +167,10 @@ fn adapt(window: &tauri::WebviewWindow, mode: SizingMode) -> Result<AdaptationOu
             .map_err(|error| format!("cannot reposition main window: {error}"))?;
     }
 
+    if maximized && mode != SizingMode::Preserve {
+        return Ok(AdaptationOutcome::Deferred);
+    }
+
     if plan.target_inner_size.is_some() || plan.target_outer_position.is_some() {
         Ok(AdaptationOutcome::Applied)
     } else {
@@ -130,22 +178,42 @@ fn adapt(window: &tauri::WebviewWindow, mode: SizingMode) -> Result<AdaptationOu
     }
 }
 
-fn start_event_controller(window: tauri::WebviewWindow) {
+fn start_event_controller(window: tauri::WebviewWindow, mut pending: Option<PendingSizing>) {
     let (event_tx, event_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let has_pending_sizing = Arc::new(AtomicBool::new(pending.is_some()));
+    let worker_pending_flag = Arc::clone(&has_pending_sizing);
     let worker_window = window.clone();
     tauri::async_runtime::spawn(run_debounced(event_rx, EVENT_DEBOUNCE, move || {
-        if let Err(error) = adapt(&worker_window, SizingMode::Preserve) {
-            eprintln!("[window-adaptation] {error}");
+        let mode = pending
+            .as_ref()
+            .map(|sizing| sizing.mode)
+            .unwrap_or(SizingMode::Preserve);
+        match adapt(&worker_window, mode) {
+            Ok(outcome) if completes_sizing_mode(mode, outcome) => {
+                if let Some(sizing) = pending.as_ref() {
+                    if let Err(error) = persist_markers(&sizing.markers) {
+                        eprintln!("[window-adaptation] {error}");
+                    } else {
+                        pending = None;
+                        worker_pending_flag.store(false, Ordering::Release);
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(error) => eprintln!("[window-adaptation] {error}"),
         }
     }));
 
     window.on_window_event(move |event| {
-        if matches!(
+        let display_context_changed = matches!(
             event,
             tauri::WindowEvent::Moved(_)
                 | tauri::WindowEvent::ScaleFactorChanged { .. }
                 | tauri::WindowEvent::Focused(true)
-        ) {
+        );
+        let pending_window_restored = matches!(event, tauri::WindowEvent::Resized(_))
+            && has_pending_sizing.load(Ordering::Acquire);
+        if display_context_changed || pending_window_restored {
             match event_tx.try_send(()) {
                 Ok(()) | Err(tokio::sync::mpsc::error::TrySendError::Full(())) => {}
                 Err(tokio::sync::mpsc::error::TrySendError::Closed(())) => {
@@ -218,7 +286,7 @@ mod tests {
         ));
         let marker = root.join("nested").join("initialized");
 
-        persist_first_run_marker(&marker).unwrap();
+        persist_marker(&marker).unwrap();
 
         assert_eq!(std::fs::read_to_string(&marker).unwrap(), "1");
         std::fs::remove_dir_all(root).unwrap();
@@ -239,8 +307,48 @@ mod tests {
         std::fs::write(&blocking_file, "x").unwrap();
         let marker = blocking_file.join("initialized");
 
-        assert!(persist_first_run_marker(&marker).is_err());
+        assert!(persist_marker(&marker).is_err());
         assert!(!marker.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn existing_install_without_v2_marker_uses_upgrade_mode() {
+        assert_eq!(initial_sizing_mode(false, true), SizingMode::Upgrade);
+        assert_eq!(initial_sizing_mode(true, true), SizingMode::Initial);
+        assert_eq!(initial_sizing_mode(false, false), SizingMode::Preserve);
+    }
+
+    #[test]
+    fn maximized_upgrade_does_not_consume_the_migration() {
+        assert!(!completes_sizing_mode(
+            SizingMode::Upgrade,
+            AdaptationOutcome::Deferred,
+        ));
+        assert!(completes_sizing_mode(
+            SizingMode::Upgrade,
+            AdaptationOutcome::Unchanged,
+        ));
+    }
+
+    #[test]
+    fn marker_batch_stops_after_the_first_failure() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-window-marker-batch-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let blocking_file = root.join("not-a-directory");
+        std::fs::write(&blocking_file, "x").unwrap();
+        let invalid = blocking_file.join("first");
+        let should_not_exist = root.join("second");
+
+        assert!(persist_markers(&[invalid, should_not_exist.clone()]).is_err());
+        assert!(!should_not_exist.exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

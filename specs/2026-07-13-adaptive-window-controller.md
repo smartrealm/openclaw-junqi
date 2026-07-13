@@ -61,9 +61,24 @@
 
 - [x] Tests cover normal laptop, 4K, mixed DPI, off-screen fallback, negative origins, decoration extents and already-visible preservation.
 
+## BUG-WIN-07 - Larger JunQi main window
+
+**Current**: the preferred width is 76% of the monitor work area, the large-display cap is 1600x1000, and restored small windows are preserved indefinitely.
+
+**Target**: new installations open around 86% x 88% of the monitor work area with an 1800x1120 cap. Existing installations receive a one-time growth-only migration; user windows already above either preferred dimension are never reduced in that dimension.
+
+**Acceptance**:
+
+- [x] The static Tauri fallback is 1440x900.
+- [x] A 1920x1040 work area plans a substantially larger main window than the old policy.
+- [x] Upgrade mode grows an undersized restored window to the preferred size.
+- [x] Upgrade mode preserves dimensions already larger than the preference.
+- [x] Preserve mode remains unchanged after the versioned migration.
+- [x] A maximized launch does not consume the migration marker.
+
 ## Validation
 
 - Rust formatting: `cargo fmt --check`
-- Rust tests: 208 passed, 2 ignored
+- Rust tests: 213 passed, 2 ignored
 - Release build: `npx tauri build --bundles dmg`
 - Disk image verification: `hdiutil verify`

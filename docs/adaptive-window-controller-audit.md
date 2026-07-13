@@ -26,6 +26,12 @@ Constraint, size, centering and marker-write results are ignored. Production dia
 
 Existing tests do not cover negative monitor origins, decoration extents, off-screen recovery, DPI invariance or position preservation.
 
+### BUG-WIN-07 - High - The main desktop window remains undersized for existing users
+
+The first-launch policy uses only 76% of the work-area width and caps at 1600x1000. More importantly, the window-state plugin restores an existing small window and `Preserve` intentionally keeps it forever, so changing only `tauri.conf.json` cannot fix current installations.
+
+**Fix**: raise the preferred work-area ratios and caps, introduce an `Upgrade` sizing mode that only grows dimensions below the new preference, and persist a versioned migration marker only after the upgrade can actually run.
+
 ## Target architecture
 
 - Pure physical-pixel planner for deterministic Windows DPI behavior.
@@ -33,3 +39,4 @@ Existing tests do not cover negative monitor origins, decoration extents, off-sc
 - One plan containing minimum size, optional target size and optional target position.
 - One debounced event worker per main window with a bounded channel.
 - Explicit native `Result` propagation and first-run marker written only after success.
+- Versioned preferred-size migration that preserves already-larger user windows.

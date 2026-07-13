@@ -1,10 +1,10 @@
 const COMFORTABLE_MIN_WIDTH: f64 = 960.0;
 const COMFORTABLE_MIN_HEIGHT: f64 = 640.0;
-const INITIAL_WIDTH_RATIO: f64 = 0.76;
-const INITIAL_HEIGHT_RATIO: f64 = 0.82;
+const INITIAL_WIDTH_RATIO: f64 = 0.86;
+const INITIAL_HEIGHT_RATIO: f64 = 0.88;
 const SCREEN_MARGIN_RATIO: f64 = 0.94;
-const INITIAL_MAX_WIDTH: f64 = 1600.0;
-const INITIAL_MAX_HEIGHT: f64 = 1000.0;
+const INITIAL_MAX_WIDTH: f64 = 1800.0;
+const INITIAL_MAX_HEIGHT: f64 = 1120.0;
 const MIN_DRAGGABLE_WIDTH: i64 = 120;
 const TITLE_BAR_HEIGHT: i64 = 48;
 const MIN_TITLE_BAR_VISIBLE_HEIGHT: i64 = 24;
@@ -41,6 +41,7 @@ pub(crate) struct WindowSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SizingMode {
     Initial,
+    Upgrade,
     Preserve,
 }
 
@@ -98,24 +99,20 @@ pub(crate) fn plan_window_adjustment(
         });
     }
 
+    let preferred_inner = preferred_inner_size(snapshot, frame, minimum_inner_size, maximum_inner);
     let desired_inner = match mode {
-        SizingMode::Initial => PhysicalSize {
-            width: initial_dimension(
-                snapshot.work_area.size.width,
-                frame.width,
-                minimum_inner_size.width,
-                maximum_inner.width,
-                INITIAL_WIDTH_RATIO,
-                logical_to_physical(INITIAL_MAX_WIDTH, snapshot.monitor_scale_factor),
-            ),
-            height: initial_dimension(
-                snapshot.work_area.size.height,
-                frame.height,
-                minimum_inner_size.height,
-                maximum_inner.height,
-                INITIAL_HEIGHT_RATIO,
-                logical_to_physical(INITIAL_MAX_HEIGHT, snapshot.monitor_scale_factor),
-            ),
+        SizingMode::Initial => preferred_inner,
+        SizingMode::Upgrade => PhysicalSize {
+            width: snapshot
+                .inner_size
+                .width
+                .max(preferred_inner.width)
+                .clamp(minimum_inner_size.width, maximum_inner.width),
+            height: snapshot
+                .inner_size
+                .height
+                .max(preferred_inner.height)
+                .clamp(minimum_inner_size.height, maximum_inner.height),
         },
         SizingMode::Preserve => PhysicalSize {
             width: snapshot
@@ -148,6 +145,32 @@ pub(crate) fn plan_window_adjustment(
         target_outer_position: (desired_position != snapshot.outer_position)
             .then_some(desired_position),
     })
+}
+
+fn preferred_inner_size(
+    snapshot: WindowSnapshot,
+    frame: PhysicalSize,
+    minimum: PhysicalSize,
+    maximum: PhysicalSize,
+) -> PhysicalSize {
+    PhysicalSize {
+        width: initial_dimension(
+            snapshot.work_area.size.width,
+            frame.width,
+            minimum.width,
+            maximum.width,
+            INITIAL_WIDTH_RATIO,
+            logical_to_physical(INITIAL_MAX_WIDTH, snapshot.monitor_scale_factor),
+        ),
+        height: initial_dimension(
+            snapshot.work_area.size.height,
+            frame.height,
+            minimum.height,
+            maximum.height,
+            INITIAL_HEIGHT_RATIO,
+            logical_to_physical(INITIAL_MAX_HEIGHT, snapshot.monitor_scale_factor),
+        ),
+    }
 }
 
 fn logical_to_physical(logical: f64, scale_factor: f64) -> u32 {
@@ -264,6 +287,59 @@ mod tests {
     }
 
     #[test]
+    fn preferred_size_uses_more_of_a_standard_desktop_work_area() {
+        let plan = plan_window_adjustment(snapshot(), SizingMode::Initial).unwrap();
+
+        assert_eq!(
+            plan.target_inner_size,
+            Some(PhysicalSize {
+                width: 1635,
+                height: 876,
+            })
+        );
+    }
+
+    #[test]
+    fn upgrade_grows_only_dimensions_below_the_new_preference() {
+        let mut input = snapshot();
+        input.inner_size = PhysicalSize {
+            width: 1700,
+            height: 700,
+        };
+        input.outer_size = PhysicalSize {
+            width: 1716,
+            height: 739,
+        };
+
+        let plan = plan_window_adjustment(input, SizingMode::Upgrade).unwrap();
+
+        assert_eq!(
+            plan.target_inner_size,
+            Some(PhysicalSize {
+                width: 1700,
+                height: 876,
+            })
+        );
+    }
+
+    #[test]
+    fn upgrade_leaves_an_already_larger_window_unchanged() {
+        let mut input = snapshot();
+        input.inner_size = PhysicalSize {
+            width: 1700,
+            height: 900,
+        };
+        input.outer_size = PhysicalSize {
+            width: 1716,
+            height: 939,
+        };
+
+        let plan = plan_window_adjustment(input, SizingMode::Upgrade).unwrap();
+
+        assert_eq!(plan.target_inner_size, None);
+    }
+
+    #[test]
     fn first_launch_is_centered_and_bounded_on_4k() {
         let mut input = snapshot();
         input.work_area.size = PhysicalSize {
@@ -285,13 +361,13 @@ mod tests {
         assert_eq!(
             plan.target_inner_size,
             Some(PhysicalSize {
-                width: 1600,
-                height: 1000
+                width: 1800,
+                height: 1120
             })
         );
         assert_eq!(
             plan.target_outer_position,
-            Some(PhysicalPosition { x: 1112, y: 520 })
+            Some(PhysicalPosition { x: 1012, y: 460 })
         );
     }
 

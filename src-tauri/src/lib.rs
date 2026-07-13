@@ -432,9 +432,11 @@ pub fn run() {
             // Use the monitor work area (excluding taskbar/menu bar) for first-launch
             // sizing. Later launches preserve the window-state plugin's restored size,
             // unless it no longer fits the current display.
-            let first_run_marker = paths::desktop_dir().join(".junqi-window-initialized");
+            let desktop_dir = paths::desktop_dir();
+            let first_run_marker = desktop_dir.join(".junqi-window-initialized");
+            let preferred_size_marker = desktop_dir.join(".junqi-window-size-v2");
             if let Some(window) = app.get_webview_window("main") {
-                window_adaptation::initialize(window, first_run_marker);
+                window_adaptation::initialize(window, first_run_marker, preferred_size_marker);
             } else {
                 eprintln!("[window-adaptation] main window is unavailable during setup");
             }

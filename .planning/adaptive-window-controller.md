@@ -10,3 +10,4 @@
 | B | BUG-WIN-04 | `src-tauri/src/window_sizing.rs` | Make DPI-independent sizing deterministic and overflow-safe. |
 | C | BUG-WIN-05 | `src-tauri/src/lib.rs` | Propagate native errors and emit actionable diagnostics. |
 | D | BUG-WIN-06 | `src-tauri/src/window_sizing.rs` | Cover Windows multi-monitor, negative origins, DPI and off-screen recovery. |
+| E | BUG-WIN-07 | `window_sizing.rs`, `window_adaptation.rs`, `tauri.conf.json` | Increase the preferred main-window size and migrate undersized restored windows once. |
