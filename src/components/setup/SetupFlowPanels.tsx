@@ -618,7 +618,7 @@ function currentStepOf(steps: StepState[]): StepState | null {
     ?? null;
 }
 
-function InstallationTimeline({ steps }: { steps: StepState[] }) {
+function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: StepState[]; awaitingGatewayStart?: boolean }) {
   const { t } = useTranslation();
   const visibleSteps = steps.length > 0 ? steps : [{ id: "gateway", label: "Gateway", status: "pending" as const }];
   return (
@@ -663,7 +663,9 @@ function InstallationTimeline({ steps }: { steps: StepState[] }) {
                 s.status === "error" && "bg-red-500/10 text-red-300",
                 (s.status === "pending" || s.status === "skipped") && "bg-aegis-surface text-aegis-text-dim",
               )}>
-                {stepStatusText(s.status, t)}
+                {awaitingGatewayStart && s.id === "gateway" && s.status === "pending"
+                  ? t("setup.installPanel.waitingToStart", "等待启动")
+                  : stepStatusText(s.status, t)}
               </span>
             </div>
             {s.detail && <div className="mt-2 break-words rounded-lg bg-aegis-surface/55 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-secondary">{s.detail}</div>}
@@ -738,7 +740,7 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
       </div>
 
       <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
-        <InstallationTimeline steps={flow.steps} />
+        <InstallationTimeline steps={flow.steps} awaitingGatewayStart={isAwaitingGatewayStart} />
         <aside className="min-h-[260px] rounded-xl border border-aegis-border bg-aegis-elevated p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-aegis-text">
             <TerminalSquare size={16} />

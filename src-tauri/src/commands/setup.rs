@@ -3,10 +3,21 @@ use crate::paths;
 use crate::platform;
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, OnceLock,
+};
 use tauri::Emitter;
 
 static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+struct NpmCacheCleanup(PathBuf);
+
+impl Drop for NpmCacheCleanup {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 // ─── Platform helpers ──────────────────────────────────────────────────────────
 
@@ -472,8 +483,16 @@ async fn npm_install_with_fallback(
         None
     };
     let path_env = platform::build_path(&node_bin_str, git_bin_str.as_deref());
-    let npm_cache = paths::npm_cache_dir();
-    std::fs::create_dir_all(&npm_cache).ok();
+    let install_nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    // A fresh cache avoids npm repeatedly reusing a partially extracted tarball
+    // after an interrupted Windows install. It is removed when this call ends.
+    let npm_cache_root =
+        paths::npm_cache_dir().join(format!("install-{}-{}", std::process::id(), install_nonce));
+    let _npm_cache_cleanup = NpmCacheCleanup(npm_cache_root.clone());
+    std::fs::create_dir_all(&npm_cache_root).ok();
     std::fs::create_dir_all(global_prefix).ok();
     // `npm i -g` creates `<prefix>/bin` and `<prefix>/lib/node_modules`
     // itself; pre-creating the prefix dir avoids races on first run.
@@ -484,6 +503,10 @@ async fn npm_install_with_fallback(
     let total_regs = registries.len();
 
     for (reg_idx, registry) in registries.into_iter().enumerate() {
+        // A failed source must not poison the fallback source with partially
+        // extracted cache entries.
+        let npm_cache = npm_cache_root.join(format!("registry-{}", reg_idx + 1));
+        std::fs::create_dir_all(&npm_cache).ok();
         let reg_label = registry.label();
         emit(
             app,
@@ -509,7 +532,7 @@ async fn npm_install_with_fallback(
         cmd.args([
             "install",
             "-g",
-            "--prefer-offline",
+            "--prefer-online",
             "--no-fund",
             "--no-audit",
             pkg,
@@ -553,9 +576,11 @@ async fn npm_install_with_fallback(
                 }
             });
         }
+        let tar_warning_count = Arc::new(AtomicUsize::new(0));
         if let Some(stderr) = child.stderr.take() {
             let app_e = app.clone();
             let step_e = step.to_string();
+            let tar_warning_count_e = Arc::clone(&tar_warning_count);
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
@@ -563,6 +588,14 @@ async fn npm_install_with_fallback(
                     let line = line.trim().to_string();
                     if line.is_empty() || line.starts_with("npm notice") {
                         continue;
+                    }
+                    if line.contains("TAR_ENTRY_ERROR") && line.contains("ENOENT") {
+                        let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
+                        // Preserve the first diagnostic but avoid flooding the
+                        // setup UI with hundreds of identical npm warnings.
+                        if seen > 0 {
+                            continue;
+                        }
                     }
                     emit(&app_e, &step_e, &format!("npm › {}", line), prog_live);
                 }
@@ -605,6 +638,18 @@ async fn npm_install_with_fallback(
             };
 
         if status.success() {
+            let tar_warnings = tar_warning_count.load(Ordering::Relaxed);
+            if tar_warnings > 1 {
+                emit(
+                    app,
+                    step,
+                    &format!(
+                        "npm reported {} duplicate extraction warnings; installation validation will confirm integrity",
+                        tar_warnings
+                    ),
+                    prog_live,
+                );
+            }
             emit(
                 app,
                 step,

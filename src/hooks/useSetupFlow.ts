@@ -18,6 +18,12 @@ import {
 } from "@/api/tauri-commands";
 import { debugWarn } from "@/utils/debugLog";
 import { setupProgressI18nParams } from "./setupProgressParams";
+import {
+  advanceSetupProgress,
+  phaseForSetupEvent,
+  progressForPhase,
+  type SetupProgressPhase,
+} from "./setupProgressModel";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
@@ -156,6 +162,8 @@ export function useSetupFlow(
   const { t } = useTranslation();
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
   const [openclawStatus, setOpenclawStatus] = useState<OpenclawStatus | null>(null);
+  const progressRef = useRef(progress);
+  progressRef.current = progress;
   const activeRunRef = useRef(0);
   const beginRun = useCallback(() => {
     activeRunRef.current += 1;
@@ -170,9 +178,29 @@ export function useSetupFlow(
 
   const report = useCallback((message: string, nextProgress?: number) => {
     setStatusMessage(message);
-    if (typeof nextProgress === "number") setProgress(nextProgress);
-    setSetupStatus(message, nextProgress);
+    if (typeof nextProgress === "number") {
+      const monotonicProgress = Math.max(progressRef.current, nextProgress);
+      progressRef.current = monotonicProgress;
+      setProgress(monotonicProgress);
+      setSetupStatus(message, monotonicProgress);
+      return;
+    }
+    setSetupStatus(message);
   }, [setStatusMessage, setProgress, setSetupStatus]);
+
+  const reportPhase = useCallback((
+    phase: SetupProgressPhase,
+    message: string,
+    localPercent = 0,
+  ) => {
+    const nextProgress = advanceSetupProgress(progressRef.current, phase, localPercent);
+    report(message, nextProgress);
+  }, [report]);
+
+  const resetProgress = useCallback(() => {
+    progressRef.current = 0;
+    setProgress(0);
+  }, [setProgress]);
 
   const waitForGatewayReady = useCallback(async (runId: number, timeoutMs = 30_000, port?: number | null) => {
     const deadline = Date.now() + timeoutMs;
@@ -287,7 +315,11 @@ export function useSetupFlow(
         // path is byte-identical to what's in the progress message.
         const resolvedTarget = pickInstallTargetFromProgress(String(key ?? ""), message);
         if (resolvedTarget) setInstallTarget(resolvedTarget);
-        const nextProgress = p != null ? Math.round(p * 100) : undefined;
+        const localProgress = p != null ? Math.round(p * 100) : undefined;
+        const eventPhase = phaseForSetupEvent(step);
+        const nextProgress = eventPhase && typeof localProgress === "number"
+          ? progressForPhase(eventPhase, localProgress)
+          : undefined;
 
         // Keep the primary onboarding copy coarse and calm.
         // Gateway preparation emits useful diagnostics, but those belong in the
@@ -297,8 +329,7 @@ export function useSetupFlow(
           step === "gateway" && typeof key === "string" && key.startsWith("setup.gateway.");
         if (isGatewayDiagnostic) {
           if (typeof nextProgress === "number") {
-            setProgress(nextProgress);
-            setSetupStatus(t("setup.preparingGateway"), nextProgress);
+            report(t("setup.preparingGateway"), nextProgress);
           }
         } else {
           report(display, nextProgress);
@@ -333,7 +364,7 @@ export function useSetupFlow(
   const startGatewayAction = useCallback(async () => {
     const runId = beginRun();
     setSetupStep("checking");
-    report(t("setup.startingGateway"), 30);
+    reportPhase("gatewayConfig", t("setup.gatewayReadingConfig", "正在读取 Gateway 配置…"));
     if (stepsRef.current.some((s) => s.id === "gateway")) {
       patchStep("gateway", "running", t("setup.startingGateway"));
     } else {
@@ -342,6 +373,8 @@ export function useSetupFlow(
     try {
       const status: any = await startGateway();
       cacheGatewayTarget(status?.port, status?.token);
+      patchStep("gateway", "running", t("setup.gatewayWaitingPort", "Gateway 进程已启动，正在等待端口就绪…"));
+      reportPhase("gatewayPort", t("setup.gatewayWaitingPort", "Gateway 进程已启动，正在等待端口就绪…"));
       await waitForGatewayReady(runId, 30_000, status?.port);
       if (!isRunActive(runId)) return;
       setGatewayRunning(true);
@@ -350,7 +383,7 @@ export function useSetupFlow(
       } else {
         setSteps([{ id: "gateway", label: "Gateway", status: "done" }]);
       }
-      report(t("setup.ready"), 100);
+      reportPhase("ready", t("setup.gatewayConnected", "Gateway 已连接"));
       await new Promise((r) => setTimeout(r, 600));
       if (!isRunActive(runId)) return;
       setSetupStep("ready");
@@ -365,10 +398,11 @@ export function useSetupFlow(
       report(e?.message || String(e));
       setSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, report, t, setSteps, waitForGatewayReady, setGatewayRunning, setSetupError]);
+  }, [beginRun, isRunActive, setSetupStep, report, reportPhase, t, setSteps, waitForGatewayReady, setGatewayRunning, setSetupError]);
 
   const runNativeSetup = useCallback(async () => {
     const runId = beginRun();
+    resetProgress();
     clearSetupLogs();
     const s = [...INITIAL_NATIVE_STEPS];
     setSteps(s);
@@ -377,14 +411,14 @@ export function useSetupFlow(
 
       // Git
       patchStep("git", "running", t("setup.checkingGit"));
-      report(t("setup.checkingGit"), 5);
+      reportPhase("git", t("setup.checkingGit"));
       const gitStatus = await checkGit();
       if (!isRunActive(runId)) return;
       if (!gitStatus.available) {
         patchStep("git", "error", t("setup.gitRequiredDesc"));
         setNeedsGit(true);
         setSetupStep("git-missing");
-        report(t("setup.gitRequiredDesc"), 10);
+        reportPhase("git", t("setup.gitRequiredDesc"), 100);
         return;
       } else {
         patchStep("git", "done", gitStatus.version ?? undefined);
@@ -392,13 +426,13 @@ export function useSetupFlow(
 
       // Node
       patchStep("node", "running", t("setup.checkingNode"));
-      report(t("setup.checkingNode"), 15);
+      reportPhase("node", t("setup.checkingNode"));
       const nodeStatus = await checkNode();
       if (!isRunActive(runId)) return;
       if (!nodeStatus.available) {
         patchStep("node", "running", t("setup.installingNode"));
         setSetupStep("install-node");
-        report(t("setup.installingNode"), 25);
+        reportPhase("node", t("setup.installingNode"), 20);
         await installNode();
         if (!isRunActive(runId)) return;
         patchStep("node", "done");
@@ -408,14 +442,14 @@ export function useSetupFlow(
 
       // OpenClaw
       patchStep("openclaw", "running", t("setup.checkingOpenclaw"));
-      report(t("setup.checkingOpenclaw"), 40);
+      reportPhase("openclaw", t("setup.checkingOpenclaw"));
       const oclawStatus = await checkOpenclaw();
       setOpenclawStatus(oclawStatus);
       if (!isRunActive(runId)) return;
       if (!oclawStatus.installed) {
         patchStep("openclaw", "running", t("setup.installingOpenclaw"));
         setSetupStep("install-openclaw");
-        report(t("setup.installingOpenclaw"), 50);
+        reportPhase("openclaw", t("setup.installingOpenclaw"), 10);
         await installOpenclaw();
         try {
           const installedStatus = await checkOpenclaw();
@@ -437,7 +471,7 @@ export function useSetupFlow(
       // 原样展示到 statusMessage 上，与 install_* 的呈现形态完全一致。
       patchStep("gateway", "running", t("setup.preparingGateway"));
       setSetupStep("install-openclaw");
-      report(t("setup.preparingGateway"), 55);
+      reportPhase("gatewayPrepare", t("setup.preparingGateway"));
       try {
         await prepareGateway();
       } catch (e) {
@@ -446,7 +480,7 @@ export function useSetupFlow(
       }
       if (!isRunActive(runId)) return;
       patchStep("gateway", "pending", t("setup.installCompleteGatewayPending", "Gateway 配置已准备，点击启动 Gateway 继续。"));
-      report(t("setup.installComplete", "必需组件已安装完成"), 68);
+      reportPhase("awaitingGatewayStart", t("setup.installComplete", "必需组件已安装完成"));
       setSetupStep("install-complete");
     } catch (err: any) {
       if (!isRunActive(runId)) return;
@@ -455,11 +489,12 @@ export function useSetupFlow(
       report(msg);
       setSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, t, report, setNeedsGit, setSteps,
+  }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, reportPhase, setNeedsGit, setSteps,
       waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
+    resetProgress();
     clearSetupLogs();
     setSteps([...INITIAL_DOCKER_STEPS]);
     try {
@@ -493,7 +528,7 @@ export function useSetupFlow(
       report(err?.message || String(err));
       setSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, t, report, setSteps,
+  }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, setSteps,
       waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs]);
 
   const selectMode = useCallback((mode: "native" | "docker") => {
