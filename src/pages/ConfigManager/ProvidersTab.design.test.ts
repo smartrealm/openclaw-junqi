@@ -30,3 +30,14 @@ test('the add-service dialog remains compact and exposes both workflow steps', a
   assert.match(dialog, /role="dialog"/);
   assert.doesNotMatch(dialog, /rounded-2xl/);
 });
+
+test('the providers overview uses one compact summary instead of stat cards', async () => {
+  const source = await read('./ProvidersTab.tsx');
+  const overview = source.slice(
+    source.indexOf('{/* ── A) Overview Hero Card'),
+    source.indexOf('{/* ── B) Unified Provider Cards'),
+  );
+
+  assert.match(overview, /data-testid="provider-compact-summary"/);
+  assert.doesNotMatch(overview, /<StatCard/);
+});

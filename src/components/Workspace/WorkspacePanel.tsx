@@ -18,6 +18,7 @@ import {
   type FsEntry, type ImagePreview,
 } from '@/services/workspaceFs';
 import { loadCodeMirrorLanguage } from '@/utils/codeMirrorLanguages';
+import { showConfirm } from '@/components/shared/AlertDialog';
 
 interface OpenFile {
   entry: FsEntry;
@@ -90,14 +91,9 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
     };
   }, [open?.entry.name, open?.entry.extension, open?.image, open?.error]);
 
-  const openFile = useCallback(async (entry: FsEntry) => {
+  const loadFile = useCallback(async (entry: FsEntry) => {
     if (!root) return;
     setSaveError(null);
-    // Guard unsaved edits before switching files.
-    const cur = openRef.current;
-    if (cur && cur.image === null && cur.error === null && cur.content !== cur.saved) {
-      if (!window.confirm(t('workspace.discardUnsavedConfirm', 'Discard unsaved changes in "{{name}}" and open another file?', { name: cur.entry.name }))) return;
-    }
     setLoadingFile(true);
     try {
       if (isImageExt(entry.extension)) {
@@ -113,6 +109,19 @@ export function WorkspacePanel({ onClose, agentId: agentIdProp, rootOverride }: 
       setLoadingFile(false);
     }
   }, [root, t]);
+
+  const openFile = useCallback((entry: FsEntry) => {
+    const cur = openRef.current;
+    if (cur && cur.image === null && cur.error === null && cur.content !== cur.saved) {
+      showConfirm(
+        t('workspace.discardUnsavedTitle', 'Unsaved changes'),
+        t('workspace.discardUnsavedConfirm', 'Discard unsaved changes in "{{name}}" and open another file?', { name: cur.entry.name }),
+        () => { void loadFile(entry); },
+      );
+      return;
+    }
+    void loadFile(entry);
+  }, [loadFile, t]);
 
   const dirty = !!open && open.image === null && open.error === null && open.content !== open.saved;
 

@@ -14,9 +14,8 @@ import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { getDirection } from '@/i18n';
+import { isGatewayOptionalPath } from '@/utils/gatewayOptionalRoutes';
 
-/** Pages that work without Gateway connection */
-const OFFLINE_PAGES = ['/settings', '/terminal', '/welcome', '/config', '/openclaw-commands'];
 const CommandPalette = lazy(() => import('@/components/CommandPalette').then(m => ({ default: m.CommandPalette })));
 const PetBreakOverlay = lazy(() => import('@/pet/PetBreakOverlay').then(m => ({ default: m.PetBreakOverlay })));
 const OfflineOverlay = lazy(() => import('@/components/OfflineOverlay').then(m => ({ default: m.OfflineOverlay })));
@@ -91,7 +90,7 @@ export function AppLayout() {
   // Show offline overlay on pages that need Gateway, when not connected.
   // A 600ms grace period prevents the overlay from flashing on brief
   // disconnect/reconnect cycles (e.g. when the user clicks "重连").
-  const isOfflinePage = OFFLINE_PAGES.some((path) => matchPath(`${path}/*`, location.pathname) !== null);
+  const isOfflinePage = isGatewayOptionalPath(location.pathname);
   const wantsOffline = !connected && !isOfflinePage;
   const [showOffline, setShowOffline] = useState(false);
   useEffect(() => {

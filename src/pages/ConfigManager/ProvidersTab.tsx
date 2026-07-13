@@ -27,7 +27,7 @@ import {
   type ProviderCatalogEntry,
   type ProviderTab,
 } from './providerTemplates';
-import { MaskedInput, ChipList, ChipInput, StatCard } from './components';
+import { MaskedInput, ChipList, ChipInput } from './components';
 import { buildProviderSubmissionModelIds } from './providerModelSelection';
 import { gateway } from '@/services/gateway';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
@@ -3216,13 +3216,22 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
           </button>
         </div>
 
-        {/* stats row */}
-        <div className="flex gap-5 p-3.5 bg-aegis-surface border border-aegis-border rounded-xl">
-          <StatCard value={uniqueProviderCount} label={t('config.providers')} colorClass="text-aegis-primary" />
-          <div className="w-px bg-aegis-border" />
-          <StatCard value={modelCount} label={t('config.models')}  colorClass="text-blue-400" />
-          <div className="w-px bg-aegis-border" />
-          <StatCard value={aliasCount} label={t('config.aliases')} colorClass="text-purple-400" />
+        {/* Compact summary keeps the overview scannable without another row of cards. */}
+        <div
+          className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-aegis-border pt-3 text-xs text-aegis-text-muted"
+          aria-label={t('config.providers')}
+          data-testid="provider-compact-summary"
+        >
+          {[
+            [uniqueProviderCount, t('config.providers')],
+            [modelCount, t('config.models')],
+            [aliasCount, t('config.aliases')],
+          ].map(([value, label]) => (
+            <span key={String(label)} className="inline-flex items-baseline gap-1.5">
+              <strong className="text-sm font-semibold tabular-nums text-aegis-text">{value}</strong>
+              <span>{label}</span>
+            </span>
+          ))}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">

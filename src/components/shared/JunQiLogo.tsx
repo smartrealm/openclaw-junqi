@@ -5,7 +5,7 @@ import lightLogoUrl from '@/assets/brand/daxia-group-light.png';
 import darkLogoUrl from '@/assets/brand/daxia-group-dark.png';
 import companyLogoUrl from '@/assets/brand/junqi-company-logo.png';
 
-type JunQiLogoVariant = 'full' | 'emblem' | 'lockup';
+type JunQiLogoVariant = 'full' | 'emblem' | 'lockup' | 'company-emblem';
 
 interface JunQiLogoProps {
   variant?: JunQiLogoVariant;
@@ -38,6 +38,25 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
         style={style}
         draggable={false}
       />
+    );
+  }
+
+  if (variant === 'company-emblem') {
+    return (
+      <span
+        role="img"
+        aria-label={title}
+        className={clsx('block shrink-0 overflow-hidden', className)}
+        style={style}
+      >
+        <img
+          src={companyLogoUrl}
+          alt=""
+          aria-hidden="true"
+          className="block h-full w-auto max-w-none object-left dark:brightness-125"
+          draggable={false}
+        />
+      </span>
     );
   }
 

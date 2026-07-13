@@ -2010,6 +2010,7 @@
   "workspace.saveFailed": "فشل الحفظ",
   "workspace.previewFailed": "تعذرت معاينة هذا الملف",
   "workspace.locateFailed": "تعذر تحديد مجلد مساحة عمل هذا الوكيل",
+  "workspace.discardUnsavedTitle": "تغييرات غير محفوظة",
   "workspace.discardUnsavedConfirm": "هل تريد تجاهل التغييرات غير المحفوظة في \"{{name}}\" وفتح ملف آخر؟",
   "agentSettings.showWorkspaceFiles": "فتح ملفات مساحة العمل",
   "agentSettings.hideWorkspaceFiles": "إخفاء ملفات مساحة العمل",

@@ -2811,6 +2811,7 @@
   "workspace.saveFailed": "Save failed",
   "workspace.previewFailed": "Unable to preview this file",
   "workspace.locateFailed": "Unable to locate this agent's workspace directory",
+  "workspace.discardUnsavedTitle": "Unsaved changes",
   "workspace.discardUnsavedConfirm": "Discard unsaved changes in \"{{name}}\" and open another file?",
   "agentSettings.showWorkspaceFiles": "Open workspace files",
   "agentSettings.hideWorkspaceFiles": "Hide workspace files",

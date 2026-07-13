@@ -2835,6 +2835,7 @@
   "workspace.saveFailed": "保存失败",
   "workspace.previewFailed": "无法预览此文件",
   "workspace.locateFailed": "无法定位当前智能体的工作区目录",
+  "workspace.discardUnsavedTitle": "存在未保存的修改",
   "workspace.discardUnsavedConfirm": "「{{name}}」有未保存的修改，放弃更改并打开新文件？",
   "agentSettings.showWorkspaceFiles": "打开工作区文件",
   "agentSettings.hideWorkspaceFiles": "收起工作区文件",
