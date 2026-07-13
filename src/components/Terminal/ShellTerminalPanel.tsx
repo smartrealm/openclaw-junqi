@@ -1,7 +1,7 @@
 import type React from "react";
 import { createPortal } from "react-dom";
 import { APP_PLATFORM } from "./_nezha-platform";
-import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
@@ -30,6 +30,7 @@ import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInput
 import {
   advanceShellLaunchPath,
   applyTerminalToolCallEvent,
+  beginShellRename,
   createShellRunId,
   markStalledTerminalToolCalls,
   migrateShellTitleState,
@@ -38,12 +39,14 @@ import {
   parseJunqiAgentStatusTitle,
   recordClosedTerminalShell,
   resolveShellDisplayTitle,
+  resolveShellRename,
   shellStateFromExit,
   takeRecentlyClosedTerminalShell,
   terminalAgentLaunchCommand,
   type TerminalAgentId,
   type TerminalAgentActivity,
   type TerminalHookEvent,
+  type ShellRenameSession,
   type TerminalToolCall,
   type OpenShellResult,
   type ShellProxyInfo,
@@ -142,12 +145,13 @@ function TabShellItem({
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState('');
+  const [renameSession, setRenameSession] = useState<ShellRenameSession | null>(null);
+  const renaming = renameSession !== null;
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const pendingRenameFrameRef = useRef<number | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (renaming && renameInputRef.current) {
       renameInputRef.current.focus();
       renameInputRef.current.select();
@@ -156,10 +160,14 @@ function TabShellItem({
 
   useEffect(() => {
     if (!renameRequested) return;
-    setRenameValue(title);
-    setRenaming(true);
+    setCtxMenu(null);
+    setRenameSession((current) => current ?? beginShellRename(title));
     onRenameRequestHandled?.();
   }, [onRenameRequestHandled, renameRequested, title]);
+
+  useEffect(() => () => {
+    if (pendingRenameFrameRef.current !== null) cancelAnimationFrame(pendingRenameFrameRef.current);
+  }, []);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -193,17 +201,21 @@ function TabShellItem({
 
   const startRename = (deferred = false) => {
     const open = () => {
-      setRenameValue(title);
-      setRenaming(true);
+      pendingRenameFrameRef.current = null;
+      setRenameSession((current) => current ?? beginShellRename(title));
     };
     setCtxMenu(null);
-    if (deferred) requestAnimationFrame(open);
+    if (pendingRenameFrameRef.current !== null) cancelAnimationFrame(pendingRenameFrameRef.current);
+    if (deferred) pendingRenameFrameRef.current = requestAnimationFrame(open);
     else open();
   };
   const commitRename = () => {
-    onRename?.(renameValue);
-    setRenaming(false);
+    if (!renameSession) return;
+    const result = resolveShellRename(renameSession);
+    setRenameSession(null);
+    if (result.changed) onRename?.(result.value);
   };
+  const cancelRename = () => setRenameSession(null);
 
   return (
     <>
@@ -265,17 +277,19 @@ function TabShellItem({
         {renaming ? (
           <input
             ref={renameInputRef}
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
+            value={renameSession.draft}
+            aria-label={t('terminal.rename', 'Rename terminal')}
+            onChange={(e) => setRenameSession((current) => current ? { ...current, draft: e.target.value } : current)}
             onBlur={commitRename}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
-              if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); }
+              if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
               e.stopPropagation();
             }}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.stopPropagation()}
             style={{
               fontSize: 12,
               background: 'rgb(var(--aegis-surface))',
@@ -297,8 +311,8 @@ function TabShellItem({
             background: "none", border: "none", color: "rgb(var(--aegis-text-dim))",
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: 1, borderRadius: 3, cursor: "pointer",
-            opacity: (hovered || selected) ? 1 : 0,
-            pointerEvents: (hovered || selected) ? "auto" : "none",
+            opacity: !renaming && (hovered || selected) ? 1 : 0,
+            pointerEvents: !renaming && (hovered || selected) ? "auto" : "none",
             transition: "opacity 0.1s, background 0.12s, color 0.12s",
           }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.10)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}

@@ -28,12 +28,16 @@ test('terminal menus use the shared opaque theme surface', () => {
 test('terminal rename disables tab dragging while the input owns focus', () => {
   assert.match(source, /draggable=\{!renaming\}/);
   assert.match(source, /onPointerDown=\{\(e\) => e\.stopPropagation\(\)\}/);
+  assert.match(source, /const \[renameSession, setRenameSession\]/);
+  assert.match(source, /if \(result\.changed\) onRename\?\.\(result\.value\)/);
+  assert.match(source, /cancelRename\(\)/);
 });
 
 test('context-menu rename waits for the menu click to finish before focusing the input', () => {
   assert.match(source, /const startRename = \(deferred = false\) =>/);
-  assert.match(source, /if \(deferred\) requestAnimationFrame\(open\)/);
+  assert.match(source, /if \(deferred\) pendingRenameFrameRef\.current = requestAnimationFrame\(open\)/);
   assert.match(source, /onClick=\{\(\) => startRename\(true\)\}/);
+  assert.match(source, /cancelAnimationFrame\(pendingRenameFrameRef\.current\)/);
 });
 
 test('terminal launcher menu is portaled and populated from detected CLI tools', () => {
