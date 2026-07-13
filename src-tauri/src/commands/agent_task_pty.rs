@@ -466,7 +466,7 @@ pub async fn run_task(
         )
     })?;
 
-    let program = crate::platform::resolve_spawn_program(spec.bin);
+    let program = super::app_settings::get_agent_program(spec.bin);
     let mut cmd = CommandBuilder::new(&program);
     cmd.cwd(&project_path);
     let hook_status = super::hooks::ensure_installed();

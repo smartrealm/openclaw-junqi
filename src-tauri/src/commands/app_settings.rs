@@ -193,6 +193,22 @@ fn load_settings_unlocked() -> AppSettings {
     serde_json::from_str(&raw).unwrap_or_default()
 }
 
+fn agent_program_from_settings(settings: &AppSettings, agent: &str) -> String {
+    let configured = match agent {
+        "codex" => settings.codex_path.trim(),
+        _ => settings.claude_path.trim(),
+    };
+    crate::platform::resolve_spawn_program(if configured.is_empty() {
+        agent
+    } else {
+        configured
+    })
+}
+
+pub fn get_agent_program(agent: &str) -> String {
+    agent_program_from_settings(&load_settings_unlocked(), agent)
+}
+
 #[tauri::command]
 pub async fn load_app_settings() -> Result<AppSettings, String> {
     tokio::task::spawn_blocking(load_settings_unlocked)
@@ -313,5 +329,31 @@ mod tests {
     fn legacy_settings_receive_default_scrollback() {
         let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
         assert_eq!(settings.terminal_scrollback, 1000);
+    }
+
+    #[test]
+    fn configured_agent_program_takes_priority_over_the_default_binary() {
+        let settings = AppSettings {
+            claude_path: "/custom/bin/claude".to_string(),
+            codex_path: "/custom/bin/codex".to_string(),
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            agent_program_from_settings(&settings, "claude"),
+            "/custom/bin/claude"
+        );
+        assert_eq!(
+            agent_program_from_settings(&settings, "codex"),
+            "/custom/bin/codex"
+        );
+    }
+
+    #[test]
+    fn ai_agent_entry_points_use_the_configured_program() {
+        assert!(
+            include_str!("agent_task_pty.rs").contains("app_settings::get_agent_program(spec.bin)")
+        );
+        assert!(include_str!("agent_assist.rs").contains("app_settings::get_agent_program(&agent)"));
+        assert!(include_str!("git_neu.rs").contains("app_settings::get_agent_program(\"codex\")"));
     }
 }

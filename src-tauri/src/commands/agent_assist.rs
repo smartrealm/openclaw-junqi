@@ -293,7 +293,7 @@ pub async fn generate_task_name(
         None
     };
     let prompt = title_prompt(&original_prompt, summary.as_deref());
-    let program = crate::platform::resolve_spawn_program(&agent);
+    let program = super::app_settings::get_agent_program(&agent);
     let mut command = tokio::process::Command::new(program);
     crate::platform::configure_background_command(&mut command);
     if agent == "codex" {

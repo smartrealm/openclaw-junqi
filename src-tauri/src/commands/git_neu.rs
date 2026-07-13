@@ -41,15 +41,15 @@ struct AgentLaunchSpec {
 fn get_agent_launch_spec_helper(agent: &str) -> AgentLaunchSpec {
     match agent {
         "codex" => AgentLaunchSpec {
-            program: crate::platform::resolve_spawn_program("codex"),
+            program: super::app_settings::get_agent_program("codex"),
             extra_env: Vec::new(),
         },
         "claude" => AgentLaunchSpec {
-            program: crate::platform::resolve_spawn_program("claude"),
+            program: super::app_settings::get_agent_program("claude"),
             extra_env: Vec::new(),
         },
         _ => AgentLaunchSpec {
-            program: crate::platform::resolve_spawn_program("claude"),
+            program: super::app_settings::get_agent_program("claude"),
             extra_env: Vec::new(),
         },
     }
