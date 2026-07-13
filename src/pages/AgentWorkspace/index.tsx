@@ -411,6 +411,14 @@ export function AgentWorkspacePage() {
     setOpenDiff(null);
     setOpenFiles([]);
     setActiveFilePath(null);
+    setShowShellTerminal(false);
+    setShowFileSearch(false);
+    setShowProjectSettings(false);
+    setResizingTerminal(false);
+    setResizingRightPanel(false);
+    setEditingTaskId(null);
+    setEditingTaskDetailsId(null);
+    setTaskActionError(null);
   }, [projectPath]);
 
   const startNewTask = useCallback(() => {
@@ -1078,6 +1086,7 @@ export function AgentWorkspacePage() {
               className="absolute -top-1 left-0 z-20 h-2 w-full cursor-row-resize bg-transparent"
             />
             <ShellTerminalPanel
+              key={`agent-workspace-shell:${workspace?.id ?? projectPath}`}
               projectPath={currentGitPath}
               projectId={`agent-workspace:${workspace?.id ?? 'default'}`}
               onClose={() => setShowShellTerminal(false)}

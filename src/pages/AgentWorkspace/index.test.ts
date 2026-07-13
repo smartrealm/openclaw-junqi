@@ -14,3 +14,10 @@ test('deleting an active task surfaces cancellation failures', () => {
   assert.match(source, /取消任务失败/);
   assert.match(source, /remove_task_worktree/);
 });
+
+test('switching projects cannot leak project-scoped overlays or terminals', () => {
+  assert.match(source, /setShowShellTerminal\(false\)/);
+  assert.match(source, /setShowFileSearch\(false\)/);
+  assert.match(source, /setShowProjectSettings\(false\)/);
+  assert.match(source, /key=\{`agent-workspace-shell:/);
+});
