@@ -114,6 +114,7 @@ interface TabShellItemProps {
   onClose: () => void;
   onCloseOthers?: () => void;
   onCloseToRight?: () => void;
+  onCloseAll?: () => void;
   onRename?: (name: string) => void;
   onDuplicate?: () => void;
   onMoveToNewWindow?: () => void;
@@ -130,7 +131,7 @@ interface TabShellItemProps {
 
 function TabShellItem({
   title, status, exitCode, selected, index, totalCount,
-  onSelect, onClose, onCloseOthers, onCloseToRight, onRename,
+  onSelect, onClose, onCloseOthers, onCloseToRight, onCloseAll, onRename,
   onDuplicate, onMoveToNewWindow, onSplitH, onSplitV, onRevealDirectory,
   onDragStart, onDragEnter, onDragEnd, onExternalDrop, renameRequested = false, onRenameRequestHandled,
 }: TabShellItemProps) {
@@ -159,11 +160,23 @@ function TabShellItem({
 
   useEffect(() => {
     if (!ctxMenu) return;
-    const handler = (event: MouseEvent) => {
+    const dismissOutside = (event: MouseEvent) => {
       if (!contextMenuRef.current?.contains(event.target as Node)) setCtxMenu(null);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCtxMenu(null);
+    };
+    const dismiss = () => setCtxMenu(null);
+    document.addEventListener('mousedown', dismissOutside);
+    window.addEventListener('keydown', dismissOnEscape);
+    window.addEventListener('resize', dismiss);
+    window.addEventListener('blur', dismiss);
+    return () => {
+      document.removeEventListener('mousedown', dismissOutside);
+      window.removeEventListener('keydown', dismissOnEscape);
+      window.removeEventListener('resize', dismiss);
+      window.removeEventListener('blur', dismiss);
+    };
   }, [ctxMenu]);
 
   const menuItemStyle: React.CSSProperties = {
@@ -288,7 +301,7 @@ function TabShellItem({
           role="menu"
           onMouseDown={(event) => event.stopPropagation()}
           style={{
-          position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 220), top: Math.min(ctxMenu.y, window.innerHeight - 280), zIndex: 2147482000,
+          position: 'fixed', left: Math.max(4, Math.min(ctxMenu.x, window.innerWidth - 220)), top: Math.max(4, Math.min(ctxMenu.y, window.innerHeight - 280)), zIndex: 2147482000,
           background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(255 255 255 / 0.08)',
           borderRadius: 6, boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
           padding: '4px 0', minWidth: 180, display: 'flex', flexDirection: 'column',
@@ -300,6 +313,8 @@ function TabShellItem({
             onClick={() => { if (onCloseOthers && totalCount > 1) { onCloseOthers(); setCtxMenu(null); } }}>{t('terminal.closeOthers', 'Close Others')}</button>
           <button type="button" role="menuitem" disabled={!onCloseToRight || index >= totalCount - 1} style={{ ...menuItemStyle, opacity: onCloseToRight && index < totalCount - 1 ? 1 : 0.45, cursor: onCloseToRight && index < totalCount - 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
             onClick={() => { if (onCloseToRight && index < totalCount - 1) { onCloseToRight(); setCtxMenu(null); } }}>{t('terminal.closeTabsToRight', 'Close Tabs to the Right')}</button>
+          <button type="button" role="menuitem" disabled={!onCloseAll} style={{ ...menuItemStyle, opacity: onCloseAll ? 1 : 0.45, cursor: onCloseAll ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            onClick={() => { if (onCloseAll) { onCloseAll(); setCtxMenu(null); } }}>{t('file.closeAllTabs', 'Close All Tabs')}</button>
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onSplitH && (
             <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
@@ -1942,6 +1957,13 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                       if (activeShellId && toClose.some((s) => s.id === activeShellId)) {
                         setActiveShellId(shell.id);
                       }
+                    }}
+                    onCloseAll={() => {
+                      shells.forEach(recordClosedTerminalShell);
+                      setShells([]);
+                      setActiveShellId(null);
+                      shellRefs.current = {};
+                      onClose();
                     }}
                     onRename={(name) => {
                       const customTitle = normalizeShellCustomTitle(name);
