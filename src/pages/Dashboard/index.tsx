@@ -6,13 +6,14 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   RefreshCw, BarChart3,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
   TrendingUp, TrendingDown,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { PageTransition } from '@/components/shared/PageTransition';
+import { SceneTransition } from '@/components/shared/SceneTransition';
 import { DashboardIcon } from '@/components/shared/DashboardIcon';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore } from '@/stores/chatStore';
@@ -22,6 +23,7 @@ import clsx from 'clsx';
 import { themeColorVar } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { formatTokens } from '@/utils/format';
+import { useSceneRecovery } from '@/motion/sceneRecovery';
 
 import {
   ContextRing, QuickAction, SessionItem, FeedItem, AgentItem,
@@ -84,6 +86,9 @@ export function DashboardPage() {
 
   const [quickActionLoading, setQuickActionLoading] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const sceneRecovery = useSceneRecovery(connected, () => {
+    void refreshAll();
+  });
 
   const connectedSince = useRef<number | null>(null);
 
@@ -338,7 +343,11 @@ export function DashboardPage() {
 
   // ── Render ───────────────────────────────────────────────────
   return (
-    <PageTransition className="min-h-full p-5 space-y-4 max-w-[1280px] mx-auto">
+    <SceneTransition
+      className="min-h-full p-5 space-y-4 max-w-[1280px] mx-auto"
+      recoveryRevision={sceneRecovery.revision}
+      recoveryReason={sceneRecovery.reason}
+    >
 
       {/* ════ SECTION 1: TOP BAR ════ */}
       <div className="flex items-center justify-between">
@@ -355,37 +364,44 @@ export function DashboardPage() {
                 {t('dashboard.title')}
               </h1>
               {/* Status badge — inline with title so the idle/working state reads naturally */}
-              <div className={clsx(
-                'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border',
-                connected
-                  ? agentStatus === 'working'
-                    ? 'bg-aegis-success/[0.08] border-aegis-success/30 text-aegis-success'
-                    : 'bg-aegis-text-dim/[0.06] border-aegis-text-dim/20 text-aegis-text-dim'
-                  : 'bg-aegis-danger/[0.08] border-aegis-danger/30 text-aegis-danger'
-              )}>
-                {/* Dot with ring background — gives the status indicator visual weight */}
-                <span className={clsx(
-                  'relative flex items-center justify-center w-3.5 h-3.5 rounded-full border',
-                  connected
-                    ? agentStatus === 'working'
-                      ? 'border-aegis-success/30 bg-aegis-success/[0.06]'
-                      : 'border-aegis-text-dim/25 bg-aegis-text-dim/[0.04]'
-                    : 'border-aegis-danger/30 bg-aegis-danger/[0.06]'
-                )}>
-                  <span className={clsx(
-                    'w-1.5 h-1.5 rounded-full',
+              <AnimatePresence initial={false} mode="wait">
+                <motion.div
+                  key={`${connected}-${agentStatus}`}
+                  initial={{ opacity: 0, y: -3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 3 }}
+                  transition={{ duration: 0.18 }}
+                  className={clsx(
+                    'flex min-w-[62px] items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border',
                     connected
                       ? agentStatus === 'working'
-                        ? 'bg-aegis-success animate-pulse-soft'
-                        : 'bg-aegis-text-dim'
-                      : 'bg-aegis-danger animate-pulse-soft'
-                  )} />
-                </span>
-                {connected
-                  ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
-                  : t('dashboard.offline')
-                }
-              </div>
+                        ? 'bg-aegis-success/[0.08] border-aegis-success/30 text-aegis-success'
+                        : 'bg-aegis-text-dim/[0.06] border-aegis-text-dim/20 text-aegis-text-dim'
+                      : 'bg-aegis-danger/[0.08] border-aegis-danger/30 text-aegis-danger',
+                  )}
+                >
+                  <span className={clsx(
+                    'relative flex items-center justify-center w-3.5 h-3.5 rounded-full border',
+                    connected
+                      ? agentStatus === 'working'
+                        ? 'border-aegis-success/30 bg-aegis-success/[0.06]'
+                        : 'border-aegis-text-dim/25 bg-aegis-text-dim/[0.04]'
+                      : 'border-aegis-danger/30 bg-aegis-danger/[0.06]',
+                  )}>
+                    <span className={clsx(
+                      'w-1.5 h-1.5 rounded-full',
+                      connected
+                        ? agentStatus === 'working'
+                          ? 'bg-aegis-success animate-pulse-soft'
+                          : 'bg-aegis-text-dim'
+                        : 'bg-aegis-danger animate-pulse-soft',
+                    )} />
+                  </span>
+                  {connected
+                    ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
+                    : t('dashboard.offline')}
+                </motion.div>
+              </AnimatePresence>
             </div>
             <p className="text-[11px] text-aegis-text-dim">{t('dashboard.commandCenter')}</p>
           </div>
@@ -750,6 +766,6 @@ export function DashboardPage() {
         </GlassCard>
       </div>
 
-    </PageTransition>
+    </SceneTransition>
   );
 }

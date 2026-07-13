@@ -34,7 +34,7 @@ test('primary scrolling pages delegate vertical scrolling to AppLayout', async (
   ]);
 
   for (const source of sources) {
-    const pageTransition = source.match(/<PageTransition className="([^"]+)"/)?.[1] ?? '';
+    const pageTransition = source.match(/<(?:Page|Scene)Transition(?:\s|\n)+className="([^"]+)"/)?.[1] ?? '';
     assert.doesNotMatch(pageTransition, /overflow-y-auto/);
     assert.equal(pageTransition.split(/\s+/).includes('h-full'), false);
     assert.match(pageTransition, /min-h-full/);
