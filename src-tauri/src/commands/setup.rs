@@ -1729,12 +1729,19 @@ mod tests {
             .expect("Node.js is required by the desktop build");
         let (_activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
 
-        let result = wait_for_process_activity(
-            &mut child,
-            &mut activity_rx,
-            std::time::Duration::from_secs(1),
+        // Hosted CI runners can take more than a second to schedule a freshly
+        // spawned Node process. Keep the inactivity budget representative of
+        // process startup while retaining a separate hard test deadline.
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            wait_for_process_activity(
+                &mut child,
+                &mut activity_rx,
+                std::time::Duration::from_secs(10),
+            ),
         )
-        .await;
+        .await
+        .expect("process activity wait must finish within the test deadline");
 
         assert!(matches!(result, NpmWaitResult::Exited(Ok(status)) if status.success()));
     }
