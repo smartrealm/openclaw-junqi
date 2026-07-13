@@ -456,6 +456,76 @@ fn extract_targz(
 
 const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(360);
 
+const NPM_NOISY_LOG_PREFIXES: &[&str] = &[
+    "npm verbose",
+    "npm sill",
+    "npm timing",
+    "npm http",
+    "npm notice",
+];
+
+const NPM_SECRET_MARKERS: &[&str] = &[
+    "_authtoken",
+    "authorization",
+    "bearer ",
+    "password",
+    "api_key",
+    "apikey",
+];
+
+/// Keep npm's verbose stream available for inactivity detection without
+/// forwarding internal chatter or credentials into the setup console.
+fn npm_log_line_for_display(line: &str) -> Option<String> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+
+    let lowercase = line.to_ascii_lowercase();
+    if NPM_NOISY_LOG_PREFIXES
+        .iter()
+        .any(|prefix| lowercase.starts_with(prefix))
+    {
+        return None;
+    }
+
+    if NPM_SECRET_MARKERS
+        .iter()
+        .any(|marker| lowercase.contains(marker))
+    {
+        return Some("[authentication details redacted]".into());
+    }
+
+    let redacted = line
+        .split_whitespace()
+        .map(|token| {
+            let contains_url_credentials = token
+                .find("://")
+                .and_then(|scheme_end| token[scheme_end + 3..].find('@'))
+                .is_some();
+            if contains_url_credentials {
+                "[registry URL redacted]"
+            } else {
+                token
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    const MAX_DISPLAY_CHARS: usize = 1_000;
+    if redacted.chars().count() <= MAX_DISPLAY_CHARS {
+        Some(redacted)
+    } else {
+        Some(
+            redacted
+                .chars()
+                .take(MAX_DISPLAY_CHARS)
+                .chain(std::iter::once('…'))
+                .collect(),
+        )
+    }
+}
+
 enum NpmWaitResult {
     Exited(std::io::Result<std::process::ExitStatus>),
     Inactive,
@@ -602,6 +672,7 @@ async fn npm_install_with_fallback(
             "install",
             "-g",
             "--prefer-online",
+            "--loglevel=verbose",
             "--no-fund",
             "--no-audit",
             pkg,
@@ -641,10 +712,9 @@ async fn npm_install_with_fallback(
                 let mut lines = BufReader::new(stdout).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     activity_tx.send_modify(|sequence| *sequence += 1);
-                    let line = line.trim().to_string();
-                    if line.is_empty() || line.starts_with("npm notice") {
+                    let Some(line) = npm_log_line_for_display(&line) else {
                         continue;
-                    }
+                    };
                     emit(&app_c, &step_c, &format!("npm › {}", line), prog_live);
                 }
             })
@@ -660,10 +730,9 @@ async fn npm_install_with_fallback(
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     activity_tx.send_modify(|sequence| *sequence += 1);
-                    let line = line.trim().to_string();
-                    if line.is_empty() || line.starts_with("npm notice") {
+                    let Some(line) = npm_log_line_for_display(&line) else {
                         continue;
-                    }
+                    };
                     if line.contains("TAR_ENTRY_ERROR") && line.contains("ENOENT") {
                         let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
                         // Preserve the first diagnostic but avoid flooding the
@@ -1720,6 +1789,41 @@ pub async fn install_winget_package(package_id: String) -> Result<String, String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npm_log_filter_hides_verbose_transport_noise() {
+        assert_eq!(
+            npm_log_line_for_display("npm verbose cli /usr/bin/node /usr/bin/npm"),
+            None
+        );
+        assert_eq!(
+            npm_log_line_for_display("npm http fetch GET 200 https://registry.npmjs.org/openclaw"),
+            None
+        );
+        assert_eq!(
+            npm_log_line_for_display("npm warn deprecated package@1.0.0"),
+            Some("npm warn deprecated package@1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn npm_log_filter_redacts_credentials() {
+        assert_eq!(
+            npm_log_line_for_display("npm error authorization: Bearer secret-value"),
+            Some("[authentication details redacted]".into())
+        );
+        assert_eq!(
+            npm_log_line_for_display("request https://user:secret@example.com/package failed"),
+            Some("request [registry URL redacted] failed".into())
+        );
+    }
+
+    #[test]
+    fn npm_log_filter_bounds_untrusted_output() {
+        let output = npm_log_line_for_display(&"x".repeat(1_500)).expect("line remains visible");
+        assert_eq!(output.chars().count(), 1_001);
+        assert!(output.ends_with('…'));
+    }
 
     #[tokio::test]
     async fn process_activity_wait_returns_exit_status() {
