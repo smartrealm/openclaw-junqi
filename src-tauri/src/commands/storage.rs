@@ -225,10 +225,9 @@ async fn stop_all_locked(
         let _ =
             run_gateway_service_command(binary, state_dir, config_path, &["gateway", "stop"]).await;
     }
-    crate::commands::gateway_supervisor::transition_runtime(
-        state,
+    state.transition(
         GatewayLifecycle::Stopped,
-        GatewayRuntimeMode::None,
+        Some(GatewayRuntimeMode::None),
         "storage migration: all managed runtimes stopped",
     );
 }

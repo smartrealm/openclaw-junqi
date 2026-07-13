@@ -112,10 +112,9 @@ pub async fn ensure_gateway_running(
     // 1. 本机配置端口已经可用，直接复用。
     if probe_gateway_port(port).await {
         let token = read_gateway_token();
-        crate::commands::gateway_supervisor::transition_runtime(
-            &state,
+        state.transition(
             GatewayLifecycle::Running,
-            GatewayRuntimeMode::External,
+            Some(GatewayRuntimeMode::External),
             "ensure_gateway_running: existing endpoint is healthy",
         );
         push_log(
@@ -229,10 +228,9 @@ pub async fn ensure_gateway_running(
                 match start_docker_gateway_locked(app.clone(), Some(port), None).await {
                     Ok(status) => {
                         docker_token = status.token.or_else(read_docker_gateway_token);
-                        crate::commands::gateway_supervisor::transition_runtime(
-                            &state,
+                        state.transition(
                             GatewayLifecycle::Running,
-                            GatewayRuntimeMode::Docker,
+                            Some(GatewayRuntimeMode::Docker),
                             "ensure_gateway_running: Docker fallback started",
                         );
                     }

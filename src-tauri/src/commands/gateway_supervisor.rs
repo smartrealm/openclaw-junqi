@@ -217,11 +217,7 @@ pub async fn openclaw_doctor_repair(
 pub async fn get_gateway_lifecycle(
     state: tauri::State<'_, GatewayProcess>,
 ) -> Result<GatewayLifecycle, String> {
-    state
-        .lifecycle
-        .lock()
-        .map(|lc| *lc)
-        .map_err(|e| e.to_string())
+    state.runtime_snapshot().map(|snapshot| snapshot.lifecycle)
 }
 
 #[derive(serde::Serialize)]
@@ -237,8 +233,7 @@ pub struct GatewayRuntimeSnapshot {
 pub async fn get_gateway_runtime_snapshot(
     state: tauri::State<'_, GatewayProcess>,
 ) -> Result<GatewayRuntimeSnapshot, String> {
-    let lifecycle = *state.lifecycle.lock().map_err(|e| e.to_string())?;
-    let mode = *state.runtime_mode.lock().map_err(|e| e.to_string())?;
+    let runtime = state.runtime_snapshot()?;
     let port = *state.port.lock().map_err(|e| e.to_string())?;
     let managed_pid = state
         .child
@@ -247,37 +242,11 @@ pub async fn get_gateway_runtime_snapshot(
         .as_ref()
         .and_then(|child| child.id());
     Ok(GatewayRuntimeSnapshot {
-        lifecycle,
-        mode,
+        lifecycle: runtime.lifecycle,
+        mode: runtime.mode,
         port,
         managed_pid,
     })
-}
-
-/// Transition the lifecycle state and push a log entry.
-pub fn transition_lifecycle(state: &GatewayProcess, next: GatewayLifecycle, reason: &str) {
-    if let Ok(mut lc) = state.lifecycle.lock() {
-        *lc = next;
-    }
-    push_log(
-        &state.logs,
-        LogSource::Lifecycle,
-        LogLevel::Info,
-        format!("lifecycle → {:?} ({})", next, reason),
-    );
-}
-
-/// Update lifecycle and runtime ownership as one supervisor-level transition.
-pub fn transition_runtime(
-    state: &GatewayProcess,
-    next: GatewayLifecycle,
-    mode: GatewayRuntimeMode,
-    reason: &str,
-) {
-    if let Ok(mut current_mode) = state.runtime_mode.lock() {
-        *current_mode = mode;
-    }
-    transition_lifecycle(state, next, reason);
 }
 
 #[cfg(test)]

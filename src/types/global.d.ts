@@ -39,7 +39,7 @@ interface AegisAPI {
       error: string | null;
       logs: { stdout: string; stderr: string };
     }>;
-    start: () => Promise<{ success: boolean; error?: string }>;
+    start: () => Promise<{ success: boolean; error?: string; port?: number; token?: string | null }>;
     retry: () => Promise<{ success: boolean; error?: string }>;
     /**
      * Boot-time orchestrator: try native → Docker fallback. Returns the

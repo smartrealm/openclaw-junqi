@@ -31,6 +31,12 @@ pub enum GatewayRuntimeMode {
     Docker,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GatewayRuntimeState {
+    pub lifecycle: GatewayLifecycle,
+    pub mode: GatewayRuntimeMode,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LogLevel {
@@ -83,10 +89,9 @@ pub struct GatewayProcess {
     /// Circular buffer of recent log entries (SPEC §2.4, M6).
     /// Push path evicts the oldest entry once length exceeds LOG_BUFFER_CAP.
     pub logs: Mutex<VecDeque<LogEntry>>,
-    /// Canonical lifecycle state machine.
-    pub lifecycle: Mutex<GatewayLifecycle>,
-    /// Canonical owner/runtime mode for the configured endpoint.
-    pub runtime_mode: Mutex<GatewayRuntimeMode>,
+    /// Canonical lifecycle and ownership state. Kept behind one private lock so
+    /// readers cannot observe a new mode paired with an old lifecycle.
+    runtime: Mutex<GatewayRuntimeState>,
 }
 
 impl GatewayProcess {
@@ -98,9 +103,46 @@ impl GatewayProcess {
             operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             restart_completed_generation: AtomicU64::new(0),
             logs: Mutex::new(VecDeque::with_capacity(LOG_BUFFER_CAP)),
-            lifecycle: Mutex::new(GatewayLifecycle::Stopped),
-            runtime_mode: Mutex::new(GatewayRuntimeMode::None),
+            runtime: Mutex::new(GatewayRuntimeState {
+                lifecycle: GatewayLifecycle::Stopped,
+                mode: GatewayRuntimeMode::None,
+            }),
         }
+    }
+
+    pub fn runtime_snapshot(&self) -> Result<GatewayRuntimeState, String> {
+        self.runtime
+            .lock()
+            .map(|state| *state)
+            .map_err(|e| e.to_string())
+    }
+
+    /// The only canonical Gateway state writer.
+    pub fn transition(
+        &self,
+        lifecycle: GatewayLifecycle,
+        mode: Option<GatewayRuntimeMode>,
+        reason: &str,
+    ) {
+        let applied_mode = match self.runtime.lock() {
+            Ok(mut state) => {
+                state.lifecycle = lifecycle;
+                if let Some(mode) = mode {
+                    state.mode = mode;
+                }
+                state.mode
+            }
+            Err(error) => {
+                eprintln!("GatewayProcess::transition: mutex poisoned: {}", error);
+                return;
+            }
+        };
+        push_log(
+            &self.logs,
+            LogSource::Lifecycle,
+            LogLevel::Info,
+            format!("gateway -> {:?}/{:?} ({})", lifecycle, applied_mode, reason),
+        );
     }
 }
 
@@ -115,6 +157,23 @@ mod operation_gate_tests {
         assert!(state.operation_gate.clone().try_lock_owned().is_err());
         drop(owner);
         assert!(state.operation_gate.clone().try_lock_owned().is_ok());
+    }
+
+    #[test]
+    fn bug_gsc04_transition_updates_lifecycle_and_mode_atomically() {
+        let state = GatewayProcess::new();
+        state.transition(
+            GatewayLifecycle::Running,
+            Some(GatewayRuntimeMode::ManagedChild),
+            "test",
+        );
+        assert_eq!(
+            state.runtime_snapshot().unwrap(),
+            GatewayRuntimeState {
+                lifecycle: GatewayLifecycle::Running,
+                mode: GatewayRuntimeMode::ManagedChild,
+            }
+        );
     }
 }
 

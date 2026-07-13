@@ -20,7 +20,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
-import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { notifications } from '@/services/notifications';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
@@ -390,7 +390,7 @@ export function SettingsPageFull() {
     setTestResult(null);
     try {
       const { url, token } = await resolveConnectionUrl();
-      gateway.connect(url, token);
+      gatewayManager.connect(url, token);
       // Poll the store for up to 5 s (50 × 100 ms) instead of a fixed 2.5 s sleep.
       // This resolves faster on quick connections and is more reliable on slow ones.
       let connected = false;
@@ -408,7 +408,7 @@ export function SettingsPageFull() {
 
   const handleReconnect = async () => {
     const { url, token } = await resolveConnectionUrl();
-    gateway.connect(url, token);
+    gatewayManager.connect(url, token);
   };
 
   const handleSaveConnection = () => {
@@ -417,7 +417,7 @@ export function SettingsPageFull() {
     setConnectionDirty(false);
     // Reconnect with new settings
     const url = editUrl.trim() || 'ws://127.0.0.1:18789';
-    gateway.connect(url, editToken.trim());
+    gatewayManager.connect(url, editToken.trim());
   };
 
   // Toggle switch — unified design (used everywhere in settings)

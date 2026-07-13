@@ -1,0 +1,16 @@
+# Gateway 单核心收敛计划
+
+| 阶段 | 缺陷 | 实施 |
+| --- | --- | --- |
+| A | BUG-GSC02/03/05 | 修正 FSM 优先级；Manager 的所有状态提交统一进入 `dispatch` |
+| A | BUG-GSC01 | 将 App 的恢复步骤收进 Manager，移除调用方直接拼接的 lifecycle 操作 |
+| B | BUG-GSC04 | 合并 Rust lifecycle/mode 状态锁，只保留 `GatewayProcess::transition` 写入口 |
+| C | BUG-GSC06 | 每个缺陷增加行为回归测试和禁止旁路的边界断言 |
+| D | 全部 | TypeScript、前端测试、Rust 测试、边界检查、生产构建与真实 Tauri 验证 |
+
+## 唯一性约束
+
+1. 前端只有 `GatewayConnectionManager.dispatch` 能提交编排状态。
+2. UI 和 App 不直接组合 Gateway 进程恢复步骤。
+3. Rust canonical 状态字段私有，只有 `GatewayProcess::transition` 能写入 lifecycle/mode。
+4. WebSocket 的协议内退避属于传输实现，不得修改 Gateway 进程 canonical 状态。

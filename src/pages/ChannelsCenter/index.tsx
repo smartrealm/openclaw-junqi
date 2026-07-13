@@ -5,6 +5,7 @@ import { AlertCircle, Bot, Check, ChevronDown, Copy, ExternalLink, ListFilter, L
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import type { LogEntry } from '@/api/tauri-commands';
 import type { AgentConfig, GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
 import { CHANNEL_TEMPLATES, getChannelTemplate, type ChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
@@ -621,10 +622,7 @@ export function ChannelsCenterPage() {
     if (gatewayActionBusy) return;
     setGatewayActionBusy(true);
     try {
-      if (!window.aegis?.gateway?.retry) {
-        throw new Error('Gateway restart API unavailable');
-      }
-      const result = await window.aegis.gateway.retry();
+      const result = await gatewayManager.restart();
       if (!result?.success) {
         throw new Error(result?.error || 'Gateway restart failed');
       }

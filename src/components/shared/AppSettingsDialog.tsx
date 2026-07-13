@@ -23,7 +23,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { setThemeWithTransition } from '@/motion/themeTransition';
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
-import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { notifications } from '@/services/notifications';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
 import { SkinPreview } from '@/pet/SkinPreview';
@@ -430,8 +430,8 @@ function ConnectPanel() {
   const [testing, setTesting] = useState(false);
   const [testOk, setTestOk] = useState<boolean|null>(null);
   const dirty = editUrl !== gatewayUrl || editToken !== gatewayToken;
-  const handleSave = () => { setGatewayUrl(editUrl.trim()); setGatewayToken(editToken.trim()); gateway.connect(editUrl.trim()||'ws://127.0.0.1:18789',editToken.trim()); };
-  const handleTest = async () => { setTesting(true); setTestOk(null); try { gateway.connect(editUrl.trim()||'ws://127.0.0.1:18789',editToken.trim()); await new Promise(r=>setTimeout(r,2500)); setTestOk(useChatStore.getState().connected); } catch { setTestOk(false); } finally { setTesting(false); } };
+  const handleSave = () => { setGatewayUrl(editUrl.trim()); setGatewayToken(editToken.trim()); gatewayManager.connect(editUrl.trim()||'ws://127.0.0.1:18789',editToken.trim()); };
+  const handleTest = async () => { setTesting(true); setTestOk(null); try { gatewayManager.connect(editUrl.trim()||'ws://127.0.0.1:18789',editToken.trim()); await new Promise(r=>setTimeout(r,2500)); setTestOk(useChatStore.getState().connected); } catch { setTestOk(false); } finally { setTesting(false); } };
   return (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.connect', 'Connect')}</h2>

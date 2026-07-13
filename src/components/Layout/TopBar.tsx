@@ -140,8 +140,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
   const onStatusClick = useCallback(() => {
     if (status === 'working') navigate('/chat');
     else if (status === 'disconnected') {
-      try { gatewayManager.reset(); } catch {}
-      try { void window.aegis?.gateway?.retry?.(); } catch {}
+      void gatewayManager.restart();
     }
   }, [status, navigate]);
 

@@ -42,12 +42,58 @@ test('BUG-GL03 desktop registers one OS-level application instance', () => {
 });
 
 test('BUG-GL04 diagnostics expose lifecycle and runtime ownership together', () => {
+  const state = source('src-tauri/src/state/gateway_process.rs');
   const supervisor = source('src-tauri/src/commands/gateway_supervisor.rs');
   const panel = source('src/components/settings/GatewayLifecyclePanel.tsx');
+  const processFields = state.slice(
+    state.indexOf('pub struct GatewayProcess'),
+    state.indexOf('impl GatewayProcess'),
+  );
+  assert.match(state, /runtime: Mutex<GatewayRuntimeState>/);
+  assert.match(state, /pub fn transition\(/);
+  assert.doesNotMatch(processFields, /pub lifecycle:|pub runtime_mode:/);
   assert.match(supervisor, /GatewayRuntimeSnapshot/);
   assert.match(supervisor, /lifecycle:[\s\S]*mode:[\s\S]*managed_pid/);
   assert.match(panel, /get_gateway_runtime_snapshot/);
   assert.match(panel, /runtimeModeLabel/);
+});
+
+test('BUG-GSC01 application lifecycle requests use the manager core', () => {
+  const app = source('src/App.tsx');
+  const channels = source('src/pages/ChannelsCenter/index.tsx');
+  const settings = source('src/pages/SettingsPage.tsx');
+  const palette = source('src/components/CommandPalette.tsx');
+  const setup = source('src/hooks/useSetupFlow.ts');
+  assert.doesNotMatch(app, /gateway\.disconnect\(\)/);
+  assert.doesNotMatch(app, /window\.aegis\??\.gateway\??\.(?:retry|ensureRunning)\??\.\(/);
+  assert.doesNotMatch(app, /gateway\.reconnectWithToken\(/);
+  assert.match(app, /gatewayManager\.ensureRunning\(\)/);
+  assert.match(app, /gatewayManager\.restart\(\)/);
+  assert.match(channels, /gatewayManager\.restart\(\)/);
+  assert.match(setup, /gatewayManager\.startForSetup\(\)/);
+  assert.match(setup, /gatewayManager\.startDockerForSetup\(\)/);
+  assert.doesNotMatch(setup, /await startGateway\(\)/);
+  assert.doesNotMatch(setup, /await startDockerGateway\(\)/);
+  assert.doesNotMatch(settings, /gateway\.connect\(/);
+  assert.doesNotMatch(palette, /gateway\.connect\(/);
+});
+
+test('BUG-GSC03 manager has one state transition and emission core', () => {
+  const manager = source('src/services/gateway/GatewayConnectionManager.ts');
+  assert.equal((manager.match(/this\.fsm\.transition\(/g) ?? []).length, 1);
+  assert.equal((manager.match(/this\.emit\(\)/g) ?? []).length, 1);
+  assert.doesNotMatch(manager, /if \(status\.retrying\)[\s\S]{0,120}return/);
+});
+
+test('BUG-GSC04 Rust canonical state has one atomic writer', () => {
+  const state = source('src-tauri/src/state/gateway_process.rs');
+  const supervisor = source('src-tauri/src/commands/gateway_supervisor.rs');
+  const gatewayCommand = source('src-tauri/src/commands/gateway.rs');
+  assert.equal((state.match(/self\.runtime/g) ?? []).length, 2);
+  assert.match(state, /pub fn runtime_snapshot\([\s\S]*self\.runtime\.lock/);
+  assert.match(state, /pub fn transition\([\s\S]*self\.runtime\.lock/);
+  assert.doesNotMatch(supervisor, /transition_lifecycle|transition_runtime|\.runtime\.lock/);
+  assert.doesNotMatch(gatewayCommand, /runtime_mode|\.lifecycle\.lock|transition_lifecycle|transition_runtime/);
 });
 
 test('BUG-ST01 storage bootstrap is stable and environment overrides remain supported', () => {

@@ -11,7 +11,7 @@ import {
   checkNode, checkGit, checkOpenclaw,
   installNode, installOpenclaw,
   prepareGateway,
-  startGateway, checkDocker, pullOpenclawImage, startDockerGateway,
+  checkDocker, pullOpenclawImage,
   type DockerStatus,
   type OpenclawStatus,
 } from "@/api/tauri-commands";
@@ -404,7 +404,6 @@ export function useSetupFlow(
     try {
       const target = await invoke<{ port: number; token: string | null }>("detect_gateway_config");
       cacheGatewayTarget(target.port, target.token);
-      gateway.disconnect();
       gatewayManager.reconnect();
     } catch {
       // The normal connection resolver can still read settings/config later.
@@ -489,7 +488,7 @@ export function useSetupFlow(
       setSteps([{ id: "gateway", label: "Gateway", status: "running", detail: t("setup.startingGateway") }]);
     }
     try {
-      const status: any = await startGateway();
+      const status: any = await gatewayManager.startForSetup();
       cacheGatewayTarget(status?.port, status?.token);
       patchStep("gateway", "running", t("setup.gatewayWaitingPort", "Gateway 进程已启动，正在等待端口就绪…"));
       reportPhase("gatewayPort", t("setup.gatewayWaitingPort", "Gateway 进程已启动，正在等待端口就绪…"));
@@ -632,7 +631,7 @@ export function useSetupFlow(
 
       patchStep("container", "running", t("setup.startingContainer"));
       report(t("setup.startingContainer"), 50);
-      const gatewayStatus = await startDockerGateway();
+      const gatewayStatus = await gatewayManager.startDockerForSetup();
       if (!isRunActive(runId)) return;
       cacheGatewayTarget(gatewayStatus.port, gatewayStatus.token);
       setGatewayRunning(true);

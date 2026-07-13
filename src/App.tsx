@@ -284,7 +284,6 @@ export default function App() {
     // Allow the auto-recovery effect to re-arm if the user clicks "reconnect"
     // stays true after the first recovery attempt and blocks all subsequent retries.
     bootRecoveryStartedRef.current = false;
-    try { gateway.disconnect(); } catch {}
     emitGatewayProgress('Detecting, connecting, and syncing runtime state…', syncingProgress, 'gateway.progress.detectConnectSync');
     // Use reconnect() instead of reset() — triggers an immediate status probe
     // so we don't wait up to 2s for the periodic poller to drive the FSM.
@@ -304,13 +303,12 @@ export default function App() {
     addBootRecoveryLog('Restarting Gateway service…');
     emitGatewayProgress('Restarting OpenClaw Gateway…', 0.15, 'gateway.progress.restart');
     try {
-      const result = await window.aegis.gateway.retry();
+      const result = await gatewayManager.restart();
       if (result?.success === false) {
         throw new Error(result.error || 'Gateway restart failed');
       }
       addBootRecoveryLog('Gateway restart command completed');
       emitGatewayProgress('Gateway service restarted, reconnecting…', 0.94, 'gateway.progress.restartDone');
-      triggerGatewayReconnect('after-restart', 0.95);
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -332,7 +330,7 @@ export default function App() {
     } finally {
       setBootRecoveryRestarting(false);
     }
-  }, [addBootRecoveryLog, emitGatewayProgress, triggerGatewayReconnect]);
+  }, [addBootRecoveryLog, emitGatewayProgress]);
 
   const openBootLogs = useCallback(() => {
     try { window.location.hash = '#/logs'; } catch {}
@@ -365,7 +363,7 @@ export default function App() {
       addBootRecoveryLog(`Starting Gateway recovery immediately (${reason})…`);
       emitGatewayProgress('Starting OpenClaw Gateway…', 0.20, 'gateway.progress.starting');
       try {
-        const result = await window.aegis?.gateway?.ensureRunning?.();
+        const result = await gatewayManager.ensureRunning();
         if (cancelled || useChatStore.getState().connected) return;
         if (result?.healthy) {
           addBootRecoveryLog(`Gateway healthy (${result.mode ?? 'native'}); reconnecting WebSocket`);
@@ -374,8 +372,6 @@ export default function App() {
             0.75,
             'gateway.progress.gatewayHealthy',
           );
-          try { gateway.disconnect(); } catch {}
-          try { gatewayManager.reconnect(); } catch {}
           return;
         }
         addBootRecoveryLog(`ensure_gateway_running returned unhealthy: ${result?.error ?? 'unknown error'}`);
@@ -739,13 +735,7 @@ export default function App() {
           });
       }
       if (providerChanged) {
-        try { gateway.disconnect(); } catch {}
-        void window.aegis?.gateway?.ensureRunning?.()
-          .then((r: any) => {
-            if (r?.healthy) {
-              try { gatewayManager.reconnect(); } catch {}
-            }
-          })
+        void gatewayManager.ensureRunning()
           .catch(() => { /* handled by status poller */ });
       }
       setTimeout(() => loadAvailableModels(), 1500);
@@ -783,8 +773,6 @@ export default function App() {
       void (async () => {
         bootRecoveryStartedRef.current = false;
         addBootRecoveryLog(`Gateway recovery requested (${source}, ${action})`);
-        try { gateway.disconnect(); } catch {}
-
         try {
           if (action === 'restart') {
             await restartGatewayFromBoot();
@@ -793,7 +781,7 @@ export default function App() {
 
           emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.10, 'gateway.progress.reconnect');
           emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
-          const result = await window.aegis?.gateway?.ensureRunning?.();
+          const result = await gatewayManager.ensureRunning();
           addBootRecoveryLog(result?.healthy
             ? `Gateway healthy (${result.mode ?? 'native'}) — reconnecting`
             : 'ensure_gateway_running returned unhealthy — restarting');
@@ -804,9 +792,7 @@ export default function App() {
             result?.healthy ? 0.75 : 0.45,
             result?.healthy ? 'gateway.progress.gatewayHealthy' : 'gateway.progress.ensureUnhealthy',
           );
-          if (result?.healthy) {
-            triggerGatewayReconnect(`manual-${source}`, 0.82);
-          } else {
+          if (!result?.healthy) {
             await restartGatewayFromBoot();
           }
         } catch (error) {
@@ -850,7 +836,7 @@ export default function App() {
       await window.aegis.config.save({ gatewayToken: token });
     }
     // Reconnect gateway with new token
-    gateway.reconnectWithToken(token);
+    gatewayManager.reconnectWithToken(token);
     setNeedsPairing(false);
     pairingTriggeredRef.current = false;
   }, []);
@@ -864,9 +850,8 @@ export default function App() {
   }, []);
 
   const handleGatewayRetry = useCallback(() => {
-    if (!window.aegis?.gateway?.retry) return;
     setGatewayRetrying(true);
-    void window.aegis.gateway.retry();
+    void gatewayManager.restart();
   }, []);
 
   const handleGatewayRecovered = useCallback(() => {
