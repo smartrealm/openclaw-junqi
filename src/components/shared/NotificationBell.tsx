@@ -20,6 +20,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 interface NotificationItem {
   id: string;
@@ -53,7 +54,9 @@ interface NotificationEntryProps {
 
 function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryProps) {
   const { t } = useTranslation();
+  const language = useSettingsStore((state) => state.language);
   const [hov, setHov] = useState(false);
+  const body = language === 'zh' && item.bodyZh ? item.bodyZh : item.body;
 
   const handleClick = () => {
     if (!item.isRead) onMarkRead(item.id);
@@ -65,7 +68,7 @@ function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryPro
       onClick={handleClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      className="px-3 py-2.5 border-b flex items-start gap-2.5 cursor-pointer transition-colors"
+      className={`px-3 py-2.5 border-b flex items-start gap-2.5 transition-colors ${item.url ? 'cursor-pointer' : 'cursor-default'}`}
       style={{
         borderColor: 'rgb(var(--aegis-overlay) / 0.06)',
         background: hov ? 'rgb(var(--aegis-overlay) / 0.04)' : item.isRead ? 'transparent' : 'rgb(var(--aegis-primary) / 0.06)',
@@ -97,22 +100,8 @@ function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryPro
             lineHeight: 1.5,
           }}
         >
-          {item.body}
+          {body}
         </div>
-        {item.bodyZh && (
-          <div
-            className="text-[11.5px] text-aegis-text-muted leading-snug overflow-hidden mt-1"
-            style={{
-              display: '-webkit-box',
-              WebkitLineClamp: 5,
-              WebkitBoxOrient: 'vertical',
-              whiteSpace: 'pre-line',
-              lineHeight: 1.5,
-            }}
-          >
-            {item.bodyZh}
-          </div>
-        )}
         <div className="text-[10.5px] text-aegis-text-dim mt-1">
           {item.createdAt}
         </div>
@@ -238,7 +227,7 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-[min(720px,calc(100vw-48px))] max-h-[calc(100vh-96px)] flex flex-col rounded-[14px] overflow-hidden"
+            className="w-[min(920px,calc(100vw-48px),calc((100vh-96px)*4/3))] max-h-[calc(100vh-96px)] flex flex-col rounded-[14px] overflow-hidden"
             style={{
               background: 'rgb(var(--aegis-card))',
               border: '1px solid rgb(var(--aegis-border))',
