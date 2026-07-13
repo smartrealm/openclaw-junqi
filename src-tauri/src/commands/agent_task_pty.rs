@@ -476,8 +476,9 @@ pub async fn run_task(
             cmd.arg(argument);
         }
     }
-    // Codex resume is a subcommand and does not accept the original prompt.
-    if !prompt.is_empty() && !(agent == "codex" && resume_args.is_some()) {
+    // Resume continues the existing conversation; neither Claude nor Codex
+    // should receive the original task prompt a second time.
+    if !prompt.is_empty() && resume_args.is_none() {
         if let Some(flag) = spec.prompt_flag {
             cmd.arg(flag);
         }

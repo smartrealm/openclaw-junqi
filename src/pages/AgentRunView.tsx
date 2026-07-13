@@ -913,7 +913,7 @@ export function AgentRunView({
   // ── Start / Cancel ───────────────────────────────────────────────────────
   const handleStart = useCallback(async (promptOverride?: string) => {
     const basePrompt = (promptOverride ?? prompt).trim();
-    if ((!basePrompt && attachedImages.length === 0 && textAttachments.length === 0) || running) return;
+    if ((!basePrompt && attachedImages.length === 0 && textAttachments.length === 0 && !resumeIdRef.current) || running) return;
     const taskPrompt = planMode && basePrompt ? `${basePrompt}\n\nPlease use plan mode.` : basePrompt;
     setError(null); clearTerm(); setStatus('running'); setRunning(true); setMetrics(null); setDiffStats(null);
     if (workspaceTaskId) {
@@ -1094,10 +1094,13 @@ export function AgentRunView({
 
   const handleResume = useCallback(() => {
     const resumeSessionId = sessionId ?? sessionPath?.split('/').pop()?.replace('.jsonl', '') ?? '';
+    if (!resumeSessionId) return;
     resumeIdRef.current = resumeSessionId;
-    setStatus('idle'); setRunning(false); setError(null); setMetrics(null); setDiffStats(null);
-    setPrompt(`[Resuming conversation ${resumeSessionId}]`);
-  }, [sessionId, sessionPath]);
+    setError(null);
+    setMetrics(null);
+    setDiffStats(null);
+    void handleStart(prompt);
+  }, [handleStart, prompt, sessionId, sessionPath]);
 
   const handleReconnect = useCallback(() => {
     setStatus('running');
@@ -1221,9 +1224,8 @@ export function AgentRunView({
         const resumeSessionId = m?.[1] ?? m?.[2];
         if (resumeSessionId) {
           resumeIdRef.current = resumeSessionId;
-          setStatus('idle');
           setError(null);
-          setPrompt(`[Resuming ${agent} session ${resumeSessionId}]`);
+          void handleStart(`[Resuming ${agent} session ${resumeSessionId}]`);
         }
       }} />}
       {(running || isDone) && (
