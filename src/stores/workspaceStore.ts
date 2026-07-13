@@ -223,7 +223,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           return hydrated;
         }
 
-        const fresh = newWorkspace('Workspace', fallback);
+        const fresh = newWorkspace(undefined, fallback);
         set({ workspaces: [fresh], activeWorkspaceId: fresh.id });
         return fresh;
       },
@@ -326,7 +326,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         }
         const remaining = state.workspaces.filter((workspace) => !closingIds.has(workspace.id));
         if (remaining.length === 0) {
-          const fresh = newWorkspace('Workspace', state.defaultWorkingDirectory);
+          const fresh = newWorkspace(undefined, state.defaultWorkingDirectory);
           return { workspaces: [fresh], activeWorkspaceId: fresh.id };
         }
         const next = remaining[Math.min(index, remaining.length - 1)];

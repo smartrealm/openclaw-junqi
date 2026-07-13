@@ -18,6 +18,7 @@ const CANDIDATES: &[(&str, Label, Icon)] = &[
     ("agy", "Antigravity CLI", ""),
     ("kimi", "Kimi Code", ""),
     ("opencode", "OpenCode", ""),
+    ("droid", "Droid", ""),
     ("aider", "Aider", ""),
     ("qwen", "Qwen CLI", ""),
     ("ollama", "Ollama", ""),

@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import emblemUrl from '@/assets/brand/daxia-group-emblem.png';
 import lightLogoUrl from '@/assets/brand/daxia-group-light.png';
 import darkLogoUrl from '@/assets/brand/daxia-group-dark.png';
+import companyLogoUrl from '@/assets/brand/junqi-company-logo.png';
 
 type JunQiLogoVariant = 'full' | 'emblem' | 'lockup';
 
@@ -28,13 +29,25 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
     );
   }
 
+  if (variant === 'lockup') {
+    return (
+      <img
+        src={companyLogoUrl}
+        alt={title}
+        className={clsx('block h-full w-full object-contain object-left dark:brightness-150 dark:saturate-75', className)}
+        style={style}
+        draggable={false}
+      />
+    );
+  }
+
   return (
     <span
       role="img"
       aria-label={title}
       className={clsx(
         'relative block min-w-0',
-        variant === 'lockup' ? 'h-8 w-full' : 'aspect-[4001/1151] w-full',
+        'aspect-[4001/1151] w-full',
         className,
       )}
       style={style}
@@ -45,7 +58,7 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
         aria-hidden="true"
         className={clsx(
           'absolute inset-0 block h-full w-full object-contain dark:hidden',
-          variant === 'lockup' ? 'object-left' : 'object-center',
+          'object-center',
         )}
         draggable={false}
       />
@@ -55,7 +68,7 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
         aria-hidden="true"
         className={clsx(
           'absolute inset-0 hidden h-full w-full object-contain dark:block',
-          variant === 'lockup' ? 'object-left' : 'object-center',
+          'object-center',
         )}
         draggable={false}
       />

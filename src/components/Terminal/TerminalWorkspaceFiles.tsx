@@ -15,7 +15,6 @@ import {
   SquareTerminal,
 } from 'lucide-react';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { listen } from '@tauri-apps/api/event';
 import {
   openWithSystemDefault,
   readTerminalGitFileDiff,
@@ -27,6 +26,8 @@ import {
   type FsEntry,
 } from '@/services/workspaceFs';
 import { debugError } from '@/utils/debugLog';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
+import { TERMINAL_CONTEXT_MENU_STYLE } from './terminalMenuStyles';
 import {
   serializeTerminalWorkspacePathDrop,
   TERMINAL_WORKSPACE_PATH_MIME,
@@ -241,8 +242,7 @@ function TerminalWorkspaceFileNode({
           style={{
             position: 'fixed', left: menuLeft, top: menuTop, zIndex: 700,
             minWidth: 220, padding: '4px 0', borderRadius: 6,
-            background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(255 255 255 / 0.1)',
-            boxShadow: '0 10px 28px rgb(0 0 0 / 0.35)',
+            ...TERMINAL_CONTEXT_MENU_STYLE,
           }}
         >
           {!canExpand && (
@@ -375,7 +375,6 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
   useEffect(() => {
     let disposed = false;
     let refreshTimer: number | null = null;
-    let unlisten: (() => void) | undefined;
     const watchId = watchIdRef.current;
     const generation = ++watchGenerationRef.current;
     const scheduleRefresh = () => {
@@ -392,19 +391,16 @@ export function TerminalWorkspaceFiles({ root, refreshVersion = 0, onFileOpen }:
         if (!disposed) debugError('terminal', '[terminal] unable to watch workspace tree:', error);
       }
     };
-    void listen<{ watchId?: unknown }>('terminal-workspace-files-changed', (event) => {
+    const unlisten = subscribeTauriEvent<{ watchId?: unknown }>('terminal-workspace-files-changed', (event) => {
       if (event.payload?.watchId === watchId) scheduleRefresh();
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    }).catch((error) => {
+    }, (error) => {
       if (!disposed) debugError('terminal', '[terminal] unable to listen for workspace tree changes:', error);
     });
     void register();
     return () => {
       disposed = true;
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
-      unlisten?.();
+      unlisten();
       void clearTerminalWorkspaceWatches(watchId, generation);
     };
   }, [root, watchedPaths]);

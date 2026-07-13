@@ -10,6 +10,12 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { APP_PLATFORM } from '@/components/Terminal/_nezha-platform';
+import {
+  readTerminalSidebarMode,
+  requestTerminalSidebarToggle,
+  TERMINAL_SIDEBAR_MODE_EVENT,
+} from '@/components/Terminal/terminalSidebarEvents';
+import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 
 const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPanel').then(m => ({ default: m.NotificationPanel })));
 
@@ -34,9 +40,10 @@ type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
  */
 interface TopBarProps {
   hideSidebarToggle?: boolean;
+  sidebarTarget?: 'app' | 'terminal';
 }
 
-export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
+export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: TopBarProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const isMac = APP_PLATFORM === 'macos';
@@ -44,16 +51,29 @@ export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
   // ── Sidebar collapse (three-stage cycle: expanded → mini → hidden) ──
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);
   const cycleSidebar = useSettingsStore((s) => s.cycleSidebar);
-  const collapseIcon = sidebarMode === 'expanded'
+  const [terminalSidebarMode, setTerminalSidebarMode] = useState<TerminalSidebarMode>(readTerminalSidebarMode);
+  useEffect(() => {
+    const update = (event: Event) => {
+      const mode = (event as CustomEvent<TerminalSidebarMode>).detail;
+      if (mode === 'full' || mode === 'compact' || mode === 'hidden') setTerminalSidebarMode(mode);
+    };
+    window.addEventListener(TERMINAL_SIDEBAR_MODE_EVENT, update);
+    return () => window.removeEventListener(TERMINAL_SIDEBAR_MODE_EVENT, update);
+  }, []);
+  const effectiveSidebarMode = sidebarTarget === 'terminal'
+    ? terminalSidebarMode === 'full' ? 'expanded' : terminalSidebarMode === 'compact' ? 'mini' : 'hidden'
+    : sidebarMode;
+  const collapseIcon = effectiveSidebarMode === 'expanded'
     ? <PanelLeftClose size={16} />
-    : sidebarMode === 'mini'
+    : effectiveSidebarMode === 'mini'
       ? <PanelLeft size={16} />
       : <PanelLeftOpen size={16} />;
-  const collapseTitle = sidebarMode === 'expanded'
+  const collapseTitle = effectiveSidebarMode === 'expanded'
     ? t('nav.sidebarToMini', 'Collapse to icons')
-    : sidebarMode === 'mini'
+    : effectiveSidebarMode === 'mini'
       ? t('nav.sidebarHide', 'Hide sidebar')
       : t('nav.sidebarExpand', 'Expand sidebar');
+  const handleSidebarToggle = sidebarTarget === 'terminal' ? requestTerminalSidebarToggle : cycleSidebar;
 
   // Zoom cancellation: webview setZoom scales everything, but traffic lights
   // are native window chrome → we cancel the zoom on the bar so they stay
@@ -205,7 +225,7 @@ export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
       {!hideSidebarToggle && (
         <button
           type="button"
-          onClick={() => cycleSidebar()}
+          onClick={handleSidebarToggle}
           title={collapseTitle}
           aria-label={collapseTitle}
           className="w-[28px] h-[28px] flex items-center justify-center rounded-[5px] text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors shrink-0"

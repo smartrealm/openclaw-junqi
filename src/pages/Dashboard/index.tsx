@@ -338,7 +338,7 @@ export function DashboardPage() {
 
   // ── Render ───────────────────────────────────────────────────
   return (
-    <PageTransition className="p-5 space-y-4 max-w-[1280px] mx-auto overflow-y-auto h-full">
+    <PageTransition className="min-h-full p-5 space-y-4 max-w-[1280px] mx-auto">
 
       {/* ════ SECTION 1: TOP BAR ════ */}
       <div className="flex items-center justify-between">
