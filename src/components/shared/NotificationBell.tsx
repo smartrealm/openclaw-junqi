@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 interface NotificationItem {
   id: string;
@@ -47,17 +48,16 @@ function LevelIcon({ level }: { level: string }) {
 interface NotificationEntryProps {
   item: NotificationItem;
   onMarkRead: (id: string) => void;
+  onOpenUrl: (url: string) => void;
 }
 
-function NotificationEntry({ item, onMarkRead }: NotificationEntryProps) {
+function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryProps) {
   const { t } = useTranslation();
   const [hov, setHov] = useState(false);
 
   const handleClick = () => {
     if (!item.isRead) onMarkRead(item.id);
-    if (item.url) {
-      try { window.open(item.url, '_blank', 'noopener,noreferrer'); } catch { /* ignore */ }
-    }
+    if (item.url) onOpenUrl(item.url);
   };
 
   return (
@@ -144,6 +144,7 @@ interface NotificationBellProps {
 
 export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<NotificationResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -187,6 +188,15 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
       setError(String(e));
     }
   }, [fetchNotifications]);
+
+  const handleOpenUrl = useCallback((url: string) => {
+    setOpen(false);
+    if (url.startsWith('/')) {
+      navigate(url);
+      return;
+    }
+    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch { /* ignore */ }
+  }, [navigate]);
 
   const unreadCount = result?.unreadCount ?? 0;
   const bellColor = error
@@ -279,7 +289,12 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
                 </div>
               ) : (
                 items.map((item) => (
-                  <NotificationEntry key={item.id} item={item} onMarkRead={handleMarkRead} />
+                  <NotificationEntry
+                    key={item.id}
+                    item={item}
+                    onMarkRead={handleMarkRead}
+                    onOpenUrl={handleOpenUrl}
+                  />
                 ))
               )}
             </div>

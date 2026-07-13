@@ -683,7 +683,7 @@ pub async fn run_task(
                 &task_id_for_reader[..task_id_for_reader.len().min(16)],
                 final_status
             ),
-            None,
+            Some(&task_notification_url(&task_id_for_reader)),
         );
     });
 
@@ -783,10 +783,7 @@ fn spawn_session_watcher(
                                             &task_id[..task_id.len().min(12)],
                                             session_path_str
                                         ),
-                                        Some(&format!(
-                                            "/session?path={}",
-                                            url_encode(&session_path_str)
-                                        )),
+                                        Some(&task_notification_url(&task_id)),
                                     );
                                     return;
                                 }
@@ -820,7 +817,7 @@ fn spawn_session_watcher(
                             "Task {} session file found",
                             &task_id[..task_id.len().min(12)]
                         ),
-                        Some(&format!("/session?path={}", url_encode(&session_path_str))),
+                        Some(&task_notification_url(&task_id)),
                     );
                     return;
                 }
@@ -922,7 +919,10 @@ fn spawn_toolcall_watcher(app: tauri::AppHandle, task_id: String, path: PathBuf)
     });
 }
 
-/// Minimal URL-encode for file paths used in notification deep-links.
+fn task_notification_url(task_id: &str) -> String {
+    format!("/ai-workspace?task={}", url_encode(task_id))
+}
+
 fn url_encode(s: &str) -> String {
     s.chars()
         .map(|c| match c {
@@ -1085,8 +1085,8 @@ mod tests {
     use super::{
         append_task_output, claude_project_directory_name, cleanup_task_attachments,
         decode_task_image, permission_flag, prompt_with_attachments, prompt_with_project_prefix,
-        resume_arguments, safe_task_id, task_final_status, task_output_buffers,
-        MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+        resume_arguments, safe_task_id, task_final_status, task_notification_url,
+        task_output_buffers, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
     };
 
     #[test]
@@ -1221,6 +1221,14 @@ mod tests {
         assert_eq!(task_final_status(true, true, false), "done");
         assert_eq!(task_final_status(false, true, true), "cancelled");
         assert_eq!(task_final_status(false, false, false), "failed");
+    }
+
+    #[test]
+    fn task_notifications_link_back_to_the_ai_workspace() {
+        assert_eq!(
+            task_notification_url("agent-task:123"),
+            "/ai-workspace?task=agent-task%3A123"
+        );
     }
 
     #[test]

@@ -27,7 +27,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { GitChanges, GitDiffViewer, GitHistory } from '@/components/Git';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { FileExplorer } from '@/components/FileExplorer';
@@ -113,6 +113,7 @@ function workspacePath(workspace: { projectDirectory?: string; workingDirectory?
 
 export function AgentWorkspacePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const resolvedTheme = useTheme();
   const themeVariant = resolvedTheme.replace('aegis-', '') as ThemeVariant;
   const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
@@ -154,6 +155,18 @@ export function AgentWorkspacePage() {
   const createTask = useAgentWorkspaceStore((state) => state.createTask);
   const updateTask = useAgentWorkspaceStore((state) => state.updateTask);
   const removeTask = useAgentWorkspaceStore((state) => state.removeTask);
+
+  useEffect(() => {
+    const taskId = new URLSearchParams(location.search).get('task');
+    if (!taskId) return;
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    if (!task) return;
+    const targetWorkspace = findWorkspaceForDirectory(workspaces, task.projectPath);
+    if (!targetWorkspace) return;
+    setActiveWorkspace(targetWorkspace.id);
+    selectProjectTask(task.projectPath, task.id);
+    navigate('/ai-workspace', { replace: true });
+  }, [location.search, navigate, selectProjectTask, setActiveWorkspace, tasks, workspaces]);
 
   const [query, setQuery] = useState('');
   const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(readTaskDisplayWindow);

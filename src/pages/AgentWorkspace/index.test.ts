@@ -81,6 +81,14 @@ test('expanded and collapsed task panels expose Nezha footer actions', () => {
   assert.match(source, /应用设置/);
 });
 
+test('task notification deep links select their project and task', () => {
+  assert.match(source, /new URLSearchParams\(location\.search\)\.get\('task'\)/);
+  assert.match(source, /findWorkspaceForDirectory\(workspaces, task\.projectPath\)/);
+  assert.match(source, /setActiveWorkspace\(targetWorkspace\.id\)/);
+  assert.match(source, /selectProjectTask\(task\.projectPath, task\.id\)/);
+  assert.match(source, /navigate\('\/ai-workspace', \{ replace: true \}\)/);
+});
+
 test('task history and attention badge preferences live in Nezha app settings', () => {
   assert.match(source, /readAttentionBadge/);
   assert.match(source, /attentionBadge && activity\.attention > 0/);
