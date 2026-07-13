@@ -68,6 +68,7 @@ import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktr
 import { applyPlanModePrompt } from './agentPrompt';
 import claudeGif from '@/assets/gif/claude.gif';
 import codexGif from '@/assets/gif/codex.gif';
+import { captureTaskNameSnapshot, taskStillMatchesNameSnapshot } from './AgentWorkspace/taskNameGuard';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -1234,6 +1235,9 @@ export function AgentRunView({
 
   const generateTitle = useCallback(async () => {
     if (!workspaceTaskId || generatingTitle || running) return;
+    const expectedTask = useAgentWorkspaceStore.getState().tasks.find((task) => task.id === workspaceTaskId);
+    if (!expectedTask) return;
+    const snapshot = captureTaskNameSnapshot(expectedTask);
     setGeneratingTitle(true);
     try {
       const nextTitle = await invoke<string>('generate_task_name', {
@@ -1241,11 +1245,13 @@ export function AgentRunView({
         agent,
         originalPrompt: prompt,
       });
-      if (nextTitle.trim()) {
-        setTaskTitle(nextTitle.trim());
-        setTitleDraft(nextTitle.trim());
-        updateWorkspaceTask(workspaceTaskId, { title: nextTitle.trim() });
-      }
+      const title = nextTitle.trim();
+      if (!title) return;
+      const currentTask = useAgentWorkspaceStore.getState().tasks.find((task) => task.id === workspaceTaskId);
+      if (!taskStillMatchesNameSnapshot(currentTask, snapshot)) return;
+      setTaskTitle(title);
+      setTitleDraft(title);
+      updateWorkspaceTask(workspaceTaskId, { title });
     } catch (reason) {
       setError(`生成任务名称失败：${String(reason)}`);
     } finally {

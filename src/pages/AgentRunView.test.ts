@@ -100,6 +100,11 @@ test('plan mode prompt handling remains idempotent during session recovery', () 
   assert.doesNotMatch(source, /`\$\{basePrompt\}\\n\\nPlease use plan mode\.`/);
 });
 
+test('generated task names cannot overwrite concurrent task edits', () => {
+  assert.match(source, /captureTaskNameSnapshot\(expectedTask\)/);
+  assert.match(source, /taskStillMatchesNameSnapshot\(currentTask, snapshot\)/);
+});
+
 test('worktree branch loading is stable across parent renders', () => {
   assert.match(source, /baseBranchRef\.current = baseBranch/);
   assert.match(source, /onBranchRef\.current = onBranch/);
