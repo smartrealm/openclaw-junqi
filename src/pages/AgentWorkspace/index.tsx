@@ -4,6 +4,8 @@ import { confirm, open } from '@tauri-apps/plugin-dialog';
 import {
   Bot,
   Code2,
+  Eye,
+  EyeOff,
   FileText,
   Files,
   GitBranch,
@@ -129,6 +131,7 @@ export function AgentWorkspacePage() {
   const createWorkspace = useWorkspaceStore((state) => state.createWorkspace);
   const moveWorkspace = useWorkspaceStore((state) => state.moveWorkspace);
   const renameWorkspace = useWorkspaceStore((state) => state.renameWorkspace);
+  const toggleWorkspaceHidden = useWorkspaceStore((state) => state.toggleWorkspaceHidden);
   const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
   const workspace = workspaces.find((item) => item.id === activeWorkspaceId);
   const projectPath = workspacePath(workspace);
@@ -201,11 +204,11 @@ export function AgentWorkspacePage() {
     () => allProjectTasks.filter((task) => !task.isDraft),
     [allProjectTasks],
   );
-  const railWorkspaces = useMemo(
-    () => workspaces.filter((item) => !item.worktreeParentId),
-    [workspaces],
-  );
   const activeRailWorkspaceId = workspace?.worktreeParentId ?? activeWorkspaceId;
+  const railWorkspaces = useMemo(
+    () => workspaces.filter((item) => !item.worktreeParentId && (!item.hiddenFromRail || item.id === activeRailWorkspaceId)),
+    [activeRailWorkspaceId, workspaces],
+  );
   const workspaceActivity = useCallback((item: typeof workspaces[number]) => {
     const path = workspacePath(item);
     const itemTasks = tasks.filter((task) => task.projectPath === path && !task.isDraft);
@@ -745,6 +748,14 @@ export function AgentWorkspacePage() {
                       className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim opacity-0 hover:bg-aegis-bg hover:text-aegis-text group-hover:opacity-100 focus:opacity-100"
                     >
                       <Pencil size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      title={item.hiddenFromRail ? '固定到项目栏' : '从项目栏隐藏'}
+                      onClick={() => toggleWorkspaceHidden(item.id)}
+                      className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim opacity-0 hover:bg-aegis-bg hover:text-aegis-text group-hover:opacity-100 focus:opacity-100"
+                    >
+                      {item.hiddenFromRail ? <Eye size={12} /> : <EyeOff size={12} />}
                     </button>
                     <button
                       type="button"

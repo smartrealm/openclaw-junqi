@@ -48,3 +48,10 @@ test('project rail uses WebView-safe pointer reordering', () => {
   assert.match(source, /suppressWorkspaceClickRef/);
   assert.doesNotMatch(source, /onDragStart=/);
 });
+
+test('hidden projects remain available in the drawer and active project stays on the rail', () => {
+  assert.match(source, /!item\.hiddenFromRail \|\| item\.id === activeRailWorkspaceId/);
+  assert.match(source, /toggleWorkspaceHidden\(item\.id\)/);
+  assert.match(source, /从项目栏隐藏/);
+  assert.match(source, /固定到项目栏/);
+});

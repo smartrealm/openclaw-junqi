@@ -63,6 +63,8 @@ export interface Workspace {
   worktreePath?: string;
   /** SSH destination for a remote-only workspace (for example user@host). */
   sshRemoteHost?: string;
+  /** Keep the project in the drawer but omit it from the AI workspace rail. */
+  hiddenFromRail?: boolean;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -324,6 +326,7 @@ function normalizeWorkspaceWithPaneIds(
   const worktreeBranch = nonEmptyString(source.worktreeBranch);
   const worktreePath = nonEmptyPathString(source.worktreePath);
   const sshRemoteHost = nonEmptyString(source.sshRemoteHost);
+  const hiddenFromRail = source.hiddenFromRail === true;
   if (sshRemoteHost) {
     const remoteRoot = mapLeaves(root, (leaf) => {
       if (!leaf.config.cwd) return leaf;
@@ -338,6 +341,7 @@ function normalizeWorkspaceWithPaneIds(
       root: remoteRoot,
       focusedPaneId,
       sshRemoteHost,
+      ...(hiddenFromRail ? { hiddenFromRail: true } : {}),
     };
   }
   const hydratedRoot = mapLeaves(root, (leaf) => (
@@ -354,6 +358,7 @@ function normalizeWorkspaceWithPaneIds(
     ...(worktreeParentId ? { worktreeParentId } : {}),
     ...(worktreeBranch ? { worktreeBranch } : {}),
     ...(worktreePath ? { worktreePath } : {}),
+    ...(hiddenFromRail ? { hiddenFromRail: true } : {}),
   };
 }
 

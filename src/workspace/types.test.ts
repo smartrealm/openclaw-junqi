@@ -121,6 +121,16 @@ test('normalization infers a missing workspace cwd from the focused pane', () =>
   assert.equal(migrated.projectDirectory, '/repo/packages/web');
 });
 
+test('normalization preserves the optional project rail visibility flag', () => {
+  const workspace = normalizeWorkspace({
+    id: 'hidden-project',
+    name: 'Hidden project',
+    hiddenFromRail: true,
+    root: defaultLeaf('shell', undefined, '/repo'),
+  });
+  assert.equal(workspace.hiddenFromRail, true);
+});
+
 test('normalization maps a legacy config focus id to the matching non-first pane', () => {
   const migrated = normalizeWorkspace({
     focusedPaneId: 'legacy-second',

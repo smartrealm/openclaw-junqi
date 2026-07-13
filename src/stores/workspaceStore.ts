@@ -57,6 +57,7 @@ interface WorkspaceStoreState {
   addShellPane: () => string | null;
   addAgentPane: (agent?: string) => string | null;
   renameWorkspace: (id: string, name: string) => void;
+  toggleWorkspaceHidden: (id: string) => void;
   moveWorkspace: (workspaceId: string, targetWorkspaceId: string, position?: 'before' | 'after') => void;
 }
 
@@ -511,6 +512,12 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           )),
         }));
       },
+
+      toggleWorkspaceHidden: (id) => set((state) => ({
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === id ? { ...workspace, hiddenFromRail: !workspace.hiddenFromRail } : workspace
+        )),
+      })),
 
       moveWorkspace: (workspaceId, targetWorkspaceId, position = 'before') => set((state) => {
         if (workspaceId === targetWorkspaceId) return {};
