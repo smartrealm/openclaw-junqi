@@ -11,9 +11,9 @@ use tauri::Emitter;
 
 static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
-struct NpmCacheCleanup(PathBuf);
+struct TemporaryDirectory(PathBuf);
 
-impl Drop for NpmCacheCleanup {
+impl Drop for TemporaryDirectory {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
@@ -491,18 +491,39 @@ async fn npm_install_with_fallback(
     // after an interrupted Windows install. It is removed when this call ends.
     let npm_cache_root =
         paths::npm_cache_dir().join(format!("install-{}-{}", std::process::id(), install_nonce));
-    let _npm_cache_cleanup = NpmCacheCleanup(npm_cache_root.clone());
+    let _npm_cache_cleanup = TemporaryDirectory(npm_cache_root.clone());
     std::fs::create_dir_all(&npm_cache_root).ok();
     std::fs::create_dir_all(global_prefix).ok();
+    let staging_prefix = global_prefix.join(format!(
+        ".junqi-openclaw-stage-{}-{}",
+        std::process::id(),
+        install_nonce
+    ));
+    let install_prefix = if cfg!(windows) {
+        staging_prefix.as_path()
+    } else {
+        global_prefix
+    };
+    let _staging_cleanup = cfg!(windows).then(|| TemporaryDirectory(staging_prefix.clone()));
     // `npm i -g` creates `<prefix>/bin` and `<prefix>/lib/node_modules`
     // itself; pre-creating the prefix dir avoids races on first run.
-    let npm_prefix_str = global_prefix.to_string_lossy().to_string();
+    let npm_prefix_str = install_prefix.to_string_lossy().to_string();
 
     let registries = npm_registry::select_npm_registry().await.candidates();
     let mut last_err = String::new();
     let total_regs = registries.len();
 
     for (reg_idx, registry) in registries.into_iter().enumerate() {
+        if cfg!(windows) {
+            let _ = std::fs::remove_dir_all(&staging_prefix);
+            std::fs::create_dir_all(&staging_prefix).map_err(|error| {
+                format!(
+                    "Cannot prepare the isolated OpenClaw installer at {}: {}",
+                    staging_prefix.display(),
+                    error
+                )
+            })?;
+        }
         // A failed source must not poison the fallback source with partially
         // extracted cache entries.
         let npm_cache = npm_cache_root.join(format!("registry-{}", reg_idx + 1));
@@ -649,6 +670,10 @@ async fn npm_install_with_fallback(
                     ),
                     prog_live,
                 );
+            }
+            if cfg!(windows) {
+                validate_staged_openclaw_install(&staging_prefix)?;
+                promote_staged_openclaw_install(&staging_prefix, global_prefix).await?;
             }
             emit(
                 app,
@@ -1121,6 +1146,91 @@ fn openclaw_node_modules_dir(prefix: &std::path::Path) -> PathBuf {
     }
 }
 
+fn validate_staged_openclaw_install(prefix: &std::path::Path) -> Result<(), String> {
+    let package_dir = openclaw_node_modules_dir(prefix).join("openclaw");
+    let package_json = package_dir.join("package.json");
+    let launcher = prefix.join("openclaw.cmd");
+    if package_json.is_file() && launcher.is_file() {
+        return Ok(());
+    }
+    Err(format!(
+        "npm finished but the isolated OpenClaw install is incomplete at {}",
+        prefix.display()
+    ))
+}
+
+async fn promote_staged_openclaw_install(
+    staging_prefix: &std::path::Path,
+    target_prefix: &std::path::Path,
+) -> Result<(), String> {
+    let staged_package = openclaw_node_modules_dir(staging_prefix).join("openclaw");
+    let target_node_modules = openclaw_node_modules_dir(target_prefix);
+    let target_package = target_node_modules.join("openclaw");
+    let backup_package =
+        target_node_modules.join(format!(".junqi-openclaw-backup-{}", std::process::id()));
+    let mut last_error = String::new();
+
+    for attempt in 0..6 {
+        std::fs::create_dir_all(&target_node_modules).map_err(|error| {
+            format!(
+                "Cannot prepare the OpenClaw package directory {}: {}",
+                target_node_modules.display(),
+                error
+            )
+        })?;
+        let _ = std::fs::remove_dir_all(&backup_package);
+
+        let had_existing_package = target_package.exists();
+        if had_existing_package {
+            if let Err(error) = std::fs::rename(&target_package, &backup_package) {
+                last_error = format!(
+                    "Cannot move the current OpenClaw installation because it is in use: {}",
+                    error
+                );
+                if attempt < 5 {
+                    tokio::time::sleep(std::time::Duration::from_millis(250 * (attempt + 1))).await;
+                }
+                continue;
+            }
+        }
+
+        match std::fs::rename(&staged_package, &target_package) {
+            Ok(()) => {
+                for shim in ["openclaw", "openclaw.cmd", "openclaw.ps1"] {
+                    let source = staging_prefix.join(shim);
+                    if source.is_file() {
+                        std::fs::copy(&source, target_prefix.join(shim)).map_err(|error| {
+                            format!("Cannot install the OpenClaw launcher {}: {}", shim, error)
+                        })?;
+                    }
+                }
+                let _ = std::fs::remove_dir_all(&backup_package);
+                return Ok(());
+            }
+            Err(error) => {
+                last_error = format!(
+                    "Cannot activate the staged OpenClaw package at {}: {}",
+                    target_package.display(),
+                    error
+                );
+                if had_existing_package {
+                    let _ = std::fs::rename(&backup_package, &target_package);
+                }
+            }
+        }
+
+        if attempt < 5 {
+            tokio::time::sleep(std::time::Duration::from_millis(250 * (attempt + 1))).await;
+        }
+    }
+
+    Err(format!(
+        "OpenClaw was downloaded safely, but its current installation is locked. Close OpenClaw, Gateway, and any antivirus scan using {}, then retry. Last error: {}",
+        target_prefix.display(),
+        last_error
+    ))
+}
+
 /// Remove only a broken npm package payload before reinstalling it. User data
 /// lives under `~/.openclaw`, outside every npm prefix selected above.
 fn remove_broken_openclaw_install(prefix: &std::path::Path) -> Result<(), String> {
@@ -1279,7 +1389,9 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         0.08,
     );
     std::fs::create_dir_all(&openclaw_prefix).ok();
-    remove_broken_openclaw_install(&openclaw_prefix)?;
+    if !cfg!(windows) {
+        remove_broken_openclaw_install(&openclaw_prefix)?;
+    }
 
     // ③ npm install（CN 源优先，官方兜底，全程输出实时日志）
     emit_keyed(
