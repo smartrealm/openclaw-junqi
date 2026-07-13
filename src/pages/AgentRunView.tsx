@@ -444,6 +444,7 @@ export interface AgentRunViewProps {
   onTaskStarted?: () => void;
   onTaskSaved?: () => void;
   onOpenWorktreeTerminal?: () => void;
+  terminalScrollback?: number;
 }
 
 export function AgentRunView({
@@ -467,6 +468,7 @@ export function AgentRunView({
   onTaskStarted,
   onTaskSaved,
   onOpenWorktreeTerminal,
+  terminalScrollback = 1000,
 }: AgentRunViewProps = {}) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
@@ -614,6 +616,8 @@ export function AgentRunView({
   const fitRef = useRef<FitAddon | null>(null);
   const metricsTimerRef = useRef<number | null>(null);
   const shiftEnterNewlineRef = useRef(DEFAULT_SHIFT_ENTER_NEWLINE);
+  const terminalScrollbackRef = useRef(terminalScrollback);
+  terminalScrollbackRef.current = terminalScrollback;
 
   // ── Terminal output buffer ───────────────────────────────────────────────
   // Channel callbacks can fire BEFORE the xterm instance is mounted (the
@@ -684,7 +688,7 @@ export function AgentRunView({
           })(),
           rows: 30,
           cols: 120,
-          scrollback: 1000,
+          scrollback: terminalScrollbackRef.current,
         });
         fit = new deps.FitAddon();
         term.loadAddon(fit);

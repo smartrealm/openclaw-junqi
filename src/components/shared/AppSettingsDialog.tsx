@@ -142,6 +142,24 @@ function GeneralPanel() {
   const { t } = useTranslation();
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
+  const [terminalScrollback, setTerminalScrollback] = useState(1000);
+  const [savingScrollback, setSavingScrollback] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<{ terminal_scrollback?: number }>('load_app_settings').then((settings) => {
+      if (!cancelled) setTerminalScrollback(settings.terminal_scrollback ?? 1000);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  const saveScrollback = async (value: number) => {
+    const next = Math.round(Math.min(5000, Math.max(500, value)) / 500) * 500;
+    setTerminalScrollback(next);
+    setSavingScrollback(true);
+    try {
+      await invoke('save_terminal_scrollback', { scrollback: next });
+      window.dispatchEvent(new Event('nezha:app-settings-changed'));
+    } finally { setSavingScrollback(false); }
+  };
   const handleLanguageChange = (lang: SupportedLanguage) => {
     setLanguage(lang);
     changeLanguage(lang);
@@ -163,6 +181,22 @@ function GeneralPanel() {
             ))}
           </select>
           <p className="text-[11px] text-aegis-text-dim mt-1">{t('appSettings.languageHint', 'Applies immediately.')}</p>
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{t('appSettings.terminalScrollback', 'Terminal scrollback')}</label>
+          <div className="flex items-center gap-2">
+            <input type="number" min={500} max={5000} step={500} value={terminalScrollback}
+              disabled={savingScrollback}
+              onChange={(event) => setTerminalScrollback(Number(event.target.value))}
+              onBlur={() => void saveScrollback(terminalScrollback)}
+              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void saveScrollback(terminalScrollback); } }}
+              className="w-28 rounded-md px-3 py-2 text-[13px] font-mono"
+              style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }} />
+            <span className="text-[11px] text-aegis-text-dim">{t('appSettings.lines', 'lines')}</span>
+            {savingScrollback && <Loader2 size={12} className="animate-spin text-aegis-text-dim" />}
+          </div>
+          <p className="mt-1 text-[11px] text-aegis-text-dim">{t('appSettings.terminalScrollbackHint', '500–5000 lines. Applies to newly opened terminals.')}</p>
+          {terminalScrollback > 3000 && <p className="mt-1 text-[11px] text-aegis-warning">{t('appSettings.terminalScrollbackWarning', 'Large buffers use more memory.')}</p>}
         </div>
       </div>
     </div>
@@ -240,9 +274,10 @@ function ShortcutsPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [loadedSettings, setLoadedSettings] = useState<Record<string, unknown>>({});
   const isMac = typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('mac');
-  useEffect(() => { let c = false; invoke<{send_shortcut?:string;terminal_shift_enter_newline?:boolean}>('load_app_settings').then(s => { if(!c){ setSend(s.send_shortcut||'mod_enter'); setShiftEnter(s.terminal_shift_enter_newline??true); } }).catch(()=>{}).finally(()=>{ if(!c) setLoading(false); }); return ()=>{c=true}; }, []);
-  const save = async () => { setSaving(true); try { await invoke('save_app_settings',{settings:{send_shortcut:send,terminal_shift_enter_newline:shiftEnter}}); setSaved(true); setTimeout(()=>setSaved(false),1500); } catch {} finally { setSaving(false); } };
+  useEffect(() => { let c = false; invoke<Record<string, unknown> & {send_shortcut?:string;terminal_shift_enter_newline?:boolean}>('load_app_settings').then(s => { if(!c){ setLoadedSettings(s); setSend(s.send_shortcut||'mod_enter'); setShiftEnter(s.terminal_shift_enter_newline??true); } }).catch(()=>{}).finally(()=>{ if(!c) setLoading(false); }); return ()=>{c=true}; }, []);
+  const save = async () => { setSaving(true); try { const settings = {...loadedSettings,send_shortcut:send,terminal_shift_enter_newline:shiftEnter}; await invoke('save_app_settings',{settings}); setLoadedSettings(settings); window.dispatchEvent(new Event('nezha:app-settings-changed')); setSaved(true); setTimeout(()=>setSaved(false),1500); } catch {} finally { setSaving(false); } };
   return loading ? <div className="p-6"><Loader2 size={14} className="animate-spin text-aegis-text-dim"/></div> : (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.shortcuts', 'Shortcuts')}</h2>

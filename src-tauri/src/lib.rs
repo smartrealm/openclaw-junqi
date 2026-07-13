@@ -224,6 +224,7 @@ pub fn run() {
             commands::project_config::write_agent_config_file,
             // App settings (ported from nezha app_settings.rs, simplified)
             commands::app_settings::load_app_settings,
+            commands::app_settings::save_terminal_scrollback,
             commands::app_settings::save_app_settings,
             commands::app_settings::detect_agent_paths,
             // Hooks (minimal port of nezha hooks.rs)

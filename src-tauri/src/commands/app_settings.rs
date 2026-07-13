@@ -39,6 +39,15 @@ fn default_claude_force_default_tui() -> bool {
     true
 }
 
+fn default_terminal_scrollback() -> u32 {
+    1000
+}
+
+fn clamp_terminal_scrollback(value: u32) -> u32 {
+    let clamped = value.clamp(500, 5000);
+    ((clamped + 250) / 500) * 500
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AppSettings {
     #[serde(default)]
@@ -51,6 +60,8 @@ pub struct AppSettings {
     pub terminal_shift_enter_newline: bool,
     #[serde(default = "default_claude_force_default_tui")]
     pub claude_force_default_tui: bool,
+    #[serde(default = "default_terminal_scrollback")]
+    pub terminal_scrollback: u32,
 }
 
 impl Default for AppSettings {
@@ -61,6 +72,7 @@ impl Default for AppSettings {
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
             claude_force_default_tui: default_claude_force_default_tui(),
+            terminal_scrollback: default_terminal_scrollback(),
         }
     }
 }
@@ -163,6 +175,7 @@ fn load_settings_unlocked() -> AppSettings {
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
             claude_force_default_tui: default_claude_force_default_tui(),
+            terminal_scrollback: default_terminal_scrollback(),
         };
         if let Ok(dir) = nezha_dir() {
             let _ = fs::create_dir_all(&dir);
@@ -195,6 +208,23 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
     let path = settings_path()?;
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     atomic_write(&path, &raw)
+}
+
+#[tauri::command]
+pub async fn save_terminal_scrollback(scrollback: u32) -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = settings_lock().lock();
+        let mut settings = load_settings_unlocked();
+        settings.terminal_scrollback = clamp_terminal_scrollback(scrollback);
+        let dir = nezha_dir()?;
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = settings_path()?;
+        let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+        atomic_write(&path, &raw)?;
+        Ok::<AppSettings, String>(settings)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -263,5 +293,25 @@ fn run_version_command(binary: &str) -> Option<String> {
         }
     } else {
         Some(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_scrollback_is_clamped_and_snapped() {
+        assert_eq!(clamp_terminal_scrollback(0), 500);
+        assert_eq!(clamp_terminal_scrollback(749), 500);
+        assert_eq!(clamp_terminal_scrollback(750), 1000);
+        assert_eq!(clamp_terminal_scrollback(3200), 3000);
+        assert_eq!(clamp_terminal_scrollback(9999), 5000);
+    }
+
+    #[test]
+    fn legacy_settings_receive_default_scrollback() {
+        let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
+        assert_eq!(settings.terminal_scrollback, 1000);
     }
 }

@@ -110,6 +110,7 @@ export function AgentWorkspacePage() {
   const themeVariant = resolvedTheme.replace('aegis-', '') as ThemeVariant;
   const terminalFontSize = DEFAULT_TERMINAL_FONT_SIZE as TerminalFontSize;
   const monoFontFamily = getDefaultMonoFont() as FontFamily;
+  const [terminalScrollback, setTerminalScrollback] = useState(1000);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   useAgentWorkspacePersistence(workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
@@ -120,6 +121,18 @@ export function AgentWorkspacePage() {
   const closeWorkspace = useWorkspaceStore((state) => state.closeWorkspace);
   const workspace = workspaces.find((item) => item.id === activeWorkspaceId);
   const projectPath = workspacePath(workspace);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      void invoke<{ terminal_scrollback?: number }>('load_app_settings').then((settings) => {
+        if (!cancelled) setTerminalScrollback(settings.terminal_scrollback ?? 1000);
+      }).catch(() => undefined);
+    };
+    load();
+    window.addEventListener('nezha:app-settings-changed', load);
+    return () => { cancelled = true; window.removeEventListener('nezha:app-settings-changed', load); };
+  }, []);
 
   const tasks = useAgentWorkspaceStore((state) => state.tasks);
   const selectedTaskIds = useAgentWorkspaceStore((state) => state.selectedTaskIds);
@@ -1041,6 +1054,7 @@ export function AgentWorkspacePage() {
                 autoStart={autoStartTaskId === task.id}
                 onTaskStarted={() => setAutoStartTaskId((current) => current === task.id ? null : current)}
                 onOpenWorktreeTerminal={() => setShowShellTerminal(true)}
+                terminalScrollback={terminalScrollback}
               />
             </div>
           ))}
