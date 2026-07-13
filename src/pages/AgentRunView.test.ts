@@ -76,6 +76,12 @@ test('new task composition follows the Nezha card and launch-bar hierarchy', () 
   assert.doesNotMatch(source, /<SessionHistoryStrip agent=/);
 });
 
+test('todo tasks reject attachments instead of silently dropping them', () => {
+  assert.match(source, /attachedImages\.length > 0 \|\| textAttachments\.length > 0 \|\| !prompt\.trim\(\)/);
+  assert.match(source, /disabled=\{launchMode === 'worktree' \|\| attachedImages\.length > 0 \|\| textAttachments\.length > 0 \|\| !prompt\.trim\(\)\}/);
+  assert.match(source, /包含附件的任务必须立即发送/);
+});
+
 test('workspace task agent choices match Nezha while standalone runs may use Pi', () => {
   assert.match(source, /allowPi \? \['claude', 'codex', 'pi'\] : \['claude', 'codex'\]/);
   assert.match(source, /allowPi=\{providedProjectPath === undefined\}/);

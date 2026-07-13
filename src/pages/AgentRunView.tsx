@@ -1262,7 +1262,7 @@ export function AgentRunView({
 
   // ── Save as Todo ────────────────────────────────────────────────────────
   const handleSaveTodo = useCallback(() => {
-    if (launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)) return;
+    if (launchMode === 'worktree' || attachedImages.length > 0 || textAttachments.length > 0 || !prompt.trim()) return;
     if (workspaceTaskId) {
       updateWorkspaceTask(workspaceTaskId, {
         prompt,
@@ -1278,7 +1278,7 @@ export function AgentRunView({
     }
     onTaskSaved?.();
     setAttachedImages([]); setTextAttachments([]);
-  }, [prompt, agent, perm, textAttachments, workspaceTaskId, updateWorkspaceTask, onTaskSaved, launchMode]);
+  }, [prompt, agent, perm, attachedImages, textAttachments, workspaceTaskId, updateWorkspaceTask, onTaskSaved, launchMode]);
 
   // ── Xterm re-fit on done ────────────────────────────────────────────────
   useEffect(() => {
@@ -1427,8 +1427,12 @@ export function AgentRunView({
                   </button>
                 )}
                 <button type="button" onClick={handleSaveTodo}
-                  disabled={launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)}
-                  title={launchMode === 'worktree' ? '工作树任务需要直接启动' : '保存为待办'}
+                  disabled={launchMode === 'worktree' || attachedImages.length > 0 || textAttachments.length > 0 || !prompt.trim()}
+                  title={launchMode === 'worktree'
+                    ? '工作树任务需要直接启动'
+                    : attachedImages.length > 0 || textAttachments.length > 0
+                      ? '包含附件的任务必须立即发送'
+                      : '保存为待办'}
                   className="flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40">
                   <Bookmark size={13} />保存为待办
                 </button>
