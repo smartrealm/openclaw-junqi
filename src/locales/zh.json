@@ -2567,7 +2567,7 @@
     "fontFamilyHint": "同时用于终端、代码块和文件预览。",
     "systemDefault": "系统默认",
     "scrollback": "回滚行数",
-    "scrollbackHint": "应用于新打开的终端；数值越大，长时会话占用的内存越多。",
+    "scrollbackHint": "立即应用到已打开和新打开的终端；数值越大，长时会话占用的内存越多。",
     "shiftEnter": "Shift+Enter 换行",
     "shiftEnterHint": "在交互式终端中插入换行，不立即执行当前输入。",
     "saveFailed": "终端设置保存失败：{{error}}"

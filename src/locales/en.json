@@ -2573,7 +2573,7 @@
     "fontFamilyHint": "Also used by terminals, code blocks, and file previews.",
     "systemDefault": "System default",
     "scrollback": "Scrollback lines",
-    "scrollbackHint": "Applies to new terminals; larger values use more memory in long sessions.",
+    "scrollbackHint": "Applies immediately to open and new terminals; larger values use more memory in long sessions.",
     "shiftEnter": "Shift+Enter newline",
     "shiftEnterHint": "Insert a newline in interactive terminals without executing the current input.",
     "saveFailed": "Could not save terminal settings: {{error}}"

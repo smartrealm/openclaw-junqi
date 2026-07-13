@@ -38,16 +38,23 @@ test('terminal settings have native persistence and a deep-linkable settings tab
 });
 
 test('terminal settings are translated in every supported locale', () => {
+  const locales = ['zh', 'en', 'ar'] as const;
+  const openTerminalMarkers: Record<(typeof locales)[number], string> = {
+    zh: '已打开',
+    en: 'open',
+    ar: 'المفتوحة',
+  };
   const keys = [
     'settings.tab.terminal',
     'terminalSettings.title',
     'terminalSettings.description',
     'terminalSettings.scrollback',
+    'terminalSettings.scrollbackHint',
     'terminalSettings.shiftEnter',
     'terminalSettings.saveFailed',
   ];
 
-  for (const locale of ['zh', 'en', 'ar']) {
+  for (const locale of locales) {
     const messages = JSON.parse(source(`../../locales/${locale}.json`)) as Record<string, unknown>;
     for (const key of keys) {
       const nested = key.split('.').reduce<unknown>((value, part) => {
@@ -58,5 +65,8 @@ test('terminal settings are translated in every supported locale', () => {
       assert.equal(typeof value, 'string', `${locale} is missing ${key}`);
       assert.notEqual((value as string).trim(), '', `${locale} has an empty ${key}`);
     }
+
+    const scrollbackHint = (messages.terminalSettings as Record<string, unknown>).scrollbackHint;
+    assert.match(String(scrollbackHint), new RegExp(openTerminalMarkers[locale]));
   }
 });
