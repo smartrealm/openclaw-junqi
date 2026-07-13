@@ -19,11 +19,11 @@ export class GatewayConnectionManager {
   private retrying = false;
   private logs: { stdout: string; stderr: string } | undefined;
   private statusUnsub: (() => void) | undefined;
-  private startAttempted = false;
   private pendingStart: {
     promise: Promise<any>;
     resolve: (result: any) => void;
     reject: (error: Error) => void;
+    generation: number;
   } | null = null;
   private readonly lifecycleEpoch = new LifecycleEpoch();
 
@@ -36,13 +36,11 @@ export class GatewayConnectionManager {
 
   /** Initialize: subscribe to gateway status events + probe. */
   init(): void {
+    this.rejectPendingStart('Gateway manager was reinitialized');
     const generation = this.lifecycleEpoch.activate();
-    this.fsm = new GatewayStateMachine();
-    this.startAttempted = false;
-    this.retrying = false;
-    this.error = null;
     this.statusUnsub?.();
     this.statusUnsub = undefined;
+    this.dispatch({ type: 'INITIALIZE' });
 
     if (!window.aegis?.gateway) {
       this.dispatch({ type: 'STATUS_RECEIVED', running: true, error: null, retrying: false });
@@ -82,7 +80,7 @@ export class GatewayConnectionManager {
 
   /** Reset to DETECTING (e.g. after config change). */
   reset(): void {
-    this.lifecycleEpoch.invalidate();
+    this.invalidateLifecycle('Gateway lifecycle was reset');
     this.dispatch({ type: 'RESET' });
   }
 
@@ -131,14 +129,20 @@ export class GatewayConnectionManager {
 
   private requestSetupStart(event: 'START_REQUESTED' | 'DOCKER_START_REQUESTED'): Promise<any> {
     if (this.pendingStart) return this.pendingStart.promise;
-    if (!this.lifecycleEpoch.isActive()) this.lifecycleEpoch.activate();
+    if (!this.lifecycleEpoch.isActive()) {
+      this.lifecycleEpoch.activate();
+      this.dispatch({ type: 'INITIALIZE' });
+    } else {
+      this.invalidateLifecycle('A newer setup start superseded the previous lifecycle');
+    }
+    const generation = this.lifecycleEpoch.capture();
     let resolve!: (result: any) => void;
     let reject!: (error: Error) => void;
     const promise = new Promise<any>((resolvePromise, rejectPromise) => {
       resolve = resolvePromise;
       reject = rejectPromise;
     });
-    this.pendingStart = { promise, resolve, reject };
+    this.pendingStart = { promise, resolve, reject, generation };
     this.dispatch({ type: event });
     return promise;
   }
@@ -148,7 +152,9 @@ export class GatewayConnectionManager {
       this.reconnect();
       return { healthy: true, mode: 'browser' };
     }
+    const generation = this.beginProcessRecovery();
     const result = await window.aegis.gateway.ensureRunning();
+    if (!this.isCurrent(generation)) return { ...result, superseded: true };
     if (result?.healthy) {
       this.reconnect();
     } else {
@@ -168,13 +174,14 @@ export class GatewayConnectionManager {
       this.dispatch({ type: 'STATUS_RECEIVED', running: false, error: result.error, retrying: false });
       return result;
     }
-    this.dispatch({ type: 'STATUS_RECEIVED', running: false, error: null, retrying: true });
+    const generation = this.beginProcessRecovery();
     let result: any;
     try {
       result = await window.aegis.gateway.retry();
     } catch (error) {
       result = { success: false, error: String(error) };
     }
+    if (!this.isCurrent(generation)) return { ...result, superseded: true };
     if (result?.success === false) {
       this.dispatch({
         type: 'STATUS_RECEIVED',
@@ -189,13 +196,13 @@ export class GatewayConnectionManager {
   }
 
   reconnectWithToken(token: string): void {
-    this.lifecycleEpoch.invalidate();
+    this.invalidateLifecycle('Gateway credentials changed');
     this.dispatch({ type: 'RESET' });
     gateway.reconnectWithToken(token);
   }
 
   connect(url: string, token: string): void {
-    this.lifecycleEpoch.invalidate();
+    this.invalidateLifecycle('Gateway connection target changed');
     this.dispatch({ type: 'RESET' });
     gateway.connect(url, token);
   }
@@ -205,8 +212,7 @@ export class GatewayConnectionManager {
     this.lifecycleEpoch.deactivate();
     this.statusUnsub?.();
     this.statusUnsub = undefined;
-    this.pendingStart?.reject(new Error('Gateway manager was destroyed'));
-    this.pendingStart = null;
+    this.rejectPendingStart('Gateway manager was destroyed');
     this.listeners.clear();
     gateway.disconnect();
   }
@@ -214,7 +220,14 @@ export class GatewayConnectionManager {
   // The single Gateway orchestration core: every fact and intent commits here.
   private dispatch(event: GatewayEvent): void {
     if (!this.lifecycleEpoch.isActive()) return;
-    if (event.type === 'STATUS_RECEIVED') {
+    if (event.type === 'INITIALIZE') {
+      this.logs = undefined;
+      this.retrying = false;
+      this.error = null;
+    } else if (event.type === 'RECOVERY_REQUESTED') {
+      this.retrying = true;
+      this.error = null;
+    } else if (event.type === 'STATUS_RECEIVED') {
       if (event.logs) this.logs = event.logs;
       this.retrying = event.retrying;
       this.error = event.error;
@@ -230,14 +243,6 @@ export class GatewayConnectionManager {
     ) {
       this.error = null;
       this.retrying = false;
-      if (
-        event.type === 'RESET'
-        || event.type === 'RETRY'
-        || event.type === 'START_REQUESTED'
-        || event.type === 'DOCKER_START_REQUESTED'
-      ) {
-        this.startAttempted = false;
-      }
     }
 
     const result = this.fsm.transition(event);
@@ -260,19 +265,10 @@ export class GatewayConnectionManager {
         }, () => this.isCurrent(generation));
         break;
       case 'START':
-        if (!this.startAttempted) {
-          this.startAttempted = true;
-          void executeStart().then((result) => this.completeStart(result, generation));
-        }
+        void executeStart().then((result) => this.completeStart(result, generation));
         break;
       case 'START_DOCKER':
-        if (!this.startAttempted) {
-          this.startAttempted = true;
-          void executeDockerStart().then((result) => this.completeStart(result, generation));
-        }
-        break;
-      case 'CLEAR_ERROR':
-        this.error = null;
+        void executeDockerStart().then((result) => this.completeStart(result, generation));
         break;
       case 'SHOW_ERROR':
         // error already committed by dispatch
@@ -299,14 +295,19 @@ export class GatewayConnectionManager {
   }
 
   private beginRecovery(event: 'RESET' | 'RETRY'): void {
-    this.lifecycleEpoch.invalidate();
-    gateway.disconnect();
+    this.invalidateLifecycle('A newer Gateway recovery was requested');
     this.dispatch({ type: event });
+    gateway.disconnect();
     this.probe();
   }
 
   private completeStart(result: any, generation: number): void {
-    if (!this.isCurrent(generation)) return;
+    if (!this.isCurrent(generation)) {
+      if (this.pendingStart?.generation === generation) {
+        this.rejectPendingStart('Gateway start was superseded by a newer lifecycle');
+      }
+      return;
+    }
     if (result.success) {
       this.dispatch({ type: 'START_SUCCESS' });
       this.pendingStart?.resolve(result);
@@ -315,6 +316,22 @@ export class GatewayConnectionManager {
       this.dispatch({ type: 'START_FAILED', error });
       this.pendingStart?.reject(new Error(error));
     }
+    this.pendingStart = null;
+  }
+
+  private beginProcessRecovery(): number {
+    this.invalidateLifecycle('A newer Gateway process recovery was requested');
+    this.dispatch({ type: 'RECOVERY_REQUESTED' });
+    return this.lifecycleEpoch.capture();
+  }
+
+  private invalidateLifecycle(reason: string): void {
+    this.rejectPendingStart(reason);
+    this.lifecycleEpoch.invalidate();
+  }
+
+  private rejectPendingStart(reason: string): void {
+    this.pendingStart?.reject(new Error(reason));
     this.pendingStart = null;
   }
 }

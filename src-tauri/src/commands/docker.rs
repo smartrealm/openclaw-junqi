@@ -208,20 +208,23 @@ pub async fn start_docker_gateway(
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate.lock_owned().await;
     state.transition(
-        crate::state::gateway_process::GatewayLifecycle::Starting,
+        Some(crate::state::gateway_process::GatewayLifecycle::Starting),
+        None,
         None,
         "start_docker_gateway: starting container",
     );
     let result = start_docker_gateway_locked(app, port, tag).await;
     match &result {
         Ok(_) => state.transition(
-            crate::state::gateway_process::GatewayLifecycle::Running,
+            Some(crate::state::gateway_process::GatewayLifecycle::Running),
             Some(crate::state::gateway_process::GatewayRuntimeMode::Docker),
+            None,
             "start_docker_gateway: container healthy",
         ),
         Err(_) => state.transition(
-            crate::state::gateway_process::GatewayLifecycle::Error,
+            Some(crate::state::gateway_process::GatewayLifecycle::Error),
             Some(crate::state::gateway_process::GatewayRuntimeMode::None),
+            None,
             "start_docker_gateway: container failed",
         ),
     }
@@ -444,8 +447,9 @@ pub async fn stop_docker_gateway(
     let result = stop_docker_gateway_locked().await;
     if result.is_ok() {
         state.transition(
-            crate::state::gateway_process::GatewayLifecycle::Stopped,
+            Some(crate::state::gateway_process::GatewayLifecycle::Stopped),
             Some(crate::state::gateway_process::GatewayRuntimeMode::None),
+            None,
             "stop_docker_gateway: container stopped",
         );
     }

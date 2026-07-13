@@ -317,6 +317,7 @@ export default function App() {
     emitGatewayProgress('Restarting OpenClaw Gateway…', 0.15, 'gateway.progress.restart');
     try {
       const result = await gatewayManager.restart();
+      if (result?.superseded) return false;
       if (result?.success === false) {
         throw new Error(result.error || 'Gateway restart failed');
       }
@@ -378,6 +379,7 @@ export default function App() {
       try {
         const result = await gatewayManager.ensureRunning();
         if (cancelled || useChatStore.getState().connected) return;
+        if (result?.superseded) return;
         if (result?.healthy) {
           addBootRecoveryLog(`Gateway healthy (${result.mode ?? 'native'}); reconnecting WebSocket`);
           emitGatewayProgress(
@@ -795,6 +797,7 @@ export default function App() {
           emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.10, 'gateway.progress.reconnect');
           emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
           const result = await gatewayManager.ensureRunning();
+          if (result?.superseded) return;
           addBootRecoveryLog(result?.healthy
             ? `Gateway healthy (${result.mode ?? 'native'}) — reconnecting`
             : 'ensure_gateway_running returned unhealthy — restarting');

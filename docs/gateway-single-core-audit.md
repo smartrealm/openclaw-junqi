@@ -79,3 +79,37 @@
 - Rust canonical lifecycle/mode 位于同一个私有 Mutex，只有 `GatewayProcess::transition` 可写。
 - 源码扫描确认旧 `transition_lifecycle`、`transition_runtime`、`runtime_mode` 和直接 lifecycle lock 写入为 0。
 - 真实 Tauri 开发二进制使用隔离应用标识成功启动，并连接到健康的本地 Gateway。
+
+## 完成性复核补充（2026-07-13）
+
+上一轮证明只覆盖了 lifecycle/mode，没有覆盖同样参与生命周期判断的 `restarting`，也没有证明只读状态查询不会覆盖正在执行的操作。按“所有 Gateway 状态”重新枚举后，补充以下缺陷。
+
+### BUG-GSC07 · CRITICAL · 重启标记与 canonical 状态分裂
+
+**位置**：`src-tauri/src/state/gateway_process.rs`、`src-tauri/src/commands/gateway.rs`。
+
+**证据**：`restarting` 使用独立 Mutex，并由 `restart_gateway` 和 RAII guard 直接写入；`gateway_status`、`start_gateway_locked` 又读取它决定对外状态和是否启动。
+
+**影响**：即使 lifecycle/mode 只有一个写方法，系统仍存在第二个生命周期状态源，无法原子观察 `reconnecting + restarting`。
+
+**修复**：把 restarting 合并进私有 `GatewayRuntimeState`，所有变更仍只经过 `GatewayProcess::transition`。
+
+### BUG-GSC08 · CRITICAL · 状态查询可覆盖正在执行的生命周期
+
+**位置**：`src-tauri/src/commands/gateway.rs`。
+
+**证据**：`gateway_status` 未持有 `operation_gate`，但在子进程退出或发现外部端口时调用 transition；`restart_gateway` 还在获取 gate 前写 port。
+
+**影响**：状态轮询可以把 STARTING/RECONNECTING 覆盖为 STOPPED/RUNNING；并发重启等待者可以在真正获得所有权前污染 owner 的 port。
+
+**修复**：重启获得 gate 且确认不是合并请求后才写 port；状态查询仅在成功取得 observation gate 时清理 child 和提交观测状态。
+
+### BUG-GSC09 · HIGH · 前端核心外仍有状态写入和悬挂启动 Promise
+
+**位置**：`GatewayConnectionManager.ts`、`GatewayStateMachine.ts`。
+
+**证据**：init 直接替换 FSM 并写 error/retrying/startAttempted；executeAction 写 startAttempted/error。异步 start 在 generation 失效后直接 return，pending Promise 永不 settle。
+
+**影响**：源码无法证明 dispatch 是唯一状态提交点；设置向导切换生命周期时可能永久等待旧启动。
+
+**修复**：增加 INITIALIZE/RECOVERY_REQUESTED 事件；FSM 在 STARTING 状态吞掉重复离线轮询，从而删除 startAttempted；失效 start 明确 reject waiter。

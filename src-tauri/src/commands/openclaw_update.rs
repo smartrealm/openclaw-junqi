@@ -572,8 +572,9 @@ async fn stop_managed_gateway(state: &GatewayProcess) -> Result<bool, String> {
         }
     }
     state.transition(
-        GatewayLifecycle::Stopped,
+        Some(GatewayLifecycle::Stopped),
         Some(GatewayRuntimeMode::None),
+        None,
         "openclaw_update: managed child stopped before package replacement",
     );
     Ok(true)

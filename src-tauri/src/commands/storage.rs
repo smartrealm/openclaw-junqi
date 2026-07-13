@@ -226,8 +226,9 @@ async fn stop_all_locked(
             run_gateway_service_command(binary, state_dir, config_path, &["gateway", "stop"]).await;
     }
     state.transition(
-        GatewayLifecycle::Stopped,
+        Some(GatewayLifecycle::Stopped),
         Some(GatewayRuntimeMode::None),
+        None,
         "storage migration: all managed runtimes stopped",
     );
 }

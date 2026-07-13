@@ -113,8 +113,9 @@ pub async fn ensure_gateway_running(
     if probe_gateway_port(port).await {
         let token = read_gateway_token();
         state.transition(
-            GatewayLifecycle::Running,
+            Some(GatewayLifecycle::Running),
             Some(GatewayRuntimeMode::External),
+            None,
             "ensure_gateway_running: existing endpoint is healthy",
         );
         push_log(
@@ -229,8 +230,9 @@ pub async fn ensure_gateway_running(
                     Ok(status) => {
                         docker_token = status.token.or_else(read_docker_gateway_token);
                         state.transition(
-                            GatewayLifecycle::Running,
+                            Some(GatewayLifecycle::Running),
                             Some(GatewayRuntimeMode::Docker),
+                            None,
                             "ensure_gateway_running: Docker fallback started",
                         );
                     }

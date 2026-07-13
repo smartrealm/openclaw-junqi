@@ -51,3 +51,42 @@
 - 构建：`npm run build`、`npm run lint`、`cargo check`、`cargo fmt --check` 通过。
 - 运行时：以 `com.junqi.desktop.gateway-audit` 临时标识启动真实 Tauri 开发二进制；进程持续运行，OpenClaw Gateway 在 `127.0.0.1:18789` 健康响应。
 - 保护：没有关闭正式版 JunQi，也没有为了验证而重启其共享 Gateway。
+
+## 完成性复核规格
+
+### BUG-GSC07 · 完整原子 runtime 状态
+
+**Current**：restarting 在 canonical lifecycle/mode 之外独立读写。
+
+**Target**：lifecycle、mode、restarting 同锁读写，只有 transition 能修改。
+
+**Acceptance**：
+
+- [ ] `GatewayProcess` 不再公开 `restarting: Mutex<bool>`。
+- [ ] runtime snapshot 同时返回 lifecycle、mode、restarting。
+- [ ] restart guard 通过 transition 清除 restarting。
+
+### BUG-GSC08 · 观测不能覆盖 owner
+
+**Current**：gateway_status 未持 gate 即可 transition；restart 在 gate 前写 port。
+
+**Target**：只有 lifecycle owner 或成功取得 observation gate 的查询能提交状态。
+
+**Acceptance**：
+
+- [ ] restart 通过合并检查后才写 port。
+- [ ] operation gate 被占用时，gateway_status 不清 child、不 transition。
+- [ ] operation gate 空闲时，gateway_status 仍能把已退出 child 和健康外部 endpoint 对账到 canonical 状态。
+
+### BUG-GSC09 · 前端唯一状态提交方法
+
+**Current**：init/executeAction 直接写编排字段，stale start 不 settle。
+
+**Target**：只有 dispatch 写 UI-facing 编排状态并推进 FSM；动作执行器只做副作用。
+
+**Acceptance**：
+
+- [ ] error/retrying/logs 只在 dispatch 内赋值。
+- [ ] 删除 startAttempted；STARTING + offline 不重复返回 START。
+- [ ] initialize/ensure/restart 都先提交明确事件。
+- [ ] stale start 明确 reject pending Promise，后续 setup start 可重新执行。

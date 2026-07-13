@@ -13,6 +13,8 @@ export enum GatewayState {
 
 /** Events that drive state transitions. */
 export type GatewayEvent =
+  | { type: 'INITIALIZE' }
+  | { type: 'RECOVERY_REQUESTED' }
   | {
       type: 'STATUS_RECEIVED';
       running: boolean;

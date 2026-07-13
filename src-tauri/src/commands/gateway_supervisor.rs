@@ -224,6 +224,7 @@ pub async fn get_gateway_lifecycle(
 pub struct GatewayRuntimeSnapshot {
     lifecycle: GatewayLifecycle,
     mode: GatewayRuntimeMode,
+    restarting: bool,
     port: u16,
     managed_pid: Option<u32>,
 }
@@ -244,6 +245,7 @@ pub async fn get_gateway_runtime_snapshot(
     Ok(GatewayRuntimeSnapshot {
         lifecycle: runtime.lifecycle,
         mode: runtime.mode,
+        restarting: runtime.restarting,
         port,
         managed_pid,
     })

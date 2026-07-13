@@ -10,7 +10,6 @@ export type GatewayAction =
   | 'CONNECT'    // Establish WebSocket connection
   | 'START'      // Start gateway process
   | 'START_DOCKER'
-  | 'CLEAR_ERROR'
   | 'SHOW_ERROR'
   | 'NONE';
 
@@ -33,16 +32,16 @@ interface TransitionRule {
 const RULES: TransitionRule[] = [
   // ── DETECTING ──
   { from: GatewayState.DETECTING, event: 'STATUS_RECEIVED', to: GatewayState.CONNECTING,  actions: ['CONNECT'] },
-  { from: GatewayState.DETECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },
+  { from: GatewayState.DETECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: [] },
   // Note: running=false or error handled dynamically in transition()
 
   // ── STARTING ──
   { from: GatewayState.STARTING,  event: 'START_SUCCESS',   to: GatewayState.CONNECTING,  actions: ['CONNECT'] },
   { from: GatewayState.STARTING,  event: 'START_FAILED',    to: GatewayState.ERROR,       actions: ['SHOW_ERROR'] },
-  { from: GatewayState.STARTING,  event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },
+  { from: GatewayState.STARTING,  event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: [] },
 
   // ── CONNECTING ──
-  { from: GatewayState.CONNECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },
+  { from: GatewayState.CONNECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: [] },
   { from: GatewayState.CONNECTING, event: 'WS_CLOSE',        to: GatewayState.DETECTING,   actions: [] },
 
   // ── CONNECTED ──
@@ -72,6 +71,9 @@ export class GatewayStateMachine {
 
   /** Process an event; returns the transition result or null if no rule. */
   transition(event: GatewayEvent): TransitionResult {
+    if (event.type === 'INITIALIZE' || event.type === 'RECOVERY_REQUESTED') {
+      return this.apply(this.state, event.type, GatewayState.DETECTING, []);
+    }
     if (event.type === 'START_REQUESTED') {
       return this.apply(this.state, event.type, GatewayState.STARTING, ['START']);
     }
@@ -90,6 +92,9 @@ export class GatewayStateMachine {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.ERROR, ['SHOW_ERROR']);
       }
       if (!event.running) {
+        if (this.state === GatewayState.STARTING) {
+          return { state: this.state, actions: ['NONE'] };
+        }
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.STARTING, ['START']);
       }
       if (this.state === GatewayState.CONNECTED || this.state === GatewayState.CONNECTING) {

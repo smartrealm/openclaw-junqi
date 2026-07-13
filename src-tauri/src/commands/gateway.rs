@@ -2,7 +2,6 @@ use crate::paths;
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode};
 use crate::state::GatewayProcess;
 use serde::Serialize;
-use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::net::TcpStream;
 
@@ -396,7 +395,8 @@ async fn start_managed_gateway_fallback(
         Ok(status) => status,
         Err(error) => {
             app.state::<GatewayProcess>().transition(
-                GatewayLifecycle::Error,
+                Some(GatewayLifecycle::Error),
+                None,
                 None,
                 "restart fallback: managed Gateway failed",
             );
@@ -416,7 +416,8 @@ async fn start_managed_gateway_fallback(
     }
 
     app.state::<GatewayProcess>().transition(
-        GatewayLifecycle::Error,
+        Some(GatewayLifecycle::Error),
+        None,
         None,
         "restart fallback: health check timed out",
     );
@@ -474,8 +475,6 @@ pub async fn restart_gateway(
     let config_path = paths::config_path();
     let meta = ConfigMetadata::load(&config_path);
     let port = port.unwrap_or(meta.port);
-    *state.port.lock().map_err(|e| e.to_string())? = port;
-
     use std::sync::atomic::Ordering;
 
     let observed_restart_generation = state.restart_completed_generation.load(Ordering::Acquire);
@@ -497,6 +496,7 @@ pub async fn restart_gateway(
         );
         return gateway_status(state).await;
     }
+    *state.port.lock().map_err(|e| e.to_string())? = port;
 
     struct RestartCompletionGuard<'a> {
         generation: &'a std::sync::atomic::AtomicU64,
@@ -511,28 +511,26 @@ pub async fn restart_gateway(
     };
 
     state.transition(
-        GatewayLifecycle::Reconnecting,
+        Some(GatewayLifecycle::Reconnecting),
         None,
+        Some(true),
         "restart_gateway: restarting system service",
     );
-
-    // Mark restarting so the status poller / start_gateway don't race us:
-    // gateway_status returns running=true, start_gateway refuses to spawn.
-    *state.restarting.lock().map_err(|e| e.to_string())? = true;
     // Guard: clear the flag no matter how we exit (success, error, panic).
     struct RestartGuard<'a> {
-        flag: &'a Mutex<bool>,
+        state: &'a GatewayProcess,
     }
     impl<'a> Drop for RestartGuard<'a> {
         fn drop(&mut self) {
-            if let Ok(mut g) = self.flag.lock() {
-                *g = false;
-            }
+            self.state.transition(
+                None,
+                None,
+                Some(false),
+                "restart_gateway: restart operation completed",
+            );
         }
     }
-    let _restart_guard = RestartGuard {
-        flag: &state.restarting,
-    };
+    let _restart_guard = RestartGuard { state: &state };
 
     emit_restart_progress(
         &app,
@@ -632,8 +630,9 @@ pub async fn restart_gateway(
         let token = read_gateway_token(&config_path);
         emit_restart_progress(&app, "Gateway health check passed.");
         state.transition(
-            GatewayLifecycle::Running,
+            Some(GatewayLifecycle::Running),
             Some(GatewayRuntimeMode::SystemService),
+            None,
             "restart_gateway: service health check passed",
         );
         return Ok(GatewayStatus {
@@ -687,7 +686,7 @@ pub(crate) async fn start_gateway_locked(
     // A real `openclaw gateway restart` owns the lifecycle right now — do not
     // spawn a competing foreground child. Report the configured port so the
     // caller retries status instead of racing the restart.
-    if *state.restarting.lock().map_err(|e| e.to_string())? {
+    if state.runtime_snapshot()?.restarting {
         return Ok(GatewayStatus {
             running: true,
             port,
@@ -701,8 +700,9 @@ pub(crate) async fn start_gateway_locked(
     if is_gateway_serving(port).await {
         *state.port.lock().map_err(|e| e.to_string())? = port;
         state.transition(
-            GatewayLifecycle::Running,
+            Some(GatewayLifecycle::Running),
             Some(GatewayRuntimeMode::External),
+            None,
             "start_gateway: existing endpoint is healthy",
         );
         // Gateway already running — read the token from config so the frontend
@@ -719,7 +719,8 @@ pub(crate) async fn start_gateway_locked(
     // Nothing is serving — (re)start our own managed child. We only ever kill
     // our OWN previously-spawned child here, never a foreign process.
     state.transition(
-        crate::state::gateway_process::GatewayLifecycle::Starting,
+        Some(crate::state::gateway_process::GatewayLifecycle::Starting),
+        None,
         None,
         "start_gateway: beginning spawn sequence",
     );
@@ -731,7 +732,8 @@ pub(crate) async fn start_gateway_locked(
         fn drop(&mut self) {
             if self.armed {
                 self.state.transition(
-                    GatewayLifecycle::Error,
+                    Some(GatewayLifecycle::Error),
+                    None,
                     None,
                     "start_gateway: spawn sequence failed",
                 );
@@ -876,8 +878,9 @@ pub(crate) async fn start_gateway_locked(
     }
     *state.port.lock().map_err(|e| e.to_string())? = port;
     state.transition(
-        GatewayLifecycle::Running,
+        Some(GatewayLifecycle::Running),
         Some(GatewayRuntimeMode::ManagedChild),
+        None,
         "start_gateway: child spawned",
     );
     start_failure_guard.armed = false;
@@ -908,15 +911,17 @@ pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, St
             .await
             .map_err(|e| format!("Failed to kill gateway: {}", e))?;
         state.transition(
-            GatewayLifecycle::Stopped,
+            Some(GatewayLifecycle::Stopped),
             Some(GatewayRuntimeMode::None),
+            None,
             "stop_gateway: managed child stopped",
         );
         Ok("Gateway stopped".into())
     } else {
         state.transition(
-            GatewayLifecycle::Stopped,
+            Some(GatewayLifecycle::Stopped),
             Some(GatewayRuntimeMode::None),
+            None,
             "stop_gateway: no managed child",
         );
         Ok("Gateway not running — nothing to stop".into())
@@ -937,7 +942,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
     // If a real restart is in progress, report running=true so the frontend
     // status poller does NOT see a down→up flap and trigger a competing
     // start_gateway. The restart command owns the lifecycle right now.
-    if *state.restarting.lock().map_err(|e| e.to_string())? {
+    if state.runtime_snapshot()?.restarting {
         let token = read_gateway_token(&config_path);
         return Ok(GatewayStatus {
             running: true,
@@ -947,6 +952,12 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         });
     }
 
+    // Observation may reconcile canonical state only when no lifecycle owner
+    // is active. A busy query remains read-only and cannot overwrite STARTING
+    // or RECONNECTING while another command owns the operation gate.
+    let _observation_guard = state.operation_gate.clone().try_lock_owned().ok();
+    let can_reconcile = _observation_guard.is_some();
+
     // 1. Our own managed child takes priority. Compute the "still alive" flag
     //    and PID first (synchronously), then drop the lock, then await the
     //    gateway probe — std Mutex guards are not Send across await.
@@ -955,13 +966,15 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         if let Some(ref mut child) = *child_lock {
             match child.try_wait() {
                 Ok(Some(_status)) => {
-                    // Process exited — clear it and fall through to external probe.
-                    *child_lock = None;
-                    state.transition(
-                        GatewayLifecycle::Stopped,
-                        Some(GatewayRuntimeMode::None),
-                        "gateway_status: managed child exited",
-                    );
+                    if can_reconcile {
+                        *child_lock = None;
+                        state.transition(
+                            Some(GatewayLifecycle::Stopped),
+                            Some(GatewayRuntimeMode::None),
+                            None,
+                            "gateway_status: managed child exited",
+                        );
+                    }
                     (false, None)
                 }
                 Ok(None) => {
@@ -998,18 +1011,21 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
 
     // 2. No managed child: probe JunQi's configured OpenClaw port only.
     if is_gateway_serving(port).await {
-        *state.port.lock().map_err(|e| e.to_string())? = port;
-        let current = state.runtime_snapshot()?;
-        let observed_mode = if current.mode == GatewayRuntimeMode::None {
-            GatewayRuntimeMode::External
-        } else {
-            current.mode
-        };
-        state.transition(
-            GatewayLifecycle::Running,
-            Some(observed_mode),
-            "gateway_status: configured endpoint is healthy",
-        );
+        if can_reconcile {
+            *state.port.lock().map_err(|e| e.to_string())? = port;
+            let current = state.runtime_snapshot()?;
+            let observed_mode = if current.mode == GatewayRuntimeMode::None {
+                GatewayRuntimeMode::External
+            } else {
+                current.mode
+            };
+            state.transition(
+                Some(GatewayLifecycle::Running),
+                Some(observed_mode),
+                None,
+                "gateway_status: configured endpoint is healthy",
+            );
+        }
         let probe_token = read_gateway_token(&config_path);
         return Ok(GatewayStatus {
             running: true,
