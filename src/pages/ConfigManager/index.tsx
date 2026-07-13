@@ -25,10 +25,9 @@ import { deriveProviderApiKeyEnvKey, preserveProviderSecretsFromDisk } from './p
 import { FloatingSaveButton, ChangesPill } from './components';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
+import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
 
-type Tab = 'providers' | 'agents' | 'channels' | 'tools' | 'advanced' | 'secrets';
-const VALID_TABS: ReadonlySet<Tab> = new Set(['providers', 'agents', 'channels', 'tools', 'advanced', 'secrets']);
-const isValidTab = (s: string): s is Tab => VALID_TABS.has(s as Tab);
+type Tab = ConfigTab;
 
 type ConfigBackup = {
   key: string;
@@ -244,18 +243,19 @@ function applyPreferredWebProviders(config: GatewayRuntimeConfig): GatewayRuntim
 export function ConfigManagerPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<Tab>('providers');
+  const [providerAddRequestId, setProviderAddRequestId] = useState(0);
 
-  // Sidebar split-button quick-create sends users to /config?tab=<name>
-  // for the model/channel sub-categories. Consume the query so the tab
-  // does not reset on every render.
+  // `tab` is durable navigation state. `action` is consumed once so direct
+  // links can open a workflow without coupling the sidebar to modal state.
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab && isValidTab(tab)) {
-      setActiveTab(tab);
-      const next = new URLSearchParams(searchParams);
-      next.delete('tab');
-      setSearchParams(next, { replace: true });
+    const intent = readConfigNavigationIntent(searchParams);
+    if (intent.tab) {
+      setActiveTab(intent.tab);
+    }
+    if (intent.addProvider) {
+      setProviderAddRequestId((current) => current + 1);
+      setSearchParams(intent.consumedParams!, { replace: true });
     }
   }, [searchParams, setSearchParams]);
 
@@ -1303,6 +1303,7 @@ export function ConfigManagerPage() {
                 onChange={handleChange}
                 onApplyAndSave={handleApplyAndSave}
                 saving={saving}
+                addRequestId={providerAddRequestId}
               />
             ) : activeTab === 'agents' ? (
               <AgentsTab config={config} onChange={handleChange} />

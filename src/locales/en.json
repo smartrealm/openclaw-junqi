@@ -2557,7 +2557,7 @@
   "sidebar.newChat": "New chat",
   "sidebar.newSession": "New session",
   "sidebar.nav.agents": "Agents",
-  "sidebar.nav.models": "Models",
+  "sidebar.nav.models": "Providers & Models",
   "sidebar.nav.channels": "Channels",
   "sidebar.nav.cron": "Scheduled tasks",
   "sidebar.activeSessions": "Active sessions",

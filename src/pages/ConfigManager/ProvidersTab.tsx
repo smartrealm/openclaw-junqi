@@ -78,6 +78,7 @@ interface ProvidersTabProps {
     options?: { connectionProbe?: ConnectionPrecheckProbe }
   ) => Promise<boolean>;
   saving: boolean;
+  addRequestId?: number;
 }
 
 
@@ -3073,7 +3074,7 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
 // ProvidersTab — Main Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: ProvidersTabProps) {
+export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequestId = 0 }: ProvidersTabProps) {
   const { t } = useTranslation();
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
@@ -3151,6 +3152,10 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving }: Provi
     setModalInitialTemplate(template);
     setShowModal(true);
   }, []);
+
+  useEffect(() => {
+    if (addRequestId > 0) openModal();
+  }, [addRequestId, openModal]);
 
   // ── Add provider (auth profile + models) ──
   const handleAdd = (

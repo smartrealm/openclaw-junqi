@@ -2581,7 +2581,7 @@
   "sidebar.newChat": "新建对话",
   "sidebar.newSession": "新建会话",
   "sidebar.nav.agents": "智能体",
-  "sidebar.nav.models": "模型",
+  "sidebar.nav.models": "供应方与模型",
   "sidebar.nav.channels": "通道",
   "sidebar.nav.cron": "定时任务",
   "sidebar.activeSessions": "活跃会话",

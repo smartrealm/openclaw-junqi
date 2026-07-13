@@ -392,22 +392,52 @@ function WorkbenchPanel() {
             (it.to === '/agents' && location.pathname.startsWith('/agents')) ||
             (it.to === '/cron?new=1' && location.pathname.startsWith('/cron'))
           );
+          const rowClassName = clsx(
+            'h-8 rounded-md text-[13px] text-left flex items-center gap-2.5 transition-colors',
+            active
+              ? 'text-aegis-primary bg-aegis-primary/[0.08] font-semibold'
+              : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-aegis-hover/30',
+          );
+          const rowContent = (
+            <>
+              <span className={clsx('shrink-0', active ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
+                {it.icon}
+              </span>
+              <span className="flex-1 truncate">{it.label}</span>
+            </>
+          );
+
+          if (it.key === 'models') {
+            return (
+              <div key={it.key} className={clsx(rowClassName, '-mx-2 pr-1')}>
+                <button
+                  type="button"
+                  onClick={() => navigate(it.to)}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 self-stretch px-2 text-left"
+                >
+                  {rowContent}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/config?tab=providers&action=add')}
+                  className="grid size-6 shrink-0 place-items-center rounded text-aegis-text-dim transition-colors hover:bg-aegis-primary/10 hover:text-aegis-primary"
+                  title={t('config.addProvider', 'Add provider')}
+                  aria-label={t('config.addProvider', 'Add provider')}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            );
+          }
+
           return (
             <button
               key={it.key}
               type="button"
               onClick={() => navigate(it.to)}
-              className={clsx(
-                'h-8 px-2 -mx-2 rounded-md text-[13px] text-left flex items-center gap-2.5 transition-colors',
-                active
-                  ? 'text-aegis-primary bg-aegis-primary/[0.08] font-semibold'
-                  : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-aegis-hover/30',
-              )}
+              className={clsx(rowClassName, 'px-2 -mx-2')}
             >
-              <span className={clsx('shrink-0', active ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
-                {it.icon}
-              </span>
-              <span className="flex-1">{it.label}</span>
+              {rowContent}
             </button>
           );
         })}
