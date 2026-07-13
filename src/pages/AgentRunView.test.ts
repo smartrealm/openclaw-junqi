@@ -63,3 +63,8 @@ test('workspace-owned tasks cannot change their project path', () => {
   assert.match(source, /providedProjectPath === undefined && \(/);
   assert.match(source, /placeholder="Project path \(cwd if empty\)"/);
 });
+
+test('new worktree tasks require an explicit base branch', () => {
+  assert.match(source, /launchMode === 'worktree' && !resumingExistingWorktree && !baseBranch\.trim\(\)/);
+  assert.match(source, /请选择工作树的基础分支/);
+});

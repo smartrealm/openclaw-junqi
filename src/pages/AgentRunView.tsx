@@ -1025,6 +1025,11 @@ export function AgentRunView({
   const handleStart = useCallback(async (promptOverride?: string, forceResume = false) => {
     const basePrompt = (promptOverride ?? prompt).trim();
     if ((!basePrompt && attachedImages.length === 0 && textAttachments.length === 0 && !resumeIdRef.current) || (running && !forceResume)) return;
+    const resumingExistingWorktree = Boolean(resumeIdRef.current && worktreePathRef.current);
+    if (launchMode === 'worktree' && !resumingExistingWorktree && !baseBranch.trim()) {
+      setError('请选择工作树的基础分支');
+      return;
+    }
     const taskPrompt = planMode && basePrompt ? `${basePrompt}\n\nPlease use plan mode.` : basePrompt;
     setError(null); clearTerm(); setStatus('running'); setRunning(true); setMetrics(null); setDiffStats(null);
     if (workspaceTaskId) {

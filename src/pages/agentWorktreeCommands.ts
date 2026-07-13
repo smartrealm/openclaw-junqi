@@ -1,5 +1,5 @@
 export function createTaskWorktreeArgs(projectPath: string, taskId: string, baseBranch?: string) {
-  return { projectPath: projectPath || '.', taskId, baseBranch: baseBranch || 'main' };
+  return { projectPath: projectPath || '.', taskId, baseBranch: baseBranch || '' };
 }
 
 export function taskWorktreeArgs(projectPath: string, worktreePath: string, branch: string) {
@@ -7,10 +7,9 @@ export function taskWorktreeArgs(projectPath: string, worktreePath: string, bran
 }
 
 export function mergeTaskWorktreeArgs(projectPath: string, worktreePath: string, branch: string, baseBranch?: string) {
-  return { ...taskWorktreeArgs(projectPath, worktreePath, branch), baseBranch: baseBranch || 'main' };
+  return { ...taskWorktreeArgs(projectPath, worktreePath, branch), baseBranch: baseBranch || '' };
 }
 
 export function worktreeDiffStatsArgs(projectPath: string, worktreePath: string, baseBranch?: string) {
-  return { projectPath: projectPath || '.', worktreePath, baseBranch: baseBranch || 'main' };
+  return { projectPath: projectPath || '.', worktreePath, baseBranch: baseBranch || '' };
 }
-
