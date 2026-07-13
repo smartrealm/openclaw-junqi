@@ -40,6 +40,12 @@ export const STEP_META: Record<string, { titleKey: string; titleFallback: string
     descriptionKey: "setup.installSteps.node.description",
     descriptionFallback: "确认本地运行时版本，缺失时安装内置版本",
   },
+  npm: {
+    titleKey: "setup.installSteps.npm.title",
+    titleFallback: "npm",
+    descriptionKey: "setup.installSteps.npm.description",
+    descriptionFallback: "确认包管理器版本与 OpenClaw 安装能力",
+  },
   openclaw: {
     titleKey: "setup.installSteps.openclaw.title",
     titleFallback: "OpenClaw",

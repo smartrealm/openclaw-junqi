@@ -55,6 +55,7 @@ pub fn run() {
             // System
             commands::system::get_platform_info,
             commands::system::check_node,
+            commands::system::check_npm,
             commands::system::check_git,
             commands::system::check_openclaw,
             commands::openclaw_update::check_openclaw_update,

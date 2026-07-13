@@ -2271,6 +2271,10 @@
         "title": "Node.js",
         "description": "确认本地运行时版本，缺失时安装内置版本"
       },
+      "npm": {
+        "title": "npm",
+        "description": "确认包管理器版本与 OpenClaw 安装能力"
+      },
       "openclaw": {
         "title": "OpenClaw",
         "description": "检查 CLI 包与 Gateway 能力，必要时执行安装"
@@ -2315,6 +2319,11 @@
     "installingGit": "正在安装 Git...",
     "checkingNode": "正在检测 Node.js...",
     "installingNode": "正在安装 Node.js...",
+    "checkingNpm": "正在检测 npm...",
+    "installingNpm": "正在通过托管 Node.js 安装 npm...",
+    "npmInstallFailed": "npm 安装后校验失败",
+    "nodeInstallFailed": "Node.js 安装后校验失败",
+    "openclawInstallFailed": "OpenClaw 安装后校验失败",
     "checkingOpenclaw": "正在检测 OpenClaw...",
     "installingOpenclaw": "正在安装 OpenClaw...",
     "startingGateway": "正在启动 Gateway...",

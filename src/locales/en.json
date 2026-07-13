@@ -2277,6 +2277,10 @@
         "title": "Node.js",
         "description": "Check the local runtime and install the bundled version when needed"
       },
+      "npm": {
+        "title": "npm",
+        "description": "Verify the package manager version used to install OpenClaw"
+      },
       "openclaw": {
         "title": "OpenClaw",
         "description": "Validate the CLI package and Gateway capability, then install if missing"
@@ -2321,6 +2325,11 @@
     "installingGit": "Installing Git...",
     "checkingNode": "Checking Node.js...",
     "installingNode": "Installing Node.js...",
+    "checkingNpm": "Checking npm...",
+    "installingNpm": "Installing npm through managed Node.js...",
+    "npmInstallFailed": "npm validation failed after installation",
+    "nodeInstallFailed": "Node.js validation failed after installation",
+    "openclawInstallFailed": "OpenClaw validation failed after installation",
     "checkingOpenclaw": "Checking OpenClaw...",
     "installingOpenclaw": "Installing OpenClaw...",
     "startingGateway": "Starting Gateway...",

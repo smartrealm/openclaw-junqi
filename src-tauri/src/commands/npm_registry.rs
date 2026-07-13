@@ -35,10 +35,11 @@ impl NpmRegistry {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NpmRegistrySelection {
     pub primary: NpmRegistry,
     pub fallback: Option<NpmRegistry>,
+    pub package_version: Option<String>,
 }
 
 impl NpmRegistrySelection {
@@ -54,6 +55,7 @@ impl NpmRegistrySelection {
         Self {
             primary: OFFICIAL_NPM_REGISTRY,
             fallback: None,
+            package_version: None,
         }
     }
 }
@@ -142,22 +144,26 @@ fn select_from_probes(
             NpmRegistrySelection {
                 primary: mirror.registry,
                 fallback: Some(official.registry),
+                package_version: Some(official.version),
             }
         }
         (Some(official), Some(mirror)) if official.version == mirror.version => {
             NpmRegistrySelection {
                 primary: official.registry,
                 fallback: Some(mirror.registry),
+                package_version: Some(official.version),
             }
         }
         // A mirror that has not caught up must never become the source of truth.
         (Some(official), Some(_)) | (Some(official), None) => NpmRegistrySelection {
             primary: official.registry,
             fallback: None,
+            package_version: Some(official.version),
         },
         (None, Some(mirror)) => NpmRegistrySelection {
             primary: mirror.registry,
             fallback: None,
+            package_version: Some(mirror.version),
         },
         (None, None) => NpmRegistrySelection::official_default(),
     }
@@ -189,6 +195,7 @@ mod tests {
 
         assert_eq!(selection.primary.kind, NpmRegistryKind::Official);
         assert_eq!(selection.fallback, Some(CHINA_NPM_REGISTRY));
+        assert_eq!(selection.package_version.as_deref(), Some("2026.7.1"));
     }
 
     #[test]
@@ -200,6 +207,7 @@ mod tests {
 
         assert_eq!(selection.primary.kind, NpmRegistryKind::ChinaMirror);
         assert_eq!(selection.fallback, Some(OFFICIAL_NPM_REGISTRY));
+        assert_eq!(selection.package_version.as_deref(), Some("2026.7.1"));
     }
 
     #[test]
@@ -211,6 +219,7 @@ mod tests {
 
         assert_eq!(selection.primary.kind, NpmRegistryKind::Official);
         assert_eq!(selection.fallback, None);
+        assert_eq!(selection.package_version.as_deref(), Some("2026.7.1"));
     }
 
     #[test]
@@ -219,5 +228,15 @@ mod tests {
 
         assert_eq!(selection.primary.kind, NpmRegistryKind::ChinaMirror);
         assert_eq!(selection.fallback, None);
+        assert_eq!(selection.package_version.as_deref(), Some("2026.7.1"));
+    }
+
+    #[test]
+    fn unavailable_registries_fall_back_without_claiming_a_version() {
+        let selection = select_from_probes(None, None);
+
+        assert_eq!(selection.primary.kind, NpmRegistryKind::Official);
+        assert_eq!(selection.fallback, None);
+        assert_eq!(selection.package_version, None);
     }
 }

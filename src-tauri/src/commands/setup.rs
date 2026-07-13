@@ -155,7 +155,7 @@ fn node_sources() -> Vec<(String, &'static str)> {
 }
 
 fn git_win_filename() -> String {
-    format!("Git-{}-64-bit.exe", GIT_WIN_VERSION)
+    format!("MinGit-{}-64-bit.zip", GIT_WIN_VERSION)
 }
 
 fn git_win_sources() -> Vec<(String, &'static str)> {
@@ -396,6 +396,59 @@ fn extract_zip(
     Ok(())
 }
 
+fn extract_zip_preserving_root(
+    app: &tauri::AppHandle,
+    step: &str,
+    archive: &PathBuf,
+    dest: &PathBuf,
+    prog_start: f64,
+    prog_end: f64,
+) -> Result<(), String> {
+    let file = std::fs::File::open(archive).map_err(|e| format!("打开压缩包失败: {}", e))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("读取 zip 失败: {}", e))?;
+    let total = zip.len();
+    emit(
+        app,
+        step,
+        &format!("Extracting managed Git runtime ({} files)...", total),
+        prog_start,
+    );
+
+    for i in 0..total {
+        let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
+        let Some(relative) = entry.enclosed_name() else {
+            continue;
+        };
+        let outpath = dest.join(&relative);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&outpath).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(parent) = outpath.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let mut output = std::fs::File::create(&outpath)
+                .map_err(|e| format!("创建 {} 失败: {}", outpath.display(), e))?;
+            std::io::copy(&mut entry, &mut output)
+                .map_err(|e| format!("解压 {} 失败: {}", relative.display(), e))?;
+        }
+        if i % 200 == 0 && total > 0 {
+            let fraction = i as f64 / total as f64;
+            emit(
+                app,
+                step,
+                &format!(
+                    "Extracting Git {}% ({}/{})...",
+                    (fraction * 100.0) as u32,
+                    i,
+                    total
+                ),
+                prog_start + fraction * (prog_end - prog_start),
+            );
+        }
+    }
+    Ok(())
+}
+
 fn extract_targz(
     app: &tauri::AppHandle,
     step: &str,
@@ -454,15 +507,9 @@ fn extract_targz(
 
 // ─── npm install with registry fallback ───────────────────────────────────────
 
-const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(360);
+const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
 
-const NPM_NOISY_LOG_PREFIXES: &[&str] = &[
-    "npm verbose",
-    "npm sill",
-    "npm timing",
-    "npm http",
-    "npm notice",
-];
+const NPM_NOISY_LOG_PREFIXES: &[&str] = &["npm verbose", "npm sill", "npm timing", "npm notice"];
 
 const NPM_SECRET_MARKERS: &[&str] = &[
     "_authtoken",
@@ -615,9 +662,29 @@ async fn npm_install_with_fallback(
     let _npm_cache_cleanup = TemporaryDirectory(npm_cache_root.clone());
     std::fs::create_dir_all(&npm_cache_root).ok();
     std::fs::create_dir_all(global_prefix).ok();
-    let registries = npm_registry::select_npm_registry().await.candidates();
+    let registry_selection = npm_registry::select_npm_registry().await;
+    let expected_version = registry_selection.package_version.clone();
+    let registries = registry_selection.candidates();
     let mut last_err = String::new();
     let total_regs = registries.len();
+    let registry_order = registries
+        .iter()
+        .map(|registry| registry.label())
+        .collect::<Vec<_>>()
+        .join(" -> ");
+    emit(
+        app,
+        step,
+        &format!(
+            "npm source order: {}{}",
+            registry_order,
+            expected_version
+                .as_deref()
+                .map(|version| format!("; OpenClaw latest = {}", version))
+                .unwrap_or_default()
+        ),
+        prog_start,
+    );
 
     for (reg_idx, registry) in registries.into_iter().enumerate() {
         let staging_prefix = global_prefix.join(format!(
@@ -672,7 +739,12 @@ async fn npm_install_with_fallback(
             "install",
             "-g",
             "--prefer-online",
-            "--loglevel=verbose",
+            "--loglevel=http",
+            "--foreground-scripts",
+            "--fetch-retries=2",
+            "--fetch-retry-mintimeout=1000",
+            "--fetch-retry-maxtimeout=10000",
+            "--fetch-timeout=120000",
             "--no-fund",
             "--no-audit",
             pkg,
@@ -745,7 +817,37 @@ async fn npm_install_with_fallback(
                 }
             })
         });
+        let (heartbeat_tx, mut heartbeat_rx) = tokio::sync::watch::channel(false);
+        let heartbeat_app = app.clone();
+        let heartbeat_step = step.to_string();
+        let heartbeat_label = reg_label.to_string();
+        let heartbeat_task = tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            loop {
+                tokio::select! {
+                    changed = heartbeat_rx.changed() => {
+                        if changed.is_err() || *heartbeat_rx.borrow() {
+                            break;
+                        }
+                    }
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                        emit(
+                            &heartbeat_app,
+                            &heartbeat_step,
+                            &format!(
+                                "npm is still installing via {} (elapsed {}s); waiting for network, extraction, or lifecycle scripts...",
+                                heartbeat_label,
+                                started.elapsed().as_secs(),
+                            ),
+                            prog_live,
+                        );
+                    }
+                }
+            }
+        });
         let wait_result = wait_for_npm_activity(&mut child, &mut activity_rx).await;
+        let _ = heartbeat_tx.send(true);
+        let _ = heartbeat_task.await;
         let status = match wait_result {
             NpmWaitResult::Exited(Ok(s)) => s,
             NpmWaitResult::Exited(Err(e)) => {
@@ -764,14 +866,14 @@ async fn npm_install_with_fallback(
                 continue;
             }
             NpmWaitResult::Inactive => {
-                last_err = "npm install produced no output for 6 minutes".into();
+                last_err = "npm install produced no child-process output for 10 minutes".into();
                 terminate_npm_process_tree(&mut child, child_pid).await;
                 if reg_idx + 1 < total_regs {
                     emit(
                             app,
                             step,
                             &format!(
-                                "{} install stopped after 6 minutes without output; retrying with fallback source...",
+                                "{} install stopped after 10 minutes without child-process output; retrying with fallback source...",
                                 reg_label
                             ),
                             prog_start,
@@ -852,19 +954,18 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
     );
 
     if node_bin.exists() {
-        let version_str = tokio::process::Command::new(&node_bin)
-            .arg("--version")
-            .output()
-            .await
-            .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                } else {
-                    None
-                }
-            });
+        let mut version_command = tokio::process::Command::new(&node_bin);
+        version_command.arg("--version");
+        platform::configure_background_command(&mut version_command);
+        let version_str = version_command.output().await.ok().and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        });
 
+        let bundled_npm_available = paths::local_npm_cli_path().is_file();
         let needs_upgrade = match &version_str {
             Some(v) => {
                 let parts: Vec<u32> = v
@@ -872,7 +973,9 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
                     .split('.')
                     .filter_map(|s| s.parse().ok())
                     .collect();
-                parts.len() < 3 || (parts[0], parts[1], parts[2]) < (24, 14, 0)
+                parts.len() < 3
+                    || (parts[0], parts[1], parts[2]) < (24, 14, 0)
+                    || !bundled_npm_available
             }
             None => true,
         };
@@ -889,7 +992,14 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
             return Ok(format!("Node.js {} already installed", ver));
         }
 
-        let ver = version_str.unwrap_or_else(|| "older version".into());
+        let ver = if !bundled_npm_available {
+            format!(
+                "{} with missing bundled npm",
+                version_str.unwrap_or_else(|| "unknown Node.js".into())
+            )
+        } else {
+            version_str.unwrap_or_else(|| "older version".into())
+        };
         emit_keyed(
             &app,
             step,
@@ -952,8 +1062,10 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
         "setup.node.verify",
         0.96,
     );
-    let ver = tokio::process::Command::new(&node_bin)
-        .arg("--version")
+    let mut version_command = tokio::process::Command::new(&node_bin);
+    version_command.arg("--version");
+    platform::configure_background_command(&mut version_command);
+    let ver = version_command
         .output()
         .await
         .ok()
@@ -991,32 +1103,48 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
     let local_git = paths::local_git_path();
     let system_git = platform::bin_name("git");
 
-    if local_git.exists()
-        || tokio::process::Command::new(&system_git)
-            .arg("--version")
+    let existing_git = if local_git.exists() {
+        Some(local_git.clone())
+    } else {
+        let mut command = tokio::process::Command::new(&system_git);
+        command.arg("--version");
+        platform::configure_background_command(&mut command);
+        command
             .output()
             .await
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    {
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|_| PathBuf::from(&system_git))
+    };
+    if let Some(git_path) = existing_git {
+        let mut command = tokio::process::Command::new(&git_path);
+        command.arg("--version");
+        platform::configure_background_command(&mut command);
+        let version = command
+            .output()
+            .await
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+            .unwrap_or_else(|| "unknown version".into());
         emit_keyed(
             &app,
             step,
-            "Git already installed, skipping",
+            &format!("Git {} already installed, skipping", version),
             "setup.git.skip",
             1.0,
         );
-        return Ok("Git already installed".into());
+        return Ok(format!("Git {} already installed", version));
     }
 
     if cfg!(windows) {
-        // ── Windows：下载安装包（CN 源优先，GitHub 兜底）──────────────────
+        // ── Windows: extract managed MinGit without a wizard or console ───────
 
         emit(
             &app,
             step,
             &format!(
-                "准备下载 Git for Windows v{}，优先使用国内镜像源...",
+                "Preparing managed MinGit v{} (China mirror first)...",
                 GIT_WIN_VERSION
             ),
             0.04,
@@ -1025,108 +1153,47 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
         let temp_dir = paths::desktop_dir().join("tmp");
         std::fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp dir: {}", e))?;
-        let installer_path = temp_dir.join(git_win_filename());
+        let archive_path = temp_dir.join(git_win_filename());
 
-        download_with_fallback(&app, step, &git_win_sources(), &installer_path, 0.05, 0.50).await?;
+        download_with_fallback(&app, step, &git_win_sources(), &archive_path, 0.05, 0.55).await?;
+        let git_dir = paths::desktop_dir().join("git");
+        let _ = std::fs::remove_dir_all(&git_dir);
+        std::fs::create_dir_all(&git_dir)
+            .map_err(|e| format!("Failed to prepare managed Git directory: {}", e))?;
+        extract_zip_preserving_root(&app, step, &archive_path, &git_dir, 0.56, 0.92)?;
 
-        // 启动安装向导
-        emit_keyed(
-            &app,
-            step,
-            "Download complete, launching Git installer wizard...",
-            "setup.git.launchWizard",
-            0.52,
-        );
-        let mut child = tokio::process::Command::new(&installer_path)
-            .spawn()
-            .map_err(|e| format!("Failed to launch Git installer: {}", e))?;
-
-        // 等待用户完成向导（最多 15 分钟）
-        let mut elapsed_secs: u64 = 0;
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            elapsed_secs += 5;
-            match child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) => {
-                    let mins = elapsed_secs / 60;
-                    let secs = elapsed_secs % 60;
-                    let pct = (0.52 + (elapsed_secs as f64 / 900.0) * 0.35).min(0.87);
-                    emit_keyed(
-                        &app,
-                        step,
-                        &format!(
-                            "Waiting for installer wizard... elapsed {:02}:{:02}",
-                            mins, secs
-                        ),
-                        "setup.git.waitingWizard",
-                        pct,
-                    );
-                    if elapsed_secs > 900 {
-                        return Err(
-                            "Timed out (15 min) waiting for Git installer, please retry".into()
-                        );
-                    }
-                }
-                Err(e) => return Err(format!("Installer process error: {}", e)),
-            }
-        }
-
-        // 清理安装包
-        let _ = std::fs::remove_file(&installer_path);
+        let _ = std::fs::remove_file(&archive_path);
         let _ = std::fs::remove_dir_all(&temp_dir);
 
-        // 刷新 PATH 并验证
         emit_keyed(
             &app,
             step,
-            "Wizard finished, refreshing system PATH...",
-            "setup.git.refreshPath",
-            0.90,
-        );
-        #[cfg(windows)]
-        refresh_path_from_registry();
-
-        emit_keyed(
-            &app,
-            step,
-            "Verifying git is usable...",
+            "Verifying managed Git runtime...",
             "setup.git.verify",
-            0.94,
+            0.95,
         );
 
-        #[allow(unused_mut)]
-        let mut git_ok = tokio::process::Command::new("git.exe")
-            .arg("--version")
+        let mut command = tokio::process::Command::new(&local_git);
+        command.arg("--version");
+        platform::configure_background_command(&mut command);
+        let version = command
             .output()
             .await
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        #[cfg(windows)]
-        if !git_ok {
-            if let Some(git_path) = find_git_in_default_paths() {
-                git_ok = tokio::process::Command::new(&git_path)
-                    .arg("--version")
-                    .output()
-                    .await
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-            }
-        }
-
-        if git_ok {
-            emit_keyed(
-                &app,
-                step,
-                "Git installed successfully ✓",
-                "setup.git.done",
-                1.0,
-            );
-            return Ok("Git installed successfully".into());
-        }
-
-        Err("Git installer wizard finished, but git was not detected. Please restart the app or manually add Git to PATH.".into())
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+            .filter(|version| !version.is_empty())
+            .ok_or_else(|| {
+                "Managed Git extraction finished, but git.exe could not be verified".to_string()
+            })?;
+        emit_keyed(
+            &app,
+            step,
+            &format!("Git {} installed successfully ✓", version),
+            "setup.git.done",
+            1.0,
+        );
+        Ok(format!("Git {} installed successfully", version))
     } else {
         emit_keyed(
             &app,
@@ -1167,6 +1234,7 @@ async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> PathBuf {
         )
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    platform::configure_background_command(&mut cmd);
     let prefix_from_npm = match cmd.output().await {
         Ok(out) if out.status.success() => {
             let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -1524,11 +1592,10 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     // ③ npm install（CN 源优先，官方兜底，全程输出实时日志）
-    emit_keyed(
+    emit(
         &app,
         step,
-        "Preferring npmmirror.com (CN) for openclaw install; falls back to npmjs.org (official)...",
-        "setup.openclaw.npmInstall",
+        "Checking npmjs.org and npmmirror.com, then using the fastest current source...",
         0.10,
     );
 
@@ -1588,14 +1655,17 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     }
     crate::commands::system::persist_selected_openclaw_binary(&openclaw_bin)?;
 
-    emit_keyed(
+    let installed_version = verified.version.unwrap_or_else(|| "unknown version".into());
+    emit(
         &app,
         step,
-        "openclaw installed successfully ✓",
-        "setup.openclaw.done",
+        &format!("OpenClaw {} installed successfully ✓", installed_version),
         1.0,
     );
-    Ok("OpenClaw installed successfully".into())
+    Ok(format!(
+        "OpenClaw {} installed successfully",
+        installed_version
+    ))
 }
 
 /// 准备 Gateway — 在 install_openclaw 完成后由前端调用。
@@ -1791,14 +1861,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn npm_log_filter_hides_verbose_transport_noise() {
+    fn managed_windows_git_sources_use_non_interactive_mingit_archives() {
+        let filename = git_win_filename();
+        let sources = git_win_sources();
+
+        assert_eq!(filename, format!("MinGit-{}-64-bit.zip", GIT_WIN_VERSION));
+        assert_eq!(sources.len(), 2);
+        assert!(sources.iter().all(|(url, _)| url.ends_with(&filename)));
+        assert!(sources.iter().all(|(url, _)| url.starts_with("https://")));
+        assert!(sources.iter().any(|(url, _)| url.contains("npmmirror.com")));
+        assert!(sources
+            .iter()
+            .any(|(url, _)| url.contains("github.com/git-for-windows")));
+    }
+
+    #[test]
+    fn npm_log_filter_hides_internal_noise_but_keeps_download_progress() {
         assert_eq!(
             npm_log_line_for_display("npm verbose cli /usr/bin/node /usr/bin/npm"),
             None
         );
         assert_eq!(
             npm_log_line_for_display("npm http fetch GET 200 https://registry.npmjs.org/openclaw"),
-            None
+            Some("npm http fetch GET 200 https://registry.npmjs.org/openclaw".into())
         );
         assert_eq!(
             npm_log_line_for_display("npm warn deprecated package@1.0.0"),

@@ -8,8 +8,8 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/app-store";
 import {
-  checkNode, checkGit, checkOpenclaw,
-  installNode, installOpenclaw,
+  checkNode, checkNpm, checkGit, checkOpenclaw,
+  installNode, installGit, installOpenclaw,
   prepareGateway,
   checkDocker, pullOpenclawImage,
   type DockerStatus,
@@ -135,6 +135,7 @@ export interface SetupFlow {
 const INITIAL_NATIVE_STEPS: StepState[] = [
   { id: "git",       label: "Git",        status: "pending" },
   { id: "node",      label: "Node.js",    status: "pending" },
+  { id: "npm",       label: "npm",        status: "pending" },
   { id: "openclaw",  label: "OpenClaw",   status: "pending" },
   { id: "gateway",   label: "Gateway",    status: "pending" },
 ];
@@ -366,7 +367,7 @@ export function useSetupFlow(
         }
         // Map Rust step names to our step IDs
         const stepMap: Record<string, string> = {
-          node: "node", git: "git", openclaw: "openclaw",
+          node: "node", npm: "npm", git: "git", openclaw: "openclaw",
           gateway: "gateway", pull: "pull", container: "container",
         };
         const sid = stepMap[step];
@@ -537,11 +538,20 @@ export function useSetupFlow(
       const gitStatus = await checkGit();
       if (!isRunActive(runId)) return;
       if (!gitStatus.available) {
-        patchStep("git", "error", t("setup.gitRequiredDesc"));
-        setNeedsGit(true);
-        setSetupStep("git-missing");
-        reportPhase("git", t("setup.gitRequiredDesc"), 100);
-        return;
+        const isWindows = navigator.userAgent.toLowerCase().includes("windows");
+        if (!isWindows) {
+          patchStep("git", "error", t("setup.gitRequiredDesc"));
+          setNeedsGit(true);
+          setSetupStep("git-missing");
+          reportPhase("git", t("setup.gitRequiredDesc"), 100);
+          return;
+        }
+        patchStep("git", "running", t("setup.installingGit", "正在静默安装 Git…"));
+        setSetupStep("install-git");
+        await installGit();
+        const installedGit = await checkGit();
+        if (!installedGit.available) throw new Error(t("setup.gitRequiredDesc"));
+        patchStep("git", "done", installedGit.version ?? undefined);
       } else {
         patchStep("git", "done", gitStatus.version ?? undefined);
       }
@@ -557,10 +567,24 @@ export function useSetupFlow(
         reportPhase("node", t("setup.installingNode"), 20);
         await installNode();
         if (!isRunActive(runId)) return;
-        patchStep("node", "done");
+        const installedNode = await checkNode();
+        if (!installedNode.available) throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
+        patchStep("node", "done", installedNode.version ?? undefined);
       } else {
         patchStep("node", "done", nodeStatus.version ?? undefined);
       }
+
+      // npm is bundled with managed Node but remains an independently verified
+      // dependency because a system Node installation can exist without npm.
+      patchStep("npm", "running", t("setup.checkingNpm", "正在检查 npm 版本…"));
+      let npmStatus = await checkNpm();
+      if (!npmStatus.available) {
+        patchStep("npm", "running", t("setup.installingNpm", "正在通过托管 Node.js 安装 npm…"));
+        await installNode();
+        npmStatus = await checkNpm();
+      }
+      if (!npmStatus.available) throw new Error(t("setup.npmInstallFailed", "npm 安装后校验失败"));
+      patchStep("npm", "done", npmStatus.version ?? undefined);
 
       // OpenClaw
       patchStep("openclaw", "running", t("setup.checkingOpenclaw"));
@@ -574,14 +598,11 @@ export function useSetupFlow(
         setSetupStep("install-openclaw");
         reportPhase("openclaw", t("setup.installingOpenclaw"), 10);
         await installOpenclaw();
-        try {
-          const installedStatus = await checkOpenclaw();
-          setOpenclawStatus(installedStatus);
-        } catch {
-          // install_openclaw already validates and reports failures; this refresh is best effort.
-        }
+        const installedStatus = await checkOpenclaw();
+        setOpenclawStatus(installedStatus);
         if (!isRunActive(runId)) return;
-        patchStep("openclaw", "done");
+        if (!installedStatus.installed) throw new Error(installedStatus.error || t("setup.openclawInstallFailed", "OpenClaw 安装后校验失败"));
+        patchStep("openclaw", "done", installedStatus.version ?? undefined);
       } else {
         if (oclawStatus.path) {
           setInstallTarget({ tier: "existing", path: oclawStatus.path, version: oclawStatus.version ?? undefined });
