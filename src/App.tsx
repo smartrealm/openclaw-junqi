@@ -2,7 +2,9 @@ import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { useTheme } from '@/theme/useTheme';
+import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
 import { useAgentWorkspaceTaskEvents } from '@/hooks/useAgentWorkspaceTaskEvents';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const AppRoutes = lazy(() => import('@/AppRoutes'));
 const PetRuntime = lazy(() => import('@/pet/PetRuntime'));
@@ -65,6 +67,8 @@ async function addToastLazy(type: 'message' | 'task_complete' | 'info' | 'error'
 
 export default function App() {
   const { t } = useTranslation();
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  useAgentWorkspacePersistence(workspaces);
   useAgentWorkspaceTaskEvents();
 
   const {

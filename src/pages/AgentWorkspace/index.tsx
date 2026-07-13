@@ -43,7 +43,6 @@ import { useAgentWorkspaceStore, type AgentWorkspaceTask } from '@/stores/agentW
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { findWorkspaceForDirectory } from '@/workspace/projectWorkspace';
 import { useTheme } from '@/theme/useTheme';
-import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import { NotificationBell } from '@/components/shared/NotificationBell';
 import { UsagePopover } from '@/components/shared/UsagePopover';
@@ -126,7 +125,6 @@ export function AgentWorkspacePage() {
   const darkTheme = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
   const [terminalScrollback, setTerminalScrollback] = useState(1000);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
-  useAgentWorkspacePersistence(workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((state) => state.setActive);
   const createWorkspace = useWorkspaceStore((state) => state.createWorkspace);
