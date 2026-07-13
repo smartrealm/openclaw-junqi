@@ -25,6 +25,7 @@ import { changeLanguage } from '@/i18n';
 import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { debugLog, debugWarn } from '@/utils/debugLog';
+import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 
 function RouteLoadingFallback() {
   return (
@@ -99,6 +100,8 @@ export default function App() {
   const [gatewayRetrying, setGatewayRetrying] = useState(false);
   const connected = useChatStore((s) => s.connected);
   const setupComplete = useAppStore((s) => s.setupComplete);
+  const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
+  const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
   const bootOverlayStartedAtRef = useRef(Date.now());
   const bootOverlayDismissedRef = useRef(false);
@@ -111,6 +114,16 @@ export default function App() {
   const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
   const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
   const [bootRecoveryLogs, setBootRecoveryLogs] = useState<string[]>([]);
+
+  useEffect(() => {
+    const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));
+    window.addEventListener('hashchange', updateRoutePath);
+    window.addEventListener('popstate', updateRoutePath);
+    return () => {
+      window.removeEventListener('hashchange', updateRoutePath);
+      window.removeEventListener('popstate', updateRoutePath);
+    };
+  }, []);
 
   // ── Load Sessions from Gateway (also updates per-session model/thinking/token data) ──
   // This is the single polling call for all session metadata. The store's setSessions
@@ -881,7 +894,7 @@ export default function App() {
 
       {/* Gateway process error overlay — shown when the gateway failed to start.
           Takes priority over everything; user must recover before using the app. */}
-      {gatewayBootError && (
+      {gatewayBootError && !gatewayOptionalRoute && (
         <Suspense fallback={null}>
           <GatewayErrorScreen
             error={gatewayBootError}
@@ -893,7 +906,7 @@ export default function App() {
         </Suspense>
       )}
 
-      {bootOverlayVisible && !gatewayBootError && !needsPairing && (
+      {bootOverlayVisible && !gatewayOptionalRoute && !gatewayBootError && !needsPairing && (
         <Suspense fallback={null}>
           <BootTimelineOverlay
             recovery={{
@@ -914,7 +927,7 @@ export default function App() {
       </Suspense>
 
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
-      {needsPairing && !gatewayBootError && (
+      {needsPairing && !gatewayOptionalRoute && !gatewayBootError && (
         <Suspense fallback={null}>
           <PairingScreen
             gatewayHttpUrl={gatewayHttpUrl}
