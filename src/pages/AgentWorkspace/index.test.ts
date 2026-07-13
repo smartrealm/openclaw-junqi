@@ -19,6 +19,7 @@ test('switching projects preserves isolated project view state', () => {
   assert.match(source, /projectUiStatesRef/);
   assert.match(source, /restored\?\.openFiles/);
   assert.match(source, /restored\?\.showShellTerminal/);
+  assert.match(source, /restored\?\.taskSidebarMode/);
   assert.match(source, /setShowFileSearch\(false\)/);
   assert.match(source, /setShowProjectSettings\(false\)/);
   assert.match(source, /key=\{`agent-workspace-shell:/);
@@ -72,8 +73,11 @@ test('hidden projects remain available in the drawer and active project stays on
   assert.match(source, /已隐藏/);
 });
 
-test('expanded and collapsed task panels expose Nezha footer actions', () => {
-  assert.equal((source.match(/<NotificationBell \/>/g) ?? []).length, 2);
+test('full task panel owns footer actions while compact mode keeps only the project rail', () => {
+  assert.equal((source.match(/<NotificationBell \/>/g) ?? []).length, 1);
+  assert.match(source, /taskSidebarMode === 'full'/);
+  assert.match(source, /taskSidebarMode !== 'hidden'/);
+  assert.match(source, /setTaskSidebarMode\('compact'\)/);
   assert.match(source, /navigate\('\/settings\?tab=terminal'\)/);
   assert.match(source, /terminalSettings\.title/);
   assert.match(source, /setTheme\(darkTheme \? 'aegis-light' : 'aegis-dark'\)/);
@@ -81,6 +85,29 @@ test('expanded and collapsed task panels expose Nezha footer actions', () => {
   assert.match(source, /切换到深色主题/);
   assert.match(source, /ENABLE_USAGE_INSIGHTS && <UsagePopover \/>/);
   assert.match(source, /visible=\{selected\?\.id === task\.id && selectedRunVisible\}/);
+});
+
+test('AI workspace exposes a deterministic back hierarchy and animated content scenes', () => {
+  assert.match(source, /if \(openDiff\)/);
+  assert.match(source, /if \(activeFilePath\)/);
+  assert.match(source, /selectTask\(null\)/);
+  assert.match(source, /navigate\('\/'\)/);
+  assert.match(source, /aria-label=\{backLabel\}/);
+  assert.match(source, /<AnimatePresence initial=\{false\} mode="wait">/);
+  assert.match(source, /<WorkspaceContentScene key=/);
+  assert.match(source, /agentWorkspace\.backToTask/);
+  assert.match(source, /agentWorkspace\.backToTaskList/);
+  assert.match(source, /agentWorkspace\.backToDashboard/);
+});
+
+test('AI workspace navigation labels exist in every supported locale', () => {
+  for (const locale of ['zh', 'en', 'ar']) {
+    const messages = JSON.parse(readFileSync(new URL(`../../locales/${locale}.json`, import.meta.url), 'utf8'));
+    assert.equal(typeof messages.agentWorkspace.backToTask, 'string');
+    assert.equal(typeof messages.agentWorkspace.backToTaskList, 'string');
+    assert.equal(typeof messages.agentWorkspace.backToDashboard, 'string');
+    assert.equal(typeof messages.agentWorkspace.expandSidebar, 'string');
+  }
 });
 
 test('closing the active file tab follows Nezha adjacent-tab fallback', () => {

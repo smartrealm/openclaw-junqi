@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm, open } from '@tauri-apps/plugin-dialog';
 import {
+  ArrowLeft,
   Bot,
   Code2,
   Eye,
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { AnimatePresence, motion } from 'framer-motion';
 import { GitChanges, GitDiffViewer, GitHistory } from '@/components/Git';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { FileExplorer } from '@/components/FileExplorer';
@@ -57,6 +59,14 @@ import {
   readTaskDisplayWindow,
   type TaskDisplayWindow,
 } from '@/workspace/agentWorkspacePreferences';
+import {
+  AGENT_WORKSPACE_SIDEBAR_STORAGE_KEY,
+  AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT,
+  publishAgentWorkspaceSidebarMode,
+  readAgentWorkspaceSidebarMode,
+} from '@/components/Layout/agentWorkspaceSidebarEvents';
+import { nextWorkspaceSidebarMode, type WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarChannel';
+import { SceneTransition } from '@/components/shared/SceneTransition';
 
 type RightPanel = 'files' | 'changes' | 'history' | null;
 type DiffTarget =
@@ -73,7 +83,7 @@ interface ProjectUiState {
   activeFilePath: string | null;
   rightPanel: RightPanel;
   rightPanelWidth: number;
-  taskPanelCollapsed: boolean;
+  taskSidebarMode: WorkspaceSidebarMode;
   showShellTerminal: boolean;
   terminalHeight: number;
 }
@@ -81,6 +91,22 @@ interface ProjectUiState {
 const TASK_GROUP_ROW_HEIGHT = 29;
 const TASK_ROW_HEIGHT = 48;
 const TASK_LIST_OVERSCAN_ROWS = 8;
+
+function WorkspaceContentScene({ children }: { children: ReactNode }) {
+  const { i18n } = useTranslation();
+  const enterX = i18n.dir() === 'rtl' ? -10 : 10;
+  return (
+    <motion.div
+      className="absolute inset-0"
+      initial={{ opacity: 0, x: enterX }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -enterX * 0.8 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
 function findTaskRowIndex(offsets: number[], offset: number): number {
   if (offsets.length <= 1) return 0;
 
@@ -115,7 +141,8 @@ function workspacePath(workspace: { projectDirectory?: string; workingDirectory?
 }
 
 export function AgentWorkspacePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const sidebarEnterX = i18n.dir() === 'rtl' ? 8 : -8;
   const navigate = useNavigate();
   const location = useLocation();
   const resolvedTheme = useTheme();
@@ -166,7 +193,7 @@ export function AgentWorkspacePage() {
   const [mountedRunTaskIds, setMountedRunTaskIds] = useState<Set<string>>(() => new Set());
   const [rightPanel, setRightPanel] = useState<RightPanel>('files');
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
-  const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false);
+  const [taskSidebarMode, setTaskSidebarMode] = useState<WorkspaceSidebarMode>(readAgentWorkspaceSidebarMode);
   const [openDiff, setOpenDiff] = useState<DiffTarget | null>(null);
   const [openFiles, setOpenFiles] = useState<OpenFileTab[]>([]);
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
@@ -201,12 +228,22 @@ export function AgentWorkspacePage() {
   }, [projectPath, workspace?.sshRemoteHost]);
   const currentProjectUiRef = useRef<ProjectUiState>({
     openDiff, openFiles, activeFilePath, rightPanel, rightPanelWidth,
-    taskPanelCollapsed, showShellTerminal, terminalHeight,
+    taskSidebarMode, showShellTerminal, terminalHeight,
   });
   currentProjectUiRef.current = {
     openDiff, openFiles, activeFilePath, rightPanel, rightPanelWidth,
-    taskPanelCollapsed, showShellTerminal, terminalHeight,
+    taskSidebarMode, showShellTerminal, terminalHeight,
   };
+
+  useEffect(() => {
+    try { localStorage.setItem(AGENT_WORKSPACE_SIDEBAR_STORAGE_KEY, taskSidebarMode); } catch {}
+    publishAgentWorkspaceSidebarMode(taskSidebarMode);
+  }, [taskSidebarMode]);
+  useEffect(() => {
+    const cycleSidebar = () => setTaskSidebarMode(nextWorkspaceSidebarMode);
+    window.addEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, cycleSidebar);
+    return () => window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_TOGGLE_EVENT, cycleSidebar);
+  }, []);
 
   const allProjectTasks = useMemo(
     () => tasks.filter((task) => task.projectPath === projectPath),
@@ -446,7 +483,7 @@ export function AgentWorkspacePage() {
     setActiveFilePath(restored?.activeFilePath ?? null);
     setRightPanel(restored?.rightPanel ?? 'files');
     setRightPanelWidth(restored?.rightPanelWidth ?? 320);
-    setTaskPanelCollapsed(restored?.taskPanelCollapsed ?? false);
+    setTaskSidebarMode(restored?.taskSidebarMode ?? readAgentWorkspaceSidebarMode());
     setShowShellTerminal(restored?.showShellTerminal ?? false);
     setTerminalHeight(restored?.terminalHeight ?? 260);
     setShowFileSearch(false);
@@ -517,7 +554,7 @@ export function AgentWorkspacePage() {
 
   const showDiff = useCallback((target: DiffTarget) => {
     setOpenDiff(target);
-    setTaskPanelCollapsed(true);
+    setTaskSidebarMode('compact');
   }, []);
 
   const closeDiff = useCallback(() => {
@@ -563,6 +600,27 @@ export function AgentWorkspacePage() {
   const currentGitPath = selected?.worktreePath && !selected.worktreeDiscarded
     ? selected.worktreePath
     : projectPath;
+
+  const backLabel = openDiff || activeFilePath
+    ? t('agentWorkspace.backToTask', '返回当前任务')
+    : selected
+      ? t('agentWorkspace.backToTaskList', '返回任务列表')
+      : t('agentWorkspace.backToDashboard', '返回仪表盘');
+  const navigateBack = useCallback(() => {
+    if (openDiff) {
+      setOpenDiff(null);
+      return;
+    }
+    if (activeFilePath) {
+      setActiveFilePath(null);
+      return;
+    }
+    if (selected) {
+      selectTask(null);
+      return;
+    }
+    navigate('/');
+  }, [activeFilePath, navigate, openDiff, selectTask, selected]);
 
   const beginWorkspaceDrag = useCallback((event: React.PointerEvent<HTMLButtonElement>, workspaceId: string) => {
     if (event.button !== 0) return;
@@ -637,8 +695,28 @@ export function AgentWorkspacePage() {
   }, [projectDrawerOpen]);
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-aegis-bg text-aegis-text">
-      <aside ref={projectRailRef} className="relative flex w-12 shrink-0 flex-col items-center gap-1 border-r border-aegis-border bg-aegis-surface py-2">
+    <SceneTransition className="flex h-full min-h-0 overflow-hidden bg-aegis-bg text-aegis-text">
+      <AnimatePresence initial={false}>
+      {taskSidebarMode !== 'hidden' && (
+      <motion.aside
+        ref={projectRailRef}
+        initial={{ width: 0, opacity: 0, x: sidebarEnterX }}
+        animate={{ width: 48, opacity: 1, x: 0 }}
+        exit={{ width: 0, opacity: 0, x: sidebarEnterX }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        className="relative flex shrink-0 flex-col items-center gap-1 border-r border-aegis-border bg-aegis-surface py-2"
+      >
+        {taskSidebarMode === 'compact' && (
+          <button
+            type="button"
+            title={t('agentWorkspace.expandTasks', '展开任务栏')}
+            onClick={() => setTaskSidebarMode('full')}
+            className="relative mb-1 flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+          >
+            <PanelLeftOpen size={15} />
+            {attentionBadge && hasAttention && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />}
+          </button>
+        )}
         {railWorkspaces.map((item) => {
           const active = item.id === activeRailWorkspaceId;
           const activity = workspaceActivity(item);
@@ -791,17 +869,26 @@ export function AgentWorkspacePage() {
             </div>
           </div>
         )}
-      </aside>
+      </motion.aside>
+      )}
+      </AnimatePresence>
 
-      {!taskPanelCollapsed ? (
-        <aside className="flex w-[276px] shrink-0 flex-col border-r border-aegis-border bg-aegis-surface">
+      <AnimatePresence initial={false}>
+      {taskSidebarMode === 'full' && (
+        <motion.aside
+          initial={{ width: 0, opacity: 0, x: sidebarEnterX }}
+          animate={{ width: 276, opacity: 1, x: 0 }}
+          exit={{ width: 0, opacity: 0, x: sidebarEnterX }}
+          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+          className="flex shrink-0 flex-col overflow-hidden border-r border-aegis-border bg-aegis-surface"
+        >
           <div className="flex h-12 items-center gap-2 border-b border-aegis-border px-3">
             <Bot size={16} className="text-aegis-primary" />
             <span className="min-w-0 flex-1 truncate text-sm font-semibold">{workspace?.name || 'AI 工作台'}</span>
             <button
               type="button"
-              title="收起任务栏"
-              onClick={() => setTaskPanelCollapsed(true)}
+              title={t('agentWorkspace.collapseTasks', '收起任务栏')}
+              onClick={() => setTaskSidebarMode('compact')}
               className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
             >
               <PanelLeftClose size={15} />
@@ -952,37 +1039,34 @@ export function AgentWorkspacePage() {
             <button type="button" title={darkTheme ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(darkTheme ? 'aegis-light' : 'aegis-dark')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{darkTheme ? <Sun size={14} /> : <Moon size={14} />}</button>
             {ENABLE_USAGE_INSIGHTS && <UsagePopover />}
           </footer>
-        </aside>
-      ) : (
-        <aside className="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-aegis-border bg-aegis-surface py-2">
-          <button
-            type="button"
-            title="展开任务栏"
-            onClick={() => setTaskPanelCollapsed(false)}
-            className="relative flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
-          >
-            <PanelLeftOpen size={15} />
-            {attentionBadge && hasAttention && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />}
-          </button>
-          {workspace && <ProjectAvatar name={workspace.name || 'Workspace'} size={24} />}
-          <button
-            type="button"
-            title="新建任务"
-            onClick={startNewTask}
-            className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
-          >
-            <Plus size={15} />
-          </button>
-          <span className="flex-1" />
-          <NotificationBell />
-          <button type="button" title={t('terminalSettings.title', '终端设置')} onClick={() => navigate('/settings?tab=terminal')} className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"><Settings size={14} /></button>
-          <button type="button" title={darkTheme ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(darkTheme ? 'aegis-light' : 'aegis-dark')} className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{darkTheme ? <Sun size={14} /> : <Moon size={14} />}</button>
-        </aside>
+        </motion.aside>
       )}
+      </AnimatePresence>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-aegis-border px-4">
           <div className="flex min-w-0 items-center gap-2 text-xs text-aegis-text-dim">
+            {taskSidebarMode === 'hidden' && (
+              <button
+                type="button"
+                title={t('agentWorkspace.expandSidebar', '展开工作台侧栏')}
+                onClick={() => setTaskSidebarMode('full')}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+              >
+                <PanelLeftOpen size={15} />
+              </button>
+            )}
+            <button
+              type="button"
+              title={backLabel}
+              aria-label={backLabel}
+              onClick={navigateBack}
+              className="flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+            >
+              <ArrowLeft size={14} />
+              <span className="hidden text-[11px] sm:inline">{backLabel}</span>
+            </button>
+            <span className="h-4 w-px shrink-0 bg-aegis-border" />
             <GitBranch size={14} className="shrink-0" />
             <span className="truncate">{workspace?.name || '项目工作台'}</span>
             {openDiff && <span className="truncate text-aegis-text">/ {openDiff.title}</span>}
@@ -992,89 +1076,104 @@ export function AgentWorkspacePage() {
 
         <div className="relative min-h-0 flex-1">
           <ErrorBoundary fallbackMessage="任务内容加载失败，请重试。">
+          <AnimatePresence initial={false} mode="wait">
           {openDiff ? (
-            <GitDiffViewer
-              projectPath={currentGitPath}
-              mode={openDiff.mode}
-              commitHash={'commitHash' in openDiff ? openDiff.commitHash : undefined}
-              filePath={'filePath' in openDiff ? openDiff.filePath : undefined}
-              staged={openDiff.mode === 'file' ? openDiff.staged : undefined}
-              title={openDiff.title}
-              onClose={closeDiff}
-            />
+            <WorkspaceContentScene key={`diff:${openDiff.mode}:${openDiff.title}`}>
+              <GitDiffViewer
+                projectPath={currentGitPath}
+                mode={openDiff.mode}
+                commitHash={'commitHash' in openDiff ? openDiff.commitHash : undefined}
+                filePath={'filePath' in openDiff ? openDiff.filePath : undefined}
+                staged={openDiff.mode === 'file' ? openDiff.staged : undefined}
+                title={openDiff.title}
+                onClose={closeDiff}
+              />
+            </WorkspaceContentScene>
           ) : activeFilePath && openFiles.length > 0 ? (
-            <FileViewer
-              tabs={openFiles}
-              activeFilePath={activeFilePath}
-              projectPath={projectPath}
-              themeVariant={themeVariant}
-              onSelectTab={setActiveFilePath}
-              onCloseTab={closeFile}
-              onCloseOtherTabs={(path) => {
-                setOpenFiles((current) => current.filter((file) => file.path === path));
-                setActiveFilePath(path);
-              }}
-              onCloseTabsToRight={(path) => {
-                setOpenFiles((current) => {
-                  const index = current.findIndex((file) => file.path === path);
-                  const next = index >= 0 ? current.slice(0, index + 1) : current;
-                  if (!next.some((file) => file.path === activeFilePath)) setActiveFilePath(path);
-                  return next;
-                });
-              }}
-              onCloseTabsToLeft={(path) => {
-                setOpenFiles((current) => {
-                  const index = current.findIndex((file) => file.path === path);
-                  const next = index >= 0 ? current.slice(index) : current;
-                  if (!next.some((file) => file.path === activeFilePath)) setActiveFilePath(path);
-                  return next;
-                });
-              }}
-              onCloseAllTabs={() => {
-                setOpenFiles([]);
-                setActiveFilePath(null);
-              }}
-            />
+            <WorkspaceContentScene key={`file:${activeFilePath}`}>
+              <FileViewer
+                tabs={openFiles}
+                activeFilePath={activeFilePath}
+                projectPath={projectPath}
+                themeVariant={themeVariant}
+                onSelectTab={setActiveFilePath}
+                onCloseTab={closeFile}
+                onCloseOtherTabs={(path) => {
+                  setOpenFiles((current) => current.filter((file) => file.path === path));
+                  setActiveFilePath(path);
+                }}
+                onCloseTabsToRight={(path) => {
+                  setOpenFiles((current) => {
+                    const index = current.findIndex((file) => file.path === path);
+                    const next = index >= 0 ? current.slice(0, index + 1) : current;
+                    if (!next.some((file) => file.path === activeFilePath)) setActiveFilePath(path);
+                    return next;
+                  });
+                }}
+                onCloseTabsToLeft={(path) => {
+                  setOpenFiles((current) => {
+                    const index = current.findIndex((file) => file.path === path);
+                    const next = index >= 0 ? current.slice(index) : current;
+                    if (!next.some((file) => file.path === activeFilePath)) setActiveFilePath(path);
+                    return next;
+                  });
+                }}
+                onCloseAllTabs={() => {
+                  setOpenFiles([]);
+                  setActiveFilePath(null);
+                }}
+              />
+            </WorkspaceContentScene>
           ) : !projectPath ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <FileText size={28} className="text-aegis-text-dim" />
-              <p className="text-sm text-aegis-text-dim">请先在终端工作台创建或选择一个本地项目工作区。</p>
-              <button
-                type="button"
-                onClick={() => navigate('/terminal')}
-                className="rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
-              >
-                打开终端工作台
-              </button>
-            </div>
+            <WorkspaceContentScene key="no-project">
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <FileText size={28} className="text-aegis-text-dim" />
+                <p className="text-sm text-aegis-text-dim">请先在终端工作台创建或选择一个本地项目工作区。</p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/terminal')}
+                  className="rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
+                >
+                  打开终端工作台
+                </button>
+              </div>
+            </WorkspaceContentScene>
           ) : !selected ? (
-            <section className="mx-auto flex h-full w-full max-w-3xl flex-col justify-center px-8">
-              <h1 className="mb-2 text-xl font-semibold">新建 AI 任务</h1>
-              <p className="mb-5 text-sm text-aegis-text-dim">使用完整编辑器配置智能体、权限、工作树和附件，再直接启动或保存为待办。</p>
-              <button
-                type="button"
-                onClick={startNewTask}
-                className="inline-flex w-fit items-center gap-2 rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
-              >
-                <Plus size={14} />新建任务
-              </button>
-            </section>
+            <WorkspaceContentScene key={`task-list:${projectPath}`}>
+              <section className="mx-auto flex h-full w-full max-w-3xl flex-col justify-center px-8">
+                <h1 className="mb-2 text-xl font-semibold">新建 AI 任务</h1>
+                <p className="mb-5 text-sm text-aegis-text-dim">使用完整编辑器配置智能体、权限、工作树和附件，再直接启动或保存为待办。</p>
+                <button
+                  type="button"
+                  onClick={startNewTask}
+                  className="inline-flex w-fit items-center gap-2 rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
+                >
+                  <Plus size={14} />新建任务
+                </button>
+              </section>
+            </WorkspaceContentScene>
           ) : selected.status === 'todo' && !selected.isDraft ? (
-            <AgentWorkspaceTodoTaskView
-              task={selected}
-              onUpdate={(patch) => updateTask(selected.id, patch)}
-              onRun={() => {
-                setAutoStartTaskId(selected.id);
-                setMountedRunTaskIds((current) => new Set([...current, selected.id]));
-                updateTask(selected.id, { status: 'pending' });
-              }}
-            />
+            <WorkspaceContentScene key={`todo:${selected.id}`}>
+              <AgentWorkspaceTodoTaskView
+                task={selected}
+                onUpdate={(patch) => updateTask(selected.id, patch)}
+                onRun={() => {
+                  setAutoStartTaskId(selected.id);
+                  setMountedRunTaskIds((current) => new Set([...current, selected.id]));
+                  updateTask(selected.id, { status: 'pending' });
+                }}
+              />
+            </WorkspaceContentScene>
           ) : null}
+          </AnimatePresence>
 
           {renderedRunTasks.map((task) => (
-            <div
+            <motion.div
               key={task.id}
               className={selected?.id === task.id && selectedRunVisible ? 'absolute inset-0' : 'hidden'}
+              initial={false}
+              animate={selected?.id === task.id && selectedRunVisible ? { opacity: 1, x: 0 } : { opacity: 0, x: 10 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             >
               <AgentRunView
                 taskId={task.id}
@@ -1102,7 +1201,7 @@ export function AgentWorkspacePage() {
                 themeVariant={themeVariant}
                 visible={selected?.id === task.id && selectedRunVisible}
               />
-            </div>
+            </motion.div>
           ))}
           </ErrorBoundary>
         </div>
@@ -1241,6 +1340,6 @@ export function AgentWorkspacePage() {
           onClose={() => setShowProjectSettings(false)}
         />
       )}
-    </div>
+    </SceneTransition>
   );
 }

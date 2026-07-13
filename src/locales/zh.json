@@ -349,6 +349,14 @@
     "vsYesterday": "较昨日",
     "working": "工作中"
   },
+  "agentWorkspace": {
+    "backToTask": "返回当前任务",
+    "backToTaskList": "返回任务列表",
+    "backToDashboard": "返回仪表盘",
+    "expandSidebar": "展开工作台侧栏",
+    "expandTasks": "展开任务栏",
+    "collapseTasks": "收起任务栏"
+  },
   "workshop": {
     "title": "工作台",
     "subtitle": "任务流转：队列 → 进行中 → 已完成",

@@ -278,6 +278,14 @@
     "vsYesterday": "مقارنة بالأمس",
     "working": "يعمل"
   },
+  "agentWorkspace": {
+    "backToTask": "العودة إلى المهمة الحالية",
+    "backToTaskList": "العودة إلى قائمة المهام",
+    "backToDashboard": "العودة إلى لوحة التحكم",
+    "expandSidebar": "إظهار الشريط الجانبي لمساحة العمل",
+    "expandTasks": "إظهار قائمة المهام",
+    "collapseTasks": "طي قائمة المهام"
+  },
   "workshop": {
     "title": "الورشة",
     "subtitle": "إدارة المهام — Queue → In Progress → Done",

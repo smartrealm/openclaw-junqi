@@ -349,6 +349,14 @@
     "vsYesterday": "vs yesterday",
     "working": "Working"
   },
+  "agentWorkspace": {
+    "backToTask": "Back to current task",
+    "backToTaskList": "Back to task list",
+    "backToDashboard": "Back to dashboard",
+    "expandSidebar": "Show workspace sidebar",
+    "expandTasks": "Show task sidebar",
+    "collapseTasks": "Collapse task sidebar"
+  },
   "workshop": {
     "title": "Workshop",
     "subtitle": "Task Management — Queue → In Progress → Done",

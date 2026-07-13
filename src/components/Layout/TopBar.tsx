@@ -22,6 +22,12 @@ import {
 } from '@/components/Terminal/terminalSidebarEvents';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
+import {
+  AGENT_WORKSPACE_SIDEBAR_MODE_EVENT,
+  readAgentWorkspaceSidebarMode,
+  requestAgentWorkspaceSidebarToggle,
+} from './agentWorkspaceSidebarEvents';
+import { isWorkspaceSidebarMode, type WorkspaceSidebarMode } from './workspaceSidebarChannel';
 
 const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPanel').then(m => ({ default: m.NotificationPanel })));
 
@@ -65,7 +71,7 @@ export function toNotificationPanelItem(
  */
 interface TopBarProps {
   hideSidebarToggle?: boolean;
-  sidebarTarget?: 'app' | 'terminal';
+  sidebarTarget?: 'app' | 'terminal' | 'agent-workspace';
 }
 
 export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: TopBarProps) {
@@ -77,16 +83,30 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);
   const cycleSidebar = useSettingsStore((s) => s.cycleSidebar);
   const [terminalSidebarMode, setTerminalSidebarMode] = useState<TerminalSidebarMode>(readTerminalSidebarMode);
+  const [agentWorkspaceSidebarMode, setAgentWorkspaceSidebarMode] = useState<WorkspaceSidebarMode>(readAgentWorkspaceSidebarMode);
   useEffect(() => {
-    const update = (event: Event) => {
+    const updateTerminal = (event: Event) => {
       const mode = (event as CustomEvent<TerminalSidebarMode>).detail;
-      if (mode === 'full' || mode === 'compact' || mode === 'hidden') setTerminalSidebarMode(mode);
+      if (isWorkspaceSidebarMode(mode)) setTerminalSidebarMode(mode);
     };
-    window.addEventListener(TERMINAL_SIDEBAR_MODE_EVENT, update);
-    return () => window.removeEventListener(TERMINAL_SIDEBAR_MODE_EVENT, update);
+    const updateAgentWorkspace = (event: Event) => {
+      const mode = (event as CustomEvent<WorkspaceSidebarMode>).detail;
+      if (isWorkspaceSidebarMode(mode)) setAgentWorkspaceSidebarMode(mode);
+    };
+    window.addEventListener(TERMINAL_SIDEBAR_MODE_EVENT, updateTerminal);
+    window.addEventListener(AGENT_WORKSPACE_SIDEBAR_MODE_EVENT, updateAgentWorkspace);
+    return () => {
+      window.removeEventListener(TERMINAL_SIDEBAR_MODE_EVENT, updateTerminal);
+      window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_MODE_EVENT, updateAgentWorkspace);
+    };
   }, []);
-  const effectiveSidebarMode = sidebarTarget === 'terminal'
-    ? terminalSidebarMode === 'full' ? 'expanded' : terminalSidebarMode === 'compact' ? 'mini' : 'hidden'
+  const workspaceSidebarMode = sidebarTarget === 'terminal'
+    ? terminalSidebarMode
+    : sidebarTarget === 'agent-workspace'
+      ? agentWorkspaceSidebarMode
+      : null;
+  const effectiveSidebarMode = workspaceSidebarMode
+    ? workspaceSidebarMode === 'full' ? 'expanded' : workspaceSidebarMode === 'compact' ? 'mini' : 'hidden'
     : sidebarMode;
   const collapseIcon = effectiveSidebarMode === 'expanded'
     ? <PanelLeftClose size={16} />
@@ -98,7 +118,11 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
     : effectiveSidebarMode === 'mini'
       ? t('nav.sidebarHide', 'Hide sidebar')
       : t('nav.sidebarExpand', 'Expand sidebar');
-  const handleSidebarToggle = sidebarTarget === 'terminal' ? requestTerminalSidebarToggle : cycleSidebar;
+  const handleSidebarToggle = sidebarTarget === 'terminal'
+    ? requestTerminalSidebarToggle
+    : sidebarTarget === 'agent-workspace'
+      ? requestAgentWorkspaceSidebarToggle
+      : cycleSidebar;
 
   // Zoom cancellation: webview setZoom scales everything, but traffic lights
   // are native window chrome → we cancel the zoom on the bar so they stay

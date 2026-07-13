@@ -10,8 +10,9 @@ test('Tools opens its catalog before the dedicated terminal route', () => {
   assert.match(tabBar, /id: 'tools'.*path: '\/tools'/);
 });
 
-test('terminal owns the left content rail while the top-bar toggle remains available', () => {
-  assert.match(appLayout, /usesGlobalSidebar = !isWorkspacePage && !isTerminalPage/);
-  assert.match(appLayout, /sidebarTarget=\{isTerminalPage \? 'terminal' : 'app'\}/);
+test('terminal and AI workspaces own their left rail and top-bar toggle channels', () => {
+  assert.match(appLayout, /usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage/);
+  assert.match(appLayout, /isAgentWorkspacePage \? 'agent-workspace' : 'app'/);
   assert.match(topBar, /requestTerminalSidebarToggle/);
+  assert.match(topBar, /requestAgentWorkspaceSidebarToggle/);
 });

@@ -82,7 +82,8 @@ export function AppLayout() {
   const { connected } = useChatStore();
   const isWorkspacePage = matchPath('/welcome', location.pathname) !== null;
   const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
-  const usesGlobalSidebar = !isWorkspacePage && !isTerminalPage;
+  const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
+  const usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage;
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -114,7 +115,7 @@ export function AppLayout() {
       {/* ── Custom window-chrome top bar ── */}
       <TopBar
         hideSidebarToggle={isWorkspacePage}
-        sidebarTarget={isTerminalPage ? 'terminal' : 'app'}
+        sidebarTarget={isTerminalPage ? 'terminal' : isAgentWorkspacePage ? 'agent-workspace' : 'app'}
       />
 
       {/* ── Navigation tabs ── */}
@@ -129,7 +130,7 @@ export function AppLayout() {
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
           <div
             ref={routeScrollRef}
-            className="route-scrollbar flex-1 overflow-y-auto h-full"
+            className={`route-scrollbar flex-1 h-full ${isTerminalPage || isAgentWorkspacePage ? 'overflow-hidden' : 'overflow-y-auto'}`}
             data-route-scroll
           >
             <ErrorBoundary>
