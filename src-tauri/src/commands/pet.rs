@@ -12,8 +12,8 @@
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, Manager, Position, WebviewUrl, WebviewWindowBuilder,
-    WindowEvent,
+    webview::Color, AppHandle, Emitter, LogicalPosition, Manager, Position, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
 };
 
 pub const PET_LABEL: &str = "pet";
@@ -55,6 +55,7 @@ pub async fn open_pet_window(app: AppHandle) -> Result<(), String> {
             .maximizable(false)
             .decorations(false)
             .transparent(true)
+            .background_color(Color(0, 0, 0, 0))
             .always_on_top(true)
             .skip_taskbar(true)
             .focused(false)
@@ -198,7 +199,9 @@ pub async fn start_pet_dragging(app: AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window(PET_LABEL)
         .ok_or("pet window not found")?;
-    win.start_dragging().map_err(|e| e.to_string())
+    win.start_dragging().map_err(|e| e.to_string())?;
+    app.emit_to(PET_LABEL, "pet-drag-ended", ())
+        .map_err(|e| e.to_string())
 }
 
 /// Read the pet window's current logical (x, y) — used by the JS drag handler

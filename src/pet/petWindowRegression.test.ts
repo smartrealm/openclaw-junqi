@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+
+const petWindow = readFileSync(new URL('./PetWindow.tsx', import.meta.url), 'utf8');
+const petCommands = readFileSync(new URL('../../src-tauri/src/commands/pet.rs', import.meta.url), 'utf8');
+
+test('native pet dragging has an explicit completion signal on Windows', () => {
+  assert.match(petCommands, /start_dragging\(\)/);
+  assert.match(petCommands, /emit_to\(PET_LABEL, "pet-drag-ended"/);
+  assert.match(petWindow, /subscribeTauriEvent\('pet-drag-ended', onUp\)/);
+});
+
+test('pet transparency is owned by the native window and every DOM root', () => {
+  assert.match(petCommands, /background_color\(Color\(0, 0, 0, 0\)\)/);
+  assert.match(petWindow, /document\.documentElement\.style\.backgroundColor = 'transparent'/);
+  assert.match(petWindow, /document\.body\.style\.backgroundColor = 'transparent'/);
+  assert.match(petWindow, /appRoot\.style\.backgroundColor = 'transparent'/);
+});
+
+test('drag feedback scales the character instead of the transparent window root', () => {
+  assert.doesNotMatch(petWindow, /transform: dragging \? 'scale\(1\.08\)'/);
+  assert.match(petWindow, /dragging=\{dragging\}/);
+});

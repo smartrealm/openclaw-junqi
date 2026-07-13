@@ -155,9 +155,16 @@ export default function PetWindow() {
 
   useEffect(() => {
     document.documentElement.style.background = 'transparent';
+    document.documentElement.style.backgroundColor = 'transparent';
     document.body.style.background = 'transparent';
+    document.body.style.backgroundColor = 'transparent';
     document.body.style.margin = '0';
     document.body.style.overflow = 'hidden';
+    const appRoot = document.getElementById('app-root');
+    if (appRoot) {
+      appRoot.style.background = 'transparent';
+      appRoot.style.backgroundColor = 'transparent';
+    }
     invoke('set_pet_click_through', { ignore: false }).catch(() => undefined);
 
     const initialPosition = positionRef.current;
@@ -376,12 +383,14 @@ export default function PetWindow() {
       lastMoveXRef.current = null;
       setWalkDir(0);
     };
+    const nativeDragEnded = subscribeTauriEvent('pet-drag-ended', onUp);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
       active = false;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      nativeDragEnded();
       cancelSnap();
       for (const id of timeoutsRef.current) window.clearTimeout(id);
       timeoutsRef.current = [];
@@ -651,9 +660,8 @@ export default function PetWindow() {
         alignItems: 'center',
         justifyContent: 'flex-end',
         gap: 10,
+        background: 'transparent',
         cursor: dragging ? 'grabbing' : 'grab',
-        transform: dragging ? 'scale(1.08)' : 'scale(1)',
-        transition: 'transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
         WebkitUserSelect: 'none',
         userSelect: 'none',
       }}
