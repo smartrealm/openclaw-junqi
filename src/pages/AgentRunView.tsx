@@ -76,6 +76,7 @@ import {
   TERMINAL_NEWLINE_SEQUENCE,
 } from '@/_nezha_root/shortcuts';
 import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktreeDiffStatsArgs } from './agentWorktreeCommands';
+import { applyPlanModePrompt } from './agentPrompt';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -1035,7 +1036,7 @@ export function AgentRunView({
       setError('请选择工作树的基础分支');
       return;
     }
-    const taskPrompt = planMode && basePrompt ? `${basePrompt}\n\nPlease use plan mode.` : basePrompt;
+    const taskPrompt = applyPlanModePrompt(basePrompt, planMode);
     setError(null); clearTerm(); setStatus('running'); setRunning(true); setMetrics(null); setDiffStats(null);
     if (workspaceTaskId) {
       updateWorkspaceTask(workspaceTaskId, {

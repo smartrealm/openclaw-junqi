@@ -75,6 +75,11 @@ test('new worktree tasks require an explicit base branch', () => {
   assert.match(source, /请选择工作树的基础分支/);
 });
 
+test('plan mode prompt handling remains idempotent during session recovery', () => {
+  assert.match(source, /applyPlanModePrompt\(basePrompt, planMode\)/);
+  assert.doesNotMatch(source, /`\$\{basePrompt\}\\n\\nPlease use plan mode\.`/);
+});
+
 test('worktree branch loading is stable across parent renders', () => {
   assert.match(source, /baseBranchRef\.current = baseBranch/);
   assert.match(source, /onBranchRef\.current = onBranch/);
