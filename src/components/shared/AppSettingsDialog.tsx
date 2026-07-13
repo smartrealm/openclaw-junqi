@@ -576,13 +576,14 @@ function AgentProgramPathSection({ agent }: { agent: 'claude' | 'codex' }) {
       setDetecting(false);
     }
   };
-  const save = async () => {
-    if (!settings) return;
+  const save = async (nextSettings: NativeAppSettings | null = settings) => {
+    if (!nextSettings) return;
     setSaving(true);
     setSaved(false);
     setError(null);
     try {
-      await invoke('save_app_settings', { settings });
+      await invoke('save_app_settings', { settings: nextSettings });
+      setSettings(nextSettings);
       window.dispatchEvent(new Event('nezha:app-settings-changed'));
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2000);
@@ -614,6 +615,19 @@ function AgentProgramPathSection({ agent }: { agent: 'claude' | 'codex' }) {
         </button>
       </div>
       <p className="mt-1.5 text-[11px] text-aegis-text-dim">{t('appSettings.executablePathHint', 'Leave empty to resolve the agent from the login-shell PATH.')}</p>
+      {agent === 'claude' && settings && (
+        <div className="mt-3 flex items-center justify-between gap-4 border-t border-aegis-border pt-3">
+          <div>
+            <div className="text-[12px] font-medium text-aegis-text">{t('appSettings.claudeForceDefaultTui', 'Use Claude default terminal UI')}</div>
+            <p className="mt-0.5 text-[11px] text-aegis-text-dim">{t('appSettings.claudeForceDefaultTuiHint', 'Avoid fullscreen terminal behavior that can interfere with scrolling and text selection.')}</p>
+          </div>
+          <Toggle enabled={settings.claude_force_default_tui} disabled={saving || detecting} onChange={(enabled) => {
+            const next = { ...settings, claude_force_default_tui: enabled };
+            setSettings(next);
+            void save(next);
+          }} />
+        </div>
+      )}
       {error && <div className="mt-2 text-[11px] text-aegis-danger" role="alert">{error}</div>}
     </div>
   );

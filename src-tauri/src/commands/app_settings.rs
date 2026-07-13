@@ -209,6 +209,10 @@ pub fn get_agent_program(agent: &str) -> String {
     agent_program_from_settings(&load_settings_unlocked(), agent)
 }
 
+pub fn claude_force_default_tui() -> bool {
+    load_settings_unlocked().claude_force_default_tui
+}
+
 #[tauri::command]
 pub async fn load_app_settings() -> Result<AppSettings, String> {
     tokio::task::spawn_blocking(load_settings_unlocked)

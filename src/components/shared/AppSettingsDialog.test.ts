@@ -17,6 +17,7 @@ test('agent settings expose executable paths backed by native app settings', () 
   assert.match(source, /function AgentProgramPathSection/);
   assert.match(source, /invoke<NativeAppSettings>\('load_app_settings'\)/);
   assert.match(source, /invoke<NativeAppSettings>\('detect_agent_paths'\)/);
-  assert.match(source, /invoke\('save_app_settings', \{ settings \}\)/);
+  assert.match(source, /invoke\('save_app_settings', \{ settings: nextSettings \}\)/);
   assert.match(source, /<AgentProgramPathSection agent=\{agent\}\/>/);
+  assert.match(source, /settings\.claude_force_default_tui/);
 });
