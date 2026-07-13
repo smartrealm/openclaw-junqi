@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Check, FolderOpen, HardDrive, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
 import type { SetupLog } from '@/stores/app-store';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 interface StorageSetupStatus {
   configured: boolean;
@@ -75,16 +75,13 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
   }, [onReady]);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
     let cancelled = false;
-    listen<MigrationProgress>('storage-migration-progress', (event) => {
+    const unlisten = subscribeTauriEvent<MigrationProgress>('storage-migration-progress', (event) => {
       if (!cancelled) setProgress(event.payload);
-    }).then((fn) => {
-      if (cancelled) fn(); else unlisten = fn;
-    }).catch(() => undefined);
+    });
     return () => {
       cancelled = true;
-      unlisten?.();
+      unlisten();
     };
   }, []);
 

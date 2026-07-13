@@ -17,7 +17,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { X, FileText, Folder, Sparkles, Minus, Maximize2, GripVertical } from 'lucide-react';
 import clsx from 'clsx';
@@ -25,6 +24,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { gateway } from '@/services/gateway';
 import { useTranslation } from 'react-i18next';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 interface SeedFile {
   path: string;
@@ -97,15 +97,19 @@ export function QuickChatPage() {
   }, [t]);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    (async () => {
-      unlisten = await listen<string[]>('quickchat:seed', (e) => {
-        applySeed(e.payload);
-      });
-      const initial = await invoke<string[]>('get_quickchat_seed').catch(() => []);
-      if (initial.length > 0) applySeed(initial);
-    })();
-    return () => { unlisten?.(); };
+    let disposed = false;
+    const unlisten = subscribeTauriEvent<string[]>('quickchat:seed', (e) => {
+      if (!disposed) applySeed(e.payload);
+    });
+    void invoke<string[]>('get_quickchat_seed')
+      .then((initial) => {
+        if (!disposed && initial.length > 0) applySeed(initial);
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten();
+    };
   }, [applySeed]);
 
   // Drag-region for the frameless title bar.

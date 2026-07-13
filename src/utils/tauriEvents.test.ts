@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { hasTauriEventBridge, subscribeTauriEvent } from './tauriEvents';
+
+const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    return /\.(?:ts|tsx)$/.test(entry.name) && !entry.name.endsWith('.test.ts') && !entry.name.endsWith('.test.tsx')
+      ? [path]
+      : [];
+  });
+}
 
 test('plain browser previews do not register Tauri listeners', () => {
   const host = globalThis.window as Window & { __TAURI_INTERNALS__?: unknown };
@@ -12,4 +27,22 @@ test('plain browser previews do not register Tauri listeners', () => {
   } finally {
     host.__TAURI_INTERNALS__ = previous;
   }
+});
+
+test('feature code cannot bypass the lifecycle-safe Tauri event subscriber', () => {
+  const allowed = new Set([
+    'api/tauri-adapter.ts',
+    'components/Terminal/ShellTerminalPanel.tsx',
+    'utils/tauriEvents.ts',
+  ]);
+  const directImports = sourceFiles(srcRoot)
+    .map((path) => ({
+      path: relative(srcRoot, path),
+      source: readFileSync(path, 'utf8'),
+    }))
+    .filter(({ source }) => /from\s+['"]@tauri-apps\/api\/event['"]/.test(source))
+    .map(({ path }) => path)
+    .filter((path) => !allowed.has(path));
+
+  assert.deepEqual(directImports, []);
 });

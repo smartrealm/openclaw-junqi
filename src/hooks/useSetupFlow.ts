@@ -5,7 +5,6 @@
 
 import { useEffect, useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/app-store";
 import {
@@ -17,6 +16,7 @@ import {
   type OpenclawStatus,
 } from "@/api/tauri-commands";
 import { debugWarn } from "@/utils/debugLog";
+import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import { setupProgressI18nParams } from "./setupProgressParams";
 import {
   advanceSetupProgress,
@@ -326,8 +326,7 @@ export function useSetupFlow(
   const stepsRef = useRef(steps);
   stepsRef.current = steps;
   useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen<{ step: string; message: string; progress: number | null; error: string | null; key?: string } | string>(
+    const unlisten = subscribeTauriEvent<{ step: string; message: string; progress: number | null; error: string | null; key?: string } | string>(
       "setup-progress",
       (event) => {
         if (typeof event.payload === "string") {
@@ -380,8 +379,8 @@ export function useSetupFlow(
           setSteps(newSteps);
         }
       }
-    ).then((fn) => { unlisten = fn; }).catch(() => {});
-    return () => { unlisten?.(); };
+    );
+    return unlisten;
   }, [t, report]);
 
   // ── Helpers ──

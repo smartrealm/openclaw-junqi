@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   Activity,
   AlertTriangle,
@@ -14,6 +13,7 @@ import {
 } from 'lucide-react';
 import { getGatewayLogs, type LogEntry } from '@/api/tauri-commands';
 import clsx from 'clsx';
+import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 
 type GatewayLifecycle = 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
 type GatewayRuntimeMode = 'none' | 'external' | 'system_service' | 'managed_child' | 'docker';
@@ -145,27 +145,21 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
   }, [refresh, variant]);
 
   useEffect(() => {
-    let setupUnlisten: UnlistenFn | undefined;
-    let gatewayUnlisten: UnlistenFn | undefined;
     let cancelled = false;
 
-    listen<ProgressEvent>('setup-progress', (event) => {
+    const setupUnlisten = subscribeTauriEvent<ProgressEvent>('setup-progress', (event) => {
       if (cancelled || event.payload?.step !== 'gateway') return;
       const message = resolveProgressMessage(t, event.payload);
       if (message) setLatestProgress(message);
       if (typeof event.payload.progress === 'number') setProgress(event.payload.progress);
       void refresh();
-    }).then((fn) => {
-      if (cancelled) fn(); else setupUnlisten = fn;
-    }).catch(() => undefined);
+    });
 
-    listen<string>('gateway-log', (event) => {
+    const gatewayUnlisten = subscribeTauriEvent<string>('gateway-log', (event) => {
       if (cancelled || !event.payload) return;
       setLatestProgress(event.payload);
       void refresh();
-    }).then((fn) => {
-      if (cancelled) fn(); else gatewayUnlisten = fn;
-    }).catch(() => undefined);
+    });
 
     const onLocalProgress = (event: Event) => {
       if (cancelled) return;
@@ -180,8 +174,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
 
     return () => {
       cancelled = true;
-      setupUnlisten?.();
-      gatewayUnlisten?.();
+      combineUnlisteners([setupUnlisten, gatewayUnlisten])();
       window.removeEventListener('aegis:gateway-progress', onLocalProgress);
     };
   }, [refresh, t]);

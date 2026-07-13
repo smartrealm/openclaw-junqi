@@ -18,8 +18,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 export interface SetupProgressDetail {
   step: string;
@@ -43,7 +43,6 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
   const [latest, setLatest] = useState<SetupProgressDetail | null>(null);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
     let cancelled = false;
 
     function accept(d: Partial<RawSetupProgressDetail> | undefined): void {
@@ -73,11 +72,9 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
     }
 
     // Producer 1: Tauri event from Rust.
-    listen<RawSetupProgressDetail>('setup-progress', (e) => {
+    const unlisten = subscribeTauriEvent<RawSetupProgressDetail>('setup-progress', (e) => {
       if (!cancelled) accept(e.payload);
-    }).then((fn) => {
-      if (cancelled) fn(); else unlisten = fn;
-    }).catch(() => { /* not running under Tauri — fine */ });
+    });
 
     // Producer 2: synthetic window event for non-install flows
     // (manual reconnect, boot recovery) that App.tsx raises.
@@ -90,7 +87,7 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
     return () => {
       cancelled = true;
       window.removeEventListener('aegis:gateway-progress', onLocal);
-      unlisten?.();
+      unlisten();
     };
   }, [filterStep]);
 

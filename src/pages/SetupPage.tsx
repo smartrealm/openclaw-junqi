@@ -22,8 +22,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/app-store";
+import { combineUnlisteners, subscribeTauriEvent } from "@/utils/tauriEvents";
 import type { SetupLog, SetupStep } from "@/stores/app-store";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changeLanguage } from "@/i18n";
@@ -651,22 +651,16 @@ export function SetupPage() {
   );
 
   useEffect(() => {
-    let unlistenSetup: (() => void) | null = null;
-    let unlistenGateway: (() => void) | null = null;
-
-    listen("setup-progress", (event) => {
+    const unlistenSetup = subscribeTauriEvent("setup-progress", (event) => {
       const message = payloadMessage(event.payload);
       if (message) appendSetupLog({ source: "setup", message });
-    }).then((fn) => { unlistenSetup = fn; }).catch(() => {});
+    });
 
-    listen<string>("gateway-log", (event) => {
+    const unlistenGateway = subscribeTauriEvent<string>("gateway-log", (event) => {
       if (event.payload) appendSetupLog({ source: "gateway", message: event.payload });
-    }).then((fn) => { unlistenGateway = fn; }).catch(() => {});
+    });
 
-    return () => {
-      unlistenSetup?.();
-      unlistenGateway?.();
-    };
+    return combineUnlisteners([unlistenSetup, unlistenGateway]);
   }, [appendSetupLog]);
 
   const sharedLogs = useMemo(() => logs, [logs]);
