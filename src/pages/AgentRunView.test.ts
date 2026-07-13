@@ -133,3 +133,13 @@ test('worktree actions remain available when diff statistics are unavailable', (
   assert.match(source, /worktreePath && worktreeBranch && !worktreeDiscarded/);
   assert.match(source, /\{diffStats && <>/);
 });
+
+test('visible task runs share usage snapshots and pause hidden metrics polling', () => {
+  assert.match(source, /useUsageSnapshot\(visible\)/);
+  assert.match(source, /if \(!visible\) return;/);
+  assert.match(source, /\[sessionPath, running, visible\]/);
+  assert.match(source, /usageSnapshot\?\.claude\.status === 'available'/);
+  assert.match(source, /usageSnapshot\?\.codex\.status === 'available'/);
+  assert.match(source, /<InlineUsageWindow label="5h"/);
+  assert.match(source, /<InlineUsageWindow label="7d"/);
+});

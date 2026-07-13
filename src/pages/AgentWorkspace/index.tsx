@@ -1110,6 +1110,7 @@ export function AgentWorkspacePage() {
                 terminalFontSize={terminalFontSize}
                 monoFontFamily={monoFontFamily}
                 themeVariant={themeVariant}
+                visible={selected?.id === task.id && selectedRunVisible}
               />
             </div>
           ))}

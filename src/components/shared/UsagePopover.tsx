@@ -1,56 +1,31 @@
 // ── UsagePopover — minimal port of nezha's UsagePopover ───────────────────────
 //
 // Frontend popover that:
-//   1. Calls `read_usage_snapshot` Tauri command on open
+//   1. Uses the shared cached usage snapshot while open
 //   2. Renders Claude (5h / 7d) + Codex (primary / secondary) usage bars
-//   3. Handles "unavailable" status (current state — backend is a stub) by
-//      showing a friendly placeholder instead of crashing
+//   3. Handles unavailable agent usage with a friendly placeholder
 //
 // Adapted differences from nezha:
 //   - Uses `react-i18next` (junqi's i18n) instead of nezha's useI18n.
-//   - Calls `invoke()` directly instead of a useUsageSnapshot hook.
+//   - Uses JunQi's shared useUsageSnapshot hook.
 //   - Uses Tailwind + aegis CSS variables instead of nezha's `s.xxx` styles.
-//   - Backend currently returns `unavailable` for both agents, so the
-//     "Available" branch only renders once the real usage backend lands
-//     (PR-0.6b stub → future OAuth/RPC integration).
 //
 // Source: nezha/src/components/nezha/UsagePopover.tsx
 
 import { useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { Activity } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
+import {
+  getUsageColor,
+  useUsageSnapshot,
+  type ClaudeUsageData,
+  type CodexUsageData,
+  type UsageSource,
+  type UsageWindow,
+} from '@/hooks/useUsageSnapshot';
 
 // ── Types — must match commands/usage.rs serialized shape ────────────────────
-
-interface UsageWindow {
-  usedPercent: number;
-  remainingPercent: number;
-  resetAt?: number | null;
-}
-
-interface ClaudeUsageData {
-  fiveHour?: UsageWindow | null;
-  sevenDay?: UsageWindow | null;
-}
-
-interface CodexUsageData {
-  email?: string | null;
-  planType?: string | null;
-  primary?: UsageWindow | null;
-  secondary?: UsageWindow | null;
-}
-
-type UsageSource<T> =
-  | { status: 'available'; data: T }
-  | { status: 'unavailable'; reason: string };
-
-interface UsageSnapshot {
-  claude: UsageSource<ClaudeUsageData>;
-  codex: UsageSource<CodexUsageData>;
-  fetchedAt: number;
-}
 
 function formatResetTime(resetAt?: number | null): string | null {
   if (!resetAt) return null;
@@ -62,13 +37,6 @@ function formatResetTime(resetAt?: number | null): string | null {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
-}
-
-function getUsageColor(remainingPercent: number): string {
-  // Green ≥ 50%, yellow ≥ 20%, red < 20%
-  if (remainingPercent >= 50) return 'rgb(var(--aegis-success))';
-  if (remainingPercent >= 20) return 'rgb(var(--aegis-warning))';
-  return 'rgb(var(--aegis-danger))';
 }
 
 function UsageMetricRow({ label, window: w }: { label: string; window: UsageWindow }) {
@@ -115,19 +83,10 @@ function SourceCard<T>({
 export function UsagePopover() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [snapshot, setSnapshot] = useState<UsageSnapshot | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { snapshot, loading, error } = useUsageSnapshot(open);
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
-    if (!next) return;
-    setLoading(true);
-    setError(null);
-    invoke<UsageSnapshot>('read_usage_snapshot')
-      .then((s) => setSnapshot(s))
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
   };
 
   const renderClaude = (data: ClaudeUsageData) => (

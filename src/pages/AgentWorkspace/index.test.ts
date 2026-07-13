@@ -80,6 +80,7 @@ test('expanded and collapsed task panels expose Nezha footer actions', () => {
   assert.match(source, /切换到深色主题/);
   assert.match(source, /应用设置/);
   assert.equal((source.match(/<UsagePopover \/>/g) ?? []).length, 1);
+  assert.match(source, /visible=\{selected\?\.id === task\.id && selectedRunVisible\}/);
 });
 
 test('task notification deep links select their project and task', () => {

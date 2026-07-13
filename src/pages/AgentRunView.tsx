@@ -69,6 +69,7 @@ import { applyPlanModePrompt } from './agentPrompt';
 import claudeGif from '@/assets/gif/claude.gif';
 import codexGif from '@/assets/gif/codex.gif';
 import { captureTaskNameSnapshot, taskStillMatchesNameSnapshot } from './AgentWorkspace/taskNameGuard';
+import { getUsageColor, useUsageSnapshot, type UsageWindow } from '@/hooks/useUsageSnapshot';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -154,6 +155,17 @@ function formatDuration(secs: number): string {
 }
 function fmtNum(n: number): string { return n < 1000 ? String(n) : n < 1e6 ? `${(n/1e3).toFixed(1)}k` : `${(n/1e6).toFixed(1)}M`; }
 function fmtBytes(b: number): string { return b < 1024 ? `${b}B` : b < 1024*1024 ? `${(b/1024).toFixed(0)}K` : `${(b/1024/1024).toFixed(1)}M`; }
+
+function InlineUsageWindow({ label, window }: { label: string; window: UsageWindow }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-[10px] text-aegis-text-dim">{label}</span>
+      <span className="text-[11px] font-bold tabular-nums" style={{ color: getUsageColor(window.remainingPercent) }}>
+        {window.remainingPercent}%
+      </span>
+    </span>
+  );
+}
 
 // ── Kooky ToolCallActivityStrip sub-components ─────────────────────────────
 
@@ -388,6 +400,7 @@ export interface AgentRunViewProps {
   terminalFontSize?: TerminalFontSize;
   monoFontFamily?: FontFamily;
   themeVariant?: ThemeVariant;
+  visible?: boolean;
 }
 
 export function AgentRunView({
@@ -415,6 +428,7 @@ export function AgentRunView({
   terminalFontSize = 12,
   monoFontFamily = getDefaultMonoFont(),
   themeVariant = 'dark',
+  visible = true,
 }: AgentRunViewProps = {}) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
@@ -428,6 +442,7 @@ export function AgentRunView({
       path: workspace.projectDirectory || workspace.workingDirectory,
     }))
     .filter((workspace) => Boolean(workspace.path)), [workspaces]);
+  const { snapshot: usageSnapshot } = useUsageSnapshot(visible);
   const requestedAgent = providedAgent ?? params.get('agent');
   const initialAgent: AgentType = requestedAgent === 'codex' || requestedAgent === 'pi'
     ? requestedAgent
@@ -933,6 +948,7 @@ export function AgentRunView({
       setMetrics(null);
       return;
     }
+    if (!visible) return;
     let cancelled = false;
     const fetch = async () => {
       try {
@@ -947,7 +963,7 @@ export function AgentRunView({
       if (metricsTimerRef.current) window.clearInterval(metricsTimerRef.current);
       metricsTimerRef.current = null;
     };
-  }, [sessionPath, running]);
+  }, [sessionPath, running, visible]);
 
   const copySessionPath = useCallback(async () => {
     if (!sessionPath) return;
@@ -1339,7 +1355,29 @@ export function AgentRunView({
         </div>
       )}
 
-      {/* ── Missing-file warning ──────────────────────────────────────── */}
+      {/* Run metadata */}
+      {(running || isDone) && (
+        <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-2 border-b border-aegis-border px-5 py-1.5 text-[11px] text-aegis-text-dim">
+          <span className="whitespace-nowrap font-medium text-aegis-text-secondary">
+            {agent === 'claude' ? '✦ Claude Code' : agent === 'codex' ? '⬡ Codex' : 'Pi'} · {t(PERM_OPTIONS.find((option) => option.value === perm)?.label ?? 'agent.perm.ask')}
+          </span>
+          {agent === 'claude' && usageSnapshot?.claude.status === 'available' && (
+            <>
+              {usageSnapshot.claude.data.fiveHour && <><span>·</span><InlineUsageWindow label="5h" window={usageSnapshot.claude.data.fiveHour} /></>}
+              {usageSnapshot.claude.data.sevenDay && <><span>·</span><InlineUsageWindow label="7d" window={usageSnapshot.claude.data.sevenDay} /></>}
+            </>
+          )}
+          {agent === 'codex' && usageSnapshot?.codex.status === 'available' && (
+            <>
+              {usageSnapshot.codex.data.primary && <><span>·</span><InlineUsageWindow label="5h" window={usageSnapshot.codex.data.primary} /></>}
+              {usageSnapshot.codex.data.secondary && <><span>·</span><InlineUsageWindow label="7d" window={usageSnapshot.codex.data.secondary} /></>}
+            </>
+          )}
+          {worktreeBranch && !worktreeDiscarded && <><span>·</span><span className="inline-flex min-w-0 items-center gap-1 truncate"><GitBranch size={11} />{worktreeBranch}</span></>}
+        </div>
+      )}
+
+      {/* Missing-file warning */}
       {missingInstructionsFile && !running && !isDone && (
         <div className="mx-4 mt-3 px-3 py-2 rounded-lg flex items-center gap-2 text-[12px]"
           style={{ background: 'rgb(var(--aegis-warning)/0.06)', border: '1px solid rgb(var(--aegis-warning)/0.2)', color: 'rgb(var(--aegis-warning))' }}>
