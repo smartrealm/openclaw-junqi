@@ -2,12 +2,11 @@
 //
 // Reads the Claude Code CLI's OAuth credentials from well-known filesystem
 // locations, then queries the Anthropic OAuth usage endpoint for real 5h/7d
-// window utilization. On any failure path (no credentials, network error,
-// non-2xx, parse error) returns Err so the caller can fall back to mock.
+// window utilization. On failure the caller exposes an unavailable source
+// instead of fabricating quota values.
 //
-// This keeps the implementation portable: no dependency on the Claude CLI
-// being in PATH, no shelling out, no spawning child processes. Just a plain
-// HTTPS call to the Anthropic API.
+// File credentials are portable; macOS additionally falls back to the Claude
+// Code Keychain item used by current releases.
 
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -22,6 +21,7 @@ struct CredentialFile {
     #[serde(rename = "oauthAccount")]
     oauth_account: Option<OAuthAccount>,
     #[serde(default)]
+    #[serde(rename = "claudeAiOauth")]
     claude_ai_oauth: Option<OAuthAccount>,
 }
 
@@ -53,6 +53,33 @@ pub fn find_oauth_token() -> Option<String> {
             return Some(token);
         }
     }
+    None
+}
+
+#[cfg(target_os = "macos")]
+pub fn find_keychain_oauth_token() -> Option<String> {
+    let output = std::process::Command::new("/usr/bin/security")
+        .args([
+            "find-generic-password",
+            "-s",
+            "Claude Code-credentials",
+            "-w",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?
+        .stdout;
+    let payload: serde_json::Value = serde_json::from_slice(&output).ok()?;
+    payload
+        .pointer("/claudeAiOauth/accessToken")
+        .and_then(serde_json::Value::as_str)
+        .filter(|token| !token.trim().is_empty())
+        .map(str::to_string)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn find_keychain_oauth_token() -> Option<String> {
     None
 }
 
@@ -121,8 +148,6 @@ pub struct FetchedWindow {
 pub struct FetchedUsage {
     pub claude_five_hour: Option<FetchedWindow>,
     pub claude_seven_day: Option<FetchedWindow>,
-    /// Debug-friendly description of how the data was sourced.
-    pub source: String,
 }
 
 /// Query the Anthropic OAuth usage endpoint with the given bearer token.
@@ -156,7 +181,6 @@ pub async fn fetch_claude_usage(token: &str) -> Result<FetchedUsage, String> {
     Ok(FetchedUsage {
         claude_five_hour: parsed.five_hour.map(convert_window),
         claude_seven_day: parsed.seven_day.map(convert_window),
-        source: "Anthropic OAuth usage API".to_string(),
     })
 }
 
@@ -200,6 +224,19 @@ mod tests {
             token: Some("c".into()),
         };
         assert_eq!(acc.pick_token(), Some("c"));
+    }
+
+    #[test]
+    fn credential_file_accepts_claude_code_camel_case_shape() {
+        let parsed: CredentialFile =
+            serde_json::from_str(r#"{"claudeAiOauth":{"accessToken":"oauth-token"}}"#).unwrap();
+        assert_eq!(
+            parsed
+                .claude_ai_oauth
+                .as_ref()
+                .and_then(OAuthAccount::pick_token),
+            Some("oauth-token")
+        );
     }
 
     #[test]

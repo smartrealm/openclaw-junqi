@@ -9,9 +9,11 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 const CODEX_ATTEMPT_TIMEOUT_SECS: u64 = 10;
+const CLAUDE_429_BACKOFF_SECS: u64 = 300;
 
 static CODEX_RPC: LazyLock<Arc<Mutex<Option<CodexRpcClient>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
+static CLAUDE_429_UNTIL: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 struct CodexRpcClient {
     stdin: ChildStdin,
@@ -234,12 +236,35 @@ fn attempt_codex_usage_calls(client: &mut CodexRpcClient) -> Result<CodexUsageDa
 }
 
 async fn read_claude_usage() -> UsageSource<ClaudeUsageData> {
-    let Some(token) = super::oauth::find_oauth_token() else {
+    if let Some(until) = *CLAUDE_429_UNTIL.lock() {
+        let remaining = until.saturating_duration_since(Instant::now());
+        if !remaining.is_zero() {
+            return unavailable(format!(
+                "Claude usage rate-limited; retry in {}s.",
+                remaining.as_secs()
+            ));
+        }
+    }
+
+    let token = match super::oauth::find_oauth_token() {
+        Some(token) => Some(token),
+        None => tokio::task::spawn_blocking(super::oauth::find_keychain_oauth_token)
+            .await
+            .ok()
+            .flatten(),
+    };
+    let Some(token) = token else {
         return unavailable("Claude OAuth credentials are unavailable.");
     };
     let fetched = match super::oauth::fetch_claude_usage(&token).await {
         Ok(usage) => usage,
-        Err(reason) => return unavailable(reason),
+        Err(reason) => {
+            if reason.contains("429") {
+                *CLAUDE_429_UNTIL.lock() =
+                    Some(Instant::now() + Duration::from_secs(CLAUDE_429_BACKOFF_SECS));
+            }
+            return unavailable(reason);
+        }
     };
     let map_window = |window: super::oauth::FetchedWindow| UsageWindow {
         used_percent: percent_to_u8(window.used_percent),
