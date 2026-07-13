@@ -55,6 +55,17 @@ type TaskListRow =
   | { type: 'group'; key: string; label: string }
   | { type: 'task'; key: string; task: AgentWorkspaceTask };
 
+interface ProjectUiState {
+  openDiff: DiffTarget | null;
+  openFiles: OpenFileTab[];
+  activeFilePath: string | null;
+  rightPanel: RightPanel;
+  rightPanelWidth: number;
+  taskPanelCollapsed: boolean;
+  showShellTerminal: boolean;
+  terminalHeight: number;
+}
+
 const TASK_GROUP_ROW_HEIGHT = 29;
 const TASK_ROW_HEIGHT = 48;
 const TASK_LIST_OVERSCAN_ROWS = 8;
@@ -174,6 +185,16 @@ export function AgentWorkspacePage() {
   const taskListRef = useRef<HTMLDivElement>(null);
   const [taskListViewportHeight, setTaskListViewportHeight] = useState(0);
   const [taskListScrollTop, setTaskListScrollTop] = useState(0);
+  const projectUiStatesRef = useRef<Record<string, ProjectUiState>>({});
+  const previousProjectPathRef = useRef(projectPath);
+  const currentProjectUiRef = useRef<ProjectUiState>({
+    openDiff, openFiles, activeFilePath, rightPanel, rightPanelWidth,
+    taskPanelCollapsed, showShellTerminal, terminalHeight,
+  });
+  currentProjectUiRef.current = {
+    openDiff, openFiles, activeFilePath, rightPanel, rightPanelWidth,
+    taskPanelCollapsed, showShellTerminal, terminalHeight,
+  };
 
   const allProjectTasks = useMemo(
     () => tasks.filter((task) => task.projectPath === projectPath),
@@ -408,10 +429,17 @@ export function AgentWorkspacePage() {
   }, [resizingTerminal]);
 
   useEffect(() => {
-    setOpenDiff(null);
-    setOpenFiles([]);
-    setActiveFilePath(null);
-    setShowShellTerminal(false);
+    const previousPath = previousProjectPathRef.current;
+    if (previousPath) projectUiStatesRef.current[previousPath] = currentProjectUiRef.current;
+    const restored = projectPath ? projectUiStatesRef.current[projectPath] : undefined;
+    setOpenDiff(restored?.openDiff ?? null);
+    setOpenFiles(restored?.openFiles ?? []);
+    setActiveFilePath(restored?.activeFilePath ?? null);
+    setRightPanel(restored?.rightPanel ?? 'files');
+    setRightPanelWidth(restored?.rightPanelWidth ?? 320);
+    setTaskPanelCollapsed(restored?.taskPanelCollapsed ?? false);
+    setShowShellTerminal(restored?.showShellTerminal ?? false);
+    setTerminalHeight(restored?.terminalHeight ?? 260);
     setShowFileSearch(false);
     setShowProjectSettings(false);
     setResizingTerminal(false);
@@ -419,6 +447,7 @@ export function AgentWorkspacePage() {
     setEditingTaskId(null);
     setEditingTaskDetailsId(null);
     setTaskActionError(null);
+    previousProjectPathRef.current = projectPath;
   }, [projectPath]);
 
   const startNewTask = useCallback(() => {

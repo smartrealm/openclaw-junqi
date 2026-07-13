@@ -15,8 +15,10 @@ test('deleting an active task surfaces cancellation failures', () => {
   assert.match(source, /remove_task_worktree/);
 });
 
-test('switching projects cannot leak project-scoped overlays or terminals', () => {
-  assert.match(source, /setShowShellTerminal\(false\)/);
+test('switching projects preserves isolated project view state', () => {
+  assert.match(source, /projectUiStatesRef/);
+  assert.match(source, /restored\?\.openFiles/);
+  assert.match(source, /restored\?\.showShellTerminal/);
   assert.match(source, /setShowFileSearch\(false\)/);
   assert.match(source, /setShowProjectSettings\(false\)/);
   assert.match(source, /key=\{`agent-workspace-shell:/);
