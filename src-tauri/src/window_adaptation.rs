@@ -223,4 +223,24 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&marker).unwrap(), "1");
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn marker_persistence_failure_leaves_marker_absent() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-window-marker-failure-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let blocking_file = root.join("not-a-directory");
+        std::fs::write(&blocking_file, "x").unwrap();
+        let marker = blocking_file.join("initialized");
+
+        assert!(persist_first_run_marker(&marker).is_err());
+        assert!(!marker.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

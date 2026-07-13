@@ -64,6 +64,6 @@
 ## Validation
 
 - Rust formatting: `cargo fmt --check`
-- Rust tests: 206 passed, 2 ignored
+- Rust tests: 208 passed, 2 ignored
 - Release build: `npx tauri build --bundles dmg`
 - Disk image verification: `hdiutil verify`

@@ -76,6 +76,9 @@ pub(crate) fn plan_window_adjustment(
         width: ratio(snapshot.work_area.size.width, SCREEN_MARGIN_RATIO),
         height: ratio(snapshot.work_area.size.height, SCREEN_MARGIN_RATIO),
     };
+    if frame.width >= maximum_outer.width || frame.height >= maximum_outer.height {
+        return Err("window frame exceeds the usable monitor work area");
+    }
     let maximum_inner = PhysicalSize {
         width: maximum_outer.width.saturating_sub(frame.width).max(1),
         height: maximum_outer.height.saturating_sub(frame.height).max(1),
@@ -352,6 +355,17 @@ mod tests {
     }
 
     #[test]
+    fn intentionally_offset_but_reachable_window_position_is_preserved() {
+        let mut input = snapshot();
+        input.outer_position = PhysicalPosition { x: -100, y: 20 };
+
+        let plan = plan_window_adjustment(input, SizingMode::Preserve).unwrap();
+
+        assert_eq!(plan.target_inner_size, None);
+        assert_eq!(plan.target_outer_position, None);
+    }
+
+    #[test]
     fn unreachable_title_bar_is_recovered_even_when_size_fits() {
         let mut input = snapshot();
         input.outer_position = PhysicalPosition { x: 200, y: -100 };
@@ -416,6 +430,20 @@ mod tests {
 
         input.monitor_scale_factor = 1.0;
         input.work_area.size.width = 0;
+        assert!(plan_window_adjustment(input, SizingMode::Preserve).is_err());
+
+        input.work_area.size = PhysicalSize {
+            width: 100,
+            height: 100,
+        };
+        input.inner_size = PhysicalSize {
+            width: 1,
+            height: 1,
+        };
+        input.outer_size = PhysicalSize {
+            width: 200,
+            height: 200,
+        };
         assert!(plan_window_adjustment(input, SizingMode::Preserve).is_err());
     }
 }
