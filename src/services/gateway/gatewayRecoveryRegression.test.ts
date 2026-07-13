@@ -96,6 +96,32 @@ test('BUG-GSC04 Rust canonical state has one atomic writer', () => {
   assert.doesNotMatch(gatewayCommand, /runtime_mode|\.lifecycle\.lock|transition_lifecycle|transition_runtime/);
 });
 
+test('BUG-GSC08 gateway observation is read-only while lifecycle ownership is busy', () => {
+  const gatewayCommand = source('src-tauri/src/commands/gateway.rs');
+  const status = gatewayCommand.slice(
+    gatewayCommand.indexOf('pub async fn gateway_status'),
+    gatewayCommand.indexOf('pub async fn probe_gateway_port'),
+  );
+  assert.match(status, /try_lock_owned\(\)\.ok\(\)/);
+  assert.match(status, /let can_reconcile = _observation_guard\.is_some\(\)/);
+  assert.match(status, /GatewayObservation::ManagedChildUnready/);
+  assert.match(status, /GatewayObservation::EndpointOffline/);
+  assert.doesNotMatch(status, /state\.transition\(/);
+});
+
+test('BUG-GSC09 manager commits orchestration fields only through dispatch', () => {
+  const manager = source('src/services/gateway/GatewayConnectionManager.ts');
+  const beforeDispatch = manager.slice(0, manager.indexOf('private dispatch('));
+  const afterDispatch = manager.slice(manager.indexOf('private dispatch('));
+  assert.doesNotMatch(beforeDispatch, /this\.(?:error|retrying|logs)\s*=/);
+  assert.match(afterDispatch, /this\.error\s*=/);
+  assert.match(afterDispatch, /this\.retrying\s*=/);
+  assert.match(afterDispatch, /this\.logs\s*=/);
+  assert.doesNotMatch(manager, /startAttempted/);
+  assert.match(manager, /this\.dispatch\(\{ type: 'RECOVERY_REQUESTED' \}\)/);
+  assert.match(manager, /rejectPendingStart\('Gateway start was superseded/);
+});
+
 test('BUG-ST01 storage bootstrap is stable and environment overrides remain supported', () => {
   const paths = source('src-tauri/src/paths.rs');
   assert.match(paths, /storage_bootstrap_path/);

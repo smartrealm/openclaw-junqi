@@ -46,8 +46,8 @@
 
 ## 验证记录
 
-- 前端：567 项测试通过；边界测试 15 项通过。
-- Rust：186 项通过，2 项环境集成测试按预期忽略。
+- 前端：592 项测试通过；边界测试 15 项通过。
+- Rust：225 项通过，2 项环境集成测试按预期忽略。
 - 构建：`npm run build`、`npm run lint`、`cargo check`、`cargo fmt --check` 通过。
 - 运行时：以 `com.junqi.desktop.gateway-audit` 临时标识启动真实 Tauri 开发二进制；进程持续运行，OpenClaw Gateway 在 `127.0.0.1:18789` 健康响应。
 - 保护：没有关闭正式版 JunQi，也没有为了验证而重启其共享 Gateway。
@@ -62,9 +62,9 @@
 
 **Acceptance**：
 
-- [ ] `GatewayProcess` 不再公开 `restarting: Mutex<bool>`。
-- [ ] runtime snapshot 同时返回 lifecycle、mode、restarting。
-- [ ] restart guard 通过 transition 清除 restarting。
+- [x] `GatewayProcess` 不再公开 `restarting: Mutex<bool>`。
+- [x] runtime snapshot 同时返回 lifecycle、mode、restarting。
+- [x] restart guard 通过 transition 清除 restarting。
 
 ### BUG-GSC08 · 观测不能覆盖 owner
 
@@ -74,9 +74,12 @@
 
 **Acceptance**：
 
-- [ ] restart 通过合并检查后才写 port。
-- [ ] operation gate 被占用时，gateway_status 不清 child、不 transition。
-- [ ] operation gate 空闲时，gateway_status 仍能把已退出 child 和健康外部 endpoint 对账到 canonical 状态。
+- [x] restart 通过合并检查后才写 port。
+- [x] operation gate 被占用时，gateway_status 不清 child、不 transition。
+- [x] operation gate 空闲时，gateway_status 仍能把已退出 child 和健康外部 endpoint 对账到 canonical 状态。
+- [x] 子进程存活但端口失联时 canonical 状态降为 managed_child/starting。
+- [x] 无子进程且端口离线时清除陈旧 runtime owner。
+- [x] 无受管 child 的健康端口不会继续标记为 managed_child。
 
 ### BUG-GSC09 · 前端唯一状态提交方法
 
@@ -86,7 +89,8 @@
 
 **Acceptance**：
 
-- [ ] error/retrying/logs 只在 dispatch 内赋值。
-- [ ] 删除 startAttempted；STARTING + offline 不重复返回 START。
-- [ ] initialize/ensure/restart 都先提交明确事件。
-- [ ] stale start 明确 reject pending Promise，后续 setup start 可重新执行。
+- [x] error/retrying/logs 只在 dispatch 内赋值。
+- [x] 删除 startAttempted；STARTING + offline 不重复返回 START。
+- [x] initialize/ensure/restart 都先提交明确事件。
+- [x] stale start 明确 reject pending Promise，后续 setup start 可重新执行。
+- [x] ensure 原生调用 reject 时退出 retrying 并提交可见错误。

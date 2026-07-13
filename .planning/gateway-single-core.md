@@ -17,6 +17,7 @@
 | B | BUG-GSC09 | 初始化、恢复意图全部事件化；删除 startAttempted；失效启动必须 settle |
 | C | BUG-GSC07/08/09 | 增加原子快照、查询竞争、重复启动与 stale Promise 回归证明 |
 | D | 全部 | 对当前工作树重新执行四层验证及真实 Tauri 启动检查 |
+| E | BUG-GSC10/11 | 对账离线 runtime；确保 ensure 异常和 stale setup start 均可恢复 |
 
 ## 唯一性约束
 

@@ -153,7 +153,12 @@ export class GatewayConnectionManager {
       return { healthy: true, mode: 'browser' };
     }
     const generation = this.beginProcessRecovery();
-    const result = await window.aegis.gateway.ensureRunning();
+    let result: any;
+    try {
+      result = await window.aegis.gateway.ensureRunning();
+    } catch (error) {
+      result = { healthy: false, error: String(error) };
+    }
     if (!this.isCurrent(generation)) return { ...result, superseded: true };
     if (result?.healthy) {
       this.reconnect();
@@ -308,11 +313,11 @@ export class GatewayConnectionManager {
       }
       return;
     }
-    if (result.success) {
+    if (result?.success) {
       this.dispatch({ type: 'START_SUCCESS' });
       this.pendingStart?.resolve(result);
     } else {
-      const error = result.error || 'Failed to start gateway';
+      const error = result?.error || 'Failed to start gateway';
       this.dispatch({ type: 'START_FAILED', error });
       this.pendingStart?.reject(new Error(error));
     }

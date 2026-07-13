@@ -113,3 +113,21 @@
 **影响**：源码无法证明 dispatch 是唯一状态提交点；设置向导切换生命周期时可能永久等待旧启动。
 
 **修复**：增加 INITIALIZE/RECOVERY_REQUESTED 事件；FSM 在 STARTING 状态吞掉重复离线轮询，从而删除 startAttempted；失效 start 明确 reject waiter。
+
+## 2026-07-14 最终复核
+
+### BUG-GSC10 · HIGH · 离线返回值与 canonical runtime 不一致
+
+**位置**：`src-tauri/src/commands/gateway.rs`。
+
+**证据**：`gateway_status` 在受管 child 存活但端口失联、或无 child 且端口离线时返回 `running: false`，却不更新 runtime；诊断页仍可能看到 `running/managed_child`、`running/system_service` 或 `running/docker`。
+
+**修复**：把观察事实映射为纯 runtime 归约；只有取得 observation gate 的查询可以提交，并且仅在状态真正变化时调用 `transition`，避免轮询刷日志。
+
+### BUG-GSC11 · HIGH · ensure 异常会让恢复界面永久 retrying
+
+**位置**：`src/services/gateway/GatewayConnectionManager.ts`。
+
+**证据**：`ensureRunning()` 直接 await 原生 Promise，没有异常归一化。IPC reject 时既不提交 `STATUS_RECEIVED`，也不清除 retrying。
+
+**修复**：将 reject 归一化为 `{ healthy: false, error }` 并通过 dispatch 进入 ERROR；增加 Manager 行为测试，同时证明 stale setup start 会 reject 且后续启动仍可执行。
