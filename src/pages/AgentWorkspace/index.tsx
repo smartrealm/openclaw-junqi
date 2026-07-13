@@ -291,9 +291,10 @@ export function AgentWorkspacePage() {
     || task.status === 'interrupted'
   ), []);
   const deleteTasks = useCallback(async (deletingTasks: AgentWorkspaceTask[]) => {
+    const deletingIds = new Set(deletingTasks.map((task) => task.id));
     for (const task of deletingTasks) {
       if (isActiveTask(task)) {
-        await invoke('cancel_task', { taskId: task.id }).catch(() => undefined);
+        await invoke('cancel_task', { taskId: task.id }).catch((error) => setTaskActionError(`取消任务失败：${String(error)}`));
       }
       if (task.worktreePath && task.worktreeBranch && !task.worktreeDiscarded) {
         await invoke('remove_task_worktree', {
@@ -304,6 +305,8 @@ export function AgentWorkspacePage() {
       }
       removeTask(task.id);
     }
+    setMountedRunTaskIds((current) => new Set([...current].filter((id) => !deletingIds.has(id))));
+    setAutoStartTaskId((current) => current && deletingIds.has(current) ? null : current);
   }, [isActiveTask, removeTask]);
   const requestDeleteTask = useCallback(async (task: AgentWorkspaceTask) => {
     const preview = task.prompt.length > 100 ? `${task.prompt.slice(0, 100)}...` : task.prompt;
@@ -314,13 +317,13 @@ export function AgentWorkspacePage() {
     if (accepted) await deleteTasks([task]);
   }, [deleteTasks]);
   const requestClearProjectTasks = useCallback(async () => {
-    if (projectTasks.length === 0) return;
-    const accepted = await confirm(`确定清空“${workspace?.name || projectPath}”中的 ${projectTasks.length} 个任务吗？`, {
+    if (allProjectTasks.length === 0) return;
+    const accepted = await confirm(`确定清空“${workspace?.name || projectPath}”中的 ${allProjectTasks.length} 个任务吗？`, {
       title: '清空任务',
       kind: 'warning',
     });
-    if (accepted) await deleteTasks(projectTasks);
-  }, [deleteTasks, projectPath, projectTasks, workspace?.name]);
+    if (accepted) await deleteTasks(allProjectTasks);
+  }, [allProjectTasks, deleteTasks, projectPath, workspace?.name]);
   const requestCloseProject = useCallback(async (closingWorkspace: typeof workspaces[number]) => {
     const sourceId = closingWorkspace.worktreeParentId || closingWorkspace.id;
     const familyPaths = new Set(workspaces
