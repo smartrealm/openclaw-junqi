@@ -2493,6 +2493,7 @@ dependencies = [
  "url",
  "uuid",
  "window-vibrancy 0.5.3",
+ "windows-sys 0.61.2",
  "winreg 0.55.0",
  "zip 2.4.2",
 ]

@@ -7,6 +7,8 @@ const petCommands = readFileSync(new URL('../../src-tauri/src/commands/pet.rs', 
 
 test('native pet dragging has an explicit completion signal on Windows', () => {
   assert.match(petCommands, /start_dragging\(\)/);
+  assert.match(petCommands, /wait_for_windows_left_button_release\(\)\.await/);
+  assert.match(petCommands, /GetAsyncKeyState\(VK_LBUTTON as i32\)/);
   assert.match(petCommands, /emit_to\(PET_LABEL, "pet-drag-ended"/);
   assert.match(petWindow, /subscribeTauriEvent\('pet-drag-ended', onUp\)/);
 });

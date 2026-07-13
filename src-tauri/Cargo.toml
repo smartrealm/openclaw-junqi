@@ -52,3 +52,4 @@ window-vibrancy = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
