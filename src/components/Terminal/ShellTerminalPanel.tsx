@@ -191,7 +191,15 @@ function TabShellItem({
   const menuHover = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; };
   const menuLeave = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; };
 
-  const startRename = () => { setRenameValue(title); setRenaming(true); setCtxMenu(null); };
+  const startRename = (deferred = false) => {
+    const open = () => {
+      setRenameValue(title);
+      setRenaming(true);
+    };
+    setCtxMenu(null);
+    if (deferred) requestAnimationFrame(open);
+    else open();
+  };
   const commitRename = () => {
     onRename?.(renameValue);
     setRenaming(false);
@@ -336,7 +344,7 @@ function TabShellItem({
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onRename && (
             <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={startRename}>{t('terminal.rename', 'Rename...')}</button>
+              onClick={() => startRename(true)}>{t('terminal.rename', 'Rename...')}</button>
           )}
           {onDuplicate && (
             <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}

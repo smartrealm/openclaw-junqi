@@ -30,6 +30,12 @@ test('terminal rename disables tab dragging while the input owns focus', () => {
   assert.match(source, /onPointerDown=\{\(e\) => e\.stopPropagation\(\)\}/);
 });
 
+test('context-menu rename waits for the menu click to finish before focusing the input', () => {
+  assert.match(source, /const startRename = \(deferred = false\) =>/);
+  assert.match(source, /if \(deferred\) requestAnimationFrame\(open\)/);
+  assert.match(source, /onClick=\{\(\) => startRename\(true\)\}/);
+});
+
 test('terminal launcher menu is portaled and populated from detected CLI tools', () => {
   assert.match(source, /invoke<DetectedCliTool\[]>\('detect_cli_tools'\)/);
   assert.match(source, /addMenuOpen && createPortal/);
