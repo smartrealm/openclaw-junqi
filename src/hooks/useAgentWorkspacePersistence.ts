@@ -48,6 +48,7 @@ export function useAgentWorkspacePersistence(workspaces: PersistedWorkspace[]): 
   const loadedIdsRef = useRef(new Set<string>());
   const blockedIdsRef = useRef(new Set<string>());
   const saveTimersRef = useRef(new Map<string, number>());
+  const pendingSavesRef = useRef(new Map<string, AgentWorkspaceTask[]>());
   const workspaceMapRef = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -107,9 +108,13 @@ export function useAgentWorkspacePersistence(workspaces: PersistedWorkspace[]): 
         if (current === before || JSON.stringify(current) === JSON.stringify(before)) continue;
         const existing = saveTimersRef.current.get(projectId);
         if (existing !== undefined) window.clearTimeout(existing);
+        pendingSavesRef.current.set(projectId, current);
         saveTimersRef.current.set(projectId, window.setTimeout(() => {
           saveTimersRef.current.delete(projectId);
-          void invoke('save_agent_workspace_tasks', { projectId, tasks: current }).catch((error) => {
+          const tasks = pendingSavesRef.current.get(projectId);
+          pendingSavesRef.current.delete(projectId);
+          if (!tasks) return;
+          void invoke('save_agent_workspace_tasks', { projectId, tasks }).catch((error) => {
             console.error(`save AI workspace tasks for ${projectId}`, error);
           });
         }, 400));
@@ -119,6 +124,12 @@ export function useAgentWorkspacePersistence(workspaces: PersistedWorkspace[]): 
       unsubscribe();
       for (const timer of saveTimersRef.current.values()) window.clearTimeout(timer);
       saveTimersRef.current.clear();
+      for (const [projectId, tasks] of pendingSavesRef.current) {
+        void invoke('save_agent_workspace_tasks', { projectId, tasks }).catch((error) => {
+          console.error(`flush AI workspace tasks for ${projectId}`, error);
+        });
+      }
+      pendingSavesRef.current.clear();
     };
   }, []);
 }
