@@ -454,6 +454,57 @@ fn extract_targz(
 
 // ─── npm install with registry fallback ───────────────────────────────────────
 
+const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(360);
+
+enum NpmWaitResult {
+    Exited(std::io::Result<std::process::ExitStatus>),
+    Inactive,
+}
+
+async fn wait_for_npm_activity(
+    child: &mut tokio::process::Child,
+    activity: &mut tokio::sync::watch::Receiver<u64>,
+) -> NpmWaitResult {
+    wait_for_process_activity(child, activity, NPM_INACTIVITY_TIMEOUT).await
+}
+
+async fn wait_for_process_activity(
+    child: &mut tokio::process::Child,
+    activity: &mut tokio::sync::watch::Receiver<u64>,
+    inactivity_timeout: std::time::Duration,
+) -> NpmWaitResult {
+    let wait = child.wait();
+    tokio::pin!(wait);
+    loop {
+        tokio::select! {
+            status = &mut wait => return NpmWaitResult::Exited(status),
+            changed = activity.changed() => {
+                if changed.is_err() {
+                    return NpmWaitResult::Exited(wait.await);
+                }
+            }
+            _ = tokio::time::sleep(inactivity_timeout) => return NpmWaitResult::Inactive,
+        }
+    }
+}
+
+async fn terminate_npm_process_tree(child: &mut tokio::process::Child, pid: Option<u32>) {
+    #[cfg(windows)]
+    if let Some(pid) = pid {
+        let pid = pid.to_string();
+        let mut taskkill = tokio::process::Command::new("taskkill");
+        taskkill.args(["/PID", &pid, "/T", "/F"]);
+        platform::configure_background_command(&mut taskkill);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(15), taskkill.status()).await;
+    }
+
+    #[cfg(not(windows))]
+    let _ = pid;
+
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(10), child.wait()).await;
+}
+
 /// Run `npm install -g <pkg>` against a user-writable global prefix with
 /// live output streaming. The registry order is selected from verified package
 /// metadata and current network latency, then returns Ok on first success.
@@ -494,28 +545,25 @@ async fn npm_install_with_fallback(
     let _npm_cache_cleanup = TemporaryDirectory(npm_cache_root.clone());
     std::fs::create_dir_all(&npm_cache_root).ok();
     std::fs::create_dir_all(global_prefix).ok();
-    let staging_prefix = global_prefix.join(format!(
-        ".junqi-openclaw-stage-{}-{}",
-        std::process::id(),
-        install_nonce
-    ));
-    let install_prefix = if cfg!(windows) {
-        staging_prefix.as_path()
-    } else {
-        global_prefix
-    };
-    let _staging_cleanup = cfg!(windows).then(|| TemporaryDirectory(staging_prefix.clone()));
-    // `npm i -g` creates `<prefix>/bin` and `<prefix>/lib/node_modules`
-    // itself; pre-creating the prefix dir avoids races on first run.
-    let npm_prefix_str = install_prefix.to_string_lossy().to_string();
-
     let registries = npm_registry::select_npm_registry().await.candidates();
     let mut last_err = String::new();
     let total_regs = registries.len();
 
     for (reg_idx, registry) in registries.into_iter().enumerate() {
+        let staging_prefix = global_prefix.join(format!(
+            ".junqi-openclaw-stage-{}-{}-{}",
+            std::process::id(),
+            install_nonce,
+            reg_idx + 1
+        ));
+        let _staging_cleanup = cfg!(windows).then(|| TemporaryDirectory(staging_prefix.clone()));
+        let install_prefix = if cfg!(windows) {
+            staging_prefix.as_path()
+        } else {
+            global_prefix
+        };
+        let npm_prefix_str = install_prefix.to_string_lossy().to_string();
         if cfg!(windows) {
-            let _ = std::fs::remove_dir_all(&staging_prefix);
             std::fs::create_dir_all(&staging_prefix).map_err(|error| {
                 format!(
                     "Cannot prepare the isolated OpenClaw installer at {}: {}",
@@ -579,33 +627,39 @@ async fn npm_install_with_fallback(
                 continue;
             }
         };
+        let child_pid = child.id();
+        let (activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
 
         // Stream stdout to progress events so the user sees live npm output
         let prog_live = prog_start + (prog_end - prog_start) * 0.4;
-        if let Some(stdout) = child.stdout.take() {
+        let stdout_task = child.stdout.take().map(|stdout| {
             let app_c = app.clone();
             let step_c = step.to_string();
+            let activity_tx = activity_tx.clone();
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stdout).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    activity_tx.send_modify(|sequence| *sequence += 1);
                     let line = line.trim().to_string();
                     if line.is_empty() || line.starts_with("npm notice") {
                         continue;
                     }
                     emit(&app_c, &step_c, &format!("npm › {}", line), prog_live);
                 }
-            });
-        }
+            })
+        });
         let tar_warning_count = Arc::new(AtomicUsize::new(0));
-        if let Some(stderr) = child.stderr.take() {
+        let stderr_task = child.stderr.take().map(|stderr| {
             let app_e = app.clone();
             let step_e = step.to_string();
             let tar_warning_count_e = Arc::clone(&tar_warning_count);
+            let activity_tx = activity_tx.clone();
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    activity_tx.send_modify(|sequence| *sequence += 1);
                     let line = line.trim().to_string();
                     if line.is_empty() || line.starts_with("npm notice") {
                         continue;
@@ -620,43 +674,50 @@ async fn npm_install_with_fallback(
                     }
                     emit(&app_e, &step_e, &format!("npm › {}", line), prog_live);
                 }
-            });
-        }
+            })
+        });
+        let wait_result = wait_for_npm_activity(&mut child, &mut activity_rx).await;
+        let status = match wait_result {
+            NpmWaitResult::Exited(Ok(s)) => s,
+            NpmWaitResult::Exited(Err(e)) => {
+                last_err = format!("npm process error: {}", e);
+                if reg_idx + 1 < total_regs {
+                    emit(
+                        app,
+                        step,
+                        &format!(
+                            "{} install errored, retrying with fallback source...",
+                            reg_label
+                        ),
+                        prog_start,
+                    );
+                }
+                continue;
+            }
+            NpmWaitResult::Inactive => {
+                last_err = "npm install produced no output for 6 minutes".into();
+                terminate_npm_process_tree(&mut child, child_pid).await;
+                if reg_idx + 1 < total_regs {
+                    emit(
+                            app,
+                            step,
+                            &format!(
+                                "{} install stopped after 6 minutes without output; retrying with fallback source...",
+                                reg_label
+                            ),
+                            prog_start,
+                        );
+                }
+                continue;
+            }
+        };
 
-        let status =
-            match tokio::time::timeout(std::time::Duration::from_secs(360), child.wait()).await {
-                Ok(Ok(s)) => s,
-                Ok(Err(e)) => {
-                    last_err = format!("npm process error: {}", e);
-                    if reg_idx + 1 < total_regs {
-                        emit(
-                            app,
-                            step,
-                            &format!(
-                                "{} install errored, retrying with fallback source...",
-                                reg_label
-                            ),
-                            prog_start,
-                        );
-                    }
-                    continue;
-                }
-                Err(_) => {
-                    last_err = "npm install timed out (>6 min)".into();
-                    if reg_idx + 1 < total_regs {
-                        emit(
-                            app,
-                            step,
-                            &format!(
-                                "{} install timed out, retrying with fallback source...",
-                                reg_label
-                            ),
-                            prog_start,
-                        );
-                    }
-                    continue;
-                }
-            };
+        if let Some(task) = stdout_task {
+            let _ = task.await;
+        }
+        if let Some(task) = stderr_task {
+            let _ = task.await;
+        }
 
         if status.success() {
             let tar_warnings = tar_warning_count.load(Ordering::Relaxed);
@@ -1496,7 +1557,10 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         0.12,
     );
 
-    let node_ok = paths::local_node_path().exists();
+    let node_ok = crate::commands::system::check_node()
+        .await
+        .map(|status| status.available)
+        .unwrap_or(false);
     let openclaw_status = crate::commands::system::detect_openclaw().await;
     let oclaw_ok = openclaw_status.installed;
     let summary = format!(
@@ -1650,5 +1714,48 @@ pub async fn install_winget_package(package_id: String) -> Result<String, String
                 stderr
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn process_activity_wait_returns_exit_status() {
+        let mut child = tokio::process::Command::new(platform::bin_name("node"))
+            .args(["-e", "process.exit(0)"])
+            .spawn()
+            .expect("Node.js is required by the desktop build");
+        let (_activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
+
+        let result = wait_for_process_activity(
+            &mut child,
+            &mut activity_rx,
+            std::time::Duration::from_secs(1),
+        )
+        .await;
+
+        assert!(matches!(result, NpmWaitResult::Exited(Ok(status)) if status.success()));
+    }
+
+    #[tokio::test]
+    async fn process_activity_wait_detects_inactivity() {
+        let mut child = tokio::process::Command::new(platform::bin_name("node"))
+            .args(["-e", "setTimeout(() => {}, 10000)"])
+            .spawn()
+            .expect("Node.js is required by the desktop build");
+        let (_activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
+
+        let result = wait_for_process_activity(
+            &mut child,
+            &mut activity_rx,
+            std::time::Duration::from_millis(25),
+        )
+        .await;
+
+        assert!(matches!(result, NpmWaitResult::Inactive));
+        let pid = child.id();
+        terminate_npm_process_tree(&mut child, pid).await;
     }
 }
