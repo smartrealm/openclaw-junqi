@@ -16,7 +16,8 @@ use std::time::Duration;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
-const STATUS_TIMEOUT: Duration = Duration::from_secs(30);
+const STATUS_TIMEOUT: Duration = Duration::from_secs(90);
+const OPENCLAW_STATUS_TIMEOUT_SECONDS: &str = "60";
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const UPDATE_BUSY_ERROR: &str = "An OpenClaw update operation is already running";
 
@@ -168,7 +169,17 @@ async fn run_openclaw_command(
     let mut command = build_openclaw_command(binary, args, npm_registry);
     tokio::time::timeout(command_timeout, command.output())
         .await
-        .map_err(|_| format!("OpenClaw {} timed out", command_name))?
+        .map_err(|_| {
+            let source = npm_registry
+                .map(|registry| format!(" via {}", registry.label()))
+                .unwrap_or_default();
+            format!(
+                "OpenClaw {} timed out{} after {} seconds",
+                command_name,
+                source,
+                command_timeout.as_secs()
+            )
+        })?
         .map_err(|error| format!("Failed to run OpenClaw {}: {}", command_name, error))
 }
 
@@ -202,7 +213,7 @@ async fn run_npm_update_dry_run_with_registry_fallback(
         "--yes",
         "--json",
         "--timeout",
-        "15",
+        OPENCLAW_STATUS_TIMEOUT_SECONDS,
     ];
     let primary = selection.primary;
     let output = run_openclaw_command(binary, &args, STATUS_TIMEOUT, Some(primary)).await;
@@ -510,7 +521,13 @@ pub async fn check_openclaw_update() -> Result<OpenclawUpdateStatus, String> {
     // Use it only for non-npm installs, where it supplies git-specific state.
     let output = run_openclaw_command(
         &binary,
-        &["update", "status", "--json", "--timeout", "15"],
+        &[
+            "update",
+            "status",
+            "--json",
+            "--timeout",
+            OPENCLAW_STATUS_TIMEOUT_SECONDS,
+        ],
         STATUS_TIMEOUT,
         None,
     )
