@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Container,
-  Copy,
   Circle,
   Globe2,
   Monitor,
@@ -374,7 +373,7 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
 
 function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const { setupStep, setupError } = useAppStore();
+  const { setupStep } = useAppStore();
   const active = setupStep === "ready" ? 3 : 2;
   const isInstallComplete = setupStep === "install-complete";
 
@@ -398,20 +397,6 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       }
     >
       <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
-      {setupStep === "error" && setupError && (
-        <div className="mt-5 rounded-lg border border-red-500/25 bg-red-500/5 p-4">
-          <p className="break-all font-mono text-sm text-red-300">{setupError}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={() => void navigator.clipboard?.writeText(setupError)}
-              className="inline-flex items-center gap-1 rounded-lg border border-aegis-border px-3 py-1.5 text-xs text-aegis-text-secondary hover:bg-aegis-surface"
-            >
-              <Copy size={11} />
-              {t("setup.copyError")}
-            </button>
-          </div>
-        </div>
-      )}
     </SetupShell>
   );
 }

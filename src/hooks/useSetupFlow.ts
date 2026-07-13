@@ -173,7 +173,7 @@ export function useSetupFlow(
   const {
     setupStep, installMode,
     setSetupStep, setSetupError, setSetupComplete, setPostStorageStep,
-    setGatewayRunning, setInstallMode, setSetupStatus, clearSetupLogs,
+    setGatewayRunning, setInstallMode, setSetupStatus, clearSetupLogs, appendSetupLog,
   } = useAppStore();
   const { t } = useTranslation();
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
@@ -413,6 +413,12 @@ export function useSetupFlow(
   function failRunningStep(message: string) {
     const running = stepsRef.current.find((step) => step.status === "running");
     if (running) patchStep(running.id, "error", message);
+    appendSetupLog({
+      source: "setup",
+      message,
+      step: running?.id,
+      level: "error",
+    });
   }
 
   const waitForGatewayConnection = useCallback(async (timeoutMs = 20_000) => {
@@ -541,11 +547,12 @@ export function useSetupFlow(
       } else {
         commitSteps([{ id: "gateway", label: "Gateway", status: "error", detail: String(e?.message ?? e) }]);
       }
+      appendSetupLog({ source: "setup", message: String(e?.message ?? e), step: "gateway", level: "error" });
       setSetupError(e?.message || String(e));
       report(e?.message || String(e));
       setSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setSetupError, needsOnboarding, startOfficialOnboarding]);
+  }, [beginRun, isRunActive, setSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setSetupError, needsOnboarding, startOfficialOnboarding, appendSetupLog]);
 
   const runNativeSetup = useCallback(async () => {
     const runId = beginRun();
@@ -659,7 +666,7 @@ export function useSetupFlow(
       setSetupStep("error");
     }
   }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs]);
+      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
@@ -704,7 +711,7 @@ export function useSetupFlow(
       setSetupStep("error");
     }
   }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, commitSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, needsOnboarding, startOfficialOnboarding]);
+      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, needsOnboarding, startOfficialOnboarding, appendSetupLog]);
 
   const selectMode = useCallback((mode: "native" | "docker") => {
     setInstallMode(mode);

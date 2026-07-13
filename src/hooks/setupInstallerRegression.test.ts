@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
+const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
+const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const setupCommands = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
 
@@ -55,4 +57,18 @@ test('visual setup commits keep the synchronous step reference current', () => {
     /const commitSteps = useCallback\([\s\S]*?stepsRef\.current = next;[\s\S]*?setSteps\(next\)/,
   );
   assert.doesNotMatch(setupFlow, /(?<!const )setSteps\((?!next\))/);
+});
+
+test('mobile installation console switches between steps and logs', () => {
+  assert.match(setupFlowPanels, /useState<"steps" \| "logs">\("steps"\)/);
+  assert.match(setupFlowPanels, /setup\.installPanel\.timeline/);
+  assert.match(setupFlowPanels, /setup\.installPanel\.activity/);
+  assert.match(setupFlowPanels, /mobileView !== "steps" && "hidden lg:block"/);
+  assert.match(setupFlowPanels, /mobileView !== "logs" && "hidden lg:block"/);
+});
+
+test('setup failures are retained in the copyable activity log without a duplicate error card', () => {
+  assert.match(setupFlow, /appendSetupLog\(\{[\s\S]*?level: "error"/);
+  assert.doesNotMatch(setupPage, /setup\.copyError/);
+  assert.doesNotMatch(setupPage, /navigator\.clipboard/);
 });

@@ -791,6 +791,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
 
 export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs: SetupLog[]; setupStep: string }) {
   const { t } = useTranslation();
+  const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done").length;
   const total = flow.steps.length || 1;
@@ -798,6 +799,9 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
   const isReady = setupStep === "ready";
   const isError = setupStep === "error";
   const isAwaitingGatewayStart = setupStep === "install-complete";
+  useEffect(() => {
+    if (isError) setMobileView("logs");
+  }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
   const currentTitle = current
     ? currentMeta ? t(currentMeta.titleKey, currentMeta.titleFallback) : current.label
@@ -845,9 +849,34 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
         </div>
       </div>
 
-      <div className="grid overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
-        <InstallationTimeline steps={flow.steps} awaitingGatewayStart={isAwaitingGatewayStart} />
-        <InstallLiveLog logs={logs} />
+      <div className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
+        <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">
+          {(["steps", "logs"] as const).map((view) => (
+            <button
+              key={view}
+              type="button"
+              onClick={() => setMobileView(view)}
+              className={clsx(
+                "flex-1 rounded-md px-3 py-2 text-xs font-semibold transition-colors",
+                mobileView === view
+                  ? "bg-aegis-surface text-aegis-text"
+                  : "text-aegis-text-dim hover:text-aegis-text-secondary",
+              )}
+            >
+              {view === "steps"
+                ? t("setup.installPanel.timeline", "执行步骤")
+                : t("setup.installPanel.activity", "执行记录")}
+            </button>
+          ))}
+        </div>
+        <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
+          <div className={clsx(mobileView !== "steps" && "hidden lg:block")}>
+            <InstallationTimeline steps={flow.steps} awaitingGatewayStart={isAwaitingGatewayStart} />
+          </div>
+          <div className={clsx(mobileView !== "logs" && "hidden lg:block")}>
+            <InstallLiveLog logs={logs} />
+          </div>
+        </div>
       </div>
     </div>
   );
