@@ -38,11 +38,14 @@ fn home_dir_or_fallback() -> PathBuf {
 }
 
 /// Stable location that is never stored inside the movable OpenClaw state dir.
-pub fn storage_bootstrap_path() -> PathBuf {
+pub fn app_config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| home_dir_or_fallback().join(".config"))
         .join("com.junqi.junqidesktop")
-        .join("bootstrap.json")
+}
+
+pub fn storage_bootstrap_path() -> PathBuf {
+    app_config_dir().join("bootstrap.json")
 }
 
 pub fn legacy_default_state_dir() -> PathBuf {
@@ -70,28 +73,41 @@ pub fn save_storage_bootstrap(bootstrap: &StorageBootstrap) -> Result<(), String
 }
 
 fn write_storage_bootstrap(path: &Path, bootstrap: &StorageBootstrap) -> Result<(), String> {
-    let parent = path.parent().ok_or("Invalid bootstrap path")?;
+    let raw = serde_json::to_string_pretty(bootstrap)
+        .map_err(|e| format!("Failed to serialize bootstrap: {}", e))?;
+    atomic_write_text(path, &raw).map_err(|error| format!("Failed to write bootstrap: {}", error))
+}
+
+pub(crate) fn atomic_write_text(path: &Path, content: &str) -> Result<(), String> {
+    let parent = path.parent().ok_or("Invalid atomic write path")?;
     std::fs::create_dir_all(parent)
-        .map_err(|e| format!("Failed to create bootstrap directory: {}", e))?;
+        .map_err(|e| format!("Failed to create parent directory: {}", e))?;
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let tmp = parent.join(format!(".bootstrap-{}-{}.tmp", std::process::id(), suffix));
-    let raw = serde_json::to_string_pretty(bootstrap)
-        .map_err(|e| format!("Failed to serialize bootstrap: {}", e))?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("data");
+    let tmp = parent.join(format!(
+        ".{}-{}-{}.tmp",
+        file_name,
+        std::process::id(),
+        suffix
+    ));
     let write_result = (|| -> std::io::Result<()> {
         let mut file = std::fs::File::create(&tmp)?;
-        file.write_all(raw.as_bytes())?;
+        file.write_all(content.as_bytes())?;
         file.sync_all()
     })();
     if let Err(error) = write_result {
         let _ = std::fs::remove_file(&tmp);
-        return Err(format!("Failed to write bootstrap: {}", error));
+        return Err(format!("Failed to write temporary file: {}", error));
     }
     if let Err(error) = replace_file(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
-        return Err(format!("Failed to activate bootstrap: {}", error));
+        return Err(format!("Failed to replace destination: {}", error));
     }
     Ok(())
 }
