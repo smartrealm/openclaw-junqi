@@ -25,7 +25,7 @@ import {
   Loader2, BarChart3, FileText, CheckCircle2, XCircle,
   Activity, FileWarning, FilePlus2, Image as ImageIcon, Bookmark, Command,
   CornerDownLeft, Laptop, GitPullRequestArrow, Plus, RefreshCw,
-  Search, X, Check, Globe, List, Box, SquareTerminal, Pencil, Folder, Download,
+  Search, X, Check, Globe, List, Box, SquareTerminal, Pencil, Folder, Download, Copy,
 } from 'lucide-react';
 import {
   Sparkle,
@@ -554,6 +554,7 @@ export function AgentRunView({
   const [sessionPath, setSessionPath] = useState<string | null>(providedInitialSessionPath ?? null);
   const [sessionId, setSessionId] = useState<string | null>(providedInitialSessionId ?? null);
   const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
+  const [sessionPathCopied, setSessionPathCopied] = useState(false);
   const [exportingSession, setExportingSession] = useState(false);
   const [missingInstructionsFile, setMissingInstructionsFile] = useState(false);
   const [hookReadiness, setHookReadiness] = useState<HookAgentReadiness[] | null>(null);
@@ -901,14 +902,36 @@ export function AgentRunView({
   }, [baseBranch, projectPath, taskId, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId]);
 
   useEffect(() => {
-    if (!sessionPath || !running) return;
+    if (!sessionPath) {
+      setMetrics(null);
+      return;
+    }
+    let cancelled = false;
     const fetch = async () => {
-      try { setMetrics(await invoke<SessionMetrics>('read_session_metrics', { sessionPath })); } catch { /* */ }
+      try {
+        const next = await invoke<SessionMetrics>('read_session_metrics', { sessionPath });
+        if (!cancelled) setMetrics(next);
+      } catch { /* Session files may still be appearing while hooks settle. */ }
     };
-    fetch();
-    metricsTimerRef.current = window.setInterval(fetch, 30_000);
-    return () => { if (metricsTimerRef.current) window.clearInterval(metricsTimerRef.current); };
+    void fetch();
+    if (running) metricsTimerRef.current = window.setInterval(fetch, 3_000);
+    return () => {
+      cancelled = true;
+      if (metricsTimerRef.current) window.clearInterval(metricsTimerRef.current);
+      metricsTimerRef.current = null;
+    };
   }, [sessionPath, running]);
+
+  const copySessionPath = useCallback(async () => {
+    if (!sessionPath) return;
+    try {
+      await navigator.clipboard.writeText(sessionPath);
+      setSessionPathCopied(true);
+      window.setTimeout(() => setSessionPathCopied(false), 1600);
+    } catch (reason) {
+      setError(`复制会话路径失败：${String(reason)}`);
+    }
+  }, [sessionPath]);
 
   // ── Start / Cancel ───────────────────────────────────────────────────────
   const handleStart = useCallback(async (promptOverride?: string) => {
@@ -1533,6 +1556,11 @@ export function AgentRunView({
                 )}
                 {sessionPath && (
                   <>
+                    <button type="button" onClick={() => void copySessionPath()} title={sessionPath}
+                      className="inline-flex items-center gap-1 hover:text-[rgb(var(--aegis-primary))] transition-colors">
+                      {sessionPathCopied ? <Check size={10} /> : <Copy size={10} />}
+                      {sessionPathCopied ? '已复制路径' : '会话文件'}
+                    </button>
                     <button onClick={() => navigate(`/session?path=${encodeURIComponent(sessionPath)}`)} title={sessionPath}
                       className="hover:text-[rgb(var(--aegis-primary))] transition-colors">{t('agent.session.view', 'session')}</button>
                     <button
