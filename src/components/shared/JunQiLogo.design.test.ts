@@ -19,4 +19,5 @@ test('JunQi lockups use the official emblem and theme-aware brand text', async (
   assert.doesNotMatch(lockup, /dark:brightness/);
   assert.match(source, /陕西浚启智境科技有限公司/);
   assert.match(source, /深浚其智，广启其途/);
+  assert.doesNotMatch(source, /dark:/);
 });

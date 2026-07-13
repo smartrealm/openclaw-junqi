@@ -82,10 +82,10 @@ export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TI
         draggable={false}
       />
       <span className="min-w-0 text-left leading-none">
-        <span className="block truncate text-[15px] font-bold text-[#245C9F] dark:text-aegis-text">
+        <span className="block truncate text-[15px] font-bold text-aegis-text">
           陕西浚启智境科技有限公司
         </span>
-        <span className="mt-2 block truncate text-[9px] font-semibold text-[#245C9F]/80 dark:text-aegis-text-muted">
+        <span className="mt-2 block truncate text-[9px] font-semibold text-aegis-text-muted">
           JunQi&nbsp;&nbsp;·&nbsp;&nbsp;深浚其智，广启其途
         </span>
       </span>
