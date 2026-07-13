@@ -13,6 +13,7 @@ import {
   GripVertical,
   History,
   LayoutGrid,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -21,6 +22,7 @@ import {
   Search,
   Settings,
   Star,
+  Sun,
   TerminalSquare,
   Trash2,
   X,
@@ -122,7 +124,10 @@ export function AgentWorkspacePage() {
   const themeVariant = resolvedTheme.replace('aegis-', '') as ThemeVariant;
   const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
   const configuredMonoFont = useSettingsStore((state) => state.monoFont);
+  const setTheme = useSettingsStore((state) => state.setTheme);
+  const setSettingsOpen = useSettingsStore((state) => state.setSettingsOpen);
   const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
+  const darkTheme = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
   const [terminalScrollback, setTerminalScrollback] = useState(1000);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   useAgentWorkspacePersistence(workspaces);
@@ -951,6 +956,10 @@ export function AgentWorkspacePage() {
               })}
             </div>
           </div>
+          <footer className="flex h-10 shrink-0 items-center justify-end gap-1 border-t border-aegis-border px-2">
+            <button type="button" title="应用设置" onClick={() => setSettingsOpen(true)} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"><Settings size={14} /></button>
+            <button type="button" title={darkTheme ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(darkTheme ? 'aegis-light' : 'aegis-dark')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{darkTheme ? <Sun size={14} /> : <Moon size={14} />}</button>
+          </footer>
         </aside>
       ) : (
         <aside className="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-aegis-border bg-aegis-surface py-2">
@@ -972,6 +981,9 @@ export function AgentWorkspacePage() {
           >
             <Plus size={15} />
           </button>
+          <span className="flex-1" />
+          <button type="button" title="应用设置" onClick={() => setSettingsOpen(true)} className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"><Settings size={14} /></button>
+          <button type="button" title={darkTheme ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(darkTheme ? 'aegis-light' : 'aegis-dark')} className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{darkTheme ? <Sun size={14} /> : <Moon size={14} />}</button>
         </aside>
       )}
 
