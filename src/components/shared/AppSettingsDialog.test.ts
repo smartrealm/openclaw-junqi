@@ -21,3 +21,10 @@ test('agent settings expose executable paths backed by native app settings', () 
   assert.match(source, /<AgentProgramPathSection agent=\{agent\}\/>/);
   assert.match(source, /settings\.claude_force_default_tui/);
 });
+
+test('about panel follows the Nezha product-card structure without internal feature claims', () => {
+  assert.match(source, /<JunQiLogo variant="emblem"/);
+  assert.match(source, /github\.com\/smartrealm\/openclaw-junqi/);
+  assert.doesNotMatch(source, /Nezha 39-feature port/);
+  assert.doesNotMatch(source, /portable-pty/);
+});

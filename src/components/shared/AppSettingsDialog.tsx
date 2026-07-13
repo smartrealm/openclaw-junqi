@@ -33,6 +33,7 @@ import type { AegisTheme } from '@/theme/types';
 import { APP_LANGUAGE_OPTIONS, type SupportedLanguage } from '@/i18n/languages';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { APP_VERSION } from '@/version';
+import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import clsx from 'clsx';
 import {
   readAttentionBadge,
@@ -657,13 +658,23 @@ export function CodexPanel() { return <FileEditor label="Codex" agent="codex" la
 
 function AboutPanel() {
   return (
-    <div className="p-6"><h2 className="text-[16px] font-bold text-aegis-text mb-1">About JunQi</h2><p className="text-[12px] text-aegis-text-dim mb-6">OpenClaw Gateway desktop client with Nezha-style AI tooling.</p>
-      <div className="flex flex-col gap-3">
-        {[['Version', APP_VERSION],['Stack','React 19 · Tauri 2 · TypeScript · Vite · xterm.js'],['Backend','Rust · portable-pty · serde_json · chrono · toml · serde_yaml'],['Features','Gateway chat · 24+ pages · Nezha 39-feature port · Skill hub · Worktree · Session playback · Agent PTY · 14 agents']].map(([t,b])=>
-          <div key={t} className="rounded-xl p-4" style={{background:'rgb(var(--aegis-overlay)/0.04)',border:'1px solid rgb(var(--aegis-border))'}}><div className="text-[12px] font-semibold text-aegis-text-secondary mb-1">{t}</div><div className="text-[12px] text-aegis-text-dim leading-relaxed">{b}</div></div>)}
-        <a href="https://github.com/hanshuaikang/nezha" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2 px-3 py-2 rounded-md text-[12px] w-fit hover:bg-[rgb(var(--aegis-overlay)/0.04)] transition-colors" style={{color:'rgb(var(--aegis-primary))',border:'1px solid rgb(var(--aegis-border))'}}><ExternalLink size={12}/>nezha on GitHub</a>
+    <div className="p-6">
+      <div className="flex gap-4 rounded-lg border border-aegis-border bg-aegis-surface p-5">
+        <JunQiLogo variant="emblem" title="JunQi" className="h-16 w-16 shrink-0 rounded-lg" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[16px] font-bold text-aegis-text">JunQi</div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-aegis-text-secondary">OpenClaw 桌面工作台</p>
+          <div className="mt-4 grid gap-3">
+            <div><div className="mb-1 text-[11px] text-aegis-text-dim">版本</div><div className="font-mono text-[12.5px] text-aegis-text">{APP_VERSION}</div></div>
+            <div>
+              <div className="mb-1 text-[11px] text-aegis-text-dim">GitHub</div>
+              <a href="https://github.com/smartrealm/openclaw-junqi" target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1.5 break-all text-[12.5px] text-aegis-primary hover:underline">github.com/smartrealm/openclaw-junqi<ExternalLink size={13} /></a>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>);
+    </div>
+  );
 }
 
 export default AppSettingsDialog;
