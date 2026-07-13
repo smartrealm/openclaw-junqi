@@ -2,6 +2,7 @@ pub mod cli_tools;
 pub mod font;
 
 pub mod agent_assist;
+pub mod agent_event_watcher;
 pub mod agent_task_pty;
 pub mod agent_workspace_storage;
 pub mod app_settings;

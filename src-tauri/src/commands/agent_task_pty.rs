@@ -90,7 +90,7 @@ fn append_task_output(task_id: &str, output: &str) {
     buffer.drain(..trim_at);
 }
 
-fn safe_task_id(task_id: &str) -> String {
+pub(crate) fn safe_task_id(task_id: &str) -> String {
     task_id
         .chars()
         .map(|ch| {
@@ -469,6 +469,20 @@ pub async fn run_task(
     let program = crate::platform::resolve_spawn_program(spec.bin);
     let mut cmd = CommandBuilder::new(&program);
     cmd.cwd(&project_path);
+    if agent == "claude" {
+        let hook_status = super::hooks::ensure_installed();
+        if hook_status.script_installed && hook_status.settings_linked {
+            if let Ok(settings_path) = super::hooks::settings_path() {
+                cmd.arg("--settings");
+                cmd.arg(settings_path);
+            }
+            if let Ok(event_dir) = super::hooks::events_dir_for(&task_id) {
+                let _ = fs::create_dir_all(&event_dir);
+                cmd.env("NEZHA_TASK_ID", &task_id);
+                cmd.env("NEZHA_EVENT_DIR", event_dir);
+            }
+        }
+    }
     for arg in permission_flag(&agent, &permission_mode) {
         cmd.arg(arg);
     }
@@ -634,6 +648,7 @@ pub async fn run_task(
             .lock()
             .unwrap()
             .remove(&task_id_for_reader);
+        super::agent_event_watcher::cleanup_task_events(&task_id_for_reader);
         let _ = app_for_reader.emit(
             "task-status",
             serde_json::json!({ "task_id": task_id_for_reader, "status": final_status }),
@@ -1045,6 +1060,13 @@ pub fn get_task_output_snapshot(task_id: String) -> String {
 #[tauri::command]
 pub fn get_active_task_ids() -> Vec<String> {
     pty_registry().lock().unwrap().keys().cloned().collect()
+}
+
+pub(crate) fn is_task_active(task_id: &str) -> bool {
+    pty_registry()
+        .lock()
+        .map(|registry| registry.contains_key(task_id))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

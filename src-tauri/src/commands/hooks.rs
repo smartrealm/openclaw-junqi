@@ -116,6 +116,19 @@ fn hooks_dir_internal() -> Result<std::path::PathBuf, String> {
     Ok(home.join(".nezha").join("hooks"))
 }
 
+pub fn settings_path() -> Result<std::path::PathBuf, String> {
+    Ok(hooks_dir_internal()?.join("claude-settings.json"))
+}
+
+pub fn events_root() -> Result<std::path::PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    Ok(home.join(".nezha").join("events"))
+}
+
+pub fn events_dir_for(task_id: &str) -> Result<std::path::PathBuf, String> {
+    Ok(events_root()?.join(crate::commands::agent_task_pty::safe_task_id(task_id)))
+}
+
 fn install_hook_files() -> Result<(String, String), String> {
     use std::path::PathBuf;
 
@@ -135,19 +148,9 @@ fn install_hook_files() -> Result<(String, String), String> {
         }
     }
 
-    // Build Nezha's own Claude settings file. Contains hook entries pointing
-    // at the script above, plus optional `tui: default` override.
-    let settings = serde_json::json!({
-        "tui": "default",
-        "hooks": {
-            "SessionStart":     [{ "type": "command", "command": format!("node \"{}\"", script_path.display()) }],
-            "UserPromptSubmit": [{ "type": "command", "command": format!("node \"{}\"", script_path.display()) }],
-            "Notification":     [{ "type": "command", "command": format!("node \"{}\"", script_path.display()) }],
-            "PostToolUse":      [{ "type": "command", "command": format!("node \"{}\"", script_path.display()) }],
-            "Stop":             [{ "type": "command", "command": format!("node \"{}\"", script_path.display()) }],
-            "SubagentStop":     [{ "type": "command", "command": format!("node \"{}\"", script_path.display()) }],
-        }
-    });
+    // Build Nezha's isolated Claude settings file with hook entries only.
+    // User settings remain untouched and no unrelated scalar options are overridden.
+    let settings = build_claude_settings(&script_path);
     let settings_path = dir.join("claude-settings.json");
     std::fs::write(
         &settings_path,
@@ -159,6 +162,21 @@ fn install_hook_files() -> Result<(String, String), String> {
         script_path.to_string_lossy().into_owned(),
         settings_path.to_string_lossy().into_owned(),
     ))
+}
+
+fn build_claude_settings(script_path: &std::path::Path) -> serde_json::Value {
+    let command = format!("node \"{}\"", script_path.display());
+    let entry = || serde_json::json!({ "hooks": [{ "type": "command", "command": command }] });
+    serde_json::json!({
+        "hooks": {
+            "SessionStart":     [entry()],
+            "UserPromptSubmit": [entry()],
+            "Notification":     [entry()],
+            "PostToolUse":      [entry()],
+            "Stop":             [entry()],
+            "SubagentStop":     [entry()],
+        }
+    })
 }
 
 /// Remove hooks from both agents' config files. Stub.
@@ -218,6 +236,16 @@ mod tests {
         assert!(!s.script_installed);
         assert!(!s.settings_linked);
         assert!(s.script_path.is_none());
+    }
+
+    #[test]
+    fn claude_hook_settings_use_the_current_nested_schema() {
+        let settings = build_claude_settings(std::path::Path::new("/tmp/nezha-hook.mjs"));
+        assert_eq!(
+            settings["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "node \"/tmp/nezha-hook.mjs\""
+        );
+        assert!(settings.get("tui").is_none());
     }
 
     #[test]

@@ -259,6 +259,8 @@ pub fn run() {
         ])
         .setup(|app| {
             commands::fs_watcher::init(app);
+            let _ = commands::hooks::ensure_installed();
+            commands::agent_event_watcher::start(app.handle().clone());
             // Use the default (Regular) activation policy so JunQi gets a Dock
             // tile with its icon and a Cmd+Tab entry — the whole point of
             // shipping a branded .app. The pet window is still skip_taskbar
