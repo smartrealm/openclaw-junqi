@@ -87,3 +87,8 @@ test('task history and attention badge preferences live in Nezha app settings', 
   assert.doesNotMatch(source, /aria-label="任务历史范围"/);
   assert.match(source, /<Trash2 size=\{12\} \/>清空/);
 });
+
+test('task list delegates Nezha attention ordering to the shared model', () => {
+  assert.match(source, /sort\(compareAgentWorkspaceTasks\)/);
+  assert.match(source, /agentTaskNeedsAttention\(task\)/);
+});

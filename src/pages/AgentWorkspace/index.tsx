@@ -47,6 +47,7 @@ import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersisten
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { agentTaskNeedsAttention, compareAgentWorkspaceTasks } from './taskListModel';
 import {
   readAttentionBadge,
   readTaskDisplayWindow,
@@ -235,17 +236,7 @@ export function AgentWorkspacePage() {
     const filtered = !normalized ? projectTasks : projectTasks.filter((task) => (
       `${task.title || ''} ${task.prompt} ${task.agent}`.toLowerCase().includes(normalized)
     ));
-    const priority = (task: AgentWorkspaceTask) => {
-      if (task.status === 'input_required' || task.status === 'awaiting_review' || task.status === 'detached' || task.status === 'interrupted') return 0;
-      if (task.status === 'done' && task.worktreePath && !task.worktreeDiscarded) return 1;
-      if (task.starred) return 2;
-      if (task.status === 'todo') return 3;
-      return 4;
-    };
-    return [...filtered].sort((left, right) => {
-      const priorityDelta = priority(left) - priority(right);
-      return priorityDelta || right.updatedAt - left.updatedAt;
-    });
+    return [...filtered].sort(compareAgentWorkspaceTasks);
   }, [projectTasks, query]);
   const selected = allProjectTasks.find((task) => task.id === selectedTaskId) ?? null;
   const taskListRows = useMemo<TaskListRow[]>(() => {
@@ -263,7 +254,7 @@ export function AgentWorkspacePage() {
       { key: 'earlier', label: '更早', tasks: [] },
     ];
     for (const task of visibleTasks) {
-      if (task.status === 'input_required' || task.status === 'awaiting_review' || task.status === 'detached' || task.status === 'interrupted') {
+      if (agentTaskNeedsAttention(task)) {
         groups[0].tasks.push(task);
       } else if (task.status === 'done' && task.worktreePath && !task.worktreeDiscarded) {
         groups[1].tasks.push(task);
