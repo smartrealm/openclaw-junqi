@@ -46,6 +46,7 @@ import { useTheme } from '@/theme/useTheme';
 import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import { NotificationBell } from '@/components/shared/NotificationBell';
+import { UsagePopover } from '@/components/shared/UsagePopover';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { agentTaskNeedsAttention, compareAgentWorkspaceTasks } from './taskListModel';
@@ -959,6 +960,7 @@ export function AgentWorkspacePage() {
             <NotificationBell />
             <button type="button" title="应用设置" onClick={() => setSettingsOpen(true)} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"><Settings size={14} /></button>
             <button type="button" title={darkTheme ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(darkTheme ? 'aegis-light' : 'aegis-dark')} className="flex h-7 w-7 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text">{darkTheme ? <Sun size={14} /> : <Moon size={14} />}</button>
+            <UsagePopover />
           </footer>
         </aside>
       ) : (
