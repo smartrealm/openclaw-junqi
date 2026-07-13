@@ -576,6 +576,7 @@ export function AgentRunView({
   const [worktreePath, setWorktreePath] = useState<string | null>(restoredWorktreePath);
   const worktreePathRef = useRef<string | null>(restoredWorktreePath);
   const [worktreeBranch, setWorktreeBranch] = useState<string | null>(initialWorktreeDiscarded ? null : providedInitialWorktreeBranch ?? null);
+  const [worktreeDiscarded, setWorktreeDiscarded] = useState(initialWorktreeDiscarded);
   const [diffStats, setDiffStats] = useState<{ additions: number; deletions: number } | null>(null);
   const [worktreeBusy, setWorktreeBusy] = useState<'merge' | 'discard' | null>(null);
   const [sessionPath, setSessionPath] = useState<string | null>(providedInitialSessionPath ?? null);
@@ -1048,18 +1049,23 @@ export function AgentRunView({
     try {
       let actualPath = projectPath || '.';
       if (launchMode === 'worktree') {
-        const result = await invoke<{ path: string; branch: string }>('create_task_worktree', createTaskWorktreeArgs(actualPath, taskId, baseBranch));
-        actualPath = result.path;
-        setWorktreePath(result.path);
-        worktreePathRef.current = result.path;
-        setWorktreeBranch(result.branch);
-        if (workspaceTaskId) {
-          updateWorkspaceTask(workspaceTaskId, {
-            worktreePath: result.path,
-            worktreeBranch: result.branch,
-            baseBranch: baseBranch || undefined,
-            worktreeDiscarded: false,
-          });
+        if (resumeIdRef.current && worktreePathRef.current) {
+          actualPath = worktreePathRef.current;
+        } else {
+          const result = await invoke<{ path: string; branch: string }>('create_task_worktree', createTaskWorktreeArgs(actualPath, taskId, baseBranch));
+          actualPath = result.path;
+          setWorktreePath(result.path);
+          worktreePathRef.current = result.path;
+          setWorktreeBranch(result.branch);
+          setWorktreeDiscarded(false);
+          if (workspaceTaskId) {
+            updateWorkspaceTask(workspaceTaskId, {
+              worktreePath: result.path,
+              worktreeBranch: result.branch,
+              baseBranch: baseBranch || undefined,
+              worktreeDiscarded: false,
+            });
+          }
         }
       }
       await invoke('run_task', {
@@ -1125,6 +1131,7 @@ export function AgentRunView({
       setWorktreePath(null);
       worktreePathRef.current = null;
       setWorktreeBranch(null);
+      setWorktreeDiscarded(true);
       if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { worktreeDiscarded: true, additions: 0, deletions: 0 });
     } catch (e) { setError(String(e)); } finally { setWorktreeBusy(null); }
   };
@@ -1142,6 +1149,7 @@ export function AgentRunView({
       setWorktreePath(null);
       worktreePathRef.current = null;
       setWorktreeBranch(null);
+      setWorktreeDiscarded(true);
       if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, { worktreeDiscarded: true, additions: 0, deletions: 0 });
     } catch (e) { setError(String(e)); } finally { setWorktreeBusy(null); }
   };
@@ -1210,11 +1218,12 @@ export function AgentRunView({
 
   // ── Resume support ──────────────────────────────────────────────────────
   const resumeFlag = agent === 'codex' ? 'resume' : agent === 'claude' ? '--resume' : agent === 'pi' ? '--session' : null;
-  const canResume = !running && isDone && !!sessionPath && !!resumeFlag && status === 'done';
+  const canResume = !running && isDone && !!sessionPath && !!resumeFlag && status === 'done' && !worktreeDiscarded;
   const resumeIdRef = useRef<string | null>(null);
   const recoverySessionId = sessionId ?? sessionPath?.split(/[\\/]/).pop()?.replace(/\.jsonl$/, '') ?? '';
 
   const handleResume = useCallback(() => {
+    if (worktreeDiscarded) return;
     const resumeSessionId = recoverySessionId;
     if (!resumeSessionId) return;
     resumeIdRef.current = resumeSessionId;
@@ -1222,7 +1231,7 @@ export function AgentRunView({
     setMetrics(null);
     setDiffStats(null);
     void handleStart(prompt, true);
-  }, [handleStart, prompt, recoverySessionId]);
+  }, [handleStart, prompt, recoverySessionId, worktreeDiscarded]);
 
   const handleReconnect = useCallback(async () => {
     if (!recoverySessionId) return;
