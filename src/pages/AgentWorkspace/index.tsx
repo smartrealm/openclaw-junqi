@@ -219,7 +219,7 @@ export function AgentWorkspacePage() {
         || task.status === 'detached'
         || task.status === 'interrupted'
       )).length,
-      running: itemTasks.some((task) => task.status === 'running'),
+      running: itemTasks.some((task) => task.status === 'pending' || task.status === 'running'),
       done: itemTasks.some((task) => task.status === 'done'),
     };
   }, [tasks]);
@@ -305,7 +305,8 @@ export function AgentWorkspacePage() {
     && !(activeFilePath && openFiles.length > 0),
   );
   const isActiveTask = useCallback((task: AgentWorkspaceTask) => (
-    task.status === 'running'
+    task.status === 'pending'
+    || task.status === 'running'
     || task.status === 'input_required'
     || task.status === 'awaiting_review'
     || task.status === 'detached'

@@ -23,3 +23,8 @@ test('switching projects preserves isolated project view state', () => {
   assert.match(source, /setShowProjectSettings\(false\)/);
   assert.match(source, /key=\{`agent-workspace-shell:/);
 });
+
+test('pending tasks stay mounted and participate in active-task cleanup', () => {
+  assert.match(source, /task\.status === 'pending'\s*\n\s*\|\| task\.status === 'running'/);
+  assert.match(source, /mountedRunTaskIds\.has\(task\.id\) && isActiveTask\(task\)/);
+});
