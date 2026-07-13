@@ -38,3 +38,13 @@ test('task list actions match Nezha ownership boundaries', () => {
   assert.doesNotMatch(taskActions, /生成任务名称/);
   assert.doesNotMatch(source, /editingTaskId|commitTaskRename/);
 });
+
+test('project rail uses WebView-safe pointer reordering', () => {
+  assert.match(source, /Math\.hypot\(moveEvent\.clientX - startX, moveEvent\.clientY - startY\) < 5/);
+  assert.match(source, /elementFromPoint/);
+  assert.match(source, /position: moveEvent\.clientY < bounds\.top \+ bounds\.height \/ 2 \? 'before' : 'after'/);
+  assert.match(source, /window\.addEventListener\('pointercancel', onCancel, true\)/);
+  assert.match(source, /window\.addEventListener\('blur', onBlur\)/);
+  assert.match(source, /suppressWorkspaceClickRef/);
+  assert.doesNotMatch(source, /onDragStart=/);
+});

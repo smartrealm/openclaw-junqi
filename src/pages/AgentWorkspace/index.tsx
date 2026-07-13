@@ -174,6 +174,9 @@ export function AgentWorkspacePage() {
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
   const [projectDrawerQuery, setProjectDrawerQuery] = useState('');
   const [draggedWorkspaceId, setDraggedWorkspaceId] = useState<string | null>(null);
+  const [workspaceDropTarget, setWorkspaceDropTarget] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
+  const workspaceDragCleanupRef = useRef<(() => void) | null>(null);
+  const suppressWorkspaceClickRef = useRef<string | null>(null);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [editingWorkspaceName, setEditingWorkspaceName] = useState('');
   const taskListRef = useRef<HTMLDivElement>(null);
@@ -549,6 +552,68 @@ export function AgentWorkspacePage() {
     ? selected.worktreePath
     : projectPath;
 
+  const beginWorkspaceDrag = useCallback((event: React.PointerEvent<HTMLButtonElement>, workspaceId: string) => {
+    if (event.button !== 0) return;
+    workspaceDragCleanupRef.current?.();
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+    let target: { id: string; position: 'before' | 'after' } | null = null;
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      window.removeEventListener('blur', onBlur);
+      setDraggedWorkspaceId(null);
+      setWorkspaceDropTarget(null);
+      workspaceDragCleanupRef.current = null;
+    };
+    const finish = (cancelled: boolean) => {
+      cleanup();
+      if (cancelled || !moved) return;
+      if (target && target.id !== workspaceId) moveWorkspace(workspaceId, target.id, target.position);
+      suppressWorkspaceClickRef.current = workspaceId;
+      window.setTimeout(() => {
+        if (suppressWorkspaceClickRef.current === workspaceId) suppressWorkspaceClickRef.current = null;
+      }, 100);
+    };
+    function onMove(moveEvent: PointerEvent) {
+      if (moveEvent.pointerId !== pointerId) return;
+      if (!moved && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 5) return;
+      moved = true;
+      setDraggedWorkspaceId(workspaceId);
+      const element = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest<HTMLElement>('[data-workspace-id]');
+      const targetId = element?.dataset.workspaceId;
+      if (!element || !targetId || targetId === workspaceId) {
+        target = null;
+        setWorkspaceDropTarget(null);
+      } else {
+        const bounds = element.getBoundingClientRect();
+        target = { id: targetId, position: moveEvent.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after' };
+        setWorkspaceDropTarget(target);
+      }
+      moveEvent.preventDefault();
+    }
+    function onUp(upEvent: PointerEvent) {
+      if (upEvent.pointerId !== pointerId) return;
+      if (moved) upEvent.preventDefault();
+      finish(false);
+    }
+    function onCancel(cancelEvent: PointerEvent) {
+      if (cancelEvent.pointerId === pointerId) finish(true);
+    }
+    const onBlur = () => finish(true);
+    workspaceDragCleanupRef.current = cleanup;
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
+    window.addEventListener('blur', onBlur);
+  }, [moveWorkspace]);
+
+  useEffect(() => () => workspaceDragCleanupRef.current?.(), []);
+
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-aegis-bg text-aegis-text">
       <aside className="relative flex w-12 shrink-0 flex-col items-center gap-1 border-r border-aegis-border bg-aegis-surface py-2">
@@ -559,30 +624,15 @@ export function AgentWorkspacePage() {
             <button
               key={item.id}
               type="button"
+              data-workspace-id={item.id}
               title={`${item.name || '工作区'}\n${workspacePath(item) || '未设置目录'}`}
-              draggable
-              onDragStart={(event) => {
-                setDraggedWorkspaceId(item.id);
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('application/x-junqi-workspace', item.id);
-              }}
-              onDragEnd={() => setDraggedWorkspaceId(null)}
-              onDragOver={(event) => {
-                if (!draggedWorkspaceId || draggedWorkspaceId === item.id) return;
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'move';
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                const source = event.dataTransfer.getData('application/x-junqi-workspace') || draggedWorkspaceId;
-                if (source && source !== item.id) moveWorkspace(source, item.id, 'before');
-                setDraggedWorkspaceId(null);
-              }}
+              onPointerDown={(event) => beginWorkspaceDrag(event, item.id)}
               onClick={() => {
+                if (suppressWorkspaceClickRef.current === item.id) return;
                 setActiveWorkspace(item.id);
                 setProjectDrawerOpen(false);
               }}
-              className={`relative flex h-9 w-9 items-center justify-center rounded-md ${active ? 'bg-aegis-primary/15 ring-1 ring-inset ring-aegis-primary/35' : 'hover:bg-aegis-hover'} ${draggedWorkspaceId === item.id ? 'opacity-30' : ''}`}
+              className={`relative flex h-9 w-9 touch-none items-center justify-center rounded-md ${active ? 'bg-aegis-primary/15 ring-1 ring-inset ring-aegis-primary/35' : 'hover:bg-aegis-hover'} ${draggedWorkspaceId === item.id ? 'opacity-30' : ''} ${workspaceDropTarget?.id === item.id ? workspaceDropTarget.position === 'before' ? 'before:absolute before:-top-0.5 before:h-0.5 before:w-8 before:bg-aegis-primary' : 'after:absolute after:-bottom-0.5 after:h-0.5 after:w-8 after:bg-aegis-primary' : ''}`}
             >
               <ProjectAvatar name={item.name || 'Workspace'} size={28} />
               {activity.attention > 0 ? (
