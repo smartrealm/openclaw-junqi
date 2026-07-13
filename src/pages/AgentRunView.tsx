@@ -60,6 +60,12 @@ import { debugError, debugWarn } from '@/utils/debugLog';
 import { attachSmartCopy } from '@/components/Terminal/terminalCopyHelper';
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from '@/components/Terminal/terminalInputFix';
 import { attachTerminalScrollbarAutoHide, loadWebglAddon } from '@/components/Terminal/terminalShared';
+import {
+  DEFAULT_SHIFT_ENTER_NEWLINE,
+  matchesTerminalNewline,
+  normalizeShiftEnterNewline,
+  TERMINAL_NEWLINE_SEQUENCE,
+} from '@/_nezha_root/shortcuts';
 import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktreeDiffStatsArgs } from './agentWorktreeCommands';
 
 async function loadTerminalDeps() {
@@ -607,6 +613,7 @@ export function AgentRunView({
   const xtermRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const metricsTimerRef = useRef<number | null>(null);
+  const shiftEnterNewlineRef = useRef(DEFAULT_SHIFT_ENTER_NEWLINE);
 
   // ── Terminal output buffer ───────────────────────────────────────────────
   // Channel callbacks can fire BEFORE the xterm instance is mounted (the
@@ -694,7 +701,10 @@ export function AgentRunView({
         };
         dataDisp = attachLinuxIMEFix(term, sendTerminalInput);
         disposeMacInputFix = attachMacWebKitShiftInputFix(term);
-        disposeSmartCopy = attachSmartCopy(term);
+        disposeSmartCopy = attachSmartCopy(term, {
+          matchesNewline: (event) => matchesTerminalNewline(event, shiftEnterNewlineRef.current),
+          onNewline: () => sendTerminalInput(TERMINAL_NEWLINE_SEQUENCE),
+        });
         disposeScrollbar = attachTerminalScrollbarAutoHide(term, container);
         webglHandle = loadWebglAddon(term);
 
@@ -773,6 +783,21 @@ export function AgentRunView({
       fitRef.current = null;
     };
   }, [replayOutputTo, status]);
+
+  useEffect(() => {
+    const loadNewlineSetting = () => {
+      void invoke<{ terminal_shift_enter_newline?: unknown }>('load_app_settings')
+        .then((settings) => {
+          shiftEnterNewlineRef.current = normalizeShiftEnterNewline(settings.terminal_shift_enter_newline);
+        })
+        .catch(() => {
+          shiftEnterNewlineRef.current = DEFAULT_SHIFT_ENTER_NEWLINE;
+        });
+    };
+    loadNewlineSetting();
+    window.addEventListener('nezha:app-settings-changed', loadNewlineSetting);
+    return () => window.removeEventListener('nezha:app-settings-changed', loadNewlineSetting);
+  }, []);
 
   const writeTerm = useCallback((chunk: string) => {
     outputBufferRef.current += chunk;

@@ -11,8 +11,15 @@ test('AI task terminal forwards interactive keyboard input', () => {
 });
 
 test('AI task terminal installs Nezha terminal affordances', () => {
-  assert.match(source, /attachSmartCopy\(term\)/);
+  assert.match(source, /attachSmartCopy\(term, \{/);
   assert.match(source, /attachMacWebKitShiftInputFix\(term\)/);
   assert.match(source, /attachTerminalScrollbarAutoHide\(term, container\)/);
   assert.match(source, /loadWebglAddon\(term\)/);
+});
+
+test('AI task terminal follows the configured newline shortcut', () => {
+  assert.match(source, /matchesTerminalNewline\(event, shiftEnterNewlineRef\.current\)/);
+  assert.match(source, /sendTerminalInput\(TERMINAL_NEWLINE_SEQUENCE\)/);
+  assert.match(source, /terminal_shift_enter_newline/);
+  assert.match(source, /nezha:app-settings-changed/);
 });
