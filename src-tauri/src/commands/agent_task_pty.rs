@@ -469,6 +469,10 @@ pub async fn run_task(
     let program = super::app_settings::get_agent_program(spec.bin);
     let mut cmd = CommandBuilder::new(&program);
     cmd.cwd(&project_path);
+    #[cfg(target_os = "macos")]
+    if agent == "claude" {
+        cmd.env("CLAUDE_CODE_DISABLE_MOUSE", "1");
+    }
     let hook_status = super::hooks::ensure_installed();
     if hook_status.script_installed {
         let hooks_usable = if agent == "codex" {
@@ -1107,6 +1111,13 @@ mod tests {
         assert!(source.contains("NEZHA_TASK_ID"));
         assert!(source.contains("NEZHA_EVENT_DIR"));
         assert!(source.contains("NEZHA_AGENT"));
+    }
+
+    #[test]
+    fn macos_claude_tasks_disable_cli_mouse_reporting() {
+        let source = include_str!("agent_task_pty.rs");
+        assert!(source.contains("#[cfg(target_os = \"macos\")]"));
+        assert!(source.contains("cmd.env(\"CLAUDE_CODE_DISABLE_MOUSE\", \"1\")"));
     }
 
     #[test]
