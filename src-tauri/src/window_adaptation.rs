@@ -45,9 +45,10 @@ pub(crate) fn initialize(
             if let Some(sizing) = pending.as_ref() {
                 if let Err(error) = persist_markers(&sizing.markers) {
                     eprintln!("[window-adaptation] {error}");
-                } else {
-                    pending = None;
                 }
+                // Adaptation already succeeded. A missing marker deliberately retries
+                // on the next launch, but must not repeatedly re-center this session.
+                pending = None;
             }
         }
         Ok(_) => {}
@@ -193,10 +194,9 @@ fn start_event_controller(window: tauri::WebviewWindow, mut pending: Option<Pend
                 if let Some(sizing) = pending.as_ref() {
                     if let Err(error) = persist_markers(&sizing.markers) {
                         eprintln!("[window-adaptation] {error}");
-                    } else {
-                        pending = None;
-                        worker_pending_flag.store(false, Ordering::Release);
                     }
+                    pending = None;
+                    worker_pending_flag.store(false, Ordering::Release);
                 }
             }
             Ok(_) => {}
