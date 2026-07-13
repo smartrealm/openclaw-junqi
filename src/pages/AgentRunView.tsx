@@ -213,7 +213,7 @@ function FollowUpDock({ agent, onSend, disabled }: { agent: AgentType; onSend: (
         style={{ background: "var(--aegis-elevated)", color: "rgb(var(--aegis-text-secondary))" }}>
         {agent}
       </span>
-      <input
+      <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -223,8 +223,10 @@ function FollowUpDock({ agent, onSend, disabled }: { agent: AgentType; onSend: (
           }
         }}
         disabled={disabled}
-        placeholder="Type message (Enter to send, Shift+Enter for newline) — IME / 中文 / 宫格 supported"
-        className="flex-1 bg-transparent text-[12px] font-mono text-aegis-text placeholder:text-aegis-text-dim/60 outline-none px-2"
+        rows={1}
+        aria-label="向运行中的智能体发送消息"
+        placeholder="输入消息（Enter 发送，Shift+Enter 换行）"
+        className="max-h-24 min-h-6 flex-1 resize-none bg-transparent px-2 py-1 text-[12px] leading-4 text-aegis-text outline-none placeholder:text-aegis-text-dim/60 disabled:cursor-not-allowed disabled:opacity-50"
       />
       <button type="button" onClick={handleSubmit} disabled={disabled || !text.trim()}
         className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-all"
@@ -1555,7 +1557,7 @@ export function AgentRunView({
                   debugWarn('terminal', '[AgentRunView] follow-up send failed:', err);
                 });
               }}
-              disabled={false}
+              disabled={needsRecovery}
             />
           </div>
         )}

@@ -24,6 +24,13 @@ test('AI task terminal follows the configured newline shortcut', () => {
   assert.match(source, /nezha:app-settings-changed/);
 });
 
+test('running task follow-up input supports multiline text and stops during recovery', () => {
+  assert.match(source, /<textarea/);
+  assert.match(source, /if \(e\.key === 'Enter' && !e\.shiftKey\)/);
+  assert.match(source, /disabled=\{needsRecovery\}/);
+  assert.doesNotMatch(source, /<input[\s\S]{0,400}Shift\+Enter for newline/);
+});
+
 test('AI task terminal applies live font and theme settings', () => {
   assert.match(source, /applyTerminalFontSize/);
   assert.match(source, /applyTerminalFontFamily/);
