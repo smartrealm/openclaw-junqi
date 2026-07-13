@@ -42,6 +42,7 @@ interface SettingsState {
   uiFont: string;
   /** Monospace font family (CSS font stack). Empty string means "use platform default". */
   monoFont: string;
+  terminalFontSize: number;
   sidebarOpen: boolean;
   sidebarWidth: number;
   settingsOpen: boolean;
@@ -75,6 +76,7 @@ interface SettingsState {
   setUiScale: (scale: number) => void;
   setUiFont: (font: string) => void;
   setMonoFont: (font: string) => void;
+  setTerminalFontSize: (size: number) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
@@ -159,6 +161,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   uiScale: savedUiScale,
   uiFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.uiFont) || '',
   monoFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.monoFont) || '',
+  terminalFontSize: Math.min(20, Math.max(10, Number(localStorage.getItem('nezha:terminalFontSize')) || 12)),
   sidebarOpen: true,
   sidebarWidth: 280,
   settingsOpen: false,
@@ -214,6 +217,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ monoFont: font });
     if (font) document.documentElement.style.setProperty('--font-mono', font);
     else document.documentElement.style.removeProperty('--font-mono');
+  },
+  setTerminalFontSize: (size) => {
+    const next = Math.min(20, Math.max(10, Math.round(size)));
+    localStorage.setItem('nezha:terminalFontSize', String(next));
+    set({ terminalFontSize: next });
   },
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),

@@ -29,7 +29,7 @@ import { GitChanges, GitDiffViewer, GitHistory } from '@/components/Git';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { FileExplorer } from '@/components/FileExplorer';
 import { ShellTerminalPanel } from '@/components/Terminal';
-import { DEFAULT_TERMINAL_FONT_SIZE, getDefaultMonoFont, type FontFamily, type TerminalFontSize, type ThemeVariant } from '@/_nezha_root/types';
+import { getDefaultMonoFont, type FontFamily, type TerminalFontSize, type ThemeVariant } from '@/_nezha_root/types';
 import { AgentRunView } from '@/pages/AgentRunView';
 import { AgentWorkspaceFileSearchDialog } from './FileSearchDialog';
 import { AgentWorkspaceTaskEditDialog } from './TaskEditDialog';
@@ -44,6 +44,7 @@ import { useTheme } from '@/theme/useTheme';
 import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
 import { StatusIcon } from '@/components/shared/StatusIcon';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 type RightPanel = 'files' | 'changes' | 'history' | null;
 type DiffTarget =
@@ -108,8 +109,9 @@ export function AgentWorkspacePage() {
   const navigate = useNavigate();
   const resolvedTheme = useTheme();
   const themeVariant = resolvedTheme.replace('aegis-', '') as ThemeVariant;
-  const terminalFontSize = DEFAULT_TERMINAL_FONT_SIZE as TerminalFontSize;
-  const monoFontFamily = getDefaultMonoFont() as FontFamily;
+  const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
+  const configuredMonoFont = useSettingsStore((state) => state.monoFont);
+  const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
   const [terminalScrollback, setTerminalScrollback] = useState(1000);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   useAgentWorkspacePersistence(workspaces);
@@ -1055,6 +1057,9 @@ export function AgentWorkspacePage() {
                 onTaskStarted={() => setAutoStartTaskId((current) => current === task.id ? null : current)}
                 onOpenWorktreeTerminal={() => setShowShellTerminal(true)}
                 terminalScrollback={terminalScrollback}
+                terminalFontSize={terminalFontSize}
+                monoFontFamily={monoFontFamily}
+                themeVariant={themeVariant}
               />
             </div>
           ))}

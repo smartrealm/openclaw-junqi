@@ -59,7 +59,16 @@ import { useSessionHistoryStore } from '@/stores/sessionHistoryStore';
 import { debugError, debugWarn } from '@/utils/debugLog';
 import { attachSmartCopy } from '@/components/Terminal/terminalCopyHelper';
 import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from '@/components/Terminal/terminalInputFix';
-import { attachTerminalScrollbarAutoHide, loadWebglAddon } from '@/components/Terminal/terminalShared';
+import {
+  applyTerminalFontFamily,
+  applyTerminalFontSize,
+  applyTerminalThemeOnPanel,
+  attachTerminalScrollbarAutoHide,
+  loadWebglAddon,
+  refreshTerminalDisplay,
+} from '@/components/Terminal/terminalShared';
+import type { FontFamily, TerminalFontSize, ThemeVariant } from '@/components/Terminal/_nezha-types';
+import { getDefaultMonoFont } from '@/components/Terminal/_nezha-types';
 import {
   DEFAULT_SHIFT_ENTER_NEWLINE,
   matchesTerminalNewline,
@@ -445,6 +454,9 @@ export interface AgentRunViewProps {
   onTaskSaved?: () => void;
   onOpenWorktreeTerminal?: () => void;
   terminalScrollback?: number;
+  terminalFontSize?: TerminalFontSize;
+  monoFontFamily?: FontFamily;
+  themeVariant?: ThemeVariant;
 }
 
 export function AgentRunView({
@@ -469,6 +481,9 @@ export function AgentRunView({
   onTaskSaved,
   onOpenWorktreeTerminal,
   terminalScrollback = 1000,
+  terminalFontSize = 12,
+  monoFontFamily = getDefaultMonoFont(),
+  themeVariant = 'dark',
 }: AgentRunViewProps = {}) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
@@ -677,8 +692,8 @@ export function AgentRunView({
       try {
         term = new deps.Terminal({
           cursorBlink: true,
-          fontSize: 13,
-          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          fontSize: terminalFontSize,
+          fontFamily: monoFontFamily,
           theme: (() => {
             const cs = getComputedStyle(document.documentElement);
             return {
@@ -787,6 +802,33 @@ export function AgentRunView({
       fitRef.current = null;
     };
   }, [replayOutputTo, status]);
+
+  useEffect(() => {
+    if (!xtermRef.current || !fitRef.current || !termRef.current) return;
+    const size = applyTerminalFontSize(xtermRef.current, fitRef.current, terminalFontSize, termRef.current);
+    if (size && runningRef.current) {
+      void invoke('agent_resize_pty', { taskId, cols: size.cols, rows: size.rows }).catch(() => undefined);
+    }
+  }, [taskId, terminalFontSize]);
+
+  useEffect(() => {
+    if (!xtermRef.current || !fitRef.current || !termRef.current) return;
+    const result = applyTerminalFontFamily(xtermRef.current, fitRef.current, monoFontFamily, termRef.current);
+    if (result?.immediate && runningRef.current) {
+      void invoke('agent_resize_pty', { taskId, cols: result.immediate.cols, rows: result.immediate.rows }).catch(() => undefined);
+    }
+    void result?.whenSettled.then((size) => {
+      if (size && runningRef.current) {
+        void invoke('agent_resize_pty', { taskId, cols: size.cols, rows: size.rows }).catch(() => undefined);
+      }
+    });
+  }, [monoFontFamily, taskId]);
+
+  useEffect(() => {
+    if (!xtermRef.current || !termRef.current) return;
+    applyTerminalThemeOnPanel(xtermRef.current, themeVariant, termRef.current);
+    refreshTerminalDisplay(xtermRef.current);
+  }, [themeVariant]);
 
   useEffect(() => {
     const loadNewlineSetting = () => {

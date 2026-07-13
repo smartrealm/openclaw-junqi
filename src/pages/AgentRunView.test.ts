@@ -23,3 +23,10 @@ test('AI task terminal follows the configured newline shortcut', () => {
   assert.match(source, /terminal_shift_enter_newline/);
   assert.match(source, /nezha:app-settings-changed/);
 });
+
+test('AI task terminal applies live font and theme settings', () => {
+  assert.match(source, /applyTerminalFontSize/);
+  assert.match(source, /applyTerminalFontFamily/);
+  assert.match(source, /applyTerminalThemeOnPanel/);
+  assert.match(source, /agent_resize_pty/);
+});

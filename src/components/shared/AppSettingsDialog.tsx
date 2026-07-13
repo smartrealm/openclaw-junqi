@@ -243,6 +243,8 @@ function FontsPanel() {
   const monoFont = useSettingsStore((s) => s.monoFont);
   const setUiFont = useSettingsStore((s) => s.setUiFont);
   const setMonoFont = useSettingsStore((s) => s.setMonoFont);
+  const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
+  const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
   const apply = (key: string, value: string, setter: (v: string) => void) => { localStorage.setItem(key, value); setter(value); };
   const suggestions = ['', 'Inter', 'SF Pro', 'IBM Plex Sans', 'Geist', 'Manrope'];
   const monoSuggestions = ['', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'IBM Plex Mono'];
@@ -250,6 +252,17 @@ function FontsPanel() {
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.fonts', 'Fonts')}</h2>
       <p className="text-[12px] text-aegis-text-dim mb-5">{t('appSettings.fontsDesc', 'Customize UI and code font families.')}</p>
+      <div className="mb-4">
+        <label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{t('font.terminalFontSize', 'Terminal font size')}</label>
+        <div className="flex items-center gap-2">
+          <input type="number" min={10} max={20} step={1} value={terminalFontSize}
+            onChange={(event) => setTerminalFontSize(Number(event.target.value))}
+            className="w-24 rounded-md px-3 py-2 text-[13px] font-mono"
+            style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }} />
+          <span className="text-[11px] text-aegis-text-dim">px</span>
+        </div>
+        <p className="mt-1 text-[11px] text-aegis-text-dim">{t('font.terminalFontSizeHint', 'Applies to terminal panels only. Range: 10–20px.')}</p>
+      </div>
       {[[t('appSettings.uiFont', 'UI Font'), 'aegis-font-ui', uiFont, setUiFont, suggestions], [t('appSettings.monoFont', 'Mono Font'), 'aegis-font-mono', monoFont, setMonoFont, monoSuggestions]].map(([label, key, value, setter, list]: any[]) => (
         <div key={key} className="mb-4">
           <label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{label}</label>

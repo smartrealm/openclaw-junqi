@@ -25,11 +25,9 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Check, ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, PanelLeft, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, Server, Trash2, X } from "lucide-react";
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import type { Workspace } from "@/workspace/types";
-import {
-  DEFAULT_TERMINAL_FONT_SIZE,
-  getDefaultMonoFont,
-} from "@/_nezha_root/types";
+import { getDefaultMonoFont } from "@/_nezha_root/types";
 import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 interface TerminalWorkspaceDirectory {
   path: string;
@@ -49,8 +47,9 @@ export function TerminalPage() {
   const resolvedTheme = useTheme();
   const themeVariant: ThemeVariant = resolvedTheme.replace("aegis-", "") as ThemeVariant;
 
-  const terminalFontSize: TerminalFontSize = DEFAULT_TERMINAL_FONT_SIZE;
-  const monoFontFamily: FontFamily = getDefaultMonoFont();
+  const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
+  const configuredMonoFont = useSettingsStore((state) => state.monoFont);
+  const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
   const [projectPath, setProjectPath] = useState(".");
   const [recentDirectories, setRecentDirectories] = useState<TerminalWorkspaceDirectory[]>([]);
   const addToast = useNotificationStore((state) => state.addToast);
