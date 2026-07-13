@@ -537,6 +537,88 @@ export function HooksPanel() {
         </div>)}</div>}</div>);
 }
 
+interface NativeAppSettings {
+  claude_path: string;
+  codex_path: string;
+  send_shortcut: string;
+  terminal_shift_enter_newline: boolean;
+  claude_force_default_tui: boolean;
+  terminal_scrollback: number;
+}
+
+function AgentProgramPathSection({ agent }: { agent: 'claude' | 'codex' }) {
+  const { t } = useTranslation();
+  const [settings, setSettings] = useState<NativeAppSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const field = agent === 'claude' ? 'claude_path' : 'codex_path';
+
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<NativeAppSettings>('load_app_settings')
+      .then((next) => { if (!cancelled) setSettings(next); })
+      .catch((reason) => { if (!cancelled) setError(String(reason)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const detect = async () => {
+    setDetecting(true);
+    setError(null);
+    try {
+      const next = await invoke<NativeAppSettings>('detect_agent_paths');
+      setSettings(next);
+      window.dispatchEvent(new Event('nezha:app-settings-changed'));
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setDetecting(false);
+    }
+  };
+  const save = async () => {
+    if (!settings) return;
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      await invoke('save_app_settings', { settings });
+      window.dispatchEvent(new Event('nezha:app-settings-changed'));
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2000);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-md border border-aegis-border bg-aegis-surface p-3">
+      <div className="mb-2 text-[12px] font-semibold text-aegis-text">{agent === 'claude' ? 'Claude Code' : 'Codex'} {t('appSettings.executablePath', 'executable path')}</div>
+      <div className="flex items-center gap-2">
+        <input
+          value={settings?.[field] ?? ''}
+          disabled={!settings || saving || detecting}
+          onChange={(event) => setSettings((current) => current ? { ...current, [field]: event.target.value } : current)}
+          placeholder={agent}
+          spellCheck={false}
+          className="min-w-0 flex-1 rounded-md border border-aegis-border bg-aegis-input px-3 py-2 font-mono text-[12px] text-aegis-text outline-none focus:border-aegis-primary"
+        />
+        <button type="button" onClick={() => void detect()} disabled={!settings || saving || detecting} className="flex h-9 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[12px] text-aegis-text-secondary hover:bg-aegis-hover disabled:opacity-50">
+          <RefreshCw size={12} className={detecting ? 'animate-spin' : ''} />{t('appSettings.detect', 'Detect')}
+        </button>
+        <button type="button" onClick={() => void save()} disabled={!settings || saving || detecting} className="flex h-9 items-center gap-1.5 rounded-md bg-aegis-primary px-3 text-[12px] font-semibold text-white disabled:opacity-50">
+          {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <CheckCircle2 size={12} /> : <Save size={12} />}
+          {saved ? t('common.saved', 'Saved') : t('common.save', 'Save')}
+        </button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-aegis-text-dim">{t('appSettings.executablePathHint', 'Leave empty to resolve the agent from the login-shell PATH.')}</p>
+      {error && <div className="mt-2 text-[11px] text-aegis-danger" role="alert">{error}</div>}
+    </div>
+  );
+}
+
 function FileEditor({ label, agent, lang }: { label: string; agent: 'claude'|'codex'; lang: 'json'|'toml' }) {
   const [c,setC]=useState<string|null>(null); const [orig,setOrig]=useState(''); const [fp,setFp]=useState('');
   const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [err,setErr]=useState<string|null>(null);
@@ -545,6 +627,7 @@ function FileEditor({ label, agent, lang }: { label: string; agent: 'claude'|'co
   const dirty=c!==null&&c!==orig;
   return (
     <div className="p-6 flex flex-col h-full"><div className="flex items-center gap-2 mb-1"><h2 className="text-[16px] font-bold text-aegis-text">{label}</h2><span className="text-[10px] px-2 py-0.5 rounded font-mono" style={{background:'rgb(var(--aegis-overlay)/0.06)',color:'rgb(var(--aegis-text-secondary))',border:'1px solid rgb(var(--aegis-border))'}}>{lang}</span>{dirty&&<span className="text-[10px] px-2 py-0.5 rounded font-semibold" style={{background:'rgb(var(--aegis-warning)/0.15)',color:'rgb(var(--aegis-warning))'}}>unsaved</span>}</div>
+      <AgentProgramPathSection agent={agent}/>
       <div className="text-[11px] text-aegis-text-dim font-mono mb-4 truncate" title={fp}>{fp||'(loading…)'}</div>
       {err&&<div className="mb-3 px-3 py-2 rounded-md text-[12px]" style={{background:'rgb(var(--aegis-danger)/0.1)',color:'rgb(var(--aegis-danger))'}}>{err}</div>}
       <div className="flex items-center gap-2 mb-3">
