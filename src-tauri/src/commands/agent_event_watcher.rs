@@ -18,6 +18,8 @@ struct HookEvent {
     task_id: String,
     #[serde(default)]
     event: String,
+    #[serde(default)]
+    notification_type: String,
 }
 
 static LAST_STATUS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -97,10 +99,8 @@ fn dispatch(app: &AppHandle, event: &HookEvent) {
     if event.task_id.is_empty() || !super::agent_task_pty::is_task_active(&event.task_id) {
         return;
     }
-    let status = match event.event.as_str() {
-        "Notification" | "PermissionRequest" | "Stop" => "input_required",
-        "UserPromptSubmit" | "PostToolUse" => "running",
-        _ => return,
+    let Some(status) = status_for_event(event) else {
+        return;
     };
     let Ok(mut statuses) = last_status().lock() else {
         return;
@@ -115,6 +115,26 @@ fn dispatch(app: &AppHandle, event: &HookEvent) {
     );
 }
 
+fn status_for_event(event: &HookEvent) -> Option<&'static str> {
+    match event.event.as_str() {
+        "Notification" if notification_requires_attention(&event.notification_type) => {
+            Some("input_required")
+        }
+        "PermissionRequest" => Some("input_required"),
+        "UserPromptSubmit" | "PostToolUse" => Some("running"),
+        "Stop" => Some("awaiting_review"),
+        _ => None,
+    }
+}
+
+fn notification_requires_attention(notification_type: &str) -> bool {
+    match notification_type {
+        "" | "permission_prompt" | "elicitation_dialog" => true,
+        "idle_prompt" | "auth_success" | "elicitation_complete" | "elicitation_response" => false,
+        _ => true,
+    }
+}
+
 pub fn cleanup_task_events(task_id: &str) {
     if let Ok(mut statuses) = last_status().lock() {
         statuses.remove(task_id);
@@ -126,21 +146,35 @@ pub fn cleanup_task_events(task_id: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::HookEvent;
+    use super::{status_for_event, HookEvent};
 
     #[test]
     fn hook_events_map_to_attention_and_running_states() {
-        let attention = ["Notification", "PermissionRequest", "Stop"];
-        let running = ["UserPromptSubmit", "PostToolUse"];
-        let source = include_str!("agent_event_watcher.rs");
-        for event in attention {
-            assert!(source.contains(event));
-        }
-        for event in running {
-            assert!(source.contains(event));
-        }
-        let parsed: HookEvent =
-            serde_json::from_str(r#"{"task_id":"task-1","event":"Stop"}"#).unwrap();
-        assert_eq!(parsed.task_id, "task-1");
+        let parse = |event: &str, notification_type: &str| HookEvent {
+            task_id: "task-1".to_string(),
+            event: event.to_string(),
+            notification_type: notification_type.to_string(),
+        };
+        assert_eq!(
+            status_for_event(&parse("PermissionRequest", "")),
+            Some("input_required")
+        );
+        assert_eq!(
+            status_for_event(&parse("Notification", "permission_prompt")),
+            Some("input_required")
+        );
+        assert_eq!(
+            status_for_event(&parse("Notification", "idle_prompt")),
+            None
+        );
+        assert_eq!(
+            status_for_event(&parse("Stop", "")),
+            Some("awaiting_review")
+        );
+        assert_eq!(
+            status_for_event(&parse("UserPromptSubmit", "")),
+            Some("running")
+        );
+        assert_eq!(status_for_event(&parse("PostToolUse", "")), Some("running"));
     }
 }
