@@ -1422,6 +1422,7 @@ fn ensure_path_under_worktrees_root(project_path: &str, worktree_path: &str) -> 
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorktreeCreated {
     pub worktree_path: String,
     pub worktree_branch: String,
@@ -1875,7 +1876,22 @@ pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResp
 
 #[cfg(test)]
 mod terminal_file_diff_tests {
-    use super::parse_numstat_z;
+    use super::{parse_numstat_z, WorktreeCreated};
+
+    #[test]
+    fn worktree_created_matches_the_nezha_frontend_contract() {
+        let value = serde_json::to_value(WorktreeCreated {
+            worktree_path: "/repo/.nezha/worktrees/task-1".to_string(),
+            worktree_branch: "nezha/task-1".to_string(),
+            base_branch: "main".to_string(),
+        })
+        .expect("worktree response must serialize");
+
+        assert_eq!(value["worktreePath"], "/repo/.nezha/worktrees/task-1");
+        assert_eq!(value["worktreeBranch"], "nezha/task-1");
+        assert_eq!(value["baseBranch"], "main");
+        assert!(value.get("worktree_path").is_none());
+    }
 
     #[test]
     fn numstat_z_parses_regular_and_binary_files() {

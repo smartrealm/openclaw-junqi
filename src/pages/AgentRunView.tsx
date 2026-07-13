@@ -1063,17 +1063,21 @@ export function AgentRunView({
         if (resumeIdRef.current && worktreePathRef.current) {
           actualPath = worktreePathRef.current;
         } else {
-          const result = await invoke<{ path: string; branch: string }>('create_task_worktree', createTaskWorktreeArgs(actualPath, taskId, baseBranch));
-          actualPath = result.path;
-          setWorktreePath(result.path);
-          worktreePathRef.current = result.path;
-          setWorktreeBranch(result.branch);
+          const result = await invoke<{ worktreePath: string; worktreeBranch: string; baseBranch: string }>(
+            'create_task_worktree',
+            createTaskWorktreeArgs(actualPath, taskId, baseBranch),
+          );
+          actualPath = result.worktreePath;
+          setWorktreePath(result.worktreePath);
+          worktreePathRef.current = result.worktreePath;
+          setWorktreeBranch(result.worktreeBranch);
+          setBaseBranch(result.baseBranch);
           setWorktreeDiscarded(false);
           if (workspaceTaskId) {
             updateWorkspaceTask(workspaceTaskId, {
-              worktreePath: result.path,
-              worktreeBranch: result.branch,
-              baseBranch: baseBranch || undefined,
+              worktreePath: result.worktreePath,
+              worktreeBranch: result.worktreeBranch,
+              baseBranch: result.baseBranch,
               worktreeDiscarded: false,
             });
           }

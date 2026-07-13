@@ -75,6 +75,14 @@ test('new worktree tasks require an explicit base branch', () => {
   assert.match(source, /请选择工作树的基础分支/);
 });
 
+test('new worktree creation consumes the Nezha camel-case response contract', () => {
+  assert.match(source, /worktreePath: string; worktreeBranch: string; baseBranch: string/);
+  assert.match(source, /actualPath = result\.worktreePath/);
+  assert.match(source, /worktreeBranch: result\.worktreeBranch/);
+  assert.match(source, /baseBranch: result\.baseBranch/);
+  assert.doesNotMatch(source, /result\.path|result\.branch/);
+});
+
 test('plan mode prompt handling remains idempotent during session recovery', () => {
   assert.match(source, /applyPlanModePrompt\(basePrompt, planMode\)/);
   assert.doesNotMatch(source, /`\$\{basePrompt\}\\n\\nPlease use plan mode\.`/);
