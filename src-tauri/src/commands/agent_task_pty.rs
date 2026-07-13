@@ -469,17 +469,28 @@ pub async fn run_task(
     let program = crate::platform::resolve_spawn_program(spec.bin);
     let mut cmd = CommandBuilder::new(&program);
     cmd.cwd(&project_path);
-    if agent == "claude" {
-        let hook_status = super::hooks::ensure_installed();
-        if hook_status.script_installed && hook_status.settings_linked {
-            if let Ok(settings_path) = super::hooks::settings_path() {
-                cmd.arg("--settings");
-                cmd.arg(settings_path);
+    let hook_status = super::hooks::ensure_installed();
+    if hook_status.script_installed {
+        let hooks_usable = if agent == "codex" {
+            hook_status.codex_installed
+        } else {
+            agent == "claude" && hook_status.settings_linked
+        };
+        if hooks_usable {
+            if agent == "codex" {
+                cmd.arg("--dangerously-bypass-hook-trust");
+            }
+            if agent == "claude" {
+                if let Ok(settings_path) = super::hooks::settings_path() {
+                    cmd.arg("--settings");
+                    cmd.arg(settings_path);
+                }
             }
             if let Ok(event_dir) = super::hooks::events_dir_for(&task_id) {
                 let _ = fs::create_dir_all(&event_dir);
                 cmd.env("NEZHA_TASK_ID", &task_id);
                 cmd.env("NEZHA_EVENT_DIR", event_dir);
+                cmd.env("NEZHA_AGENT", &agent);
             }
         }
     }
@@ -1087,6 +1098,15 @@ mod tests {
             source.contains("spawn_toolcall_watcher(app.clone(), task_id.clone(), path.clone())")
         );
         assert!(source.contains("registry.contains_key(&task_id)"));
+    }
+
+    #[test]
+    fn trusted_hook_tasks_receive_event_environment_and_codex_trust_flag() {
+        let source = include_str!("agent_task_pty.rs");
+        assert!(source.contains("--dangerously-bypass-hook-trust"));
+        assert!(source.contains("NEZHA_TASK_ID"));
+        assert!(source.contains("NEZHA_EVENT_DIR"));
+        assert!(source.contains("NEZHA_AGENT"));
     }
 
     #[test]

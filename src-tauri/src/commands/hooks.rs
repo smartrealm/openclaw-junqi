@@ -1,22 +1,7 @@
-// ── Hook readiness (minimal port of nezha hooks.rs) ──────────────────────────
-//
-// This is a minimal subset of nezha's hooks.rs that exposes only what the
-// frontend `NewTaskView` calls:
-//   - `HookAgentReadiness` struct (serialized to JSON for `get_hook_readiness`)
-//   - `usable_for(agent)` (returns false until hooks are installed)
-//   - `get_hook_readiness` Tauri command
-//   - `cache_status` / `current_status` / `ensure_installed` / `uninstall`
-//     (stubs — the full hook installation system from nezha is not ported yet)
-//
-// Why minimal:
-//   - Full port requires: `~/.nezha/hooks/nezha-hook.mjs` script content
-//     (inlined via `include_str!`), complex `~/.claude/settings.json` mutation
-//     with `_nezha_managed` markers, `~/.codex/config.toml` region rewriting,
-//     and event-watcher background thread. That's ~700 lines of nuanced code.
-//   - Frontend only needs `get_hook_readiness` to show the "soft" hook warning
-//     banner. Backend simply reports "no node" / "not installed" until the
-//     full installer lands.
+// Agent hook installation and readiness for the AI workspace. Claude uses an
+// isolated settings file; Codex receives an idempotent managed TOML block.
 
+use std::fs;
 use std::sync::{Mutex, OnceLock};
 
 /// Hook install status — mirrors nezha's `HookInstallStatus`.
@@ -26,6 +11,7 @@ use std::sync::{Mutex, OnceLock};
 pub struct HookInstallStatus {
     pub script_installed: bool,
     pub settings_linked: bool,
+    pub codex_installed: bool,
     pub script_path: Option<String>,
 }
 
@@ -34,6 +20,7 @@ impl Default for HookInstallStatus {
         Self {
             script_installed: false,
             settings_linked: false,
+            codex_installed: false,
             script_path: None,
         }
     }
@@ -78,10 +65,15 @@ pub fn current_status() -> HookInstallStatus {
         .clone()
 }
 
-/// Whether `agent`'s hooks are usable. Without the full installer landed,
-/// this always returns false and the frontend falls back to polling.
+/// Whether the selected agent's hook configuration was installed successfully.
 pub fn usable_for(_agent: &str) -> bool {
-    current_status().script_installed && current_status().settings_linked
+    let status = current_status();
+    status.script_installed
+        && if _agent == "codex" {
+            status.codex_installed
+        } else {
+            status.settings_linked
+        }
 }
 
 /// Run the hook installer. Writes:
@@ -97,6 +89,7 @@ pub fn ensure_installed() -> HookInstallStatus {
             let status = HookInstallStatus {
                 script_installed: true,
                 settings_linked: true,
+                codex_installed: install_codex_hooks(&script_path_str).unwrap_or(false),
                 script_path: Some(script_path_str),
             };
             let _ = settings_path_str; // kept for future settings_linked parity
@@ -179,6 +172,77 @@ fn build_claude_settings(script_path: &std::path::Path) -> serde_json::Value {
     })
 }
 
+const CODEX_HOOK_MIN_VERSION: &str = "0.131.0";
+const CODEX_BEGIN: &str = "# >>> nezha-managed-begin (do not edit; managed by Nezha) >>>";
+const CODEX_END: &str = "# <<< nezha-managed-end <<<";
+const CODEX_EVENTS: &[&str] = &[
+    "SessionStart",
+    "UserPromptSubmit",
+    "PermissionRequest",
+    "PostToolUse",
+    "Stop",
+    "SubagentStop",
+];
+
+fn toml_quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn build_codex_block(script_path: &str) -> String {
+    let command = toml_quote(&format!("node \"{script_path}\""));
+    let mut block = format!("{CODEX_BEGIN}\n");
+    for event in CODEX_EVENTS {
+        block.push_str(&format!("[[hooks.{event}]]\n[[hooks.{event}.hooks]]\ntype = \"command\"\ncommand = {command}\n\n"));
+    }
+    block.push_str(&format!("{CODEX_END}\n"));
+    block
+}
+
+fn inject_codex_text(existing: &str, script_path: &str) -> String {
+    let block = build_codex_block(script_path);
+    if let (Some(begin), Some(end)) = (existing.find(CODEX_BEGIN), existing.find(CODEX_END)) {
+        if begin < end {
+            let end = existing[end..]
+                .find('\n')
+                .map(|offset| end + offset + 1)
+                .unwrap_or(existing.len());
+            return format!("{}{}{}", &existing[..begin], block, &existing[end..]);
+        }
+    }
+    format!(
+        "{}{}{}",
+        existing,
+        if existing.is_empty() || existing.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        },
+        block
+    )
+}
+
+fn install_codex_hooks(script_path: &str) -> Result<bool, String> {
+    let Some(version) = super::app_settings::detect_codex_version() else {
+        return Ok(false);
+    };
+    if version_lt(&version, CODEX_HOOK_MIN_VERSION) {
+        return Ok(false);
+    }
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let path = home.join(".codex").join("config.toml");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+    let updated = inject_codex_text(&existing, script_path);
+    toml::from_str::<toml::Value>(&updated)
+        .map_err(|error| format!("Codex hook config is invalid: {error}"))?;
+    let temporary = path.with_extension("toml.junqi.tmp");
+    fs::write(&temporary, updated).map_err(|error| error.to_string())?;
+    fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
 /// Remove hooks from both agents' config files. Stub.
 pub fn uninstall() -> Result<(), String> {
     cache_status(HookInstallStatus::default());
@@ -235,6 +299,7 @@ mod tests {
         let s = HookInstallStatus::default();
         assert!(!s.script_installed);
         assert!(!s.settings_linked);
+        assert!(!s.codex_installed);
         assert!(s.script_path.is_none());
     }
 
@@ -263,6 +328,7 @@ mod tests {
         let injected = HookInstallStatus {
             script_installed: true,
             settings_linked: true,
+            codex_installed: true,
             script_path: Some("/tmp/test-hook.mjs".to_string()),
         };
         cache_status(injected.clone());
@@ -287,6 +353,7 @@ mod tests {
         cache_status(HookInstallStatus {
             script_installed: true,
             settings_linked: true,
+            codex_installed: true,
             script_path: Some("/fake/path".to_string()),
         });
         assert!(usable_for("claude"));
@@ -302,6 +369,24 @@ mod tests {
         let cmd = format!("node \"{}\"", "/some path/with space/hook.mjs");
         assert!(cmd.starts_with("node "));
         assert!(cmd.contains('"'));
+    }
+
+    #[test]
+    fn codex_hook_injection_is_idempotent_and_preserves_user_config() {
+        let original = "model = \"gpt-5\"\n";
+        let first = inject_codex_text(original, "/tmp/nezha hook.mjs");
+        let second = inject_codex_text(&first, "/tmp/new-hook.mjs");
+        assert!(second.starts_with(original));
+        assert_eq!(second.matches(CODEX_BEGIN).count(), 1);
+        assert!(second.contains("PermissionRequest"));
+        assert!(second.contains("new-hook.mjs"));
+        toml::from_str::<toml::Value>(&second).expect("injected config is valid TOML");
+    }
+
+    #[test]
+    fn version_comparison_accepts_codex_cli_prefix() {
+        assert!(!version_lt("codex-cli 0.131.0", CODEX_HOOK_MIN_VERSION));
+        assert!(version_lt("codex-cli 0.130.9", CODEX_HOOK_MIN_VERSION));
     }
 
     #[test]
@@ -357,8 +442,8 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
             },
             Some(ver) => HookAgentReadiness {
                 agent: "claude".to_string(),
-                usable: false, // false until hooks installer lands
-                reason: Some("not_installed".to_string()),
+                usable: usable_for("claude"),
+                reason: (!usable_for("claude")).then(|| "not_installed".to_string()),
                 detected_version: Some(ver),
                 min_version: Some(claude_min.to_string()),
             },
@@ -388,8 +473,8 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
             },
             Some(ver) => HookAgentReadiness {
                 agent: "codex".to_string(),
-                usable: false,
-                reason: Some("not_installed".to_string()),
+                usable: usable_for("codex"),
+                reason: (!usable_for("codex")).then(|| "not_installed".to_string()),
                 detected_version: Some(ver),
                 min_version: Some(codex_min.to_string()),
             },
@@ -433,25 +518,17 @@ fn detect_agent_version(binary: &str) -> Option<String> {
 }
 
 /// Loose semver-ish compare: returns true if `have < min`.
-/// Handles `1.2.3`, `1.2`, `v1.2.3`, and prefixes like `claude 2.1.87 (...)`.
+/// Handles `1.2.3`, `v1.2.3`, `claude 2.1.87`, and `codex-cli 0.131.0`.
 fn version_lt(have: &str, min: &str) -> bool {
     fn parse(v: &str) -> Vec<u64> {
-        // Strip leading non-digit prefix (e.g. "v", "claude ", "codex ").
-        let trimmed = v.trim();
-        let bytes = trimmed.as_bytes();
-        let mut start = 0;
-        while start < bytes.len() && (bytes[start].is_ascii_alphabetic() || bytes[start] == b' ') {
-            start += 1;
-        }
-        let numeric = &trimmed[start..];
-        // Take only the first token (split by whitespace or '-').
-        let token = numeric
-            .split_whitespace()
-            .next()
-            .unwrap_or(numeric)
-            .split('-')
-            .next()
-            .unwrap_or(numeric);
+        let start = v
+            .find(|character: char| character.is_ascii_digit())
+            .unwrap_or(v.len());
+        let numeric = &v[start..];
+        let end = numeric
+            .find(|character: char| !character.is_ascii_digit() && character != '.')
+            .unwrap_or(numeric.len());
+        let token = &numeric[..end];
         token
             .split('.')
             .filter_map(|p| p.parse::<u64>().ok())
