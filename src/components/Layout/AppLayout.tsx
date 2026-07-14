@@ -85,8 +85,8 @@ export function AppLayout() {
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
   const isSettingsPage = matchPath('/settings/*', location.pathname) !== null;
   const usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage;
-  const showRouteBack = isTerminalPage || isSettingsPage;
-  const routeBackFallback = isTerminalPage ? '/tools' : '/';
+  const showRouteBack = isTerminalPage || isAgentWorkspacePage || isSettingsPage;
+  const routeBackFallback = isTerminalPage || isAgentWorkspacePage ? '/tools' : '/';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
