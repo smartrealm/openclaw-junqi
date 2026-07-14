@@ -75,7 +75,7 @@ fn update_user_path(enabled: bool) -> Result<(), String> {
     validate_path_length(&next)?;
 
     let original = environment.get_raw_value("Path").ok();
-    let existing_type = original.as_ref().map(|value| value.vtype);
+    let existing_type = original.as_ref().map(|value| value.vtype.clone());
     let mut next_value = next.to_reg_value();
     if existing_type == Some(REG_EXPAND_SZ) {
         next_value.vtype = REG_EXPAND_SZ;
