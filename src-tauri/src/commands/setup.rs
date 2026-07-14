@@ -1823,6 +1823,118 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     Ok(format!("Gateway prepared on port {}", port))
 }
 
+/// Repair OpenClaw's post-update state after the user explicitly requests
+/// setup self-rescue. `update repair` includes doctor repair and plugin
+/// convergence, which is required for missing plugin payloads that a plain
+/// Gateway restart cannot fix.
+#[tauri::command]
+pub async fn repair_openclaw_for_setup(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::state::GatewayProcess>,
+) -> Result<String, String> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
+    let step = "gateway";
+    emit(&app, step, "Starting OpenClaw official repair...", 0.08);
+    let openclaw = crate::commands::gateway::resolve_openclaw_binary()
+        .ok_or_else(|| "OpenClaw binary not found; cannot run repair".to_string())?;
+    let mut command = tokio::process::Command::new(openclaw);
+    command
+        .args([
+            "update",
+            "repair",
+            "--yes",
+            "--timeout",
+            "300",
+            "--no-restart",
+        ])
+        .env("PATH", crate::commands::system::openclaw_search_path())
+        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
+        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
+        .env("OPENCLAW_NO_RESPAWN", "1")
+        .env("NO_COLOR", "1")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    platform::configure_background_command(&mut command);
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Failed to start OpenClaw repair: {}", error))?;
+    let pid = child.id();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let stdout_app = app.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut captured = Vec::new();
+        if let Some(stdout) = stdout {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                emit(&stdout_app, step, &format!("[repair] {}", line), 0.5);
+                captured.push(line);
+            }
+        }
+        captured
+    });
+    let stderr_app = app.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut captured = Vec::new();
+        if let Some(stderr) = stderr {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                emit(&stderr_app, step, &format!("[repair] {}", line), 0.5);
+                captured.push(line);
+            }
+        }
+        captured
+    });
+
+    let status = match tokio::time::timeout(std::time::Duration::from_secs(360), child.wait()).await
+    {
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            terminate_npm_process_tree(&mut child, pid).await;
+            return Err(format!(
+                "Failed while waiting for OpenClaw repair: {}",
+                error
+            ));
+        }
+        Err(_) => {
+            terminate_npm_process_tree(&mut child, pid).await;
+            return Err("OpenClaw repair timed out after 360 seconds".into());
+        }
+    };
+    let mut output = stdout_task.await.unwrap_or_default();
+    output.extend(stderr_task.await.unwrap_or_default());
+    if !status.success() {
+        let tail = output
+            .iter()
+            .rev()
+            .take(8)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(if tail.trim().is_empty() {
+            format!("OpenClaw repair exited with {}", status)
+        } else {
+            format!("OpenClaw repair exited with {}\n{}", status, tail)
+        });
+    }
+
+    emit(
+        &app,
+        step,
+        "OpenClaw repair completed; retrying Gateway...",
+        1.0,
+    );
+    Ok("OpenClaw repair completed".into())
+}
+
 /// Install a package via winget (Windows only).
 #[tauri::command]
 pub async fn install_winget_package(package_id: String) -> Result<String, String> {

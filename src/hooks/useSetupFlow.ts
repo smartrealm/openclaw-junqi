@@ -133,7 +133,9 @@ export interface SetupFlow {
   wizardSubmitting: boolean;
   wizardError: string | null;
   needsOnboarding: boolean;
+  repairing: boolean;
   startGateway: () => Promise<void>;
+  repairAndRetry: () => Promise<void>;
   submitWizardStep: (stepId: string, value?: unknown) => Promise<void>;
   retryWizard: () => Promise<void>;
   runNativeSetup: () => Promise<void>;
@@ -197,6 +199,7 @@ export function useSetupFlow(
   const [wizardSubmitting, setWizardSubmitting] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
+  const [repairing, setRepairing] = useState(false);
   const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
   if (!wizardClientRef.current) {
     wizardClientRef.current = new OpenClawWizardClient((method, params) => gateway.call(method, params));
@@ -780,6 +783,40 @@ export function useSetupFlow(
     }
   }, [installMode, setSetupError, setProgress, setNeedsGit, runDockerSetup, runNativeSetup]);
 
+  const repairAndRetry = useCallback(async () => {
+    if (repairing) return;
+    cancelActiveRun();
+    setRepairing(true);
+    setSetupError(null);
+    patchStep("gateway", "running", t("setup.repairingGateway", "正在修复 OpenClaw 和插件状态…"));
+    report(t("setup.repairingGateway", "正在修复 OpenClaw 和插件状态…"));
+    appendSetupLog({
+      source: "setup",
+      step: "gateway",
+      message: t("setup.repairStarting", "开始运行 OpenClaw 官方修复流程…"),
+      level: "info",
+    });
+    try {
+      await invoke<string>("repair_openclaw_for_setup");
+      appendSetupLog({
+        source: "setup",
+        step: "gateway",
+        message: t("setup.repairComplete", "修复完成，正在重新启动 Gateway…"),
+        level: "info",
+      });
+      await startGatewayAction();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      patchStep("gateway", "error", message);
+      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+      setSetupError(message);
+      report(message);
+      setSetupStep("error");
+    } finally {
+      setRepairing(false);
+    }
+  }, [repairing, cancelActiveRun, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, setSetupStep]);
+
   const goBack = useCallback(() => {
     void wizardClientRef.current?.cancel().catch(() => {});
     setWizardStep(null);
@@ -846,7 +883,9 @@ export function useSetupFlow(
     wizardSubmitting,
     wizardError,
     needsOnboarding,
+    repairing,
     startGateway: startGatewayAction,
+    repairAndRetry,
     submitWizardStep,
     retryWizard: startOfficialOnboarding,
     runNativeSetup,
