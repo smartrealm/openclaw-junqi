@@ -85,11 +85,12 @@ pub fn usable_for(_agent: &str) -> bool {
 /// once the script + settings file exist on disk.
 pub fn ensure_installed() -> HookInstallStatus {
     match install_hook_files() {
-        Ok((script_path_str, settings_path_str)) => {
+        Ok((script_path_str, settings_path_str, node_path_str)) => {
             let status = HookInstallStatus {
                 script_installed: true,
                 settings_linked: true,
-                codex_installed: install_codex_hooks(&script_path_str).unwrap_or(false),
+                codex_installed: install_codex_hooks(&node_path_str, &script_path_str)
+                    .unwrap_or(false),
                 script_path: Some(script_path_str),
             };
             let _ = settings_path_str; // kept for future settings_linked parity
@@ -122,9 +123,10 @@ pub fn events_dir_for(task_id: &str) -> Result<std::path::PathBuf, String> {
     Ok(events_root()?.join(crate::commands::agent_task_pty::safe_task_id(task_id)))
 }
 
-fn install_hook_files() -> Result<(String, String), String> {
+fn install_hook_files() -> Result<(String, String, String), String> {
     use std::path::PathBuf;
 
+    let node_path = detect_node().ok_or_else(|| "Node.js executable was not found".to_string())?;
     let dir: PathBuf = hooks_dir_internal()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {}", dir.display(), e))?;
 
@@ -144,6 +146,7 @@ fn install_hook_files() -> Result<(String, String), String> {
     // Build Nezha's isolated Claude settings file with hook entries only.
     // User settings remain untouched and no unrelated scalar options are overridden.
     let settings = build_claude_settings(
+        &node_path,
         &script_path,
         super::app_settings::claude_force_default_tui(),
     );
@@ -157,14 +160,20 @@ fn install_hook_files() -> Result<(String, String), String> {
     Ok((
         script_path.to_string_lossy().into_owned(),
         settings_path.to_string_lossy().into_owned(),
+        node_path,
     ))
 }
 
+fn hook_command(node_path: &str, script_path: &std::path::Path) -> String {
+    format!("\"{}\" \"{}\"", node_path, script_path.display())
+}
+
 fn build_claude_settings(
+    node_path: &str,
     script_path: &std::path::Path,
     force_default_tui: bool,
 ) -> serde_json::Value {
-    let command = format!("node \"{}\"", script_path.display());
+    let command = hook_command(node_path, script_path);
     let entry = || serde_json::json!({ "hooks": [{ "type": "command", "command": command }] });
     let mut settings = serde_json::json!({
         "hooks": {
@@ -198,8 +207,8 @@ fn toml_quote(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-fn build_codex_block(script_path: &str) -> String {
-    let command = toml_quote(&format!("node \"{script_path}\""));
+fn build_codex_block(node_path: &str, script_path: &str) -> String {
+    let command = toml_quote(&hook_command(node_path, std::path::Path::new(script_path)));
     let mut block = format!("{CODEX_BEGIN}\n");
     for event in CODEX_EVENTS {
         block.push_str(&format!("[[hooks.{event}]]\n[[hooks.{event}.hooks]]\ntype = \"command\"\ncommand = {command}\n\n"));
@@ -208,8 +217,8 @@ fn build_codex_block(script_path: &str) -> String {
     block
 }
 
-fn inject_codex_text(existing: &str, script_path: &str) -> String {
-    let block = build_codex_block(script_path);
+fn inject_codex_text(existing: &str, node_path: &str, script_path: &str) -> String {
+    let block = build_codex_block(node_path, script_path);
     if let (Some(begin), Some(end)) = (existing.find(CODEX_BEGIN), existing.find(CODEX_END)) {
         if begin < end {
             let end = existing[end..]
@@ -231,7 +240,7 @@ fn inject_codex_text(existing: &str, script_path: &str) -> String {
     )
 }
 
-fn install_codex_hooks(script_path: &str) -> Result<bool, String> {
+fn install_codex_hooks(node_path: &str, script_path: &str) -> Result<bool, String> {
     let Some(version) = super::app_settings::detect_codex_version() else {
         return Ok(false);
     };
@@ -244,7 +253,7 @@ fn install_codex_hooks(script_path: &str) -> Result<bool, String> {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let existing = fs::read_to_string(&path).unwrap_or_default();
-    let updated = inject_codex_text(&existing, script_path);
+    let updated = inject_codex_text(&existing, node_path, script_path);
     toml::from_str::<toml::Value>(&updated)
         .map_err(|error| format!("Codex hook config is invalid: {error}"))?;
     let temporary = path.with_extension("toml.junqi.tmp");
@@ -315,17 +324,25 @@ mod tests {
 
     #[test]
     fn claude_hook_settings_use_the_current_nested_schema() {
-        let settings = build_claude_settings(std::path::Path::new("/tmp/nezha-hook.mjs"), false);
+        let settings = build_claude_settings(
+            "/opt/homebrew/bin/node",
+            std::path::Path::new("/tmp/nezha-hook.mjs"),
+            false,
+        );
         assert_eq!(
             settings["hooks"]["Stop"][0]["hooks"][0]["command"],
-            "node \"/tmp/nezha-hook.mjs\""
+            "\"/opt/homebrew/bin/node\" \"/tmp/nezha-hook.mjs\""
         );
         assert!(settings.get("tui").is_none());
     }
 
     #[test]
     fn claude_hook_settings_can_force_the_default_tui_without_touching_user_settings() {
-        let settings = build_claude_settings(std::path::Path::new("/tmp/nezha-hook.mjs"), true);
+        let settings = build_claude_settings(
+            "/opt/homebrew/bin/node",
+            std::path::Path::new("/tmp/nezha-hook.mjs"),
+            true,
+        );
         assert_eq!(settings["tui"], "default");
         assert!(settings["hooks"]["Stop"].is_array());
     }
@@ -381,22 +398,26 @@ mod tests {
 
     #[test]
     fn hook_command_format_is_unix_safe() {
-        // The command uses bare `node` (not absolute path) + quoted script path,
-        // which works on both Unix and Windows shells.
-        let cmd = format!("node \"{}\"", "/some path/with space/hook.mjs");
-        assert!(cmd.starts_with("node "));
-        assert!(cmd.contains('"'));
+        let cmd = hook_command(
+            "/some path/node",
+            std::path::Path::new("/some path/with space/hook.mjs"),
+        );
+        assert_eq!(
+            cmd,
+            "\"/some path/node\" \"/some path/with space/hook.mjs\""
+        );
     }
 
     #[test]
     fn codex_hook_injection_is_idempotent_and_preserves_user_config() {
         let original = "model = \"gpt-5\"\n";
-        let first = inject_codex_text(original, "/tmp/nezha hook.mjs");
-        let second = inject_codex_text(&first, "/tmp/new-hook.mjs");
+        let first = inject_codex_text(original, "/usr/bin/node", "/tmp/nezha hook.mjs");
+        let second = inject_codex_text(&first, "/opt/node/bin/node", "/tmp/new-hook.mjs");
         assert!(second.starts_with(original));
         assert_eq!(second.matches(CODEX_BEGIN).count(), 1);
         assert!(second.contains("PermissionRequest"));
         assert!(second.contains("new-hook.mjs"));
+        assert!(second.contains("/opt/node/bin/node"));
         toml::from_str::<toml::Value>(&second).expect("injected config is valid TOML");
     }
 
@@ -504,18 +525,13 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
 }
 
 fn detect_node() -> Option<String> {
-    let lookup = if cfg!(windows) { "where" } else { "which" };
-    std::process::Command::new(lookup)
-        .arg("node")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            String::from_utf8(o.stdout)
-                .ok()
-                .and_then(|s| s.lines().next().map(|l| l.trim().to_string()))
-        })
-        .filter(|s| !s.is_empty())
+    let managed = crate::paths::local_node_path();
+    if managed.is_file() {
+        return Some(managed.to_string_lossy().into_owned());
+    }
+
+    let detected = crate::platform::detect_path("node");
+    (!detected.is_empty()).then_some(detected)
 }
 
 /// Loose semver-ish compare: returns true if `have < min`.
