@@ -42,6 +42,11 @@ import { formatGatewayLogs } from '../services/gateway/gatewayLogFormatting';
 import { gatewayRestartSingleFlight } from '../services/gateway/SingleFlight';
 import { gatewayRestartProgressFromLog, type GatewayRecoveryStatus } from '../services/gateway/recoveryProgress';
 import { APP_VERSION } from '../version';
+import {
+  persistGatewayToken,
+  pollGatewayPairing,
+  requestGatewayPairing,
+} from './gateway-pairing';
 
 const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
 const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
@@ -249,7 +254,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     read: async () => { try { const d: any = await invoke("read_config"); return { data: JSON.parse(d.raw || "{}"), path: d.path }; } catch { return { data: {}, path: "" }; } },
     write: async (_p: string, d: any) => { try { await invoke("write_config", { json: JSON.stringify(d, null, 2) }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
     restart: restartLocalGateway,
-    validateOpenclawJson: async () => { try { const d: any = await invoke("read_config"); return { valid: true, path: d.path, exists: d.exists === true }; } catch { return { valid: false, path: "", exists: false }; } },
+    validateOpenclawJson: async () => { try { return await invoke("validate_openclaw_config"); } catch (e: any) { return { valid: false, path: "", exists: false, error: String(e) }; } },
     backupAndResetOpenclaw: async () => { try { await invoke("write_config", { json: "{}" }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
   },
 
@@ -501,7 +506,28 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     getSources: async () => { try { const r: any = await invoke("screenshot_list_windows"); return Array.isArray(r) ? r : []; } catch { return []; } },
   },
   memory: { browse: async () => null, readLocal: async () => ({ success: false, files: [] }) },
-  pairing: { getToken: async () => { try { return await invoke("get_gateway_token"); } catch { return null; } }, saveToken: async () => ({ success: true }), requestPairing: async () => { const id = await deviceIdentity(); return { code: "", deviceId: id.deviceId }; }, poll: async () => ({ status: "timeout" }) },
+  pairing: {
+    getToken: async () => {
+      try {
+        const settings = JSON.parse(localStorage.getItem('aegis-config') || '{}');
+        if (typeof settings.gatewayToken === 'string' && settings.gatewayToken.trim()) {
+          return settings.gatewayToken.trim();
+        }
+      } catch { /* fall through to the OpenClaw config */ }
+      try { return await invoke("get_gateway_token"); } catch { return null; }
+    },
+    saveToken: async (token: string) => {
+      try {
+        persistGatewayToken(token, localStorage);
+        _cachedGatewayToken = token.trim();
+        return { success: true };
+      } catch {
+        return { success: false };
+      }
+    },
+    requestPairing: (httpBaseUrl: string) => requestGatewayPairing(httpBaseUrl, detectPlatform()),
+    poll: (httpBaseUrl: string, deviceId: string) => pollGatewayPairing(httpBaseUrl, deviceId),
+  },
   terminal: {
     // portable-pty backed PTY multiplexer in Rust. Each create() spawns a
     // login shell; stdout arrives via the "terminal-data" event, exits via

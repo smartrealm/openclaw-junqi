@@ -71,6 +71,10 @@ fn invalid_id(id: &str) -> String {
     format!("unknown pty id: {id}")
 }
 
+fn remove_stream(id: &str) -> Option<StreamHandle> {
+    streams().lock().unwrap().remove(id)
+}
+
 fn build_shell(cwd: Option<&str>) -> CommandBuilder {
     #[cfg(windows)]
     {
@@ -172,7 +176,8 @@ fn pty_reader_thread(id: String, mut reader: Box<dyn Read + Send>, app: AppHandl
         );
     }
 
-    // EOF -> emit exit so renderer marks tab dead.
+    // Natural exits release their registry slot just like explicit kills.
+    remove_stream(&id);
     let _ = app.emit("terminal-exit", ExitEvent { id, exit_code: 0 });
 }
 
@@ -269,14 +274,6 @@ pub async fn terminal_create(
     let (user_tx, user_rx) = flume::bounded::<Vec<u8>>(64);
     let closed = Arc::new(AtomicBool::new(false));
 
-    // Spawn reader thread (lives until PTY EOF)
-    let rid = id.clone();
-    let rapp = app.clone();
-    thread::spawn(move || pty_reader_thread(rid, reader, rapp));
-
-    // Spawn writer thread (lives until sender dropped on Kill/Close)
-    thread::spawn(move || pty_writer_thread(writer, user_rx));
-
     let ctx = IoStreamContext {
         creator_user_id: 1,
         target_server_id: 0,
@@ -287,6 +284,13 @@ pub async fn terminal_create(
     };
     let handle: StreamHandle = Arc::new(Mutex::new(Some(ctx)));
     streams().lock().unwrap().insert(id.clone(), handle);
+
+    // Register before threads start: a short-lived process may reach EOF
+    // immediately, and its cleanup must be able to remove the registry entry.
+    let rid = id.clone();
+    let rapp = app.clone();
+    thread::spawn(move || pty_reader_thread(rid, reader, rapp));
+    thread::spawn(move || pty_writer_thread(writer, user_rx));
 
     Ok(CreateResult { id, pid })
 }
@@ -341,7 +345,7 @@ pub async fn terminal_resize(id: String, cols: u16, rows: u16) -> Result<(), Str
 #[tauri::command]
 pub async fn terminal_kill(id: String) -> Result<(), String> {
     // Remove from registry first.
-    let handle = streams().lock().unwrap().remove(&id);
+    let handle = remove_stream(&id);
     let handle = handle.ok_or_else(|| invalid_id(&id))?;
 
     // Take context so all fields can be dropped cleanly.
@@ -369,5 +373,17 @@ mod tests {
     fn constants_are_sane() {
         assert!(MAX_STREAMS_PER_USER >= 1);
         assert!(MAX_STREAMS_PER_SERVER >= 1);
+    }
+
+    #[test]
+    fn natural_exit_cleanup_releases_the_registry_slot() {
+        let id = format!("cleanup-test-{}", next_id());
+        streams()
+            .lock()
+            .unwrap()
+            .insert(id.clone(), Arc::new(Mutex::new(None)));
+
+        assert!(remove_stream(&id).is_some());
+        assert!(!streams().lock().unwrap().contains_key(&id));
     }
 }

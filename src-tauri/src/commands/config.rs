@@ -1,7 +1,8 @@
-use crate::paths;
+use crate::{paths, state::GatewayProcess};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use tauri::State;
 
 #[derive(Deserialize)]
 struct RuntimeDefaults {
@@ -62,6 +63,15 @@ pub struct ConfigData {
     pub exists: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfigValidation {
+    pub valid: bool,
+    pub path: String,
+    pub exists: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[tauri::command]
 pub async fn read_config() -> Result<ConfigData, String> {
     let path = paths::config_path();
@@ -82,7 +92,48 @@ pub async fn read_config() -> Result<ConfigData, String> {
 }
 
 #[tauri::command]
-pub async fn write_config(json: String) -> Result<String, String> {
+pub async fn validate_openclaw_config() -> ConfigValidation {
+    let path = paths::config_path();
+    validate_openclaw_config_path(&path)
+}
+
+fn validate_openclaw_config_path(path: &Path) -> ConfigValidation {
+    if !path.exists() {
+        return ConfigValidation {
+            valid: true,
+            path: path.to_string_lossy().to_string(),
+            exists: false,
+            error: None,
+        };
+    }
+    match std::fs::read_to_string(path)
+        .map_err(|error| format!("Failed to read config: {error}"))
+        .and_then(|raw| parse_openclaw_config_json(&raw).map(|_| ()))
+    {
+        Ok(()) => ConfigValidation {
+            valid: true,
+            path: path.to_string_lossy().to_string(),
+            exists: true,
+            error: None,
+        },
+        Err(error) => ConfigValidation {
+            valid: false,
+            path: path.to_string_lossy().to_string(),
+            exists: true,
+            error: Some(error),
+        },
+    }
+}
+
+#[tauri::command]
+pub async fn write_config(
+    state: State<'_, GatewayProcess>,
+    json: String,
+) -> Result<String, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
+        "Gateway or storage maintenance is running; try saving again shortly".to_string()
+    })?;
     let value = parse_openclaw_config_json(&json)?;
     let path = paths::config_path();
     write_openclaw_config_value(&path, &value)?;
@@ -362,6 +413,28 @@ mod tests {
         let value = json!({"gateway": {"port": 65535}});
         assert_eq!(gateway_port_from_config(&value), Some(65535));
         validate_openclaw_config_shape(&value).unwrap();
+    }
+
+    #[test]
+    fn validation_reports_malformed_and_wrong_shape_configs() {
+        let path = isolated_config_path("validation");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        fs::write(&path, "{not-json").unwrap();
+        let malformed = validate_openclaw_config_path(&path);
+        assert!(!malformed.valid);
+        assert!(malformed.exists);
+        assert!(malformed.error.unwrap().contains("Invalid JSON"));
+
+        fs::write(&path, r#"{"gateway":{"port":"18789"}}"#).unwrap();
+        let wrong_shape = validate_openclaw_config_path(&path);
+        assert!(!wrong_shape.valid);
+        assert!(wrong_shape.error.unwrap().contains("gateway.port"));
+
+        fs::write(&path, r#"{"gateway":{"port":18789}}"#).unwrap();
+        assert!(validate_openclaw_config_path(&path).valid);
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
