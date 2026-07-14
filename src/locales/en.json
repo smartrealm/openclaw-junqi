@@ -1153,6 +1153,8 @@
     "dnd": "Do Not Disturb"
   },
   "topbar": {
+    "back": "Back",
+    "backHint": "Go back",
     "statusIdle": "Ready",
     "statusWorking": "AI working…",
     "statusConnecting": "Connecting…",

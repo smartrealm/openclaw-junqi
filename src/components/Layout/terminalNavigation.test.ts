@@ -16,3 +16,13 @@ test('terminal and AI workspaces own their left rail and top-bar toggle channels
   assert.match(topBar, /requestTerminalSidebarToggle/);
   assert.match(topBar, /requestAgentWorkspaceSidebarToggle/);
 });
+
+test('settings and terminal expose a safe route-level back action without hijacking AI workspace navigation', () => {
+  assert.match(appLayout, /showBack=\{showRouteBack\}/);
+  assert.match(appLayout, /showRouteBack = isTerminalPage \|\| isSettingsPage/);
+  assert.match(appLayout, /routeBackFallback = isTerminalPage \? '\/tools' : '\/'/);
+  assert.doesNotMatch(appLayout, /showRouteBack = .*isAgentWorkspacePage/);
+  assert.match(topBar, /window\.history\.state/);
+  assert.match(topBar, /navigate\(-1\)/);
+  assert.match(topBar, /navigate\(backFallback\)/);
+});

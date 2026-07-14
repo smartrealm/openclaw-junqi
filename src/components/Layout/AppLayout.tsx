@@ -83,7 +83,10 @@ export function AppLayout() {
   const isWorkspacePage = matchPath('/welcome', location.pathname) !== null;
   const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
+  const isSettingsPage = matchPath('/settings/*', location.pathname) !== null;
   const usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage;
+  const showRouteBack = isTerminalPage || isSettingsPage;
+  const routeBackFallback = isTerminalPage ? '/tools' : '/';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -116,6 +119,8 @@ export function AppLayout() {
       <TopBar
         hideSidebarToggle={isWorkspacePage}
         sidebarTarget={isTerminalPage ? 'terminal' : isAgentWorkspacePage ? 'agent-workspace' : 'app'}
+        showBack={showRouteBack}
+        backFallback={routeBackFallback}
       />
 
       {/* ── Navigation tabs ── */}

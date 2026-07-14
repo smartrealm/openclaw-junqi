@@ -840,6 +840,8 @@
     "dnd": "عدم الإزعاج"
   },
   "topbar": {
+    "back": "رجوع",
+    "backHint": "العودة إلى الصفحة السابقة",
     "statusIdle": "جاهز",
     "statusWorking": "الذكاء الاصطناعي يعمل…",
     "statusConnecting": "جارٍ الاتصال…",

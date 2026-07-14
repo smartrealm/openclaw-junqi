@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo } fro
 import { useNavigate } from 'react-router-dom';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
-import { PanelLeftOpen, PanelLeftClose, PanelLeft, Bell } from 'lucide-react';
+import { ArrowLeft, PanelLeftOpen, PanelLeftClose, PanelLeft, Bell } from 'lucide-react';
 import clsx from 'clsx';
 
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -72,12 +72,20 @@ export function toNotificationPanelItem(
 interface TopBarProps {
   hideSidebarToggle?: boolean;
   sidebarTarget?: 'app' | 'terminal' | 'agent-workspace';
+  showBack?: boolean;
+  backFallback?: string;
 }
 
-export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: TopBarProps) {
+export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showBack = false, backFallback = '/' }: TopBarProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const isMac = APP_PLATFORM === 'macos';
+  const backLabel = t('topbar.back', '返回');
+  const handleBack = useCallback(() => {
+    const historyIndex = Number((window.history.state as { idx?: number } | null)?.idx);
+    if (Number.isFinite(historyIndex) && historyIndex > 0) navigate(-1);
+    else navigate(backFallback);
+  }, [backFallback, navigate]);
 
   // ── Sidebar collapse (three-stage cycle: expanded → mini → hidden) ──
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);
@@ -295,6 +303,19 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
         isMac ? 'ps-[82px] pe-3' : 'px-3',
       )}
     >
+      {showBack && (
+        <button
+          type="button"
+          onClick={handleBack}
+          title={t('topbar.backHint', '返回上一页')}
+          aria-label={t('topbar.backHint', '返回上一页')}
+          className="flex h-[28px] shrink-0 items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+        >
+          <ArrowLeft size={14} />
+          <span>{backLabel}</span>
+        </button>
+      )}
+
       {/* Left — collapse toggle (kooky: 28x28, cornerRadius 5, icon 12pt) */}
       {!hideSidebarToggle && (
         <button
@@ -315,7 +336,8 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app' }: Top
         disabled={!statusClickable}
         title={statusText}
         className={clsx(
-          'absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] border transition-colors max-w-[50%]',
+          'absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] border transition-colors',
+          showBack ? 'max-w-[calc(50%_-_80px)]' : 'max-w-[50%]',
           status === 'idle' && 'border-transparent text-aegis-text-muted',
           status === 'working' && 'border-aegis-primary/25 text-aegis-primary bg-aegis-primary/[0.06] hover:bg-aegis-primary/[0.12] cursor-pointer',
           status === 'connecting' && 'border-transparent text-aegis-warning',

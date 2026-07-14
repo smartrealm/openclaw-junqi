@@ -1151,6 +1151,8 @@
     "dnd": "免打扰"
   },
   "topbar": {
+    "back": "返回",
+    "backHint": "返回上一页",
     "statusIdle": "已就绪",
     "statusWorking": "AI 工作中…",
     "statusConnecting": "连接中…",
