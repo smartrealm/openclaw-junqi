@@ -46,6 +46,9 @@ function childStoragePath(parent: string): string {
 export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProps) {
   const { t } = useTranslation();
   const checkedRef = useRef(false);
+  const mountedRef = useRef(false);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const [status, setStatus] = useState<StorageSetupStatus | null>(null);
   const [targetDir, setTargetDir] = useState('');
   const [migrateExisting, setMigrateExisting] = useState(true);
@@ -55,25 +58,35 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (checkedRef.current) return;
-    checkedRef.current = true;
-    if (!(window as any).__TAURI_INTERNALS__) {
-      onReady({ createdFresh: false });
-      return;
+    mountedRef.current = true;
+    if (!checkedRef.current) {
+      checkedRef.current = true;
+      if (!(window as any).__TAURI_INTERNALS__) {
+        onReadyRef.current({ createdFresh: false });
+      } else {
+        void invoke<StorageSetupStatus>('get_storage_setup_status')
+          .then((result) => {
+            if (!mountedRef.current) return;
+            if (result.configured) {
+              onReadyRef.current({ createdFresh: false });
+              return;
+            }
+            setStatus(result);
+            setTargetDir(result.legacyDir);
+            setMigrateExisting(result.legacyExists);
+          })
+          .catch((cause) => {
+            if (mountedRef.current) setError(String(cause));
+          })
+          .finally(() => {
+            if (mountedRef.current) setLoading(false);
+          });
+      }
     }
-    void invoke<StorageSetupStatus>('get_storage_setup_status')
-      .then((result) => {
-        if (result.configured) {
-          onReady({ createdFresh: false });
-          return;
-        }
-        setStatus(result);
-        setTargetDir(result.legacyDir);
-        setMigrateExisting(result.legacyExists);
-      })
-      .catch((cause) => setError(String(cause)))
-      .finally(() => setLoading(false));
-  }, [onReady]);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +115,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
       multiple: false,
       title: t('storage.chooseParent', '选择 OpenClaw 数据所在文件夹'),
     });
+    if (!mountedRef.current) return;
     if (typeof selected !== 'string') return;
     setTargetDir(childStoragePath(selected));
     setMigrateExisting(Boolean(status?.legacyExists));
@@ -123,15 +137,16 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
         targetDir,
         migrateExisting: !usingLegacy && status.legacyExists && migrateExisting,
       });
-      onReady({
+      if (!mountedRef.current) return;
+      onReadyRef.current({
         createdFresh: !usingLegacy && (!status.legacyExists || !migrateExisting),
       });
     } catch (cause) {
-      setError(String(cause));
+      if (mountedRef.current) setError(String(cause));
     } finally {
-      setApplying(false);
+      if (mountedRef.current) setApplying(false);
     }
-  }, [applying, migrateExisting, onReady, status, t, targetDir, usingLegacy]);
+  }, [applying, migrateExisting, status, t, targetDir, usingLegacy]);
 
   if (loading) {
     return (
@@ -180,7 +195,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
       title={t('storage.title', '选择 OpenClaw 数据位置')}
       subtitle={t('storage.subtitle', '配置、会话、认证、工作区和 JunQi 管理的运行时将使用此位置。')}
       logs={logs}
-      previousAction={{ onClick: onBack }}
+      previousAction={{ onClick: onBack, disabled: applying }}
       nextAction={{
         label: applying ? progress?.message || t('storage.preparing', '正在准备新存储位置…') : actionLabel,
         onClick: () => void applyStorage(),

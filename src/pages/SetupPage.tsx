@@ -295,7 +295,9 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
             currentVersion={flow.openclawStatus.version}
             onUpdated={async () => {
               const refreshed = await flow.refreshRuntime();
-              if (refreshed.gatewayRunning) navigateSetup("ready");
+              if (refreshed.gatewayRunning) {
+                navigateSetup(flow.needsOnboarding ? "configure-openclaw" : "ready");
+              }
             }}
           />
         )}
@@ -340,25 +342,31 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
         <div
           className={clsx(
             "flex min-h-[168px] flex-col rounded-lg border border-aegis-border bg-aegis-surface/50 p-5 text-left transition-colors",
-            dockerAvailable ? "cursor-pointer hover:border-aegis-primary hover:bg-aegis-primary/5" : "opacity-80",
+            dockerAvailable ? "hover:border-aegis-primary hover:bg-aegis-primary/5 focus-within:border-aegis-primary" : "opacity-80",
           )}
-          onClick={() => dockerAvailable && flow.selectMode("docker")}
         >
-          <div className="mb-4 flex items-center gap-3">
-            <div className={clsx("rounded-lg p-2", dockerAvailable ? "bg-aegis-success/10 text-aegis-success" : "bg-aegis-text-dim/10 text-aegis-text-dim")}>
-              <Container size={18} />
+          <button
+            type="button"
+            disabled={!dockerAvailable}
+            onClick={() => flow.selectMode("docker")}
+            className="flex flex-1 flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 disabled:cursor-not-allowed"
+          >
+            <div className="mb-4 flex items-center gap-3">
+              <div className={clsx("rounded-lg p-2", dockerAvailable ? "bg-aegis-success/10 text-aegis-success" : "bg-aegis-text-dim/10 text-aegis-text-dim")}>
+                <Container size={18} />
+              </div>
+              <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeDocker")}</h3>
             </div>
-            <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeDocker")}</h3>
-          </div>
-          <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeDockerDesc")}</p>
-          <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", dockerAvailable ? "text-aegis-success" : "text-aegis-danger")}>
-            {flow.checkingDocker ? <RefreshCw size={13} className="animate-spin" /> : dockerAvailable ? <Check size={13} /> : <X size={13} />}
-            <span>{dockerStatusText}</span>
-          </div>
+            <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeDockerDesc")}</p>
+            <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", dockerAvailable ? "text-aegis-success" : "text-aegis-danger")}>
+              {flow.checkingDocker ? <RefreshCw size={13} className="animate-spin" /> : dockerAvailable ? <Check size={13} /> : <X size={13} />}
+              <span>{dockerStatusText}</span>
+            </div>
+          </button>
           {!dockerAvailable && !flow.checkingDocker && (
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); void flow.detectDocker(); }}
+              onClick={() => void flow.detectDocker()}
               className="mt-3 inline-flex items-center gap-1.5 self-start rounded-md border border-aegis-border px-2.5 py-1.5 text-[11px] text-aegis-text-secondary hover:bg-aegis-surface"
             >
               <RefreshCw size={12} />
@@ -528,7 +536,6 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
 function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const navigateSetup = useSetupNavigation();
   const doneCount = flow.steps.filter((s) => s.status === "done").length;
   const total = flow.steps.length || doneCount || 1;
 
@@ -538,7 +545,6 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}
-      previousAction={{ onClick: () => navigateSetup("install-complete") }}
       nextAction={{ label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }}
     >
       <div className="flex flex-col items-center gap-6 py-5 text-center">
