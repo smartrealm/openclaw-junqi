@@ -257,7 +257,9 @@ export function MessageInput() {
         st.clearMessages(activeSessionKey);
         gateway.call('sessions.reset', { sessionKey: activeSessionKey }).catch(() => {});
       } else if (cmd.localAction === 'compress') {
-        window.dispatchEvent(new CustomEvent('aegis:compress-session'));
+        void gateway.compactSession(activeSessionKey).catch((error) => {
+          debugError('gateway', '[Chat] Session compaction failed:', error);
+        });
       } else if (cmd.localAction === 'new') {
         window.dispatchEvent(new Event('aegis:open-new-session-picker'));
       }

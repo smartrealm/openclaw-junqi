@@ -76,6 +76,13 @@ export const gateway = {
     return connection.request('chat.history', { sessionKey, limit }, { timeoutMs });
   },
   async abortChat(sessionKey = 'agent:main:main') { return connection.request('chat.abort', { sessionKey }); },
+  async compactSession(sessionKey = 'agent:main:main') {
+    return connection.request('chat.send', {
+      sessionKey,
+      message: '/compact',
+      idempotencyKey: `aegis-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    });
+  },
 
   // Session Lifecycle
   async deleteSession(sessionKey: string, deleteTranscript = true) {

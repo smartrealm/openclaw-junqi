@@ -17,6 +17,8 @@ import { changeLanguage } from '@/i18n';
 import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
+import { gateway } from '@/services/gateway';
+import { useNotificationStore } from '@/stores/notificationStore';
 import clsx from 'clsx';
 
 const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
@@ -89,7 +91,20 @@ export function CommandPalette() {
       window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: "What's on my calendar today and tomorrow?", autoSend: true } }));
     }},
     { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
-      window.dispatchEvent(new CustomEvent('aegis:compress-session'));
+      const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
+      void gateway.compactSession(sessionKey).then(() => {
+        useNotificationStore.getState().addToast(
+          'task_complete',
+          t('dashboard.compactQueuedTitle', 'Compaction requested'),
+          t('dashboard.compactQueuedBody', 'OpenClaw is compacting the current session context.'),
+        );
+      }).catch((error) => {
+        useNotificationStore.getState().addToast(
+          'error',
+          t('dashboard.compactFailedTitle', 'Compaction failed'),
+          String(error),
+        );
+      });
     }},
 
     // Agent launchers (kooky ⌘P pattern: type to filter, Enter to launch)

@@ -8,6 +8,7 @@ import { Loader2, Pin, PinOff } from 'lucide-react';
 import clsx from 'clsx';
 import { themeColorVar } from '@/utils/theme-colors';
 import { Badge, StatusDot } from '@/components/shared/badge';
+import i18n from '@/i18n';
 
 // ── Format helpers (shared with index.tsx) ──────────────────
 export const fmtCost = (n: number) => `$${n.toFixed(2)}`;
@@ -18,18 +19,20 @@ export const fmtCostShort = (n: number) =>
 export const timeAgo = (ts?: string) => {
   if (!ts) return '—';
   const diff = Date.now() - new Date(ts).getTime();
-  if (diff < 60_000)     return 'now';
-  if (diff < 3_600_000)  return `${Math.floor(diff / 60_000)}m`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
-  return `${Math.floor(diff / 86_400_000)}d`;
+  if (diff < 60_000) return i18n.t('dashboard.timeNow', { defaultValue: 'now' });
+  if (diff < 3_600_000) return i18n.t('dashboard.timeMinutes', { n: Math.floor(diff / 60_000), defaultValue: '{{n}}m' });
+  if (diff < 86_400_000) return i18n.t('dashboard.timeHours', { n: Math.floor(diff / 3_600_000), defaultValue: '{{n}}h' });
+  return i18n.t('dashboard.timeDays', { n: Math.floor(diff / 86_400_000), defaultValue: '{{n}}d' });
 };
 
 export const fmtUptime = (ms: number) => {
-  if (ms < 60_000) return '<1m';
+  if (ms < 60_000) return i18n.t('dashboard.uptimeUnderMinute', { defaultValue: '<1m' });
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
-  if (h === 0) return `${m}m`;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (h === 0) return i18n.t('dashboard.uptimeMinutes', { m, defaultValue: '{{m}}m' });
+  return m > 0
+    ? i18n.t('dashboard.uptimeHoursMinutes', { h, m, defaultValue: '{{h}}h {{m}}m' })
+    : i18n.t('dashboard.uptimeHours', { h, defaultValue: '{{h}}h' });
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -77,7 +80,7 @@ export function ContextRing({ percentage }: { percentage: number }) {
 // ═══════════════════════════════════════════════════════════
 // QuickAction — Action button with hover glow
 // ═══════════════════════════════════════════════════════════
-export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, onClick, loading }: {
+export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, onClick, loading, disabled }: {
   icon: React.ElementType;
   label: string;
   glowColor: string;
@@ -85,17 +88,18 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
   iconColor: string;
   onClick: () => void;
   loading?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      disabled={loading}
+      disabled={loading || disabled}
       className={clsx(
-        'group relative flex flex-col items-center gap-2 p-3.5 rounded-xl',
+        'relative flex flex-col items-center gap-2 p-3.5 rounded-xl',
         'border border-[rgb(var(--aegis-overlay)/0.05)] bg-[rgb(var(--aegis-overlay)/0.015)]',
         'transition-all duration-250 overflow-hidden',
-        'hover:border-[rgb(var(--aegis-overlay)/0.12)] hover:-translate-y-0.5 active:translate-y-0',
-        loading && 'opacity-50 pointer-events-none'
+        (loading || disabled) && 'opacity-45 cursor-not-allowed',
+        !loading && !disabled && 'group hover:border-[rgb(var(--aegis-overlay)/0.12)] hover:-translate-y-0.5 active:translate-y-0'
       )}
     >
       {/* Radial hover glow */}
@@ -113,7 +117,7 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
           <Icon size={18} style={{ color: iconColor }} />
         </div>
       )}
-      <span className="text-[10.5px] font-medium text-aegis-text-muted leading-tight text-center relative z-10 group-hover:text-aegis-text transition-colors">
+      <span className="text-[12px] font-medium text-aegis-text-muted leading-tight text-center relative z-10 group-hover:text-aegis-text transition-colors">
         {label}
       </span>
     </button>
@@ -157,14 +161,14 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
           <Icon size={13} style={{ color: avatarColor }} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[11px] font-semibold text-aegis-text truncate leading-tight">{name}</div>
-          <div className="text-[9px] text-aegis-text-muted font-mono flex gap-1.5">
+          <div className="text-[12px] font-semibold text-aegis-text truncate leading-tight">{name}</div>
+          <div className="text-[10px] text-aegis-text-muted font-mono flex gap-1.5">
             <span className="truncate max-w-[80px]">{model}</span>
             <span className="opacity-60">{detail}</span>
           </div>
         </div>
         <span className={clsx(
-          'text-[10px] font-bold font-mono flex-shrink-0',
+          'text-[11px] font-bold font-mono tabular-nums flex-shrink-0',
           isMain ? 'text-aegis-primary' : 'text-aegis-text-dim'
         )}>{tokens}</span>
       </button>
@@ -199,12 +203,8 @@ export function FeedItem({ color, glowColor, text, time, isLast, agentName, onCl
   agentName?: string;
   onClick?: () => void;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full text-left flex gap-2.5 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors animate-slide-in-right"
-    >
+  const content = (
+    <>
       <div className="flex flex-col items-center pt-1.5">
         <div
           className="w-[7px] h-[7px] rounded-full flex-shrink-0"
@@ -215,14 +215,21 @@ export function FeedItem({ color, glowColor, text, time, isLast, agentName, onCl
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] text-aegis-text leading-[1.4]">{text}</div>
+        <div className="text-[12px] text-aegis-text leading-[1.45]">{text}</div>
         <div className="flex items-center gap-2 mt-0.5">
           {agentName && (
-            <span className="text-[9px] font-medium text-aegis-accent truncate max-w-[100px]">{agentName}</span>
+            <span className="text-[10px] font-medium text-aegis-accent truncate max-w-[100px]">{agentName}</span>
           )}
-          <span className="text-[9px] text-aegis-text-muted font-mono">{time}</span>
+          <span className="text-[10px] text-aegis-text-muted font-mono tabular-nums">{time}</span>
         </div>
       </div>
+    </>
+  );
+  const rowClass = 'w-full text-left flex gap-2.5 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 animate-slide-in-right';
+  if (!onClick) return <div className={rowClass}>{content}</div>;
+  return (
+    <button type="button" onClick={onClick} className={`${rowClass} hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors`}>
+      {content}
     </button>
   );
 }
@@ -230,7 +237,7 @@ export function FeedItem({ color, glowColor, text, time, isLast, agentName, onCl
 // ═══════════════════════════════════════════════════════════
 // AgentItem — Agent row with relative token bar
 // ═══════════════════════════════════════════════════════════
-export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, sessions }: {
+export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, sessions, running }: {
   emoji: React.ReactNode;
   name: string;
   model: string;
@@ -238,23 +245,23 @@ export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, s
   tokenCount: number;
   maxTokens: number;
   sessions?: number;
+  running?: boolean;
 }) {
   const barPct = maxTokens > 0 ? Math.min(100, (tokenCount / maxTokens) * 100) : 0;
-  const tone = barPct > 70 ? 'err' : barPct > 40 ? 'warn' : 'info';
-  const colorName = tone === 'err' ? 'danger' : tone === 'warn' ? 'warning' : 'primary';
-  const barColor = themeColorVar(colorName);
-  const barShadow = themeColorVar(colorName, 0.25);
+  const tone = running ? 'running' : 'neutral';
+  const barColor = themeColorVar('primary');
+  const barShadow = themeColorVar('primary', 0.2);
 
   return (
     <div className="flex items-center gap-3 py-2.5 border-b border-[rgb(var(--aegis-overlay)/0.04)] last:border-b-0">
       <span className="text-[18px] flex-shrink-0 leading-none w-6 text-center relative">
         {emoji}
-        <StatusDot tone={tone} size="sm" className="absolute -right-1 -bottom-0.5" />
+        <StatusDot tone={tone} live={running} size="sm" className="absolute -right-1 -bottom-0.5" />
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 mb-1">
-          <span className="text-[12px] font-semibold text-aegis-text truncate">{name}</span>
-          <Badge tone={tone} size="sm" variant="soft" className="font-mono flex-shrink-0">{tokens}</Badge>
+          <span className="text-[13px] font-semibold text-aegis-text truncate">{name}</span>
+          <Badge tone={tone} size="sm" variant="soft" className="font-mono tabular-nums flex-shrink-0">{tokens}</Badge>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex-1 h-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] overflow-hidden">
@@ -263,7 +270,7 @@ export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, s
               style={{ width: `${barPct}%`, background: barColor, boxShadow: `0 0 4px ${barShadow}` }}
             />
           </div>
-          <span className="text-[9px] text-aegis-text-muted font-mono flex-shrink-0 truncate max-w-[96px]">{model}</span>
+          <span className="text-[10px] text-aegis-text-muted font-mono flex-shrink-0 truncate max-w-[112px]">{model}</span>
           {sessions && sessions > 1 && <Badge tone="info" size="sm" variant="outline" className="font-mono flex-shrink-0">×{sessions}</Badge>}
         </div>
       </div>
