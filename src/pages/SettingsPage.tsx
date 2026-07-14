@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X, Sparkles, FolderOpen, TerminalSquare, PanelTop,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -32,14 +32,15 @@ import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';
+import { MaintenanceCenter } from '@/components/settings/MaintenanceCenter';
 import { TerminalSettingsPanel } from '@/components/settings/TerminalSettingsPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 
-type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'pet' | 'connect' | 'storage' | 'about';
-const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'pet', 'connect', 'storage', 'about'];
+type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
+const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'pet', 'connect', 'storage', 'maintenance', 'about'];
 
 export function SettingsPageFull() {
   const { t, i18n } = useTranslation();
@@ -202,24 +203,6 @@ export function SettingsPageFull() {
   // The pet tab is the ownership boundary for loading package metadata.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
-
-  // Doctor output modal — runs `openclaw doctor [--fix]` and shows the result.
-  const [doctorOutput, setDoctorOutput] = useState<string | null>(null);
-  const [doctorRunning, setDoctorRunning] = useState<null | 'check' | 'fix'>(null);
-
-  const runDoctor = async (mode: 'check' | 'fix') => {
-    if (doctorRunning) return;
-    setDoctorRunning(mode);
-    try {
-      const cmd = mode === 'fix' ? 'openclaw_doctor_repair' : 'run_doctor';
-      const out = await invoke<string>(cmd);
-      setDoctorOutput(out || '(no output)');
-    } catch (err: any) {
-      setDoctorOutput(`Error: ${err?.message || err || 'unknown'}`);
-    } finally {
-      setDoctorRunning(null);
-    }
-  };
 
   const [managedFilesRefreshing, setManagedFilesRefreshing] = useState(false);
   const [attachmentsStatus, setAttachmentsStatus] = useState<string>('');
@@ -490,6 +473,7 @@ export function SettingsPageFull() {
           ['pet', t('settings.tab.pet', '萌宠'), PawPrint],
           ['connect', t('settings.tab.connect', '连接'), Wifi],
           ['storage', t('settings.tab.storage', '存储'), HardDrive],
+          ['maintenance', t('settings.tab.maintenance', '检修'), Wrench],
           ['about', t('settings.tab.about', '关于'), Info],
         ] as const).map(([key, label, Icon]) => (
           <button key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => selectTab(key)}
@@ -507,6 +491,8 @@ export function SettingsPageFull() {
       <div className="space-y-6">
 
       {activeTab === 'terminal' && <TerminalSettingsPanel />}
+
+      {activeTab === 'maintenance' && <MaintenanceCenter />}
 
       {activeTab === 'appearance' && (
         <>
@@ -1249,21 +1235,11 @@ export function SettingsPageFull() {
           </button>
 
           <button
-            onClick={() => runDoctor('check')}
-            disabled={doctorRunning !== null}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors disabled:opacity-50"
+            onClick={() => selectTab('maintenance')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
           >
-            {doctorRunning === 'check' ? <Loader2 size={12} className="animate-spin" /> : <Stethoscope size={12} />}
-            {t('settings.runDoctor', '运行诊断')}
-          </button>
-          <button
-            onClick={() => runDoctor('fix')}
-            disabled={doctorRunning !== null}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors disabled:opacity-50"
-            title={t('settings.runDoctorFixHint', '运行 openclaw doctor --fix 自动修复')}
-          >
-            {doctorRunning === 'fix' ? <Loader2 size={12} className="animate-spin" /> : <HeartPulse size={12} />}
-            {t('settings.runDoctorFix', '自动修复')}
+            <Wrench size={12} />
+            {t('settings.openMaintenance', '打开检修')}
           </button>
 
           {window.aegis?.logs && (
@@ -1298,48 +1274,6 @@ export function SettingsPageFull() {
         )}
       </GlassCard>
         </>
-      )}
-
-      {/* Doctor output modal — shows stdout/stderr of `openclaw doctor [--fix]` */}
-      {doctorOutput !== null && (
-        <div
-          className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={() => setDoctorOutput(null)}
-        >
-          <div
-            className="bg-aegis-card-solid border border-aegis-border rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col shadow-lg"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="px-4 py-3 border-b border-aegis-border flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ScrollText size={14} className="text-aegis-primary" />
-                <h3 className="text-sm font-mono text-aegis-text">
-                  {t('settings.doctorOutput', '诊断输出')}
-                </h3>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => {
-                    void navigator.clipboard.writeText(doctorOutput);
-                  }}
-                  className="p-1.5 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/40"
-                  title="Copy"
-                >
-                  <Copy size={13} />
-                </button>
-                <button
-                  onClick={() => setDoctorOutput(null)}
-                  className="p-1.5 rounded text-aegis-text-dim hover:text-aegis-text hover:bg-aegis-hover/40"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-            <pre className="flex-1 overflow-auto p-4 font-mono text-[11.5px] leading-relaxed text-aegis-text whitespace-pre-wrap break-words">
-              {doctorOutput}
-            </pre>
-          </div>
-        </div>
       )}
 
       </div>

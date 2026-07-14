@@ -54,6 +54,7 @@ pub fn run() {
             commands::provider_oauth::start_provider_oauth,
             commands::gateway::get_gateway_token,
             commands::gateway::run_doctor,
+            commands::maintenance::run_maintenance_scan,
             // System
             commands::system::get_platform_info,
             commands::system::check_node,

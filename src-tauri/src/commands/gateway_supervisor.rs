@@ -95,6 +95,7 @@ pub async fn openclaw_doctor_repair(
     app: AppHandle,
     state: tauri::State<'_, GatewayProcess>,
 ) -> Result<bool, String> {
+    let _operation_guard = crate::commands::maintenance::acquire_operation_guard().await;
     push_log(
         &state.logs,
         LogSource::Lifecycle,
@@ -117,12 +118,15 @@ pub async fn openclaw_doctor_repair(
 
     let mut cmd = tokio::process::Command::new(&openclaw);
     cmd.args(["doctor", "--fix", "--yes", "--non-interactive"])
+        .env("PATH", crate::commands::system::openclaw_search_path())
         .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
         .env("OPENCLAW_CONFIG_PATH", paths::config_path())
         .env("OPENCLAW_NO_RESPAWN", "1")
+        .env("NO_COLOR", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+    crate::platform::configure_background_command(&mut cmd);
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
