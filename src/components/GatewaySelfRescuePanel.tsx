@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
 import { AlertCircle, Bot, CheckCircle2, FileText, HeartPulse, Loader2, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { GatewayRescueChat } from './GatewayRescueChat';
+import {
+  diagnoseGatewayRecovery,
+  runOpenClawRepair,
+  useOpenClawRepairing,
+  type GatewayRecoveryRecommendation,
+} from '@/services/gateway/openclawRepair';
 
 export interface GatewaySelfRescuePanelProps {
   connected?: boolean;
@@ -41,8 +46,23 @@ export function GatewaySelfRescuePanel({
   const { t } = useTranslation();
   const [doctorFixState, setDoctorFixState] = useState<DoctorFixState>('idle');
   const [showAiRescue, setShowAiRescue] = useState(false);
+  const [recommendation, setRecommendation] = useState<GatewayRecoveryRecommendation | null>(null);
+  const globalRepairing = useOpenClawRepairing();
 
-  const doctorFixBusy = doctorFixState === 'running';
+  useEffect(() => {
+    let active = true;
+    const diagnostic = error || progressMessage;
+    if (!diagnostic) {
+      setRecommendation(null);
+      return () => { active = false; };
+    }
+    void diagnoseGatewayRecovery(diagnostic)
+      .then((value) => { if (active) setRecommendation(value); })
+      .catch(() => { if (active) setRecommendation(null); });
+    return () => { active = false; };
+  }, [error, progressMessage]);
+
+  const doctorFixBusy = doctorFixState === 'running' || globalRepairing;
   const actionDisabled = busy || doctorFixBusy;
   const statusLabel = busy
     ? t('gatewaySelfRescue.statusBusy', '处理中')
@@ -61,7 +81,7 @@ export function GatewaySelfRescuePanel({
     if (actionDisabled) return;
     setDoctorFixState('running');
     try {
-      const repaired = await invoke<boolean>('openclaw_doctor_repair');
+      const repaired = await runOpenClawRepair();
       setDoctorFixState(repaired ? 'success' : 'failed');
       if (repaired) onPrimaryAction();
     } catch {
@@ -85,7 +105,7 @@ export function GatewaySelfRescuePanel({
               <span>{t('gatewaySelfRescue.title', 'Gateway 自救中心')}</span>
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-aegis-text-muted">
-              {t('gatewaySelfRescue.subtitle', '统一处理 Gateway 重连、doctor 修复和 AI 诊断。')}
+              {t('gatewaySelfRescue.subtitle', '统一处理 Gateway 重连、官方修复和 AI 诊断。')}
             </p>
           </div>
           <span className={clsx(
@@ -130,17 +150,29 @@ export function GatewaySelfRescuePanel({
       </div>
 
       <div className="space-y-2 px-3.5 py-3">
+        {recommendation && (
+          <div className="flex items-center justify-between rounded-lg border border-aegis-border/60 bg-white/[0.02] px-3 py-2 text-[10.5px]">
+            <span className="text-aegis-text-muted">{t('gatewaySelfRescue.recommendation', '建议操作')}</span>
+            <span className="font-semibold text-aegis-warning">
+              {recommendation === 'retry'
+                ? t('gatewaySelfRescue.recommendRetry', '重试 Gateway')
+                : recommendation === 'inspect_config'
+                  ? t('gatewaySelfRescue.recommendConfig', '检查配置')
+                  : t('gatewaySelfRescue.recommendRepair', '运行官方修复')}
+            </span>
+          </div>
+        )}
         <button
           onClick={onPrimaryAction}
-          disabled={busy}
+          disabled={actionDisabled}
           className={clsx(
             'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors',
-            busy
+            actionDisabled
               ? 'cursor-not-allowed border-aegis-warning/25 bg-aegis-warning/8 text-aegis-warning'
               : 'border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary hover:bg-aegis-primary/16',
           )}
         >
-          {busy ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+          {actionDisabled ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
           {primaryActionLabel}
         </button>
 
@@ -171,7 +203,7 @@ export function GatewaySelfRescuePanel({
         <button
           onClick={() => void runDoctorFix()}
           disabled={actionDisabled}
-          title={t('gatewaySelfRescue.doctorFixHint', '运行 openclaw doctor --fix，自动修复 OpenClaw 环境、配置与运行时问题。')}
+          title={t('gatewaySelfRescue.doctorFixHint', '运行 openclaw update repair，修复 OpenClaw 环境、配置和插件状态。')}
           className={clsx(
             'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors',
             doctorFixState === 'success' && 'border-aegis-success/30 bg-aegis-success/10 text-aegis-success',

@@ -28,6 +28,7 @@ import { normalizeSetupProgressPayload } from "./setupProgressEvents";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { gateway } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
+import { runOpenClawRepair } from "@/services/gateway/openclawRepair";
 import { defaultGatewayWsUrl } from "@/config/runtimeDefaults";
 import {
   OpenClawWizardClient,
@@ -135,6 +136,7 @@ export interface SetupFlow {
   needsOnboarding: boolean;
   repairing: boolean;
   startGateway: () => Promise<void>;
+  retryGateway: () => Promise<void>;
   repairAndRetry: () => Promise<void>;
   submitWizardStep: (stepId: string, value?: unknown) => Promise<void>;
   retryWizard: () => Promise<void>;
@@ -785,7 +787,7 @@ export function useSetupFlow(
 
   const repairAndRetry = useCallback(async () => {
     if (repairing) return;
-    cancelActiveRun();
+    const runId = beginRun();
     setRepairing(true);
     setSetupError(null);
     patchStep("gateway", "running", t("setup.repairingGateway", "正在修复 OpenClaw 和插件状态…"));
@@ -797,7 +799,8 @@ export function useSetupFlow(
       level: "info",
     });
     try {
-      await invoke<string>("repair_openclaw_for_setup");
+      await runOpenClawRepair();
+      if (!isRunActive(runId)) return;
       appendSetupLog({
         source: "setup",
         step: "gateway",
@@ -806,6 +809,7 @@ export function useSetupFlow(
       });
       await startGatewayAction();
     } catch (error) {
+      if (!isRunActive(runId)) return;
       const message = error instanceof Error ? error.message : String(error);
       patchStep("gateway", "error", message);
       appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
@@ -815,7 +819,7 @@ export function useSetupFlow(
     } finally {
       setRepairing(false);
     }
-  }, [repairing, cancelActiveRun, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, setSetupStep]);
+  }, [repairing, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, setSetupStep]);
 
   const goBack = useCallback(() => {
     void wizardClientRef.current?.cancel().catch(() => {});
@@ -885,6 +889,7 @@ export function useSetupFlow(
     needsOnboarding,
     repairing,
     startGateway: startGatewayAction,
+    retryGateway: startGatewayAction,
     repairAndRetry,
     submitWizardStep,
     retryWizard: startOfficialOnboarding,

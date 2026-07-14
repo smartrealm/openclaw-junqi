@@ -307,29 +307,7 @@ fn should_retry_dry_run_with_fallback(result: &Result<Output, String>) -> bool {
         .unwrap_or(false)
 }
 
-fn redact_diagnostic_line(line: &str) -> String {
-    let lower = line.to_ascii_lowercase();
-    if [
-        "api_key",
-        "apikey",
-        "authorization",
-        "credential",
-        "password",
-        "secret",
-        "token",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle))
-    {
-        return "[sensitive diagnostic redacted]".to_string();
-    }
-
-    let mut value = line.trim().chars().take(600).collect::<String>();
-    if line.trim().chars().count() > 600 {
-        value.push_str("...");
-    }
-    value
-}
+use crate::commands::diagnostic_output::sanitize_diagnostic_line as redact_diagnostic_line;
 
 fn output_diagnostic(output: &Output) -> Option<String> {
     let stderr = String::from_utf8_lossy(&output.stderr);

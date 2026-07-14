@@ -91,14 +91,14 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
 });
 
 test('setup self-rescue commands are registered and use official plugin convergence repair', () => {
-  const setup = source('src-tauri/src/commands/setup.rs');
+  const repair = source('src-tauri/src/commands/openclaw_repair.rs');
   const lib = source('src-tauri/src/lib.rs');
-  assert.match(setup, /pub async fn repair_openclaw_for_setup/);
-  assert.match(setup, /"update",\s*"repair"/);
-  assert.match(setup, /terminate_npm_process_tree/);
-  assert.match(setup, /operation_gate\.lock_owned\(\)\.await/);
-  assert.match(lib, /commands::setup::repair_openclaw_for_setup/);
-  assert.match(lib, /commands::gateway_supervisor::openclaw_doctor_repair/);
+  assert.match(repair, /pub async fn repair_openclaw/);
+  assert.match(repair, /"update",\s*"repair"/);
+  assert.match(repair, /terminate_process_tree/);
+  assert.match(repair, /try_lock_owned\(\)/);
+  assert.match(lib, /commands::openclaw_repair::repair_openclaw/);
+  assert.doesNotMatch(lib, /repair_openclaw_for_setup|openclaw_doctor_repair|run_maintenance_repair/);
 });
 
 test('BUG-GSC03 manager has one state transition and emission core', () => {
@@ -348,7 +348,8 @@ test('BUG-06 stalled boot exposes the complete self-rescue center', () => {
   assert.match(boot, /onReconnect=\{recovery\.onReconnect\}/);
   assert.match(boot, /onOpenLogs=\{recovery\.onOpenLogs\}/);
   assert.match(boot, /logs=\{recovery\.logs\.slice\(-40\)\.join/);
-  assert.match(panel, /openclaw_doctor_repair/);
+  assert.match(panel, /runOpenClawRepair/);
+  assert.match(panel, /disabled=\{actionDisabled\}/);
   assert.match(panel, /<GatewayRescueChat/);
 });
 
