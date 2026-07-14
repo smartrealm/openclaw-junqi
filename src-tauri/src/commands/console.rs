@@ -6,7 +6,7 @@
 //! button via an initialization script (the JS `WebviewWindow` API can't inject
 //! scripts, so the window is built here in Rust).
 
-use crate::paths;
+use crate::{paths, window_adaptation};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const CONTROL_UI_LABEL: &str = "control-ui";
@@ -257,13 +257,17 @@ pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(&app, CONTROL_UI_LABEL, WebviewUrl::External(target))
+    let window = WebviewWindowBuilder::new(&app, CONTROL_UI_LABEL, WebviewUrl::External(target))
         .title("OpenClaw Console")
         .inner_size(1280.0, 860.0)
         .min_inner_size(800.0, 600.0)
         .initialization_script(RETURN_BUTTON_SCRIPT)
         .build()
         .map_err(|e| format!("Failed to open Control UI: {}", e))?;
+
+    // Control UI is an independent native window. Size it against its current
+    // monitor's usable work area and keep it reachable across monitor/DPI changes.
+    window_adaptation::initialize_transient(window);
 
     Ok(())
 }
