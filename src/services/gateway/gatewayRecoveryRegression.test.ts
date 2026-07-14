@@ -251,6 +251,16 @@ test('BUG-04 restart lifecycle has explicit synchronous start and finish events'
   assert.match(adapter, /handleRestartFinished[\s\S]*requestImmediatePoll/);
 });
 
+test('BUG-04 late restart progress cannot re-lock recovery controls', () => {
+  const adapter = source('src/api/tauri-adapter.ts');
+  const progressHandler = adapter.slice(
+    adapter.indexOf('const handleRestartProgress'),
+    adapter.indexOf('const handleRestartStarted'),
+  );
+  assert.doesNotMatch(progressHandler, /restartActive\s*=\s*true/);
+  assert.match(progressHandler, /retrying:\s*restartActive/);
+});
+
 test('BUG-GL07 restart CLI is terminated before managed fallback on abnormal wait', () => {
   const rust = source('src-tauri/src/commands/gateway.rs');
   const waitBranches = rust.slice(
@@ -332,6 +342,8 @@ test('BUG-GL11 offline recovery shares the App route and exposes determinate pro
   assert.match(offline, /useSetupProgress\('gateway'\)/);
   assert.match(offline, /aegis:manual-reconnect/);
   assert.match(offline, /role="progressbar"/);
+  assert.match(offline, /<GatewaySelfRescuePanel/);
+  assert.match(offline, /action:\s*'reconnect'\s*\|\s*'restart'/);
   assert.doesNotMatch(offline, /gateway\?\.ensureRunning/);
   assert.match(adapter, /gatewayRestartProgressFromLog/);
   assert.doesNotMatch(adapter.slice(adapter.indexOf('consoleUi:'), adapter.indexOf('\n  logs:')), /plugin-shell/);
@@ -351,6 +363,11 @@ test('BUG-06 stalled boot exposes the complete self-rescue center', () => {
   assert.match(panel, /runOpenClawRepair/);
   assert.match(panel, /disabled=\{actionDisabled\}/);
   assert.match(panel, /<GatewayRescueChat/);
+});
+
+test('BUG-06 recovery logs remain reachable while Gateway is offline', () => {
+  const routes = source('src/utils/gatewayOptionalRoutes.ts');
+  assert.match(routes, /['"]\/logs['"]/);
 });
 
 test('BUG-07 WebSocket retry has one owner, deadline, and real UI attempt events', () => {

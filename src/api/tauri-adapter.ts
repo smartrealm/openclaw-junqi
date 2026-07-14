@@ -390,9 +390,12 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
 
       const handleRestartProgress = (event: any) => {
         const line = String(event.payload ?? '');
-        restartActive = true;
         appendLogLine(line);
-        cb({ running: false, ready: false, retrying: true, error: null, logs: lastLogs });
+        // Restart lifecycle is owned by the synchronous started/finished
+        // events. Tauri progress events can arrive after the command promise
+        // settles; treating a late log line as a new restart leaves recovery
+        // controls permanently disabled after a failed restart.
+        cb({ running: false, ready: false, retrying: restartActive, error: null, logs: lastLogs });
       };
 
       const handleRestartStarted = () => {

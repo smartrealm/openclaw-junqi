@@ -3,6 +3,7 @@ export const GATEWAY_OPTIONAL_PATHS = [
   '/terminal',
   '/welcome',
   '/config',
+  '/logs',
   '/openclaw-commands',
 ] as const;
 

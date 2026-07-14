@@ -5,11 +5,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, WifiOff, FileText, MonitorDot, RotateCw } from 'lucide-react';
+import { Loader2, WifiOff, MonitorDot } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useSetupProgress } from '@/hooks/useSetupProgress';
+import { GatewaySelfRescuePanel } from '@/components/GatewaySelfRescuePanel';
 
 export function OfflineOverlay() {
   const { t } = useTranslation();
@@ -66,11 +67,15 @@ export function OfflineOverlay() {
     try { window.location.hash = '#/logs'; } catch {}
   };
 
-  const requestRecovery = (source: 'offline' | 'control-ui', openControlUi = false) => {
+  const requestRecovery = (
+    source: 'offline' | 'control-ui',
+    openControlUi = false,
+    action: 'reconnect' | 'restart' = 'reconnect',
+  ) => {
     if (recoveryBusy && !openControlUi) return;
     setManualRecovery(true);
     window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
-      detail: { action: 'reconnect', source, openControlUi },
+      detail: { action, source, openControlUi },
     }));
   };
 
@@ -168,38 +173,37 @@ export function OfflineOverlay() {
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-2 flex-wrap">
+        <GatewaySelfRescuePanel
+          className="mt-5 text-left"
+          variant="full"
+          connected={connected}
+          busy={recoveryBusy}
+          progressMessage={showProgress ? progressMessage : null}
+          progressPercent={showProgress ? progressValue : null}
+          primaryActionLabel={recoveryBusy
+            ? t('gatewayError.actions.retrying', '正在重启…')
+            : t('boot.restartGateway', '重启 Gateway')}
+          onPrimaryAction={() => requestRecovery('offline', false, 'restart')}
+          onReconnect={() => requestRecovery('offline')}
+          onOpenLogs={openLogsPage}
+          error={lastError || (progressFailed ? progressMessage : undefined)}
+          logs={restartInfo.logs.slice(-40).join('\n')}
+        />
+
+        {window.aegis?.consoleUi && (
+          <div className="mt-2 flex justify-center">
             <button
-              onClick={() => requestRecovery('offline')}
+              onClick={() => void openControlUi()}
               disabled={recoveryBusy}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px]
                 text-aegis-text-dim hover:text-aegis-text
                 border border-aegis-border/20 hover:border-aegis-border/40 transition-colors
                 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <RotateCw size={11} /> {t('offline.retryGateway', '重新连接')}
+              <MonitorDot size={11} /> {t('settings.controlUi', 'Control UI')}
             </button>
-            <button
-              onClick={openLogsPage}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px]
-                text-aegis-text-dim hover:text-aegis-text
-                border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
-            >
-              <FileText size={11} /> {t('offline.viewLogs', '查看日志')}
-            </button>
-            {window.aegis?.consoleUi && (
-              <button
-                onClick={() => void openControlUi()}
-                disabled={recoveryBusy}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px]
-                  text-aegis-text-dim hover:text-aegis-text
-                  border border-aegis-border/20 hover:border-aegis-border/40 transition-colors
-                  disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <MonitorDot size={11} /> {t('settings.controlUi', 'Control UI')}
-              </button>
-            )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
