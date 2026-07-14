@@ -272,6 +272,8 @@ pub fn uninstall() -> Result<(), String> {
 mod tests {
     use super::*;
 
+    static STATUS_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     /// Override the hooks dir for testing — production code reads from
     /// `~/.nezha/hooks`, which we don't want to touch during unit tests.
     /// This test-only module sets a unique temp dir each time.
@@ -349,6 +351,7 @@ mod tests {
 
     #[test]
     fn cached_status_starts_uninstalled() {
+        let _guard = STATUS_TEST_LOCK.lock().expect("status test lock poisoned");
         // Reset to known state so prior tests (which mutate the global) don't
         // leak into this assertion.
         cache_status(HookInstallStatus::default());
@@ -359,6 +362,7 @@ mod tests {
 
     #[test]
     fn cache_status_round_trips_through_global() {
+        let _guard = STATUS_TEST_LOCK.lock().expect("status test lock poisoned");
         let injected = HookInstallStatus {
             script_installed: true,
             settings_linked: true,
@@ -377,6 +381,7 @@ mod tests {
 
     #[test]
     fn usable_for_returns_false_when_nothing_installed() {
+        let _guard = STATUS_TEST_LOCK.lock().expect("status test lock poisoned");
         cache_status(HookInstallStatus::default());
         assert!(!usable_for("claude"));
         assert!(!usable_for("codex"));
@@ -384,6 +389,7 @@ mod tests {
 
     #[test]
     fn usable_for_returns_true_after_install_marks_both() {
+        let _guard = STATUS_TEST_LOCK.lock().expect("status test lock poisoned");
         cache_status(HookInstallStatus {
             script_installed: true,
             settings_linked: true,
