@@ -44,11 +44,37 @@ export interface OpenclawUpdateResult {
   error: string | null;
 }
 
+export type MaintenanceSeverity = 'error' | 'warning' | 'info';
+export type MaintenanceCategory = 'config' | 'plugin' | 'mcp' | 'security' | 'gateway' | 'doctor';
+export interface MaintenanceFinding {
+  source: 'config' | 'doctor';
+  category: MaintenanceCategory;
+  severity: MaintenanceSeverity;
+  checkId: string | null;
+  message: string;
+  path: string | null;
+  requirement: string | null;
+  fixHint: string | null;
+}
+export interface MaintenanceReport {
+  healthy: boolean;
+  checkedAtMs: number;
+  configValid: boolean | null;
+  configPath: string | null;
+  doctorOk: boolean | null;
+  checksRun: number | null;
+  checksSkipped: number | null;
+  findings: MaintenanceFinding[];
+  scanErrors: string[];
+  summary: { errors: number; warnings: number; info: number };
+}
+
 export const checkNode = () => invoke<NodeStatus>("check_node");
 export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
 export const checkOpenclawUpdate = () => invoke<OpenclawUpdateStatus>("check_openclaw_update");
 export const updateOpenclaw = () => invoke<OpenclawUpdateResult>("update_openclaw");
+export const runMaintenanceScan = () => invoke<MaintenanceReport>("run_maintenance_scan");
 export const installNode = () => invoke<string>("install_node");
 export const installGit = () => invoke<string>("install_git");
 export const installOpenclaw = () => invoke<string>("install_openclaw");

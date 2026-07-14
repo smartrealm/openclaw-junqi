@@ -19,6 +19,7 @@ pub mod gateway_rescue;
 pub mod gateway_supervisor;
 pub mod git_neu;
 pub mod hooks;
+pub mod maintenance;
 pub mod managed_files;
 pub mod notification;
 pub mod npm_registry;
