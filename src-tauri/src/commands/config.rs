@@ -1,6 +1,59 @@
 use crate::paths;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+#[derive(Deserialize)]
+struct RuntimeDefaults {
+    gateway: GatewayRuntimeDefaults,
+}
+
+#[derive(Deserialize)]
+struct GatewayRuntimeDefaults {
+    host: String,
+    port: u16,
+}
+
+fn runtime_defaults() -> &'static RuntimeDefaults {
+    static DEFAULTS: OnceLock<RuntimeDefaults> = OnceLock::new();
+    DEFAULTS.get_or_init(|| {
+        let defaults: RuntimeDefaults = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../src/config/runtime-defaults.json"
+        )))
+        .expect("runtime-defaults.json must contain valid JSON");
+        assert!(
+            defaults.gateway.port > 0,
+            "runtime-defaults.json gateway.port must be a valid TCP port"
+        );
+        assert!(
+            defaults
+                .gateway
+                .host
+                .parse::<std::net::Ipv4Addr>()
+                .is_ok_and(|host| host.is_loopback()),
+            "runtime-defaults.json gateway.host must be an IPv4 loopback address"
+        );
+        defaults
+    })
+}
+
+pub(crate) fn default_gateway_port() -> u16 {
+    runtime_defaults().gateway.port
+}
+
+pub(crate) fn default_gateway_host() -> &'static str {
+    runtime_defaults().gateway.host.as_str()
+}
+
+pub(crate) fn gateway_port_from_config(value: &serde_json::Value) -> Option<u16> {
+    value
+        .get("gateway")?
+        .get("port")?
+        .as_u64()
+        .filter(|port| (1..=u16::MAX as u64).contains(port))
+        .map(|port| port as u16)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigData {
@@ -63,6 +116,16 @@ fn validate_openclaw_config_shape(value: &serde_json::Value) -> Result<(), Strin
         "agents", "auth", "models", "gateway", "env", "channels", "tools",
     ] {
         validate_object_field(value, key)?;
+    }
+    if value
+        .get("gateway")
+        .and_then(|gateway| gateway.get("port"))
+        .is_some()
+        && gateway_port_from_config(value).is_none()
+    {
+        return Err(
+            "Invalid openclaw.json: `gateway.port` must be an integer from 1 to 65535".into(),
+        );
     }
     if let Some(env_vars) = value.get("env").and_then(|env| env.get("vars")) {
         if !env_vars.is_object() {
@@ -163,23 +226,20 @@ fn extract_token_from_config(raw: &str) -> Option<String> {
         .get("auth")?
         .get("token")?
         .as_str()
+        .filter(|token| !token.trim().is_empty())
         .map(|s| s.to_string())
 }
 
 fn extract_port_from_config(raw: &str) -> Option<u16> {
     let config: serde_json::Value = serde_json::from_str(raw).ok()?;
-    config
-        .get("gateway")?
-        .get("port")?
-        .as_u64()
-        .map(|v| v as u16)
+    gateway_port_from_config(&config)
 }
 
 #[tauri::command]
 pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
     let path = paths::config_path();
     let mut token: Option<String> = None;
-    let mut port: u16 = 18789;
+    let mut port = default_gateway_port();
     let mut found_path: Option<String> = None;
 
     if path.exists() {
@@ -197,8 +257,8 @@ pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
     Ok(GatewayConfigInfo {
         token,
         port,
-        ws_url: format!("ws://127.0.0.1:{}", port),
-        http_url: format!("http://127.0.0.1:{}", port),
+        ws_url: format!("ws://{}:{}", default_gateway_host(), port),
+        http_url: format!("http://{}:{}", default_gateway_host(), port),
         config_path: found_path,
     })
 }
@@ -281,6 +341,33 @@ mod tests {
                 err
             );
         }
+    }
+
+    #[test]
+    fn gateway_port_requires_a_valid_tcp_port() {
+        for invalid in [
+            json!(0),
+            json!(65536),
+            json!(70000),
+            json!("18789"),
+            json!(1.5),
+        ] {
+            let value = json!({"gateway": {"port": invalid}});
+            assert_eq!(gateway_port_from_config(&value), None);
+            assert!(validate_openclaw_config_shape(&value)
+                .unwrap_err()
+                .contains("gateway.port"));
+        }
+
+        let value = json!({"gateway": {"port": 65535}});
+        assert_eq!(gateway_port_from_config(&value), Some(65535));
+        validate_openclaw_config_shape(&value).unwrap();
+    }
+
+    #[test]
+    fn shared_runtime_defaults_provide_a_valid_gateway_port() {
+        assert!(default_gateway_port() > 0);
+        assert!(!default_gateway_host().trim().is_empty());
     }
 
     #[test]

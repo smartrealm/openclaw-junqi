@@ -22,6 +22,7 @@ import type {
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import clsx from 'clsx';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -29,7 +30,7 @@ const HISTORY_BACKGROUND_RETRY_BASE_MS = 30_000;
 const HISTORY_BACKGROUND_RETRY_MAX_MS = 120_000;
 const HISTORY_STARTUP_RETRY_BASE_MS = 3_000;
 const HISTORY_STARTUP_RETRY_MAX_MS = 12_000;
-const DEFAULT_GATEWAY_WS_URL = 'ws://127.0.0.1:18789';
+const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 
 const InlineButtonBar = lazy(() => import('./InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.DecisionCard })));

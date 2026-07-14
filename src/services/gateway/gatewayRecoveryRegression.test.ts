@@ -161,7 +161,9 @@ test('BUG-ST03 storage migration waits for a free gateway port before copying', 
   assert.ok(stop >= 0, 'migration must stop every managed runtime');
   assert.ok(waitForPort > stop, 'migration must wait after requesting shutdown');
   assert.ok(prepare > waitForPort, 'migration must not copy until the gateway port is free');
-  assert.match(configure, /rollback_storage_transaction\(/);
+  assert.match(storage, /struct StorageRollbackContext/);
+  assert.match(configure, /rollback\.run\(RollbackPolicy::AFTER_SWITCH/);
+  assert.doesNotMatch(storage, /rollback_storage_transaction\(/);
 });
 
 test('BUG-ST04 storage progress is localized by stable keys in every locale', () => {
@@ -237,6 +239,18 @@ test('BUG-GL07 restart CLI is terminated before managed fallback on abnormal wai
     2,
   );
   assert.match(waitBranches, /terminate_owned_gateway\(&mut child\)\.await;[\s\S]*start_managed_gateway_fallback/);
+});
+
+test('BUG-GL12 restart fully terminates the managed child before restarting the service', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const restart = gateway.slice(
+    gateway.indexOf('pub async fn restart_gateway'),
+    gateway.indexOf('pub async fn restart_local_gateway'),
+  );
+
+  assert.match(restart, /terminate_owned_gateway\(&mut old\)\.await/);
+  assert.match(restart, /wait_for_port_free\(port, 30_000\)\.await/);
+  assert.doesNotMatch(restart, /let _ = old\.kill\(\)\.await/);
 });
 
 test('BUG-GL08 restart contention is coalesced only by a completed restart generation', () => {

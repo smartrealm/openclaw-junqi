@@ -2,7 +2,7 @@ use crate::commands::npm_registry;
 use crate::commands::setup_progress::{emit, emit_keyed};
 use crate::paths;
 use crate::platform;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, OnceLock,
@@ -898,7 +898,7 @@ async fn npm_install_with_fallback(
 #[tauri::command]
 pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
     let step = "node";
-    let node_dir = paths::desktop_dir().join("node");
+    let node_dir = paths::runtime_dir().join("node");
     let node_bin = paths::local_node_path();
 
     // ① 检测现有版本
@@ -1113,7 +1113,7 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
         let archive_path = temp_dir.join(git_win_filename());
 
         download_with_fallback(&app, step, &git_win_sources(), &archive_path, 0.05, 0.55).await?;
-        let git_dir = paths::desktop_dir().join("git");
+        let git_dir = paths::runtime_dir().join("git");
         let _ = std::fs::remove_dir_all(&git_dir);
         std::fs::create_dir_all(&git_dir)
             .map_err(|e| format!("Failed to prepare managed Git directory: {}", e))?;
@@ -1166,46 +1166,97 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
 /// Pick the directory we hand to `npm install -g` for the openclaw install.
 ///
 /// Order of preference:
-/// 1. The user's `npm config get prefix` from the local node's npm. This
+/// 1. An explicit custom prefix from the persisted install layout.
+/// 2. The user's `npm config get prefix` from npm resolved by the login shell. This
 ///    matches what `npm i -g openclaw` from the user's terminal would
 ///    resolve to — same bin, same `package.json`, same place the user
 ///    can then manage with `npm i -g openclaw@latest`.
-/// 2. Whatever is hard-coded in `~/.npmrc` (`prefix=...`).
-/// 3. Fall back to the JunQi-managed sandbox at
+/// 3. Whatever is hard-coded in `~/.npmrc` (`prefix=...`).
+/// 4. The user-owned `~/.local` fallback.
+/// 5. Fall back to the JunQi-managed sandbox at
 ///    `paths::openclaw_global_dir()` if neither is writable, so the
 ///    install never silently fails.
-async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> PathBuf {
-    let node_bin = paths::local_node_path();
-    let npm_cli = paths::local_npm_cli_path();
-    let mut cmd = if node_bin.exists() && npm_cli.exists() {
-        let mut c = tokio::process::Command::new(&node_bin);
-        c.arg(&npm_cli);
-        c
-    } else {
-        tokio::process::Command::new(platform::bin_name("npm"))
-    };
+async fn login_npm_prefix() -> Option<PathBuf> {
+    let npm = platform::detect_path(&platform::bin_name("npm"));
+    if npm.is_empty() {
+        return paths::user_npm_prefix().and_then(|path| normalize_npm_prefix(&path));
+    }
+    let mut cmd = tokio::process::Command::new(npm);
     cmd.args(["config", "get", "prefix"])
-        .env(
-            "PATH",
-            platform::build_path(&paths::node_bin_dir().to_string_lossy(), None),
-        )
+        .env("PATH", platform::login_shell_path())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     platform::configure_background_command(&mut cmd);
-    let prefix_from_npm = match cmd.output().await {
+    match cmd.output().await {
         Ok(out) if out.status.success() => {
-            let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if raw.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(raw))
-            }
+            normalize_npm_prefix(Path::new(String::from_utf8_lossy(&out.stdout).trim()))
+                .or_else(|| paths::user_npm_prefix().and_then(|path| normalize_npm_prefix(&path)))
         }
-        _ => None,
+        _ => paths::user_npm_prefix().and_then(|path| normalize_npm_prefix(&path)),
+    }
+}
+
+fn normalize_npm_prefix(raw: &Path) -> Option<PathBuf> {
+    let raw = raw.to_string_lossy();
+    let value = raw.trim().trim_matches(['"', '\'']);
+    if value.is_empty() || matches!(value, "null" | "undefined") {
+        return None;
+    }
+    let path = if value == "~" {
+        platform::home_dir()?
+    } else if value.starts_with("~/") || value.starts_with("~\\") {
+        platform::home_dir()?.join(value[2..].trim_start_matches(['/', '\\']))
+    } else {
+        PathBuf::from(value)
     };
-    let user_prefix = prefix_from_npm.or_else(paths::user_npm_prefix);
+    path.is_absolute().then_some(path)
+}
+
+fn prefix_bin_dir(prefix: &std::path::Path) -> PathBuf {
+    if cfg!(windows) {
+        prefix.to_path_buf()
+    } else {
+        prefix.join("bin")
+    }
+}
+
+fn prefix_bin_is_on_login_path(prefix: &std::path::Path) -> bool {
+    let expected = prefix_bin_dir(prefix);
+    let expected = std::fs::canonicalize(&expected).unwrap_or(expected);
+    std::env::split_paths(platform::login_shell_path()).any(|entry| {
+        let entry = std::fs::canonicalize(&entry).unwrap_or(entry);
+        if cfg!(windows) {
+            entry
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&expected.to_string_lossy())
+        } else {
+            entry == expected
+        }
+    })
+}
+
+async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> Result<PathBuf, String> {
+    if let Some(prefix) = paths::configured_npm_prefix() {
+        if !try_use_prefix(&prefix) {
+            return Err(format!(
+                "The selected npm global prefix is not writable: {}",
+                prefix.display()
+            ));
+        }
+        emit_keyed(
+            app,
+            step,
+            &format!("Using custom npm prefix {}", prefix.display()),
+            "setup.openclaw.customNpmPrefix",
+            0.075,
+        );
+        return Ok(prefix);
+    }
+
+    let user_prefix = login_npm_prefix().await;
     if let Some(prefix) = user_prefix {
         if try_use_prefix(&prefix) {
+            let terminal_ready = prefix_bin_is_on_login_path(&prefix);
             emit_keyed(
                 app,
                 step,
@@ -1213,10 +1264,14 @@ async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> PathBuf {
                     "Detected npm prefix {} (matches your `npm i -g`); installing openclaw there",
                     prefix.display()
                 ),
-                "setup.openclaw.userNpmPrefix",
+                if terminal_ready {
+                    "setup.openclaw.userNpmPrefix"
+                } else {
+                    "setup.openclaw.userNpmPrefixMissingPath"
+                },
                 0.075,
             );
-            return prefix;
+            return Ok(prefix);
         }
         // User's npm prefix exists but isn't writable (typical case:
         // default `prefix=/usr/local` from a Homebrew/apt/Stock-Windows
@@ -1240,12 +1295,11 @@ async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> PathBuf {
             "setup.openclaw.localNpmPrefix",
             0.075,
         );
-        return local;
+        return Ok(local);
     }
 
-    // Tier 3: JunQi-managed sandbox. Always reachable because it
-    // lives under `~/.openclaw/` which is owned by whoever runs the
-    // app. Caller will surface the path so the user can still run
+    // Tier 3: JunQi-managed sandbox under the selected state directory.
+    // Caller will surface the path so the user can still run
     // `openclaw` from JunQi even if their terminal can't find it.
     // We announce the resolved sandbox path through
     // `setup.openclaw.sandboxNpmPrefix` so the frontend can surface a
@@ -1261,7 +1315,7 @@ async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> PathBuf {
         "setup.openclaw.sandboxNpmPrefix",
         0.075,
     );
-    sandbox
+    Ok(sandbox)
 }
 
 /// Decide whether `path` is a usable install target. Returns true when
@@ -1466,6 +1520,9 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
             (_, Some(path)) => format!("Using existing OpenClaw at {}", path),
             _ => "Using existing local OpenClaw".to_string(),
         };
+        if paths::terminal_integration_requested() {
+            crate::commands::terminal_integration::sync_terminal_integration()?;
+        }
         emit_keyed(&app, step, &detail, "setup.openclaw.useExisting", 1.0);
         return Ok(detail);
     }
@@ -1530,12 +1587,10 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         None
     };
 
-    // ② 准备安装目录 — 装到用户 `~/.npmrc` 里的 npm prefix，这样
-    // `~/.npm-global/bin/openclaw` 就是用户从 terminal 跑
-    // `npm i -g openclaw` 时拿到的同一个 bin，JunQi 不再搞自己的一套
-    // sandbox。如果读不到 `prefix=` 或者目录不可写，就退回到 JunQi 管理的
-    // `~/.openclaw/global/`，保证装得上。
-    let openclaw_prefix = pick_install_target(&app, step).await;
+    // ② Resolve the install prefix dynamically. An explicit setup choice
+    // wins; otherwise use the login terminal's npm prefix, then user-owned
+    // fallbacks. No user-specific path is hard-coded here.
+    let openclaw_prefix = pick_install_target(&app, step).await?;
     emit_keyed(
         &app,
         step,
@@ -1611,6 +1666,9 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         ));
     }
     crate::commands::system::persist_selected_openclaw_binary(&openclaw_bin)?;
+    if paths::terminal_integration_requested() {
+        crate::commands::terminal_integration::sync_terminal_integration()?;
+    }
 
     let installed_version = verified.version.unwrap_or_else(|| "unknown version".into());
     emit(
@@ -1696,14 +1754,13 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     let port = std::fs::read_to_string(paths::config_path())
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|cfg| cfg.get("gateway")?.get("port")?.as_u64())
-        .map(|v| v as u16)
-        .unwrap_or(18789);
+        .and_then(|cfg| crate::commands::config::gateway_port_from_config(&cfg))
+        .unwrap_or_else(crate::commands::config::default_gateway_port);
     emit_keyed(
         &app,
         step,
         &format!(
-            "Target port = {} (source: openclaw.json, default 18789)",
+            "Target port = {} (source: openclaw.json or OpenClaw default)",
             port
         ),
         "setup.gateway.portResolved",
@@ -1716,8 +1773,9 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         &app,
         step,
         &format!(
-            "Probing 127.0.0.1:{} for existing Gateway listener...",
-            port
+            "Probing {}:{} for existing Gateway listener...",
+            crate::commands::config::default_gateway_host(),
+            port,
         ),
         "setup.gateway.probe",
         0.52,
@@ -1816,6 +1874,18 @@ pub async fn install_winget_package(package_id: String) -> Result<String, String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npm_prefix_normalization_rejects_ambiguous_values() {
+        assert_eq!(normalize_npm_prefix(Path::new("")), None);
+        assert_eq!(normalize_npm_prefix(Path::new("undefined")), None);
+        assert_eq!(normalize_npm_prefix(Path::new("relative/prefix")), None);
+
+        let absolute = std::env::temp_dir().join("junqi-npm-prefix");
+        assert_eq!(normalize_npm_prefix(&absolute), Some(absolute));
+        assert!(normalize_npm_prefix(Path::new("~/junqi-npm-prefix"))
+            .is_some_and(|path| path.is_absolute()));
+    }
 
     #[test]
     fn managed_windows_git_sources_use_non_interactive_mingit_archives() {

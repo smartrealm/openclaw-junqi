@@ -104,8 +104,12 @@ export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
     extract: capture(/Using local npm:\s+(.+)$/, "path"),
   },
   {
-    suffix: ".userNpmPrefix",
+    suffix: [".userNpmPrefix", ".userNpmPrefixMissingPath"],
     extract: capture(/Detected npm prefix\s+(.+?)\s+\(matches/, "path"),
+  },
+  {
+    suffix: ".customNpmPrefix",
+    extract: capture(/Using custom npm prefix\s+(.+)$/, "path"),
   },
   {
     // Two captures — inline arrow is clearer than a 2-arg factory.

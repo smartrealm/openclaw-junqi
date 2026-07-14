@@ -225,7 +225,7 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-aegis-primary">JunQi Desktop</div>
           <div className="mt-2 text-[11px] font-medium uppercase tracking-wider text-aegis-text-dim">{t("setup.companyLabel")}</div>
           <div className="mt-0.5 text-base font-semibold text-aegis-text">{t("setup.companyName")}</div>
-          <p className="mt-3 max-w-[42ch] text-sm leading-6 text-aegis-text-muted" dir="auto">
+          <p className="mt-3 text-sm leading-6 text-aegis-text-muted" dir="auto">
             {t("setup.productIntro")}
           </p>
         </div>
@@ -466,12 +466,19 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
     });
   };
   const blocked = (step.type === "select" || step.type === "multiselect") && options.length === 0;
+  const messageRenderedInBody = step.type === "confirm"
+    || step.type === "note"
+    || step.type === "progress"
+    || step.type === "action";
+  const wizardSubtitle = messageRenderedInBody
+    ? t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")
+    : step.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
 
   return (
     <SetupShell
       active={2}
       title={step.title || t("setup.wizard.title", "配置 OpenClaw")}
-      subtitle={step.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")}
+      subtitle={wizardSubtitle}
       logs={logs}
       previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
       nextAction={{
@@ -489,6 +496,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             value={typeof value === "string" ? value : ""}
             onChange={(event) => setValue(event.target.value)}
             placeholder={step.placeholder}
+            aria-label={step.title || t("setup.wizard.textInput", "OpenClaw 配置值")}
             autoComplete={step.sensitive ? "new-password" : "off"}
             className="w-full rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5 text-sm text-aegis-text outline-none focus:border-aegis-primary"
           />

@@ -6,8 +6,9 @@
 import { gateway } from './index';
 import { startDockerGateway } from '@/api/tauri-commands';
 import type { ConnectionTarget } from './types';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 
-const DEFAULT_URL = 'ws://127.0.0.1:18789';
+const DEFAULT_URL = defaultGatewayWsUrl();
 
 /** Resolve the WebSocket URL and token from config + user settings. */
 export async function resolveConnectionTarget(): Promise<ConnectionTarget> {

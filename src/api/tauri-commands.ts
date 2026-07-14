@@ -16,6 +16,16 @@ export interface OpenclawStatus {
 }
 export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; }
 export interface GatewayStatus { running: boolean; port: number; pid: number | null; token: string | null; }
+export interface TerminalIntegrationStatus {
+  requested: boolean;
+  enabled: boolean;
+  launcherReady: boolean;
+  launcherDir: string;
+  launcherPath: string;
+  profilePath: string | null;
+  terminalRestartRequired: boolean;
+  message: string;
+}
 export interface OpenclawUpdateStatus {
   currentVersion: string | null;
   latestVersion: string | null;
@@ -80,6 +90,7 @@ export const runMaintenanceScan = () => invoke<MaintenanceReport>("run_maintenan
 export const installNode = () => invoke<string>("install_node");
 export const installGit = () => invoke<string>("install_git");
 export const installOpenclaw = () => invoke<string>("install_openclaw");
+export const applyTerminalIntegration = () => invoke<TerminalIntegrationStatus>("apply_terminal_integration");
 export const prepareGateway = () => invoke<string>("prepare_gateway");
 export const startGateway = (port?: number) => (
   port == null ? invoke<any>("start_gateway") : invoke<any>("start_gateway", { port })

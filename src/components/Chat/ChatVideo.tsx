@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Download, Maximize2, X, Play, Pause, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
+import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 
 // ═══════════════════════════════════════════════════════════
 // ChatVideo — Video display with controls, save, and fullscreen
@@ -33,7 +34,7 @@ function resolveVideoSrc(src: string): string {
 
   // Relative gateway media path (e.g., /media/xxx.mp4)
   if (src.startsWith('/media/') || src.startsWith('/v1/media/')) {
-    const gwUrl = localStorage.getItem('aegis-gateway-http') || 'http://127.0.0.1:18789';
+    const gwUrl = localStorage.getItem('aegis-gateway-http') || defaultGatewayHttpUrl();
     return `${gwUrl}${src}`;
   }
 

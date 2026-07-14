@@ -26,6 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { EnsureResult, LogEntry } from './tauri-commands';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 import {
   loadOrCreateDeviceIdentity,
   buildDeviceAuthPayload,
@@ -128,7 +129,7 @@ let _cachedGatewayToken: string | null = null;
 
 /**
  * Returns the gateway port configured in openclaw.json.
- * Falls back to 18789 if the file is missing or the field is absent.
+ * Falls back to the shared runtime default when the field is absent.
  * Result is cached for the process lifetime to avoid repeated disk reads.
  */
 async function readGatewayPort(): Promise<number> {
@@ -141,7 +142,7 @@ async function readGatewayPort(): Promise<number> {
       return port;
     }
   } catch { /* config not yet written — use default */ }
-  return 18789;
+  return DEFAULT_GATEWAY_PORT;
 }
 
 /**

@@ -6,26 +6,117 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 1;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 2;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageBootstrap {
     pub version: u32,
     pub state_dir: PathBuf,
     pub config_path: PathBuf,
     pub workspace_dir: PathBuf,
+    pub runtime_dir: PathBuf,
+    pub npm_cache_dir: PathBuf,
+    pub npm_prefix: Option<PathBuf>,
+    pub terminal_integration: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedStorageBootstrap {
+    version: u32,
+    state_dir: PathBuf,
+    config_path: PathBuf,
+    workspace_dir: PathBuf,
+    #[serde(default)]
+    runtime_dir: Option<PathBuf>,
+    #[serde(default)]
+    npm_cache_dir: Option<PathBuf>,
+    #[serde(default)]
+    npm_prefix: Option<PathBuf>,
+    #[serde(default)]
+    terminal_integration: bool,
 }
 
 impl StorageBootstrap {
     pub fn for_state_dir(state_dir: PathBuf, workspace_dir: Option<PathBuf>) -> Self {
         let config_path = state_dir.join("openclaw.json");
         let workspace_dir = workspace_dir.unwrap_or_else(|| state_dir.join("workspace"));
+        let npm_cache_dir = state_dir.join("npm-cache");
         Self {
             version: STORAGE_BOOTSTRAP_VERSION,
+            runtime_dir: state_dir.clone(),
             state_dir,
             config_path,
             workspace_dir,
+            npm_cache_dir,
+            npm_prefix: None,
+            terminal_integration: false,
         }
+    }
+
+    pub fn with_locations(
+        state_dir: PathBuf,
+        workspace_dir: PathBuf,
+        runtime_dir: PathBuf,
+        npm_cache_dir: PathBuf,
+        npm_prefix: Option<PathBuf>,
+        terminal_integration: bool,
+    ) -> Self {
+        Self {
+            version: STORAGE_BOOTSTRAP_VERSION,
+            config_path: state_dir.join("openclaw.json"),
+            state_dir,
+            workspace_dir,
+            runtime_dir,
+            npm_cache_dir,
+            npm_prefix,
+            terminal_integration,
+        }
+    }
+
+    fn from_persisted(value: PersistedStorageBootstrap) -> Option<Self> {
+        if value.version == 0 || value.version > STORAGE_BOOTSTRAP_VERSION {
+            return None;
+        }
+        let runtime_dir = value.runtime_dir.unwrap_or_else(|| value.state_dir.clone());
+        let npm_cache_dir = value
+            .npm_cache_dir
+            .unwrap_or_else(|| value.state_dir.join("npm-cache"));
+        let normalized = Self {
+            version: STORAGE_BOOTSTRAP_VERSION,
+            state_dir: value.state_dir,
+            config_path: value.config_path,
+            workspace_dir: value.workspace_dir,
+            runtime_dir,
+            npm_cache_dir,
+            npm_prefix: value.npm_prefix,
+            terminal_integration: value.terminal_integration,
+        };
+        normalized.paths_are_absolute().then_some(normalized)
+    }
+
+    fn to_persisted(&self) -> PersistedStorageBootstrap {
+        PersistedStorageBootstrap {
+            version: STORAGE_BOOTSTRAP_VERSION,
+            state_dir: self.state_dir.clone(),
+            config_path: self.config_path.clone(),
+            workspace_dir: self.workspace_dir.clone(),
+            runtime_dir: Some(self.runtime_dir.clone()),
+            npm_cache_dir: Some(self.npm_cache_dir.clone()),
+            npm_prefix: self.npm_prefix.clone(),
+            terminal_integration: self.terminal_integration,
+        }
+    }
+
+    fn paths_are_absolute(&self) -> bool {
+        self.state_dir.is_absolute()
+            && self.config_path.is_absolute()
+            && self.workspace_dir.is_absolute()
+            && self.runtime_dir.is_absolute()
+            && self.npm_cache_dir.is_absolute()
+            && self
+                .npm_prefix
+                .as_ref()
+                .is_none_or(|path| path.is_absolute())
     }
 }
 
@@ -54,18 +145,12 @@ pub fn legacy_default_state_dir() -> PathBuf {
 
 pub fn load_storage_bootstrap() -> Option<StorageBootstrap> {
     let raw = std::fs::read_to_string(storage_bootstrap_path()).ok()?;
-    let bootstrap: StorageBootstrap = serde_json::from_str(&raw).ok()?;
-    if bootstrap.version != STORAGE_BOOTSTRAP_VERSION || !bootstrap.state_dir.is_absolute() {
-        return None;
-    }
-    Some(bootstrap)
+    let persisted: PersistedStorageBootstrap = serde_json::from_str(&raw).ok()?;
+    StorageBootstrap::from_persisted(persisted)
 }
 
 pub fn save_storage_bootstrap(bootstrap: &StorageBootstrap) -> Result<(), String> {
-    if !bootstrap.state_dir.is_absolute()
-        || !bootstrap.config_path.is_absolute()
-        || !bootstrap.workspace_dir.is_absolute()
-    {
+    if !bootstrap.paths_are_absolute() {
         return Err("Storage paths must be absolute".to_string());
     }
     let path = storage_bootstrap_path();
@@ -73,7 +158,7 @@ pub fn save_storage_bootstrap(bootstrap: &StorageBootstrap) -> Result<(), String
 }
 
 fn write_storage_bootstrap(path: &Path, bootstrap: &StorageBootstrap) -> Result<(), String> {
-    let raw = serde_json::to_string_pretty(bootstrap)
+    let raw = serde_json::to_string_pretty(&bootstrap.to_persisted())
         .map_err(|e| format!("Failed to serialize bootstrap: {}", e))?;
     atomic_write_text(path, &raw).map_err(|error| format!("Failed to write bootstrap: {}", error))
 }
@@ -174,32 +259,32 @@ pub fn config_path() -> PathBuf {
 /// 返回 JunQi 管理的 Node.js 二进制路径。
 pub fn local_node_path() -> PathBuf {
     if cfg!(windows) {
-        desktop_dir().join("node").join("node.exe")
+        runtime_dir().join("node").join("node.exe")
     } else {
-        desktop_dir().join("node").join("bin").join("node")
+        runtime_dir().join("node").join("bin").join("node")
     }
 }
 
 /// 返回 JunQi 管理的 Node.js 二进制所在目录。
 pub fn node_bin_dir() -> PathBuf {
     if cfg!(windows) {
-        desktop_dir().join("node")
+        runtime_dir().join("node")
     } else {
-        desktop_dir().join("node").join("bin")
+        runtime_dir().join("node").join("bin")
     }
 }
 
 /// 返回 JunQi 管理的 Node 安装内的 npm-cli.js 路径。
 pub fn local_npm_cli_path() -> PathBuf {
     if cfg!(windows) {
-        desktop_dir()
+        runtime_dir()
             .join("node")
             .join("node_modules")
             .join("npm")
             .join("bin")
             .join("npm-cli.js")
     } else {
-        desktop_dir()
+        runtime_dir()
             .join("node")
             .join("lib")
             .join("node_modules")
@@ -211,7 +296,38 @@ pub fn local_npm_cli_path() -> PathBuf {
 
 /// 返回 JunQi 管理的 npm 缓存目录。
 pub fn npm_cache_dir() -> PathBuf {
-    desktop_dir().join("npm-cache")
+    if std::env::var_os("OPENCLAW_STATE_DIR").is_some() {
+        return desktop_dir().join("npm-cache");
+    }
+    load_storage_bootstrap()
+        .map(|layout| layout.npm_cache_dir)
+        .unwrap_or_else(|| desktop_dir().join("npm-cache"))
+}
+
+pub fn runtime_dir() -> PathBuf {
+    if std::env::var_os("OPENCLAW_STATE_DIR").is_some() {
+        return desktop_dir();
+    }
+    load_storage_bootstrap()
+        .map(|layout| layout.runtime_dir)
+        .unwrap_or_else(desktop_dir)
+}
+
+pub fn configured_npm_prefix() -> Option<PathBuf> {
+    std::env::var_os("JUNQI_NPM_PREFIX")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| load_storage_bootstrap().and_then(|layout| layout.npm_prefix))
+}
+
+pub fn terminal_integration_requested() -> bool {
+    load_storage_bootstrap()
+        .map(|layout| layout.terminal_integration)
+        .unwrap_or(false)
+}
+
+pub fn terminal_launcher_dir() -> PathBuf {
+    app_config_dir().join("bin")
 }
 
 /// JunQi 自己安装 OpenClaw 时交给 `npm install -g` 的全局 prefix。
@@ -309,18 +425,18 @@ pub fn openclaw_binary_selection_path() -> PathBuf {
 /// 返回 JunQi 本地安装的 Git 二进制路径（Windows 是 MinGit）。
 pub fn local_git_path() -> PathBuf {
     if cfg!(windows) {
-        desktop_dir().join("git").join("cmd").join("git.exe")
+        runtime_dir().join("git").join("cmd").join("git.exe")
     } else {
-        desktop_dir().join("git").join("bin").join("git")
+        runtime_dir().join("git").join("bin").join("git")
     }
 }
 
 /// 返回 JunQi 本地 Git 二进制所在目录。
 pub fn git_bin_dir() -> PathBuf {
     if cfg!(windows) {
-        desktop_dir().join("git").join("cmd")
+        runtime_dir().join("git").join("cmd")
     } else {
-        desktop_dir().join("git").join("bin")
+        runtime_dir().join("git").join("bin")
     }
 }
 
@@ -369,11 +485,29 @@ mod storage_bootstrap_tests {
         write_storage_bootstrap(&path, &first).unwrap();
         write_storage_bootstrap(&path, &second).unwrap();
 
-        let saved: StorageBootstrap =
+        let saved_record: PersistedStorageBootstrap =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let saved = StorageBootstrap::from_persisted(saved_record).unwrap();
         assert_eq!(saved, second);
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn v1_bootstrap_keeps_legacy_runtime_and_cache_locations() {
+        let state = std::env::temp_dir().join("junqi-v1-layout");
+        let raw = serde_json::json!({
+            "version": 1,
+            "state_dir": state,
+            "config_path": state.join("openclaw.json"),
+            "workspace_dir": state.join("workspace")
+        });
+        let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
+        let layout = StorageBootstrap::from_persisted(persisted).unwrap();
+        assert_eq!(layout.runtime_dir, state);
+        assert_eq!(layout.npm_cache_dir, state.join("npm-cache"));
+        assert_eq!(layout.npm_prefix, None);
+        assert!(!layout.terminal_integration);
     }
 
     #[test]

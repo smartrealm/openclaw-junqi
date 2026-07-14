@@ -42,6 +42,8 @@ pub fn run() {
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,
+            commands::terminal_integration::apply_terminal_integration,
+            commands::terminal_integration::get_terminal_integration_status,
             commands::maintenance::run_maintenance_repair,
             commands::gateway_supervisor::get_gateway_lifecycle,
             commands::gateway_supervisor::get_gateway_runtime_snapshot,

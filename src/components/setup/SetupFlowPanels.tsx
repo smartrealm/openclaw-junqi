@@ -52,6 +52,12 @@ export const STEP_META: Record<string, { titleKey: string; titleFallback: string
     descriptionKey: "setup.installSteps.openclaw.description",
     descriptionFallback: "检查 CLI 包与 Gateway 能力，必要时执行安装",
   },
+  terminal: {
+    titleKey: "setup.installSteps.terminal.title",
+    titleFallback: "终端命令",
+    descriptionKey: "setup.installSteps.terminal.description",
+    descriptionFallback: "按用户选择配置独立启动器与终端 PATH",
+  },
   gateway: {
     titleKey: "setup.installSteps.gateway.title",
     titleFallback: "Gateway",
@@ -347,6 +353,8 @@ type TierBadgeStyles = {
 
 const TIER_BADGE: Record<InstallTarget["tier"], TierBadgeStyles> = {
   user: { border: "border-aegis-success/45", bg: "bg-aegis-success/10", text: "text-aegis-success" },
+  userMissingPath: { border: "border-amber-500/45", bg: "bg-amber-500/10", text: "text-amber-200" },
+  custom: { border: "border-sky-500/45", bg: "bg-sky-500/10", text: "text-sky-200" },
   xdg: { border: "border-amber-500/45", bg: "bg-amber-500/10", text: "text-amber-200" },
   sandbox: { border: "border-rose-500/45", bg: "bg-rose-500/10", text: "text-rose-200" },
   existing: { border: "border-sky-500/45", bg: "bg-sky-500/10", text: "text-sky-200" },
@@ -356,6 +364,10 @@ function resolveInstallNote(target: InstallTarget, t: TFunction): string {
   switch (target.tier) {
     case "user":
       return t("setup.installTarget.user.note", "与终端 `npm i -g` 落点一致；安装后 `openclaw` 已在你的 PATH 中");
+    case "userMissingPath":
+      return t("setup.installTarget.userMissingPath.note", "与终端 npm 的全局落点一致，但该目录尚未加入 PATH；可通过终端集成启用 `openclaw`");
+    case "custom":
+      return t("setup.installTarget.custom.note", "OpenClaw 将安装到你选择的 npm 全局目录；终端可用性由终端集成单独验证");
     case "xdg":
       return t("setup.installTarget.xdg.note", {
         binPath: target.binPath ?? "",
@@ -388,6 +400,10 @@ export function InstallTargetCard({ target }: { target: InstallTarget }) {
     `setup.installTarget.${target.tier}.tier`,
     target.tier === "user"
       ? "用户 npm 前缀"
+      : target.tier === "userMissingPath"
+        ? "用户 npm 前缀（未加入 PATH）"
+        : target.tier === "custom"
+          ? "自定义 npm 前缀"
       : target.tier === "xdg"
         ? "XDG 回退"
         : target.tier === "sandbox"
@@ -506,6 +522,10 @@ function installMethodLabel(source: string | null | undefined, target: InstallTa
   switch (target.tier) {
     case "user":
       return t("setup.runtimeDetails.methodUser", "npm 全局安装（用户 prefix）");
+    case "userMissingPath":
+      return t("setup.runtimeDetails.methodUserMissingPath", "npm 全局安装（未加入 PATH）");
+    case "custom":
+      return t("setup.runtimeDetails.methodCustom", "npm 全局安装（自定义 prefix）");
     case "xdg":
       return t("setup.runtimeDetails.methodXdg", "JunQi 回退安装（~/.local）");
     case "sandbox":

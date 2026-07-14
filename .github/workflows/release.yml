@@ -5,7 +5,7 @@
 # uploads installers as workflow artifacts. A version tag additionally
 # creates a public GitHub Release with those installers attached. Designed
 # to be triggered by either:
-#   - push to main (fresh, short-lived binaries in the Actions tab)
+#   - push to daxia (fresh, short-lived binaries in the Actions tab)
 #   - workflow_dispatch (manual ad-hoc builds)
 #   - tag push v* (a permanent GitHub Release)
 #
@@ -20,7 +20,7 @@
 #   - uses beforeBuildCommand from tauri.conf.json while this workflow keeps
 #     target architectures and installer formats explicit
 #
-# Artifact retention: 14 days. GitHub Releases are permanent; main-branch
+# Artifact retention: 14 days. GitHub Releases are permanent; daxia-branch
 # artifacts remain intentionally short-lived.
 # ═══════════════════════════════════════════════════════════
 
@@ -28,14 +28,14 @@ name: Release Build
 
 on:
   push:
-    branches: [main]
+    branches: [daxia]
     tags: ['v*']
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Git ref to build (branch, tag, or SHA). Defaults to main.'
+        description: 'Git ref to build (branch, tag, or SHA). Defaults to daxia.'
         required: false
-        default: 'main'
+        default: 'daxia'
 
 concurrency:
   group: release-${{ github.event.inputs.ref || github.ref }}

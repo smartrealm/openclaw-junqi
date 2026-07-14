@@ -94,7 +94,7 @@ impl GatewayProcess {
     pub fn new() -> Self {
         Self {
             child: Mutex::new(None),
-            port: Mutex::new(18789),
+            port: Mutex::new(crate::commands::config::default_gateway_port()),
             operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             restart_completed_generation: AtomicU64::new(0),
             logs: Mutex::new(VecDeque::with_capacity(LOG_BUFFER_CAP)),

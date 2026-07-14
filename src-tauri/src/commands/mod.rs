@@ -46,6 +46,7 @@ pub mod terminal;
 pub mod terminal_clipboard;
 pub mod terminal_drop;
 pub mod terminal_hooks;
+pub mod terminal_integration;
 pub mod terminal_shell_integration;
 pub mod terminal_window;
 pub mod terminal_workspace;

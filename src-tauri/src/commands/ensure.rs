@@ -54,6 +54,7 @@ fn read_gateway_token() -> Option<String> {
         .get("auth")?
         .get("token")?
         .as_str()
+        .filter(|token| !token.trim().is_empty())
         .map(|s| s.to_string())
 }
 
@@ -75,18 +76,14 @@ fn read_gateway_port() -> u16 {
     use crate::paths;
     let raw = match std::fs::read_to_string(&paths::config_path()) {
         Ok(raw) => raw,
-        Err(_) => return 18789,
+        Err(_) => return crate::commands::config::default_gateway_port(),
     };
     let v: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
-        Err(_) => return 18789,
+        Err(_) => return crate::commands::config::default_gateway_port(),
     };
-    v.get("gateway")
-        .and_then(|g| g.get("port"))
-        .and_then(|p| p.as_u64())
-        .filter(|p| *p > 0 && *p < 65536)
-        .map(|p| p as u16)
-        .unwrap_or(18789)
+    crate::commands::config::gateway_port_from_config(&v)
+        .unwrap_or_else(crate::commands::config::default_gateway_port)
 }
 
 /// 冷启动/手动自救共用的 Gateway 恢复入口。

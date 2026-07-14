@@ -16,9 +16,10 @@ import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { changeLanguage } from '@/i18n';
 import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import clsx from 'clsx';
 
-const DEFAULT_GATEWAY_WS_URL = 'ws://127.0.0.1:18789';
+const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 
 // Quick-launch agents (kooky supports 13; we expose the common ones in palette).
 import { Sparkle, Robot, Diamond, Pi, Brain as BrainPh, Cube } from '@phosphor-icons/react';

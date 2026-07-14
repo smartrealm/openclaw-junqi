@@ -421,7 +421,8 @@ pub(crate) async fn start_docker_gateway_locked(
     port: Option<u16>,
     tag: Option<String>,
 ) -> Result<GatewayStatus, String> {
-    let port = port.unwrap_or(18789);
+    let port = port.unwrap_or_else(crate::commands::config::default_gateway_port);
+    let container_port = crate::commands::config::default_gateway_port();
     let tag = tag.unwrap_or_else(|| "latest".to_string());
     let image = format!("{}:{}", OPENCLAW_IMAGE, tag);
     let base_dir = paths::desktop_dir();
@@ -438,7 +439,7 @@ pub(crate) async fn start_docker_gateway_locked(
         .map_err(|e| format!("Failed to create config dir: {}", e))?;
 
     // Ensure config with token (use "lan" bind since container needs 0.0.0.0)
-    let token = ensure_config_with_token(&config_path, 18789, "lan")?;
+    let token = ensure_config_with_token(&config_path, container_port, "lan")?;
 
     // Read workspace from config, with fallback to default
     let workspace_dir = paths::read_workspace_from_config(&config_path)
@@ -463,8 +464,13 @@ pub(crate) async fn start_docker_gateway_locked(
         "{}:/home/node/.openclaw/workspace",
         workspace_dir.to_str().ok_or("Invalid workspace dir path")?
     );
-    // Bind to 127.0.0.1 on the host so the port is not exposed to the LAN
-    let port_mapping = format!("127.0.0.1:{}:18789", port);
+    // Bind to the configured loopback host so the port is not exposed to the LAN.
+    let port_mapping = format!(
+        "{}:{}:{}",
+        crate::commands::config::default_gateway_host(),
+        port,
+        container_port
+    );
     let token_env = format!("OPENCLAW_GATEWAY_TOKEN={}", token);
 
     let output = tokio::process::Command::new(&docker_bin)
@@ -507,7 +513,11 @@ pub(crate) async fn start_docker_gateway_locked(
         "Waiting for gateway to be ready...",
         0.55,
     );
-    let addr = format!("127.0.0.1:{}", port);
+    let addr = format!(
+        "{}:{}",
+        crate::commands::config::default_gateway_host(),
+        port
+    );
     let mut healthy = false;
     for attempt in 0..30 {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -722,7 +732,7 @@ pub(crate) async fn stop_docker_gateway_locked() -> Result<String, String> {
 /// Check if the Docker container is running.
 #[tauri::command]
 pub async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, String> {
-    let port = port.unwrap_or(18789);
+    let port = port.unwrap_or_else(crate::commands::config::default_gateway_port);
     let docker_bin = match resolve_docker_bin().await {
         Ok(bin) => bin,
         Err(_) => {

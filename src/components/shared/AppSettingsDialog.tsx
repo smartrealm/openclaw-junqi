@@ -34,6 +34,7 @@ import { APP_LANGUAGE_OPTIONS, type SupportedLanguage } from '@/i18n/languages';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { APP_VERSION } from '@/version';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import clsx from 'clsx';
 import {
   readAttentionBadge,
@@ -430,8 +431,8 @@ function ConnectPanel() {
   const [testing, setTesting] = useState(false);
   const [testOk, setTestOk] = useState<boolean|null>(null);
   const dirty = editUrl !== gatewayUrl || editToken !== gatewayToken;
-  const handleSave = () => { setGatewayUrl(editUrl.trim()); setGatewayToken(editToken.trim()); gatewayManager.connect(editUrl.trim()||'ws://127.0.0.1:18789',editToken.trim()); };
-  const handleTest = async () => { setTesting(true); setTestOk(null); try { gatewayManager.connect(editUrl.trim()||'ws://127.0.0.1:18789',editToken.trim()); await new Promise(r=>setTimeout(r,2500)); setTestOk(useChatStore.getState().connected); } catch { setTestOk(false); } finally { setTesting(false); } };
+  const handleSave = () => { setGatewayUrl(editUrl.trim()); setGatewayToken(editToken.trim()); gatewayManager.connect(editUrl.trim() || defaultGatewayWsUrl(), editToken.trim()); };
+  const handleTest = async () => { setTesting(true); setTestOk(null); try { gatewayManager.connect(editUrl.trim() || defaultGatewayWsUrl(), editToken.trim()); await new Promise(r=>setTimeout(r,2500)); setTestOk(useChatStore.getState().connected); } catch { setTestOk(false); } finally { setTesting(false); } };
   return (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.connect', 'Connect')}</h2>
@@ -442,7 +443,7 @@ function ConnectPanel() {
           <span className={connected?'text-aegis-success':connecting?'text-aegis-warning':'text-aegis-danger'}>{connected?t('connection.connected'):connecting?t('connection.connecting'):t('connection.disconnected')}</span></span>
       </div>
       <div className="flex flex-col gap-3">
-        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.webSocketUrl', 'WebSocket URL')}</label><input value={editUrl} onChange={e=>setEditUrl(e.target.value)} placeholder="ws://127.0.0.1:18789" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
+        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.webSocketUrl', 'WebSocket URL')}</label><input value={editUrl} onChange={e=>setEditUrl(e.target.value)} placeholder={defaultGatewayWsUrl()} className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
         <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.token', 'Token')}</label><input type="password" value={editToken} onChange={e=>setEditToken(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
         <div className="flex items-center gap-2">
           {dirty && <button onClick={handleSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/25">{t('appSettings.saveReconnect', 'Save & Reconnect')}</button>}

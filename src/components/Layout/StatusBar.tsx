@@ -15,6 +15,7 @@ import { Badge, StatusDot } from '@/components/shared/badge';
 import { GatewaySelfRescuePanel } from '@/components/GatewaySelfRescuePanel';
 import type { AegisTheme } from '@/theme/types';
 import { setThemeWithTransition } from '@/motion/themeTransition';
+import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 
 const THEME_CYCLE: AegisTheme[] = ['aegis-dark', 'aegis-light', 'aegis-eyecare', 'aegis-midnight'];
 
@@ -49,7 +50,7 @@ export function StatusBar() {
 
   const port = useMemo(() => {
     const m = String(gatewayUrl || '').match(/:(\d+)/);
-    return m ? m[1] : '18789';
+    return m ? m[1] : String(DEFAULT_GATEWAY_PORT);
   }, [gatewayUrl]);
 
   const bootSummary = useMemo(() => getBootProgressSummary(bootStages ?? {}), [bootStages]);
