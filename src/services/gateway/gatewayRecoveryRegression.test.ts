@@ -78,6 +78,18 @@ test('BUG-GSC01 application lifecycle requests use the manager core', () => {
   assert.doesNotMatch(palette, /gateway\.connect\(/);
 });
 
+test('managed Gateway start owns readiness and preserves process diagnostics', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const setup = source('src/hooks/useSetupFlow.ts');
+  assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60/);
+  assert.match(gateway, /child\.try_wait\(\)[\s\S]*is_gateway_serving\(port\)\.await/);
+  assert.match(gateway, /terminate_owned_gateway\(&mut child\)\.await/);
+  assert.match(gateway, /Recent Gateway output/);
+  assert.match(gateway, /managed child health check passed/);
+  assert.match(setup, /waitForGatewayReady\(runId, 10_000, status\?\.port\)/);
+  assert.doesNotMatch(setup, /waitForGatewayReady\(runId, 30_000, status\?\.port\)/);
+});
+
 test('BUG-GSC03 manager has one state transition and emission core', () => {
   const manager = source('src/services/gateway/GatewayConnectionManager.ts');
   assert.equal((manager.match(/this\.fsm\.transition\(/g) ?? []).length, 1);

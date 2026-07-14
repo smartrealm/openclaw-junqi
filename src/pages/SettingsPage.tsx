@@ -35,6 +35,7 @@ import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';
 import { MaintenanceCenter } from '@/components/settings/MaintenanceCenter';
 import { TerminalSettingsPanel } from '@/components/settings/TerminalSettingsPanel';
+import { NpmCacheSettingsPanel } from '@/components/settings/NpmCacheSettingsPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
@@ -1125,6 +1126,8 @@ export function SettingsPageFull() {
       {activeTab === 'storage' && (
         <>
       <GatewayLifecyclePanel variant="full" />
+
+      <NpmCacheSettingsPanel />
 
       {/* Conversation files — same managed index as File Manager */}
       <GlassCard delay={0.28}>

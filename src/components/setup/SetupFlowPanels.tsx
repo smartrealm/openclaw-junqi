@@ -643,7 +643,7 @@ function stepStatusIcon(status: StepState["status"]) {
   return <Circle size={14} />;
 }
 
-function currentStepOf(steps: StepState[]): StepState | null {
+export function currentStepOf(steps: StepState[]): StepState | null {
   return steps.find((s) => s.status === "running")
     ?? steps.find((s) => s.status === "error")
     ?? steps.find((s) => s.status === "pending")
@@ -651,15 +651,21 @@ function currentStepOf(steps: StepState[]): StepState | null {
     ?? null;
 }
 
+export function installStepTitle(step: StepState | null, t: TFunction): string | null {
+  if (!step) return null;
+  const meta = STEP_META[step.id];
+  return meta ? t(meta.titleKey, meta.titleFallback) : step.label;
+}
+
 function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: StepState[]; awaitingGatewayStart?: boolean }) {
   const { t } = useTranslation();
   const visibleSteps = steps.length > 0 ? steps : [{ id: "gateway", label: "Gateway", status: "pending" as const }];
   return (
-    <section className="min-h-[390px] bg-aegis-elevated">
-      <div className="border-b border-aegis-border px-4 py-3">
+    <section className="h-[390px] overflow-hidden bg-aegis-elevated">
+      <div className="flex h-12 items-center border-b border-aegis-border px-4">
         <div className="text-sm font-semibold text-aegis-text">{t("setup.installPanel.timeline", "执行步骤")}</div>
       </div>
-      <div className="px-4 py-2">
+      <div className="h-[342px] overflow-auto px-4 py-2">
       {visibleSteps.map((s, index) => (
         <div
           key={s.id}
@@ -762,7 +768,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   };
 
   return (
-    <section className="min-h-[300px] overflow-hidden border-t border-aegis-border bg-aegis-bg/35 lg:min-h-[390px] lg:border-l lg:border-t-0">
+    <section className="h-[390px] overflow-hidden border-t border-aegis-border bg-aegis-bg/35 lg:border-l lg:border-t-0">
       <header className="flex h-12 items-center justify-between gap-3 border-b border-aegis-border px-4">
         <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-aegis-text">
           <TerminalSquare size={15} />
@@ -823,9 +829,7 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
     if (isError) setMobileView("logs");
   }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
-  const currentTitle = current
-    ? currentMeta ? t(currentMeta.titleKey, currentMeta.titleFallback) : current.label
-    : t("setup.preparingGateway", "正在准备 Gateway...");
+  const currentTitle = installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
   const currentDescription = currentMeta ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback) : t("setup.subtitle");
 
   return (

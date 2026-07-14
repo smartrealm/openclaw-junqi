@@ -42,6 +42,7 @@ pub fn run() {
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,
+            commands::storage::update_npm_cache_directory,
             commands::terminal_integration::apply_terminal_integration,
             commands::terminal_integration::get_terminal_integration_status,
             commands::maintenance::run_maintenance_repair,

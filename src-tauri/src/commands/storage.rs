@@ -300,6 +300,27 @@ fn selected_layout(
     ))
 }
 
+fn layout_with_npm_cache(
+    current: &StorageBootstrap,
+    npm_cache_dir: &str,
+) -> Result<StorageBootstrap, String> {
+    let mut updated = current.clone();
+    updated.npm_cache_dir = required_absolute_path("npm cache directory", npm_cache_dir)?;
+    validate_location_changes(&updated, Some(current))?;
+    Ok(updated)
+}
+
+fn verify_directory_writable(path: &Path) -> Result<(), String> {
+    let probe = path.join(format!(".junqi-write-probe-{}", uuid::Uuid::new_v4()));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+        .map_err(|error| format!("npm cache directory is not writable: {}", error))?;
+    std::fs::remove_file(&probe)
+        .map_err(|error| format!("Failed to remove npm cache write probe: {}", error))
+}
+
 fn ensure_layout_directories(layout: &StorageBootstrap) -> Result<(), String> {
     for (label, path) in [
         ("OpenClaw state", &layout.state_dir),
@@ -975,6 +996,30 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
 }
 
 #[tauri::command]
+pub async fn update_npm_cache_directory(npm_cache_dir: String) -> Result<String, String> {
+    let current = paths::load_storage_bootstrap()
+        .ok_or("Storage setup must be completed before changing the npm cache directory")?;
+    let updated = layout_with_npm_cache(&current, &npm_cache_dir)?;
+    let directory = updated.npm_cache_dir.clone();
+    let existed = directory.exists();
+    std::fs::create_dir_all(&directory).map_err(|error| {
+        format!(
+            "Failed to create npm cache directory {}: {}",
+            directory.display(),
+            error
+        )
+    })?;
+    verify_directory_writable(&directory)?;
+    if let Err(error) = paths::save_storage_bootstrap(&updated) {
+        if !existed {
+            let _ = std::fs::remove_dir(&directory);
+        }
+        return Err(error);
+    }
+    Ok(directory.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 pub async fn configure_storage(
     app: AppHandle,
     state: State<'_, GatewayProcess>,
@@ -1393,6 +1438,26 @@ mod tests {
         prefix_collision.npm_prefix = Some(prefix_collision.runtime_dir.clone());
         let prefix_collision = selected_layout(root, prefix_collision).unwrap();
         assert!(validate_independent_locations(&prefix_collision).is_err());
+    }
+
+    #[test]
+    fn npm_cache_update_is_independent_from_installed_runtime() {
+        let root = storage_test_root("npm-cache-update");
+        let current = StorageBootstrap::with_locations(
+            root.clone(),
+            root.join("workspace"),
+            root.join("runtime"),
+            root.join("cache-old"),
+            None,
+            false,
+        );
+        let next_cache = root.join("cache-new");
+        let updated = layout_with_npm_cache(&current, &next_cache.to_string_lossy()).unwrap();
+
+        assert_eq!(updated.npm_cache_dir, next_cache);
+        assert_eq!(updated.runtime_dir, current.runtime_dir);
+        assert_eq!(updated.workspace_dir, current.workspace_dir);
+        assert!(layout_with_npm_cache(&current, &current.runtime_dir.to_string_lossy()).is_err());
     }
 
     #[test]
