@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   advanceSetupProgress,
   phaseForSetupEvent,
+  progressForSetupEvent,
   progressForPhase,
   SETUP_PROGRESS_RANGES,
 } from "./setupProgressModel";
@@ -14,6 +15,14 @@ test("setup phase ranges are contiguous and never decrease", () => {
   }
   assert.equal(ranges[0].start, 0);
   assert.equal(ranges.at(-1)?.end, 100);
+});
+
+test("docker event progress follows pull, container, and gateway ranges", () => {
+  assert.equal(progressForSetupEvent("pull", 0, "docker"), 5);
+  assert.equal(progressForSetupEvent("pull", 100, "docker"), 65);
+  assert.equal(progressForSetupEvent("container", 50, "docker"), 75);
+  assert.equal(progressForSetupEvent("gateway", 100, "docker"), 99);
+  assert.equal(progressForSetupEvent("unknown", 50, "docker"), null);
 });
 
 test("local task progress is mapped into its global phase range", () => {

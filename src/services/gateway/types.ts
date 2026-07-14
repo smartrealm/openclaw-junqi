@@ -13,9 +13,19 @@ export enum GatewayState {
 
 /** Events that drive state transitions. */
 export type GatewayEvent =
-  | { type: 'STATUS_RECEIVED'; running: boolean; error: string | null; retrying: boolean }
+  | { type: 'INITIALIZE' }
+  | { type: 'RECOVERY_REQUESTED' }
+  | {
+      type: 'STATUS_RECEIVED';
+      running: boolean;
+      error: string | null;
+      retrying: boolean;
+      logs?: { stdout: string; stderr: string };
+    }
   | { type: 'START_SUCCESS' }
   | { type: 'START_FAILED'; error: string }
+  | { type: 'START_REQUESTED' }
+  | { type: 'DOCKER_START_REQUESTED' }
   | { type: 'WS_OPEN' }
   | { type: 'WS_CLOSE'; reason?: string }
   | { type: 'RETRY' }

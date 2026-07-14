@@ -143,13 +143,20 @@ export function defaultLeaf(kind: LeafKind = 'shell', label?: string, cwd = ''):
   });
 }
 
-/** Build a fresh single-pane workspace. */
-export function newWorkspace(name = 'Workspace', workingDirectory = ''): Workspace {
+/** Derive a stable human-readable workspace label from a POSIX or Windows path. */
+export function workspaceNameFromPath(workingDirectory: string): string {
+  const normalized = workingDirectory.replace(/[\\/]+$/, '');
+  return normalized.split(/[\\/]/).pop()?.trim() || 'Workspace';
+}
+
+/** Build a fresh single-pane workspace. Explicit names always win. */
+export function newWorkspace(name?: string, workingDirectory = ''): Workspace {
   const directory = nonEmptyPathString(workingDirectory) ?? '';
+  const displayName = nonEmptyString(name) ?? workspaceNameFromPath(directory);
   const leaf = defaultLeaf('shell', undefined, directory);
   return {
     id: newPaneId(),
-    name: nonEmptyString(name) ?? 'Workspace',
+    name: displayName,
     projectDirectory: directory,
     workingDirectory: directory,
     root: leaf,
@@ -347,10 +354,14 @@ function normalizeWorkspaceWithPaneIds(
   const hydratedRoot = mapLeaves(root, (leaf) => (
     leaf.config.cwd ? leaf : { ...leaf, config: { ...leaf.config, cwd: workingDirectory } }
   ));
+  const persistedName = nonEmptyString(source.name);
+  const displayName = !persistedName || persistedName === 'Workspace'
+    ? workspaceNameFromPath(projectDirectory || workingDirectory)
+    : persistedName;
 
   return {
     id: nonEmptyString(source.id) ?? newPaneId(),
-    name: nonEmptyString(source.name) ?? 'Workspace',
+    name: displayName,
     projectDirectory,
     workingDirectory,
     root: hydratedRoot,

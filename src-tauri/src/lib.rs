@@ -3,6 +3,8 @@ mod paths;
 mod platform;
 mod state;
 mod tray;
+mod window_adaptation;
+mod window_sizing;
 
 use state::GatewayProcess;
 use tauri::{Emitter, Manager, RunEvent};
@@ -55,6 +57,7 @@ pub fn run() {
             // System
             commands::system::get_platform_info,
             commands::system::check_node,
+            commands::system::check_npm,
             commands::system::check_git,
             commands::system::check_openclaw,
             commands::openclaw_update::check_openclaw_update,
@@ -117,6 +120,15 @@ pub fn run() {
             commands::quickchat::close_quickchat,
             commands::quickchat::get_quickchat_visible,
             commands::quickchat::get_quickchat_seed,
+            // Dynamic Island — top-center agent status and quick actions
+            commands::dynamic_island::open_dynamic_island,
+            commands::dynamic_island::close_dynamic_island,
+            commands::dynamic_island::toggle_dynamic_island,
+            commands::dynamic_island::get_dynamic_island_visible,
+            commands::dynamic_island::set_dynamic_island_expanded,
+            commands::dynamic_island::set_dynamic_island_click_through,
+            commands::dynamic_island::reposition_dynamic_island,
+            commands::dynamic_island::dynamic_island_focus_main,
             commands::pet::set_pet_click_through,
             commands::pet::set_pet_position,
             commands::pet::start_pet_dragging,
@@ -225,6 +237,7 @@ pub fn run() {
             // App settings (ported from nezha app_settings.rs, simplified)
             commands::app_settings::load_app_settings,
             commands::app_settings::save_terminal_scrollback,
+            commands::app_settings::save_terminal_shift_enter_newline,
             commands::app_settings::save_app_settings,
             commands::app_settings::detect_agent_paths,
             // Hooks (minimal port of nezha hooks.rs)
@@ -242,8 +255,10 @@ pub fn run() {
             commands::workspace::get_workspace_path,
             // Notification local store (PR-0.6a — local read state only)
             commands::notification::get_notifications,
+            commands::notification::push_notification,
             commands::notification::mark_notification_read,
             commands::notification::mark_all_notifications_read,
+            commands::notification::clear_notifications,
             // Claude OAuth and persistent Codex app-server usage snapshots
             commands::usage::read_usage_snapshot,
             // Agent task PTY (PR-0.3 — minimal port)
@@ -425,37 +440,23 @@ pub fn run() {
                     }
                 });
             }
-            // First launch only: size the window to ~80% of the primary monitor and
-            // center it. On later launches the window-state plugin restores the user's
-            // last size/position, so we must NOT override it. A marker file under the
-            // app dir distinguishes first run from subsequent ones.
-            let first_run_marker = paths::desktop_dir().join(".junqi-window-initialized");
-            if !first_run_marker.exists() {
-                if let Some(window) = app.get_webview_window("main") {
-                    if let (Ok(Some(monitor)), Ok(scale)) =
-                        (window.primary_monitor(), window.scale_factor())
-                    {
-                        let phys = monitor.size();
-                        // Convert physical → logical; clamp between min (960×640)
-                        // and max (1600×1000) so the window never gets absurdly large
-                        // on 4K/5K displays nor unusably small on laptops.
-                        let logical_w = phys.width as f64 / scale;
-                        let logical_h = phys.height as f64 / scale;
-                        let w = (logical_w * 0.72).clamp(1100.0, 1600.0);
-                        let h = (logical_h * 0.80).clamp(720.0, 1000.0);
-                        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
-                            width: w,
-                            height: h,
-                        }));
-                    }
-                    let _ = window.center();
-                }
-                if let Some(parent) = first_run_marker.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                // Non-critical: if the marker can't be written, we re-apply default
-                // sizing next launch — harmless.
-                let _ = std::fs::write(&first_run_marker, "1");
+            // Use the monitor work area (excluding taskbar/menu bar) for first-launch
+            // sizing. Later launches preserve the window-state plugin's restored size,
+            // unless it no longer fits the current display.
+            let desktop_dir = paths::desktop_dir();
+            let first_run_marker = desktop_dir.join(".junqi-window-initialized");
+            let preferred_size_marker = desktop_dir.join(".junqi-window-size-v2");
+            if let Some(window) = app.get_webview_window("main") {
+                window_adaptation::initialize(window, first_run_marker, preferred_size_marker);
+            } else {
+                eprintln!("[window-adaptation] main window is unavailable during setup");
+            }
+            if let Some(main_window) = app.get_webview_window("main") {
+                commands::dynamic_island::remember_main_monitor(&main_window);
+                let tracked_window = main_window.clone();
+                main_window.on_window_event(move |_| {
+                    commands::dynamic_island::remember_main_monitor(&tracked_window);
+                });
             }
             // Emit gateway config to frontend before it loads (no invoke needed)
             let handle = app.handle().clone();

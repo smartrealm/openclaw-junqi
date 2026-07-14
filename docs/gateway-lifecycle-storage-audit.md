@@ -74,6 +74,56 @@
 
 **修复**：本轮保留 TCP 作为启动就绪下限，同时在状态模型中标记外部未知所有者；后续增加协议级只读身份探测。
 
+## 2026-07-14 复审补充
+
+### BUG-ST03 · 严重 · 未确认 Gateway 停止就复制状态目录
+
+**位置**：`src-tauri/src/commands/storage.rs`
+
+停止命令全部按 best-effort 处理，随后立即复制；如果系统服务、Docker 或外部 Gateway 仍占用端口，会话和认证文件可能在复制期间继续变化。
+
+**修复**：记录迁移前运行模式，停止后等待配置端口可绑定；端口未释放时中止迁移并恢复 canonical 状态，绝不开始复制。
+
+### BUG-ST04 · 严重 · 迁移失败会把原 Gateway 留在停止状态
+
+**位置**：`src-tauri/src/commands/storage.rs`
+
+复制、校验、目标激活或 bootstrap 写入失败会直接返回。源数据仍在，但迁移前正常运行的 Gateway 不会恢复，用户只能离开向导后手工排障。
+
+**修复**：把迁移前运行模式作为事务上下文；失败时按 managed child、Docker 或系统服务原样恢复，并清理尚未提交的目标副本。
+
+### BUG-ST05 · 严重 · workspace 路径补丁失败被静默忽略
+
+**位置**：`src-tauri/src/commands/storage.rs`
+
+迁移后对 `agents.defaults.workspace` 的写入忽略所有读取、解析、序列化和落盘错误。bootstrap 可能已经指向新目录，而 OpenClaw 配置仍指回旧目录。
+
+**修复**：在临时迁移目录激活前完成路径补丁；需要修改时任何错误都使事务失败并清理临时目录。
+
+### BUG-ST06 · 严重 · Windows 无法可靠覆盖已有 bootstrap
+
+**位置**：`src-tauri/src/paths.rs`
+
+bootstrap 使用 `std::fs::rename(temp, existing)` 覆盖。Unix 支持该语义，但 Windows 对已存在目标通常返回错误，导致第二次切换或回滚失败。
+
+**修复**：写入并同步临时文件；Unix 使用 rename，Windows 使用 `MoveFileExW` 的 replace-existing 与 write-through 标志。
+
+### BUG-ST07 · 中等 · 迁移进度固定为中文
+
+**位置**：`src-tauri/src/commands/storage.rs`、`src/components/setup/StorageSetupGate.tsx`
+
+Rust 事件直接发送中文句子，英文和阿拉伯语界面迁移时仍显示中文。
+
+**修复**：事件发送稳定翻译 key 和兜底文本，前端使用当前 i18n 实例解析。
+
+### BUG-ST08 · 严重 · 符号链接状态根可能反写源目录
+
+**位置**：`src-tauri/src/commands/storage.rs`
+
+复制器会保留符号链接。如果状态根目录本身是链接，临时迁移目录也会成为指向源目录的链接，随后 workspace 配置补丁可能直接修改源配置。
+
+**修复**：仅解析状态根链接后复制其实际内容，目录内部链接仍按原样保留；逻辑路径和规范路径都可识别为状态目录内部 workspace。
+
 ## 官方路径约束
 
 OpenClaw 官方 FAQ 规定：状态根目录由 `OPENCLAW_STATE_DIR` 控制，配置可由 `OPENCLAW_CONFIG_PATH` 单独指定，工作区由 `agents.defaults.workspace` 配置。JunQi 的首次启动选择必须同时维护这三个路径的一致性。

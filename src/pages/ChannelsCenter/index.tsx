@@ -5,9 +5,10 @@ import { AlertCircle, Bot, Check, ChevronDown, Copy, ExternalLink, ListFilter, L
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import type { LogEntry } from '@/api/tauri-commands';
 import type { AgentConfig, GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
-import { CHANNEL_TEMPLATES, getChannelColor, getChannelTemplate, type ChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
+import { CHANNEL_TEMPLATES, getChannelTemplate, type ChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
 import {
   assessChannelAccountReadiness,
   addChannelAccount,
@@ -545,9 +546,7 @@ export function ChannelsCenterPage() {
     [config, t]
   );
   const agents = useMemo(() => (config?.agents?.list ?? []) as AgentConfig[], [config]);
-  const enabledCount = groups.filter(g => g.enabled).length;
   const accountCount = groups.reduce((sum, group) => sum + group.accounts.length, 0);
-  const boundCount = groups.reduce((sum, group) => sum + group.accounts.filter(a => a.agentId).length, 0);
   const readinessSummary = useMemo(() => summarizeChannelReadiness(groups), [groups]);
   const focusedAgent = useMemo(() => (
     focusedAgentId ? agents.find((agent) => agent.id === focusedAgentId) : undefined
@@ -623,10 +622,7 @@ export function ChannelsCenterPage() {
     if (gatewayActionBusy) return;
     setGatewayActionBusy(true);
     try {
-      if (!window.aegis?.gateway?.retry) {
-        throw new Error('Gateway restart API unavailable');
-      }
-      const result = await window.aegis.gateway.retry();
+      const result = await gatewayManager.restart();
       if (!result?.success) {
         throw new Error(result?.error || 'Gateway restart failed');
       }
@@ -718,24 +714,31 @@ export function ChannelsCenterPage() {
   };
 
   return (
-    <PageTransition className="p-6 space-y-6 max-w-[1180px] mx-auto">
-      <div className="flex items-start justify-between gap-4">
+    <PageTransition className="p-5 space-y-5 max-w-[1100px] mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-[28px] font-extrabold text-aegis-text tracking-tight">
-            {t('channelsCenter.title', 'Channel Center')}
+          <h1 className="text-[18px] font-bold text-aegis-text">
+            {t('sidebar.nav.channels', 'Channels')}
           </h1>
-          <p className="text-[13px] text-aegis-text-dim mt-1">
+          <p className="text-[12px] text-aegis-text-dim mt-0.5">
             {t('channelsCenter.subtitle', 'Connect agents to Feishu, DingTalk, Telegram, Discord and other message channels.')}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => void load()} disabled={loading || saving} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.05)] disabled:opacity-50">
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => void load()} disabled={loading || saving} title={t('common.refresh', 'Refresh')} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.05)] disabled:opacity-50">
             <RefreshCw size={15} className={loading ? 'animate-spin' : undefined} />
-            {t('common.refresh', 'Refresh')}
           </button>
-          <button onClick={() => navigate('/config?tab=channels')} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-aegis-primary/12 border border-aegis-primary/25 text-aegis-primary font-bold text-[12px]">
+          <button onClick={() => setDiagnosticsOpen((open) => !open)} className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text text-[11px] font-semibold">
+            <TerminalSquare size={14} />
+            {t('channelsCenter.diagnostics', 'Diagnostics')}
+          </button>
+          <button onClick={() => navigate('/config?tab=channels')} className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text font-semibold text-[11px]">
             <Settings2 size={15} />
             {t('channelsCenter.advancedConfig', 'Advanced config')}
+          </button>
+          <button onClick={() => document.getElementById('available-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex items-center gap-2 px-3 h-8 rounded-md bg-aegis-primary text-white font-semibold text-[11px] hover:opacity-90">
+            <Plus size={14} />
+            {t('channelsCenter.addChannels', 'Add channel')}
           </button>
         </div>
       </div>
@@ -753,8 +756,8 @@ export function ChannelsCenterPage() {
         </div>
       ) : (
         <>
-          <section className={clsx(
-            'rounded-xl border px-4 py-3',
+          {(!gatewayHealthy || diagnosticsOpen) && <section className={clsx(
+            'rounded-md border px-4 py-3',
             gatewayHealthy
               ? 'border-aegis-success/20 bg-aegis-success/5'
               : 'border-aegis-warning/25 bg-aegis-warning/10'
@@ -762,7 +765,7 @@ export function ChannelsCenterPage() {
             <div className="flex flex-col lg:flex-row lg:items-center gap-3">
               <div className="flex items-start gap-3 min-w-0 flex-1">
                 <div className={clsx(
-                  'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+                  'w-9 h-9 rounded-md flex items-center justify-center shrink-0',
                   gatewayHealthy ? 'bg-aegis-success/12 text-aegis-success' : 'bg-aegis-warning/12 text-aegis-warning'
                 )}>
                   {gatewayLoading
@@ -787,7 +790,7 @@ export function ChannelsCenterPage() {
                 <button
                   onClick={() => void loadGatewaySnapshot()}
                   disabled={gatewayLoading || gatewayActionBusy}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text disabled:opacity-50"
                 >
                   <RefreshCw size={13} className={gatewayLoading ? 'animate-spin' : undefined} />
                   {t('common.refresh', 'Refresh')}
@@ -795,21 +798,21 @@ export function ChannelsCenterPage() {
                 <button
                   onClick={() => void handleGatewayRestart()}
                   disabled={gatewayActionBusy}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[12px] font-bold text-aegis-primary disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-semibold text-aegis-primary disabled:opacity-50"
                 >
                   {gatewayActionBusy ? <Loader2 size={13} className="animate-spin" /> : <Power size={13} />}
                   {t('channelsCenter.restartGateway', 'Restart Gateway')}
                 </button>
                 <button
                   onClick={() => void handleCopyDiagnostics()}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text"
+                  className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text"
                 >
                   <Copy size={13} />
                   {t('channelsCenter.copyDiagnostics', 'Copy diagnostics')}
                 </button>
                 <button
                   onClick={() => setDiagnosticsOpen((open) => !open)}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text"
+                  className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text"
                 >
                   <TerminalSquare size={13} />
                   {diagnosticsOpen ? t('channelsCenter.hideLogs', 'Hide logs') : t('channelsCenter.showLogs', 'Show logs')}
@@ -844,34 +847,24 @@ export function ChannelsCenterPage() {
                 )}
               </div>
             )}
-          </section>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {[
-              [t('channelsCenter.enabledChannels', 'Enabled channels'), `${enabledCount} / ${groups.length}`],
-              [t('channelsCenter.accounts', 'Accounts'), String(accountCount)],
-              [t('channelsCenter.readyAccounts', 'Ready accounts'), `${readinessSummary.ready} / ${accountCount}`],
-              [t('channelsCenter.boundAgents', 'Bound agents'), String(boundCount)],
-              [t('channelsCenter.agents', 'Agents'), String(agents.length)],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-wider text-aegis-text-dim">{label}</div>
-                <div className="mt-1 text-[22px] font-extrabold text-aegis-text">{value}</div>
-              </div>
-            ))}
-          </div>
+          </section>}
 
           <section className="space-y-3">
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-[13px] font-bold uppercase tracking-widest text-aegis-text-muted">
+                <div>
+                <h2 className="text-[13px] font-semibold text-aegis-text-secondary">
                   {t('channelsCenter.configured', 'Configured channels')}
                 </h2>
+                <div className="mt-0.5 text-[10px] text-aegis-text-dim">
+                  {groups.length} {t('channelsCenter.enabledChannels', 'channels')} · {readinessSummary.ready} / {accountCount} {t('channelsCenter.readyAccounts', 'ready')}
+                </div>
+                </div>
                 {saving && <span className="inline-flex items-center gap-1.5 text-[11px] text-aegis-primary"><Loader2 size={12} className="animate-spin" />{t('agentSettings.saving', 'Saving...')}</span>}
               </div>
 
               {groups.length > 0 && (
-                <div className="flex flex-col gap-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
+                <div className="flex flex-col gap-2 border-y border-[rgb(var(--aegis-overlay)/0.08)] py-2">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-aegis-text-dim">
                       <ListFilter size={13} />
@@ -913,10 +906,10 @@ export function ChannelsCenterPage() {
                         key={key}
                         onClick={() => setReadinessFilter(key)}
                         className={clsx(
-                          'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors',
+                          'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-colors',
                           readinessFilter === key
-                            ? 'border-aegis-primary/35 bg-aegis-primary/12 text-aegis-primary'
-                            : 'border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
+                            ? 'bg-aegis-primary/10 text-aegis-primary'
+                            : 'text-aegis-text-dim hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
                         )}
                       >
                         <span>{label}</span>
@@ -943,14 +936,14 @@ export function ChannelsCenterPage() {
                 <div className="mt-1 text-[12px] text-aegis-text-dim">{t('channelsCenter.noFilterResultsHint', 'Change the status filter to view other channel accounts.')}</div>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {filteredGroups.map((group) => {
                   const open = expanded === group.id;
                   const originalAccountCount = groups.find((item) => item.id === group.id)?.accounts.length ?? group.accounts.length;
                   return (
-                    <div key={group.id} className="rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] overflow-hidden">
-                      <button onClick={() => setExpanded(open ? null : group.id)} className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-[rgb(var(--aegis-overlay)/0.03)]">
-                        <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center text-[12px] font-extrabold text-white', `bg-gradient-to-br ${getChannelColor(group.id)}`)}>
+                    <div key={group.id} className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] overflow-hidden">
+                      <button onClick={() => setExpanded(open ? null : group.id)} className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[rgb(var(--aegis-overlay)/0.03)]">
+                        <div className="w-8 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] flex items-center justify-center text-[10px] font-bold text-aegis-text-muted">
                           {channelIcon(group.id)}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -962,7 +955,7 @@ export function ChannelsCenterPage() {
                             {group.id} · {group.accounts.length}{readinessFilter !== 'all' ? ` / ${originalAccountCount}` : ''} {t('channelsCenter.accountUnit', 'account(s)')}
                           </div>
                         </div>
-                        <span className={clsx('inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold border', group.enabled ? 'bg-aegis-success/10 text-aegis-success border-aegis-success/20' : 'bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim border-[rgb(var(--aegis-overlay)/0.08)]')}>
+                        <span className={clsx('inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold', group.enabled ? 'text-aegis-success' : 'text-aegis-text-dim')}>
                           {group.enabled ? <Check size={11} /> : <AlertCircle size={11} />}
                           {group.enabled ? t('config.enabled', 'Enabled') : t('config.disabled', 'Disabled')}
                         </span>
@@ -1013,7 +1006,7 @@ export function ChannelsCenterPage() {
                                   : t(`channelsCenter.readinessHint.${readiness.state}`, '');
 
                               return (
-                                <div key={account.id} className="grid grid-cols-1 md:grid-cols-[1fr_220px_auto] gap-3 items-center rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-3">
+                                <div key={account.id} className="grid grid-cols-1 md:grid-cols-[1fr_220px_auto] gap-3 items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg px-3 py-2.5">
                                   <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <MessageSquare size={13} className="text-aegis-text-dim" />
@@ -1073,14 +1066,14 @@ export function ChannelsCenterPage() {
             )}
           </section>
 
-          <section className="space-y-3">
-            <h2 className="text-[13px] font-bold uppercase tracking-widest text-aegis-text-muted">
+          <section id="available-channels" className="space-y-3 scroll-mt-4">
+            <h2 className="text-[13px] font-semibold text-aegis-text-secondary">
               {t('channelsCenter.addChannels', 'Add channels')}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {addableTemplates.map((tmpl) => (
-                <button key={tmpl.id} onClick={() => handleAdd(tmpl.id)} disabled={!config || saving} className="flex items-center gap-3 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-4 py-3 text-left hover:border-aegis-primary/30 hover:bg-aegis-primary/5 disabled:opacity-50">
-                  <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-extrabold text-white', `bg-gradient-to-br ${getChannelColor(tmpl.id)}`)}>
+                <button key={tmpl.id} onClick={() => handleAdd(tmpl.id)} disabled={!config || saving} className="flex items-center gap-3 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] px-3 py-2.5 text-left hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04] disabled:opacity-50">
+                  <div className="w-8 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] flex items-center justify-center text-[10px] font-bold text-aegis-text-muted">
                     {channelIcon(tmpl.id)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -1093,15 +1086,6 @@ export function ChannelsCenterPage() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-4 py-3">
-            <div className="flex items-start gap-2 text-[12px] text-aegis-text-muted">
-              <Bot size={15} className="mt-0.5 text-aegis-primary" />
-              <div>
-                <div className="font-bold text-aegis-text">{t('channelsCenter.agentHintTitle', 'Agent binding')}</div>
-                <div className="mt-0.5 leading-relaxed">{t('channelsCenter.agentHint', 'Bind each channel account to an agent so inbound messages are routed to the right persona and workspace.')}</div>
-              </div>
-            </div>
-          </section>
         </>
       )}
       {editingAccount && (

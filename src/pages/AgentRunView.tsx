@@ -14,7 +14,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Channel } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm, save } from '@tauri-apps/plugin-dialog';
 import type { Terminal as XTerm } from '@xterm/xterm';
@@ -32,6 +31,7 @@ import {
   Robot,
 } from '@phosphor-icons/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { PromptEditor, type ImageAttach } from '@/components/shared/PromptEditor';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import {
@@ -815,12 +815,12 @@ export function AgentRunView({
     void invoke<string>('get_task_output_snapshot', { taskId }).then((snapshot) => {
       if (!disposed && snapshot) writeTerm(snapshot);
     }).catch(() => undefined);
-    const subscription = listen<{ task_id: string; output: string }>('task-output', (event) => {
+    const unlisten = subscribeTauriEvent<{ task_id: string; output: string }>('task-output', (event) => {
       if (event.payload.task_id === taskId && event.payload.output) writeTerm(event.payload.output);
     });
     return () => {
       disposed = true;
-      void subscription.then((unlisten) => unlisten());
+      unlisten();
     };
   }, [initiallyActive, taskId, workspaceTaskId, writeTerm]);
 
@@ -858,7 +858,7 @@ export function AgentRunView({
   // the `agent-sessions` key (see sessionHistoryStore).
   const recordSession = useSessionHistoryStore((s) => s.record);
   useEffect(() => {
-    const p = listen<{ task_id: string; session_id: string; session_path: string }>('task-session', (e) => {
+    const unlisten = subscribeTauriEvent<{ task_id: string; session_id: string; session_path: string }>('task-session', (e) => {
       if (e.payload.task_id !== taskId || !e.payload.session_path) return;
       setSessionPath(e.payload.session_path);
       setSessionId(e.payload.session_id);
@@ -883,12 +883,12 @@ export function AgentRunView({
         });
       }
     });
-    return () => { void p.then((u) => u()); };
+    return unlisten;
   }, [taskId, agent, projectPath, recordSession, updateWorkspaceTask, workspaceTaskId]);
 
   // ── Tool-call activity listener (kooky ToolCallActivityStrip model) ──────
   useEffect(() => {
-    const p = listen<{ task_id: string; bash: number; edit: number; read: number; other: number; latest: string }>(
+    const unlisten = subscribeTauriEvent<{ task_id: string; bash: number; edit: number; read: number; other: number; latest: string }>(
       'task-toolcall', (e) => {
         if (e.payload.task_id !== taskId) return;
         setToolStats({
@@ -900,11 +900,11 @@ export function AgentRunView({
         });
       },
     );
-    return () => { void p.then((u) => u()); };
+    return unlisten;
   }, [taskId]);
 
   useEffect(() => {
-    const listener = listen<{ task_id: string; status: string }>('task-status', (event) => {
+    const unlisten = subscribeTauriEvent<{ task_id: string; status: string }>('task-status', (event) => {
       if (event.payload.task_id !== taskId) return;
       const nextStatus = event.payload.status;
       if (
@@ -942,7 +942,7 @@ export function AgentRunView({
         if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, stats);
       }).catch(() => undefined);
     });
-    return () => { void listener.then((unlisten) => unlisten()); };
+    return unlisten;
   }, [baseBranch, projectPath, taskId, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId]);
 
   useEffect(() => {

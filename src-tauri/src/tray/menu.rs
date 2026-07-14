@@ -7,9 +7,11 @@ use tauri::{
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let toggle = MenuItemBuilder::with_id("toggle", "Show/Hide").build(app)?;
     let toggle_pet = MenuItemBuilder::with_id("toggle-pet", "Show/Hide Pet").build(app)?;
+    let toggle_island =
+        MenuItemBuilder::with_id("toggle-island", "Show/Hide Dynamic Island").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit JunQi Desktop").build(app)?;
     let menu = MenuBuilder::new(app)
-        .items(&[&toggle, &toggle_pet, &quit])
+        .items(&[&toggle, &toggle_island, &toggle_pet, &quit])
         .build()?;
 
     let _tray = TrayIconBuilder::new()
@@ -42,6 +44,12 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                         let _ = crate::commands::pet::open_pet_window(app).await;
                     });
                 }
+            }
+            "toggle-island" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::commands::dynamic_island::toggle_dynamic_island(app).await;
+                });
             }
             "quit" => {
                 app.exit(0);

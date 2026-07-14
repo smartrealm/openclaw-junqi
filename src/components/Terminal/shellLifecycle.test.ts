@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   advanceShellLaunchPath,
   applyTerminalToolCallEvent,
+  beginShellRename,
   formatTerminalToolDuration,
   markStalledTerminalToolCalls,
   clearRecentlyClosedTerminalShells,
@@ -13,10 +14,25 @@ import {
   parseJunqiAgentStatusTitle,
   recordClosedTerminalShell,
   resolveShellDisplayTitle,
+  resolveShellRename,
   shellStateFromExit,
   terminalAgentLaunchCommand,
   takeRecentlyClosedTerminalShell,
 } from './shellLifecycle';
+
+test('terminal rename sessions preserve drafts and only commit semantic changes', () => {
+  const session = beginShellRename('Project shell');
+  assert.deepEqual(session, { original: 'Project shell', draft: 'Project shell' });
+  assert.deepEqual(resolveShellRename(session), { value: 'Project shell', changed: false });
+  assert.deepEqual(
+    resolveShellRename({ ...session, draft: '  Build shell  ' }),
+    { value: 'Build shell', changed: true },
+  );
+  assert.deepEqual(
+    resolveShellRename({ original: 'Custom title', draft: '   ' }),
+    { value: '', changed: true },
+  );
+});
 
 test('parseOsc7Cwd accepts local and localhost file URLs', () => {
   assert.equal(parseOsc7Cwd('file:///Users/wei/project'), '/Users/wei/project');

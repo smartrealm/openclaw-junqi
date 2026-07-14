@@ -167,6 +167,16 @@ export interface TerminalKeyOptions {
   onPaste?: () => void | Promise<void>;
 }
 
+export function isTerminalCopyShortcut(
+  event: Pick<KeyboardEvent, 'type' | 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>,
+  platform = APP_PLATFORM,
+): boolean {
+  if (event.type !== 'keydown' || event.key.toLowerCase() !== 'c' || event.altKey || event.shiftKey) return false;
+  return platform === 'macos'
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
+}
+
 /**
  * Attach the smart copy handler to a terminal instance. Optionally also
  * intercepts the configured "insert newline" combo. xterm allows a single
@@ -217,8 +227,7 @@ export function attachSmartCopy(
       return false;
     }
 
-    const isCopy =
-      (e.metaKey || e.ctrlKey) && e.key === "c" && e.type === "keydown";
+    const isCopy = isTerminalCopyShortcut(e);
 
     if (!isCopy) return true; // Let xterm handle other keys
     if (!terminal.hasSelection()) return true; // No selection → send SIGINT as normal

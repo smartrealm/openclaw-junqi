@@ -551,11 +551,7 @@ pub async fn check_openclaw_update() -> Result<OpenclawUpdateStatus, String> {
 }
 
 async fn stop_managed_gateway(state: &GatewayProcess) -> Result<bool, String> {
-    let managed = state
-        .runtime_mode
-        .lock()
-        .map(|mode| *mode == GatewayRuntimeMode::ManagedChild)
-        .map_err(|error| error.to_string())?;
+    let managed = state.runtime_snapshot()?.mode == GatewayRuntimeMode::ManagedChild;
     if !managed {
         return Ok(false);
     }
@@ -575,10 +571,10 @@ async fn stop_managed_gateway(state: &GatewayProcess) -> Result<bool, String> {
             return Err(format!("Failed to stop the managed Gateway: {}", error));
         }
     }
-    crate::commands::gateway_supervisor::transition_runtime(
-        state,
-        GatewayLifecycle::Stopped,
-        GatewayRuntimeMode::None,
+    state.transition(
+        Some(GatewayLifecycle::Stopped),
+        Some(GatewayRuntimeMode::None),
+        None,
         "openclaw_update: managed child stopped before package replacement",
     );
     Ok(true)

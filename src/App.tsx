@@ -13,6 +13,7 @@ const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => 
 const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
 const BootTimelineOverlay = lazy(() => import('@/components/BootTimelineOverlay').then(m => ({ default: m.BootTimelineOverlay })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
+const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
@@ -25,6 +26,8 @@ import { changeLanguage } from '@/i18n';
 import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { debugLog, debugWarn } from '@/utils/debugLog';
+import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
+import { hasTauriEventBridge } from '@/utils/tauriEvents';
 
 function RouteLoadingFallback() {
   return (
@@ -99,6 +102,8 @@ export default function App() {
   const [gatewayRetrying, setGatewayRetrying] = useState(false);
   const connected = useChatStore((s) => s.connected);
   const setupComplete = useAppStore((s) => s.setupComplete);
+  const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
+  const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
   const bootOverlayStartedAtRef = useRef(Date.now());
   const bootOverlayDismissedRef = useRef(false);
@@ -111,6 +116,16 @@ export default function App() {
   const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
   const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
   const [bootRecoveryLogs, setBootRecoveryLogs] = useState<string[]>([]);
+
+  useEffect(() => {
+    const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));
+    window.addEventListener('hashchange', updateRoutePath);
+    window.addEventListener('popstate', updateRoutePath);
+    return () => {
+      window.removeEventListener('hashchange', updateRoutePath);
+      window.removeEventListener('popstate', updateRoutePath);
+    };
+  }, []);
 
   // ── Load Sessions from Gateway (also updates per-session model/thinking/token data) ──
   // This is the single polling call for all session metadata. The store's setSessions
@@ -284,7 +299,6 @@ export default function App() {
     // Allow the auto-recovery effect to re-arm if the user clicks "reconnect"
     // stays true after the first recovery attempt and blocks all subsequent retries.
     bootRecoveryStartedRef.current = false;
-    try { gateway.disconnect(); } catch {}
     emitGatewayProgress('Detecting, connecting, and syncing runtime state…', syncingProgress, 'gateway.progress.detectConnectSync');
     // Use reconnect() instead of reset() — triggers an immediate status probe
     // so we don't wait up to 2s for the periodic poller to drive the FSM.
@@ -304,13 +318,13 @@ export default function App() {
     addBootRecoveryLog('Restarting Gateway service…');
     emitGatewayProgress('Restarting OpenClaw Gateway…', 0.15, 'gateway.progress.restart');
     try {
-      const result = await window.aegis.gateway.retry();
+      const result = await gatewayManager.restart();
+      if (result?.superseded) return false;
       if (result?.success === false) {
         throw new Error(result.error || 'Gateway restart failed');
       }
       addBootRecoveryLog('Gateway restart command completed');
       emitGatewayProgress('Gateway service restarted, reconnecting…', 0.94, 'gateway.progress.restartDone');
-      triggerGatewayReconnect('after-restart', 0.95);
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -332,7 +346,7 @@ export default function App() {
     } finally {
       setBootRecoveryRestarting(false);
     }
-  }, [addBootRecoveryLog, emitGatewayProgress, triggerGatewayReconnect]);
+  }, [addBootRecoveryLog, emitGatewayProgress]);
 
   const openBootLogs = useCallback(() => {
     try { window.location.hash = '#/logs'; } catch {}
@@ -365,8 +379,9 @@ export default function App() {
       addBootRecoveryLog(`Starting Gateway recovery immediately (${reason})…`);
       emitGatewayProgress('Starting OpenClaw Gateway…', 0.20, 'gateway.progress.starting');
       try {
-        const result = await window.aegis?.gateway?.ensureRunning?.();
+        const result = await gatewayManager.ensureRunning();
         if (cancelled || useChatStore.getState().connected) return;
+        if (result?.superseded) return;
         if (result?.healthy) {
           addBootRecoveryLog(`Gateway healthy (${result.mode ?? 'native'}); reconnecting WebSocket`);
           emitGatewayProgress(
@@ -374,8 +389,6 @@ export default function App() {
             0.75,
             'gateway.progress.gatewayHealthy',
           );
-          try { gateway.disconnect(); } catch {}
-          try { gatewayManager.reconnect(); } catch {}
           return;
         }
         addBootRecoveryLog(`ensure_gateway_running returned unhealthy: ${result?.error ?? 'unknown error'}`);
@@ -739,13 +752,7 @@ export default function App() {
           });
       }
       if (providerChanged) {
-        try { gateway.disconnect(); } catch {}
-        void window.aegis?.gateway?.ensureRunning?.()
-          .then((r: any) => {
-            if (r?.healthy) {
-              try { gatewayManager.reconnect(); } catch {}
-            }
-          })
+        void gatewayManager.ensureRunning()
           .catch(() => { /* handled by status poller */ });
       }
       setTimeout(() => loadAvailableModels(), 1500);
@@ -783,8 +790,6 @@ export default function App() {
       void (async () => {
         bootRecoveryStartedRef.current = false;
         addBootRecoveryLog(`Gateway recovery requested (${source}, ${action})`);
-        try { gateway.disconnect(); } catch {}
-
         try {
           if (action === 'restart') {
             await restartGatewayFromBoot();
@@ -793,7 +798,8 @@ export default function App() {
 
           emitGatewayProgress('Reconnecting to OpenClaw Gateway…', 0.10, 'gateway.progress.reconnect');
           emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
-          const result = await window.aegis?.gateway?.ensureRunning?.();
+          const result = await gatewayManager.ensureRunning();
+          if (result?.superseded) return;
           addBootRecoveryLog(result?.healthy
             ? `Gateway healthy (${result.mode ?? 'native'}) — reconnecting`
             : 'ensure_gateway_running returned unhealthy — restarting');
@@ -804,9 +810,7 @@ export default function App() {
             result?.healthy ? 0.75 : 0.45,
             result?.healthy ? 'gateway.progress.gatewayHealthy' : 'gateway.progress.ensureUnhealthy',
           );
-          if (result?.healthy) {
-            triggerGatewayReconnect(`manual-${source}`, 0.82);
-          } else {
+          if (!result?.healthy) {
             await restartGatewayFromBoot();
           }
         } catch (error) {
@@ -850,7 +854,7 @@ export default function App() {
       await window.aegis.config.save({ gatewayToken: token });
     }
     // Reconnect gateway with new token
-    gateway.reconnectWithToken(token);
+    gatewayManager.reconnectWithToken(token);
     setNeedsPairing(false);
     pairingTriggeredRef.current = false;
   }, []);
@@ -864,9 +868,8 @@ export default function App() {
   }, []);
 
   const handleGatewayRetry = useCallback(() => {
-    if (!window.aegis?.gateway?.retry) return;
     setGatewayRetrying(true);
-    void window.aegis.gateway.retry();
+    void gatewayManager.restart();
   }, []);
 
   const handleGatewayRecovered = useCallback(() => {
@@ -893,10 +896,15 @@ export default function App() {
     <>
       <ThemeRuntime />
       <LazyPetRuntimeHost />
+      {hasTauriEventBridge() && (
+        <Suspense fallback={null}>
+          <DynamicIslandRuntime />
+        </Suspense>
+      )}
 
       {/* Gateway process error overlay — shown when the gateway failed to start.
           Takes priority over everything; user must recover before using the app. */}
-      {gatewayBootError && (
+      {gatewayBootError && !gatewayOptionalRoute && (
         <Suspense fallback={null}>
           <GatewayErrorScreen
             error={gatewayBootError}
@@ -908,7 +916,7 @@ export default function App() {
         </Suspense>
       )}
 
-      {bootOverlayVisible && !gatewayBootError && !needsPairing && (
+      {bootOverlayVisible && !gatewayOptionalRoute && !gatewayBootError && !needsPairing && (
         <Suspense fallback={null}>
           <BootTimelineOverlay
             recovery={{
@@ -929,7 +937,7 @@ export default function App() {
       </Suspense>
 
       {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
-      {needsPairing && !gatewayBootError && (
+      {needsPairing && !gatewayOptionalRoute && !gatewayBootError && (
         <Suspense fallback={null}>
           <PairingScreen
             gatewayHttpUrl={gatewayHttpUrl}

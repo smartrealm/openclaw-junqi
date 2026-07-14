@@ -18,7 +18,15 @@ export type SetupStep =
 
 type InstallMode = "native" | "docker";
 export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "configure-openclaw" | "ready";
-export type SetupLog = { source: "setup" | "gateway"; message: string; ts: number };
+export type SetupLogLevel = "info" | "success" | "warn" | "error";
+export type SetupLog = {
+  source: "setup" | "gateway";
+  message: string;
+  ts: number;
+  step?: string;
+  level?: SetupLogLevel;
+  progress?: number;
+};
 
 interface AppState {
   setupComplete: boolean | null; // null = 尚未完成首次向导判定

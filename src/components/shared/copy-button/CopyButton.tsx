@@ -13,6 +13,10 @@ export interface CopyButtonProps extends Omit<ButtonProps, "onClick" | "children
   resetMs?: number;
   /** Custom label. Defaults to nothing (icon-only). Pass a string to show label. */
   label?: ReactNode;
+  /** Called after the clipboard write succeeds. */
+  onCopySuccess?: (value: string) => void;
+  /** Called when resolving or writing the clipboard value fails. */
+  onCopyError?: (error: unknown) => void;
 }
 
 export function CopyButton({
@@ -23,6 +27,8 @@ export function CopyButton({
   variant = "ghost",
   tone = "neutral",
   iconOnly,
+  onCopySuccess,
+  onCopyError,
   ...props
 }: CopyButtonProps) {
   const [state, setState] = useState<CopyState>("idle");
@@ -33,12 +39,14 @@ export function CopyButton({
       const value = typeof text === "function" ? await text() : text;
       await navigator.clipboard.writeText(value);
       setState("copied");
-    } catch {
+      onCopySuccess?.(value);
+    } catch (error) {
       setState("error");
+      onCopyError?.(error);
     } finally {
       setTimeout(() => setState("idle"), resetMs);
     }
-  }, [state, text, resetMs]);
+  }, [state, text, resetMs, onCopySuccess, onCopyError]);
 
   const Icon = state === "copied" ? Check : state === "error" ? AlertCircle : Copy;
   const resolvedTone = state === "error" ? "danger" : state === "copied" ? "success" : tone;

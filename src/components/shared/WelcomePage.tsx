@@ -377,7 +377,7 @@ export function WelcomePage({ onLaunchTool, onOpenProject }: WelcomePageProps) {
     <div className="flex h-full min-h-0 overflow-hidden bg-[rgb(var(--aegis-bg))]">
       <aside className="flex w-[208px] shrink-0 flex-col border-e border-aegis-border bg-gradient-to-b from-aegis-surface to-aegis-surface-elevated px-3.5 py-4 xl:w-[220px]">
         <div className="mb-3 flex items-center gap-3 border-b border-aegis-border px-1.5 pb-4">
-          <JunQiLogo variant="emblem" className="h-11 w-11 shrink-0" title="JunQi Desktop" />
+          <JunQiLogo variant="company-emblem" className="h-11 w-11" title="JunQi Desktop" />
           <div className="min-w-0">
             <div className="truncate text-[16px] font-semibold leading-tight text-aegis-text">JunQi</div>
             <div className="mt-0.5 truncate text-[12px] text-aegis-text-dim">

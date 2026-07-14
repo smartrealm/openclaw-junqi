@@ -19,6 +19,21 @@ test('the tool catalog has localized Chinese primary text', () => {
   assert.equal(zh.mcpTools.category.system, '系统');
 });
 
+test('the workbench model service label stays concise', () => {
+  assert.equal(zh['sidebar.nav.models'], '模型服务');
+  assert.equal(en['sidebar.nav.models'], 'Models');
+  assert.equal(zh.config.addModelService, '添加模型服务');
+});
+
+test('OpenClaw command reference has localized navigation and page labels', () => {
+  assert.equal(zh.nav.openclawCommands, '常用命令');
+  assert.equal(en.nav.openclawCommands, 'OpenClaw Commands');
+  assert.equal(zh.openclawCommands.docsLink, '官方文档');
+  assert.equal(en.openclawCommands.docsLink, 'Official docs');
+  assert.equal(zh.openclawCommands.copySuccess, '命令已复制');
+  assert.equal(en.openclawCommands.copySuccess, 'Command copied');
+});
+
 test('agent hub view labels remain localized in Chinese', () => {
   assert.equal(zh.agents.subtitle, '所有智能体及活跃工作者一览');
   assert.equal(zh.agents.workers, '活跃工作者');

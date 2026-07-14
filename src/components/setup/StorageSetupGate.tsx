@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Check, FolderOpen, HardDrive, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
 import type { SetupLog } from '@/stores/app-store';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 interface StorageSetupStatus {
   configured: boolean;
@@ -19,6 +19,7 @@ interface StorageSetupStatus {
 }
 
 interface MigrationProgress {
+  key?: string;
   message: string;
   progress: number;
 }
@@ -75,18 +76,20 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
   }, [onReady]);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
     let cancelled = false;
-    listen<MigrationProgress>('storage-migration-progress', (event) => {
-      if (!cancelled) setProgress(event.payload);
-    }).then((fn) => {
-      if (cancelled) fn(); else unlisten = fn;
-    }).catch(() => undefined);
+    const unlisten = subscribeTauriEvent<MigrationProgress>('storage-migration-progress', (event) => {
+      if (cancelled) return;
+      const payload = event.payload;
+      setProgress({
+        ...payload,
+        message: payload.key ? t(payload.key, payload.message) : payload.message,
+      });
+    });
     return () => {
       cancelled = true;
-      unlisten?.();
+      unlisten();
     };
-  }, []);
+  }, [t]);
 
   const usingLegacy = useMemo(
     () => Boolean(status && targetDir === status.legacyDir),

@@ -4,7 +4,7 @@ import emblemUrl from '@/assets/brand/daxia-group-emblem.png';
 import lightLogoUrl from '@/assets/brand/daxia-group-light.png';
 import darkLogoUrl from '@/assets/brand/daxia-group-dark.png';
 
-type JunQiLogoVariant = 'full' | 'emblem' | 'lockup';
+type JunQiLogoVariant = 'full' | 'emblem' | 'lockup' | 'company-emblem';
 
 interface JunQiLogoProps {
   variant?: JunQiLogoVariant;
@@ -13,20 +13,35 @@ interface JunQiLogoProps {
   title?: string;
 }
 
-const BRAND_TITLE = '大夏集团 DAXIA GROUP';
+const BRAND_TITLE = '陕西浚启智境科技有限公司';
+
+function DaxiaEmblem({ className, style, title }: Omit<JunQiLogoProps, 'variant'>) {
+  return (
+    <span
+      role="img"
+      aria-label={title}
+      data-brand="daxia-group"
+      className={clsx('relative block shrink-0 overflow-hidden', className)}
+      style={style}
+    >
+      <img
+        src={emblemUrl}
+        alt=""
+        aria-hidden="true"
+        className="absolute left-1/2 top-1.5 block h-auto w-[190%] max-w-none -translate-x-1/2"
+        draggable={false}
+      />
+    </span>
+  );
+}
 
 export function JunQiLogo({ variant = 'full', className, style, title = BRAND_TITLE }: JunQiLogoProps) {
   if (variant === 'emblem') {
-    return (
-      <img
-        src={emblemUrl}
-        alt={title}
-        data-brand="daxia-group"
-        className={clsx('block object-contain', className)}
-        style={style}
-        draggable={false}
-      />
-    );
+    return <DaxiaEmblem className={className} style={style} title={title} />;
+  }
+
+  if (variant === 'company-emblem') {
+    return <DaxiaEmblem className={className} style={style} title={title} />;
   }
 
   return (

@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Container,
-  Copy,
   Circle,
   Globe2,
   Monitor,
@@ -22,9 +21,10 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/app-store";
+import { combineUnlisteners, subscribeTauriEvent } from "@/utils/tauriEvents";
 import type { SetupLog, SetupStep } from "@/stores/app-store";
+import { classifySetupMessage, normalizeSetupProgressPayload } from "@/hooks/setupProgressEvents";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changeLanguage } from "@/i18n";
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from "@/i18n/languages";
@@ -113,15 +113,6 @@ function useSetupNavigation() {
     setSetupStatus(t(setupStepMessageKey(step)), setupStepProgress(step));
     setSetupStep(step);
   };
-}
-
-function payloadMessage(payload: unknown): string | null {
-  if (typeof payload === "string") return payload;
-  if (payload && typeof payload === "object" && "message" in payload) {
-    const message = (payload as { message?: unknown }).message;
-    return typeof message === "string" ? message : null;
-  }
-  return null;
 }
 
 function LanguageThemeControls() {
@@ -382,7 +373,7 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
 
 function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const { setupStep, setupError } = useAppStore();
+  const { setupStep } = useAppStore();
   const active = setupStep === "ready" ? 3 : 2;
   const isInstallComplete = setupStep === "install-complete";
 
@@ -393,7 +384,8 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isInstallComplete ? t("setup.installCompleteSubtitle", "安装与配置已完成。请确认后手动启动 Gateway。") : t("setup.subtitle")}
       logs={logs}
       wide
-      previousAction={setupStep === "ready" ? undefined : { onClick: () => flow.goBack() }}
+      showLogToggle={false}
+      previousAction={setupStep === "error" || isInstallComplete ? { onClick: () => flow.goBack() } : undefined}
       nextAction={
         setupStep === "ready"
           ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
@@ -405,20 +397,6 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       }
     >
       <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
-      {setupStep === "error" && setupError && (
-        <div className="mt-5 rounded-lg border border-red-500/25 bg-red-500/5 p-4">
-          <p className="break-all font-mono text-sm text-red-300">{setupError}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={() => void navigator.clipboard?.writeText(setupError)}
-              className="inline-flex items-center gap-1 rounded-lg border border-aegis-border px-3 py-1.5 text-xs text-aegis-text-secondary hover:bg-aegis-surface"
-            >
-              <Copy size={11} />
-              {t("setup.copyError")}
-            </button>
-          </div>
-        </div>
-      )}
     </SetupShell>
   );
 }
@@ -651,22 +629,27 @@ export function SetupPage() {
   );
 
   useEffect(() => {
-    let unlistenSetup: (() => void) | null = null;
-    let unlistenGateway: (() => void) | null = null;
+    const unlistenSetup = subscribeTauriEvent("setup-progress", (event) => {
+      const detail = normalizeSetupProgressPayload(event.payload);
+      if (!detail) return;
+      appendSetupLog({
+        source: "setup",
+        message: detail.message,
+        step: detail.step ?? undefined,
+        level: classifySetupMessage(detail.message, detail.error),
+        progress: detail.progress ?? undefined,
+      });
+    });
 
-    listen("setup-progress", (event) => {
-      const message = payloadMessage(event.payload);
-      if (message) appendSetupLog({ source: "setup", message });
-    }).then((fn) => { unlistenSetup = fn; }).catch(() => {});
+    const unlistenGateway = subscribeTauriEvent<string>("gateway-log", (event) => {
+      if (event.payload) appendSetupLog({
+        source: "gateway",
+        message: event.payload,
+        level: classifySetupMessage(event.payload),
+      });
+    });
 
-    listen<string>("gateway-log", (event) => {
-      if (event.payload) appendSetupLog({ source: "gateway", message: event.payload });
-    }).then((fn) => { unlistenGateway = fn; }).catch(() => {});
-
-    return () => {
-      unlistenSetup?.();
-      unlistenGateway?.();
-    };
+    return combineUnlisteners([unlistenSetup, unlistenGateway]);
   }, [appendSetupLog]);
 
   const sharedLogs = useMemo(() => logs, [logs]);

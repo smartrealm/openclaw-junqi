@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { gateway } from './index';
+import { startDockerGateway } from '@/api/tauri-commands';
 import type { ConnectionTarget } from './types';
 
 const DEFAULT_URL = 'ws://127.0.0.1:18789';
@@ -47,7 +48,7 @@ export async function executeConnect(
 }
 
 /** Execute a START action: call gateway.start() via Tauri. */
-export async function executeStart(): Promise<{ success: boolean; error?: string }> {
+export async function executeStart(): Promise<{ success: boolean; error?: string; port?: number; token?: string | null }> {
   if (!window.aegis?.gateway?.start) {
     return { success: false, error: 'Gateway start not available' };
   }
@@ -56,6 +57,20 @@ export async function executeStart(): Promise<{ success: boolean; error?: string
     return result;
   } catch (e: any) {
     return { success: false, error: String(e?.message ?? e) };
+  }
+}
+
+export async function executeDockerStart(): Promise<{
+  success: boolean;
+  error?: string;
+  port?: number;
+  token?: string | null;
+}> {
+  try {
+    const result = await startDockerGateway();
+    return { ...result, success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
   }
 }
 

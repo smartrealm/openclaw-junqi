@@ -7,6 +7,7 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useChatStore, type ChatMessage } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 import { projectResponseGroupToRenderBlocks } from '@/processing/projectResponseGroup';
 import type {
@@ -944,7 +945,7 @@ export function ChatView() {
               {connectionError && <span className="opacity-60"> — {connectionError}</span>}
               <button onClick={() => {
                 window.aegis?.config.get().then((c: any) => {
-                  gateway.connect(c.gatewayUrl || c.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL, c.gatewayToken || '');
+                  gatewayManager.connect(c.gatewayUrl || c.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL, c.gatewayToken || '');
                 });
               }} className="mx-2 underline hover:no-underline">
                 {t('connection.reconnect')}

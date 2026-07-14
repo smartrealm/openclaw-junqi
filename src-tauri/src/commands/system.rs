@@ -30,6 +30,14 @@ pub struct NodeStatus {
 }
 
 #[derive(Debug, Serialize)]
+pub struct NpmStatus {
+    pub available: bool,
+    pub version: Option<String>,
+    pub path: Option<String>,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct OpenclawStatus {
     pub installed: bool,
     pub version: Option<String>,
@@ -50,17 +58,61 @@ struct OpenclawBinarySelection {
 const MIN_NODE_VERSION: (u32, u32, u32) = (24, 14, 0);
 
 async fn get_node_version(node_path: &str) -> Option<String> {
-    let output = tokio::process::Command::new(node_path)
-        .arg("--version")
-        .output()
-        .await
-        .ok()?;
+    let mut command = tokio::process::Command::new(node_path);
+    command.arg("--version");
+    platform::configure_background_command(&mut command);
+    let output = command.output().await.ok()?;
 
     if output.status.success() {
         Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
         None
     }
+}
+
+#[tauri::command]
+pub async fn check_npm() -> Result<NpmStatus, String> {
+    let local_node = paths::local_node_path();
+    let local_npm = paths::local_npm_cli_path();
+    if local_node.is_file() && local_npm.is_file() {
+        let mut command = tokio::process::Command::new(&local_node);
+        command.arg(&local_npm).arg("--version");
+        platform::configure_background_command(&mut command);
+        if let Ok(output) = command.output().await {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if output.status.success() && !version.is_empty() {
+                return Ok(NpmStatus {
+                    available: true,
+                    version: Some(version),
+                    path: Some(local_npm.to_string_lossy().into_owned()),
+                    source: Some("local".into()),
+                });
+            }
+        }
+    }
+
+    let system_npm = platform::bin_name("npm");
+    let mut command = tokio::process::Command::new(&system_npm);
+    command.arg("--version");
+    platform::configure_background_command(&mut command);
+    if let Ok(output) = command.output().await {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if output.status.success() && !version.is_empty() {
+            return Ok(NpmStatus {
+                available: true,
+                version: Some(version),
+                path: Some(system_npm),
+                source: Some("system".into()),
+            });
+        }
+    }
+
+    Ok(NpmStatus {
+        available: false,
+        version: None,
+        path: None,
+        source: None,
+    })
 }
 
 fn version_meets_minimum(version: &str) -> bool {
@@ -572,11 +624,10 @@ fn read_openclaw_pkg_version(bin: &Path) -> Option<String> {
 }
 
 async fn get_git_version(git_path: &str) -> Option<String> {
-    let output = tokio::process::Command::new(git_path)
-        .arg("--version")
-        .output()
-        .await
-        .ok()?;
+    let mut command = tokio::process::Command::new(git_path);
+    command.arg("--version");
+    platform::configure_background_command(&mut command);
+    let output = command.output().await.ok()?;
 
     if output.status.success() {
         Some(String::from_utf8_lossy(&output.stdout).trim().to_string())

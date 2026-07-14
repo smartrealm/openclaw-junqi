@@ -9,7 +9,7 @@
 
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 export type WakePhase = 'idle' | 'listening' | 'wake_detected' | 'transcribing' | 'error';
 
@@ -44,7 +44,6 @@ export function useVoiceWake({ onTranscript, onCaptureFallback, lang = 'zh-CN' }
   const [enabled, setEnabled] = useState(false);
   const [phase, setPhase] = useState<WakePhase>('idle');
   const [error, setError] = useState<string | null>(null);
-  const unlistenRef = useRef<UnlistenFn | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   // Pending WAV from a VAD capture awaiting transcription. When the webview
   // lacks Web Speech API we hand this to the fallback instead.
@@ -112,9 +111,7 @@ export function useVoiceWake({ onTranscript, onCaptureFallback, lang = 'zh-CN' }
   // Subscribe to Rust voice-wake events for the lifetime of `enabled`.
   useEffect(() => {
     if (!enabled) return;
-    let active = true;
-    listen('voice-wake', (event: any) => {
-      if (!active) return;
+    const unlisten = subscribeTauriEvent('voice-wake', (event: any) => {
       const payload = event.payload || {};
       const st = payload.state;
       if (st === 'wake_detected') {
@@ -128,12 +125,8 @@ export function useVoiceWake({ onTranscript, onCaptureFallback, lang = 'zh-CN' }
       } else if (st === 'stopped') {
         setPhase('idle');
       }
-    }).then((fn) => { if (active) unlistenRef.current = fn; else fn(); });
-    return () => {
-      active = false;
-      unlistenRef.current?.();
-      unlistenRef.current = null;
-    };
+    });
+    return unlisten;
   }, [enabled, transcribe]);
 
   return { enabled, phase, error, start, stop };

@@ -42,12 +42,84 @@ test('BUG-GL03 desktop registers one OS-level application instance', () => {
 });
 
 test('BUG-GL04 diagnostics expose lifecycle and runtime ownership together', () => {
+  const state = source('src-tauri/src/state/gateway_process.rs');
   const supervisor = source('src-tauri/src/commands/gateway_supervisor.rs');
   const panel = source('src/components/settings/GatewayLifecyclePanel.tsx');
+  const processFields = state.slice(
+    state.indexOf('pub struct GatewayProcess'),
+    state.indexOf('impl GatewayProcess'),
+  );
+  assert.match(state, /runtime: Mutex<GatewayRuntimeState>/);
+  assert.match(state, /pub fn transition\(/);
+  assert.doesNotMatch(processFields, /pub lifecycle:|pub runtime_mode:/);
   assert.match(supervisor, /GatewayRuntimeSnapshot/);
   assert.match(supervisor, /lifecycle:[\s\S]*mode:[\s\S]*managed_pid/);
   assert.match(panel, /get_gateway_runtime_snapshot/);
   assert.match(panel, /runtimeModeLabel/);
+});
+
+test('BUG-GSC01 application lifecycle requests use the manager core', () => {
+  const app = source('src/App.tsx');
+  const channels = source('src/pages/ChannelsCenter/index.tsx');
+  const settings = source('src/pages/SettingsPage.tsx');
+  const palette = source('src/components/CommandPalette.tsx');
+  const setup = source('src/hooks/useSetupFlow.ts');
+  assert.doesNotMatch(app, /gateway\.disconnect\(\)/);
+  assert.doesNotMatch(app, /window\.aegis\??\.gateway\??\.(?:retry|ensureRunning)\??\.\(/);
+  assert.doesNotMatch(app, /gateway\.reconnectWithToken\(/);
+  assert.match(app, /gatewayManager\.ensureRunning\(\)/);
+  assert.match(app, /gatewayManager\.restart\(\)/);
+  assert.match(channels, /gatewayManager\.restart\(\)/);
+  assert.match(setup, /gatewayManager\.startForSetup\(\)/);
+  assert.match(setup, /gatewayManager\.startDockerForSetup\(\)/);
+  assert.doesNotMatch(setup, /await startGateway\(\)/);
+  assert.doesNotMatch(setup, /await startDockerGateway\(\)/);
+  assert.doesNotMatch(settings, /gateway\.connect\(/);
+  assert.doesNotMatch(palette, /gateway\.connect\(/);
+});
+
+test('BUG-GSC03 manager has one state transition and emission core', () => {
+  const manager = source('src/services/gateway/GatewayConnectionManager.ts');
+  assert.equal((manager.match(/this\.fsm\.transition\(/g) ?? []).length, 1);
+  assert.equal((manager.match(/this\.emit\(\)/g) ?? []).length, 1);
+  assert.doesNotMatch(manager, /if \(status\.retrying\)[\s\S]{0,120}return/);
+});
+
+test('BUG-GSC04 Rust canonical state has one atomic writer', () => {
+  const state = source('src-tauri/src/state/gateway_process.rs');
+  const supervisor = source('src-tauri/src/commands/gateway_supervisor.rs');
+  const gatewayCommand = source('src-tauri/src/commands/gateway.rs');
+  assert.equal((state.match(/self\.runtime/g) ?? []).length, 2);
+  assert.match(state, /pub fn runtime_snapshot\([\s\S]*self\.runtime\.lock/);
+  assert.match(state, /pub fn transition\([\s\S]*self\.runtime\.lock/);
+  assert.doesNotMatch(supervisor, /transition_lifecycle|transition_runtime|\.runtime\.lock/);
+  assert.doesNotMatch(gatewayCommand, /runtime_mode|\.lifecycle\.lock|transition_lifecycle|transition_runtime/);
+});
+
+test('BUG-GSC08 gateway observation is read-only while lifecycle ownership is busy', () => {
+  const gatewayCommand = source('src-tauri/src/commands/gateway.rs');
+  const status = gatewayCommand.slice(
+    gatewayCommand.indexOf('pub async fn gateway_status'),
+    gatewayCommand.indexOf('pub async fn probe_gateway_port'),
+  );
+  assert.match(status, /try_lock_owned\(\)\.ok\(\)/);
+  assert.match(status, /let can_reconcile = _observation_guard\.is_some\(\)/);
+  assert.match(status, /GatewayObservation::ManagedChildUnready/);
+  assert.match(status, /GatewayObservation::EndpointOffline/);
+  assert.doesNotMatch(status, /state\.transition\(/);
+});
+
+test('BUG-GSC09 manager commits orchestration fields only through dispatch', () => {
+  const manager = source('src/services/gateway/GatewayConnectionManager.ts');
+  const beforeDispatch = manager.slice(0, manager.indexOf('private dispatch('));
+  const afterDispatch = manager.slice(manager.indexOf('private dispatch('));
+  assert.doesNotMatch(beforeDispatch, /this\.(?:error|retrying|logs)\s*=/);
+  assert.match(afterDispatch, /this\.error\s*=/);
+  assert.match(afterDispatch, /this\.retrying\s*=/);
+  assert.match(afterDispatch, /this\.logs\s*=/);
+  assert.doesNotMatch(manager, /startAttempted/);
+  assert.match(manager, /this\.dispatch\(\{ type: 'RECOVERY_REQUESTED' \}\)/);
+  assert.match(manager, /rejectPendingStart\('Gateway start was superseded/);
 });
 
 test('BUG-ST01 storage bootstrap is stable and environment overrides remain supported', () => {
@@ -77,6 +149,50 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   assert.match(setup, /result\?\.createdFresh && \(postStorageStep === "ready" \|\| postStorageStep === "configure-openclaw"\)[\s\S]*"gateway-stopped"/);
   assert.match(main, /import\('\.\/App'\)/);
   assert.doesNotMatch(main, /DesktopRoot/);
+});
+
+test('BUG-ST03 storage migration waits for a free gateway port before copying', () => {
+  const storage = source('src-tauri/src/commands/storage.rs');
+  const configure = storage.slice(storage.indexOf('pub async fn configure_storage'));
+  const stop = configure.indexOf('stop_all_locked(');
+  const waitForPort = configure.indexOf('wait_for_port_free(');
+  const prepare = configure.indexOf('prepare_storage_target(');
+
+  assert.ok(stop >= 0, 'migration must stop every managed runtime');
+  assert.ok(waitForPort > stop, 'migration must wait after requesting shutdown');
+  assert.ok(prepare > waitForPort, 'migration must not copy until the gateway port is free');
+  assert.match(configure, /rollback_storage_transaction\(/);
+});
+
+test('BUG-ST04 storage progress is localized by stable keys in every locale', () => {
+  const storage = source('src-tauri/src/commands/storage.rs');
+  const gate = source('src/components/setup/StorageSetupGate.tsx');
+  const locales = ['zh', 'en', 'ar'] as const;
+  const progressKeys = [
+    'storage.progress.stoppingGateway',
+    'storage.progress.copying',
+    'storage.progress.preparingFresh',
+    'storage.progress.verifying',
+    'storage.progress.switching',
+    'storage.progress.startingGateway',
+    'storage.progress.complete',
+  ];
+  const valueAt = (messages: Record<string, unknown>, key: string): unknown => {
+    if (key in messages) return messages[key];
+    return key.split('.').reduce<unknown>((value, segment) => {
+      if (!value || typeof value !== 'object') return undefined;
+      return (value as Record<string, unknown>)[segment];
+    }, messages);
+  };
+
+  assert.match(gate, /payload\.key \? t\(payload\.key, payload\.message\)/);
+  for (const key of progressKeys) {
+    assert.match(storage, new RegExp(`"${key.replaceAll('.', '\\.')}"`));
+    for (const locale of locales) {
+      const messages = JSON.parse(source(`src/locales/${locale}.json`)) as Record<string, unknown>;
+      assert.equal(typeof valueAt(messages, key), 'string', `${locale} is missing ${key}`);
+    }
+  }
 });
 
 test('BUG-02 service restart failures use the managed gateway fallback', () => {

@@ -249,6 +249,23 @@ pub async fn save_terminal_scrollback(scrollback: u32) -> Result<AppSettings, St
 }
 
 #[tauri::command]
+pub async fn save_terminal_shift_enter_newline(enabled: bool) -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = settings_lock().lock();
+        let mut settings = load_settings_unlocked();
+        settings.terminal_shift_enter_newline = enabled;
+        let dir = nezha_dir()?;
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = settings_path()?;
+        let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+        atomic_write(&path, &raw)?;
+        Ok::<AppSettings, String>(settings)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn detect_agent_paths() -> Result<AppSettings, String> {
     tokio::task::spawn_blocking(|| {
         let mut settings = load_settings_unlocked();
@@ -309,6 +326,13 @@ mod tests {
     fn legacy_settings_receive_default_scrollback() {
         let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
         assert_eq!(settings.terminal_scrollback, 1000);
+    }
+
+    #[test]
+    fn terminal_defaults_match_the_settings_ui() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.terminal_scrollback, 1000);
+        assert!(settings.terminal_shift_enter_newline);
     }
 
     #[test]

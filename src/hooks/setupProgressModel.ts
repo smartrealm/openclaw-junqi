@@ -48,3 +48,21 @@ export function phaseForSetupEvent(step: string): SetupProgressPhase | null {
     default: return null;
   }
 }
+
+export function progressForSetupEvent(
+  step: string,
+  localPercent: number,
+  mode: "native" | "docker",
+): number | null {
+  const local = Math.max(0, Math.min(100, localPercent));
+  switch (`${mode}:${step}`) {
+    case "docker:pull": return Math.round(5 + local * 0.6);
+    case "docker:container": return Math.round(65 + local * 0.2);
+    case "docker:gateway": return Math.round(85 + local * 0.14);
+    default: {
+      if (mode === "docker") return null;
+      const phase = phaseForSetupEvent(step);
+      return phase ? progressForPhase(phase, local) : null;
+    }
+  }
+}

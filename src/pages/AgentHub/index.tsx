@@ -31,6 +31,9 @@ import {
 import clsx from 'clsx';
 import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
+import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
+import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
+import { persistAgentSkillFilter } from './agentSkillConfig';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -601,8 +604,11 @@ export function AgentHubPage() {
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentFormError, setAgentFormError] = useState<string | null>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentInfo | null>(null);
-  const [settingsOpenWorkspaceFiles, setSettingsOpenWorkspaceFiles] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState<{ agent: AgentInfo; root?: string } | null>(null);
   const [newAgentSkillKeys, setNewAgentSkillKeys] = useState<string[]>([]);
+  const [agentWorkspaceSkills, setAgentWorkspaceSkills] = useState<Record<string, AgentWorkspaceSkill[]>>({});
+  const [loadingAgentSkills, setLoadingAgentSkills] = useState<Record<string, boolean>>({});
+  const [agentSkillErrors, setAgentSkillErrors] = useState<Record<string, string | null>>({});
 
   // ── Stable model map from config.get (agents.list never returns models) ──
   // Stored in local state so polling refreshes of agents.list can't overwrite it.
@@ -659,6 +665,30 @@ export function AgentHubPage() {
     void refreshSkills();
   }, [refreshSkills]);
 
+  const loadAgentWorkspaceSkills = useCallback(async (agentId: string) => {
+    setLoadingAgentSkills((current) => ({ ...current, [agentId]: true }));
+    setAgentSkillErrors((current) => ({ ...current, [agentId]: null }));
+    try {
+      const response = await gateway.getSkills(agentId);
+      setAgentWorkspaceSkills((current) => ({
+        ...current,
+        [agentId]: parseAgentWorkspaceSkills(response),
+      }));
+    } catch (error) {
+      setAgentSkillErrors((current) => ({
+        ...current,
+        [agentId]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setLoadingAgentSkills((current) => ({ ...current, [agentId]: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const agentId = settingsAgent?.id || selectedAgentId;
+    if (agentId) void loadAgentWorkspaceSkills(agentId);
+  }, [settingsAgent?.id, selectedAgentId, loadAgentWorkspaceSkills]);
+
   useEffect(() => {
     const onConfigSaved = () => { void loadAgentConfigMeta(); };
     window.addEventListener('aegis:config-saved', onConfigSaved);
@@ -690,7 +720,6 @@ export function AgentHubPage() {
       const target = enrichedAgents.find((a) => a.id === id);
       if (target) {
         setSelectedAgentId(target.id);
-        setSettingsOpenWorkspaceFiles(false);
         setSettingsAgent(target);
         const next = new URLSearchParams(searchParams);
         next.delete('agent');
@@ -728,6 +757,17 @@ export function AgentHubPage() {
     setAgentFormError(null);
     try {
       await gateway.createAgent(payload);
+      if (newAgentSkillKeys.length > 0) {
+        try {
+          await persistAgentSkillFilter(payload.id, newAgentSkillKeys);
+        } catch (skillError) {
+          showAlert(
+            t('agentHub.skillsSaveWarningTitle', 'Agent created; skills need attention'),
+            skillError instanceof Error ? skillError.message : String(skillError),
+            'warning',
+          );
+        }
+      }
       if (payload.model) {
         setAgentModels((prev) => ({ ...prev, [payload.id]: payload.model! }));
         setAgentExplicitModels((prev) => ({ ...prev, [payload.id]: true }));
@@ -738,7 +778,6 @@ export function AgentHubPage() {
       setNewAgentStep(0);
       setNewAgentSkillKeys([]);
       await refreshGroup('agents');
-      setSettingsOpenWorkspaceFiles(false);
       setSettingsAgent({
         id: payload.id,
         name: payload.name,
@@ -761,7 +800,7 @@ export function AgentHubPage() {
         setDeletingAgentId(null);
         if (selectedAgentId === agentId) setSelectedAgentId(null);
         setSettingsAgent((prev) => prev?.id === agentId ? null : prev);
-        setSettingsOpenWorkspaceFiles(false);
+        setWorkspaceView((current) => current?.agent.id === agentId ? null : current);
         setAgentChannels((prev) => {
           if (!prev[agentId]) return prev;
           const next = { ...prev };
@@ -914,7 +953,16 @@ export function AgentHubPage() {
   };
 
   return (
-    <PageTransition className="p-6 space-y-6 max-w-[1200px] mx-auto">
+    <PageTransition className={workspaceView ? 'h-full min-h-0' : 'p-6 space-y-6 max-w-[1200px] mx-auto'}>
+      {workspaceView ? (
+        <div className={clsx('h-full min-h-0', settingsAgent && 'pe-[340px]')}>
+          <WorkspacePanel
+            agentId={workspaceView.agent.id}
+            rootOverride={workspaceView.root}
+            onClose={() => setWorkspaceView(null)}
+          />
+        </div>
+      ) : <>
 
       {/* ══ Header ══ */}
       <div className="flex items-center justify-between">
@@ -966,7 +1014,7 @@ export function AgentHubPage() {
           {/* TREE VIEW                                     */}
           {/* ══════════════════════════════════════════════ */}
           {viewMode === 'tree' && (
-            <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} onAgentClick={(a) => { setSettingsOpenWorkspaceFiles(false); setSettingsAgent(a); }} />
+            <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} onAgentClick={setSettingsAgent} />
           )}
 
           {/* ══════════════════════════════════════════════ */}
@@ -1281,7 +1329,8 @@ export function AgentHubPage() {
                     const previewModel = fmtModel(selectedAgent.model);
                     const previewChannels = agentChannels[selectedAgent.id] ?? [];
                     const previewChannelLabels = previewChannels.map((binding) => formatChannelBinding(t, binding));
-                    const previewSkills = enabledSkills.slice(0, 6);
+                    const allPreviewSkills = agentWorkspaceSkills[selectedAgent.id] ?? [];
+                    const previewSkills = allPreviewSkills.slice(0, 6);
                     return (
                       <GlassCard className="mb-3">
                         <div className="flex items-start gap-4">
@@ -1314,7 +1363,7 @@ export function AgentHubPage() {
                                   {t('skills.startChat', 'Start chat')}
                                 </button>
                                 <button
-                                  onClick={() => { setSettingsOpenWorkspaceFiles(false); setSettingsAgent(selectedAgent); }}
+                                  onClick={() => setSettingsAgent(selectedAgent)}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted text-[11px] font-bold hover:border-aegis-primary/25 hover:text-aegis-primary transition-colors"
                                 >
                                   <Settings2 size={13} />
@@ -1359,7 +1408,10 @@ export function AgentHubPage() {
                                   </div>
                                 </div>
                                 <button
-                                  onClick={() => { setSettingsOpenWorkspaceFiles(true); setSettingsAgent(selectedAgent); }}
+                                  onClick={() => {
+                                    setWorkspaceView({ agent: selectedAgent, root: selectedAgent.workspace });
+                                    setSettingsAgent(selectedAgent);
+                                  }}
                                   className="shrink-0 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-bold text-aegis-primary"
                                 >
                                   {t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
@@ -1381,18 +1433,18 @@ export function AgentHubPage() {
                               </div>
                               {previewSkills.length > 0 ? (
                                 <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {previewSkills.map(([slug, info]) => (
+                                  {previewSkills.map((skill) => (
                                     <span
-                                      key={`${selectedAgent.id}:preview:${slug}`}
+                                      key={`${selectedAgent.id}:preview:${skill.name}`}
                                       className="max-w-[180px] truncate rounded-md border border-aegis-primary/15 bg-aegis-primary/8 px-2 py-1 text-[10px] font-medium text-aegis-text-secondary"
-                                      title={info.name}
+                                      title={skill.description || skill.name}
                                     >
-                                      {info.name}
+                                      {skill.name}
                                     </span>
                                   ))}
-                                  {enabledSkills.length > previewSkills.length && (
+                                  {allPreviewSkills.length > previewSkills.length && (
                                     <span className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] px-2 py-1 text-[10px] text-aegis-text-dim">
-                                      +{enabledSkills.length - previewSkills.length}
+                                      +{allPreviewSkills.length - previewSkills.length}
                                     </span>
                                   )}
                                 </div>
@@ -1539,7 +1591,7 @@ export function AgentHubPage() {
                                 <button onClick={(e) => { e.stopPropagation(); navigate(`/chat?agent=${encodeURIComponent(agent.id)}&new=1`); }}
                                   title={t('skills.startChat', 'Start chat')}
                                   className="p-1.5 rounded-lg bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary hover:bg-aegis-primary/16 transition-colors"><MessageSquare size={13} /></button>
-                                <button onClick={(e) => { e.stopPropagation(); setSettingsOpenWorkspaceFiles(false); setSettingsAgent(agent); }}
+                                <button onClick={(e) => { e.stopPropagation(); setSettingsAgent(agent); }}
                                   title={t('common.edit', 'Edit')}
                                   className="p-1.5 rounded-lg bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-primary hover:border-aegis-primary/30 transition-colors"><Settings2 size={13} /></button>
                                 <button onClick={(e) => { e.stopPropagation(); handleDeleteAgent(agent.id); }}
@@ -1580,16 +1632,25 @@ export function AgentHubPage() {
         </>
       )}
 
+      </>}
+
       {/* ══ Agent Settings Panel ══ */}
       <AgentSettingsPanel
         agent={settingsAgent}
-        initialShowWorkspaceFiles={settingsOpenWorkspaceFiles}
+        agentSkills={settingsAgent ? agentWorkspaceSkills[settingsAgent.id] ?? [] : []}
+        loadingAgentSkills={settingsAgent ? loadingAgentSkills[settingsAgent.id] ?? false : false}
+        agentSkillsError={settingsAgent ? agentSkillErrors[settingsAgent.id] ?? null : null}
+        workspaceOpen={workspaceView !== null}
         agentSessions={
           settingsAgent
             ? sessions.filter(s => s.agentId === settingsAgent.id && s.type !== 'main')
             : []
         }
-        onClose={() => { setSettingsAgent(null); setSettingsOpenWorkspaceFiles(false); }}
+        onClose={() => setSettingsAgent(null)}
+        onOpenWorkspace={(agent, root) => setWorkspaceView({ agent: agent as AgentInfo, root })}
+        onRetryAgentSkills={() => {
+          if (settingsAgent) void loadAgentWorkspaceSkills(settingsAgent.id);
+        }}
         onSaved={(patch) => {
           if (settingsAgent && patch) {
             setSettingsAgent((prev) => prev ? { ...prev, ...patch } : prev);

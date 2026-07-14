@@ -274,7 +274,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
         if (typeof result?.port === "number" && result.port > 0 && result.port < 65536) {
           _cachedGatewayPort = result.port;
         }
-        return { success: true };
+        return { ...result, success: true };
       } catch (e: any) {
         return { success: false, error: String(e) };
       }

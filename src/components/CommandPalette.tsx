@@ -7,12 +7,12 @@ import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, MessageCircle, Kanban, DollarSign, Clock, Bot, Brain,
   Settings, Wifi, WifiOff, Heart, Mail, Calendar, RefreshCw,
-  Globe, Bell, BellOff, Command, Sparkles, Terminal, Cpu
+  Globe, Bell, BellOff, BookOpenText, Command, Sparkles, Terminal, Cpu
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
-import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { changeLanguage } from '@/i18n';
 import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
@@ -57,12 +57,12 @@ export function CommandPalette() {
     const storeUrl = state.gatewayUrl?.trim();
     const storeToken = state.gatewayToken?.trim() || '';
     if (storeUrl) {
-      gateway.connect(storeUrl, storeToken);
+      gatewayManager.connect(storeUrl, storeToken);
       return;
     }
     const config = await window.aegis?.config?.get();
     const cfgUrl = config?.gatewayUrl || config?.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL;
-    gateway.connect(cfgUrl, config?.gatewayToken || storeToken);
+    gatewayManager.connect(cfgUrl, config?.gatewayToken || storeToken);
   };
 
   // Define commands — all names use i18n keys
@@ -102,6 +102,7 @@ export function CommandPalette() {
       action: () => navigate(`/agent-run?agent=${a.id}`),
     })),
     { id: 'agent-terminal', icon: Terminal, name: t('palette.openTerminal', 'Open Terminal'), keywords: ['terminal', 'shell', 'bash', 'zsh'], shortcut: 'Ctrl+T', action: () => navigate('/terminal') },
+    { id: 'nav-openclaw-commands', feature: 'tools', icon: BookOpenText, name: t('nav.openclawCommands', 'OpenClaw commands'), keywords: ['openclaw', 'cli', 'commands', 'reference', '命令', 'مرجع'], action: () => navigate('/openclaw-commands') },
     { id: 'agent-status', icon: Cpu, name: t('palette.systemStatus', 'System Status'), keywords: ['status', 'system', 'health'], action: () => navigate('/perf') },
 
     // Connection

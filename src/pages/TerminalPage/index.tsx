@@ -8,6 +8,13 @@ import {
 } from "@/components/Terminal";
 import { PaneTreeView } from "@/components/Terminal/PaneTreeView";
 import { TerminalWorkspaceFiles } from "@/components/Terminal/TerminalWorkspaceFiles";
+import { TERMINAL_CONTEXT_MENU_STYLE } from "@/components/Terminal/terminalMenuStyles";
+import {
+  publishTerminalSidebarMode,
+  readTerminalSidebarMode,
+  TERMINAL_SIDEBAR_STORAGE_KEY,
+  TERMINAL_SIDEBAR_TOGGLE_EVENT,
+} from "@/components/Terminal/terminalSidebarEvents";
 import {
   clampTerminalSidebarWidth,
   nextTerminalSidebarMode,
@@ -22,12 +29,13 @@ import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { homeDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, PanelLeft, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, Server, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Clock3, FolderOpen, FolderTree, GitBranch, Layers, Plus, RefreshCw, Search, Server, Trash2, X } from "lucide-react";
 import type { ThemeVariant, TerminalFontSize, FontFamily } from "@/_nezha_root/types";
 import type { Workspace } from "@/workspace/types";
 import { getDefaultMonoFont } from "@/_nezha_root/types";
 import { takePendingTerminalCommands } from '@/services/terminalCommandQueue';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useTerminalPreferences } from '@/hooks/useTerminalPreferences';
 
 interface TerminalWorkspaceDirectory {
   path: string;
@@ -48,6 +56,7 @@ export function TerminalPage() {
   const themeVariant: ThemeVariant = resolvedTheme.replace("aegis-", "") as ThemeVariant;
 
   const terminalFontSize = useSettingsStore((state) => state.terminalFontSize) as TerminalFontSize;
+  const { scrollback: terminalScrollback, shiftEnterNewline: terminalShiftEnterNewline } = useTerminalPreferences();
   const configuredMonoFont = useSettingsStore((state) => state.monoFont);
   const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
   const [projectPath, setProjectPath] = useState(".");
@@ -81,12 +90,7 @@ export function TerminalPage() {
   const ensureActive = useWorkspaceStore((s) => s.ensureActive);
   useEffect(() => { if (!workspace) ensureActive(); }, [workspace, ensureActive]);
 
-  const [sidebarMode, setSidebarMode] = useState<TerminalSidebarMode>(() => {
-    try {
-      const saved = localStorage.getItem('junqi:terminal-sidebar-mode');
-      return saved === 'full' || saved === 'compact' || saved === 'hidden' ? saved : 'full';
-    } catch { return 'full'; }
-  });
+  const [sidebarMode, setSidebarMode] = useState<TerminalSidebarMode>(readTerminalSidebarMode);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       return clampTerminalSidebarWidth(Number(localStorage.getItem('junqi:terminal-sidebar-width')));
@@ -97,7 +101,8 @@ export function TerminalPage() {
   const [sidebarResizeActive, setSidebarResizeActive] = useState(false);
   const sidebarTransitionTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    try { localStorage.setItem('junqi:terminal-sidebar-mode', sidebarMode); } catch {}
+    try { localStorage.setItem(TERMINAL_SIDEBAR_STORAGE_KEY, sidebarMode); } catch {}
+    publishTerminalSidebarMode(sidebarMode);
   }, [sidebarMode]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -116,6 +121,10 @@ export function TerminalPage() {
       setSidebarResizeActive(false);
     }, 200);
   }, []);
+  useEffect(() => {
+    window.addEventListener(TERMINAL_SIDEBAR_TOGGLE_EVENT, cycleSidebarMode);
+    return () => window.removeEventListener(TERMINAL_SIDEBAR_TOGGLE_EVENT, cycleSidebarMode);
+  }, [cycleSidebarMode]);
   useEffect(() => () => {
     if (sidebarTransitionTimerRef.current !== null) {
       window.clearTimeout(sidebarTransitionTimerRef.current);
@@ -148,17 +157,6 @@ export function TerminalPage() {
       setRecentDirectories([]);
     }
   }, []);
-
-  const sidebarToggleTitle = sidebarMode === 'full'
-    ? t('nav.sidebarToMini', 'Compact sidebar')
-    : sidebarMode === 'compact'
-      ? t('nav.sidebarHide', 'Hide sidebar')
-      : t('nav.sidebarExpand', 'Show sidebar');
-  const sidebarToggleIcon = sidebarMode === 'full'
-    ? <PanelLeftClose size={14} />
-    : sidebarMode === 'compact'
-      ? <PanelLeft size={14} />
-      : <PanelLeftOpen size={14} />;
 
   useEffect(() => {
     void refreshRecentDirectories();
@@ -343,47 +341,7 @@ export function TerminalPage() {
 
   return (
     <div style={{ display: "flex", flex: 1, flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--terminal-bg)" }}>
-      <div
-        style={{
-          height: 32,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 8px',
-          borderBottom: '1px solid rgb(var(--aegis-overlay)/0.08)',
-          background: 'rgb(var(--aegis-surface))',
-        }}
-      >
-        <button
-          type="button"
-          onClick={cycleSidebarMode}
-          title={sidebarToggleTitle}
-          aria-label={sidebarToggleTitle}
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 5,
-            border: 'none',
-            background: 'transparent',
-            color: 'rgb(var(--aegis-text-dim))',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onMouseEnter={(event) => {
-            event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)';
-            event.currentTarget.style.color = 'rgb(var(--aegis-text))';
-          }}
-          onMouseLeave={(event) => {
-            event.currentTarget.style.background = 'transparent';
-            event.currentTarget.style.color = 'rgb(var(--aegis-text-dim))';
-          }}
-        >
-          {sidebarToggleIcon}
-        </button>
-      </div>
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", flex: 1, minHeight: 0, position: 'relative' }}>
 
         {sidebarMode !== "hidden" && (
           <WorkspaceSidebarPanel
@@ -438,6 +396,8 @@ export function TerminalPage() {
                     isActive={candidateActive}
                     themeVariant={themeVariant}
                     terminalFontSize={terminalFontSize}
+                    terminalScrollback={terminalScrollback}
+                    terminalShiftEnterNewline={terminalShiftEnterNewline}
                     monoFontFamily={monoFontFamily}
                     projectPath={candidate.sshRemoteHost ? projectPath : candidate.projectDirectory || candidate.workingDirectory || projectPath}
                     resizeSuspended={sidebarResizeActive}
@@ -449,6 +409,8 @@ export function TerminalPage() {
               <ShellTerminalPanel
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
+                terminalScrollback={terminalScrollback}
+                terminalShiftEnterNewline={terminalShiftEnterNewline}
                 monoFontFamily={monoFontFamily}
                 projectPath={projectPath}
                 projectId="default"
@@ -711,6 +673,15 @@ function ProjectWorkspaceRow({
     if (next) onRename?.(next);
     setRenaming(false);
   };
+  const beginRename = (deferred = false) => {
+    const open = () => {
+      setName(title);
+      setRenaming(true);
+    };
+    setContextMenu(null);
+    if (deferred) requestAnimationFrame(open);
+    else open();
+  };
 
   const contextMenuContent = contextMenu && (
     <div
@@ -719,14 +690,13 @@ function ProjectWorkspaceRow({
       style={{
         position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 600,
         minWidth: 176, padding: 4, borderRadius: 6,
-        background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(var(--aegis-overlay) / 0.14)',
-        boxShadow: '0 8px 24px rgb(0 0 0 / 0.32)',
+        ...TERMINAL_CONTEXT_MENU_STYLE,
       }}
     >
       {onClose && <WorkspaceRowMenuItem danger label={workspace.worktreeParentId ? t('terminal.worktreeClose') : t('terminal.workspaceClose')} onClick={() => { onClose(); setContextMenu(null); }} />}
       <WorkspaceRowMenuItem disabled={!canCloseOthers} label={t('terminal.workspaceCloseOthers')} onClick={() => { if (canCloseOthers) { onCloseOthers?.(); setContextMenu(null); } }} />
       <div style={{ height: 1, margin: '3px 0', background: 'rgb(var(--aegis-overlay) / 0.10)' }} />
-      <WorkspaceRowMenuItem label={t('terminal.workspaceRename')} onClick={() => { setName(title); setRenaming(true); setContextMenu(null); }} />
+      <WorkspaceRowMenuItem label={t('terminal.workspaceRename')} onClick={() => beginRename(true)} />
       <WorkspaceRowMenuItem label={t('terminal.workspaceDuplicate')} onClick={() => { onDuplicate(); setContextMenu(null); }} />
       {onCreateWorktree && <WorkspaceRowMenuItem label={t('terminal.worktreeCreate')} onClick={() => { onCreateWorktree(); setContextMenu(null); }} />}
       {onGoToSource && <WorkspaceRowMenuItem label={t('terminal.worktreeGoToSource')} onClick={() => { onGoToSource(); setContextMenu(null); }} />}
@@ -773,9 +743,9 @@ function ProjectWorkspaceRow({
 
   return (
     <div
-      draggable={draggable}
+      draggable={draggable && !renaming}
       onClick={() => { if (!renaming) onSelect(); }}
-      onDoubleClick={() => { if (onRename) { setName(title); setRenaming(true); } }}
+      onDoubleClick={() => { if (onRename) beginRename(); }}
       onContextMenu={(event) => {
         event.preventDefault();
         setContextMenu({ x: event.clientX, y: event.clientY });
@@ -822,6 +792,8 @@ function ProjectWorkspaceRow({
             value={name}
             onChange={(event) => setName(event.target.value)}
             onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
             onBlur={commitRename}
             onKeyDown={(event) => {
               if (event.key === 'Enter') { event.preventDefault(); commitRename(); }
@@ -1354,7 +1326,7 @@ function TerminalWorktreeCreateDialog({ workspace, onClose, onCreate }: {
   return (
     <div role="dialog" aria-modal="true" aria-label={t('terminal.worktreeCreate')} style={terminalModalBackdropStyle} onMouseDown={onClose}>
       <div style={terminalModalStyle} onMouseDown={(event) => event.stopPropagation()}>
-        <div style={terminalModalEyebrowStyle}>CREATE-WORKTREE</div>
+        <div style={terminalModalEyebrowStyle}>{t('terminal.worktreeCreate')}</div>
         <div style={terminalModalTitleStyle}>{workspace.name}</div>
         <div style={terminalModalPathStyle}>{workspace.projectDirectory || workspace.workingDirectory}</div>
         <label style={terminalModalLabelStyle}>
@@ -1393,7 +1365,7 @@ function TerminalSshWorkspaceDialog({ onClose, onCreate }: {
   return (
     <div role="dialog" aria-modal="true" aria-label={t('terminal.sshWorkspaceCreate')} style={terminalModalBackdropStyle} onMouseDown={onClose}>
       <div style={terminalModalStyle} onMouseDown={(event) => event.stopPropagation()}>
-        <div style={terminalModalEyebrowStyle}>SSH-WORKSPACE</div>
+        <div style={terminalModalEyebrowStyle}>{t('terminal.sshWorkspaceCreate')}</div>
         <div style={terminalModalTitleStyle}>{t('terminal.sshWorkspaceTitle')}</div>
         <div style={{ color: 'rgb(var(--aegis-text-dim))', fontSize: 11.5, lineHeight: 1.5 }}>{t('terminal.sshWorkspaceDescription')}</div>
         <label style={terminalModalLabelStyle}>

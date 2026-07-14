@@ -31,6 +31,13 @@ pub enum GatewayRuntimeMode {
     Docker,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GatewayRuntimeState {
+    pub lifecycle: GatewayLifecycle,
+    pub mode: GatewayRuntimeMode,
+    pub restarting: bool,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LogLevel {
@@ -68,11 +75,6 @@ pub struct LogEntry {
 pub struct GatewayProcess {
     pub child: Mutex<Option<Child>>,
     pub port: Mutex<u16>,
-    /// True while a real `openclaw gateway restart` is in progress.
-    /// While set, `gateway_status` reports `running: true` (so the frontend
-    /// status poller does not see the service flap down→up and trigger a
-    /// competing `start_gateway`), and `start_gateway` refuses to spawn.
-    pub restarting: Mutex<bool>,
     /// Process-wide lifecycle gate. Every mutating operation (ensure, start,
     /// restart, stop, Docker switch and storage migration) must own this gate.
     pub operation_gate: Arc<tokio::sync::Mutex<()>>,
@@ -83,10 +85,9 @@ pub struct GatewayProcess {
     /// Circular buffer of recent log entries (SPEC §2.4, M6).
     /// Push path evicts the oldest entry once length exceeds LOG_BUFFER_CAP.
     pub logs: Mutex<VecDeque<LogEntry>>,
-    /// Canonical lifecycle state machine.
-    pub lifecycle: Mutex<GatewayLifecycle>,
-    /// Canonical owner/runtime mode for the configured endpoint.
-    pub runtime_mode: Mutex<GatewayRuntimeMode>,
+    /// Canonical lifecycle and ownership state. Kept behind one private lock so
+    /// readers cannot observe a new mode paired with an old lifecycle.
+    runtime: Mutex<GatewayRuntimeState>,
 }
 
 impl GatewayProcess {
@@ -94,13 +95,59 @@ impl GatewayProcess {
         Self {
             child: Mutex::new(None),
             port: Mutex::new(18789),
-            restarting: Mutex::new(false),
             operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             restart_completed_generation: AtomicU64::new(0),
             logs: Mutex::new(VecDeque::with_capacity(LOG_BUFFER_CAP)),
-            lifecycle: Mutex::new(GatewayLifecycle::Stopped),
-            runtime_mode: Mutex::new(GatewayRuntimeMode::None),
+            runtime: Mutex::new(GatewayRuntimeState {
+                lifecycle: GatewayLifecycle::Stopped,
+                mode: GatewayRuntimeMode::None,
+                restarting: false,
+            }),
         }
+    }
+
+    pub fn runtime_snapshot(&self) -> Result<GatewayRuntimeState, String> {
+        self.runtime
+            .lock()
+            .map(|state| *state)
+            .map_err(|e| e.to_string())
+    }
+
+    /// The only canonical Gateway state writer.
+    pub fn transition(
+        &self,
+        lifecycle: Option<GatewayLifecycle>,
+        mode: Option<GatewayRuntimeMode>,
+        restarting: Option<bool>,
+        reason: &str,
+    ) {
+        let applied = match self.runtime.lock() {
+            Ok(mut state) => {
+                if let Some(lifecycle) = lifecycle {
+                    state.lifecycle = lifecycle;
+                }
+                if let Some(mode) = mode {
+                    state.mode = mode;
+                }
+                if let Some(restarting) = restarting {
+                    state.restarting = restarting;
+                }
+                *state
+            }
+            Err(error) => {
+                eprintln!("GatewayProcess::transition: mutex poisoned: {}", error);
+                return;
+            }
+        };
+        push_log(
+            &self.logs,
+            LogSource::Lifecycle,
+            LogLevel::Info,
+            format!(
+                "gateway -> {:?}/{:?}/restarting={} ({})",
+                applied.lifecycle, applied.mode, applied.restarting, reason
+            ),
+        );
     }
 }
 
@@ -115,6 +162,25 @@ mod operation_gate_tests {
         assert!(state.operation_gate.clone().try_lock_owned().is_err());
         drop(owner);
         assert!(state.operation_gate.clone().try_lock_owned().is_ok());
+    }
+
+    #[test]
+    fn bug_gsc04_transition_updates_lifecycle_and_mode_atomically() {
+        let state = GatewayProcess::new();
+        state.transition(
+            Some(GatewayLifecycle::Running),
+            Some(GatewayRuntimeMode::ManagedChild),
+            Some(true),
+            "test",
+        );
+        assert_eq!(
+            state.runtime_snapshot().unwrap(),
+            GatewayRuntimeState {
+                lifecycle: GatewayLifecycle::Running,
+                mode: GatewayRuntimeMode::ManagedChild,
+                restarting: true,
+            }
+        );
     }
 }
 

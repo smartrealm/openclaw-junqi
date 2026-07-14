@@ -17,7 +17,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Save, Loader2,
   Cpu, Check, ChevronDown, Activity, AlertCircle,
-  Search, FolderOpen, Clock, Zap, MessageSquare,
+  Search, FolderOpen, Clock, Zap, MessageSquare, Puzzle,
 } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -34,7 +34,7 @@ import {
   type ChannelAccountBinding,
   type ChannelGroupView,
 } from '@/services/channelConfig';
-import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
+import type { AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import clsx from 'clsx';
 
 // ═══════════════════════════════════════════════════════════
@@ -68,8 +68,13 @@ interface ModelOption {
 interface AgentSettingsPanelProps {
   agent: AgentForPanel | null;
   agentSessions: SessionForPanel[];
-  initialShowWorkspaceFiles?: boolean;
+  agentSkills: AgentWorkspaceSkill[];
+  loadingAgentSkills: boolean;
+  agentSkillsError: string | null;
+  workspaceOpen: boolean;
   onClose: () => void;
+  onOpenWorkspace: (agent: AgentForPanel, workspace?: string) => void;
+  onRetryAgentSkills: () => void;
   onSaved: (patch?: Partial<AgentForPanel>) => void;
 }
 
@@ -237,8 +242,13 @@ function defaultAgentImAccountConfig(channelId: string, agent: AgentForPanel): R
 export function AgentSettingsPanel({
   agent,
   agentSessions,
-  initialShowWorkspaceFiles = false,
+  agentSkills,
+  loadingAgentSkills,
+  agentSkillsError,
+  workspaceOpen,
   onClose,
+  onOpenWorkspace,
+  onRetryAgentSkills,
   onSaved,
 }: AgentSettingsPanelProps) {
   const { t } = useTranslation();
@@ -275,7 +285,7 @@ export function AgentSettingsPanel({
   const [workspace, setWorkspace] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [modelInherited, setModelInherited] = useState(false);
-  const [showWorkspaceFiles, setShowWorkspaceFiles] = useState(false);
+  const [channelsExpanded, setChannelsExpanded] = useState(false);
 
   // ── Original values (from config.get) — used for hasChanges ──
   const [origName, setOrigName] = useState('');
@@ -338,7 +348,7 @@ export function AgentSettingsPanel({
     setLoadingConfig(true);
     setConfigError(null);
     setModelDropdownOpen(false);
-    setShowWorkspaceFiles(initialShowWorkspaceFiles);
+    setChannelsExpanded(false);
     setSaved(false);
 
     gateway.call('config.get', {})
@@ -391,7 +401,7 @@ export function AgentSettingsPanel({
       });
 
     return () => { cancelled = true; };
-  }, [agent?.id, initialShowWorkspaceFiles, initializedForId]); // Only re-run when the agent ID changes or initialization state resets
+  }, [agent?.id, initializedForId]); // Only re-run when the agent ID changes or initialization state resets
 
   // ── Fetch available models when panel opens ──
   useEffect(() => {
@@ -672,15 +682,17 @@ export function AgentSettingsPanel({
       {agent && (
         <>
           {/* ── Backdrop ── */}
-          <motion.div
-            key="settings-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed top-[56px] end-0 bottom-0 start-0 bg-black/40 backdrop-blur-sm z-[2147481000]"
-            onClick={requestClose}
-          />
+          {!workspaceOpen && (
+            <motion.div
+              key="settings-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed top-[56px] end-0 bottom-0 start-0 bg-black/40 backdrop-blur-sm z-[2147481000]"
+              onClick={requestClose}
+            />
+          )}
 
           {/* ── Panel (340px — compact and clean) ── */}
           <motion.div
@@ -838,32 +850,15 @@ export function AgentSettingsPanel({
                         />
                         <button
                           type="button"
-                          onClick={() => setShowWorkspaceFiles((v) => !v)}
+                          onClick={() => onOpenWorkspace(agent, trimmedWorkspace || undefined)}
                           className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-aegis-border px-2.5 py-1.5 text-[10px] font-bold text-aegis-text-muted hover:border-aegis-primary/35 hover:bg-aegis-primary/10 hover:text-aegis-primary transition-colors"
                         >
                           <FolderOpen size={12} />
-                          {showWorkspaceFiles
-                            ? t('agentSettings.hideWorkspaceFiles', 'Hide workspace files')
-                            : t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
+                          {t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
                         </button>
                       </div>
                     </div>
                   </div>
-
-                  {showWorkspaceFiles && (
-                    <div>
-                      <label className="flex items-center gap-1.5 text-[9px] text-aegis-text-muted uppercase tracking-widest font-bold mb-2">
-                        <FolderOpen size={10} />
-                        {t('agentSettings.workspaceFiles', 'Workspace Files')}
-                      </label>
-                      <div className="h-[420px] overflow-hidden rounded-xl border border-aegis-border bg-aegis-bg">
-                        <WorkspacePanel
-                          agentId={agent.id}
-                          rootOverride={trimmedWorkspace || undefined}
-                        />
-                      </div>
-                    </div>
-                  )}
 
                   {/* ── Section: Model Selector ── */}
                   <div>
@@ -1038,27 +1033,104 @@ export function AgentSettingsPanel({
                     </div>
                   </div>
 
-                  {/* ── Section: Channel Bindings ── */}
+                  {/* ── Section: Agent-owned workspace skills ── */}
                   <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <label className="flex items-center gap-1.5 text-[9px] text-aegis-text-muted uppercase tracking-widest font-bold">
-                        <MessageSquare size={10} />
-                        {t('agentSettings.channels', 'Channels')}
-                      </label>
-                      {!loadingChannels && channelGroups.length > 0 && (
-                        <span
-                          className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                          style={{
-                            color: boundChannelCount > 0 ? primaryColor : themeAlpha('text-dim', 1),
-                            background: boundChannelCount > 0 ? `${primaryColor}14` : themeAlpha('overlay', 0.06),
-                          }}
-                        >
-                          {boundChannelCount} / {channelGroups.reduce((sum, group) => sum + group.accounts.length, 0)}
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-aegis-text-muted">
+                        <Puzzle size={10} />
+                        {t('agentSettings.agentSkills', 'Agent Skills')}
+                      </div>
+                      {!loadingAgentSkills && (
+                        <span className="text-[9px] font-bold text-aegis-text-dim">
+                          {agentSkills.length}
                         </span>
                       )}
                     </div>
+                    <div className="overflow-hidden rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)]">
+                      {loadingAgentSkills ? (
+                        <div className="flex items-center gap-2 px-3.5 py-3 text-[11px] text-aegis-text-dim">
+                          <Loader2 size={13} className="animate-spin" style={{ color: primaryColor }} />
+                          {t('agentSettings.loadingAgentSkills', 'Loading agent skills…')}
+                        </div>
+                      ) : agentSkillsError ? (
+                        <div className="flex items-start gap-2.5 px-3.5 py-3">
+                          <AlertCircle size={13} className="mt-0.5 shrink-0 text-aegis-danger" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-bold text-aegis-danger">
+                              {t('agentSettings.agentSkillsLoadFailed', 'Failed to load agent skills')}
+                            </p>
+                            <p className="mt-0.5 break-words text-[9px] text-aegis-text-dim">{agentSkillsError}</p>
+                            <button
+                              type="button"
+                              onClick={onRetryAgentSkills}
+                              className="mt-1.5 text-[10px] font-bold text-aegis-primary hover:underline"
+                            >
+                              {t('common.retry', 'Retry')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : agentSkills.length > 0 ? (
+                        <div className="divide-y divide-[rgb(var(--aegis-overlay)/0.06)]">
+                          {agentSkills.map((skill) => (
+                            <div key={skill.name} className="flex items-start gap-2.5 px-3.5 py-2.5">
+                              <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-aegis-primary/10 text-aegis-primary">
+                                <Puzzle size={11} />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="truncate text-[11px] font-bold text-aegis-text">{skill.name}</span>
+                                  {(!skill.eligible || skill.disabled) && (
+                                    <span className="shrink-0 rounded bg-[rgb(var(--aegis-overlay)/0.06)] px-1.5 py-0.5 text-[8px] font-bold text-aegis-text-dim">
+                                      {t('agentSettings.skillUnavailable', 'Unavailable')}
+                                    </span>
+                                  )}
+                                </div>
+                                {skill.description && (
+                                  <p className="mt-0.5 line-clamp-2 text-[9px] leading-relaxed text-aegis-text-dim">
+                                    {skill.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="px-3.5 py-3 text-[10px] leading-relaxed text-aegis-text-dim">
+                          {t('agentSettings.noAgentSkills', 'No skills are installed in this agent workspace.')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                    <div
+                  {/* ── Section: Channel Bindings ── */}
+                  <div>
+                    <button
+                      type="button"
+                      aria-expanded={channelsExpanded}
+                      onClick={() => setChannelsExpanded((expanded) => !expanded)}
+                      className="mb-2 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-start transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.035)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary"
+                    >
+                      <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-aegis-text-muted">
+                        <MessageSquare size={10} />
+                        {t('agentSettings.channels', 'Channels')}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        {!loadingChannels && channelGroups.length > 0 && (
+                          <span
+                            className="rounded px-1.5 py-0.5 text-[9px] font-bold"
+                            style={{
+                              color: boundChannelCount > 0 ? primaryColor : themeAlpha('text-dim', 1),
+                              background: boundChannelCount > 0 ? `${primaryColor}14` : themeAlpha('overlay', 0.06),
+                            }}
+                          >
+                            {boundChannelCount} / {channelGroups.reduce((sum, group) => sum + group.accounts.length, 0)}
+                          </span>
+                        )}
+                        <ChevronDown size={13} className={clsx('text-aegis-text-dim transition-transform', channelsExpanded && 'rotate-180')} />
+                      </span>
+                    </button>
+
+                    {channelsExpanded && <div
                       className="rounded-xl border overflow-hidden"
                       style={{
                         borderColor: themeAlpha('overlay', 0.08),
@@ -1241,7 +1313,7 @@ export function AgentSettingsPanel({
                           ))}
                         </div>
                       )}
-                    </div>
+                    </div>}
                   </div>
 
                   {/* ── Section: Agent Info card ── */}
@@ -1309,21 +1381,6 @@ export function AgentSettingsPanel({
                         '--tw-divide-opacity': 1,
                       } as CSSProperties & { '--tw-divide-opacity': number }}
                     >
-                      {/* Workspace path */}
-                      {agent.workspace && (
-                        <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgb(var(--aegis-overlay)/0.02)]">
-                          <FolderOpen size={11} className="text-aegis-text-dim shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[8px] text-aegis-text-dim uppercase tracking-wider mb-0.5">
-                              {t('agentSettings.workspace', 'Workspace')}
-                            </div>
-                            <div className="text-[10px] text-aegis-text font-mono truncate">
-                              {agent.workspace}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
                       {/* Last activity */}
                       {latestSession && (
                         <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgb(var(--aegis-overlay)/0.02)]">
@@ -1353,7 +1410,7 @@ export function AgentSettingsPanel({
                       )}
 
                       {/* No sessions fallback */}
-                      {mergedSessions.length === 0 && !agent.workspace && (
+                      {mergedSessions.length === 0 && (
                         <div className="px-3.5 py-3 text-center text-[10px] text-aegis-text-dim bg-[rgb(var(--aegis-overlay)/0.02)]">
                           No sessions yet
                         </div>

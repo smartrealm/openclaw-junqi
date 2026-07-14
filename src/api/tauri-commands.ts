@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: string | null; }
+export interface NpmStatus { available: boolean; version: string | null; path: string | null; source: string | null; }
 export interface GitStatus { available: boolean; version: string | null; path: string | null; source: string | null; }
 export interface OpenclawStatus {
   installed: boolean;
@@ -45,6 +46,7 @@ export interface OpenclawUpdateResult {
 }
 
 export const checkNode = () => invoke<NodeStatus>("check_node");
+export const checkNpm = () => invoke<NpmStatus>("check_npm");
 export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
 export const checkOpenclawUpdate = () => invoke<OpenclawUpdateStatus>("check_openclaw_update");

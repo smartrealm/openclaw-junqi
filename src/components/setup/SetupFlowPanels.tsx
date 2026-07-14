@@ -13,7 +13,7 @@ import {
   TerminalSquare,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MouseEventHandler, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -39,6 +39,12 @@ export const STEP_META: Record<string, { titleKey: string; titleFallback: string
     titleFallback: "Node.js",
     descriptionKey: "setup.installSteps.node.description",
     descriptionFallback: "确认本地运行时版本，缺失时安装内置版本",
+  },
+  npm: {
+    titleKey: "setup.installSteps.npm.title",
+    titleFallback: "npm",
+    descriptionKey: "setup.installSteps.npm.description",
+    descriptionFallback: "确认包管理器版本与 OpenClaw 安装能力",
   },
   openclaw: {
     titleKey: "setup.installSteps.openclaw.title",
@@ -168,7 +174,12 @@ function LogPanel({ logs }: { logs: SetupLog[] }) {
           logs.slice(-160).map((log, i) => (
             <div
               key={`${log.source}-${i}`}
-              className={clsx(log.message.toLowerCase().includes("error") ? "text-red-300" : "text-aegis-text-secondary")}
+              className={clsx(
+                log.level === "error" && "text-red-300",
+                log.level === "warn" && "text-amber-300",
+                log.level === "success" && "text-aegis-success",
+                (!log.level || log.level === "info") && "text-aegis-text-secondary",
+              )}
             >
               <span className="text-aegis-text-dim">[{log.source}]</span> {log.message}
             </div>
@@ -188,6 +199,7 @@ export function SetupShell({
   previousAction,
   nextAction,
   wide = false,
+  showLogToggle = true,
 }: {
   active: number;
   title: string;
@@ -197,6 +209,7 @@ export function SetupShell({
   previousAction?: SetupAction;
   nextAction?: SetupNextAction;
   wide?: boolean;
+  showLogToggle?: boolean;
 }) {
   const { t } = useTranslation();
   const [showLogs, setShowLogs] = useState(false);
@@ -210,15 +223,15 @@ export function SetupShell({
         className="h-[32px] shrink-0 chrome-bg border-b border-aegis-border/30"
       />
       <Stepper active={active} />
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-6 py-8">
+      <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-3 py-4 sm:px-6 sm:py-8">
         <section className={clsx("my-auto w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
-          <div className="mb-6 text-center">
-            <h1 className="text-[30px] font-semibold tracking-normal text-aegis-text" dir="auto">{title}</h1>
+          <div className="mb-4 text-center sm:mb-6">
+            <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
           </div>
-          <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-6 shadow-sm")}>
+          <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
             {children}
-            {isRuntime && (
+            {isRuntime && showLogToggle && (
               <div className="mt-5 border-t border-aegis-border pt-4">
                 <button
                   type="button"
@@ -235,7 +248,7 @@ export function SetupShell({
         </section>
       </main>
       {showActions && (
-        <footer className="shrink-0 border-t border-aegis-border/60 bg-aegis-bg/95 px-6 py-3 backdrop-blur">
+        <footer className="shrink-0 border-t border-aegis-border/60 bg-aegis-bg/95 px-3 py-3 backdrop-blur sm:px-6">
           <div className={clsx("mx-auto flex w-full items-center justify-between gap-3", wide ? "max-w-5xl" : "max-w-3xl")}>
             <div className="flex min-w-[112px] justify-start">
               {previousAction && (
@@ -622,7 +635,7 @@ function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: 
   const { t } = useTranslation();
   const visibleSteps = steps.length > 0 ? steps : [{ id: "gateway", label: "Gateway", status: "pending" as const }];
   return (
-    <div className="min-h-[260px] rounded-xl border border-aegis-border bg-aegis-elevated">
+    <section className="min-h-[390px] bg-aegis-elevated">
       <div className="border-b border-aegis-border px-4 py-3">
         <div className="text-sm font-semibold text-aegis-text">{t("setup.installPanel.timeline", "执行步骤")}</div>
       </div>
@@ -670,28 +683,125 @@ function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: 
             </div>
             {s.detail && <div className="mt-2 break-words rounded-lg bg-aegis-surface/55 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-secondary">{s.detail}</div>}
             {s.status === "running" && (
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-aegis-surface">
-                <div className="h-full w-1/2 animate-pulse rounded-full bg-aegis-primary" />
+              <div className="mt-3 flex items-center gap-3">
+                <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-aegis-surface">
+                  {typeof s.progress === "number" ? (
+                    <div
+                      className="h-full rounded-full bg-aegis-primary transition-[width] duration-300"
+                      style={{ width: `${Math.max(2, Math.min(100, s.progress))}%` }}
+                    />
+                  ) : (
+                    <div className="h-full w-1/3 animate-pulse rounded-full bg-aegis-primary" />
+                  )}
+                </div>
+                {typeof s.progress === "number" && (
+                  <span className="w-9 text-right font-mono text-[11px] tabular-nums text-aegis-text-dim">
+                    {Math.round(s.progress)}%
+                  </span>
+                )}
               </div>
             )}
           </div>
         </div>
       ))}
       </div>
-    </div>
+    </section>
+  );
+}
+
+function logTone(level: SetupLog["level"]): string {
+  switch (level) {
+    case "error": return "text-red-300";
+    case "warn": return "text-amber-300";
+    case "success": return "text-aegis-success";
+    default: return "text-aegis-text-secondary";
+  }
+}
+
+function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
+  const { t } = useTranslation();
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef(true);
+  const [copied, setCopied] = useState(false);
+  const visibleLogs = logs.slice(-100);
+
+  useEffect(() => {
+    if (!followRef.current || !viewportRef.current) return;
+    viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
+  }, [logs.length]);
+
+  const copyLogs = () => {
+    const text = visibleLogs
+      .map((log) => `${new Date(log.ts).toLocaleTimeString()} [${log.step ?? log.source}] ${log.message}`)
+      .join("\n");
+    if (!text) return;
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    });
+  };
+
+  return (
+    <section className="min-h-[300px] overflow-hidden border-t border-aegis-border bg-aegis-bg/35 lg:min-h-[390px] lg:border-l lg:border-t-0">
+      <header className="flex h-12 items-center justify-between gap-3 border-b border-aegis-border px-4">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-aegis-text">
+          <TerminalSquare size={15} />
+          {t("setup.installPanel.activity", "执行记录")}
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-normal text-aegis-text-dim">
+            <span className="h-1.5 w-1.5 rounded-full bg-aegis-success" />
+            {t("setup.installPanel.live", "实时")}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={copyLogs}
+          disabled={visibleLogs.length === 0}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-surface disabled:opacity-40"
+        >
+          <Copy size={12} />
+          {copied ? t("setup.copiedLogs") : t("setup.copyLogs")}
+        </button>
+      </header>
+      <div
+        ref={viewportRef}
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 28;
+        }}
+        className="h-[342px] overflow-auto px-4 py-3 font-mono text-[11px] leading-5"
+      >
+        {visibleLogs.length === 0 ? (
+          <div className="py-10 text-center text-aegis-text-dim">{t("setup.logsEmpty")}</div>
+        ) : visibleLogs.map((log, index) => (
+          <div
+            key={`${log.ts}-${index}-${log.message}`}
+            className="grid grid-cols-[58px_minmax(0,1fr)] gap-x-2 border-b border-aegis-border/35 py-1.5 last:border-0 sm:grid-cols-[58px_72px_minmax(0,1fr)]"
+          >
+            <time className="tabular-nums text-aegis-text-dim">
+              {new Date(log.ts).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </time>
+            <span className="truncate text-aegis-text-dim">{log.step ?? log.source}</span>
+            <span className={clsx("col-span-2 min-w-0 break-words sm:col-span-1", logTone(log.level))}>{log.message}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
 export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow; logs: SetupLog[]; setupStep: string }) {
   const { t } = useTranslation();
+  const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done").length;
   const total = flow.steps.length || 1;
   const percent = Math.max(0, Math.min(100, Math.round(flow.progress)));
-  const recentLogs = logs.slice(-3);
   const isReady = setupStep === "ready";
   const isError = setupStep === "error";
   const isAwaitingGatewayStart = setupStep === "install-complete";
+  useEffect(() => {
+    if (isError) setMobileView("logs");
+  }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
   const currentTitle = current
     ? currentMeta ? t(currentMeta.titleKey, currentMeta.titleFallback) : current.label
@@ -739,35 +849,34 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
         </div>
       </div>
 
-      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
-        <InstallationTimeline steps={flow.steps} awaitingGatewayStart={isAwaitingGatewayStart} />
-        <aside className="min-h-[260px] rounded-xl border border-aegis-border bg-aegis-elevated p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-aegis-text">
-            <TerminalSquare size={16} />
-            {t("setup.installPanel.activity", "执行记录")}
+      <div className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
+        <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">
+          {(["steps", "logs"] as const).map((view) => (
+            <button
+              key={view}
+              type="button"
+              onClick={() => setMobileView(view)}
+              className={clsx(
+                "flex-1 rounded-md px-3 py-2 text-xs font-semibold transition-colors",
+                mobileView === view
+                  ? "bg-aegis-surface text-aegis-text"
+                  : "text-aegis-text-dim hover:text-aegis-text-secondary",
+              )}
+            >
+              {view === "steps"
+                ? t("setup.installPanel.timeline", "执行步骤")
+                : t("setup.installPanel.activity", "执行记录")}
+            </button>
+          ))}
+        </div>
+        <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
+          <div className={clsx(mobileView !== "steps" && "hidden lg:block")}>
+            <InstallationTimeline steps={flow.steps} awaitingGatewayStart={isAwaitingGatewayStart} />
           </div>
-          <div className="space-y-2">
-            {recentLogs.length === 0 ? (
-              <div className="rounded-md border border-dashed border-aegis-border px-3 py-4 text-center text-xs text-aegis-text-dim">
-                {t("setup.logsEmpty")}
-              </div>
-            ) : recentLogs.map((log, index) => (
-              <div key={`${log.source}-${index}-${log.message}`} className="rounded-md bg-aegis-bg/55 px-3 py-2">
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-aegis-text-dim">{log.source}</div>
-                <div className="break-words text-xs leading-5 text-aegis-text-secondary">{log.message}</div>
-              </div>
-            ))}
+          <div className={clsx(mobileView !== "logs" && "hidden lg:block")}>
+            <InstallLiveLog logs={logs} />
           </div>
-          <div className="mt-4 border-t border-aegis-border pt-3 text-[11px] leading-5 text-aegis-text-dim">
-            {isError
-              ? t("setup.installPanel.errorHint", "请复制错误信息或返回上一步重新选择安装方式。")
-              : isReady
-                ? t("setup.installPanel.readyHint", "Gateway 已就绪。点击进入工作台继续。")
-                : isAwaitingGatewayStart
-                  ? t("setup.installPanel.gatewayPendingHint", "必需组件已完成。点击启动 Gateway 进入下一步。")
-                  : t("setup.installPanel.keepOpen", "安装过程中请保持窗口打开。完成后点击进入工作台。")}
-          </div>
-        </aside>
+        </div>
       </div>
     </div>
   );

@@ -144,22 +144,7 @@ fn prune_config_backups(dir: &Path, keep: usize) {
 /// 任何会改写 `openclaw.json` 的路径都应复用这里，避免进程退出、
 /// 断电或并发保存时把主配置截断成半个 JSON。
 pub(crate) fn atomic_write_text(path: &Path, content: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create config dir: {}", e))?;
-    }
-    let suffix = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp_path = path.with_extension(format!("{}.{}.tmp", std::process::id(), suffix));
-    std::fs::write(&tmp_path, content)
-        .map_err(|e| format!("Failed to write temp config: {}", e))?;
-    std::fs::rename(&tmp_path, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        format!("Failed to finalize config write: {}", e)
-    })?;
-    Ok(())
+    paths::atomic_write_text(path, content)
 }
 
 #[derive(Debug, Clone, Serialize)]

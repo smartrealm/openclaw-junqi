@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════
-// Mission Control — 3-Column Command Center
-// Top: Command bar | Col 1: Gantt job rows | Col 2: 24h clock | Col 3: Detail + Activity
+// Scheduled task maintenance
+// Top: search and actions | Left: task list | Right: details and run history
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { Play, RotateCcw, Loader2, Check, X, Plus, Search , Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock} from 'lucide-react';
+import { Play, RotateCcw, Loader2, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock } from 'lucide-react';
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
@@ -385,6 +385,7 @@ export function CronMonitorPage() {
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all');
   const [showAllLogs, setShowAllLogs] = useState(false);
   // Split-button quick-create menu navigates to /cron?new=1 to open the
   // form directly. After opening, the query is consumed so the dialog does
@@ -449,9 +450,12 @@ export function CronMonitorPage() {
   // Sorted: errors → active (by next run) → paused | filtered by search
   const sortedJobs = useMemo(() => {
     let filtered = jobs;
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(j => getStatus(j) === statusFilter);
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      filtered = jobs.filter(j => (j.name || j.id).toLowerCase().includes(q));
+      filtered = filtered.filter(j => (j.name || j.id).toLowerCase().includes(q));
     }
     return [...filtered].sort((a, b) => {
       const sa = getStatus(a), sb = getStatus(b);
@@ -463,7 +467,7 @@ export function CronMonitorPage() {
       const bn = new Date(getNextRun(b) || '9999').getTime();
       return an - bn;
     });
-  }, [jobs, searchQuery]);
+  }, [jobs, searchQuery, statusFilter]);
 
   // Jobs come from central store (polled every 30s automatically)
 
@@ -603,54 +607,59 @@ export function CronMonitorPage() {
   return (
     <div className="flex flex-col flex-1 min-h-0" style={{ minHeight: 'calc(100vh - 80px)' }}>
 
-      {/* ═══ COMMAND BAR ═══ */}
-      <div className="shrink-0 flex items-center gap-4 px-6 py-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.004)]">
-        <div className="flex items-center gap-2">
-          <span className="text-base font-extrabold">🚀 {t('cron.title', 'Mission Control')}</span>
-          <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md
-            bg-aegis-primary/10 border border-aegis-primary/20 text-aegis-primary uppercase tracking-[1px]">
-            {t('cron.jobsCount', { count: jobs.length })}
-          </span>
+      <div className="shrink-0 flex flex-wrap items-center gap-3 px-5 py-3 border-b border-[rgb(var(--aegis-overlay)/0.08)]">
+        <div className="flex items-center gap-2 min-w-0">
+          <CalendarClock size={18} className="text-aegis-text-muted shrink-0" />
+          <div className="min-w-0">
+            <div className="text-[16px] font-bold text-aegis-text">{t('cron.title', 'Scheduled tasks')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('cron.jobsCount', { count: jobs.length })} · {activeCount} {t('cronDetail.active', 'active')}</div>
+          </div>
         </div>
         <div className="flex-1" />
-        {/* Search */}
-        <div className="relative">
+        <div className="relative flex-1 min-w-[180px] max-w-[280px]">
           <Search size={13} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-aegis-text-muted pointer-events-none" />
           <input
             value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
             placeholder={t('cron.searchPlaceholder', 'Search jobs...')}
-            className="w-[200px] ps-8 pe-3 py-1.5 rounded-[10px] text-xs
+            className="w-full ps-8 pe-3 h-8 rounded-md text-xs
               bg-[rgb(var(--aegis-overlay)/0.03)] border border-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text placeholder:text-aegis-text-muted
               outline-none focus:border-aegis-accent/30 focus:bg-aegis-accent/[0.03] transition-all"
           />
         </div>
         <button onClick={() => { refreshGroup('cron'); loadAllRuns(); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border border-[rgb(var(--aegis-overlay)/0.06)]
+          className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)]
             text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text-secondary transition-colors">
           <RotateCcw size={12} className={loading ? 'animate-spin' : ''} /> {t('common.refresh', 'Refresh')}
         </button>
         <button onClick={() => setShowTemplates(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px]
-            bg-aegis-accent/10 border border-aegis-accent/25 text-aegis-accent
-            text-[11px] font-semibold hover:bg-aegis-accent/15 transition-colors">
+          className="flex items-center gap-1.5 px-3 h-8 rounded-md bg-aegis-primary text-white
+            text-[11px] font-semibold hover:opacity-90 transition-opacity">
           <Plus size={12} /> {t('cron.newJob', 'New Job')}
         </button>
       </div>
 
-      {/* ═══ 3-COLUMN MAIN ═══ */}
-      {/* Fix #9: responsive via CSS class instead of inline style */}
+      {/* Master-detail maintenance layout */}
       <div className="flex-1 grid overflow-hidden mc-grid-main">
 
         {/* ═══ COL 1: Gantt-style Job List ═══ */}
         <div className="border-e border-[rgb(var(--aegis-overlay)/0.06)] flex flex-col overflow-hidden">
-          <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[rgb(var(--aegis-overlay)/0.06)]
-            bg-aegis-bg-frosted backdrop-blur-sm sticky top-0 z-10">
-            <h3 className="text-xs font-bold uppercase tracking-[1.5px] text-aegis-text-muted">
+          <div className="shrink-0 px-4 py-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-aegis-bg-frosted backdrop-blur-sm sticky top-0 z-10">
+            <div className="flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold text-aegis-text-secondary">
               {t('cron.scheduledJobs', 'Scheduled Jobs')}
             </h3>
-            <span className="text-[10px] font-bold text-aegis-primary bg-aegis-primary/10 px-2 py-0.5 rounded-md">
-              {activeCount} active
-            </span>
+            <span className="text-[10px] text-aegis-text-dim">{sortedJobs.length} / {jobs.length}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {(['all', 'active', 'paused', 'error'] as const).map((filter) => (
+                <button key={filter} onClick={() => setStatusFilter(filter)} className={clsx(
+                  'h-6 px-2 rounded text-[10px] font-semibold transition-colors',
+                  statusFilter === filter ? 'bg-aegis-primary/10 text-aegis-primary' : 'text-aegis-text-dim hover:bg-[rgb(var(--aegis-overlay)/0.04)] hover:text-aegis-text',
+                )}>
+                  {filter === 'all' ? t('cron.filterAll', 'All') : t(`cronDetail.${filter}`, filter)}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-2">
@@ -660,7 +669,7 @@ export function CronMonitorPage() {
               </div>
             ) : sortedJobs.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="text-[28px] mb-3">⏰</div>
+                <Clock size={24} className="mb-3 text-aegis-text-dim" />
                 <p className="text-xs font-semibold text-aegis-text-dim">{t('cron.noJobs')}</p>
                 <p className="text-[10px] text-aegis-text-dim mt-1">{t('cron.noJobsHint')}</p>
               </div>
@@ -679,13 +688,13 @@ export function CronMonitorPage() {
                     layout transition={{ layout: { duration: 0.15 } }}
                     onClick={() => setSelectedJobId(job.id)}
                     className={clsx(
-                      'flex items-stretch gap-0 mb-1.5 rounded-[14px] overflow-hidden cursor-pointer transition-all border',
+                      'flex items-stretch gap-0 mb-1 rounded-md overflow-hidden cursor-pointer transition-colors border',
                       isSelected ? 'border-aegis-accent/20 bg-aegis-accent/[0.03]' : 'border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.02)] hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
                       isError && 'border-aegis-danger/15',
                       isPaused && 'opacity-35',
                     )}>
                     {/* Color bar */}
-                    <div className="w-[4px] shrink-0 rounded-s-[14px]" style={{
+                    <div className="w-[3px] shrink-0" style={{
                       background: isPaused ? 'rgb(var(--aegis-overlay) / 0.06)' : color,
                       ...(isError ? { animation: 'mc-err-pulse 1.5s ease-in-out infinite' } : {}),
                     }} />
@@ -706,18 +715,18 @@ export function CronMonitorPage() {
                         {formatSchedule(job.schedule)}
                         {isError && (
                           <span className="text-[9px] font-bold text-aegis-danger/50 bg-aegis-danger/[0.08] px-1.5 py-0.5 rounded">
-                            ✗ {job.state?.lastError?.substring(0, 20) || 'error'}
+                            {job.state?.lastError?.substring(0, 20) || 'error'}
                           </span>
                         )}
                         {status === 'active' && (
                           <span className="text-[9px] font-bold text-aegis-primary/50 bg-aegis-primary/[0.08] px-1.5 py-0.5 rounded">
-                            ✓ {formatTimeAgo(getLastRun(job))}
+                            {formatTimeAgo(getLastRun(job))}
                           </span>
                         )}
                         {isPaused && <span className="text-aegis-warning/50">{t('cronDetail.paused').toLowerCase()}</span>}
                         {(job.exact || job.schedule?.exact) && (
                           <span className="text-[9px] font-bold text-aegis-warning/50 bg-aegis-warning/[0.08] px-1.5 py-0.5 rounded shrink-0">
-                            ⚡ {t('cron.exactTiming')}
+                            {t('cron.exactTiming')}
                           </span>
                         )}
                       </div>
@@ -729,7 +738,7 @@ export function CronMonitorPage() {
                       <span className="text-sm font-bold font-mono" style={{
                         color: isError ? tc.danger : isPaused ? 'rgb(var(--aegis-overlay) / 0.1)' : color,
                       }}>
-                        {isError ? '⚠' : isPaused ? '—' : formatCountdown(getNextRun(job))}
+                        {isError ? t('cronDetail.error', 'Error') : isPaused ? '—' : formatCountdown(getNextRun(job))}
                       </span>
                     </div>
 
@@ -771,35 +780,7 @@ export function CronMonitorPage() {
           </div>
         </div>
 
-        {/* ═══ COL 2: 24h Clock Face ═══ */}
-        <div className="border-e border-[rgb(var(--aegis-overlay)/0.06)] flex flex-col overflow-hidden">
-          <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
-            <h3 className="text-xs font-bold uppercase tracking-[1.5px] text-aegis-text-muted">
-              {t('cron.schedule24h', '24h Schedule')}
-            </h3>
-            <span className="text-[10px] font-bold text-aegis-accent bg-aegis-accent/10 px-2 py-0.5 rounded-md">
-              {t('common.live', 'Live')}
-            </span>
-          </div>
-          {/* Clock pushed up slightly — more top padding, less bottom */}
-          <div className="flex-1 flex items-start justify-center pt-4 pb-0 px-4">
-            <ClockFace jobs={jobs} colorMap={colorMap} selectedId={selectedJobId} onSelect={setSelectedJobId} />
-          </div>
-          {/* Legend */}
-          <div className="shrink-0 px-4 pb-3 flex flex-wrap gap-x-3 gap-y-1.5 justify-center">
-            {jobs.filter(j => j.enabled && scheduleAngle(j.schedule) !== null).map(job => (
-              <div key={job.id}
-                className={clsx('flex items-center gap-1.5 text-[9px] cursor-pointer transition-colors',
-                  selectedJobId === job.id ? 'text-aegis-text-secondary' : 'text-aegis-text-dim hover:text-aegis-text-muted')}
-                onClick={() => setSelectedJobId(job.id)}>
-                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: colorMap[job.id] }} />
-                {(job.name || job.id).substring(0, 12)}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ═══ COL 3: Detail + Activity Log ═══ */}
+        {/* Detail + Activity Log */}
         <div className="flex flex-col overflow-hidden">
 
           {/* Selected Job Detail */}
@@ -807,29 +788,29 @@ export function CronMonitorPage() {
             {selectedJob ? (
               <motion.div key={selectedJob.id}
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="shrink-0 p-5 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.005)]">
+                className="shrink-0 p-4 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.005)]">
                 {/* Header */}
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-xl border shrink-0"
+                  <div className="w-9 h-9 rounded-md flex items-center justify-center border shrink-0"
                     style={{ background: `${colorMap[selectedJob.id]}10`, borderColor: `${colorMap[selectedJob.id]}25` }}>
                     {getJobIcon(selectedJob.name || '')}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-lg font-extrabold truncate">{selectedJob.name || selectedJob.id}</div>
+                    <div className="text-[15px] font-bold truncate">{selectedJob.name || selectedJob.id}</div>
                     <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                       <span className="text-[11px] text-aegis-text-muted">{formatSchedule(selectedJob.schedule)}</span>
                       {/* Stagger badge — Gateway 2026.2.25+ */}
                       {(selectedJob.stagger || selectedJob.schedule?.stagger) && (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded
                           bg-aegis-accent/10 border border-aegis-accent/20 text-aegis-accent/70 shrink-0">
-                          ⏱️ {t('cron.stagger')}: {selectedJob.stagger || selectedJob.schedule?.stagger}
+                          {t('cron.stagger')}: {selectedJob.stagger || selectedJob.schedule?.stagger}
                         </span>
                       )}
                       {/* Exact badge — Gateway 2026.2.25+ */}
                       {(selectedJob.exact || selectedJob.schedule?.exact) && (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded
                           bg-aegis-warning/10 border border-aegis-warning/20 text-aegis-warning/70 shrink-0">
-                          ⚡ {t('cron.exactTiming')}
+                          {t('cron.exactTiming')}
                         </span>
                       )}
                       {/* Auto-spread note — only for top-of-hour cron jobs without --exact */}
@@ -842,7 +823,7 @@ export function CronMonitorPage() {
                             text-aegis-text-dim shrink-0"
                           title={t('cron.autoSpreadTitle')}
                         >
-                          🔄 {t('cron.autoSpread')}
+                          {t('cron.autoSpread')}
                         </span>
                       )}
                     </div>
@@ -850,7 +831,7 @@ export function CronMonitorPage() {
                 </div>
                 {/* Status badge */}
                 <div className={clsx(
-                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-[0.5px] border mb-3',
+                  'inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold border mb-3',
                   getStatus(selectedJob) === 'active' ? 'bg-aegis-primary/[0.08] border-aegis-primary/15 text-aegis-primary'
                   : getStatus(selectedJob) === 'error' ? 'bg-aegis-danger/[0.08] border-aegis-danger/15 text-aegis-danger'
                   : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted',
@@ -864,7 +845,7 @@ export function CronMonitorPage() {
                 {/* Delivery status badge (Gateway 2026.2.22+) */}
                 {getDeliveryStatus(selectedJob) && (
                   <div className={clsx(
-                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-[0.5px] border mb-3',
+                    'inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold border mb-3',
                     getDeliveryStatus(selectedJob) === 'delivered' ? 'bg-aegis-success/[0.08] border-aegis-success/15 text-aegis-success ms-2'
                     : getDeliveryStatus(selectedJob) === 'failed' ? 'bg-aegis-danger/[0.08] border-aegis-danger/15 text-aegis-danger ms-2'
                     : 'bg-[rgb(var(--aegis-overlay)/0.03)] border-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted ms-2',
@@ -876,17 +857,17 @@ export function CronMonitorPage() {
                   </div>
                 )}
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 gap-2 mb-3">
+                {/* Compact operational summary */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 border-y border-[rgb(var(--aegis-overlay)/0.06)] mb-3">
                   {[
                     { v: selectedJobRuns.length || '—', l: t('cron.totalRuns', 'Total Runs'), c: tc.primary },
                     { v: formatCountdown(getNextRun(selectedJob)), l: t('cron.timeLeft', 'Time Left'), c: tc.accent },
                     { v: formatDuration(selectedJob.state?.lastDurationMs), l: t('cron.lastDur', 'Last Dur.'), c: tc.warning },
                     { v: selectedJobRuns.length > 0 ? `${Math.round(selectedJobRuns.filter(r => r.status === 'ok').length / selectedJobRuns.length * 100)}%` : '—', l: t('cron.successRate', 'Success Rate'), c: tc.success },
                   ].map(s => (
-                    <div key={s.l} className="p-2.5 rounded-[10px] bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.04)]">
-                      <div className="text-lg font-extrabold leading-none" style={{ color: s.c }}>{s.v}</div>
-                      <div className="text-[7px] uppercase tracking-[1.5px] text-aegis-text-dim font-bold mt-1">{s.l}</div>
+                    <div key={s.l} className="py-2 px-2 first:ps-0">
+                      <div className="text-[13px] font-semibold leading-none text-aegis-text">{s.v}</div>
+                      <div className="text-[9px] text-aegis-text-dim mt-1">{s.l}</div>
                     </div>
                   ))}
                 </div>
@@ -894,7 +875,7 @@ export function CronMonitorPage() {
                 {/* Sparkline: last 14 runs */}
                 {selectedJobRuns.length > 0 && (
                   <>
-                    <div className="text-[9px] uppercase tracking-[1px] text-aegis-text-dim font-bold mb-1.5">
+                    <div className="text-[10px] text-aegis-text-dim font-semibold mb-1.5">
                       {t('cron.lastNRuns', 'Last {{n}} Runs').replace('{{n}}', String(selectedJobRuns.length))}
                     </div>
                     <div className="flex items-end gap-[3px] h-8 mb-3">
@@ -918,7 +899,7 @@ export function CronMonitorPage() {
                 <div className="flex gap-1.5">
                   <button onClick={() => runJob(selectedJob.id)}
                     disabled={!!actionLoading}
-                    className="flex-1 py-2 rounded-[10px] text-center text-[11px] font-bold
+                    className="flex-1 py-2 rounded-md text-center text-[11px] font-semibold
                       bg-aegis-primary/[0.08] border border-aegis-primary/20 text-aegis-primary
                       hover:bg-aegis-primary/15 transition-colors disabled:opacity-40">
                     {actionLoading === `run-${selectedJob.id}`
@@ -927,7 +908,7 @@ export function CronMonitorPage() {
                   </button>
                   <button onClick={() => toggleJob(selectedJob.id, !selectedJob.enabled)}
                     disabled={!!actionLoading}
-                    className="flex-1 py-2 rounded-[10px] text-center text-[11px] font-bold
+                    className="flex-1 py-2 rounded-md text-center text-[11px] font-semibold
                       bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.06)] text-aegis-text-muted
                       hover:text-aegis-text-secondary transition-colors disabled:opacity-40">
                     {selectedJob.enabled ? t('cronDetail.pause') : t('cronDetail.enable')}
@@ -936,7 +917,7 @@ export function CronMonitorPage() {
               </motion.div>
             ) : (
               <div className="shrink-0 p-5 border-b border-[rgb(var(--aegis-overlay)/0.06)] text-center">
-                <div className="text-2xl mb-2">👈</div>
+                <CalendarClock size={22} className="mx-auto mb-2 text-aegis-text-dim" />
                 <div className="text-[11px] text-aegis-text-dim">{t('cron.selectJob', 'Select a job')}</div>
               </div>
             )}
@@ -946,7 +927,7 @@ export function CronMonitorPage() {
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[rgb(var(--aegis-overlay)/0.06)]
               bg-aegis-bg-frosted backdrop-blur-sm">
-              <h4 className="text-[11px] font-bold uppercase tracking-[1.5px] text-aegis-text-muted">
+              <h4 className="text-[11px] font-semibold text-aegis-text-muted truncate">
                 {selectedJob
                   ? `${selectedJob.name || selectedJob.id} — ${t('cronDetail.activityLog')}`
                   : t('cronDetail.activityLog')}
@@ -956,11 +937,6 @@ export function CronMonitorPage() {
                   {activityRuns.length}
                 </span>
               )}
-              <div className="flex items-center gap-1.5 text-[8px] font-extrabold text-aegis-primary uppercase tracking-[1px]">
-                <div className="w-[5px] h-[5px] rounded-full bg-aegis-primary"
-                  style={{ animation: 'mc-dot-ping 2s ease-in-out infinite' }} />
-                LIVE
-              </div>
             </div>
             <div className={clsx('px-2 py-1', showAllLogs ? 'flex-1 overflow-y-auto' : 'overflow-hidden')}>
               {loadingRuns ? (

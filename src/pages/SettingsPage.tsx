@@ -4,11 +4,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X, Sparkles, FolderOpen,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Stethoscope, HeartPulse, ScrollText, X, Sparkles, FolderOpen, TerminalSquare, PanelTop,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -20,7 +20,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
-import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { notifications } from '@/services/notifications';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
@@ -32,14 +32,19 @@ import { formatBytes } from '@/utils/format';
 import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';
+import { TerminalSettingsPanel } from '@/components/settings/TerminalSettingsPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 
+type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'pet' | 'connect' | 'storage' | 'about';
+const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'pet', 'connect', 'storage', 'about'];
+
 export function SettingsPageFull() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     theme, setTheme,
     uiScale, setUiScale,
@@ -47,6 +52,8 @@ export function SettingsPageFull() {
     notificationsEnabled, setNotificationsEnabled,
     soundEnabled, setSoundEnabled,
     dndMode, setDndMode,
+    dynamicIslandEnabled, setDynamicIslandEnabled,
+    dynamicIslandAutoExpand, setDynamicIslandAutoExpand,
     gatewayUrl, setGatewayUrl,
     budgetLimit, setBudgetLimit,
     gatewayToken, setGatewayToken,
@@ -165,7 +172,23 @@ export function SettingsPageFull() {
   const [editUrl, setEditUrl] = useState(gatewayUrl);
   const [editToken, setEditToken] = useState(gatewayToken);
   const [connectionDirty, setConnectionDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'about'>('appearance');
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => (
+    SETTINGS_TABS.includes(requestedTab as SettingsTab) ? requestedTab as SettingsTab : 'appearance'
+  ));
+
+  useEffect(() => {
+    if (SETTINGS_TABS.includes(requestedTab as SettingsTab)) setActiveTab(requestedTab as SettingsTab);
+  }, [requestedTab]);
+
+  const selectTab = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('tab', tab);
+      return next;
+    }, { replace: true });
+  };
 
   useEffect(() => {
     if (activeTab !== 'pet') return;
@@ -390,7 +413,7 @@ export function SettingsPageFull() {
     setTestResult(null);
     try {
       const { url, token } = await resolveConnectionUrl();
-      gateway.connect(url, token);
+      gatewayManager.connect(url, token);
       // Poll the store for up to 5 s (50 × 100 ms) instead of a fixed 2.5 s sleep.
       // This resolves faster on quick connections and is more reliable on slow ones.
       let connected = false;
@@ -408,7 +431,7 @@ export function SettingsPageFull() {
 
   const handleReconnect = async () => {
     const { url, token } = await resolveConnectionUrl();
-    gateway.connect(url, token);
+    gatewayManager.connect(url, token);
   };
 
   const handleSaveConnection = () => {
@@ -417,7 +440,7 @@ export function SettingsPageFull() {
     setConnectionDirty(false);
     // Reconnect with new settings
     const url = editUrl.trim() || 'ws://127.0.0.1:18789';
-    gateway.connect(url, editToken.trim());
+    gatewayManager.connect(url, editToken.trim());
   };
 
   // Toggle switch — unified design (used everywhere in settings)
@@ -459,16 +482,17 @@ export function SettingsPageFull() {
       </div>
 
       {/* Horizontal tab bar */}
-      <div className="flex gap-1 border-b border-aegis-border pb-0 overflow-x-auto">
+      <div className="flex gap-1 border-b border-aegis-border pb-0 overflow-x-auto" role="tablist" aria-label={t('settings.title')}>
         {([
           ['appearance', t('settings.tab.appearance', '外观'), Sun],
+          ['terminal', t('settings.tab.terminal', '终端'), TerminalSquare],
           ['notify', t('settings.tab.notify', '通知'), Bell],
           ['pet', t('settings.tab.pet', '萌宠'), PawPrint],
           ['connect', t('settings.tab.connect', '连接'), Wifi],
           ['storage', t('settings.tab.storage', '存储'), HardDrive],
           ['about', t('settings.tab.about', '关于'), Info],
         ] as const).map(([key, label, Icon]) => (
-          <button key={key} onClick={() => setActiveTab(key)}
+          <button key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => selectTab(key)}
             className={clsx(
               'flex items-center gap-1.5 px-3.5 py-2 rounded-t-lg text-[13px] font-medium transition-colors border-b-2 -mb-[1px] whitespace-nowrap',
               activeTab === key
@@ -481,6 +505,8 @@ export function SettingsPageFull() {
         ))}
       </div>
       <div className="space-y-6">
+
+      {activeTab === 'terminal' && <TerminalSettingsPanel />}
 
       {activeTab === 'appearance' && (
         <>
@@ -671,6 +697,44 @@ export function SettingsPageFull() {
             className="text-[12px] px-4 py-2 rounded-xl border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text hover:border-aegis-border/40 transition-colors"
           >
             🔔 {t('settings.testSound')}
+          </button>
+        </div>
+      </GlassCard>
+
+      <GlassCard delay={0.12}>
+        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
+          <PanelTop size={16} className="text-aegis-primary" />
+          {t('settings.dynamicIsland', '灵动岛')}
+        </h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('settings.dynamicIslandEnabled', '启用灵动岛')}</div>
+              <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandDesc', '主窗口最小化且会话正在执行时显示；拖入文件时临时显示接收状态。')}</div>
+            </div>
+            <Toggle enabled={dynamicIslandEnabled} onChange={setDynamicIslandEnabled} />
+          </div>
+
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('settings.dynamicIslandAutoExpand', '重要状态自动展开')}</div>
+              <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandAutoExpandDesc', '等待输入、执行完成、失败或接收文件时短暂展开，随后自动收起。')}</div>
+            </div>
+            <Toggle enabled={dynamicIslandAutoExpand} onChange={setDynamicIslandAutoExpand} disabled={!dynamicIslandEnabled} />
+          </div>
+
+          <button
+            type="button"
+            disabled={!dynamicIslandEnabled}
+            onClick={() => invoke('open_dynamic_island').catch(() => undefined)}
+            className={clsx(
+              'text-[12px] px-4 py-2 rounded-lg border transition-colors',
+              dynamicIslandEnabled
+                ? 'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10'
+                : 'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed',
+            )}
+          >
+            {t('settings.dynamicIslandPreview', '预览灵动岛')}
           </button>
         </div>
       </GlassCard>
@@ -1146,7 +1210,7 @@ export function SettingsPageFull() {
               <JunQiLogo
                 variant="full"
                 className="h-[64px] w-[320px] max-w-full"
-                title="大夏集团 DAXIA GROUP"
+                title="陕西浚启智境科技有限公司"
               />
             </div>
           </div>

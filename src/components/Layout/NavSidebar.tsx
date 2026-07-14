@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -25,6 +25,7 @@ import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigati
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const ToolsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.ToolsPanel })));
+const CommandsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.CommandsPanel })));
 const SettingsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.SettingsPanel })));
 
 function sessionAgentId(session: Session, sessionKey: string): string {
@@ -382,15 +383,15 @@ function WorkbenchPanel() {
       <div className="px-4 mb-4 flex flex-col gap-1">
         {[
           { key: 'agents',  to: '/agents',                  label: t('sidebar.nav.agents',  '智能体'),   icon: <Bot size={14} /> },
-          { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型'),     icon: <Cpu size={14} /> },
+          { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型服务'), icon: <Cpu size={14} /> },
           { key: 'channels', to: '/channels',              label: t('sidebar.nav.channels', '通道'),     icon: <MessageSquare size={14} /> },
-          { key: 'cron',    to: '/cron?new=1',              label: t('sidebar.nav.cron',    '定时任务'), icon: <Clock size={14} /> },
+          { key: 'cron',    to: '/cron',                    label: t('sidebar.nav.cron',    '定时任务'), icon: <Clock size={14} /> },
         ].map((it) => {
           const active = location.pathname === it.to.split('?')[0] && (
             (it.to.includes('tab=providers') && location.search.includes('tab=providers')) ||
             (it.to === '/channels' && location.pathname.startsWith('/channels')) ||
             (it.to === '/agents' && location.pathname.startsWith('/agents')) ||
-            (it.to === '/cron?new=1' && location.pathname.startsWith('/cron'))
+            (it.to === '/cron' && location.pathname.startsWith('/cron'))
           );
           const rowClassName = clsx(
             'h-8 rounded-md text-[13px] text-left flex items-center gap-2.5 transition-colors',
@@ -406,29 +407,6 @@ function WorkbenchPanel() {
               <span className="flex-1 truncate">{it.label}</span>
             </>
           );
-
-          if (it.key === 'models') {
-            return (
-              <div key={it.key} className={clsx(rowClassName, '-mx-2 pr-1')}>
-                <button
-                  type="button"
-                  onClick={() => navigate(it.to)}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 self-stretch px-2 text-left"
-                >
-                  {rowContent}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate('/config?tab=providers&action=add')}
-                  className="grid size-6 shrink-0 place-items-center rounded text-aegis-text-dim transition-colors hover:bg-aegis-primary/10 hover:text-aegis-primary"
-                  title={t('config.addProvider', 'Add provider')}
-                  aria-label={t('config.addProvider', 'Add provider')}
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
-            );
-          }
 
           return (
             <button
@@ -481,6 +459,7 @@ const PANEL_REGISTRY: Record<SidebarTab, React.ComponentType> = {
   workbench: WorkbenchPanel,
   agents:    AgentsPanel,
   tools:     ToolsPanel,
+  commands:  CommandsPanel,
   settings:  SettingsPanel,
 };
 
@@ -546,6 +525,9 @@ function miniItemsFor(
       { to: '/terminal', icon: <Terminal size={20} />, label: t('nav.terminal', 'Terminal'), feature: 'terminal' },
       { to: '/files', icon: <Folder size={20} />, label: t('nav.files', 'Files'), feature: 'files' },
       { to: '/tools', icon: <Cpu size={20} />, label: t('nav.mcpTools', 'MCP Tools'), feature: 'tools' },
+    ];
+    case 'commands': return [
+      { to: '/openclaw-commands', icon: <BookOpenText size={20} />, label: t('nav.openclawCommands', 'OpenClaw commands'), feature: 'tools' },
     ];
     case 'settings': return [
       { to: '/settings', icon: <Settings size={20} />, label: t('nav.settings', 'Settings'), feature: 'settings' },
