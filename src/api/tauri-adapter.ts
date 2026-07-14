@@ -257,6 +257,16 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     validateOpenclawJson: async () => { try { return await invoke("validate_openclaw_config"); } catch (e: any) { return { valid: false, path: "", exists: false, error: String(e) }; } },
     backupAndResetOpenclaw: async () => { try { await invoke("write_config", { json: "{}" }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
   },
+  providerRuntime: {
+    catalog: (provider?: string) => invoke('get_openclaw_provider_catalog', { provider: provider ?? null }),
+    schema: () => invoke('get_openclaw_config_schema'),
+    authProfiles: (provider?: string) => invoke('get_openclaw_auth_profiles', { provider: provider ?? null }),
+    probe: (data: any, provider: string, profileKey?: string) => invoke('probe_openclaw_provider', {
+      json: JSON.stringify(data),
+      provider,
+      profileKey: profileKey ?? null,
+    }),
+  },
 
   gateway: {
     getStatus: async () => {

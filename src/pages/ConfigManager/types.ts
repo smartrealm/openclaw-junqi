@@ -48,6 +48,25 @@ export interface AuthProfile {
 
 export interface AuthConfig {
   profiles?: Record<string, AuthProfile>;
+  order?: Record<string, string[]>;
+}
+
+export type SecretRefSource = 'env' | 'file' | 'exec';
+
+export interface SecretRef {
+  source: SecretRefSource;
+  provider: string;
+  id: string;
+}
+
+export interface SecretsConfig {
+  providers?: Record<string, Record<string, any>>;
+  defaults?: Partial<Record<SecretRefSource, string>>;
+  resolution?: {
+    maxProviderConcurrency?: number;
+    maxRefsPerProvider?: number;
+    maxBatchBytes?: number;
+  };
 }
 
 // ── Models ──
@@ -336,15 +355,29 @@ export interface ModelProviderModelEntry {
 export interface ModelProviderConfig {
   baseUrl?: string;
   api?: string;
-  apiKey?: string | Record<string, any>;
+  apiKey?: string | SecretRef;
+  auth?: 'api-key' | 'aws-sdk' | 'oauth' | 'token';
+  contextWindow?: number;
+  contextTokens?: number;
+  maxTokens?: number;
+  timeoutSeconds?: number;
+  region?: string;
+  injectNumCtxForOpenAICompat?: boolean;
+  params?: Record<string, any>;
+  agentRuntime?: { id?: string };
+  localService?: Record<string, any>;
+  headers?: Record<string, string | SecretRef>;
+  authHeader?: boolean;
   request?: {
     allowPrivateNetwork?: boolean;
     [key: string]: any;
   };
   models?: ModelProviderModelEntry[];
+  [key: string]: any;
 }
 
 export interface ModelsSection {
+  mode?: 'merge' | 'replace';
   providers?: Record<string, ModelProviderConfig>;
 }
 
@@ -354,6 +387,7 @@ export interface OpenClawConfig {
   meta?: MetaConfig;
   env?: EnvConfig;
   wizard?: WizardConfig;
+  secrets?: SecretsConfig;
   auth?: AuthConfig;
   agents?: AgentsSection;
   tools?: ToolsConfig;

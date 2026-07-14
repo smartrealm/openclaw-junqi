@@ -311,6 +311,19 @@ test('normalizeModelsProvidersForRuntime fills provider rows missing from enable
   ]);
 });
 
+test('BUG-MP-08 does not turn provider wildcard allowlists into provider model rows', () => {
+  const normalized = normalizeModelsProvidersForRuntime({
+    providers: { openai: { models: [] } },
+    agents: { defaults: { models: { 'openai/*': {} } } },
+    generatedProviderCatalog,
+    canonicalProviderId,
+    stripProviderPrefix,
+    canonicalizeModelRef,
+    getTemplateById: () => ({ id: 'openai' }),
+  });
+  assert.deepEqual(normalized?.openai?.models, []);
+});
+
 test('normalizeAgentsForRuntime preserves explicit image model only when catalog marks it image-capable', () => {
   const agents: GatewayRuntimeConfig['agents'] = {
     defaults: {

@@ -49,9 +49,9 @@ test('extractAvailableModelsFromConfig fills template provider models from gener
     },
   });
 
-  assert.ok(models.some((model) => model.id === 'openai/gpt-4o'));
-  assert.ok(models.some((model) => model.id === 'openai/gpt-5.4'));
-  assert.equal(models.find((model) => model.id === 'openai/gpt-4o')?.supportsImage, true);
+  assert.ok(models.some((model) => model.id === 'openai/gpt-5.6'));
+  assert.ok(models.some((model) => model.id === 'openai/gpt-5.6-sol'));
+  assert.equal(models.find((model) => model.id === 'openai/gpt-5.6')?.supportsImage, true);
 });
 
 test('extractAvailableModelsFromConfig preserves provider model image capability metadata', () => {

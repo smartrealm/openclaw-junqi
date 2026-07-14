@@ -12,7 +12,11 @@ import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
-import { testProviderConnection, type ConnectionPrecheckProbe } from './providerConnectionTest';
+import {
+  summarizeOfficialProviderProbe,
+  type ProviderProbeRequest,
+  type ProviderProbeSummary,
+} from '@/services/openclawProviderRuntime';
 import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
@@ -378,7 +382,7 @@ export function ConfigManagerPage() {
   // ── Save ──
   async function persistConfig(
     targetConfig?: GatewayRuntimeConfig | null,
-    options?: { connectionProbe?: ConnectionPrecheckProbe }
+    options?: { connectionProbe?: ProviderProbeRequest }
   ): Promise<boolean> {
     const configToSave = targetConfig ?? config;
     if (!configToSave || !configPath) return false;
@@ -398,7 +402,13 @@ export function ConfigManagerPage() {
       // Preserve provider env vars from disk when the UI state lost them but the
       // provider/profile still exists. Prevents accidental API key deletion.
       const merged = preserveProviderSecretsFromDisk(diskConfig, mergedRaw);
-      const precheckResult = await runConnectionPrecheck(options?.connectionProbe);
+
+      // Apply save-time provider preference and strip UI-only fields before
+      // validating or probing. The probe must exercise the exact candidate that
+      // will be written, not an approximation assembled from form fields.
+      const mergedWithPreferredProviders = applyPreferredWebProviders(merged);
+      const toWrite = normalizeConfigForDisk(mergedWithPreferredProviders);
+      const precheckResult = await runConnectionPrecheck(toWrite, options?.connectionProbe);
       if (!precheckResult.ok) {
         const continueSave = await requestConnectionFailureConfirm(precheckResult.failures);
         if (!continueSave) return false;
@@ -418,9 +428,7 @@ export function ConfigManagerPage() {
         debugWarn('app', '[Config] Backup failed:', backupErr);
       }
 
-      // 3. Apply save-time provider preference for web tools, then write
-      const mergedWithPreferredProviders = applyPreferredWebProviders(merged);
-      const toWrite = normalizeConfigForDisk(mergedWithPreferredProviders);
+      // 3. Write the already validated candidate.
       const savedPrimaryModel = toWrite.agents?.defaults?.model?.primary ?? null;
       const writeResult = await window.aegis.config.write(configPath, toWrite);
       if (!writeResult.success) {
@@ -498,7 +506,7 @@ export function ConfigManagerPage() {
 
   async function handleApplyAndSave(
     updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig,
-    options?: { connectionProbe?: ConnectionPrecheckProbe }
+    options?: { connectionProbe?: ProviderProbeRequest }
   ): Promise<boolean> {
     if (!config) return false;
     return persistConfig(updater(config), options);
@@ -975,30 +983,47 @@ export function ConfigManagerPage() {
     resolver?.(value);
   };
 
-  const runConnectionPrecheck = async (probe?: ConnectionPrecheckProbe) => {
+  const probeProviderCandidate = async (
+    candidate: GatewayRuntimeConfig,
+    probe: ProviderProbeRequest,
+  ): Promise<ProviderProbeSummary> => {
+    const providerId = canonicalProviderId(probe.providerId);
+    if (!providerId) {
+      return { ok: false, status: 'unknown', detail: 'Provider ID is required.' };
+    }
+    const normalizedCandidate = normalizeConfigForDisk(candidate);
+    const payload = await window.aegis.providerRuntime.probe(
+      normalizedCandidate,
+      providerId,
+      probe.profileKey,
+    );
+    return summarizeOfficialProviderProbe(payload);
+  };
+
+  const runConnectionPrecheck = async (
+    candidate: GatewayRuntimeConfig,
+    probe?: ProviderProbeRequest,
+  ) => {
     if (!probe) {
       return { ok: true, failures: [] as string[] };
     }
-
     const providerId = canonicalProviderId(probe.providerId);
-    const baseUrl = String(probe.baseUrl ?? '').trim();
-    const apiKey = String(probe.apiKey ?? '').trim();
-    if (!providerId || !baseUrl || !apiKey) {
-      return { ok: true, failures: [] as string[] };
+    try {
+      const result = await probeProviderCandidate(candidate, probe);
+      if (result.ok) return { ok: true, failures: [] as string[] };
+      const detail = [result.status, result.reasonCode, result.detail]
+        .filter(Boolean)
+        .join(' · ');
+      return {
+        ok: false,
+        failures: [`${providerId}:${probe.profileKey ?? 'default'} — ${detail}`],
+      };
+    } catch (error: any) {
+      return {
+        ok: false,
+        failures: [`${providerId}:${probe.profileKey ?? 'default'} — ${error?.message || String(error)}`],
+      };
     }
-    const template = getTemplateById(providerId);
-    const modelOverride = stripProviderPrefix(providerId, probe.modelOverride);
-    const result = await testProviderConnection(baseUrl, apiKey, template, modelOverride);
-    const failures = result.ok
-      ? []
-      : (() => {
-          const rawMsg = result.message ?? '';
-          const i18nMatch = rawMsg.match(/^__i18n:([^:]+):(.+)__$/);
-          const displayMsg = i18nMatch ? t(i18nMatch[1], { status: i18nMatch[2] }) : rawMsg;
-          return [`${providerId}:${probe.profileKey} — ${displayMsg}`];
-        })();
-
-    return { ok: failures.length === 0, failures };
   };
 
   // ── Reload (re-detect path + re-read) ──
@@ -1307,6 +1332,7 @@ export function ConfigManagerPage() {
                 config={config}
                 onChange={handleChange}
                 onApplyAndSave={handleApplyAndSave}
+                onProbeProvider={probeProviderCandidate}
                 saving={saving}
                 addRequestId={providerAddRequestId}
               />

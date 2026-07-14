@@ -105,6 +105,10 @@ pub fn run() {
             commands::config::write_config,
             commands::config::read_provider_api_key,
             commands::config::detect_gateway_config,
+            commands::openclaw_provider::get_openclaw_provider_catalog,
+            commands::openclaw_provider::get_openclaw_config_schema,
+            commands::openclaw_provider::get_openclaw_auth_profiles,
+            commands::openclaw_provider::probe_openclaw_provider,
             // Pairing
             commands::pairing::list_pairing_requests,
             commands::pairing::approve_pairing_request,

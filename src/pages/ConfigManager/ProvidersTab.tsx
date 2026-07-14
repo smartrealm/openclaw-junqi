@@ -5,9 +5,10 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image, ArrowUp, ArrowDown } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -16,6 +17,7 @@ import type {
   ModelEntry,
   ModelProviderConfig,
   ModelProviderModelEntry,
+  SecretRef,
 } from './types';
 import {
   PROVIDER_TEMPLATES,
@@ -52,6 +54,9 @@ import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthM
 import { OPENCLAW_API_PROTOCOLS, normalizeOpenClawApiProtocol } from '@/types/openclawApiProtocol';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { ProviderModelEditor } from './ProviderModelEditor';
+import { ProviderAdvancedEditor } from './ProviderAdvancedEditor';
+import { ProviderSecretRefEditor } from './ProviderSecretRefEditor';
+import { isSecretRef } from './providerSecretRef';
 import {
   addProviderModel,
   buildEditableProviderModels,
@@ -59,12 +64,23 @@ import {
   updateProviderModel,
 } from './providerModelMutations';
 import {
-  buildTestHeaders,
-  modelsEndpointUrl,
-  PROVIDER_TEST_TIMEOUT_MS,
-  testProviderConnection,
-  type ConnectionPrecheckProbe,
-} from './providerConnectionTest';
+  loadOfficialProviderCatalog,
+  providerCatalogModels as filterOfficialProviderModels,
+  type ProviderProbeRequest,
+  type ProviderProbeSummary,
+} from '@/services/openclawProviderRuntime';
+import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
+import {
+  buildOpenClawAuthLoginCommand,
+  isOfficialOAuthMode,
+  providerProbeProfileKey,
+} from './providerAuthFlow';
+import {
+  hasProviderWildcard,
+  setModelCatalogMode,
+  setProviderAuthOrder,
+  setProviderWildcard,
+} from './providerPolicy';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -75,8 +91,12 @@ interface ProvidersTabProps {
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
   onApplyAndSave: (
     updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig,
-    options?: { connectionProbe?: ConnectionPrecheckProbe }
+    options?: { connectionProbe?: ProviderProbeRequest }
   ) => Promise<boolean>;
+  onProbeProvider: (
+    candidate: GatewayRuntimeConfig,
+    probe: ProviderProbeRequest,
+  ) => Promise<ProviderProbeSummary>;
   saving: boolean;
   addRequestId?: number;
 }
@@ -105,7 +125,6 @@ interface UnifiedProvider {
 
   // Env key detected
   envKeyFound?: boolean;
-  envKeyValue?: string;
   credentialSource?: ProviderSecretSource;
   credentialUnverified?: boolean;
 }
@@ -195,15 +214,6 @@ function hasProviderConfigApiKey(value: unknown): boolean {
 
 function authModeNeedsApiKey(mode: unknown): boolean {
   return AUTH_MODE_INFO[normalizeProviderAuthMode(mode)].hasApiKeyField;
-}
-
-function firstNonEmptyString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value !== 'string') continue;
-    const trimmed = value.trim();
-    if (trimmed) return trimmed;
-  }
-  return undefined;
 }
 
 type GatewayModelOption = {
@@ -317,58 +327,6 @@ function parseGatewayModelsResponse(res: unknown): GatewayModelOption[] {
     if (!deduped.has(item.id)) deduped.set(item.id, item);
   }
   return Array.from(deduped.values());
-}
-
-async function fetchProviderModelCatalog(
-  baseUrl: string,
-  apiKey: string,
-  tmpl?: ProviderTemplate,
-): Promise<GatewayModelOption[]> {
-  const modelsUrl = modelsEndpointUrl(baseUrl);
-  if (!modelsUrl) return [];
-  const headers = buildTestHeaders(tmpl, apiKey);
-  const isGoogle = tmpl?.id === 'google';
-  const url = isGoogle && apiKey ? `${modelsUrl}?key=${encodeURIComponent(apiKey)}` : modelsUrl;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), PROVIDER_TEST_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { method: 'GET', headers, signal: controller.signal });
-    if (!res.ok) return [];
-    const json = await res.json().catch(() => null);
-    const rows: GatewayModelOption[] = [];
-    const pushRow = (row: any) => {
-      const id = String(row?.id ?? row?.model ?? '').trim();
-      if (!id) return;
-      rows.push({ id, supportsImage: resolveModelSupportsImage(row) });
-    };
-    if (json && typeof json === 'object' && Array.isArray((json as any).data)) {
-      for (const row of (json as any).data) {
-        pushRow(row);
-      }
-    } else if (json && typeof json === 'object' && Array.isArray((json as any).models)) {
-      for (const row of (json as any).models) {
-        pushRow(row);
-      }
-    } else if (Array.isArray(json)) {
-      for (const row of json) {
-        if (typeof row === 'string') {
-          const id = row.trim();
-          if (id) rows.push({ id });
-        } else {
-          pushRow(row);
-        }
-      }
-    }
-    const deduped = new Map<string, GatewayModelOption>();
-    for (const row of rows) {
-      if (!deduped.has(row.id)) deduped.set(row.id, row);
-    }
-    return Array.from(deduped.values());
-  } catch {
-    return [];
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 function getModelsForProvider(
@@ -491,7 +449,6 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     result.findIndex((p) => providerNamespaceMatches(p.provider, providerId));
 
   // ── 1. auth.profiles ──────────────────────────────────────
-  const envVarsForAuth = config.env?.vars ?? {};
   const profiles = config.auth?.profiles ?? {};
   for (const [profileKey, profile] of Object.entries(profiles)) {
     const providerRaw = profile.provider || getProviderFromProfileKey(profileKey);
@@ -502,7 +459,6 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
       providerNamespaceMatches(modelsProviderId, provider)
     )?.[1];
     const secretState = resolveProviderSecret(config, provider, template, profileKey);
-    const envKeyValue = secretState.value;
     const envKeyFound = secretState.configured || hasProviderConfigApiKey(providerConfigEntry?.apiKey);
     const credentialUnverified = !envKeyFound && Boolean(providerConfigEntry);
 
@@ -517,7 +473,6 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
       modelCount:  Object.keys(models).length,
       template,
       envKeyFound,
-      envKeyValue: envKeyValue || undefined,
       credentialSource: secretState.source,
       credentialUnverified,
     });
@@ -536,7 +491,6 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
         p.modelsProvider = modelsProvider;
         const secretState = resolveProviderSecret(config, p.provider, p.template, p.profileKey);
         p.envKeyFound = p.envKeyFound || secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey);
-        p.envKeyValue = p.envKeyValue || secretState.value || undefined;
         p.credentialSource = secretState.source !== 'none' ? secretState.source : p.credentialSource;
         p.credentialUnverified = !p.envKeyFound && Boolean(modelsProvider);
       }
@@ -546,7 +500,6 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
         result[existingIndex].modelsProvider = modelsProvider;
         const secretState = resolveProviderSecret(config, result[existingIndex].provider, result[existingIndex].template);
         result[existingIndex].envKeyFound = result[existingIndex].envKeyFound || secretState.configured || hasProviderConfigApiKey(modelsProvider.apiKey);
-        result[existingIndex].envKeyValue = result[existingIndex].envKeyValue || secretState.value || undefined;
         result[existingIndex].credentialSource = secretState.source !== 'none' ? secretState.source : result[existingIndex].credentialSource;
         result[existingIndex].credentialUnverified = !result[existingIndex].envKeyFound && Boolean(modelsProvider);
       } else {
@@ -565,7 +518,6 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
           modelCount:    Object.keys(models).length,
           template,
           envKeyFound,
-          envKeyValue:   secretState.value || undefined,
           credentialSource: secretState.source,
           credentialUnverified: !envKeyFound,
         });
@@ -594,7 +546,6 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
     } else {
       const models = getModelsForProvider(template.id, allModels);
 
-      const envOnlyValue = template.envKey ? String(envVars[template.envKey] ?? '').trim() : undefined;
       result.push({
         key:         `env:${template.id}`,
         provider:    template.id,
@@ -604,7 +555,6 @@ function buildUnifiedProviders(config: GatewayRuntimeConfig): UnifiedProvider[] 
         modelCount:  Object.keys(models).length,
         template,
         envKeyFound: true,
-        envKeyValue: envOnlyValue || undefined,
         credentialSource: 'template-env',
         credentialUnverified: false,
       });
@@ -778,7 +728,8 @@ export function applyProviderAddition(
   }
 
   if (storeSecretInProviderConfig) {
-    const providerApiKeyRef = key ? `\${${providerApiKeyEnvKey}}` : currentProviderCfg.apiKey;
+    const providerApiKeyRef = providerConfig?.apiKey
+      ?? (key ? `\${${providerApiKeyEnvKey}}` : currentProviderCfg.apiKey);
     const providers = { ...(next.models?.providers ?? {}) };
     if (currentProviderKey && currentProviderKey !== providerId) {
       delete providers[currentProviderKey];
@@ -799,7 +750,7 @@ export function applyProviderAddition(
         },
       },
     };
-  } else if (normalizedModels.length > 0 || effectiveBaseUrl || effectiveApi) {
+  } else if (normalizedModels.length > 0 || effectiveBaseUrl || effectiveApi || providerConfig?.apiKey) {
     const providers = { ...(next.models?.providers ?? {}) };
     if (currentProviderKey && currentProviderKey !== providerId) {
       delete providers[currentProviderKey];
@@ -812,10 +763,24 @@ export function applyProviderAddition(
           ...providers,
           [providerId]: {
             ...currentProviderCfg,
+            ...(providerConfig?.apiKey ? { apiKey: providerConfig.apiKey } : {}),
             baseUrl: effectiveBaseUrl,
             api: effectiveApi,
             models: nextProviderModels,
           },
+        },
+      },
+    };
+  }
+
+  if (providerConfig?.secretProvider) {
+    next = {
+      ...next,
+      secrets: {
+        ...next.secrets,
+        providers: {
+          ...(next.secrets?.providers ?? {}),
+          [providerConfig.secretProvider.id]: providerConfig.secretProvider.definition,
         },
       },
     };
@@ -879,6 +844,13 @@ export function applyProviderRemoval(
     return providerNamespaceMatches(profileProvider, providerId);
   });
   const shouldRemoveProviderResources = !profileKey || !hasRemainingProfileForProvider;
+  const authOrder = { ...(prev.auth?.order ?? {}) };
+  const orderKey = Object.keys(authOrder).find((key) => providerNamespaceMatches(key, providerId));
+  if (orderKey) {
+    const nextOrder = (authOrder[orderKey] ?? []).filter((key) => key !== profileKey && key in profiles);
+    if (shouldRemoveProviderResources || nextOrder.length === 0) delete authOrder[orderKey];
+    else authOrder[orderKey] = nextOrder;
+  }
 
   const providers = { ...(prev.models?.providers ?? {}) };
   if (shouldRemoveProviderResources) {
@@ -891,7 +863,7 @@ export function applyProviderRemoval(
 
   const withoutProvider: GatewayRuntimeConfig = {
     ...prev,
-    auth: { ...prev.auth, profiles },
+    auth: { ...prev.auth, profiles, order: authOrder },
     models: { ...prev.models, providers },
   };
 
@@ -927,7 +899,7 @@ export function applyProviderRemoval(
 
   return {
     ...prev,
-    auth: { ...prev.auth, profiles },
+    auth: { ...prev.auth, profiles, order: authOrder },
     env: nextEnv,
     models: { ...prev.models, providers },
     agents: {
@@ -1167,6 +1139,7 @@ function ProviderCardShell({
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ProfileRowProps {
+  config: GatewayRuntimeConfig;
   profileKey: string;
   profile: AuthProfile;
   allModels: Record<string, ModelEntry> | undefined;
@@ -1178,48 +1151,32 @@ interface ProfileRowProps {
   apiKeyConfigured?: boolean;
   apiKeySource?: ProviderSecretSource;
   credentialUnverified?: boolean;
-  /** Actual key value from env.vars, passed through so fetch can use it */
-  envKeyValue?: string;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
   saving?: boolean;
 }
 
 // ── Fetch Models Button (inline in expanded provider card) ──
-function FetchModelsButton({ providerId, tmpl, profile, allModels, modelsProvider, onChange, saving, t, envKeyValue }: {
+function FetchModelsButton({ providerId, allModels, onChange, saving, t }: {
   providerId: string;
-  tmpl: ProviderTemplate | undefined;
-  profile: AuthProfile;
   allModels: Record<string, ModelEntry>;
-  modelsProvider?: ModelProviderConfig;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
   saving?: boolean;
   t: any;
-  envKeyValue?: string;
 }) {
   const [fetching, setFetching] = useState(false);
   const [fetchResult, setFetchResult] = useState<string | null>(null);
   const [fetchSuccess, setFetchSuccess] = useState(false);
 
   const handleFetch = async () => {
-    const baseUrl = (modelsProvider?.baseUrl ?? tmpl?.baseUrl ?? '').replace(/\/$/, '');
-    if (!baseUrl) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoEndpoint')); return; }
-    const apiKey = firstNonEmptyString(
-      (profile as any).token,
-      (profile as any).apiKey,
-      (profile as any).key,
-      envKeyValue,
-    );
-    const mode = normalizeProviderAuthMode(profile.mode ?? (profile as any).type ?? tmpl?.defaultAuthMode);
-    if (authModeNeedsApiKey(mode) && !apiKey) {
-      setFetchSuccess(false);
-      setFetchResult(t('config.fetchModelsNoApiKey'));
-      return;
-    }
-
     setFetching(true);
     setFetchResult(null);
     try {
-      const fetchedModels = await fetchProviderModelCatalog(baseUrl, apiKey ?? '', tmpl);
+      const catalog = await loadOfficialProviderCatalog(true);
+      const fetchedModels = filterOfficialProviderModels(catalog, providerId).map((model) => ({
+        id: model.key,
+        alias: model.name,
+        supportsImage: String(model.input ?? '').toLowerCase().includes('image'),
+      }));
 
       if (fetchedModels.length === 0) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoneFound')); return; }
 
@@ -1281,6 +1238,7 @@ function FetchModelsButton({ providerId, tmpl, profile, allModels, modelsProvide
 }
 
 function ProfileRow({
+  config,
   profileKey,
   profile,
   allModels,
@@ -1291,18 +1249,33 @@ function ProfileRow({
   apiKeyConfigured,
   apiKeySource,
   credentialUnverified = false,
-  envKeyValue,
   onChange,
   saving = false,
 }: ProfileRowProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const providerId    = profile.provider || getProviderFromProfileKey(profileKey);
   const tmpl          = getTemplateById(providerId);
+  const profileUsesOAuth = isOfficialOAuthMode(normalizeProviderAuthMode(profile.mode ?? (profile as any).type));
+  const [officialAuthReady, setOfficialAuthReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!profileUsesOAuth) {
+      setOfficialAuthReady(false);
+      return;
+    }
+    window.aegis.providerRuntime.authProfiles(providerId)
+      .then((result) => {
+        if (!cancelled) setOfficialAuthReady(result.profiles.some((candidate) => candidate.id === profileKey));
+      })
+      .catch(() => { if (!cancelled) setOfficialAuthReady(false); });
+    return () => { cancelled = true; };
+  }, [profileKey, profileUsesOAuth, providerId]);
   const providerModels = buildEditableProviderModels(providerId, allModels ?? {}, modelsProvider);
   const modelCount    = Object.keys(providerModels).length;
   const hasStoredSecret = Boolean(
-    profile.token ?? profile.apiKey ?? (profile as any).key ?? apiKeyConfigured
+    profile.token || profile.apiKey || (profile as any).key || apiKeyConfigured || officialAuthReady
   );
   const hasInlineSecret = Boolean(profile.token ?? profile.apiKey ?? (profile as any).key);
   const statusLabel = providerCredentialStatusLabel(
@@ -1311,6 +1284,16 @@ function ProfileRow({
     hasInlineSecret ? undefined : apiKeySource,
     credentialUnverified,
   );
+  const providerProfileIds = Object.entries(config.auth?.profiles ?? {})
+    .filter(([key, candidate]) => (
+      normalizeProviderIdForWrite(candidate.provider || getProviderFromProfileKey(key)) === normalizeProviderIdForWrite(providerId)
+    ))
+    .map(([key]) => key);
+  const orderedProfileIds = [
+    ...(config.auth?.order?.[normalizeProviderIdForWrite(providerId)] ?? []),
+    ...providerProfileIds,
+  ].filter((key, index, rows) => providerProfileIds.includes(key) && rows.indexOf(key) === index);
+  const profileOrderIndex = orderedProfileIds.indexOf(profileKey);
 
   // ── Inline edit state ──
   const [localProfile, setLocalProfile] = useState<string>(profile.profileName ?? profileKey);
@@ -1319,6 +1302,18 @@ function ProfileRow({
   const [localApi, setLocalApi] = useState<string>(modelsProvider?.api ?? tmpl?.api ?? '');
   const [apiKeyInput, setApiKeyInput]   = useState('');
   const [apiKeySaved, setApiKeySaved]   = useState(false);
+  const [authFlowError, setAuthFlowError] = useState('');
+
+  const startOfficialAuth = (mode: ReturnType<typeof normalizeProviderAuthMode>) => {
+    try {
+      enqueueTerminalCommand({
+        command: buildOpenClawAuthLoginCommand({ providerId, profileId: profileKey, mode }),
+      });
+      navigate('/terminal');
+    } catch (error: any) {
+      setAuthFlowError(error?.message || String(error));
+    }
+  };
 
   // Sync local state when prop changes (e.g. after backup restore)
   useEffect(() => { setLocalProfile(profile.profileName ?? profileKey); }, [profile.profileName, profileKey]);
@@ -1482,6 +1477,11 @@ function ProfileRow({
                       type="button"
                       disabled={saving}
                       onClick={() => {
+                        const normalizedMode = normalizeProviderAuthMode(m);
+                        if (isOfficialOAuthMode(normalizedMode) && !isSelected) {
+                          startOfficialAuth(normalizedMode);
+                          return;
+                        }
                         setLocalMode(m);
                         updateProfile({ mode: m });
                       }}
@@ -1498,6 +1498,53 @@ function ProfileRow({
                 })}
               </div>
             </div>
+          </div>
+          {authFlowError && <p className="text-xs text-red-400">{authFlowError}</p>}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-y border-aegis-border py-3">
+            <label className="inline-flex items-center gap-2 text-xs text-aegis-text-secondary">
+              <input
+                type="checkbox"
+                checked={hasProviderWildcard(config, providerId)}
+                disabled={saving}
+                onChange={(event) => onChange((prev) => setProviderWildcard(prev, providerId, event.target.checked))}
+                className="size-4 accent-aegis-primary"
+              />
+              {t('config.dynamicProviderModels', 'Allow dynamically discovered provider models (provider/*)')}
+            </label>
+            {orderedProfileIds.length > 1 && (
+              <div className="flex items-center gap-1">
+                <span className="mr-1 text-[10px] text-aegis-text-muted">
+                  {t('config.authPriority', 'Auth priority')} {profileOrderIndex + 1}/{orderedProfileIds.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={saving || profileOrderIndex <= 0}
+                  onClick={() => onChange((prev) => {
+                    const next = [...orderedProfileIds];
+                    [next[profileOrderIndex - 1], next[profileOrderIndex]] = [next[profileOrderIndex], next[profileOrderIndex - 1]];
+                    return setProviderAuthOrder(prev, providerId, next);
+                  })}
+                  className="grid size-7 place-items-center rounded border border-aegis-border text-aegis-text-muted hover:text-aegis-text disabled:opacity-30"
+                  title={t('config.moveAuthEarlier', 'Use earlier')}
+                >
+                  <ArrowUp size={12} />
+                </button>
+                <button
+                  type="button"
+                  disabled={saving || profileOrderIndex < 0 || profileOrderIndex >= orderedProfileIds.length - 1}
+                  onClick={() => onChange((prev) => {
+                    const next = [...orderedProfileIds];
+                    [next[profileOrderIndex + 1], next[profileOrderIndex]] = [next[profileOrderIndex], next[profileOrderIndex + 1]];
+                    return setProviderAuthOrder(prev, providerId, next);
+                  })}
+                  className="grid size-7 place-items-center rounded border border-aegis-border text-aegis-text-muted hover:text-aegis-text disabled:opacity-30"
+                  title={t('config.moveAuthLater', 'Use later')}
+                >
+                  <ArrowDown size={12} />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* API Key — inline editable with save button */}
@@ -1546,6 +1593,13 @@ function ProfileRow({
             </div>
           </div>
 
+          <ProviderSecretRefEditor
+            config={config}
+            providerId={providerId}
+            disabled={saving}
+            onChange={onChange}
+          />
+
           {/* Connection config */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
@@ -1590,6 +1644,17 @@ function ProfileRow({
             </div>
           </div>
 
+          <ProviderAdvancedEditor
+            value={modelsProvider ?? {}}
+            disabled={saving}
+            onChange={(next) => {
+              const removals = Object.fromEntries(
+                Object.keys(modelsProvider ?? {}).filter((key) => !(key in next)).map((key) => [key, undefined]),
+              );
+              updateProviderConnection({ ...removals, ...next });
+            }}
+          />
+
           {/* Models */}
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
@@ -1607,6 +1672,7 @@ function ProfileRow({
             <ProviderModelEditor
               providerId={providerId}
               models={providerModels}
+              providerModels={modelsProvider?.models}
               primaryModel={primaryModel}
               imageModel={imagePrimaryModel}
               imageSupportMap={imageSupportMap}
@@ -1635,14 +1701,10 @@ function ProfileRow({
             {/* Fetch Models button */}
             <FetchModelsButton
               providerId={providerId}
-              tmpl={tmpl}
-              profile={profile}
               allModels={allModels ?? {}}
-              modelsProvider={modelsProvider}
               onChange={onChange}
               saving={saving}
               t={t}
-              envKeyValue={envKeyValue}
             />
             <button
               onClick={removeProfile}
@@ -1667,6 +1729,7 @@ function ProfileRow({
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ModelsProviderRowProps {
+  config: GatewayRuntimeConfig;
   unifiedProvider: UnifiedProvider;
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
   primaryModel?: string;
@@ -1675,7 +1738,7 @@ interface ModelsProviderRowProps {
   saving?: boolean;
 }
 
-function ModelsProviderRow({ unifiedProvider, onChange, primaryModel, imagePrimaryModel, imageSupportMap, saving = false }: ModelsProviderRowProps) {
+function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, imagePrimaryModel, imageSupportMap, saving = false }: ModelsProviderRowProps) {
   const [open, setOpen] = useState(false);
   const { provider, modelsProvider, template, envKeyFound, credentialSource, credentialUnverified } = unifiedProvider;
   const { t } = useTranslation();
@@ -1777,10 +1840,29 @@ function ModelsProviderRow({ unifiedProvider, onChange, primaryModel, imagePrima
             </select>
           </div>
 
+          <ProviderAdvancedEditor
+            value={modelsProvider ?? {}}
+            disabled={saving}
+            onChange={(next) => {
+              const removals = Object.fromEntries(
+                Object.keys(modelsProvider ?? {}).filter((key) => !(key in next)).map((key) => [key, undefined]),
+              );
+              updateModelsProvider({ ...removals, ...next });
+            }}
+          />
+
+          <ProviderSecretRefEditor
+            config={config}
+            providerId={provider}
+            disabled={saving}
+            onChange={onChange}
+          />
+
           {/* Models list */}
           <ProviderModelEditor
             providerId={provider}
             models={editableModels}
+            providerModels={modelsProvider?.models}
             primaryModel={primaryModel}
             imageModel={imagePrimaryModel}
             imageSupportMap={imageSupportMap}
@@ -2148,6 +2230,8 @@ export interface ProviderConfigOverride {
   textPrimaryModel?: string;
   imagePrimaryModel?: string;
   imageCapableModels?: string[];
+  apiKey?: SecretRef;
+  secretProvider?: { id: string; definition: Record<string, any> };
 }
 
 interface ConfigureStepProps {
@@ -2161,13 +2245,26 @@ interface ConfigureStepProps {
     profile: AuthProfile,
     selectedModels: string[],
     providerConfig?: ProviderConfigOverride,
-    connectionProbe?: ConnectionPrecheckProbe
+    connectionProbe?: ProviderProbeRequest
   ) => Promise<boolean>;
+  onProbeProvider: (
+    candidate: GatewayRuntimeConfig,
+    probe: ProviderProbeRequest,
+  ) => Promise<ProviderProbeSummary>;
   saving: boolean;
 }
 
-function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }: ConfigureStepProps) {
+function ConfigureStep({
+  config,
+  tmpl,
+  catalogEntry,
+  onBack,
+  onSubmit,
+  onProbeProvider,
+  saving,
+}: ConfigureStepProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const catalogLabel = catalogEntry
     ? t(`config.providerCatalog.${catalogEntry.catalogId}`, catalogEntry.label)
     : undefined;
@@ -2190,9 +2287,19 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
   const [providerCatalogModels, setProviderCatalogModels] = useState<GatewayModelOption[]>([]);
   const [loadingGatewayModels, setLoadingGatewayModels] = useState(false);
   const [loadingProviderCatalog, setLoadingProviderCatalog] = useState(false);
+  const [catalogVersion, setCatalogVersion] = useState('');
+  const [officialAuthProfiles, setOfficialAuthProfiles] = useState<Array<{
+    id: string;
+    provider: string;
+    type: string;
+    label?: string;
+  }>>([]);
+  const [loadingOfficialAuth, setLoadingOfficialAuth] = useState(false);
+  const [officialAuthError, setOfficialAuthError] = useState('');
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [secretDraftConfig, setSecretDraftConfig] = useState<GatewayRuntimeConfig>(() => structuredClone(config));
   const [selectedModels, setSelectedModels] = useState<string[]>(() =>
     catalogEntry?.defaultModelRef ? [catalogEntry.defaultModelRef] : []
   );
@@ -2216,6 +2323,54 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
     tmpl.id === 'custom'
       ? normalizeProviderIdForWrite(customProviderId) || 'custom'
       : normalizeProviderIdForWrite(runtimeProviderId);
+  const draftSecretRefValue = secretDraftConfig.models?.providers?.[effectiveProviderId]?.apiKey;
+  const draftSecretRef = isSecretRef(draftSecretRefValue) ? draftSecretRefValue : undefined;
+  const draftSecretProvider = draftSecretRef
+    ? secretDraftConfig.secrets?.providers?.[draftSecretRef.provider]
+    : undefined;
+  const requestedProfileKey = normalizeProfileKeyForProvider(effectiveProviderId, profileName);
+  const oauthMode = isOfficialOAuthMode(authMode);
+  const officialOAuthProfile = oauthMode
+    ? officialAuthProfiles.find((profile) => profile.id === requestedProfileKey)
+      ?? officialAuthProfiles.find((profile) => normalizeProviderIdForWrite(profile.provider) === effectiveProviderId)
+    : undefined;
+
+  const refreshOfficialAuth = useCallback(async () => {
+    if (!oauthMode) {
+      setOfficialAuthProfiles([]);
+      setOfficialAuthError('');
+      return;
+    }
+    setLoadingOfficialAuth(true);
+    setOfficialAuthError('');
+    try {
+      const result = await window.aegis.providerRuntime.authProfiles(effectiveProviderId);
+      setOfficialAuthProfiles(Array.isArray(result.profiles) ? result.profiles : []);
+    } catch (error: any) {
+      setOfficialAuthProfiles([]);
+      setOfficialAuthError(error?.message || String(error));
+    } finally {
+      setLoadingOfficialAuth(false);
+    }
+  }, [effectiveProviderId, oauthMode]);
+
+  useEffect(() => {
+    void refreshOfficialAuth();
+  }, [refreshOfficialAuth]);
+
+  const openOfficialAuthFlow = () => {
+    try {
+      const command = buildOpenClawAuthLoginCommand({
+        providerId: effectiveProviderId,
+        profileId: requestedProfileKey,
+        mode: authMode,
+      });
+      enqueueTerminalCommand({ command });
+      navigate('/terminal');
+    } catch (error: any) {
+      setOfficialAuthError(error?.message || String(error));
+    }
+  };
 
   const resolvedBaseUrl = baseUrl.trim() || catalogEntry?.baseUrlOverride || tmpl.baseUrl;
   const modelsToAdd = buildProviderSubmissionModelIds({
@@ -2252,26 +2407,25 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
   }, [gatewayModels, isCustomLike, normalizedTemplateProvider]);
   const providerCatalogModelOptions = useMemo(() => {
-    if (!isCustomLike) return [];
     const values = providerCatalogModels
       .map((item) => normalizeProviderModelRef(effectiveProviderId, item.id))
       .filter((id): id is string => Boolean(id));
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-  }, [effectiveProviderId, isCustomLike, providerCatalogModels]);
+  }, [effectiveProviderId, providerCatalogModels]);
   const hasDynamicCatalogOptions = providerCatalogModelOptions.length > 0 || gatewayModelOptions.length > 0;
   const modelSourceInfo = useMemo(() => {
-    if (!isCustomLike) {
-      return {
-        label: t('config.modelSourceSynced', 'Source: Built-in Catalog'),
-        detail: t('config.modelSourceSyncedHint', 'Using the JunQi Desktop built-in provider catalog'),
-        className: 'bg-green-500/10 text-green-300 border-green-500/20',
-      };
-    }
     if (providerCatalogModelOptions.length > 0) {
       return {
-        label: t('config.modelSourceProvider', 'Source: Provider Catalog'),
-        detail: t('config.modelSourceProviderHint', 'Using the live /models response from this provider'),
+        label: t('config.modelSourceProvider', 'Source: OpenClaw Catalog'),
+        detail: `${t('config.modelSourceProviderHint', 'Using the model catalog reported by the installed OpenClaw runtime')}${catalogVersion ? ` (${catalogVersion})` : ''}`,
         className: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
+      };
+    }
+    if (!isCustomLike) {
+      return {
+        label: t('config.modelSourceSynced', 'Source: Built-in Fallback'),
+        detail: t('config.modelSourceSyncedHint', 'The OpenClaw catalog was unavailable; using the bundled fallback'),
+        className: 'bg-green-500/10 text-green-300 border-green-500/20',
       };
     }
     return {
@@ -2279,12 +2433,11 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
       detail: t('config.modelSourceGatewayHint', 'Using the model catalog currently exposed by the connected gateway'),
       className: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
     };
-  }, [isCustomLike, providerCatalogModelOptions.length, t]);
+  }, [catalogVersion, isCustomLike, providerCatalogModelOptions.length, t]);
   const suggestedModels = useMemo(
     () => {
-      if (!isCustomLike) {
-        return generatedCatalogModelOptions;
-      }
+      if (!isCustomLike && providerCatalogModelOptions.length > 0) return providerCatalogModelOptions;
+      if (!isCustomLike) return generatedCatalogModelOptions;
       if (!hasDynamicCatalogOptions) {
         return generatedCatalogModelOptions;
       }
@@ -2352,17 +2505,17 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
   const resolvedImagePrimaryModel = imageModelOptions.includes(imagePrimaryModel)
     ? imagePrimaryModel
     : imageModelOptions[0] ?? '';
-  const canSubmit = Boolean(profileName) && (
+  const canSubmit = Boolean(profileName) && (!oauthMode || Boolean(officialOAuthProfile)) && (
     isCustomLike
       ? Boolean(baseUrl.trim()) && modelsToAdd.length > 0
       : modelsToAdd.length > 0
   );
   const submission = canSubmit ? {
-    profileKey: normalizeProfileKeyForProvider(effectiveProviderId, profileName),
+    profileKey: officialOAuthProfile?.id ?? requestedProfileKey,
     profile: {
       provider: effectiveProviderId,
       mode: authMode,
-      ...(authModeNeedsApiKey(authMode) && apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      ...(authModeNeedsApiKey(authMode) && apiKey.trim() && !draftSecretRef ? { apiKey: apiKey.trim() } : {}),
     } satisfies AuthProfile,
     providerConfig: (
       isCustomLike ||
@@ -2376,6 +2529,10 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
         textPrimaryModel: resolvedTextPrimaryModel || undefined,
         imagePrimaryModel: resolvedImagePrimaryModel || undefined,
         imageCapableModels: imageCapableModelsForSubmission,
+        apiKey: draftSecretRef,
+        secretProvider: draftSecretRef && draftSecretProvider
+          ? { id: draftSecretRef.provider, definition: draftSecretProvider }
+          : undefined,
       }
       : undefined,
     models: modelsToAdd,
@@ -2399,20 +2556,10 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
 
   const handleSubmit = async () => {
     if (!submission || saving) return;
-    const preferredProbeModel = stripProviderNamespace(
-      effectiveProviderId,
-      resolvedTextPrimaryModel || selectedModels[0] || suggestedModels[0] || ''
-    ) || undefined;
-    const connectionProbe: ConnectionPrecheckProbe | undefined =
-      canTestConnection && apiKey.trim()
-        ? {
-          providerId: effectiveProviderId,
-          profileKey: submission.profileKey,
-          baseUrl: effectiveBaseUrl,
-          apiKey: apiKey.trim(),
-          modelOverride: preferredProbeModel,
-        }
-        : undefined;
+    const connectionProbe: ProviderProbeRequest = {
+      providerId: effectiveProviderId,
+      profileKey: providerProbeProfileKey(authMode, submission.profileKey),
+    };
     await onSubmit(
       submission.profileKey,
       submission.profile,
@@ -2423,36 +2570,25 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
   };
 
   const effectiveBaseUrl = baseUrl.trim() || (tmpl.baseUrl ?? '').trim();
-  const canTestConnection =
-    effectiveBaseUrl &&
-    authModeNeedsApiKey(authMode) &&
-    (isCustomLike ||
-      tmpl.api === 'openai-completions' ||
-      tmpl.api === 'google-generative-ai' ||
-      tmpl.api === 'anthropic-messages');
+  const canTestConnection = Boolean(submission && previewDraft);
 
   const testConnection = async () => {
-    if (!canTestConnection) return;
+    if (!canTestConnection || !submission || !previewDraft) return;
     setTestStatus('testing');
     setTestMessage('');
-    const firstCustomModel = customModelIds.find((id) => id.trim())?.trim();
-    const preferredProbeModel = stripProviderNamespace(
-      effectiveProviderId,
-      resolvedTextPrimaryModel || selectedModels[0] || suggestedModels[0] || ''
-    );
-    const result = await testProviderConnection(
-      effectiveBaseUrl,
-      apiKey,
-      tmpl,
-      firstCustomModel || preferredProbeModel
-    );
-    setTestStatus(result.ok ? 'ok' : 'error');
-    const rawMsg = result.message ?? '';
-    const i18nMatch = rawMsg.match(/^__i18n:([^:]+):(.+)__$/);
-    const displayMsg = i18nMatch
-      ? t(i18nMatch[1], { status: i18nMatch[2] })
-      : rawMsg;
-    setTestMessage(result.ok ? t('config.connected') : displayMsg);
+    try {
+      const result = await onProbeProvider(previewDraft, {
+        providerId: effectiveProviderId,
+        profileKey: providerProbeProfileKey(authMode, submission.profileKey),
+      });
+      setTestStatus(result.ok ? 'ok' : 'error');
+      setTestMessage(result.ok
+        ? t('config.connected')
+        : [result.status, result.reasonCode, result.detail].filter(Boolean).join(' · '));
+    } catch (error: any) {
+      setTestStatus('error');
+      setTestMessage(error?.message || String(error));
+    }
   };
 
   const hasCatalogRegion = catalogEntry && catalogEntry.region !== 'none';
@@ -2506,25 +2642,20 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
 
   useEffect(() => {
     let cancelled = false;
-    if (
-      !effectiveBaseUrl ||
-      !authModeNeedsApiKey(authMode) ||
-      !apiKey.trim() ||
-      !isCustomLike
-    ) {
-      setProviderCatalogModels([]);
-      setLoadingProviderCatalog(false);
-      return;
-    }
     setLoadingProviderCatalog(true);
-    fetchProviderModelCatalog(effectiveBaseUrl, apiKey, tmpl)
-      .then((rows) => {
+    loadOfficialProviderCatalog()
+      .then((catalog) => {
         if (cancelled) return;
-        const normalizedRows = rows
-          .map((item) => {
-            const id = normalizeProviderModelRef(effectiveProviderId, item.id);
+        setCatalogVersion(catalog.version ?? '');
+        const normalizedRows = filterOfficialProviderModels(catalog, effectiveProviderId)
+          .map((model): GatewayModelOption | null => {
+            const id = normalizeProviderModelRef(effectiveProviderId, model.key);
             if (!id) return null;
-            return { ...item, id };
+            return {
+              id,
+              alias: model.name,
+              supportsImage: String(model.input ?? '').toLowerCase().includes('image'),
+            };
           })
           .filter((item): item is GatewayModelOption => Boolean(item));
         const deduped = new Map<string, GatewayModelOption>();
@@ -2535,13 +2666,14 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
       })
       .catch(() => {
         if (cancelled) return;
+        setCatalogVersion('');
         setProviderCatalogModels([]);
       })
       .finally(() => {
         if (!cancelled) setLoadingProviderCatalog(false);
       });
     return () => { cancelled = true; };
-  }, [effectiveBaseUrl, authMode, apiKey, tmpl, effectiveProviderId, isCustomLike]);
+  }, [effectiveProviderId]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -2720,11 +2852,63 @@ function ConfigureStep({ config, tmpl, catalogEntry, onBack, onSubmit, saving }:
             <MaskedInput
               value={apiKey}
               onChange={setApiKey}
+              disabled={Boolean(draftSecretRef)}
               placeholder={tmpl.envKey || t('config.apiKeyPlaceholder')}
             />
           </div>
         )}
       </div>
+
+      {authModeNeedsApiKey(authMode) && (
+        <ProviderSecretRefEditor
+          config={secretDraftConfig}
+          providerId={effectiveProviderId}
+          disabled={saving}
+          onChange={(updater) => setSecretDraftConfig((current) => updater(current))}
+        />
+      )}
+
+      {oauthMode && (
+        <div className="rounded-md border border-aegis-border bg-aegis-surface p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-aegis-text">
+                {officialOAuthProfile
+                  ? t('config.officialAuthReady', 'OpenClaw authentication ready')
+                  : t('config.officialAuthRequired', 'Complete OpenClaw authentication before saving')}
+              </div>
+              <div className="mt-1 break-all font-mono text-[10px] text-aegis-text-muted">
+                {officialOAuthProfile?.id ?? requestedProfileKey}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={openOfficialAuthFlow}
+                className="inline-flex items-center gap-1.5 rounded border border-aegis-primary/30 bg-aegis-primary/10 px-2.5 py-1.5 text-xs font-medium text-aegis-primary hover:bg-aegis-primary/15"
+              >
+                <Key size={12} />
+                {officialOAuthProfile
+                  ? t('config.officialAuthAgain', 'Authenticate again')
+                  : t('config.openOfficialAuth', 'Open official login')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void refreshOfficialAuth()}
+                disabled={loadingOfficialAuth}
+                className="grid size-7 place-items-center rounded border border-aegis-border text-aegis-text-muted hover:bg-aegis-hover/40 disabled:opacity-50"
+                title={t('common.refresh', 'Refresh')}
+                aria-label={t('common.refresh', 'Refresh')}
+              >
+                <Loader2 size={12} className={loadingOfficialAuth ? 'animate-spin' : ''} />
+              </button>
+            </div>
+          </div>
+          {officialAuthError && (
+            <p className="mt-2 break-all text-[11px] text-red-400">{officialAuthError}</p>
+          )}
+        </div>
+      )}
 
       {tmpl.envKey && (
         <p className="text-[10px] text-aegis-text-muted -mt-2">
@@ -2962,18 +3146,29 @@ interface AddProviderModalProps {
   config: GatewayRuntimeConfig;
   saving: boolean;
   onClose: () => void;
+  onProbeProvider: (
+    candidate: GatewayRuntimeConfig,
+    probe: ProviderProbeRequest,
+  ) => Promise<ProviderProbeSummary>;
   onSubmit: (
     profileKey: string,
     profile: AuthProfile,
     models: string[],
     providerConfig?: ProviderConfigOverride,
-    connectionProbe?: ConnectionPrecheckProbe
+    connectionProbe?: ProviderProbeRequest
   ) => Promise<boolean>;
   /** Pre-select a template and skip to the configure step */
   initialTemplate?: ProviderTemplate;
 }
 
-function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }: AddProviderModalProps) {
+function AddProviderModal({
+  config,
+  saving,
+  onClose,
+  onProbeProvider,
+  onSubmit,
+  initialTemplate,
+}: AddProviderModalProps) {
   const { t } = useTranslation();
   const [step, setStep]               = useState<'pick' | 'configure'>(
     initialTemplate ? 'configure' : 'pick'
@@ -3048,6 +3243,7 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
               catalogEntry={selectedEntry}
               onBack={handleBack}
               saving={saving}
+              onProbeProvider={onProbeProvider}
               onSubmit={async (key, profile, models, providerConfig, connectionProbe) => {
                 const ok = await onSubmit(key, profile, models, providerConfig, connectionProbe);
                 if (ok) onClose();
@@ -3065,7 +3261,14 @@ function AddProviderModal({ config, saving, onClose, onSubmit, initialTemplate }
 // ProvidersTab — Main Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequestId = 0 }: ProvidersTabProps) {
+export function ProvidersTab({
+  config,
+  onChange,
+  onApplyAndSave,
+  onProbeProvider,
+  saving,
+  addRequestId = 0,
+}: ProvidersTabProps) {
   const { t } = useTranslation();
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
@@ -3232,6 +3435,28 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
               <span>{label}</span>
             </span>
           ))}
+          <div className="ml-auto inline-flex items-center gap-1 rounded-md border border-aegis-border bg-aegis-surface p-0.5">
+            {(['merge', 'replace'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                disabled={saving}
+                aria-pressed={(config.models?.mode ?? 'merge') === mode}
+                onClick={() => onChange((prev) => setModelCatalogMode(prev, mode))}
+                className={clsx(
+                  'rounded px-2 py-1 text-[11px] font-medium transition-colors',
+                  (config.models?.mode ?? 'merge') === mode
+                    ? 'bg-aegis-primary/15 text-aegis-primary'
+                    : 'text-aegis-text-muted hover:text-aegis-text',
+                )}
+                title={mode === 'merge'
+                  ? t('config.modelsModeMergeHint', 'Keep built-in models and overlay configured providers')
+                  : t('config.modelsModeReplaceHint', 'Use only explicitly configured providers')}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
@@ -3374,6 +3599,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
                   return (
                     <ProfileRow
                       key={up.key}
+                      config={config}
                       profileKey={up.profileKey!}
                       profile={up.authProfile!}
                       allModels={allModels}
@@ -3384,7 +3610,6 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
                       apiKeyConfigured={up.envKeyFound}
                       apiKeySource={up.credentialSource}
                       credentialUnverified={up.credentialUnverified}
-                      envKeyValue={up.envKeyValue}
                       onChange={onChange}
                       saving={saving}
                     />
@@ -3394,6 +3619,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
                   return (
                     <ModelsProviderRow
                       key={up.key}
+                      config={config}
                       unifiedProvider={up}
                       onChange={onChange}
                       primaryModel={primaryModel}
@@ -3560,6 +3786,7 @@ export function ProvidersTab({ config, onChange, onApplyAndSave, saving, addRequ
         <AddProviderModal
           config={config}
           saving={saving}
+          onProbeProvider={onProbeProvider}
           onClose={() => {
             setShowModal(false);
             setModalInitialTemplate(undefined);

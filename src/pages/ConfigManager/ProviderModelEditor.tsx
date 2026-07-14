@@ -1,20 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Check, Image, Plus, Search, Star, Trash2, X } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Check, Image, Plus, Search, SlidersHorizontal, Star, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import type { ModelEntry } from './types';
+import type { ModelEntry, ModelProviderModelEntry } from './types';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { canonicalizeProviderModelRef } from './providerModelMutations';
+import { ProviderModelAdvancedEditor } from './ProviderModelAdvancedEditor';
 
 interface ProviderModelEditorProps {
   providerId: string;
   models: Record<string, ModelEntry>;
+  providerModels?: ModelProviderModelEntry[];
   primaryModel?: string;
   imageModel?: string;
   imageSupportMap?: Map<string, boolean>;
   disabled?: boolean;
   onAdd: (modelId: string, alias: string, supportsImage: boolean) => void;
-  onUpdate: (modelRef: string, patch: { alias?: string; supportsImage?: boolean }) => void;
+  onUpdate: (modelRef: string, patch: {
+    alias?: string;
+    supportsImage?: boolean;
+    providerPatch?: Partial<ModelProviderModelEntry>;
+  }) => void;
   onRemove: (modelRef: string) => void;
   onSetPrimary: (modelRef: string) => void;
   onSetImageModel: (modelRef: string) => void;
@@ -23,6 +29,7 @@ interface ProviderModelEditorProps {
 export function ProviderModelEditor({
   providerId,
   models,
+  providerModels = [],
   primaryModel,
   imageModel,
   imageSupportMap,
@@ -42,6 +49,7 @@ export function ProviderModelEditor({
   const [error, setError] = useState('');
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [aliasDrafts, setAliasDrafts] = useState<Record<string, string>>({});
+  const [advancedModel, setAdvancedModel] = useState<string | null>(null);
 
   useEffect(() => {
     setAliasDrafts(Object.fromEntries(
@@ -174,8 +182,16 @@ export function ProviderModelEditor({
               const isPrimary = primaryModel === ref;
               const isImagePrimary = imageModel === ref;
               const removing = confirmRemove === ref;
+              const providerModel = providerModels.find((model) => (
+                canonicalizeProviderModelRef(providerId, model.id) === ref
+              )) ?? {
+                id: ref.slice(ref.indexOf('/') + 1),
+                name: entry.alias || ref.slice(ref.indexOf('/') + 1),
+                input: supportsImage ? ['text', 'image'] : ['text'],
+              };
               return (
-                <tr key={ref} className="group transition-colors hover:bg-aegis-overlay/[0.035]">
+                <Fragment key={ref}>
+                <tr className="group transition-colors hover:bg-aegis-overlay/[0.035]">
                   <td className="px-3 py-2.5">
                     <div className="truncate font-mono text-xs text-aegis-text" title={ref}>{ref}</div>
                   </td>
@@ -217,6 +233,9 @@ export function ProviderModelEditor({
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
+                      <button type="button" disabled={disabled} onClick={() => setAdvancedModel((current) => current === ref ? null : ref)} title="OpenClaw model settings" className="grid size-8 place-items-center rounded-md text-aegis-text-muted hover:bg-aegis-overlay/10 hover:text-aegis-text">
+                        <SlidersHorizontal size={13} />
+                      </button>
                       <button type="button" disabled={disabled} onClick={() => onSetPrimary(ref)} title={t('config.setPrimary', 'Set as primary')} className="grid size-8 place-items-center rounded-md hover:bg-aegis-overlay/10">
                         <Star size={14} className={isPrimary ? 'fill-yellow-400 text-yellow-400' : 'text-aegis-text-muted'} />
                       </button>
@@ -236,6 +255,18 @@ export function ProviderModelEditor({
                     </div>
                   </td>
                 </tr>
+                {advancedModel === ref && (
+                  <tr>
+                    <td colSpan={4} className="bg-aegis-elevated/35 px-3 py-3">
+                      <ProviderModelAdvancedEditor
+                        value={providerModel}
+                        disabled={disabled}
+                        onChange={(next) => onUpdate(ref, { providerPatch: next })}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
