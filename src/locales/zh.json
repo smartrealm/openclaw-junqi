@@ -612,7 +612,7 @@
     "tab.connect": "连接",
     "tab.storage": "存储",
     "tab.about": "关于",
-    "gatewayUrlHint": "留空使用默认值 (ws://127.0.0.1:18789)",
+    "gatewayUrlHint": "留空使用默认值 ({{url}})",
     "controlUi": "Control UI",
     "controlUiRecovering": "Gateway 正在恢复，连接完成后将自动打开 Control UI。"
   },
@@ -1417,7 +1417,7 @@
     "toolIntentDesc": "在聊天中以卡片形式展示工具调用输入/输出（默认隐藏）",
     "copySystemInfo": "复制系统信息",
     "wsUrlLabel": "WebSocket URL",
-    "wsUrlPlaceholder": "ws://127.0.0.1:18789",
+    "wsUrlPlaceholder": "WebSocket URL",
     "gatewayTokenLabel": "Gateway Token",
     "memoryApiPlaceholder": "http://localhost:3040",
     "platform": "平台",
@@ -2458,6 +2458,7 @@
       "retry": "重试",
       "run": "执行",
       "confirm": "确认并继续",
+      "textInput": "OpenClaw 配置值",
       "readyForStep": "此步骤由 OpenClaw 执行。"
     }
   },
@@ -2933,7 +2934,7 @@
   "setup.gateway.detectRuntime": "检测本地运行时（Node.js / npm / openclaw 二进制）…",
   "setup.gateway.runtimeSummary": "运行时检测完成：{{summary}}",
   "setup.gateway.readPort": "读取 ~/.openclaw/openclaw.json 中的 gateway 端口…",
-  "setup.gateway.portResolved": "目标端口 = {{port}}（来源：openclaw.json，默认 18789）",
+  "setup.gateway.portResolved": "目标端口 = {{port}}（来源：openclaw.json 或 OpenClaw 默认值）",
   "setup.gateway.probe": "探测 127.0.0.1:{{port}} 是否已有 Gateway 在监听…",
   "setup.gateway.alreadyUp": "端口 {{port}} 已被占用，假定 Gateway 正在运行，跳过启动",
   "setup.gateway.willStart": "未检测到正在运行的 Gateway，将由前端启动器接管启动流程",

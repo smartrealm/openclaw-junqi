@@ -612,7 +612,7 @@
     "tab.connect": "Connection",
     "tab.storage": "Storage",
     "tab.about": "About",
-    "gatewayUrlHint": "Leave empty for default (ws://127.0.0.1:18789)",
+    "gatewayUrlHint": "Leave empty for default ({{url}})",
     "controlUi": "Control UI",
     "controlUiRecovering": "Gateway is recovering. Control UI will open automatically once it reconnects."
   },
@@ -1419,7 +1419,7 @@
     "toolIntentDesc": "Show tool calls in chat as cards with input/output — hidden by default",
     "copySystemInfo": "Copy system info",
     "wsUrlLabel": "WebSocket URL",
-    "wsUrlPlaceholder": "ws://127.0.0.1:18789",
+    "wsUrlPlaceholder": "WebSocket URL",
     "gatewayTokenLabel": "Gateway Token",
     "memoryApiPlaceholder": "http://localhost:3040",
     "platform": "Platform",
@@ -2464,6 +2464,7 @@
       "retry": "Retry",
       "run": "Run",
       "confirm": "Confirm and continue",
+      "textInput": "OpenClaw configuration value",
       "readyForStep": "OpenClaw will perform this step."
     }
   },
@@ -2909,7 +2910,7 @@
   "setup.gateway.detectRuntime": "Detecting local runtime (Node.js / npm / openclaw binary)…",
   "setup.gateway.runtimeSummary": "Runtime check done: {{summary}}",
   "setup.gateway.readPort": "Reading gateway port from ~/.openclaw/openclaw.json…",
-  "setup.gateway.portResolved": "Target port = {{port}} (source: openclaw.json, default 18789)",
+  "setup.gateway.portResolved": "Target port = {{port}} (source: openclaw.json or OpenClaw default)",
   "setup.gateway.probe": "Probing 127.0.0.1:{{port}} for existing Gateway listener…",
   "setup.gateway.alreadyUp": "Port {{port}} already in use — Gateway is running, skipping start",
   "setup.gateway.willStart": "No Gateway detected — the frontend launcher will start it",

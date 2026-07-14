@@ -6,6 +6,19 @@ const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'u
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 
+function flattenMessages(value: unknown, prefix = '', result: Record<string, unknown> = {}): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      flattenMessages(entry, path, result);
+    } else {
+      result[path] = entry;
+    }
+  }
+  return result;
+}
+
 test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   const detection = setupFlow.slice(
     setupFlow.indexOf('// ── 挂载后自动检测'),
@@ -53,4 +66,38 @@ test('BUG-ONB-05 Docker mode selection is a keyboard-operable native button', ()
 
   assert.match(mode, /<button\s+type="button"\s+disabled=\{!dockerAvailable\}[\s\S]*?flow\.selectMode\("docker"\)/);
   assert.doesNotMatch(mode, /onClick=\{\(\) => dockerAvailable && flow\.selectMode\("docker"\)\}/);
+});
+
+test('BUG-ONB-06 every setup message is complete in all supported locales', () => {
+  const locales = Object.fromEntries(['zh', 'en', 'ar'].map((locale) => [
+    locale,
+    flattenMessages(JSON.parse(readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'))),
+  ])) as Record<string, Record<string, unknown>>;
+  const setupKeys = Object.keys(locales.zh).filter((key) => key.startsWith('setup.'));
+
+  for (const locale of ['en', 'ar']) {
+    for (const key of setupKeys) {
+      assert.equal(typeof locales[locale][key], 'string', `${locale} is missing ${key}`);
+      assert.notEqual(String(locales[locale][key]).trim(), '', `${locale} has an empty ${key}`);
+    }
+  }
+});
+
+test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
+  const wizard = setupPage.slice(
+    setupPage.indexOf('function WizardScreen'),
+    setupPage.indexOf('function ReadyScreen'),
+  );
+
+  assert.match(wizard, /const messageRenderedInBody = step\.type === "confirm"/);
+  assert.match(wizard, /subtitle=\{wizardSubtitle\}/);
+  assert.match(wizard, /aria-label=\{step\.title \|\| t\("setup\.wizard\.textInput"/);
+});
+
+test('BUG-ONB-08 the product summary is not constrained to an awkward narrow line length', () => {
+  const welcome = setupPage.slice(
+    setupPage.indexOf('function WelcomeScreen'),
+    setupPage.indexOf('function DetectingScreen'),
+  );
+  assert.doesNotMatch(welcome, /max-w-\[42ch\]/);
 });
