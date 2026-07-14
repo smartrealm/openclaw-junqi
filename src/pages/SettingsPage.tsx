@@ -492,7 +492,15 @@ export function SettingsPageFull() {
 
       {activeTab === 'terminal' && <TerminalSettingsPanel />}
 
-      {activeTab === 'maintenance' && <MaintenanceCenter />}
+      {activeTab === 'maintenance' && (
+        <MaintenanceCenter
+          onRecoverGateway={() => gatewayManager.ensureRunning()}
+          onOpenConfig={(category) => {
+            const tab = category === 'mcp' ? 'tools' : category === 'security' ? 'secrets' : 'advanced';
+            navigate(`/config?tab=${tab}`);
+          }}
+        />
+      )}
 
       {activeTab === 'appearance' && (
         <>

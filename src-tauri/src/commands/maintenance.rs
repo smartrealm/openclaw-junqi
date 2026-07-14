@@ -1,10 +1,15 @@
+use crate::state::gateway_process::{push_log, LogLevel, LogSource};
+use crate::state::GatewayProcess;
 use crate::{commands::gateway::resolve_openclaw_binary, commands::system, paths, platform};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashSet, path::Path, process::Stdio, sync::OnceLock, time::Duration};
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 const CONFIG_TIMEOUT: Duration = Duration::from_secs(30);
 const DOCTOR_TIMEOUT: Duration = Duration::from_secs(120);
+const MAX_STDOUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_STDERR_BYTES: usize = 512 * 1024;
 static MAINTENANCE_OPERATION: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 pub async fn acquire_operation_guard() -> tokio::sync::MutexGuard<'static, ()> {
@@ -50,6 +55,28 @@ pub struct MaintenanceReport {
     pub summary: MaintenanceSummary,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigValidationEnvelope {
+    valid: bool,
+    path: Option<String>,
+    #[serde(default)]
+    issues: Vec<Value>,
+    #[serde(default)]
+    errors: Vec<Value>,
+    #[serde(default)]
+    warnings: Vec<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DoctorEnvelope {
+    ok: bool,
+    checks_run: Option<u64>,
+    checks_skipped: Option<u64>,
+    findings: Vec<Value>,
+}
+
 fn build_command(binary: &Path, args: &[&str]) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(binary);
     command
@@ -75,28 +102,82 @@ async fn run_json_command(
 ) -> Result<Value, String> {
     let label = args.join(" ");
     let mut command = build_command(binary, args);
-    let output = tokio::time::timeout(timeout, command.output())
-        .await
-        .map_err(|_| {
-            format!(
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Failed to run OpenClaw {label}: {error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("OpenClaw {label} stdout was unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("OpenClaw {label} stderr was unavailable"))?;
+
+    let execution = tokio::time::timeout(timeout, async {
+        tokio::try_join!(
+            async {
+                child
+                    .wait()
+                    .await
+                    .map_err(|error| format!("Failed to wait for OpenClaw {label}: {error}"))
+            },
+            read_limited(stdout, MAX_STDOUT_BYTES, "stdout"),
+            read_limited(stderr, MAX_STDERR_BYTES, "stderr"),
+        )
+    })
+    .await;
+
+    let (status, stdout, _stderr) = match execution {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(format!("OpenClaw {label} {error}"));
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(format!(
                 "OpenClaw {label} timed out after {} seconds",
                 timeout.as_secs()
-            )
-        })?
-        .map_err(|error| format!("Failed to run OpenClaw {label}: {error}"))?;
+            ));
+        }
+    };
 
     // Validation commands intentionally use non-zero exit codes when they find issues.
     // The structured payload is authoritative, so parse it regardless of exit status.
-    parse_json_object(&output.stdout, required_keys).map_err(|_| {
-        if output.status.success() {
+    parse_json_object(&stdout, required_keys).map_err(|_| {
+        if status.success() {
             format!("OpenClaw {label} returned an invalid JSON response")
         } else {
             format!(
                 "OpenClaw {label} failed with exit code {} and no valid JSON response",
-                output.status.code().unwrap_or(-1)
+                status.code().unwrap_or(-1)
             )
         }
     })
+}
+
+async fn read_limited<R>(mut reader: R, limit: usize, stream: &str) -> Result<Vec<u8>, String>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut output = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = reader
+            .read(&mut chunk)
+            .await
+            .map_err(|error| format!("{stream} read failed: {error}"))?;
+        if read == 0 {
+            return Ok(output);
+        }
+        if output.len().saturating_add(read) > limit {
+            return Err(format!("{stream} exceeded the {} byte limit", limit));
+        }
+        output.extend_from_slice(&chunk[..read]);
+    }
 }
 
 fn has_required_keys(value: &Value, required_keys: &[&str]) -> bool {
@@ -137,9 +218,10 @@ fn optional_text(value: &Value, key: &str) -> Option<String> {
 
 fn normalize_severity(value: Option<&str>, fallback: &str) -> String {
     match value.unwrap_or(fallback).to_ascii_lowercase().as_str() {
-        "error" | "fatal" => "error",
+        "error" | "fatal" | "critical" => "error",
         "warn" | "warning" => "warning",
-        _ => "info",
+        "info" | "notice" | "pass" | "passed" | "success" => "info",
+        _ => "warning",
     }
     .to_string()
 }
@@ -198,22 +280,6 @@ fn finding_from_value(
     })
 }
 
-fn collect_array_findings(
-    payload: &Value,
-    field: &str,
-    source: &str,
-    fallback_severity: &str,
-    findings: &mut Vec<MaintenanceFinding>,
-) {
-    if let Some(items) = payload.get(field).and_then(Value::as_array) {
-        findings.extend(
-            items
-                .iter()
-                .filter_map(|item| finding_from_value(source, item, fallback_severity)),
-        );
-    }
-}
-
 fn deduplicate(findings: &mut Vec<MaintenanceFinding>) {
     let mut seen = HashSet::new();
     findings.retain(|finding| {
@@ -239,6 +305,144 @@ fn summarize(findings: &[MaintenanceFinding]) -> MaintenanceSummary {
         }
     }
     summary
+}
+
+fn apply_config_payload(report: &mut MaintenanceReport, payload: Value) -> Result<(), String> {
+    let payload = serde_json::from_value::<ConfigValidationEnvelope>(payload).map_err(|error| {
+        format!("OpenClaw config validate returned an incompatible response: {error}")
+    })?;
+    report.config_valid = Some(payload.valid);
+    report.config_path = payload.path;
+    report.findings.extend(
+        payload
+            .issues
+            .iter()
+            .filter_map(|item| finding_from_value("config", item, "error")),
+    );
+    report.findings.extend(
+        payload
+            .errors
+            .iter()
+            .filter_map(|item| finding_from_value("config", item, "error")),
+    );
+    report.findings.extend(
+        payload
+            .warnings
+            .iter()
+            .filter_map(|item| finding_from_value("config", item, "warning")),
+    );
+    if !payload.valid
+        && !report
+            .findings
+            .iter()
+            .any(|finding| finding.source == "config")
+    {
+        report.findings.push(MaintenanceFinding {
+            source: "config".to_string(),
+            category: "config".to_string(),
+            severity: "error".to_string(),
+            check_id: None,
+            message: "OpenClaw configuration is invalid".to_string(),
+            path: report.config_path.clone(),
+            requirement: None,
+            fix_hint: None,
+        });
+    }
+    Ok(())
+}
+
+fn apply_doctor_payload(report: &mut MaintenanceReport, payload: Value) -> Result<(), String> {
+    let payload = serde_json::from_value::<DoctorEnvelope>(payload)
+        .map_err(|error| format!("OpenClaw doctor returned an incompatible response: {error}"))?;
+    report.doctor_ok = Some(payload.ok);
+    report.checks_run = payload.checks_run;
+    report.checks_skipped = payload.checks_skipped;
+    report.findings.extend(
+        payload
+            .findings
+            .iter()
+            .filter_map(|item| finding_from_value("doctor", item, "warning")),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn run_maintenance_repair(
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<bool, String> {
+    let _operation_guard = acquire_operation_guard().await;
+    push_log(
+        &state.logs,
+        LogSource::Lifecycle,
+        LogLevel::Info,
+        "maintenance repair started",
+    );
+
+    let Some(binary) = resolve_openclaw_binary() else {
+        push_log(
+            &state.logs,
+            LogSource::Lifecycle,
+            LogLevel::Error,
+            "maintenance repair failed: OpenClaw executable not found",
+        );
+        return Ok(false);
+    };
+
+    let mut command = tokio::process::Command::new(binary);
+    command
+        .args(["doctor", "--fix", "--yes", "--non-interactive"])
+        .env("PATH", system::openclaw_search_path())
+        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
+        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
+        .env("OPENCLAW_NO_RESPAWN", "1")
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    platform::configure_background_command(&mut command);
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Failed to start OpenClaw maintenance repair: {error}"))?;
+    let status = match tokio::time::timeout(DOCTOR_TIMEOUT, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            push_log(
+                &state.logs,
+                LogSource::Lifecycle,
+                LogLevel::Error,
+                format!("maintenance repair wait failed: {error}"),
+            );
+            return Ok(false);
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            push_log(
+                &state.logs,
+                LogSource::Lifecycle,
+                LogLevel::Error,
+                "maintenance repair timed out",
+            );
+            return Ok(false);
+        }
+    };
+    let repaired = status.success();
+    push_log(
+        &state.logs,
+        LogSource::Lifecycle,
+        if repaired {
+            LogLevel::Info
+        } else {
+            LogLevel::Error
+        },
+        format!(
+            "maintenance repair exited with code {}",
+            status.code().unwrap_or(-1)
+        ),
+    );
+    Ok(repaired)
 }
 
 #[tauri::command]
@@ -288,68 +492,45 @@ pub async fn run_maintenance_scan() -> Result<MaintenanceReport, String> {
         summary: MaintenanceSummary::default(),
     };
 
-    match config_result {
-        Ok(payload) => {
-            report.config_valid = payload.get("valid").and_then(Value::as_bool);
-            report.config_path = optional_text(&payload, "path");
-            collect_array_findings(&payload, "errors", "config", "error", &mut report.findings);
-            collect_array_findings(
-                &payload,
-                "warnings",
-                "config",
-                "warning",
-                &mut report.findings,
-            );
-            if report.config_valid == Some(false)
-                && !report
-                    .findings
-                    .iter()
-                    .any(|finding| finding.source == "config")
-            {
-                report.findings.push(MaintenanceFinding {
-                    source: "config".to_string(),
-                    category: "config".to_string(),
-                    severity: "error".to_string(),
-                    check_id: None,
-                    message: "OpenClaw configuration is invalid".to_string(),
-                    path: report.config_path.clone(),
-                    requirement: None,
-                    fix_hint: None,
-                });
-            }
-        }
-        Err(error) => report.scan_errors.push(error),
+    if let Err(error) = config_result.and_then(|payload| apply_config_payload(&mut report, payload))
+    {
+        report.scan_errors.push(error);
     }
 
-    match doctor_result {
-        Ok(payload) => {
-            report.doctor_ok = payload.get("ok").and_then(Value::as_bool);
-            report.checks_run = payload.get("checksRun").and_then(Value::as_u64);
-            report.checks_skipped = payload.get("checksSkipped").and_then(Value::as_u64);
-            collect_array_findings(
-                &payload,
-                "findings",
-                "doctor",
-                "warning",
-                &mut report.findings,
-            );
-        }
-        Err(error) => report.scan_errors.push(error),
+    if let Err(error) = doctor_result.and_then(|payload| apply_doctor_payload(&mut report, payload))
+    {
+        report.scan_errors.push(error);
     }
 
     deduplicate(&mut report.findings);
     report.summary = summarize(&report.findings);
     report.healthy = report.scan_errors.is_empty()
-        && report.config_valid != Some(false)
-        && report.doctor_ok != Some(false)
+        && report.config_valid == Some(true)
+        && report.doctor_ok == Some(true)
         && report.summary.errors == 0
         && report.summary.warnings == 0;
+    report.checked_at_ms = chrono::Utc::now().timestamp_millis();
     Ok(report)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn empty_report() -> MaintenanceReport {
+        MaintenanceReport {
+            healthy: false,
+            checked_at_ms: 0,
+            config_valid: None,
+            config_path: None,
+            doctor_ok: None,
+            checks_run: None,
+            checks_skipped: None,
+            findings: Vec::new(),
+            scan_errors: Vec::new(),
+            summary: MaintenanceSummary::default(),
+        }
+    }
 
     #[test]
     fn parses_json_after_noisy_prefix() {
@@ -369,6 +550,60 @@ mod tests {
         )
         .unwrap();
         assert_eq!(value.get("ok").and_then(Value::as_bool), Some(false));
+    }
+
+    #[test]
+    fn bug_m01_typed_envelopes_reject_wrong_field_types() {
+        let mut report = empty_report();
+        let config_error = apply_config_payload(
+            &mut report,
+            serde_json::json!({"valid": "yes", "issues": []}),
+        )
+        .unwrap_err();
+        assert!(config_error.contains("incompatible response"));
+        assert_eq!(report.config_valid, None);
+
+        let doctor_error =
+            apply_doctor_payload(&mut report, serde_json::json!({"ok": true, "findings": {}}))
+                .unwrap_err();
+        assert!(doctor_error.contains("incompatible response"));
+        assert_eq!(report.doctor_ok, None);
+    }
+
+    #[test]
+    fn bug_m02_config_issues_preserve_path_and_message() {
+        let mut report = empty_report();
+        apply_config_payload(
+            &mut report,
+            serde_json::json!({
+                "valid": false,
+                "path": "/tmp/openclaw.json",
+                "issues": [{"path": "gateway.port", "message": "Invalid input"}]
+            }),
+        )
+        .unwrap();
+        assert_eq!(report.config_valid, Some(false));
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].path.as_deref(), Some("gateway.port"));
+        assert_eq!(report.findings[0].message, "Invalid input");
+        assert_eq!(report.findings[0].severity, "error");
+    }
+
+    #[test]
+    fn bug_m07_unknown_severity_fails_closed() {
+        assert_eq!(normalize_severity(Some("critical"), "info"), "error");
+        assert_eq!(normalize_severity(Some("future-level"), "info"), "warning");
+        assert_eq!(normalize_severity(Some("info"), "warning"), "info");
+    }
+
+    #[tokio::test]
+    async fn bug_m09_output_reader_enforces_byte_limit() {
+        let error = read_limited(&b"12345"[..], 4, "stdout").await.unwrap_err();
+        assert!(error.contains("exceeded"));
+        assert_eq!(
+            read_limited(&b"1234"[..], 4, "stdout").await.unwrap(),
+            b"1234"
+        );
     }
 
     #[test]

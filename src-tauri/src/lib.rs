@@ -42,7 +42,7 @@ pub fn run() {
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,
-            commands::gateway_supervisor::openclaw_doctor_repair,
+            commands::maintenance::run_maintenance_repair,
             commands::gateway_supervisor::get_gateway_lifecycle,
             commands::gateway_supervisor::get_gateway_runtime_snapshot,
             commands::secret_store::store_provider_secret,
@@ -53,7 +53,6 @@ pub fn run() {
             commands::session_labels::remove_legacy_session_labels,
             commands::provider_oauth::start_provider_oauth,
             commands::gateway::get_gateway_token,
-            commands::gateway::run_doctor,
             commands::maintenance::run_maintenance_scan,
             // System
             commands::system::get_platform_info,
