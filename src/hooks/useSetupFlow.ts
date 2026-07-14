@@ -261,10 +261,12 @@ export function useSetupFlow(
   // “已完成”标记；该标记必须由用户点击“进入工作台”后写入。
   useEffect(() => {
     if (setupStep !== "detecting") return;
-    (async () => {
+    let cancelled = false;
+    void (async () => {
       report(t("setup.detecting"), 0);
       try {
         const oclaw = await checkOpenclaw();
+        if (cancelled) return;
         setOpenclawStatus(oclaw);
         if (!oclaw.installed) {
           // 从未安装过，先确定存储位置，再进入安装方式选择。
@@ -277,7 +279,9 @@ export function useSetupFlow(
         let onboardingRequired = true;
         try {
           const detected = await window.aegis.config.detect();
+          if (cancelled) return;
           const loaded = await window.aegis.config.read(detected.path);
+          if (cancelled) return;
           onboardingRequired = requiresOpenClawOnboarding(detected.exists, loaded.data);
           setNeedsOnboarding(onboardingRequired);
         } catch {
@@ -291,6 +295,7 @@ export function useSetupFlow(
         try {
           // 不传端口时由 Rust 读取配置；读取失败才回退到 18789。
           const reachable: boolean = await invoke("probe_gateway_port", {});
+          if (cancelled) return;
           if (reachable) {
             setGatewayRunning(true);
             commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
@@ -299,19 +304,25 @@ export function useSetupFlow(
             setSetupStep("storage");
             return;
           }
-        } catch {}
+        } catch {
+          if (cancelled) return;
+        }
 
         // Installed but gateway not responding → ask the user to start it.
         setPostStorageStep("gateway-stopped");
         report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
         setSetupStep("storage");
       } catch {
+        if (cancelled) return;
         setOpenclawStatus(null);
         setPostStorageStep("choosing-mode");
         report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
         setSetupStep("storage");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [setupStep, report, t, setGatewayRunning, setPostStorageStep, setSetupStep, commitSteps]);
 
   // ── Docker detect after the welcome step ──
