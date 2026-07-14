@@ -9,6 +9,10 @@ import {
   initialOpenclawUpdateState,
   openclawUpdateReducer,
 } from './openclawUpdateState';
+import {
+  dispatchOpenclawUpdateMaintenanceFinished,
+  dispatchOpenclawUpdateMaintenanceStarted,
+} from '@/services/openclawUpdateLifecycle';
 
 export interface OpenclawUpdateCompletion {
   result: OpenclawUpdateResult;
@@ -54,8 +58,12 @@ export function useOpenclawUpdate() {
     busy.current = true;
     const id = ++operationId.current;
     dispatch({ type: 'updateStarted' });
+    dispatchOpenclawUpdateMaintenanceStarted();
+    let maintenanceFinished = false;
     try {
       const result = await updateOpenclaw();
+      dispatchOpenclawUpdateMaintenanceFinished();
+      maintenanceFinished = true;
       if (!result.success) {
         if (id === operationId.current) {
           dispatch({
@@ -83,6 +91,9 @@ export function useOpenclawUpdate() {
       }
       return null;
     } finally {
+      if (!maintenanceFinished) {
+        dispatchOpenclawUpdateMaintenanceFinished();
+      }
       busy.current = false;
     }
   }, []);

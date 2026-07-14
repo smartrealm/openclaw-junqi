@@ -222,3 +222,16 @@ test('BUG-08 an automatic retry can promote the manager directly to connected', 
     /from: GatewayState\.STARTING,\s+event: 'WS_OPEN',[\s\S]*to: GatewayState\.CONNECTED/,
   );
 });
+
+test('OpenClaw updates reuse boot recovery UI without racing the updater restart', () => {
+  const app = source('src/App.tsx');
+  const hook = source('src/hooks/useOpenclawUpdate.ts');
+  const lifecycle = source('src/services/openclawUpdateLifecycle.ts');
+
+  assert.match(hook, /dispatchOpenclawUpdateMaintenanceStarted\(\)/);
+  assert.match(hook, /await updateOpenclaw\(\)[\s\S]*dispatchOpenclawUpdateMaintenanceFinished\(\)/);
+  assert.match(lifecycle, /aegis:openclaw-update-maintenance-started/);
+  assert.match(app, /handleUpdateMaintenanceStarted[\s\S]*useBootSequenceStore\.getState\(\)\.reset\(\)/);
+  assert.match(app, /if \(openclawUpdateActive\) return/);
+  assert.match(app, /OPENCLAW_UPDATE_MAINTENANCE_FINISHED/);
+});

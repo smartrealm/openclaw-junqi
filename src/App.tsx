@@ -19,6 +19,10 @@ import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
 import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
+import {
+  OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
+  OPENCLAW_UPDATE_MAINTENANCE_STARTED,
+} from '@/services/openclawUpdateLifecycle';
 import { changeLanguage } from '@/i18n';
 import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
@@ -96,6 +100,7 @@ export default function App() {
   const connected = useChatStore((s) => s.connected);
   const setupComplete = useAppStore((s) => s.setupComplete);
   const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
+  const [openclawUpdateActive, setOpenclawUpdateActive] = useState(false);
   const bootOverlayStartedAtRef = useRef(Date.now());
   const bootOverlayDismissedRef = useRef(false);
   const lastGatewayToastKeyRef = useRef<string | null>(null);
@@ -107,6 +112,37 @@ export default function App() {
   const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
   const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
   const [bootRecoveryLogs, setBootRecoveryLogs] = useState<string[]>([]);
+
+  useEffect(() => {
+    const handleUpdateMaintenanceStarted = () => {
+      setOpenclawUpdateActive(true);
+      bootOverlayDismissedRef.current = false;
+      bootOverlayStartedAtRef.current = Date.now();
+      bootRecoveryStartedRef.current = false;
+      setBootRecoveryAttempt(0);
+      setBootRecoveryReady(false);
+      setBootRecoveryRestarting(false);
+      setBootRecoveryLogs([]);
+      useBootSequenceStore.getState().reset();
+      if (!useChatStore.getState().connected) {
+        setBootOverlayVisible(true);
+      }
+    };
+    const handleUpdateMaintenanceFinished = () => {
+      setOpenclawUpdateActive(false);
+      if (useChatStore.getState().connected) {
+        bootOverlayDismissedRef.current = true;
+        setBootOverlayVisible(false);
+      }
+    };
+
+    window.addEventListener(OPENCLAW_UPDATE_MAINTENANCE_STARTED, handleUpdateMaintenanceStarted);
+    window.addEventListener(OPENCLAW_UPDATE_MAINTENANCE_FINISHED, handleUpdateMaintenanceFinished);
+    return () => {
+      window.removeEventListener(OPENCLAW_UPDATE_MAINTENANCE_STARTED, handleUpdateMaintenanceStarted);
+      window.removeEventListener(OPENCLAW_UPDATE_MAINTENANCE_FINISHED, handleUpdateMaintenanceFinished);
+    };
+  }, []);
 
   // ── Load Sessions from Gateway (also updates per-session model/thinking/token data) ──
   // This is the single polling call for all session metadata. The store's setSessions
@@ -341,6 +377,7 @@ export default function App() {
   // handshake retry timers.
   useEffect(() => {
     if (setupComplete !== true) return;
+    if (openclawUpdateActive) return;
     if (connected) {
       bootRecoveryStartedRef.current = false;
       setBootRecoveryAttempt(0);
@@ -420,7 +457,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [connected, bootOverlayVisible, setupComplete, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot]);
+  }, [connected, bootOverlayVisible, openclawUpdateActive, setupComplete, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
