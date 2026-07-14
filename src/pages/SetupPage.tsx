@@ -402,10 +402,10 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       logs={logs}
       wide
       showLogToggle={false}
-      previousAction={setupStep === "error" || isInstallComplete ? { onClick: () => flow.goBack() } : undefined}
+      previousAction={setupStep === "error" || isInstallComplete ? { onClick: () => flow.goBack(), disabled: flow.repairing } : undefined}
       secondaryAction={canRepairGateway ? {
         label: t("setup.retryDirectly", "直接重试"),
-        onClick: () => { void flow.retrySetup(); },
+        onClick: () => { void flow.retryGateway(); },
         disabled: flow.repairing,
       } : undefined}
       nextAction={

@@ -1,5 +1,3 @@
-use crate::state::gateway_process::{push_log, LogLevel, LogSource};
-use crate::state::GatewayProcess;
 use crate::{commands::gateway::resolve_openclaw_binary, commands::system, paths, platform};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -364,85 +362,6 @@ fn apply_doctor_payload(report: &mut MaintenanceReport, payload: Value) -> Resul
             .filter_map(|item| finding_from_value("doctor", item, "warning")),
     );
     Ok(())
-}
-
-#[tauri::command]
-pub async fn run_maintenance_repair(
-    state: tauri::State<'_, GatewayProcess>,
-) -> Result<bool, String> {
-    let _operation_guard = acquire_operation_guard().await;
-    push_log(
-        &state.logs,
-        LogSource::Lifecycle,
-        LogLevel::Info,
-        "maintenance repair started",
-    );
-
-    let Some(binary) = resolve_openclaw_binary() else {
-        push_log(
-            &state.logs,
-            LogSource::Lifecycle,
-            LogLevel::Error,
-            "maintenance repair failed: OpenClaw executable not found",
-        );
-        return Ok(false);
-    };
-
-    let mut command = tokio::process::Command::new(binary);
-    command
-        .args(["doctor", "--fix", "--yes", "--non-interactive"])
-        .env("PATH", system::openclaw_search_path())
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
-        .env("OPENCLAW_NO_RESPAWN", "1")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    platform::configure_background_command(&mut command);
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Failed to start OpenClaw maintenance repair: {error}"))?;
-    let status = match tokio::time::timeout(DOCTOR_TIMEOUT, child.wait()).await {
-        Ok(Ok(status)) => status,
-        Ok(Err(error)) => {
-            push_log(
-                &state.logs,
-                LogSource::Lifecycle,
-                LogLevel::Error,
-                format!("maintenance repair wait failed: {error}"),
-            );
-            return Ok(false);
-        }
-        Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            push_log(
-                &state.logs,
-                LogSource::Lifecycle,
-                LogLevel::Error,
-                "maintenance repair timed out",
-            );
-            return Ok(false);
-        }
-    };
-    let repaired = status.success();
-    push_log(
-        &state.logs,
-        LogSource::Lifecycle,
-        if repaired {
-            LogLevel::Info
-        } else {
-            LogLevel::Error
-        },
-        format!(
-            "maintenance repair exited with code {}",
-            status.code().unwrap_or(-1)
-        ),
-    );
-    Ok(repaired)
 }
 
 #[tauri::command]

@@ -84,7 +84,9 @@ test('Gateway setup errors expose explicit repair and direct retry actions', () 
   assert.match(setupPage, /setup\.repairAndRetry/);
   assert.match(setupPage, /flow\.repairAndRetry\(\)/);
   assert.match(setupPage, /setup\.retryDirectly/);
-  assert.match(setupFlow, /repair_openclaw_for_setup/);
+  assert.match(setupFlow, /runOpenClawRepair/);
+  assert.match(setupFlow, /if \(!isRunActive\(runId\)\) return/);
+  assert.match(setupPage, /flow\.retryGateway\(\)/);
   assert.match(setupFlow, /await startGatewayAction\(\)/);
 });
 

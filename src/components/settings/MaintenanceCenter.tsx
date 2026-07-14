@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { invoke } from '@tauri-apps/api/core';
 import {
   runMaintenanceScan,
   type MaintenanceCategory,
@@ -25,6 +24,7 @@ import {
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { GatewayLifecyclePanel } from './GatewayLifecyclePanel';
+import { runOpenClawRepair, useOpenClawRepairing } from '@/services/gateway/openclawRepair';
 
 const CATEGORY_ORDER: MaintenanceCategory[] = ['config', 'plugin', 'mcp', 'security', 'gateway', 'doctor'];
 
@@ -64,6 +64,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
   const [report, setReport] = useState<MaintenanceReport | null>(null);
   const [scanning, setScanning] = useState(false);
   const [repairing, setRepairing] = useState(false);
+  const globalRepairing = useOpenClawRepairing();
   const [gatewayRecovering, setGatewayRecovering] = useState(false);
   const [gatewayRecoveryError, setGatewayRecoveryError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -112,7 +113,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
           setRepairing(true);
           setRequestError(null);
           try {
-            const repaired = await invoke<boolean>('run_maintenance_repair');
+            const repaired = await runOpenClawRepair();
             if (!repaired) {
               showAlert(
                 t('maintenance.repairFailedTitle', '修复未完成'),
@@ -162,7 +163,7 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
     }
   }, [gatewayRecovering, onRecoverGateway]);
 
-  const busy = scanning || repairing;
+  const busy = scanning || repairing || globalRepairing;
   const canRepair = Boolean(report && (report.configValid === false || report.doctorOk === false));
   const checkedTime = report
     ? new Intl.DateTimeFormat(i18n.language, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(report.checkedAtMs)
