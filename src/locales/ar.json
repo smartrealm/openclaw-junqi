@@ -281,10 +281,21 @@
   "agentWorkspace": {
     "backToTask": "العودة إلى المهمة الحالية",
     "backToTaskList": "العودة إلى قائمة المهام",
-    "backToDashboard": "العودة إلى لوحة التحكم",
     "expandSidebar": "إظهار الشريط الجانبي لمساحة العمل",
     "expandTasks": "إظهار قائمة المهام",
-    "collapseTasks": "طي قائمة المهام"
+    "collapseTasks": "طي قائمة المهام",
+    "projectManager": "إدارة المشاريع",
+    "projectManagerHint": "إعادة تسمية المشاريع أو تثبيتها أو إزالتها دون تعديل المجلدات المحلية.",
+    "openProject": "إضافة مشروع",
+    "searchProjects": "البحث في المشاريع",
+    "renameProject": "إعادة تسمية المشروع",
+    "pinProject": "تثبيت في شريط المشاريع",
+    "hideProject": "إخفاء من شريط المشاريع",
+    "removeProject": "إزالة المشروع",
+    "removeProjectConfirm": "هل تريد إزالة «{{name}}» من مساحة العمل؟ لن يُحذف مجلد المشروع المحلي.",
+    "removeProjectWithTasksConfirm": "هل تريد إزالة «{{name}}» من مساحة العمل؟ ستُحذف أيضًا مهامه البالغ عددها {{count}}، لكن سيبقى مجلد المشروع المحلي.",
+    "noTaskSelected": "لم يتم تحديد مهمة",
+    "noTaskSelectedHint": "افتح مهمة من الشريط الجانبي أو استخدم مهمة جديدة."
   },
   "workshop": {
     "title": "الورشة",

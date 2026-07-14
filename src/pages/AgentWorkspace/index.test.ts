@@ -73,6 +73,16 @@ test('hidden projects remain available in the drawer and active project stays on
   assert.match(source, /已隐藏/);
 });
 
+test('project management keeps rename, visibility and removal actions discoverable', () => {
+  assert.match(source, /agentWorkspace\.projectManager/);
+  assert.match(source, /<FolderCog size=\{15\} \/>/);
+  assert.match(source, /agentWorkspace\.renameProject/);
+  assert.match(source, /agentWorkspace\.removeProject/);
+  assert.match(source, /requestCloseProject\(item\)/);
+  assert.match(source, /<Trash2 size=\{12\} \/>/);
+  assert.doesNotMatch(source, /title="关闭项目"/);
+});
+
 test('full task panel owns footer actions while compact mode keeps only the project rail', () => {
   assert.equal((source.match(/<NotificationBell \/>/g) ?? []).length, 1);
   assert.match(source, /taskSidebarMode === 'full'/);
@@ -91,13 +101,21 @@ test('AI workspace exposes a deterministic back hierarchy and animated content s
   assert.match(source, /if \(openDiff\)/);
   assert.match(source, /if \(activeFilePath\)/);
   assert.match(source, /selectTask\(null\)/);
-  assert.match(source, /navigate\('\/'\)/);
+  assert.doesNotMatch(source, /navigate\('\/'\)/);
+  assert.match(source, /: null;/);
+  assert.match(source, /\{backLabel && \(/);
   assert.match(source, /aria-label=\{backLabel\}/);
   assert.match(source, /<AnimatePresence initial=\{false\} mode="wait">/);
   assert.match(source, /<WorkspaceContentScene key=/);
   assert.match(source, /agentWorkspace\.backToTask/);
   assert.match(source, /agentWorkspace\.backToTaskList/);
-  assert.match(source, /agentWorkspace\.backToDashboard/);
+  assert.doesNotMatch(source, /agentWorkspace\.backToDashboard/);
+});
+
+test('empty task state stays secondary to the task sidebar action', () => {
+  assert.match(source, /agentWorkspace\.noTaskSelected/);
+  assert.doesNotMatch(source, /<h1 className="mb-2 text-xl font-semibold">新建 AI 任务<\/h1>/);
+  assert.doesNotMatch(source, /使用完整编辑器配置智能体、权限、工作树和附件/);
 });
 
 test('AI workspace navigation labels exist in every supported locale', () => {
@@ -105,8 +123,9 @@ test('AI workspace navigation labels exist in every supported locale', () => {
     const messages = JSON.parse(readFileSync(new URL(`../../locales/${locale}.json`, import.meta.url), 'utf8'));
     assert.equal(typeof messages.agentWorkspace.backToTask, 'string');
     assert.equal(typeof messages.agentWorkspace.backToTaskList, 'string');
-    assert.equal(typeof messages.agentWorkspace.backToDashboard, 'string');
     assert.equal(typeof messages.agentWorkspace.expandSidebar, 'string');
+    assert.equal(typeof messages.agentWorkspace.projectManager, 'string');
+    assert.equal(typeof messages.agentWorkspace.removeProject, 'string');
   }
 });
 

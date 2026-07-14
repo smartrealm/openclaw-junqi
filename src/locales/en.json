@@ -352,10 +352,21 @@
   "agentWorkspace": {
     "backToTask": "Back to current task",
     "backToTaskList": "Back to task list",
-    "backToDashboard": "Back to dashboard",
     "expandSidebar": "Show workspace sidebar",
     "expandTasks": "Show task sidebar",
-    "collapseTasks": "Collapse task sidebar"
+    "collapseTasks": "Collapse task sidebar",
+    "projectManager": "Manage projects",
+    "projectManagerHint": "Rename, pin, or remove workspace projects without changing local folders.",
+    "openProject": "Add project",
+    "searchProjects": "Search projects",
+    "renameProject": "Rename project",
+    "pinProject": "Pin to project rail",
+    "hideProject": "Hide from project rail",
+    "removeProject": "Remove project",
+    "removeProjectConfirm": "Remove “{{name}}” from the workspace? The local project folder will not be deleted.",
+    "removeProjectWithTasksConfirm": "Remove “{{name}}” from the workspace? Its {{count}} tasks will also be deleted, but the local project folder will remain.",
+    "noTaskSelected": "No task selected",
+    "noTaskSelectedHint": "Open a task from the sidebar, or use New task."
   },
   "workshop": {
     "title": "Workshop",

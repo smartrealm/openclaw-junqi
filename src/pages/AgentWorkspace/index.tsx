@@ -9,9 +9,9 @@ import {
   EyeOff,
   FileText,
   Files,
+  FolderCog,
   GitBranch,
   GitCompareArrows,
-  GripVertical,
   History,
   LayoutGrid,
   Moon,
@@ -26,7 +26,6 @@ import {
   Sun,
   TerminalSquare,
   Trash2,
-  X,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -397,14 +396,23 @@ export function AgentWorkspacePage() {
       .filter((candidate) => candidate.id === sourceId || candidate.worktreeParentId === sourceId)
       .map(workspacePath));
     const relatedTasks = tasks.filter((task) => familyPaths.has(task.projectPath));
-    const accepted = await confirm(`确定从工作台移除“${closingWorkspace.name}”吗？${relatedTasks.length ? ` 该项目的 ${relatedTasks.length} 个任务也会删除。` : ''}`, {
-      title: '移除项目',
+    const accepted = await confirm(relatedTasks.length
+      ? t('agentWorkspace.removeProjectWithTasksConfirm', {
+        name: closingWorkspace.name,
+        count: relatedTasks.length,
+        defaultValue: `确定从工作台移除“${closingWorkspace.name}”吗？该项目的 ${relatedTasks.length} 个任务也会删除，但不会删除本地项目目录。`,
+      })
+      : t('agentWorkspace.removeProjectConfirm', {
+        name: closingWorkspace.name,
+        defaultValue: `确定从工作台移除“${closingWorkspace.name}”吗？不会删除本地项目目录。`,
+      }), {
+      title: t('agentWorkspace.removeProject', '移除项目'),
       kind: 'warning',
     });
     if (!accepted) return;
     await deleteTasks(relatedTasks);
     closeWorkspace(closingWorkspace.id);
-  }, [closeWorkspace, deleteTasks, tasks, workspaces]);
+  }, [closeWorkspace, deleteTasks, t, tasks, workspaces]);
   const renderedRunTasks = useMemo(() => tasks.filter((task) => (
     (selected?.id === task.id && (task.isDraft || task.status !== 'todo'))
     || (mountedRunTaskIds.has(task.id) && isActiveTask(task))
@@ -605,7 +613,7 @@ export function AgentWorkspacePage() {
     ? t('agentWorkspace.backToTask', '返回当前任务')
     : selected
       ? t('agentWorkspace.backToTaskList', '返回任务列表')
-      : t('agentWorkspace.backToDashboard', '返回仪表盘');
+      : null;
   const navigateBack = useCallback(() => {
     if (openDiff) {
       setOpenDiff(null);
@@ -619,8 +627,7 @@ export function AgentWorkspacePage() {
       selectTask(null);
       return;
     }
-    navigate('/');
-  }, [activeFilePath, navigate, openDiff, selectTask, selected]);
+  }, [activeFilePath, openDiff, selectTask, selected]);
 
   const beginWorkspaceDrag = useCallback((event: React.PointerEvent<HTMLButtonElement>, workspaceId: string) => {
     if (event.button !== 0) return;
@@ -756,15 +763,15 @@ export function AgentWorkspacePage() {
         </button>
         <button
           type="button"
-          title="所有项目"
+          title={t('agentWorkspace.projectManager', '项目管理')}
           onClick={() => setProjectDrawerOpen((open) => !open)}
           className={`flex h-8 w-8 items-center justify-center rounded ${projectDrawerOpen ? 'bg-aegis-primary/15 text-aegis-primary' : 'text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text'}`}
         >
-          <GripVertical size={15} />
+          <FolderCog size={15} />
         </button>
         <button
           type="button"
-          title="打开项目"
+          title={t('agentWorkspace.openProject', '添加项目')}
           onClick={() => void openProjectWorkspace()}
           className="flex h-8 w-8 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
         >
@@ -772,9 +779,24 @@ export function AgentWorkspacePage() {
         </button>
 
         {projectDrawerOpen && (
-          <div className="absolute bottom-2 left-12 top-0 z-50 flex w-64 flex-col border-r border-aegis-border bg-aegis-surface shadow-xl">
+          <div className="absolute bottom-2 left-12 top-0 z-50 flex w-80 flex-col border-r border-aegis-border bg-aegis-surface shadow-xl">
             <div className="border-b border-aegis-border p-3">
-              <div className="mb-2 text-[10px] font-semibold text-aegis-text-dim">所有项目</div>
+              <div className="mb-2 flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold text-aegis-text">{t('agentWorkspace.projectManager', '项目管理')}</div>
+                  <div className="mt-0.5 text-[10px] text-aegis-text-dim">
+                    {t('agentWorkspace.projectManagerHint', '重命名、固定或移除工作台项目；不会修改本地目录。')}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  title={t('agentWorkspace.openProject', '添加项目')}
+                  onClick={() => void openProjectWorkspace()}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-aegis-primary text-white hover:brightness-110"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
               <div className="flex items-center gap-2 rounded-md border border-aegis-border bg-aegis-bg px-2 py-1.5">
                 <Search size={13} className="text-aegis-text-dim" />
                 <input
@@ -784,7 +806,7 @@ export function AgentWorkspacePage() {
                   onKeyDown={(event) => {
                     if (event.key === 'Escape') setProjectDrawerOpen(false);
                   }}
-                  placeholder="搜索项目"
+                  placeholder={t('agentWorkspace.searchProjects', '搜索项目')}
                   className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-aegis-text-dim"
                 />
               </div>
@@ -838,30 +860,32 @@ export function AgentWorkspacePage() {
                     )}
                     <button
                       type="button"
-                      title="重命名项目"
+                      title={t('agentWorkspace.renameProject', '重命名项目')}
                       onClick={() => {
                         setEditingWorkspaceId(item.id);
                         setEditingWorkspaceName(item.name);
                       }}
-                      className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim opacity-0 hover:bg-aegis-bg hover:text-aegis-text group-hover:opacity-100 focus:opacity-100"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-bg hover:text-aegis-text"
                     >
                       <Pencil size={12} />
                     </button>
                     <button
                       type="button"
-                      title={item.hiddenFromRail ? '固定到项目栏' : '从项目栏隐藏'}
+                      title={item.hiddenFromRail
+                        ? t('agentWorkspace.pinProject', '固定到项目栏')
+                        : t('agentWorkspace.hideProject', '从项目栏隐藏')}
                       onClick={() => toggleWorkspaceHidden(item.id)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim opacity-0 hover:bg-aegis-bg hover:text-aegis-text group-hover:opacity-100 focus:opacity-100"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-bg hover:text-aegis-text"
                     >
                       {item.hiddenFromRail ? <Eye size={12} /> : <EyeOff size={12} />}
                     </button>
                     <button
                       type="button"
-                      title="关闭项目"
+                      title={t('agentWorkspace.removeProject', '移除项目')}
                       onClick={() => void requestCloseProject(item)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim opacity-0 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 focus:opacity-100"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400"
                     >
-                      <X size={12} />
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 );
@@ -1056,17 +1080,21 @@ export function AgentWorkspacePage() {
                 <PanelLeftOpen size={15} />
               </button>
             )}
-            <button
-              type="button"
-              title={backLabel}
-              aria-label={backLabel}
-              onClick={navigateBack}
-              className="flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
-            >
-              <ArrowLeft size={14} />
-              <span className="hidden text-[11px] sm:inline">{backLabel}</span>
-            </button>
-            <span className="h-4 w-px shrink-0 bg-aegis-border" />
+            {backLabel && (
+              <>
+                <button
+                  type="button"
+                  title={backLabel}
+                  aria-label={backLabel}
+                  onClick={navigateBack}
+                  className="flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+                >
+                  <ArrowLeft size={14} />
+                  <span className="hidden text-[11px] sm:inline">{backLabel}</span>
+                </button>
+                <span className="h-4 w-px shrink-0 bg-aegis-border" />
+              </>
+            )}
             <GitBranch size={14} className="shrink-0" />
             <span className="truncate">{workspace?.name || '项目工作台'}</span>
             {openDiff && <span className="truncate text-aegis-text">/ {openDiff.title}</span>}
@@ -1140,16 +1168,16 @@ export function AgentWorkspacePage() {
             </WorkspaceContentScene>
           ) : !selected ? (
             <WorkspaceContentScene key={`task-list:${projectPath}`}>
-              <section className="mx-auto flex h-full w-full max-w-3xl flex-col justify-center px-8">
-                <h1 className="mb-2 text-xl font-semibold">新建 AI 任务</h1>
-                <p className="mb-5 text-sm text-aegis-text-dim">使用完整编辑器配置智能体、权限、工作树和附件，再直接启动或保存为待办。</p>
-                <button
-                  type="button"
-                  onClick={startNewTask}
-                  className="inline-flex w-fit items-center gap-2 rounded bg-aegis-primary px-3 py-2 text-xs font-semibold text-white"
-                >
-                  <Plus size={14} />新建任务
-                </button>
+              <section className="flex h-full items-center justify-center px-8" aria-label={t('agentWorkspace.noTaskSelected', '未选择任务')}>
+                <div className="flex max-w-sm flex-col items-center text-center text-aegis-text-dim">
+                  <Bot size={24} strokeWidth={1.5} className="mb-3 opacity-45" />
+                  <p className="text-xs font-medium text-aegis-text-secondary">
+                    {t('agentWorkspace.noTaskSelected', '未选择任务')}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-5">
+                    {t('agentWorkspace.noTaskSelectedHint', '从左侧任务列表打开一项，或使用“新建任务”。')}
+                  </p>
+                </div>
               </section>
             </WorkspaceContentScene>
           ) : selected.status === 'todo' && !selected.isDraft ? (

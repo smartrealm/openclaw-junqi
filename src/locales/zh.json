@@ -352,10 +352,21 @@
   "agentWorkspace": {
     "backToTask": "返回当前任务",
     "backToTaskList": "返回任务列表",
-    "backToDashboard": "返回仪表盘",
     "expandSidebar": "展开工作台侧栏",
     "expandTasks": "展开任务栏",
-    "collapseTasks": "收起任务栏"
+    "collapseTasks": "收起任务栏",
+    "projectManager": "项目管理",
+    "projectManagerHint": "重命名、固定或移除工作台项目；不会修改本地目录。",
+    "openProject": "添加项目",
+    "searchProjects": "搜索项目",
+    "renameProject": "重命名项目",
+    "pinProject": "固定到项目栏",
+    "hideProject": "从项目栏隐藏",
+    "removeProject": "移除项目",
+    "removeProjectConfirm": "确定从工作台移除“{{name}}”吗？不会删除本地项目目录。",
+    "removeProjectWithTasksConfirm": "确定从工作台移除“{{name}}”吗？该项目的 {{count}} 个任务也会删除，但不会删除本地项目目录。",
+    "noTaskSelected": "未选择任务",
+    "noTaskSelectedHint": "从左侧任务列表打开一项，或使用“新建任务”。"
   },
   "workshop": {
     "title": "工作台",
