@@ -351,6 +351,8 @@ fn output_diagnostic(output: &Output) -> Option<String> {
 const GATEWAY_RESTART_FAILURE_MARKERS: &[&str] = &[
     "gateway did not become healthy after restart",
     "gateway: restart failed",
+    "gateway restart failed after",
+    "gateway service restart failed",
     "updated install restart failed",
     "update restart failed",
     "failed to restart managed gateway service",
@@ -359,6 +361,10 @@ const GATEWAY_RESTART_FAILURE_MARKERS: &[&str] = &[
 fn gateway_restart_failure_diagnostic(output: &Output) -> Option<String> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
+    gateway_restart_failure_diagnostic_from_text(&stderr, &stdout)
+}
+
+fn gateway_restart_failure_diagnostic_from_text(stderr: &str, stdout: &str) -> Option<String> {
     let combined = format!("{stderr}\n{stdout}");
     let lines = combined.lines().collect::<Vec<_>>();
     let start = lines.iter().position(|line| {
@@ -997,5 +1003,35 @@ mod tests {
         assert!(!result.success);
         assert_eq!(result.reason.as_deref(), Some("post-update-plugins"));
         assert_eq!(result.gateway_error, None);
+    }
+
+    #[test]
+    fn extracts_restart_failure_after_unrelated_migration_warnings() {
+        let diagnostic = gateway_restart_failure_diagnostic_from_text(
+            "[state-migrations] Legacy state migration warnings\n\
+             [restart] killing 1 stale gateway process(es) before restart: 84555\n\
+             Gateway did not become healthy after restart.\n\
+             Service runtime stayed stopped.",
+            "",
+        );
+
+        assert_eq!(
+            diagnostic.as_deref(),
+            Some(
+                "Gateway did not become healthy after restart.\n\
+                 Service runtime stayed stopped."
+            )
+        );
+    }
+
+    #[test]
+    fn stale_process_cleanup_alone_is_not_a_restart_failure() {
+        assert_eq!(
+            gateway_restart_failure_diagnostic_from_text(
+                "[restart] killing 1 stale gateway process(es) before restart: 84555",
+                "",
+            ),
+            None
+        );
     }
 }
