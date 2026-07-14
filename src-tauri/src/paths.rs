@@ -495,7 +495,7 @@ mod storage_bootstrap_tests {
 
     #[test]
     fn v1_bootstrap_keeps_legacy_runtime_and_cache_locations() {
-        let state = PathBuf::from("/tmp/junqi-v1-layout");
+        let state = std::env::temp_dir().join("junqi-v1-layout");
         let raw = serde_json::json!({
             "version": 1,
             "state_dir": state,

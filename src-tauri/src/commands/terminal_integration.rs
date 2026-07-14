@@ -339,27 +339,27 @@ fn remove_launcher() -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn platform_environment_is_configured(_profile: Option<&Path>) -> bool {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let launcher = paths::terminal_launcher_dir().to_string_lossy().to_string();
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey("Environment")
+        .ok()
+        .and_then(|key| key.get_value::<String, _>("Path").ok())
+        .is_some_and(|path| {
+            path.split(';')
+                .any(|entry| entry.trim().eq_ignore_ascii_case(&launcher))
+        })
+}
+
+#[cfg(not(windows))]
 fn platform_environment_is_configured(profile: Option<&Path>) -> bool {
-    #[cfg(windows)]
-    {
-        use winreg::enums::HKEY_CURRENT_USER;
-        use winreg::RegKey;
-        let launcher = paths::terminal_launcher_dir().to_string_lossy().to_string();
-        return RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey("Environment")
-            .ok()
-            .and_then(|key| key.get_value::<String, _>("Path").ok())
-            .is_some_and(|path| {
-                path.split(';')
-                    .any(|entry| entry.trim().eq_ignore_ascii_case(&launcher))
-            });
-    }
-    #[cfg(not(windows))]
-    {
-        profile
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .is_some_and(|content| content.contains(BLOCK_START) && content.contains(BLOCK_END))
-    }
+    profile
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .is_some_and(|content| content.contains(BLOCK_START) && content.contains(BLOCK_END))
 }
 
 #[cfg(windows)]
