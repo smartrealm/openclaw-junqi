@@ -239,6 +239,18 @@ test('BUG-GL07 restart CLI is terminated before managed fallback on abnormal wai
   assert.match(waitBranches, /terminate_owned_gateway\(&mut child\)\.await;[\s\S]*start_managed_gateway_fallback/);
 });
 
+test('BUG-GL12 restart fully terminates the managed child before restarting the service', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const restart = gateway.slice(
+    gateway.indexOf('pub async fn restart_gateway'),
+    gateway.indexOf('pub async fn restart_local_gateway'),
+  );
+
+  assert.match(restart, /terminate_owned_gateway\(&mut old\)\.await/);
+  assert.match(restart, /wait_for_port_free\(port, 30_000\)\.await/);
+  assert.doesNotMatch(restart, /let _ = old\.kill\(\)\.await/);
+});
+
 test('BUG-GL08 restart contention is coalesced only by a completed restart generation', () => {
   const state = source('src-tauri/src/state/gateway_process.rs');
   const rust = source('src-tauri/src/commands/gateway.rs');

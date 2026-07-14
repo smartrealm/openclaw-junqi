@@ -1696,14 +1696,13 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     let port = std::fs::read_to_string(paths::config_path())
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|cfg| cfg.get("gateway")?.get("port")?.as_u64())
-        .map(|v| v as u16)
-        .unwrap_or(18789);
+        .and_then(|cfg| crate::commands::config::gateway_port_from_config(&cfg))
+        .unwrap_or_else(crate::commands::config::default_gateway_port);
     emit_keyed(
         &app,
         step,
         &format!(
-            "Target port = {} (source: openclaw.json, default 18789)",
+            "Target port = {} (source: openclaw.json or OpenClaw default)",
             port
         ),
         "setup.gateway.portResolved",
@@ -1716,8 +1715,9 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         &app,
         step,
         &format!(
-            "Probing 127.0.0.1:{} for existing Gateway listener...",
-            port
+            "Probing {}:{} for existing Gateway listener...",
+            crate::commands::config::default_gateway_host(),
+            port,
         ),
         "setup.gateway.probe",
         0.52,

@@ -583,9 +583,8 @@ pub async fn configure_storage(
     let port = std::fs::read_to_string(&old_config)
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|config| config.get("gateway")?.get("port")?.as_u64())
-        .map(|value| value as u16)
-        .unwrap_or(18789);
+        .and_then(|config| crate::commands::config::gateway_port_from_config(&config))
+        .unwrap_or_else(crate::commands::config::default_gateway_port);
 
     if target == source {
         let layout = StorageBootstrap::for_state_dir(

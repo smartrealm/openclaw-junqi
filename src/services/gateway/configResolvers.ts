@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { debugLog } from '@/utils/debugLog';
+import { DEFAULT_GATEWAY_PORT, defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 
 export interface GwConfig { token: string; ws_url: string }
 export interface ConfigResolver { name: string; resolve(): Promise<GwConfig | null> }
@@ -15,8 +16,8 @@ export class CachedTokenResolver implements ConfigResolver {
   async resolve(): Promise<GwConfig | null> {
     const token = this.get();
     if (!token) return null;
-    const port = this.getPort() ?? 18789;
-    return { token, ws_url: `ws://127.0.0.1:${port}` };
+    const port = this.getPort() ?? DEFAULT_GATEWAY_PORT;
+    return { token, ws_url: defaultGatewayWsUrl(port) };
   }
 }
 

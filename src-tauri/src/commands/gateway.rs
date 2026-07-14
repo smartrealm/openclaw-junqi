@@ -139,6 +139,135 @@ mod runtime_observation_tests {
     }
 }
 
+#[cfg(test)]
+mod gateway_config_tests {
+    use super::*;
+
+    fn isolated_config_path(name: &str) -> std::path::PathBuf {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir()
+            .join(format!(
+                "junqi-gateway-config-test-{}-{}-{}",
+                name,
+                std::process::id(),
+                suffix
+            ))
+            .join("openclaw.json")
+    }
+
+    #[test]
+    fn invalid_configured_port_uses_the_shared_default() {
+        let path = isolated_config_path("invalid-port");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"gateway":{"port":70000}}"#).unwrap();
+
+        assert_eq!(
+            ConfigMetadata::load(&path).port,
+            crate::commands::config::default_gateway_port()
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn explicit_non_token_auth_mode_is_preserved_and_rejected() {
+        let path = isolated_config_path("password-mode");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original =
+            r#"{"gateway":{"auth":{"mode":"password","password":"legacy","token":"existing"}}}"#;
+        std::fs::write(&path, original).unwrap();
+
+        let error = ensure_config_with_token(
+            &path,
+            crate::commands::config::default_gateway_port(),
+            "loopback",
+        )
+        .unwrap_err();
+
+        assert!(error.contains("password"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn inferred_token_auth_mode_is_not_materialized() {
+        let path = isolated_config_path("inferred-token-mode");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"gateway":{"auth":{"token":"existing"}}}"#).unwrap();
+
+        let token = ensure_config_with_token(
+            &path,
+            crate::commands::config::default_gateway_port(),
+            "loopback",
+        )
+        .unwrap();
+        let config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(token, "existing");
+        assert!(config["gateway"]["auth"].get("mode").is_none());
+        assert_eq!(config["gateway"]["auth"]["token"], "existing");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn inferred_password_auth_is_not_rewritten_as_token_auth() {
+        let path = isolated_config_path("inferred-password-mode");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = r#"{"gateway":{"auth":{"password":"existing"}}}"#;
+        std::fs::write(&path, original).unwrap();
+
+        let error = ensure_config_with_token(
+            &path,
+            crate::commands::config::default_gateway_port(),
+            "loopback",
+        )
+        .unwrap_err();
+
+        assert!(error.contains("password"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn blank_token_is_replaced_with_a_secure_token() {
+        let path = isolated_config_path("blank-token");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"gateway":{"auth":{"token":"   "}}}"#).unwrap();
+
+        let token = ensure_config_with_token(
+            &path,
+            crate::commands::config::default_gateway_port(),
+            "loopback",
+        )
+        .unwrap();
+        let config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(token.len(), 64);
+        assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(config["gateway"]["auth"]["token"], token);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn invalid_requested_port_does_not_create_or_mutate_config() {
+        let path = isolated_config_path("invalid-requested-port");
+
+        let error = ensure_config_with_token(&path, 0, "loopback").unwrap_err();
+
+        assert!(error.contains("port"));
+        assert!(!path.exists());
+    }
+}
+
 /// Build a PATH that includes bundled Node.js, our openclaw prefix,
 /// and common native install locations — same approach as openclaw-desktop.
 fn augmented_path() -> String {
@@ -153,7 +282,7 @@ pub fn resolve_openclaw_binary() -> Option<std::path::PathBuf> {
 /// Lightweight snapshot of the fields we need from openclaw.json at gateway startup.
 /// Parsed once per launch to avoid redundant disk reads across callers.
 struct ConfigMetadata {
-    /// Configured gateway port; defaults to 18789 when absent.
+    /// Configured gateway port; uses the shared runtime default when absent.
     port: u16,
     /// Provider API keys and env overrides from `env.vars`.
     env_vars: Vec<(String, String)>,
@@ -169,9 +298,8 @@ impl ConfigMetadata {
 
         let port = parsed
             .as_ref()
-            .and_then(|cfg| cfg.get("gateway")?.get("port")?.as_u64())
-            .map(|v| v as u16)
-            .unwrap_or(18789);
+            .and_then(crate::commands::config::gateway_port_from_config)
+            .unwrap_or_else(crate::commands::config::default_gateway_port);
 
         let env_vars = parsed
             .as_ref()
@@ -202,31 +330,25 @@ fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
         .get("auth")?
         .get("token")?
         .as_str()
+        .filter(|token| !token.trim().is_empty())
         .map(|s| s.to_string())
 }
 
-/// Generate a random token for localhost gateway authentication.
-///
-/// Uses `RandomState` with a fresh OS-seeded key per round to produce
-/// unpredictable 192-bit tokens. Adequate for loopback-only use where
-/// the port is not exposed to the network.
-pub(crate) fn generate_token() -> String {
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hasher};
-    let mut token = String::with_capacity(48);
-    // Mix OS entropy (RandomState::new()) with timestamp nanos to prevent
-    // identical tokens from rapid successive calls.
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    for i in 0..3 {
-        let s = RandomState::new();
-        let mut h = s.build_hasher();
-        h.write_u64((ts ^ (i as u128)) as u64);
-        token.push_str(&format!("{:016x}", h.finish()));
+/// Generate a 256-bit token from the operating system CSPRNG.
+pub(crate) fn generate_token() -> Result<String, String> {
+    use rand::{rngs::OsRng, RngCore};
+
+    let mut bytes = [0_u8; 32];
+    OsRng
+        .try_fill_bytes(&mut bytes)
+        .map_err(|error| format!("Failed to generate a secure Gateway token: {error}"))?;
+    let mut token = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write;
+        write!(&mut token, "{byte:02x}")
+            .map_err(|error| format!("Failed to encode the Gateway token: {error}"))?;
     }
-    token
+    Ok(token)
 }
 
 pub(crate) fn ensure_config_with_token(
@@ -234,6 +356,9 @@ pub(crate) fn ensure_config_with_token(
     port: u16,
     bind: &str,
 ) -> Result<String, String> {
+    if port == 0 {
+        return Err("Gateway port must be between 1 and 65535".into());
+    }
     // Origins that Tauri webviews may send depending on OS/version
     let allowed_origins = serde_json::json!([
         "tauri://localhost",
@@ -261,12 +386,38 @@ pub(crate) fn ensure_config_with_token(
         let config: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("Failed to parse config: {}", e))?;
 
+        let auth_config = config
+            .get("gateway")
+            .and_then(|gateway| gateway.get("auth"));
+        let configured_auth_mode = auth_config.and_then(|auth| auth.get("mode"));
+        if let Some(mode_value) = configured_auth_mode {
+            let mode = mode_value
+                .as_str()
+                .ok_or("gateway.auth.mode must be a string")?;
+            if mode != "token" {
+                return Err(format!(
+                    "Gateway auth mode `{}` is not compatible with JunQi token authentication; update the Gateway connection configuration first",
+                    mode
+                ));
+            }
+        } else if auth_config
+            .and_then(|auth| auth.get("password"))
+            .and_then(|password| password.as_str())
+            .is_some_and(|password| !password.is_empty())
+        {
+            return Err(
+                "Gateway password authentication is configured without an explicit auth mode; select a Gateway authentication mode before JunQi adds a token"
+                    .into(),
+            );
+        }
+
         // Try to get existing token
         if let Some(token) = config
             .get("gateway")
             .and_then(|g| g.get("auth"))
             .and_then(|a| a.get("token"))
             .and_then(|t| t.as_str())
+            .filter(|token| !token.trim().is_empty())
         {
             let token = token.to_string();
 
@@ -317,8 +468,7 @@ pub(crate) fn ensure_config_with_token(
             .entry("auth")
             .or_insert_with(|| serde_json::json!({}));
         let auth_obj = auth.as_object_mut().ok_or("auth is not an object")?;
-        let token = generate_token();
-        auth_obj.insert("mode".into(), serde_json::json!("token"));
+        let token = generate_token()?;
         auth_obj.insert("token".into(), serde_json::json!(token));
 
         write_openclaw_config_safely(config_path, &config)?;
@@ -332,7 +482,7 @@ pub(crate) fn ensure_config_with_token(
             .map_err(|e| format!("Failed to create config dir: {}", e))?;
     }
 
-    let token = generate_token();
+    let token = generate_token()?;
     let default_config = serde_json::json!({
         "agents": {
             "defaults": {
@@ -344,7 +494,6 @@ pub(crate) fn ensure_config_with_token(
             "port": port,
             "bind": bind,
             "auth": {
-                "mode": "token",
                 "token": token
             },
             "controlUi": control_ui
@@ -457,7 +606,7 @@ pub async fn get_gateway_token() -> Result<String, String> {
 pub async fn is_gateway_serving(port: u16) -> bool {
     tokio::time::timeout(
         std::time::Duration::from_millis(700),
-        TcpStream::connect(("127.0.0.1", port)),
+        TcpStream::connect((crate::commands::config::default_gateway_host(), port)),
     )
     .await
     .map(|result| result.is_ok())
@@ -656,8 +805,15 @@ pub async fn restart_gateway(
     };
     if let Some(mut old) = old_child {
         emit_restart_progress(&app, "Stopping desktop-managed gateway process...");
-        let _ = old.kill().await;
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old).await;
+        if let Err(error) =
+            crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
+        {
+            emit_restart_progress(
+                &app,
+                format!("Gateway port release is still pending: {}", error),
+            );
+        }
     }
 
     let openclaw = resolve_openclaw_binary()
@@ -1176,7 +1332,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
 pub async fn probe_gateway_port(port: Option<u16>) -> Result<bool, String> {
     // When the caller supplies a port, probe it directly. Otherwise read
     // the configured port from openclaw.json so we detect gateways that
-    // don't run on the default 18789.
+    // don't run on the shared default port.
     let target_port = match port {
         Some(p) => p,
         None => ConfigMetadata::load(&paths::config_path()).port,

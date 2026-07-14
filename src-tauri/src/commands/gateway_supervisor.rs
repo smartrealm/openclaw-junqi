@@ -34,7 +34,13 @@ pub async fn wait_for_port_free(port: u16, timeout_ms: u64) -> Result<u64, Strin
                 port, timeout_ms,
             ));
         }
-        match TcpListener::bind(format!("127.0.0.1:{}", port)).await {
+        match TcpListener::bind(format!(
+            "{}:{}",
+            crate::commands::config::default_gateway_host(),
+            port
+        ))
+        .await
+        {
             Ok(_) => {
                 return Ok(elapsed);
             }
@@ -68,9 +74,13 @@ pub async fn terminate_owned_gateway(child: &mut tokio::process::Child) {
 /// Probe for an orphaned process on our port and kill it if found.
 /// Returns true if we freed the port (orphan was killed, now port is free).
 pub async fn find_and_kill_orphans(port: u16) -> bool {
-    if TcpListener::bind(format!("127.0.0.1:{}", port))
-        .await
-        .is_ok()
+    if TcpListener::bind(format!(
+        "{}:{}",
+        crate::commands::config::default_gateway_host(),
+        port
+    ))
+    .await
+    .is_ok()
     {
         return false; // port is already free
     }

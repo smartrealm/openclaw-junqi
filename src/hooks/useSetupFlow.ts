@@ -27,6 +27,7 @@ import { normalizeSetupProgressPayload } from "./setupProgressEvents";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { gateway } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
+import { defaultGatewayWsUrl } from "@/config/runtimeDefaults";
 import {
   OpenClawWizardClient,
   isOpenClawWizardSessionLost,
@@ -153,7 +154,7 @@ function cacheGatewayTarget(port?: number | null, token?: string | null): void {
     const current = JSON.parse(localStorage.getItem("aegis-config") || "{}");
     const next = {
       ...current,
-      ...(port ? { gatewayUrl: `ws://127.0.0.1:${port}` } : {}),
+      ...(port ? { gatewayUrl: defaultGatewayWsUrl(port) } : {}),
       ...(token ? { gatewayToken: token } : {}),
     };
     localStorage.setItem("aegis-config", JSON.stringify(next));
@@ -293,7 +294,7 @@ export function useSetupFlow(
         // OpenClaw 已安装，继续探测 Gateway 是否已监听。这里不直接
         // 进入工作台，避免用户在向导中前后切换时被跳过确认步骤。
         try {
-          // 不传端口时由 Rust 读取配置；读取失败才回退到 18789。
+          // 不传端口时由 Rust 读取配置；读取失败时使用共享运行时默认值。
           const reachable: boolean = await invoke("probe_gateway_port", {});
           if (cancelled) return;
           if (reachable) {

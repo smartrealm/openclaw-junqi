@@ -32,6 +32,7 @@ import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
+import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 
 function RouteLoadingFallback() {
   return (
@@ -94,7 +95,7 @@ export default function App() {
   // ── Auto-Pairing State ──
   const [needsPairing, setNeedsPairing] = useState(false);
   const [scopeError, setScopeError] = useState<string>('');
-  const [gatewayHttpUrl, setGatewayHttpUrl] = useState('http://127.0.0.1:18789');
+  const [gatewayHttpUrl, setGatewayHttpUrl] = useState(defaultGatewayHttpUrl);
   const pairingTriggeredRef = useRef(false);
   const deferredModelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

@@ -14,6 +14,7 @@ import {
 import { getGatewayLogs, type LogEntry } from '@/api/tauri-commands';
 import clsx from 'clsx';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
+import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 
 type GatewayLifecycle = 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
 type GatewayRuntimeMode = 'none' | 'external' | 'system_service' | 'managed_child' | 'docker';
@@ -114,7 +115,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
   const { t } = useTranslation();
   const [lifecycle, setLifecycle] = useState<GatewayLifecycle>('stopped');
   const [runtimeMode, setRuntimeMode] = useState<GatewayRuntimeMode>('none');
-  const [runtimePort, setRuntimePort] = useState(18789);
+  const [runtimePort, setRuntimePort] = useState(DEFAULT_GATEWAY_PORT);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [latestProgress, setLatestProgress] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);

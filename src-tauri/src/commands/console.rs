@@ -20,12 +20,17 @@ fn read_gateway_token() -> Option<String> {
         .get("auth")?
         .get("token")?
         .as_str()
+        .filter(|token| !token.trim().is_empty())
         .map(|s| s.to_string())
 }
 
 fn control_ui_url(port: u16, token: Option<String>) -> Result<url::Url, String> {
-    let mut url = url::Url::parse(&format!("http://127.0.0.1:{}", port))
-        .map_err(|e| format!("Invalid Control UI URL: {}", e))?;
+    let mut url = url::Url::parse(&format!(
+        "http://{}:{}",
+        crate::commands::config::default_gateway_host(),
+        port
+    ))
+    .map_err(|e| format!("Invalid Control UI URL: {}", e))?;
 
     if let Some(token) = token.filter(|value| !value.is_empty()) {
         // The Control UI reads the hash with URLSearchParams. Serialize the
@@ -229,8 +234,9 @@ pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
     let port = crate::commands::gateway::configured_gateway_port();
     if !crate::commands::gateway::is_gateway_serving(port).await {
         return Err(format!(
-            "OpenClaw Gateway is not ready on 127.0.0.1:{}. Start or reconnect it before opening Control UI.",
-            port
+            "OpenClaw Gateway is not ready on {}:{}. Start or reconnect it before opening Control UI.",
+            crate::commands::config::default_gateway_host(),
+            port,
         ));
     }
 
@@ -243,7 +249,7 @@ pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
         let needs_navigation = win
             .url()
             .map(|current| {
-                current.host_str() != Some("127.0.0.1")
+                current.host_str() != Some(crate::commands::config::default_gateway_host())
                     || current.port_or_known_default() != Some(port)
             })
             .unwrap_or(true);

@@ -26,6 +26,7 @@ import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActio
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
 import { SkinPreview } from '@/pet/SkinPreview';
 import { invoke } from '@tauri-apps/api/core';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
@@ -307,7 +308,7 @@ export function SettingsPageFull() {
   };
 
   const copyDiagnosticInfo = async () => {
-    const gatewayUrl = localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || 'ws://127.0.0.1:18789';
+    const gatewayUrl = localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || defaultGatewayWsUrl();
     const hasGatewayToken = Boolean((editToken || '').trim() || (gatewayToken || '').trim());
     const platformInfo = await window.aegis?.app?.platformInfo?.() ?? `${navigator.platform || '—'}`;
     const info = [
@@ -383,11 +384,11 @@ export function SettingsPageFull() {
     try {
       const config = await window.aegis?.config.get();
       return {
-        url: config?.gatewayUrl || config?.gatewayWsUrl || 'ws://127.0.0.1:18789',
+        url: config?.gatewayUrl || config?.gatewayWsUrl || defaultGatewayWsUrl(),
         token: config?.gatewayToken || '',
       };
     } catch {
-      return { url: 'ws://127.0.0.1:18789', token: '' };
+      return { url: defaultGatewayWsUrl(), token: '' };
     }
   };
 
@@ -422,7 +423,7 @@ export function SettingsPageFull() {
     setGatewayToken(editToken.trim());
     setConnectionDirty(false);
     // Reconnect with new settings
-    const url = editUrl.trim() || 'ws://127.0.0.1:18789';
+    const url = editUrl.trim() || defaultGatewayWsUrl();
     gatewayManager.connect(url, editToken.trim());
   };
 
@@ -1044,7 +1045,7 @@ export function SettingsPageFull() {
               type="text"
               value={editUrl}
               onChange={(e) => { setEditUrl(e.target.value); setConnectionDirty(true); }}
-              placeholder={t('settingsExtra.wsUrlPlaceholder', 'ws://127.0.0.1:18789')}
+              placeholder={defaultGatewayWsUrl()}
               className="w-full px-3 py-2.5 rounded-xl text-[13px] font-mono
                 bg-[rgb(var(--aegis-overlay)/0.03)] border border-aegis-border
                 text-aegis-text placeholder:text-aegis-text-dim
@@ -1052,7 +1053,10 @@ export function SettingsPageFull() {
               dir="ltr"
             />
             <div className="text-[10px] text-aegis-text-dim mt-1">
-              {t('settings.gatewayUrlHint', 'Leave empty to use default (ws://127.0.0.1:18789)')}
+              {t('settings.gatewayUrlHint', {
+                url: defaultGatewayWsUrl(),
+                defaultValue: 'Leave empty to use default ({{url}})',
+              })}
             </div>
           </div>
 
@@ -1218,7 +1222,7 @@ export function SettingsPageFull() {
           {[
             ['OpenClaw', openclawVersion ? `v${openclawVersion}` : '—'],
             [t('settingsExtra.platform', 'Platform'), platformLabel],
-            [t('settings.gateway', 'Gateway'), connected ? `${localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || 'ws://127.0.0.1:18789'} ✓` : '— ✗'],
+            [t('settings.gateway', 'Gateway'), connected ? `${localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || defaultGatewayWsUrl()} ✓` : '— ✗'],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between">
               <span className="text-[11px] text-aegis-text-dim">{label}</span>
