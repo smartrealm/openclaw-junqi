@@ -30,16 +30,25 @@ pub(crate) fn initialize(
     let is_first_run = !first_run_marker.exists();
     let needs_size_upgrade = !preferred_size_marker.exists();
     let mode = initial_sizing_mode(is_first_run, needs_size_upgrade);
-    let mut pending = (mode != SizingMode::Preserve).then(|| PendingSizing {
+    initialize_for_mode(
+        window,
         mode,
-        markers: [
+        [
             is_first_run.then_some(first_run_marker),
             needs_size_upgrade.then_some(preferred_size_marker),
         ]
         .into_iter()
         .flatten()
         .collect(),
-    });
+    );
+}
+
+pub(crate) fn initialize_transient(window: tauri::WebviewWindow) {
+    initialize_for_mode(window, SizingMode::Initial, Vec::new());
+}
+
+fn initialize_for_mode(window: tauri::WebviewWindow, mode: SizingMode, markers: Vec<PathBuf>) {
+    let mut pending = (mode != SizingMode::Preserve).then_some(PendingSizing { mode, markers });
     match adapt(&window, mode) {
         Ok(outcome) if completes_sizing_mode(mode, outcome) => {
             if let Some(sizing) = pending.as_ref() {
@@ -160,12 +169,12 @@ fn adapt(window: &tauri::WebviewWindow, mode: SizingMode) -> Result<AdaptationOu
     if let Some(size) = plan.target_inner_size {
         window
             .set_size(tauri::PhysicalSize::new(size.width, size.height))
-            .map_err(|error| format!("cannot resize main window: {error}"))?;
+            .map_err(|error| format!("cannot resize window: {error}"))?;
     }
     if let Some(position) = plan.target_outer_position {
         window
             .set_position(tauri::PhysicalPosition::new(position.x, position.y))
-            .map_err(|error| format!("cannot reposition main window: {error}"))?;
+            .map_err(|error| format!("cannot reposition window: {error}"))?;
     }
 
     if maximized && mode != SizingMode::Preserve {
