@@ -161,7 +161,9 @@ test('BUG-ST03 storage migration waits for a free gateway port before copying', 
   assert.ok(stop >= 0, 'migration must stop every managed runtime');
   assert.ok(waitForPort > stop, 'migration must wait after requesting shutdown');
   assert.ok(prepare > waitForPort, 'migration must not copy until the gateway port is free');
-  assert.match(configure, /rollback_storage_transaction\(/);
+  assert.match(storage, /struct StorageRollbackContext/);
+  assert.match(configure, /rollback\.run\(RollbackPolicy::AFTER_SWITCH/);
+  assert.doesNotMatch(storage, /rollback_storage_transaction\(/);
 });
 
 test('BUG-ST04 storage progress is localized by stable keys in every locale', () => {

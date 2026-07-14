@@ -387,13 +387,184 @@ fn patch_configured_workspace(config_path: &Path, workspace_dir: &Path) -> Resul
     );
     let serialized = serde_json::to_string_pretty(&config)
         .map_err(|error| format!("Failed to serialize migrated config: {}", error))?;
-    std::fs::write(config_path, serialized).map_err(|error| {
+    paths::atomic_write_text(config_path, &serialized).map_err(|error| {
         format!(
             "Failed to update migrated workspace in {}: {}",
             config_path.display(),
             error
         )
     })
+}
+
+struct TextFileSnapshot {
+    path: PathBuf,
+    original: Option<String>,
+}
+
+impl TextFileSnapshot {
+    fn capture(path: &Path) -> Result<Self, String> {
+        let original = match std::fs::read_to_string(path) {
+            Ok(content) => Some(content),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                return Err(format!(
+                    "Failed to snapshot {} before reconfiguration: {}",
+                    path.display(),
+                    error
+                ))
+            }
+        };
+        Ok(Self {
+            path: path.to_path_buf(),
+            original,
+        })
+    }
+
+    fn restore(&self) -> Result<(), String> {
+        match &self.original {
+            Some(content) => paths::atomic_write_text(&self.path, content),
+            None if self.path.exists() => std::fs::remove_file(&self.path).map_err(|error| {
+                format!(
+                    "Failed to remove {} during rollback: {}",
+                    self.path.display(),
+                    error
+                )
+            }),
+            None => Ok(()),
+        }
+    }
+}
+
+struct StorageReconfiguration {
+    old_bootstrap: Option<StorageBootstrap>,
+    config_snapshot: TextFileSnapshot,
+    created_directories: Vec<PathBuf>,
+}
+
+trait ReconfigurationOperations {
+    fn ensure_layout(layout: &StorageBootstrap) -> Result<(), String>;
+    fn patch_workspace(config_path: &Path, workspace_dir: &Path) -> Result<(), String>;
+    fn save_bootstrap(layout: &StorageBootstrap) -> Result<(), String>;
+    fn restore_bootstrap(old_bootstrap: Option<&StorageBootstrap>) -> Result<(), String>;
+    fn sync_terminal() -> Result<(), String>;
+}
+
+struct SystemReconfigurationOperations;
+
+impl ReconfigurationOperations for SystemReconfigurationOperations {
+    fn ensure_layout(layout: &StorageBootstrap) -> Result<(), String> {
+        ensure_layout_directories(layout)
+    }
+
+    fn patch_workspace(config_path: &Path, workspace_dir: &Path) -> Result<(), String> {
+        patch_configured_workspace(config_path, workspace_dir)
+    }
+
+    fn save_bootstrap(layout: &StorageBootstrap) -> Result<(), String> {
+        paths::save_storage_bootstrap(layout)
+    }
+
+    fn restore_bootstrap(old_bootstrap: Option<&StorageBootstrap>) -> Result<(), String> {
+        restore_bootstrap(old_bootstrap)
+    }
+
+    fn sync_terminal() -> Result<(), String> {
+        crate::commands::terminal_integration::sync_terminal_integration().map(|_| ())
+    }
+}
+
+impl StorageReconfiguration {
+    fn begin(
+        old_bootstrap: Option<StorageBootstrap>,
+        config_path: &Path,
+        layout: &StorageBootstrap,
+    ) -> Result<Self, String> {
+        let mut created_directories = layout_directories(layout)
+            .into_iter()
+            .filter(|path| !path.exists())
+            .collect::<Vec<_>>();
+        created_directories.sort_by(|left, right| {
+            right
+                .components()
+                .count()
+                .cmp(&left.components().count())
+                .then_with(|| left.cmp(right))
+        });
+        created_directories.dedup();
+        Ok(Self {
+            old_bootstrap,
+            config_snapshot: TextFileSnapshot::capture(config_path)?,
+            created_directories,
+        })
+    }
+
+    fn apply(self, layout: &StorageBootstrap) -> Result<(), String> {
+        self.apply_with::<SystemReconfigurationOperations>(layout)
+    }
+
+    fn apply_with<O: ReconfigurationOperations>(
+        self,
+        layout: &StorageBootstrap,
+    ) -> Result<(), String> {
+        let result = self.apply_changes::<O>(layout);
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => Err(self.rollback::<O>(error)),
+        }
+    }
+
+    fn apply_changes<O: ReconfigurationOperations>(
+        &self,
+        layout: &StorageBootstrap,
+    ) -> Result<(), String> {
+        O::ensure_layout(layout)?;
+        O::patch_workspace(&self.config_snapshot.path, &layout.workspace_dir)?;
+        O::save_bootstrap(layout)?;
+        O::sync_terminal()?;
+        Ok(())
+    }
+
+    fn rollback<O: ReconfigurationOperations>(&self, failure: String) -> String {
+        let mut errors = Vec::new();
+        if let Err(error) = O::restore_bootstrap(self.old_bootstrap.as_ref()) {
+            errors.push(format!("restore bootstrap: {}", error));
+        }
+        if let Err(error) = self.config_snapshot.restore() {
+            errors.push(format!("restore OpenClaw config: {}", error));
+        }
+        if let Err(error) = O::sync_terminal() {
+            errors.push(format!("restore terminal integration: {}", error));
+        }
+        for path in &self.created_directories {
+            match std::fs::remove_dir(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => errors.push(format!(
+                    "remove newly created directory {}: {}",
+                    path.display(),
+                    error
+                )),
+            }
+        }
+        if errors.is_empty() {
+            failure
+        } else {
+            format!("{}; rollback issues: {}", failure, errors.join("; "))
+        }
+    }
+}
+
+fn layout_directories(layout: &StorageBootstrap) -> Vec<PathBuf> {
+    let mut directories = vec![
+        layout.state_dir.clone(),
+        layout.workspace_dir.clone(),
+        layout.runtime_dir.clone(),
+        layout.npm_cache_dir.clone(),
+    ];
+    if let Some(prefix) = &layout.npm_prefix {
+        directories.push(prefix.clone());
+    }
+    directories
 }
 
 struct StagedDirectory {
@@ -659,44 +830,92 @@ fn cleanup_transaction_target(target: &Path) -> Result<(), String> {
     })
 }
 
-async fn rollback_storage_transaction(
-    app: &AppHandle,
-    state: &State<'_, GatewayProcess>,
+#[derive(Clone, Copy)]
+enum TargetRollback {
+    Preserve,
+    Remove,
+}
+
+#[derive(Clone, Copy)]
+enum BootstrapRollback {
+    Unchanged,
+    Restore,
+}
+
+#[derive(Clone, Copy)]
+struct RollbackPolicy {
+    target: TargetRollback,
+    bootstrap: BootstrapRollback,
+}
+
+impl RollbackPolicy {
+    const FRESH_PREPARATION: Self = Self {
+        target: TargetRollback::Remove,
+        bootstrap: BootstrapRollback::Unchanged,
+    };
+    const MIGRATION_PREPARATION: Self = Self {
+        target: TargetRollback::Preserve,
+        bootstrap: BootstrapRollback::Unchanged,
+    };
+    const AFTER_BOOTSTRAP_SAVE: Self = Self {
+        target: TargetRollback::Remove,
+        bootstrap: BootstrapRollback::Unchanged,
+    };
+    const AFTER_SWITCH: Self = Self {
+        target: TargetRollback::Remove,
+        bootstrap: BootstrapRollback::Restore,
+    };
+}
+
+struct StorageRollbackContext<'a, 'state> {
+    app: &'a AppHandle,
+    state: &'a State<'state, GatewayProcess>,
     previous: PreviousGateway,
-    old_bootstrap: Option<&StorageBootstrap>,
-    old_state_dir: &Path,
-    old_config_path: &Path,
-    binary: Option<&Path>,
-    target: &Path,
-    cleanup_target: bool,
-    bootstrap_switched: bool,
-    failure: String,
-) -> String {
-    let mut rollback_errors = Vec::new();
-    if bootstrap_switched {
-        if let Err(error) = restore_bootstrap(old_bootstrap) {
-            rollback_errors.push(format!("restore bootstrap: {}", error));
+    old_bootstrap: Option<&'a StorageBootstrap>,
+    old_state_dir: &'a Path,
+    old_config_path: &'a Path,
+    binary: Option<&'a Path>,
+    target: &'a Path,
+}
+
+impl StorageRollbackContext<'_, '_> {
+    async fn run(&self, policy: RollbackPolicy, failure: String) -> String {
+        let mut errors = Vec::new();
+        if matches!(policy.bootstrap, BootstrapRollback::Restore) {
+            collect_rollback_error(
+                &mut errors,
+                "restore bootstrap",
+                restore_bootstrap(self.old_bootstrap),
+            );
         }
-    }
-    if cleanup_target {
-        if let Err(error) = cleanup_transaction_target(target) {
-            rollback_errors.push(error);
+        if matches!(policy.target, TargetRollback::Remove) {
+            collect_rollback_error(
+                &mut errors,
+                "clean target",
+                cleanup_transaction_target(self.target),
+            );
         }
+        self.restore_gateway(&mut errors).await;
+        append_rollback_errors(failure, errors)
     }
-    if previous.reachable {
-        if let Err(error) = start_runtime_locked(
-            app,
-            state,
-            previous.runtime.mode,
-            previous.port,
-            binary,
-            old_state_dir,
-            old_config_path,
+
+    async fn restore_gateway(&self, errors: &mut Vec<String>) {
+        if !self.previous.reachable {
+            return;
+        }
+        let result = start_runtime_locked(
+            self.app,
+            self.state,
+            self.previous.runtime.mode,
+            self.previous.port,
+            self.binary,
+            self.old_state_dir,
+            self.old_config_path,
         )
-        .await
-        {
-            rollback_errors.push(format!("restore previous Gateway: {}", error));
-            state.transition(
+        .await;
+        if let Err(error) = result {
+            errors.push(format!("restore previous Gateway: {}", error));
+            self.state.transition(
                 Some(GatewayLifecycle::Error),
                 Some(GatewayRuntimeMode::None),
                 None,
@@ -704,15 +923,19 @@ async fn rollback_storage_transaction(
             );
         }
     }
+}
 
-    if rollback_errors.is_empty() {
+fn collect_rollback_error(errors: &mut Vec<String>, operation: &str, result: Result<(), String>) {
+    if let Err(error) = result {
+        errors.push(format!("{}: {}", operation, error));
+    }
+}
+
+fn append_rollback_errors(failure: String, errors: Vec<String>) -> String {
+    if errors.is_empty() {
         failure
     } else {
-        format!(
-            "{}; rollback issues: {}",
-            failure,
-            rollback_errors.join("; ")
-        )
+        format!("{}; rollback issues: {}", failure, errors.join("; "))
     }
 }
 
@@ -782,14 +1005,7 @@ pub async fn configure_storage(
             )
         });
         validate_location_changes(&layout, Some(&existing_layout))?;
-        ensure_layout_directories(&layout)?;
-        patch_configured_workspace(&old_config, &layout.workspace_dir)?;
-        paths::save_storage_bootstrap(&layout)?;
-        if let Err(error) = crate::commands::terminal_integration::sync_terminal_integration() {
-            restore_bootstrap(old_bootstrap.as_ref())?;
-            let _ = crate::commands::terminal_integration::sync_terminal_integration();
-            return Err(error);
-        }
+        StorageReconfiguration::begin(old_bootstrap, &old_config, &layout)?.apply(&layout)?;
         return Ok(StorageConfigureResult {
             state_dir: layout.state_dir.to_string_lossy().to_string(),
             config_path: layout.config_path.to_string_lossy().to_string(),
@@ -867,6 +1083,16 @@ pub async fn configure_storage(
         runtime: state.runtime_snapshot()?,
         port,
     };
+    let rollback = StorageRollbackContext {
+        app: &app,
+        state: &state,
+        previous,
+        old_bootstrap: old_bootstrap.as_ref(),
+        old_state_dir: &source,
+        old_config_path: &old_config,
+        binary: binary.as_deref(),
+        target: &target,
+    };
     emit_progress(
         &app,
         "storage.progress.stoppingGateway",
@@ -938,6 +1164,10 @@ pub async fn configure_storage(
     let source_for_prepare = source.clone();
     let target_for_prepare = target.clone();
     let layout_for_prepare = layout;
+    let preparation_rollback = match migrate_existing {
+        true => RollbackPolicy::MIGRATION_PREPARATION,
+        false => RollbackPolicy::FRESH_PREPARATION,
+    };
     let prepared = match tokio::task::spawn_blocking(move || {
         prepare_storage_target(
             &source_for_prepare,
@@ -950,37 +1180,16 @@ pub async fn configure_storage(
     {
         Ok(Ok(prepared)) => prepared,
         Ok(Err(error)) => {
-            let failure = rollback_storage_transaction(
-                &app,
-                &state,
-                previous,
-                old_bootstrap.as_ref(),
-                &source,
-                &old_config,
-                binary.as_deref(),
-                &target,
-                !migrate_existing,
-                false,
-                error,
-            )
-            .await;
+            let failure = rollback.run(preparation_rollback, error).await;
             return Err(failure);
         }
         Err(error) => {
-            let failure = rollback_storage_transaction(
-                &app,
-                &state,
-                previous,
-                old_bootstrap.as_ref(),
-                &source,
-                &old_config,
-                binary.as_deref(),
-                &target,
-                !migrate_existing,
-                false,
-                format!("Migration worker failed: {}", error),
-            )
-            .await;
+            let failure = rollback
+                .run(
+                    preparation_rollback,
+                    format!("Migration worker failed: {}", error),
+                )
+                .await;
             return Err(failure);
         }
     };
@@ -1000,37 +1209,13 @@ pub async fn configure_storage(
         0.76,
     );
     if let Err(error) = paths::save_storage_bootstrap(&prepared.layout) {
-        let failure = rollback_storage_transaction(
-            &app,
-            &state,
-            previous,
-            old_bootstrap.as_ref(),
-            &source,
-            &old_config,
-            binary.as_deref(),
-            &target,
-            true,
-            false,
-            error,
-        )
-        .await;
+        let failure = rollback
+            .run(RollbackPolicy::AFTER_BOOTSTRAP_SAVE, error)
+            .await;
         return Err(failure);
     }
     if let Err(error) = crate::commands::terminal_integration::sync_terminal_integration() {
-        let failure = rollback_storage_transaction(
-            &app,
-            &state,
-            previous,
-            old_bootstrap.as_ref(),
-            &source,
-            &old_config,
-            binary.as_deref(),
-            &target,
-            true,
-            true,
-            error,
-        )
-        .await;
+        let failure = rollback.run(RollbackPolicy::AFTER_SWITCH, error).await;
         let _ = crate::commands::terminal_integration::sync_terminal_integration();
         return Err(failure);
     }
@@ -1060,20 +1245,12 @@ pub async fn configure_storage(
                 &prepared.layout.config_path,
             )
             .await;
-            let failure = rollback_storage_transaction(
-                &app,
-                &state,
-                previous,
-                old_bootstrap.as_ref(),
-                &source,
-                &old_config,
-                binary.as_deref(),
-                &target,
-                true,
-                true,
-                format!("Gateway failed to start from migrated storage: {}", error),
-            )
-            .await;
+            let failure = rollback
+                .run(
+                    RollbackPolicy::AFTER_SWITCH,
+                    format!("Gateway failed to start from migrated storage: {}", error),
+                )
+                .await;
             return Err(failure);
         }
     }
@@ -1134,6 +1311,61 @@ mod tests {
             npm_prefix: None,
             terminal_integration: false,
         }
+    }
+
+    struct FailAfterConfigPatch;
+
+    impl ReconfigurationOperations for FailAfterConfigPatch {
+        fn ensure_layout(layout: &StorageBootstrap) -> Result<(), String> {
+            ensure_layout_directories(layout)
+        }
+
+        fn patch_workspace(config_path: &Path, workspace_dir: &Path) -> Result<(), String> {
+            patch_configured_workspace(config_path, workspace_dir)
+        }
+
+        fn save_bootstrap(_layout: &StorageBootstrap) -> Result<(), String> {
+            Err("injected bootstrap failure".into())
+        }
+
+        fn restore_bootstrap(_old_bootstrap: Option<&StorageBootstrap>) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn sync_terminal() -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn same_location_reconfiguration_rolls_back_config_and_directories() {
+        let root = storage_test_root("same-location-rollback");
+        std::fs::create_dir_all(&root).unwrap();
+        let config_path = root.join("openclaw.json");
+        let original = r#"{"agents":{"defaults":{"workspace":"original"}}}"#;
+        std::fs::write(&config_path, original).unwrap();
+        let layout = StorageBootstrap::with_locations(
+            root.clone(),
+            root.join("workspace-new"),
+            root.join("runtime-new"),
+            root.join("cache-new"),
+            Some(root.join("prefix-new")),
+            false,
+        );
+
+        let transaction = StorageReconfiguration::begin(None, &config_path, &layout).unwrap();
+        let error = transaction
+            .apply_with::<FailAfterConfigPatch>(&layout)
+            .unwrap_err();
+
+        assert!(error.contains("injected bootstrap failure"));
+        assert_eq!(std::fs::read_to_string(&config_path).unwrap(), original);
+        for path in layout_directories(&layout) {
+            if path != root {
+                assert!(!path.exists(), "{} should be rolled back", path.display());
+            }
+        }
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
