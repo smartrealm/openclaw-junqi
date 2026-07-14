@@ -387,6 +387,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const active = setupStep === "ready" ? 3 : 2;
   const isInstallComplete = setupStep === "install-complete";
   const currentInstallStep = currentStepOf(flow.steps);
+  const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
   const currentInstallTitle = installStepTitle(currentInstallStep, t) ?? t("setup.settingUp");
   const runningStepLabel = t("setup.installPanel.runningStep", {
     step: currentInstallTitle,
@@ -402,11 +403,25 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       wide
       showLogToggle={false}
       previousAction={setupStep === "error" || isInstallComplete ? { onClick: () => flow.goBack() } : undefined}
+      secondaryAction={canRepairGateway ? {
+        label: t("setup.retryDirectly", "直接重试"),
+        onClick: () => { void flow.retrySetup(); },
+        disabled: flow.repairing,
+      } : undefined}
       nextAction={
         setupStep === "ready"
           ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
           : isInstallComplete
             ? { label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }
+          : canRepairGateway
+            ? {
+                label: flow.repairing
+                  ? t("setup.repairing", "正在修复…")
+                  : t("setup.repairAndRetry", "自动修复并重试"),
+                onClick: () => { void flow.repairAndRetry(); },
+                loading: flow.repairing,
+                icon: "none",
+              }
           : setupStep === "error"
             ? { label: t("setup.retry"), onClick: () => { void flow.retrySetup(); }, icon: "none" }
             : { label: runningStepLabel, disabled: true, loading: true, icon: "none" }

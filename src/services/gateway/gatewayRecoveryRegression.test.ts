@@ -90,6 +90,17 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   assert.doesNotMatch(setup, /waitForGatewayReady\(runId, 30_000, status\?\.port\)/);
 });
 
+test('setup self-rescue commands are registered and use official plugin convergence repair', () => {
+  const setup = source('src-tauri/src/commands/setup.rs');
+  const lib = source('src-tauri/src/lib.rs');
+  assert.match(setup, /pub async fn repair_openclaw_for_setup/);
+  assert.match(setup, /"update",\s*"repair"/);
+  assert.match(setup, /terminate_npm_process_tree/);
+  assert.match(setup, /operation_gate\.lock_owned\(\)\.await/);
+  assert.match(lib, /commands::setup::repair_openclaw_for_setup/);
+  assert.match(lib, /commands::gateway_supervisor::openclaw_doctor_repair/);
+});
+
 test('BUG-GSC03 manager has one state transition and emission core', () => {
   const manager = source('src/services/gateway/GatewayConnectionManager.ts');
   assert.equal((manager.match(/this\.fsm\.transition\(/g) ?? []).length, 1);

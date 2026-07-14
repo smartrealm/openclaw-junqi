@@ -79,6 +79,15 @@ test('installation footer reports the current step instead of a live log message
   assert.doesNotMatch(setupPage, /label: flow\.statusMessage \|\| t\("setup\.settingUp"\)/);
 });
 
+test('Gateway setup errors expose explicit repair and direct retry actions', () => {
+  assert.match(setupPage, /canRepairGateway/);
+  assert.match(setupPage, /setup\.repairAndRetry/);
+  assert.match(setupPage, /flow\.repairAndRetry\(\)/);
+  assert.match(setupPage, /setup\.retryDirectly/);
+  assert.match(setupFlow, /repair_openclaw_for_setup/);
+  assert.match(setupFlow, /await startGatewayAction\(\)/);
+});
+
 test('setup failures are retained in the copyable activity log without a duplicate error card', () => {
   assert.match(setupFlow, /appendSetupLog\(\{[\s\S]*?level: "error"/);
   assert.doesNotMatch(setupPage, /setup\.copyError/);
