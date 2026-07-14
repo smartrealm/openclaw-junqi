@@ -468,7 +468,19 @@ export function SettingsPageFull() {
       </div>
       <div className="space-y-6">
 
-      {activeTab === 'maintenance' && <MaintenanceCenter />}
+      {activeTab === 'maintenance' && (
+        <MaintenanceCenter
+          onRecoverGateway={async () => {
+            const result = await invoke<{ healthy?: boolean }>('ensure_gateway_running');
+            if (result?.healthy) await handleReconnect();
+            return result;
+          }}
+          onOpenConfig={(category) => {
+            const tab = category === 'mcp' ? 'tools' : category === 'security' ? 'secrets' : 'advanced';
+            navigate(`/config?tab=${tab}`);
+          }}
+        />
+      )}
 
       {activeTab === 'appearance' && (
         <>

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   CircleAlert,
   ClipboardCopy,
   HeartPulse,
   Loader2,
+  Power,
   RefreshCw,
   ShieldCheck,
   Stethoscope,
@@ -26,6 +28,21 @@ import { GatewayLifecyclePanel } from './GatewayLifecyclePanel';
 
 const CATEGORY_ORDER: MaintenanceCategory[] = ['config', 'plugin', 'mcp', 'security', 'gateway', 'doctor'];
 
+interface MaintenanceCenterProps {
+  onOpenConfig?: (category: MaintenanceCategory) => void;
+  onRecoverGateway?: () => Promise<unknown> | unknown;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown error';
+  }
+}
+
 function severityRank(severity: MaintenanceSeverity): number {
   return severity === 'error' ? 0 : severity === 'warning' ? 1 : 2;
 }
@@ -42,11 +59,13 @@ function FindingIcon({ severity }: { severity: MaintenanceSeverity }) {
   return <CheckCircle2 size={16} />;
 }
 
-export function MaintenanceCenter() {
+export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: MaintenanceCenterProps) {
   const { t, i18n } = useTranslation();
   const [report, setReport] = useState<MaintenanceReport | null>(null);
   const [scanning, setScanning] = useState(false);
   const [repairing, setRepairing] = useState(false);
+  const [gatewayRecovering, setGatewayRecovering] = useState(false);
+  const [gatewayRecoveryError, setGatewayRecoveryError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
 
   const scan = useCallback(async () => {
@@ -56,7 +75,7 @@ export function MaintenanceCenter() {
     try {
       setReport(await runMaintenanceScan());
     } catch (error) {
-      setRequestError(String(error));
+      setRequestError(errorMessage(error));
     } finally {
       setScanning(false);
     }
@@ -87,13 +106,13 @@ export function MaintenanceCenter() {
   const repair = useCallback(() => {
     showConfirm(
       t('maintenance.repairConfirmTitle', '运行官方修复'),
-      t('maintenance.repairConfirmMessage', '将执行 openclaw doctor --fix。配置可能被修改，完成后会自动重新扫描。'),
+      t('maintenance.repairConfirmMessage', '将运行 OpenClaw 官方修复流程。配置可能被修改，完成后会自动重新扫描。'),
       () => {
         void (async () => {
           setRepairing(true);
           setRequestError(null);
           try {
-            const repaired = await invoke<boolean>('openclaw_doctor_repair');
+            const repaired = await invoke<boolean>('run_maintenance_repair');
             if (!repaired) {
               showAlert(
                 t('maintenance.repairFailedTitle', '修复未完成'),
@@ -102,13 +121,14 @@ export function MaintenanceCenter() {
               );
             }
           } catch (error) {
-            showAlert(t('maintenance.repairFailedTitle', '修复未完成'), String(error), 'error');
+            showAlert(t('maintenance.repairFailedTitle', '修复未完成'), errorMessage(error), 'error');
           } finally {
-            setRepairing(false);
             try {
               setReport(await runMaintenanceScan());
             } catch (error) {
-              setRequestError(String(error));
+              setRequestError(errorMessage(error));
+            } finally {
+              setRepairing(false);
             }
           }
         })();
@@ -122,11 +142,28 @@ export function MaintenanceCenter() {
       await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
       showAlert(t('maintenance.copiedTitle', '已复制检修报告'), '', 'success');
     } catch (error) {
-      showAlert(t('maintenance.copyFailedTitle', '复制失败'), String(error), 'error');
+      showAlert(t('maintenance.copyFailedTitle', '复制失败'), errorMessage(error), 'error');
     }
   }, [report, t]);
 
+  const recoverGateway = useCallback(async () => {
+    if (!onRecoverGateway || gatewayRecovering) return;
+    setGatewayRecovering(true);
+    setGatewayRecoveryError(null);
+    try {
+      const result = await onRecoverGateway();
+      if (result && typeof result === 'object' && 'healthy' in result && result.healthy === false) {
+        throw new Error('error' in result && result.error ? String(result.error) : 'Gateway recovery failed');
+      }
+    } catch (error) {
+      setGatewayRecoveryError(errorMessage(error));
+    } finally {
+      setGatewayRecovering(false);
+    }
+  }, [gatewayRecovering, onRecoverGateway]);
+
   const busy = scanning || repairing;
+  const canRepair = Boolean(report && (report.configValid === false || report.doctorOk === false));
   const checkedTime = report
     ? new Intl.DateTimeFormat(i18n.language, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(report.checkedAtMs)
     : null;
@@ -186,7 +223,7 @@ export function MaintenanceCenter() {
             <button
               type="button"
               onClick={repair}
-              disabled={busy || !report || report.healthy}
+              disabled={busy || !canRepair}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-primary/30 bg-aegis-primary/10 px-3 text-[12px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/20 disabled:opacity-40"
             >
               {repairing ? <Loader2 size={13} className="animate-spin" /> : <HeartPulse size={13} />}
@@ -217,12 +254,32 @@ export function MaintenanceCenter() {
         ) : null}
       </GlassCard>
 
-      <GatewayLifecyclePanel variant="full" />
+      <div className="space-y-2">
+        <GatewayLifecyclePanel variant="full" />
+        {onRecoverGateway && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {gatewayRecoveryError && (
+              <span role="alert" className="min-w-0 flex-1 break-words text-[11px] text-aegis-danger">
+                {t('maintenance.gatewayRecoveryFailed', 'Gateway 恢复失败：{{error}}', { error: gatewayRecoveryError })}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => { void recoverGateway(); }}
+              disabled={gatewayRecovering}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-primary/30 bg-aegis-primary/10 px-3 text-[11px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/20 disabled:opacity-50"
+            >
+              {gatewayRecovering ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
+              {t('maintenance.recoverGateway', '检查并恢复 Gateway')}
+            </button>
+          </div>
+        )}
+      </div>
 
       {report && groupedFindings.length === 0 && report.scanErrors.length === 0 && (
         <div className="flex min-h-[120px] items-center justify-center border-y border-aegis-border/25 text-[12px] text-aegis-success">
           <CheckCircle2 size={15} className="mr-2" />
-          {t('maintenance.noFindings', '配置、插件与运行时检查均通过')}
+          {t('maintenance.noFindings', '配置、插件与 Doctor 检查均通过')}
         </div>
       )}
 
@@ -234,7 +291,19 @@ export function MaintenanceCenter() {
                 defaultValue: ({ config: '配置', plugin: '插件', mcp: 'MCP', security: '安全', gateway: 'Gateway', doctor: 'Doctor' } as Record<MaintenanceCategory, string>)[category],
               })}
             </h3>
-            <span className="text-[10px] tabular-nums text-aegis-text-dim">{findings.length}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] tabular-nums text-aegis-text-dim">{findings.length}</span>
+              {onOpenConfig && ['config', 'plugin', 'mcp', 'security'].includes(category) && (
+                <button
+                  type="button"
+                  onClick={() => onOpenConfig(category)}
+                  className="inline-flex h-7 items-center gap-1 rounded-md border border-aegis-border/35 px-2 text-[10.5px] font-medium text-aegis-text-dim transition-colors hover:border-aegis-primary/35 hover:text-aegis-primary"
+                >
+                  {t('maintenance.openConfiguration', '配置管理')}
+                  <ArrowRight size={11} />
+                </button>
+              )}
+            </div>
           </div>
           <div className="divide-y divide-aegis-border/20 border-y border-aegis-border/20">
             {findings.map((finding, index) => (
