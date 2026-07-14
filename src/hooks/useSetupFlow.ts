@@ -10,6 +10,7 @@ import { useAppStore } from "@/stores/app-store";
 import {
   checkNode, checkNpm, checkGit, checkOpenclaw,
   installNode, installGit, installOpenclaw,
+  applyTerminalIntegration,
   prepareGateway,
   checkDocker, pullOpenclawImage,
   type DockerStatus,
@@ -45,14 +46,16 @@ export interface StepState {
   progress?: number;
 }
 
-export type InstallTargetTier = "user" | "xdg" | "sandbox" | "existing";
+export type InstallTargetTier = "user" | "userMissingPath" | "custom" | "xdg" | "sandbox" | "existing";
 
 export interface InstallTarget {
   /**
    * Where the installer decided to put `openclaw`.
    *  - "user": same dir as the user's terminal `npm i -g` (their
-   *    actual `npm config get prefix`). `openclaw` will be on PATH
-   *    without further action.
+   *    actual `npm config get prefix`) and its bin directory is on PATH.
+   *  - "userMissingPath": same npm prefix as the user's terminal, but
+   *    its bin directory is not currently on the login-shell PATH.
+   *  - "custom": explicit global prefix selected during setup.
    *  - "xdg": fell back to `~/.local` because the user prefix was
    *    not writable. User must add `binPath` to PATH to use
    *    `openclaw` from terminal.
@@ -66,7 +69,7 @@ export interface InstallTarget {
    */
   tier: InstallTargetTier;
   path: string;
-  /** Only set for the `xdg` tier. */
+  /** Bin directory surfaced when a fallback requires manual PATH setup. */
   binPath?: string;
   /** Only set for the `existing` tier, when a version string was returned. */
   version?: string;
@@ -74,6 +77,8 @@ export interface InstallTarget {
 
 const INSTALL_TARGET_KEYS = {
   user: "setup.openclaw.userNpmPrefix",
+  userMissingPath: "setup.openclaw.userNpmPrefixMissingPath",
+  custom: "setup.openclaw.customNpmPrefix",
   xdg: "setup.openclaw.localNpmPrefix",
   sandbox: "setup.openclaw.sandboxNpmPrefix",
   existing: "setup.openclaw.useExisting",
@@ -85,6 +90,8 @@ function pickInstallTargetFromProgress(
 ): InstallTarget | null {
   if (
     key !== INSTALL_TARGET_KEYS.user &&
+    key !== INSTALL_TARGET_KEYS.userMissingPath &&
+    key !== INSTALL_TARGET_KEYS.custom &&
     key !== INSTALL_TARGET_KEYS.xdg &&
     key !== INSTALL_TARGET_KEYS.sandbox &&
     key !== INSTALL_TARGET_KEYS.existing
@@ -100,6 +107,12 @@ function pickInstallTargetFromProgress(
   }
   if (key === INSTALL_TARGET_KEYS.sandbox) {
     return { tier: "sandbox", path: params.path };
+  }
+  if (key === INSTALL_TARGET_KEYS.userMissingPath) {
+    return { tier: "userMissingPath", path: params.path };
+  }
+  if (key === INSTALL_TARGET_KEYS.custom) {
+    return { tier: "custom", path: params.path };
   }
   if (key === INSTALL_TARGET_KEYS.existing) {
     return { tier: "existing", path: params.path, version: params.version };
@@ -139,6 +152,7 @@ const INITIAL_NATIVE_STEPS: StepState[] = [
   { id: "node",      label: "Node.js",    status: "pending" },
   { id: "npm",       label: "npm",        status: "pending" },
   { id: "openclaw",  label: "OpenClaw",   status: "pending" },
+  { id: "terminal",  label: "Terminal",   status: "pending" },
   { id: "gateway",   label: "Gateway",    status: "pending" },
 ];
 
@@ -651,6 +665,25 @@ export function useSetupFlow(
           setInstallTarget({ tier: "existing", path: oclawStatus.path, version: oclawStatus.version ?? undefined });
         }
         patchStep("openclaw", "done", oclawStatus.version ?? undefined);
+      }
+
+      // The launcher can only be verified after a concrete OpenClaw binary
+      // has been selected. This operation is idempotent on retries.
+      patchStep("terminal", "running", t("setup.configuringTerminal", "正在配置终端命令…"));
+      const terminalStatus = await applyTerminalIntegration();
+      if (!isRunActive(runId)) return;
+      if (!terminalStatus.requested) {
+        patchStep("terminal", "skipped", t("setup.terminalIntegrationDisabled", "未启用外部终端集成"));
+      } else if (!terminalStatus.enabled || !terminalStatus.launcherReady) {
+        throw new Error(t("setup.terminalIntegrationFailed", "终端启动器未能完成配置"));
+      } else {
+        patchStep(
+          "terminal",
+          "done",
+          terminalStatus.terminalRestartRequired
+            ? t("setup.terminalRestartRequired", "已配置；打开新的终端窗口后生效")
+            : t("setup.terminalIntegrationReady", "终端命令已就绪"),
+        );
       }
 
       // Gateway — 准备阶段。前端 `setup-progress` 监听会把 Rust 端

@@ -83,6 +83,17 @@ const CASES: Record<string, Case> = {
       "Detected npm prefix /Users/wei/.npm-global (matches your `npm i -g`); installing openclaw there",
     expected: { path: "/Users/wei/.npm-global" },
   },
+  ".userNpmPrefixMissingPath": {
+    key: "setup.openclaw.userNpmPrefixMissingPath",
+    message:
+      "Detected npm prefix /Users/wei/.npm-global (matches your `npm i -g`); installing openclaw there",
+    expected: { path: "/Users/wei/.npm-global" },
+  },
+  ".customNpmPrefix": {
+    key: "setup.openclaw.customNpmPrefix",
+    message: "Using custom npm prefix /Volumes/Tools/npm-global",
+    expected: { path: "/Volumes/Tools/npm-global" },
+  },
   ".localNpmPrefix (two captures)": {
     key: "setup.openclaw.localNpmPrefix",
     message:

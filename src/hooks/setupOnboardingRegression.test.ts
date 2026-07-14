@@ -101,3 +101,22 @@ test('BUG-ONB-08 the product summary is not constrained to an awkward narrow lin
   );
   assert.doesNotMatch(welcome, /max-w-\[42ch\]/);
 });
+
+test('BUG-ONB-09 native setup verifies optional terminal integration after OpenClaw', () => {
+  const openclawStep = setupFlow.indexOf('patchStep("openclaw", "done"');
+  const terminalStep = setupFlow.indexOf('await applyTerminalIntegration()', openclawStep);
+  const gatewayStep = setupFlow.indexOf('patchStep("gateway", "running"', terminalStep);
+
+  assert.ok(openclawStep >= 0);
+  assert.ok(terminalStep > openclawStep);
+  assert.ok(gatewayStep > terminalStep);
+  assert.match(setupFlow, /!terminalStatus\.enabled \|\| !terminalStatus\.launcherReady/);
+  assert.match(setupFlow, /patchStep\("terminal", "skipped"/);
+});
+
+test('BUG-ONB-10 fresh setup keeps managed runtime separate from workspace and cache', () => {
+  const runtimeDefaults = storageGate.match(/setRuntimeDir\(joinPath\(target(?:Dir)?, 'runtime'\)\)/g) ?? [];
+
+  assert.equal(runtimeDefaults.length, 2);
+  assert.doesNotMatch(storageGate, /setRuntimeDir\(target(?:Dir)?\)/);
+});
