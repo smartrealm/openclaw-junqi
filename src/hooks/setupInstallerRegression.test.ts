@@ -67,6 +67,18 @@ test('mobile installation console switches between steps and logs', () => {
   assert.match(setupFlowPanels, /mobileView !== "logs" && "hidden lg:block"/);
 });
 
+test('installation steps and activity log use aligned fixed-height viewports', () => {
+  assert.equal((setupFlowPanels.match(/h-\[390px\]/g) ?? []).length, 2);
+  assert.equal((setupFlowPanels.match(/h-\[342px\]/g) ?? []).length, 2);
+  assert.match(setupFlowPanels, /flex h-12 items-center border-b/);
+});
+
+test('installation footer reports the current step instead of a live log message', () => {
+  assert.match(setupPage, /const runningStepLabel = t\("setup\.installPanel\.runningStep"/);
+  assert.match(setupPage, /label: runningStepLabel, disabled: true/);
+  assert.doesNotMatch(setupPage, /label: flow\.statusMessage \|\| t\("setup\.settingUp"\)/);
+});
+
 test('setup failures are retained in the copyable activity log without a duplicate error card', () => {
   assert.match(setupFlow, /appendSetupLog\(\{[\s\S]*?level: "error"/);
   assert.doesNotMatch(setupPage, /setup\.copyError/);

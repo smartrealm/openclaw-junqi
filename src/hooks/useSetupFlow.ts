@@ -547,9 +547,9 @@ export function useSetupFlow(
     try {
       const status: any = await gatewayManager.startForSetup();
       cacheGatewayTarget(status?.port, status?.token);
-      patchStep("gateway", "running", t("setup.gatewayWaitingPort", "Gateway 进程已启动，正在等待端口就绪…"));
-      reportPhase("gatewayPort", t("setup.gatewayWaitingPort", "Gateway 进程已启动，正在等待端口就绪…"));
-      await waitForGatewayReady(runId, 30_000, status?.port);
+      patchStep("gateway", "running", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
+      reportPhase("gatewayPort", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
+      await waitForGatewayReady(runId, 10_000, status?.port);
       if (!isRunActive(runId)) return;
       setGatewayRunning(true);
       if (stepsRef.current.some((s) => s.id === "gateway")) {

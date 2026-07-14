@@ -137,6 +137,39 @@ mod runtime_observation_tests {
         };
         assert!(runtime_after_observation(current, GatewayObservation::EndpointHealthy).restarting);
     }
+
+    #[test]
+    fn managed_gateway_diagnostics_only_include_current_child_output() {
+        use crate::state::gateway_process::{LogEntry, LogLevel, LogSource};
+        use std::collections::VecDeque;
+
+        let state = GatewayProcess::new();
+        *state.logs.lock().unwrap() = VecDeque::from([
+            LogEntry {
+                timestamp_ms: 10,
+                level: LogLevel::Error,
+                source: LogSource::ChildStderr,
+                message: "old failure".into(),
+            },
+            LogEntry {
+                timestamp_ms: 20,
+                level: LogLevel::Warn,
+                source: LogSource::Lifecycle,
+                message: "lifecycle noise".into(),
+            },
+            LogEntry {
+                timestamp_ms: 30,
+                level: LogLevel::Error,
+                source: LogSource::ChildStderr,
+                message: "missing plugin entry".into(),
+            },
+        ]);
+
+        assert_eq!(
+            managed_gateway_diagnostics(&state, 20, 8),
+            "missing plugin entry"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -630,6 +663,46 @@ async fn wait_for_gateway_reachable(port: u16, timeout_secs: u64) -> bool {
     false
 }
 
+const MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60;
+
+fn managed_gateway_diagnostics(state: &GatewayProcess, started_at_ms: i64, limit: usize) -> String {
+    let Ok(logs) = state.logs.lock() else {
+        return String::new();
+    };
+    let mut lines = logs
+        .iter()
+        .rev()
+        .filter(|entry| {
+            entry.timestamp_ms >= started_at_ms
+                && matches!(
+                    entry.source,
+                    crate::state::gateway_process::LogSource::ChildStdout
+                        | crate::state::gateway_process::LogSource::ChildStderr
+                )
+        })
+        .filter_map(|entry| {
+            let message = entry.message.trim();
+            (!message.is_empty()).then(|| message.to_string())
+        })
+        .take(limit)
+        .collect::<Vec<_>>();
+    lines.reverse();
+    lines.join("\n")
+}
+
+fn with_managed_gateway_diagnostics(
+    message: String,
+    state: &GatewayProcess,
+    started_at_ms: i64,
+) -> String {
+    let diagnostics = managed_gateway_diagnostics(state, started_at_ms, 8);
+    if diagnostics.is_empty() {
+        message
+    } else {
+        format!("{}\nRecent Gateway output:\n{}", message, diagnostics)
+    }
+}
+
 async fn start_managed_gateway_fallback(
     app: AppHandle,
     state: State<'_, GatewayProcess>,
@@ -1078,6 +1151,10 @@ pub(crate) async fn start_gateway_locked(
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
+    let startup_started_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0);
     let mut child = cmd.spawn().map_err(|e| {
         // Diagnose common failure modes. Pre-fix: just returned the raw
         // io::Error which was opaque to the user.
@@ -1126,16 +1203,52 @@ pub(crate) async fn start_gateway_locked(
         format!("start_gateway invoked (port={})", port),
     );
 
-    // Wait briefly and check if the process crashed on startup
-    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-    match child.try_wait() {
-        Ok(Some(status)) => {
-            let msg = format!("Gateway exited immediately with {}", status);
+    // A spawned process is not yet a running Gateway. Keep ownership local
+    // until either its TCP endpoint is reachable, the child exits, or startup
+    // times out. This gives every caller one cross-platform readiness contract
+    // and preserves the real stderr instead of reducing failures to a UI timer.
+    let startup_deadline = std::time::Instant::now()
+        + std::time::Duration::from_secs(MANAGED_GATEWAY_START_TIMEOUT_SECS);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                // Let the async stdout/stderr readers flush their final lines.
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                let msg = with_managed_gateway_diagnostics(
+                    format!("Gateway exited before becoming ready ({})", status),
+                    &state,
+                    startup_started_at_ms,
+                );
+                let _ = app.emit("gateway-log", &msg);
+                return Err(msg);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+                return Err(format!("Failed to check Gateway process status: {}", error));
+            }
+        }
+
+        if is_gateway_serving(port).await {
+            break;
+        }
+
+        if std::time::Instant::now() >= startup_deadline {
+            crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+            let _ = crate::commands::gateway_supervisor::wait_for_port_free(port, 5_000).await;
+            let msg = with_managed_gateway_diagnostics(
+                format!(
+                    "Gateway process did not become reachable on 127.0.0.1:{} within {} seconds",
+                    port, MANAGED_GATEWAY_START_TIMEOUT_SECS
+                ),
+                &state,
+                startup_started_at_ms,
+            );
             let _ = app.emit("gateway-log", &msg);
             return Err(msg);
         }
-        Ok(None) => { /* still running — good */ }
-        Err(e) => return Err(format!("Failed to check gateway status: {}", e)),
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
     let pid = child.id();
@@ -1148,7 +1261,7 @@ pub(crate) async fn start_gateway_locked(
         Some(GatewayLifecycle::Running),
         Some(GatewayRuntimeMode::ManagedChild),
         None,
-        "start_gateway: child spawned",
+        "start_gateway: managed child health check passed",
     );
     start_failure_guard.armed = false;
 

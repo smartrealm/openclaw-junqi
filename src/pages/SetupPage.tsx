@@ -35,6 +35,8 @@ import type { ThemeSetting } from "@/theme/types";
 import { setThemeWithTransition } from "@/motion/themeTransition";
 import {
   InstallationConsole,
+  currentStepOf,
+  installStepTitle,
   OpenClawRuntimeDetails,
   SetupShell,
   StatusPanel,
@@ -384,6 +386,12 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { setupStep } = useAppStore();
   const active = setupStep === "ready" ? 3 : 2;
   const isInstallComplete = setupStep === "install-complete";
+  const currentInstallStep = currentStepOf(flow.steps);
+  const currentInstallTitle = installStepTitle(currentInstallStep, t) ?? t("setup.settingUp");
+  const runningStepLabel = t("setup.installPanel.runningStep", {
+    step: currentInstallTitle,
+    defaultValue: "正在执行：{{step}}",
+  });
 
   return (
     <SetupShell
@@ -401,7 +409,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             ? { label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }
           : setupStep === "error"
             ? { label: t("setup.retry"), onClick: () => { void flow.retrySetup(); }, icon: "none" }
-            : { label: flow.statusMessage || t("setup.settingUp"), disabled: true, loading: true, icon: "none" }
+            : { label: runningStepLabel, disabled: true, loading: true, icon: "none" }
       }
     >
       <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
