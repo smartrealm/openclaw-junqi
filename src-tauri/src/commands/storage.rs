@@ -996,7 +996,14 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
 }
 
 #[tauri::command]
-pub async fn update_npm_cache_directory(npm_cache_dir: String) -> Result<String, String> {
+pub async fn update_npm_cache_directory(
+    state: State<'_, GatewayProcess>,
+    npm_cache_dir: String,
+) -> Result<String, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate
+        .try_lock_owned()
+        .map_err(|_| "Gateway or storage maintenance is running; try again shortly".to_string())?;
     let current = paths::load_storage_bootstrap()
         .ok_or("Storage setup must be completed before changing the npm cache directory")?;
     let updated = layout_with_npm_cache(&current, &npm_cache_dir)?;
