@@ -508,7 +508,8 @@
   "settings": {
     "title": "Settings",
     "tab": {
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "maintenance": "Maintenance"
     },
     "language": "Language",
     "notifications": "Notifications",
@@ -543,6 +544,7 @@
     "newTab": "New Tab",
     "nextTab": "Next Tab",
     "openSettings": "Open Settings",
+    "openMaintenance": "Open Maintenance",
     "provider": "Provider",
     "refresh": "Refresh",
     "shortcuts": "Keyboard Shortcuts",
@@ -1111,6 +1113,39 @@
     "fileRevealFailed": "The path could not be revealed in the system file manager.",
     "pathInsertFailedTitle": "Cannot insert path",
     "pathInsertFailed": "Confirm that the path is still inside the active workspace."
+  },
+  "maintenance": {
+    "scanning": "Running checks",
+    "healthy": "No issues found",
+    "issuesFound": "{{count}} issues found",
+    "ready": "System maintenance",
+    "configStatus": "Config",
+    "valid": "Valid",
+    "invalid": "Invalid",
+    "unknown": "Unknown",
+    "checksRun": "{{count}} checks",
+    "checkedAt": "Checked at {{time}}",
+    "rescan": "Rescan",
+    "officialRepair": "Official repair",
+    "copyReport": "Copy maintenance report",
+    "copiedTitle": "Maintenance report copied",
+    "copyFailedTitle": "Copy failed",
+    "repairConfirmTitle": "Run official repair",
+    "repairConfirmMessage": "This runs openclaw doctor --fix. Configuration may change and will be scanned again when it finishes.",
+    "repairFailedTitle": "Repair did not finish",
+    "repairFailedMessage": "The official repair command did not complete successfully. Use the new scan results to resolve the remaining issues.",
+    "errors": "Errors",
+    "warnings": "Warnings",
+    "info": "Info",
+    "noFindings": "Configuration, plugins, and runtime checks passed",
+    "category": {
+      "config": "Configuration",
+      "plugin": "Plugins",
+      "mcp": "MCP",
+      "security": "Security",
+      "gateway": "Gateway",
+      "doctor": "Doctor"
+    }
   },
   "offline": {
     "title": "Not Connected",
