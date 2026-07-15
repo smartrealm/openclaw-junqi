@@ -10,7 +10,10 @@ use crate::state::GatewayProcess;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::process::{Output, Stdio};
-use std::sync::OnceLock;
+use std::sync::{
+    atomic::{AtomicU8, AtomicUsize, Ordering},
+    Arc, OnceLock,
+};
 use std::time::Duration;
 use tauri::{AppHandle, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -21,8 +24,143 @@ const OPENCLAW_STATUS_TIMEOUT_SECONDS: &str = "60";
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const UPDATE_BUSY_ERROR: &str = "An OpenClaw update operation is already running";
 const UPDATE_PROGRESS_STEP: &str = "openclaw-update";
+const UPDATE_STREAM_START_PERCENT: u8 = 55;
 
 static UPDATE_OPERATION: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+enum UpdateStreamPhase {
+    Resolving = 1,
+    Downloading = 2,
+    Extracting = 3,
+    RunningScripts = 4,
+    Verifying = 5,
+}
+
+impl UpdateStreamPhase {
+    fn progress(self, http_request_count: usize) -> u8 {
+        match self {
+            Self::Resolving => 58,
+            Self::Downloading => 62 + http_request_count.min(10) as u8,
+            Self::Extracting => 76,
+            Self::RunningScripts => 82,
+            Self::Verifying => 86,
+        }
+    }
+
+    fn event(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Resolving => (
+                "Resolving OpenClaw package dependencies...",
+                "setup.openclawUpdate.progress.resolvingPackage",
+            ),
+            Self::Downloading => (
+                "Downloading OpenClaw package from the npm registry...",
+                "setup.openclawUpdate.progress.downloadingPackage",
+            ),
+            Self::Extracting => (
+                "Extracting and replacing the OpenClaw package...",
+                "setup.openclawUpdate.progress.extractingPackage",
+            ),
+            Self::RunningScripts => (
+                "Running OpenClaw package installation scripts...",
+                "setup.openclawUpdate.progress.runningScripts",
+            ),
+            Self::Verifying => (
+                "Validating the updated OpenClaw package...",
+                "setup.openclawUpdate.progress.verifyingPackage",
+            ),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct UpdateStreamObservation {
+    progress: f64,
+    entered_phase: Option<UpdateStreamPhase>,
+}
+
+#[derive(Debug)]
+struct UpdateStreamProgress {
+    phase: AtomicU8,
+    progress: AtomicU8,
+    http_requests: AtomicUsize,
+}
+
+impl UpdateStreamProgress {
+    fn new() -> Self {
+        Self {
+            phase: AtomicU8::new(0),
+            progress: AtomicU8::new(UPDATE_STREAM_START_PERCENT),
+            http_requests: AtomicUsize::new(0),
+        }
+    }
+
+    fn observe(&self, line: &str) -> UpdateStreamObservation {
+        let lower = line.to_ascii_lowercase();
+        let phase = if lower.contains("npm http fetch")
+            || lower.contains("downloading")
+            || lower.contains("tarball")
+        {
+            Some(UpdateStreamPhase::Downloading)
+        } else if lower.contains("reify")
+            || lower.contains("extract")
+            || lower.contains("unpack")
+            || lower.contains("package tree")
+            || lower.contains("staging")
+        {
+            Some(UpdateStreamPhase::Extracting)
+        } else if lower.contains("preinstall")
+            || lower.contains("postinstall")
+            || lower.contains("install script")
+            || lower.contains("foreground script")
+        {
+            Some(UpdateStreamPhase::RunningScripts)
+        } else if lower.contains("validat")
+            || lower.contains("dist manifest")
+            || lower.contains("promot")
+            || lower.contains("activat")
+            || lower.contains("packages in")
+            || lower.starts_with("added ")
+            || lower.starts_with("changed ")
+        {
+            Some(UpdateStreamPhase::Verifying)
+        } else if lower.contains("resolv")
+            || lower.contains("ideal tree")
+            || lower.contains("idealtree")
+            || lower.contains("fetch manifest")
+            || lower.contains("npm http cache")
+        {
+            Some(UpdateStreamPhase::Resolving)
+        } else {
+            None
+        };
+
+        let http_request_count = if lower.contains("npm http fetch") {
+            self.http_requests.fetch_add(1, Ordering::Relaxed) + 1
+        } else {
+            self.http_requests.load(Ordering::Relaxed)
+        };
+        let candidate = phase
+            .map(|value| value.progress(http_request_count))
+            .unwrap_or_else(|| self.progress.load(Ordering::Relaxed));
+        let progress = self
+            .progress
+            .fetch_max(candidate, Ordering::Relaxed)
+            .max(candidate);
+
+        let entered_phase = phase.and_then(|next| {
+            let previous = self.phase.fetch_max(next as u8, Ordering::Relaxed);
+            (next as u8 > previous).then_some(next)
+        });
+
+        UpdateStreamObservation {
+            progress: f64::from(progress) / 100.0,
+            entered_phase,
+        }
+    }
+}
 
 fn update_operation() -> &'static Mutex<()> {
     UPDATE_OPERATION.get_or_init(|| Mutex::new(()))
@@ -154,7 +292,13 @@ fn build_openclaw_command(
         // Child-process-only config: this must not mutate ~/.npmrc or global npm settings.
         command
             .env("npm_config_registry", registry.url)
-            .env("NPM_CONFIG_REGISTRY", registry.url);
+            .env("NPM_CONFIG_REGISTRY", registry.url)
+            // OpenClaw delegates package replacement to npm. HTTP-level output
+            // gives the desktop updater useful download detail without enabling
+            // npm's credential-heavy verbose/silly logs.
+            .env("npm_config_loglevel", "http")
+            .env("npm_config_foreground_scripts", "true")
+            .env("npm_config_progress", "true");
     }
     platform::configure_background_command(&mut command);
     command
@@ -196,7 +340,11 @@ fn emit_update_error(app: &AppHandle, message: &str, progress: Option<f64>) {
     setup_progress::emit_error(app, UPDATE_PROGRESS_STEP, message, progress);
 }
 
-async fn collect_stream<R>(app: AppHandle, stream: R, progress: f64) -> Result<Vec<u8>, String>
+async fn collect_stream<R>(
+    app: AppHandle,
+    stream: R,
+    tracker: Arc<UpdateStreamProgress>,
+) -> Result<Vec<u8>, String>
 where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -211,7 +359,12 @@ where
         output.push(b'\n');
         let safe_line = redact_diagnostic_line(&line);
         if !safe_line.trim().is_empty() {
-            emit_update_progress(&app, &safe_line, progress);
+            let observation = tracker.observe(&safe_line);
+            if let Some(phase) = observation.entered_phase {
+                let (message, key) = phase.event();
+                emit_update_progress_keyed(&app, message, key, observation.progress);
+            }
+            emit_update_progress(&app, &safe_line, observation.progress);
         }
     }
     Ok(output)
@@ -237,8 +390,9 @@ async fn run_openclaw_command_streaming(
         .stderr
         .take()
         .ok_or_else(|| "OpenClaw update stderr was not captured".to_string())?;
-    let stdout_task = tokio::spawn(collect_stream(app.clone(), stdout, 0.65));
-    let stderr_task = tokio::spawn(collect_stream(app.clone(), stderr, 0.65));
+    let tracker = Arc::new(UpdateStreamProgress::new());
+    let stdout_task = tokio::spawn(collect_stream(app.clone(), stdout, Arc::clone(&tracker)));
+    let stderr_task = tokio::spawn(collect_stream(app.clone(), stderr, tracker));
 
     let child_pid = child.id();
     let status = match tokio::time::timeout(command_timeout, child.wait()).await {
@@ -1152,5 +1306,59 @@ mod tests {
         assert!(!is_network_failure(&business_error));
         assert!(contains_network_error("step stderr: ECONNRESET"));
         assert!(!contains_network_error("permission denied"));
+    }
+
+    #[test]
+    fn update_stream_reports_download_details_with_incrementing_progress() {
+        let tracker = UpdateStreamProgress::new();
+        let first = tracker.observe(
+            "npm http fetch GET 200 https://registry.npmmirror.com/openclaw/-/openclaw.tgz 350ms",
+        );
+        let second = tracker.observe(
+            "npm http fetch GET 200 https://registry.npmmirror.com/dependency/-/dependency.tgz 90ms",
+        );
+
+        assert_eq!(first.entered_phase, Some(UpdateStreamPhase::Downloading));
+        assert!(first.progress > 0.62);
+        assert!(second.entered_phase.is_none());
+        assert!(second.progress > first.progress);
+    }
+
+    #[test]
+    fn update_stream_advances_through_installation_phases_without_regressing() {
+        let tracker = UpdateStreamProgress::new();
+        let resolving = tracker.observe("npm http cache openclaw@https://registry.npmmirror.com");
+        let extracting = tracker.observe("npm verb reify unpack OpenClaw package tree");
+        let scripts = tracker.observe("npm info run openclaw@2026.7.1 postinstall");
+        let verifying = tracker.observe("changed 1 package in 8s");
+        let late_download = tracker.observe("npm http fetch GET 200 a-late-request 5ms");
+
+        assert_eq!(resolving.entered_phase, Some(UpdateStreamPhase::Resolving));
+        assert_eq!(
+            extracting.entered_phase,
+            Some(UpdateStreamPhase::Extracting)
+        );
+        assert_eq!(
+            scripts.entered_phase,
+            Some(UpdateStreamPhase::RunningScripts)
+        );
+        assert_eq!(verifying.entered_phase, Some(UpdateStreamPhase::Verifying));
+        assert!(resolving.progress < extracting.progress);
+        assert!(extracting.progress < scripts.progress);
+        assert!(scripts.progress < verifying.progress);
+        assert_eq!(late_download.progress, verifying.progress);
+        assert!(late_download.entered_phase.is_none());
+    }
+
+    #[test]
+    fn unknown_update_output_keeps_the_current_progress() {
+        let tracker = UpdateStreamProgress::new();
+        let initial = tracker.observe("OpenClaw updater started");
+        let download = tracker.observe("Downloading package tarball");
+        let unknown = tracker.observe("still working");
+
+        assert_eq!(initial.progress, 0.55);
+        assert_eq!(unknown.progress, download.progress);
+        assert!(unknown.entered_phase.is_none());
     }
 }
