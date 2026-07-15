@@ -86,7 +86,10 @@ pub fn run() {
             commands::voice_wake::voice_wake_status,
             // Setup
             commands::setup::install_node,
+            commands::managed_runtime::update_managed_node,
             commands::setup::install_git,
+            commands::managed_runtime::update_managed_git,
+            commands::managed_runtime::get_managed_runtime_status,
             commands::setup::install_openclaw,
             commands::setup::prepare_gateway,
             commands::setup::install_winget_package,

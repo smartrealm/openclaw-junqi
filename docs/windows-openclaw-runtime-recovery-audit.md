@@ -28,7 +28,8 @@ are valid internally but should not be shown to users.
 
 ## Resolution
 
-- Centralized the OpenClaw Node support matrix and managed Node version.
+- Derive the Node support range from installed/target OpenClaw package metadata.
+- Select a compatible published Node.js LTS dynamically for the current platform.
 - Added one runtime guard shared by update checks, updates, and Gateway starts.
 - Automatically repairs with JunQi-managed Node.js without changing the user's
   system installation.
@@ -38,7 +39,7 @@ are valid internally but should not be shown to users.
 
 ## Regression Coverage
 
-- Exact accepted/rejected Node.js boundary versions.
+- npm-semver range behavior and dynamic compatible-release selection.
 - Windows drive and UNC display path normalization.
 - Node.js diagnostics take priority over wrapper JSON.
 - Update reducer progress monotonicity and duplicate-log suppression.

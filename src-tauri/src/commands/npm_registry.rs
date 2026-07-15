@@ -40,6 +40,7 @@ pub struct NpmRegistrySelection {
     pub primary: NpmRegistry,
     pub fallback: Option<NpmRegistry>,
     pub package_version: Option<String>,
+    pub node_requirement: Option<String>,
 }
 
 impl NpmRegistrySelection {
@@ -56,6 +57,7 @@ impl NpmRegistrySelection {
             primary: OFFICIAL_NPM_REGISTRY,
             fallback: None,
             package_version: None,
+            node_requirement: None,
         }
     }
 }
@@ -65,12 +67,19 @@ struct RegistryProbe {
     registry: NpmRegistry,
     latency: Duration,
     version: String,
+    node_requirement: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PackageMetadata {
     version: Option<String>,
     dist: Option<PackageDist>,
+    engines: Option<PackageEngines>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PackageEngines {
+    node: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +123,11 @@ async fn probe_registry(client: &reqwest::Client, registry: NpmRegistry) -> Opti
 
     let metadata = response.json::<PackageMetadata>().await.ok()?;
     let version = metadata.version.filter(|value| !value.trim().is_empty())?;
+    let node_requirement = metadata
+        .engines
+        .and_then(|engines| engines.node)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     let tarball = metadata
         .dist
         .and_then(|dist| dist.tarball)
@@ -129,7 +143,71 @@ async fn probe_registry(client: &reqwest::Client, registry: NpmRegistry) -> Opti
         registry,
         latency: started.elapsed(),
         version,
+        node_requirement,
     })
+}
+
+pub async fn fetch_openclaw_node_requirement(
+    registry: NpmRegistry,
+    version: &str,
+) -> Result<Option<String>, String> {
+    if version.is_empty()
+        || version.len() > 64
+        || !version
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character))
+    {
+        return Err("Invalid OpenClaw package version".to_string());
+    }
+    let client = reqwest::Client::builder()
+        .connect_timeout(REGISTRY_PROBE_TIMEOUT)
+        .timeout(REGISTRY_PROBE_TIMEOUT)
+        .user_agent("JunQi Desktop OpenClaw metadata resolver")
+        .build()
+        .map_err(|error| format!("Failed to initialize npm metadata resolver: {error}"))?;
+    let response = client
+        .get(format!("{}/openclaw/{}", registry.url, version))
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|error| format!("Failed to read OpenClaw {version} metadata: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("OpenClaw {version} metadata request failed: {error}"))?;
+    let metadata = response
+        .json::<PackageMetadata>()
+        .await
+        .map_err(|error| format!("Invalid OpenClaw {version} metadata: {error}"))?;
+    if metadata.version.as_deref() != Some(version) {
+        return Err(format!(
+            "OpenClaw metadata version mismatch: requested {version}, received {}",
+            metadata.version.as_deref().unwrap_or("unknown")
+        ));
+    }
+    Ok(metadata
+        .engines
+        .and_then(|engines| engines.node)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty()))
+}
+
+pub async fn resolve_openclaw_node_requirement(
+    preferred: NpmRegistry,
+    version: &str,
+) -> Result<Option<String>, String> {
+    if preferred.kind == NpmRegistryKind::Official {
+        return fetch_openclaw_node_requirement(OFFICIAL_NPM_REGISTRY, version).await;
+    }
+    let (official, mirror) = tokio::join!(
+        fetch_openclaw_node_requirement(OFFICIAL_NPM_REGISTRY, version),
+        fetch_openclaw_node_requirement(preferred, version),
+    );
+    match (official, mirror) {
+        (Ok(requirement), _) => Ok(requirement),
+        (Err(_), Ok(requirement)) => Ok(requirement),
+        (Err(official_error), Err(mirror_error)) => Err(format!(
+            "Official and mirror OpenClaw metadata failed: {official_error}; {mirror_error}"
+        )),
+    }
 }
 
 fn select_from_probes(
@@ -139,19 +217,25 @@ fn select_from_probes(
     match (official, mirror) {
         (Some(official), Some(mirror))
             if official.version == mirror.version
+                && official.node_requirement == mirror.node_requirement
                 && should_prefer_china_mirror(official.latency, mirror.latency) =>
         {
             NpmRegistrySelection {
                 primary: mirror.registry,
                 fallback: Some(official.registry),
                 package_version: Some(official.version),
+                node_requirement: official.node_requirement,
             }
         }
-        (Some(official), Some(mirror)) if official.version == mirror.version => {
+        (Some(official), Some(mirror))
+            if official.version == mirror.version
+                && official.node_requirement == mirror.node_requirement =>
+        {
             NpmRegistrySelection {
                 primary: official.registry,
                 fallback: Some(mirror.registry),
                 package_version: Some(official.version),
+                node_requirement: official.node_requirement,
             }
         }
         // A mirror that has not caught up must never become the source of truth.
@@ -159,11 +243,13 @@ fn select_from_probes(
             primary: official.registry,
             fallback: None,
             package_version: Some(official.version),
+            node_requirement: official.node_requirement,
         },
         (None, Some(mirror)) => NpmRegistrySelection {
             primary: mirror.registry,
             fallback: None,
             package_version: Some(mirror.version),
+            node_requirement: mirror.node_requirement,
         },
         (None, None) => NpmRegistrySelection::official_default(),
     }
@@ -183,6 +269,7 @@ mod tests {
             registry,
             latency: Duration::from_millis(latency_ms),
             version: version.to_string(),
+            node_requirement: Some(">=24.15.0 <25".to_string()),
         }
     }
 
@@ -238,5 +325,17 @@ mod tests {
         assert_eq!(selection.primary.kind, NpmRegistryKind::Official);
         assert_eq!(selection.fallback, None);
         assert_eq!(selection.package_version, None);
+        assert_eq!(selection.node_requirement, None);
+    }
+
+    #[test]
+    fn engine_metadata_mismatch_never_selects_the_mirror() {
+        let official = probe(OFFICIAL_NPM_REGISTRY, 900, "2026.7.1");
+        let mut mirror = probe(CHINA_NPM_REGISTRY, 50, "2026.7.1");
+        mirror.node_requirement = Some(">=26".to_string());
+        let selection = select_from_probes(Some(official), Some(mirror));
+        assert_eq!(selection.primary.kind, NpmRegistryKind::Official);
+        assert_eq!(selection.fallback, None);
+        assert_eq!(selection.node_requirement.as_deref(), Some(">=24.15.0 <25"));
     }
 }

@@ -47,6 +47,7 @@ toml = "0.8"
 serde_yaml = "0.9"
 notify = "6.1"
 parking_lot = "0.12"
+node-semver = "2.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.5"

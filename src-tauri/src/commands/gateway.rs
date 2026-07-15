@@ -1059,7 +1059,8 @@ pub(crate) async fn start_gateway_locked(
     // OpenClaw enforces a non-contiguous Node.js support matrix. Repair the
     // desktop-managed runtime before spawning so an incompatible system Node
     // cannot produce a crash/retry loop (notably Node 24.14.x on Windows).
-    crate::commands::setup::ensure_compatible_node_runtime(&app, "gateway")
+    let node_requirement = crate::commands::system::installed_openclaw_node_requirement()?;
+    crate::commands::setup::ensure_compatible_node_runtime(&app, "gateway", &node_requirement)
         .await
         .map_err(|error| format!("Gateway runtime repair failed: {error}"))?;
 

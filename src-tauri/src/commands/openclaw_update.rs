@@ -300,7 +300,8 @@ async fn run_openclaw_command_with_registry_fallback(
 
 async fn ensure_update_node_runtime(app: &AppHandle) -> Result<(), String> {
     emit_update_progress(app, "Checking Node.js runtime compatibility...", 0.08);
-    setup::ensure_compatible_node_runtime(app, UPDATE_PROGRESS_STEP).await?;
+    let requirement = system::installed_openclaw_node_requirement()?;
+    setup::ensure_compatible_node_runtime(app, UPDATE_PROGRESS_STEP, &requirement).await?;
     Ok(())
 }
 
@@ -791,6 +792,48 @@ pub async fn update_openclaw(
     // Probe before taking the managed Gateway down so the expected network
     // decision does not lengthen its maintenance window.
     let selection = npm_registry::select_npm_registry().await;
+    emit_update_progress(
+        &app,
+        "Resolving the target OpenClaw runtime contract...",
+        0.36,
+    );
+    let (dry_run, metadata_registry) =
+        run_npm_update_dry_run_with_registry_fallback(&binary, selection.clone()).await;
+    let npm_target = dry_run
+        .as_ref()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| parse_dry_run_update_status(&output.stdout).ok())
+        .filter(is_npm_package_dry_run);
+    let target_expression = if let Some(target) = npm_target.as_ref() {
+        if let Some(version) = target.target_version.as_deref() {
+            npm_registry::resolve_openclaw_node_requirement(metadata_registry, version)
+                .await
+                .ok()
+                .flatten()
+                .or_else(|| selection.node_requirement.clone())
+        } else {
+            selection.node_requirement.clone()
+        }
+    } else {
+        None
+    };
+    if let Some(expression) = target_expression.as_deref() {
+        let target_requirement = crate::commands::node_runtime::NodeRuntimeRequirement::parse(
+            expression,
+            crate::commands::node_runtime::NodeRequirementSource::RegistryPackage,
+        )?;
+        emit_update_progress(
+            &app,
+            &format!(
+                "Target OpenClaw requires Node.js {}; validating update runtime...",
+                target_requirement.expression()
+            ),
+            0.38,
+        );
+        setup::ensure_compatible_node_runtime(&app, UPDATE_PROGRESS_STEP, &target_requirement)
+            .await?;
+    }
     emit_update_progress(&app, "Stopping the managed Gateway if necessary...", 0.45);
     let restore_gateway = stop_managed_gateway(&state).await?;
 

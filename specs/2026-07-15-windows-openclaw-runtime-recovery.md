@@ -3,7 +3,7 @@
 ## Acceptance Criteria
 
 - [x] Node.js 24.14.x is rejected before OpenClaw starts.
-- [x] JunQi automatically installs compatible managed Node.js 24.15.0.
+- [x] JunQi dynamically installs a managed Node.js release accepted by OpenClaw.
 - [x] Gateway startup retries through the compatible managed runtime.
 - [x] Update checks and updates use the same runtime guard.
 - [x] Update UI shows live phase, progress, and redacted bounded logs.
