@@ -693,7 +693,8 @@ async fn run_gateway_service_command(
     config_path: &Path,
     args: &[&str],
 ) -> Result<(), String> {
-    let output = tokio::process::Command::new(binary)
+    let mut command = crate::commands::system::openclaw_command(binary);
+    let output = command
         .args(args)
         .env("PATH", crate::commands::system::openclaw_search_path())
         .env("OPENCLAW_STATE_DIR", state_dir)
@@ -1028,7 +1029,13 @@ pub async fn update_npm_cache_directory(
         .map_err(|_| "Gateway or storage maintenance is running; try again shortly".to_string())?;
     let current = paths::load_storage_bootstrap()
         .ok_or("Storage setup must be completed before changing the npm cache directory")?;
-    let updated = layout_with_npm_cache(&current, &npm_cache_dir)?;
+    let reset_to_default = npm_cache_dir.trim().is_empty();
+    let updated = if reset_to_default {
+        let default_cache = current.state_dir.join("npm-cache");
+        layout_with_npm_cache(&current, &default_cache.to_string_lossy())?
+    } else {
+        layout_with_npm_cache(&current, &npm_cache_dir)?
+    };
     let directory = updated.npm_cache_dir.clone();
     let existed = directory.exists();
     std::fs::create_dir_all(&directory).map_err(|error| {
@@ -1045,7 +1052,11 @@ pub async fn update_npm_cache_directory(
         }
         return Err(error);
     }
-    Ok(directory.to_string_lossy().to_string())
+    Ok(if reset_to_default {
+        String::new()
+    } else {
+        directory.to_string_lossy().to_string()
+    })
 }
 
 #[tauri::command]

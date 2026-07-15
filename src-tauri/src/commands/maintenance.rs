@@ -76,7 +76,7 @@ struct DoctorEnvelope {
 }
 
 fn build_command(binary: &Path, args: &[&str]) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new(binary);
+    let mut command = crate::commands::system::openclaw_command(binary);
     command
         .args(args)
         .env("PATH", system::openclaw_search_path())

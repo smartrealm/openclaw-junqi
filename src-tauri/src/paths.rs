@@ -265,15 +265,6 @@ pub fn local_node_path() -> PathBuf {
     }
 }
 
-/// 返回 JunQi 管理的 Node.js 二进制所在目录。
-pub fn node_bin_dir() -> PathBuf {
-    if cfg!(windows) {
-        runtime_dir().join("node")
-    } else {
-        runtime_dir().join("node").join("bin")
-    }
-}
-
 /// 返回 JunQi 管理的 Node 安装内的 npm-cli.js 路径。
 pub fn local_npm_cli_path() -> PathBuf {
     if cfg!(windows) {
@@ -294,14 +285,12 @@ pub fn local_npm_cli_path() -> PathBuf {
     }
 }
 
-/// 返回 JunQi 管理的 npm 缓存目录。
-pub fn npm_cache_dir() -> PathBuf {
-    if std::env::var_os("OPENCLAW_STATE_DIR").is_some() {
-        return desktop_dir().join("npm-cache");
-    }
-    load_storage_bootstrap()
-        .map(|layout| layout.npm_cache_dir)
-        .unwrap_or_else(|| desktop_dir().join("npm-cache"))
+/// Return an npm cache override only when the user selected a path distinct
+/// from the layout default. Otherwise npm owns its platform-native cache path.
+pub fn configured_npm_cache_dir() -> Option<PathBuf> {
+    let layout = load_storage_bootstrap()?;
+    let legacy_default = layout.state_dir.join("npm-cache");
+    (layout.npm_cache_dir != legacy_default).then_some(layout.npm_cache_dir)
 }
 
 pub fn runtime_dir() -> PathBuf {
@@ -428,15 +417,6 @@ pub fn local_git_path() -> PathBuf {
         runtime_dir().join("git").join("cmd").join("git.exe")
     } else {
         runtime_dir().join("git").join("bin").join("git")
-    }
-}
-
-/// 返回 JunQi 本地 Git 二进制所在目录。
-pub fn git_bin_dir() -> PathBuf {
-    if cfg!(windows) {
-        runtime_dir().join("git").join("cmd")
-    } else {
-        runtime_dir().join("git").join("bin")
     }
 }
 

@@ -38,11 +38,9 @@ impl TerminalIntegrationBackend for WindowsBackend {
         });
         let npm = paths::configured_npm_prefix().unwrap_or_else(paths::local_npm_prefix);
         format!(
-            "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"OPENCLAW_STATE_DIR={}\"\r\nset \"OPENCLAW_CONFIG_PATH={}\"\r\nset \"PATH={};{};{};%PATH%\"\r\n{}\r\n",
+            "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"OPENCLAW_STATE_DIR={}\"\r\nset \"OPENCLAW_CONFIG_PATH={}\"\r\nset \"PATH={};%PATH%\"\r\n{}\r\n",
             batch_escape(&paths::desktop_dir()),
             batch_escape(&paths::config_path()),
-            batch_escape(&paths::node_bin_dir()),
-            batch_escape(&paths::git_bin_dir()),
             batch_escape(&npm),
             command
         )

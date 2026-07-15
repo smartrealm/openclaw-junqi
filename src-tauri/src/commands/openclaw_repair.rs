@@ -78,7 +78,7 @@ pub async fn run_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Resu
 
     let binary = crate::commands::gateway::resolve_openclaw_binary()
         .ok_or_else(|| "OpenClaw binary not found; cannot run repair".to_string())?;
-    let mut command = tokio::process::Command::new(binary);
+    let mut command = crate::commands::system::openclaw_command(&binary);
     command
         .args(REPAIR_ARGS)
         .env("PATH", crate::commands::system::openclaw_search_path())

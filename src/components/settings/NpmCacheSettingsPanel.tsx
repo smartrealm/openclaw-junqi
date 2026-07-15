@@ -1,13 +1,29 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { CheckCircle2, FolderOpen, Loader2, Package } from 'lucide-react';
+import { CheckCircle2, FolderOpen, Loader2, Package, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlassCard } from '@/components/shared/GlassCard';
 
 interface StorageSetupStatus {
   configured: boolean;
+  stateDir: string;
   npmCacheDir: string;
+}
+
+function samePath(left: string, right: string): boolean {
+  const windowsPath = left.includes('\\') || right.includes('\\') || /^[A-Za-z]:/.test(left + right);
+  const normalize = (value: string) => value.replace(/[\\/]+$/, '').replaceAll('\\', '/');
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return windowsPath
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+function defaultCacheMarker(stateDir: string): string {
+  const separator = stateDir.includes('\\') ? '\\' : '/';
+  return `${stateDir.replace(/[\\/]+$/, '')}${separator}npm-cache`;
 }
 
 export function NpmCacheSettingsPanel() {
@@ -26,8 +42,11 @@ export function NpmCacheSettingsPanel() {
       .then((status) => {
         if (!active) return;
         setConfigured(status.configured);
-        setSavedPath(status.npmCacheDir);
-        setDraftPath(status.npmCacheDir);
+        const customPath = samePath(status.npmCacheDir, defaultCacheMarker(status.stateDir))
+          ? ''
+          : status.npmCacheDir;
+        setSavedPath(customPath);
+        setDraftPath(customPath);
       })
       .catch((cause) => {
         if (active) setError(String(cause));
@@ -72,6 +91,23 @@ export function NpmCacheSettingsPanel() {
     }
   };
 
+  const resetToDefault = async () => {
+    if (!configured || saving || !savedPath) return;
+    setSaving(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await invoke<string>('update_npm_cache_directory', { npmCacheDir: '' });
+      setSavedPath('');
+      setDraftPath('');
+      setMessage(t('storage.npmCacheDefaultRestored', '已恢复 npm 默认缓存位置'));
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const unchanged = draftPath.trim() === savedPath;
 
   return (
@@ -96,6 +132,7 @@ export function NpmCacheSettingsPanel() {
           }}
           disabled={loading || !configured || saving}
           aria-label={t('storage.npmCacheLocation', 'npm 下载缓存')}
+          placeholder={t('storage.npmCacheSystemDefault', '使用 npm 系统默认位置')}
           className="min-w-0 flex-1 rounded-md border border-aegis-border bg-aegis-surface px-3 py-2 font-mono text-[11px] text-aegis-text outline-none focus:border-aegis-primary disabled:opacity-50"
         />
         <button
@@ -106,6 +143,15 @@ export function NpmCacheSettingsPanel() {
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface disabled:opacity-50"
         >
           <FolderOpen size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={() => void resetToDefault()}
+          disabled={loading || !configured || saving || !savedPath}
+          title={t('storage.npmCacheUseDefault', '恢复 npm 默认缓存位置')}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface disabled:opacity-50"
+        >
+          <RotateCcw size={15} />
         </button>
         <button
           type="button"

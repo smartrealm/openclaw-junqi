@@ -71,6 +71,29 @@ async fn get_node_version(node_path: &str) -> Option<String> {
 
 #[tauri::command]
 pub async fn check_npm() -> Result<NpmStatus, String> {
+    let system_npm = platform::detect_path("npm");
+    let system_npm = if system_npm.is_empty() {
+        platform::bin_name("npm")
+    } else {
+        system_npm
+    };
+    let mut command = tokio::process::Command::new(&system_npm);
+    command.arg("--version");
+    platform::configure_background_command(&mut command);
+    if let Ok(output) = command.output().await {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if output.status.success() && !version.is_empty() {
+            return Ok(NpmStatus {
+                available: true,
+                version: Some(version),
+                path: Some(system_npm),
+                source: Some("system".into()),
+            });
+        }
+    }
+
+    // Older JunQi releases installed a private Node/npm pair. Keep it as a
+    // compatibility fallback, but never let it shadow a system installation.
     let local_node = paths::local_node_path();
     let local_npm = paths::local_npm_cli_path();
     if local_node.is_file() && local_npm.is_file() {
@@ -90,28 +113,55 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
         }
     }
 
-    let system_npm = platform::bin_name("npm");
-    let mut command = tokio::process::Command::new(&system_npm);
-    command.arg("--version");
-    platform::configure_background_command(&mut command);
-    if let Ok(output) = command.output().await {
-        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if output.status.success() && !version.is_empty() {
-            return Ok(NpmStatus {
-                available: true,
-                version: Some(version),
-                path: Some(system_npm),
-                source: Some("system".into()),
-            });
-        }
-    }
-
     Ok(NpmStatus {
         available: false,
         version: None,
         path: None,
         source: None,
     })
+}
+
+/// Build an OpenClaw command without relying on Windows command-shim behavior.
+/// npm's `openclaw.cmd` is only a wrapper; invoking the package entry point with
+/// the detected Node.js executable keeps Gateway and update checks on the same
+/// runtime that passed compatibility validation.
+pub(crate) fn openclaw_command(binary: &Path) -> tokio::process::Command {
+    #[cfg(windows)]
+    if let Some(entry) = npm_openclaw_entry(binary) {
+        let detected = platform::detect_path("node");
+        let node = if detected.is_empty() {
+            let legacy = paths::local_node_path();
+            if legacy.is_file() {
+                legacy.to_string_lossy().into_owned()
+            } else {
+                platform::bin_name("node")
+            }
+        } else {
+            detected
+        };
+        let mut command = tokio::process::Command::new(node);
+        command.arg(entry);
+        return command;
+    }
+
+    tokio::process::Command::new(binary)
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn npm_openclaw_entry(binary: &Path) -> Option<PathBuf> {
+    let is_cmd = binary
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("cmd"));
+    if !is_cmd {
+        return None;
+    }
+    let entry = binary
+        .parent()?
+        .join("node_modules")
+        .join("openclaw")
+        .join("openclaw.mjs");
+    entry.is_file().then_some(entry)
 }
 
 #[tauri::command]
@@ -136,7 +186,25 @@ pub async fn check_node() -> Result<NodeStatus, String> {
 pub(crate) async fn check_node_for_requirement(
     requirement: &NodeRuntimeRequirement,
 ) -> Result<NodeStatus, String> {
-    // Check local node first
+    // System installations are authoritative. JunQi no longer shadows them
+    // with a private runtime when a compatible Node.js is already installed.
+    let system_node = platform::detect_path("node");
+    let system_node = if system_node.is_empty() {
+        platform::bin_name("node")
+    } else {
+        system_node
+    };
+    if let Some(version) = get_node_version(&system_node).await {
+        return Ok(NodeStatus {
+            available: requirement.supports(&version),
+            version: Some(version),
+            path: Some(system_node),
+            source: Some("system".into()),
+        });
+    }
+
+    // Legacy JunQi runtimes remain detectable for existing users, but are a
+    // compatibility fallback rather than the default installation target.
     let local = paths::local_node_path();
     if local.exists() {
         let path_str = local.to_string_lossy().to_string();
@@ -150,33 +218,11 @@ pub(crate) async fn check_node_for_requirement(
                 source: Some("local".into()),
             });
         }
-        // The managed directory is first on every OpenClaw child PATH. Do not
-        // report a compatible system Node while an incompatible managed Node
-        // would still shadow it at execution time; force managed repair.
         return Ok(NodeStatus {
             available: false,
             version,
             path: Some(path_str),
             source: Some("local".into()),
-        });
-    }
-
-    // Check system node
-    let system_node = platform::bin_name("node");
-    if let Some(version) = get_node_version(&system_node).await {
-        if requirement.supports(&version) {
-            return Ok(NodeStatus {
-                available: true,
-                version: Some(version),
-                path: Some(system_node.into()),
-                source: Some("system".into()),
-            });
-        }
-        return Ok(NodeStatus {
-            available: false,
-            version: Some(version),
-            path: Some(system_node),
-            source: Some("system".into()),
         });
     }
 
@@ -199,7 +245,6 @@ pub(crate) fn openclaw_search_path() -> String {
     // probe surface is exactly the set of places a canonical
     // `npm i -g openclaw` (or its XDG/sandbox fallback) can land.
     let mut path_parts = vec![
-        paths::node_bin_dir().to_string_lossy().to_string(),
         // Tier 1: user's actual npm prefix (read from `~/.npmrc`). This is
         // the canonical `npm i -g openclaw` bin dir the user finds on PATH.
         paths::user_npm_bin_dir()
@@ -745,19 +790,6 @@ pub async fn open_folder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn check_git() -> Result<GitStatus, String> {
-    // Check local git first (Windows MinGit)
-    let local = paths::local_git_path();
-    if local.exists() {
-        let path_str = local.to_string_lossy().to_string();
-        let version = get_git_version(&path_str).await;
-        return Ok(GitStatus {
-            available: true,
-            version,
-            path: Some(path_str),
-            source: Some("local".into()),
-        });
-    }
-
     // On Windows, refresh PATH from registry so we detect newly-installed Git
     #[cfg(windows)]
     crate::commands::setup::refresh_path_from_registry();
@@ -820,6 +852,16 @@ pub async fn check_git() -> Result<GitStatus, String> {
             }
         }
 
+        let legacy = paths::local_git_path();
+        if legacy.is_file() {
+            let path = legacy.to_string_lossy().into_owned();
+            return Ok(GitStatus {
+                available: true,
+                version: get_git_version(&path).await,
+                path: Some(path),
+                source: Some("local".into()),
+            });
+        }
         Ok(GitStatus {
             available: false,
             version: None,
@@ -932,7 +974,32 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_openclaw_version, path_text_for_display, read_openclaw_package_metadata};
+    use super::{
+        npm_openclaw_entry, parse_openclaw_version, path_text_for_display,
+        read_openclaw_package_metadata,
+    };
+
+    #[test]
+    fn windows_npm_shim_resolves_to_package_entry_point() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-openclaw-command-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let entry = root
+            .join("node_modules")
+            .join("openclaw")
+            .join("openclaw.mjs");
+        std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        std::fs::write(&entry, "").unwrap();
+
+        assert_eq!(npm_openclaw_entry(&root.join("openclaw.cmd")), Some(entry));
+        assert_eq!(npm_openclaw_entry(&root.join("openclaw.exe")), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn package_metadata_reads_version_and_node_engine_from_windows_shim_layout() {

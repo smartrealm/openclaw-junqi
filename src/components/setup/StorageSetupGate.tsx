@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, ChevronDown, Database, FolderOpen, HardDrive, LoaderCircle, Package, Terminal, Wrench } from 'lucide-react';
+import { Check, ChevronDown, Database, FolderOpen, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
@@ -111,6 +111,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
   const [workspaceDir, setWorkspaceDir] = useState('');
   const [runtimeDir, setRuntimeDir] = useState('');
   const [npmCacheDir, setNpmCacheDir] = useState('');
+  const [customNpmCache, setCustomNpmCache] = useState(false);
   const [npmPrefix, setNpmPrefix] = useState('');
   const [customNpmPrefix, setCustomNpmPrefix] = useState(false);
   const [terminalIntegration, setTerminalIntegration] = useState(false);
@@ -140,6 +141,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
             setWorkspaceDir(result.workspaceDir);
             setRuntimeDir(result.runtimeDir);
             setNpmCacheDir(result.npmCacheDir);
+            setCustomNpmCache(result.npmCacheDir !== joinPath(result.stateDir, 'npm-cache'));
             setNpmPrefix(result.npmPrefix ?? '');
             setCustomNpmPrefix(Boolean(result.npmPrefix));
             setTerminalIntegration(result.terminalIntegration);
@@ -210,13 +212,6 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     setError(null);
   }, []);
 
-  const chooseManagedRuntime = useCallback(async () => {
-    await chooseExactDirectory(
-      t('storage.runtimeChoose', '选择托管运行时所在文件夹'),
-      (parent) => setRuntimeDir(joinPath(parent, 'JunQi Runtime')),
-    );
-  }, [chooseExactDirectory, t]);
-
   const applyStorage = useCallback(async () => {
     if (!status || !targetDir || applying) return;
     setApplying(true);
@@ -234,7 +229,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
         locations: {
           workspaceDir,
           runtimeDir,
-          npmCacheDir,
+          npmCacheDir: customNpmCache ? npmCacheDir : joinPath(targetDir, 'npm-cache'),
           npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
           terminalIntegration,
         },
@@ -246,14 +241,14 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     } finally {
       if (mountedRef.current) setApplying(false);
     }
-  }, [applying, customNpmPrefix, migrateExisting, npmCacheDir, npmPrefix, runtimeDir, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+  }, [applying, customNpmCache, customNpmPrefix, migrateExisting, npmCacheDir, npmPrefix, runtimeDir, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
 
   if (loading) {
     return (
       <SetupShell
         active={2}
         title={t('storage.title', '选择 OpenClaw 数据位置')}
-        subtitle={t('storage.subtitle', '配置、会话、认证、工作区和 JunQi 管理的运行时将使用此位置。')}
+        subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
         previousAction={{ onClick: onBack }}
         nextAction={{ label: t('storage.loading', '正在读取存储信息…'), disabled: true, loading: true, icon: 'none' }}
@@ -270,7 +265,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
       <SetupShell
         active={2}
         title={t('storage.loadFailed', '无法读取存储配置')}
-        subtitle={t('storage.subtitle', '配置、会话、认证、工作区和 JunQi 管理的运行时将使用此位置。')}
+        subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
         previousAction={{ onClick: onBack }}
         nextAction={{ label: t('common.retry', '重试'), onClick: () => window.location.reload(), icon: 'none' }}
@@ -293,7 +288,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     targetDir.trim()
       && workspaceDir.trim()
       && runtimeDir.trim()
-      && npmCacheDir.trim()
+      && (!customNpmCache || npmCacheDir.trim())
       && (!customNpmPrefix || npmPrefix.trim()),
   );
 
@@ -301,7 +296,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     <SetupShell
       active={2}
       title={t('storage.title', '选择 OpenClaw 数据位置')}
-      subtitle={t('storage.subtitle', '配置、会话、认证、工作区和 JunQi 管理的运行时将使用此位置。')}
+      subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
       logs={logs}
       previousAction={{ onClick: onBack, disabled: applying }}
       nextAction={{
@@ -403,7 +398,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
           >
             <span>
               <span className="block text-sm font-semibold text-aegis-text">{t('storage.installLocations', '安装位置')}</span>
-              <span className="mt-1 block text-xs text-aegis-text-muted">{t('storage.installLocationsHint', '工作区、托管运行时、npm 缓存和终端集成')}</span>
+              <span className="mt-1 block text-xs text-aegis-text-muted">{t('storage.installLocationsHint', '工作区、可选 npm 缓存和终端集成')}</span>
             </span>
             <ChevronDown size={16} className={clsx('shrink-0 text-aegis-text-dim transition-transform', showLocations && 'rotate-180')} />
           </button>
@@ -417,20 +412,30 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 disabled={customLocationsLocked}
                 onChoose={() => void chooseExactDirectory(t('storage.workspaceChoose', '选择 OpenClaw 工作区'), setWorkspaceDir)}
               />
-              <LocationRow
-                icon={<Wrench size={16} />}
-                label={t('storage.runtimeLocation', 'Node.js / Git 托管运行时')}
-                value={runtimeDir}
-                disabled={customLocationsLocked}
-                onChoose={() => void chooseManagedRuntime()}
-              />
-              <LocationRow
-                icon={<Package size={16} />}
-                label={t('storage.npmCacheLocation', 'npm 下载缓存')}
-                value={npmCacheDir}
-                disabled={customLocationsLocked}
-                onChoose={() => void chooseExactDirectory(t('storage.npmCacheChoose', '选择 npm 下载缓存目录'), setNpmCacheDir)}
-              />
+              <div className="border-b border-aegis-border/70 py-3">
+                <label className="flex cursor-pointer items-center justify-between gap-4">
+                  <span>
+                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNpmCache', '自定义 npm 下载缓存')}</span>
+                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNpmCacheHint', '关闭时使用 npm 在当前系统和用户下的默认缓存位置')}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={customNpmCache}
+                    disabled={customLocationsLocked}
+                    onChange={(event) => setCustomNpmCache(event.target.checked)}
+                    className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
+                  />
+                </label>
+                {customNpmCache && (
+                  <LocationRow
+                    icon={<Package size={16} />}
+                    label={t('storage.npmCacheLocation', 'npm 下载缓存')}
+                    value={npmCacheDir}
+                    disabled={customLocationsLocked}
+                    onChoose={() => void chooseExactDirectory(t('storage.npmCacheChoose', '选择 npm 下载缓存目录'), setNpmCacheDir)}
+                  />
+                )}
+              </div>
 
               <div className="border-b border-aegis-border/70 py-3">
                 <label className="flex cursor-pointer items-center justify-between gap-4">

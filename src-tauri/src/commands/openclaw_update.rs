@@ -140,7 +140,7 @@ fn build_openclaw_command(
     args: &[&str],
     npm_registry: Option<NpmRegistry>,
 ) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new(binary);
+    let mut command = system::openclaw_command(binary);
     command
         .args(args)
         .env("PATH", system::openclaw_search_path())

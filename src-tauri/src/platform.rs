@@ -118,6 +118,14 @@ pub fn detect_path(binary: &str) -> String {
     }
 
     if cfg!(windows) {
+        // Package installation can update PATH after LOGIN_PATH is initialized.
+        // Probe the live process environment first, then fall back to the
+        // captured login environment used during initial detection.
+        if let Ok(current) = std::env::var("PATH") {
+            if let Some(path) = find_on_windows_path(binary, &current) {
+                return path;
+            }
+        }
         return find_on_windows_path(binary, login_shell_path()).unwrap_or_default();
     }
 
@@ -244,18 +252,4 @@ pub fn suppress_console_window(cmd: &mut std::process::Command) {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let _ = cmd; // 非 Windows 平台避免未使用告警
-}
-
-/// 构造 PATH：优先放入内置 Node/Git 目录，确保安装脚本能找到依赖。
-pub fn build_path(node_bin: &str, git_bin: Option<&str>) -> String {
-    let sep = if cfg!(windows) { ";" } else { ":" };
-    let mut parts = vec![node_bin.to_string()];
-    if let Some(gb) = git_bin {
-        parts.push(gb.to_string());
-    }
-    let existing = login_shell_path();
-    if !existing.is_empty() {
-        parts.push(existing.to_string());
-    }
-    parts.join(sep)
 }

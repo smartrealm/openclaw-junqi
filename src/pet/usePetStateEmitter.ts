@@ -19,7 +19,6 @@ const WAKE_DEBOUNCE_MS = 100;
 let petWindowOpened = false;
 
 function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): string {
-  const raw = app.setupStatusMessage;
   switch (app.setupStep) {
     case 'welcome':
       return i18n.t('setup.petWelcome', { defaultValue: 'Choose language and theme' });
@@ -33,35 +32,25 @@ function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): st
       return i18n.t('setup.gatewayNotRunning', { defaultValue: 'Gateway is not running. Click below to start it.' });
     case 'git-missing':
       return i18n.t('setup.gitRequired', { defaultValue: 'Git Required' });
+    case 'checking':
+      return i18n.t('setup.detecting', { defaultValue: 'Checking requirements...' });
+    case 'install-git':
+      return i18n.t('setup.installingGit', { defaultValue: 'Installing Git...' });
+    case 'install-node':
+      return i18n.t('setup.installingNode', { defaultValue: 'Installing Node.js...' });
+    case 'install-openclaw':
+      return i18n.t('setup.installingOpenclaw', { defaultValue: 'Installing OpenClaw...' });
+    case 'install-complete':
+      return i18n.t('setup.installComplete', { defaultValue: 'Installation complete' });
+    case 'configure-openclaw':
+      return i18n.t('setup.preparingGateway', { defaultValue: 'Preparing Gateway...' });
     case 'ready':
       return i18n.t('setup.ready', { defaultValue: 'Ready!' });
     case 'error':
-      return app.setupError || i18n.t('pet.status.error', { defaultValue: 'Error' });
+      return i18n.t('pet.status.error', { defaultValue: 'Error' });
     default:
-      break;
+      return i18n.t('setup.settingUp', { defaultValue: 'Setting up JunQi Desktop' });
   }
-
-  const common: Record<string, string> = {
-    'Detecting OpenClaw installation...': 'setup.detecting',
-    'Starting Gateway...': 'setup.startingGateway',
-    'Gateway started': 'setup.gatewayStarted',
-    'Checking Git...': 'setup.checkingGit',
-    'Installing Git...': 'setup.installingGit',
-    'Checking Node.js...': 'setup.checkingNode',
-    'Installing Node.js...': 'setup.installingNode',
-    'Checking OpenClaw...': 'setup.checkingOpenclaw',
-    'Installing OpenClaw...': 'setup.installingOpenclaw',
-    'Preparing Gateway...': 'setup.preparingGateway',
-    'Waiting for Gateway...': 'setup.waitingGateway',
-    'Pulling OpenClaw image...': 'setup.pullingImage',
-    'Starting container...': 'setup.startingContainer',
-    'Ready!': 'setup.ready',
-    'Gateway is not running': 'setup.gatewayNotRunning',
-  };
-  if (raw && common[raw]) return i18n.t(common[raw], { defaultValue: raw });
-  if (raw) return raw;
-
-  return i18n.t('setup.settingUp', { defaultValue: 'Setting up JunQi Desktop' });
 }
 
 function setupStepTitleKey(step: ReturnType<typeof useAppStore.getState>['setupStep']): string {

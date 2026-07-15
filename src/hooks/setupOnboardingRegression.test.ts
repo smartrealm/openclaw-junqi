@@ -114,9 +114,9 @@ test('BUG-ONB-09 native setup verifies optional terminal integration after OpenC
   assert.match(setupFlow, /patchStep\("terminal", "skipped"/);
 });
 
-test('BUG-ONB-10 fresh setup keeps managed runtime separate from workspace and cache', () => {
-  const runtimeDefaults = storageGate.match(/setRuntimeDir\(joinPath\(target(?:Dir)?, 'runtime'\)\)/g) ?? [];
-
-  assert.equal(runtimeDefaults.length, 2);
-  assert.doesNotMatch(storageGate, /setRuntimeDir\(target(?:Dir)?\)/);
+test('BUG-ONB-10 setup leaves system tools and npm cache at their native defaults', () => {
+  assert.doesNotMatch(storageGate, /label=\{t\('storage\.runtimeLocation'/);
+  assert.match(storageGate, /checked=\{customNpmCache\}/);
+  assert.match(storageGate, /npmCacheDir: customNpmCache \? npmCacheDir : joinPath\(targetDir, 'npm-cache'\)/);
+  assert.match(storageGate, /关闭时使用 npm 在当前系统和用户下的默认缓存位置/);
 });

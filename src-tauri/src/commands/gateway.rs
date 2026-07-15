@@ -60,7 +60,7 @@ async fn stop_offline_gateway_service(
     binary: &std::path::Path,
     search_path: &str,
 ) -> Result<bool, String> {
-    let mut status_command = tokio::process::Command::new(binary);
+    let mut status_command = crate::commands::system::openclaw_command(binary);
     status_command
         .args(["gateway", "status", "--json"])
         .env("PATH", search_path)
@@ -86,7 +86,7 @@ async fn stop_offline_gateway_service(
         "gateway-log",
         "An offline OpenClaw system service is loaded; stopping it before starting the desktop-managed Gateway...",
     );
-    let mut stop_command = tokio::process::Command::new(binary);
+    let mut stop_command = crate::commands::system::openclaw_command(binary);
     stop_command
         .args(["gateway", "stop"])
         .env("PATH", search_path)
@@ -994,7 +994,7 @@ pub async fn restart_gateway(
     // Restart the installed Gateway service (launchd/systemd/schtasks). This is
     // the real local OpenClaw restart path; unlike start_gateway(), it does not
     // simply return success when an external listener is already serving.
-    let mut cmd = tokio::process::Command::new(&openclaw);
+    let mut cmd = crate::commands::system::openclaw_command(&openclaw);
     cmd.args(["gateway", "--port", &port.to_string(), "restart"])
         .env("PATH", &gw_path)
         .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
@@ -1240,7 +1240,7 @@ pub(crate) async fn start_gateway_locked(
     // ConfigMetadata already parsed env.vars above — no additional disk IO here.
     let extra_env_vars = meta.env_vars;
 
-    let mut cmd = tokio::process::Command::new(&openclaw);
+    let mut cmd = crate::commands::system::openclaw_command(&openclaw);
     cmd.args([
         "gateway",
         "run",
@@ -1575,7 +1575,7 @@ pub async fn run_doctor() -> Result<String, String> {
     let base_dir = paths::desktop_dir();
     let config_path = paths::config_path();
 
-    let mut cmd = tokio::process::Command::new(&openclaw);
+    let mut cmd = crate::commands::system::openclaw_command(&openclaw);
     cmd.arg("doctor")
         .env("PATH", &augmented_path())
         .env("OPENCLAW_STATE_DIR", &base_dir)
