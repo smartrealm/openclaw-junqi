@@ -1,5 +1,5 @@
-use crate::commands::gateway::{is_gateway_serving, resolve_openclaw_binary};
-use crate::paths::{self, StorageBootstrap};
+use crate::commands::gateway::is_gateway_serving;
+use crate::paths::{self, OpenClawRuntimeMode, StorageBootstrap};
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode, GatewayRuntimeState};
 use crate::state::GatewayProcess;
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,8 @@ pub struct StorageSetupStatus {
     runtime_dir: String,
     npm_cache_dir: String,
     npm_prefix: Option<String>,
+    node_runtime_dir: Option<String>,
+    git_runtime_dir: Option<String>,
     terminal_integration: bool,
     terminal_launcher_dir: String,
     legacy_dir: String,
@@ -33,6 +35,8 @@ pub struct StorageConfigureResult {
     runtime_dir: String,
     npm_cache_dir: String,
     npm_prefix: Option<String>,
+    node_runtime_dir: Option<String>,
+    git_runtime_dir: Option<String>,
     terminal_integration: bool,
     created_fresh: bool,
     migrated: bool,
@@ -47,6 +51,8 @@ pub struct InstallLocationSelection {
     runtime_dir: String,
     npm_cache_dir: String,
     npm_prefix: Option<String>,
+    node_runtime_dir: Option<String>,
+    git_runtime_dir: Option<String>,
     terminal_integration: bool,
 }
 
@@ -243,6 +249,12 @@ fn layout_locations(layout: &StorageBootstrap) -> Vec<(&'static str, &Path)> {
     if let Some(prefix) = &layout.npm_prefix {
         locations.push(("npm global prefix", prefix.as_path()));
     }
+    if let Some(node_runtime) = &layout.node_runtime_dir {
+        locations.push(("custom Node.js runtime", node_runtime.as_path()));
+    }
+    if let Some(git_runtime) = &layout.git_runtime_dir {
+        locations.push(("custom Git runtime", git_runtime.as_path()));
+    }
     locations
 }
 
@@ -290,15 +302,26 @@ fn selected_layout(
     let runtime = required_absolute_path("Managed runtime directory", &selection.runtime_dir)?;
     let npm_cache = required_absolute_path("npm cache directory", &selection.npm_cache_dir)?;
     let npm_prefix = optional_absolute_path("npm global prefix", selection.npm_prefix.as_deref())?;
+    let node_runtime = optional_absolute_path(
+        "custom Node.js runtime directory",
+        selection.node_runtime_dir.as_deref(),
+    )?;
+    let git_runtime = optional_absolute_path(
+        "custom Git runtime directory",
+        selection.git_runtime_dir.as_deref(),
+    )?;
 
-    Ok(StorageBootstrap::with_locations(
+    let mut layout = StorageBootstrap::with_locations(
         state_dir,
         workspace,
         runtime,
         npm_cache,
         npm_prefix,
         selection.terminal_integration,
-    ))
+    );
+    layout.node_runtime_dir = node_runtime;
+    layout.git_runtime_dir = git_runtime;
+    Ok(layout)
 }
 
 fn layout_with_npm_cache(
@@ -347,6 +370,20 @@ fn ensure_layout_directories(layout: &StorageBootstrap) -> Result<(), String> {
             )
         })?;
     }
+    for (label, path) in [
+        ("custom Node.js runtime", layout.node_runtime_dir.as_ref()),
+        ("custom Git runtime", layout.git_runtime_dir.as_ref()),
+    ] {
+        let Some(path) = path else { continue };
+        std::fs::create_dir_all(path).map_err(|error| {
+            format!(
+                "Failed to create {} directory {}: {}",
+                label,
+                path.display(),
+                error
+            )
+        })?;
+    }
     Ok(())
 }
 
@@ -359,9 +396,14 @@ fn map_workspace_to_target(workspace: &Path, source: &Path, target: &Path) -> Op
     Some(target.join(relative))
 }
 
-fn configured_workspace(source: &Path, target: &Path) -> PathBuf {
+fn configured_workspace(
+    source: &Path,
+    target: &Path,
+    runtime_mode: OpenClawRuntimeMode,
+) -> PathBuf {
     let source_default = source.join("workspace");
-    let configured = paths::read_workspace_from_config(&source.join("openclaw.json"));
+    let config_path = paths::config_path_for_runtime(source, runtime_mode);
+    let configured = paths::read_workspace_from_config(&config_path);
     match configured {
         Some(workspace) => map_workspace_to_target(&workspace, source, target).unwrap_or(workspace),
         None => target.join(
@@ -586,6 +628,12 @@ fn layout_directories(layout: &StorageBootstrap) -> Vec<PathBuf> {
     if let Some(prefix) = &layout.npm_prefix {
         directories.push(prefix.clone());
     }
+    if let Some(node_runtime) = &layout.node_runtime_dir {
+        directories.push(node_runtime.clone());
+    }
+    if let Some(git_runtime) = &layout.git_runtime_dir {
+        directories.push(git_runtime.clone());
+    }
     directories
 }
 
@@ -668,8 +716,8 @@ fn prepare_storage_target(
                 source_stats, stage_stats
             ));
         }
-        let source_config = copy_source.join("openclaw.json");
-        let copied_config = stage.path.join("openclaw.json");
+        let source_config = paths::config_path_for_runtime(&copy_source, layout.runtime_mode);
+        let copied_config = paths::config_path_for_runtime(&stage.path, layout.runtime_mode);
         if source_config.exists()
             && (!copied_config.exists() || hash_file(&source_config)? != hash_file(&copied_config)?)
         {
@@ -693,7 +741,9 @@ async fn run_gateway_service_command(
     config_path: &Path,
     args: &[&str],
 ) -> Result<(), String> {
-    let mut command = crate::commands::system::openclaw_command(binary);
+    let runtime =
+        crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf()).await?;
+    let mut command = runtime.command();
     let output = command
         .args(args)
         .env("PATH", crate::commands::system::openclaw_search_path())
@@ -1002,12 +1052,20 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
     Ok(StorageSetupStatus {
         configured,
         state_dir: layout.state_dir.to_string_lossy().to_string(),
-        config_path: layout.config_path.to_string_lossy().to_string(),
+        config_path: paths::active_config_path().to_string_lossy().to_string(),
         workspace_dir: layout.workspace_dir.to_string_lossy().to_string(),
         runtime_dir: layout.runtime_dir.to_string_lossy().to_string(),
         npm_cache_dir: layout.npm_cache_dir.to_string_lossy().to_string(),
         npm_prefix: layout
             .npm_prefix
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
+        node_runtime_dir: layout
+            .node_runtime_dir
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
+        git_runtime_dir: layout
+            .git_runtime_dir
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
         terminal_integration: layout.terminal_integration,
@@ -1073,9 +1131,15 @@ pub async fn configure_storage(
     let _operation_guard = operation_gate.lock_owned().await;
     let old_bootstrap = paths::load_storage_bootstrap();
     let source = paths::desktop_dir();
-    let old_config = paths::config_path();
-    let layout = selected_layout(target.clone(), locations)?;
-    let binary = resolve_openclaw_binary();
+    let old_config = paths::active_config_path();
+    let mut layout = selected_layout(target.clone(), locations)?;
+    // Reconfiguring or migrating storage must not silently switch a working
+    // Docker installation back to Native. A fresh setup can still choose a
+    // different mode immediately after this transaction completes.
+    if let Some(existing) = old_bootstrap.as_ref() {
+        layout.runtime_mode = existing.runtime_mode;
+    }
+    let binary = crate::commands::system::resolve_openclaw_binary_async().await;
     let port = std::fs::read_to_string(&old_config)
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
@@ -1086,19 +1150,31 @@ pub async fn configure_storage(
         let existing_layout = old_bootstrap.clone().unwrap_or_else(|| {
             StorageBootstrap::for_state_dir(
                 source.clone(),
-                Some(configured_workspace(&source, &source)),
+                Some(configured_workspace(
+                    &source,
+                    &source,
+                    OpenClawRuntimeMode::Native,
+                )),
             )
         });
         validate_location_changes(&layout, Some(&existing_layout))?;
         StorageReconfiguration::begin(old_bootstrap, &old_config, &layout)?.apply(&layout)?;
         return Ok(StorageConfigureResult {
             state_dir: layout.state_dir.to_string_lossy().to_string(),
-            config_path: layout.config_path.to_string_lossy().to_string(),
+            config_path: paths::active_config_path().to_string_lossy().to_string(),
             workspace_dir: layout.workspace_dir.to_string_lossy().to_string(),
             runtime_dir: layout.runtime_dir.to_string_lossy().to_string(),
             npm_cache_dir: layout.npm_cache_dir.to_string_lossy().to_string(),
             npm_prefix: layout
                 .npm_prefix
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string()),
+            node_runtime_dir: layout
+                .node_runtime_dir
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string()),
+            git_runtime_dir: layout
+                .git_runtime_dir
                 .as_ref()
                 .map(|path| path.to_string_lossy().to_string()),
             terminal_integration: layout.terminal_integration,
@@ -1122,10 +1198,15 @@ pub async fn configure_storage(
         let existing_layout = old_bootstrap.clone().unwrap_or_else(|| {
             StorageBootstrap::for_state_dir(
                 source.clone(),
-                Some(configured_workspace(&source, &source)),
+                Some(configured_workspace(
+                    &source,
+                    &source,
+                    OpenClawRuntimeMode::Native,
+                )),
             )
         });
-        let expected_workspace = configured_workspace(&source, &target);
+        let expected_workspace =
+            configured_workspace(&source, &target, existing_layout.runtime_mode);
         let expected_runtime =
             map_workspace_to_target(&existing_layout.runtime_dir, &source, &target)
                 .unwrap_or(existing_layout.runtime_dir);
@@ -1135,13 +1216,15 @@ pub async fn configure_storage(
         if layout.workspace_dir != expected_workspace
             || layout.runtime_dir != expected_runtime
             || layout.npm_cache_dir != expected_cache
+            || layout.node_runtime_dir != existing_layout.node_runtime_dir
+            || layout.git_runtime_dir != existing_layout.git_runtime_dir
         {
             return Err(
-                "Custom workspace, runtime, or cache locations require a fresh setup; migration preserves the existing layout"
+                "Custom workspace, runtime, cache, Node.js, or Git locations require a fresh setup; migration preserves the existing layout"
                     .into(),
             );
         }
-        let expected_layout = StorageBootstrap::with_locations(
+        let mut expected_layout = StorageBootstrap::with_locations(
             target.clone(),
             expected_workspace,
             expected_runtime,
@@ -1149,6 +1232,9 @@ pub async fn configure_storage(
             existing_layout.npm_prefix,
             existing_layout.terminal_integration,
         );
+        expected_layout.node_runtime_dir = existing_layout.node_runtime_dir;
+        expected_layout.git_runtime_dir = existing_layout.git_runtime_dir;
+        expected_layout.runtime_mode = existing_layout.runtime_mode;
         validate_location_changes(&layout, Some(&expected_layout))?;
     } else {
         validate_independent_locations(&layout)?;
@@ -1349,13 +1435,28 @@ pub async fn configure_storage(
     );
     Ok(StorageConfigureResult {
         state_dir: prepared.layout.state_dir.to_string_lossy().to_string(),
-        config_path: prepared.layout.config_path.to_string_lossy().to_string(),
+        config_path: paths::config_path_for_runtime(
+            &prepared.layout.state_dir,
+            prepared.layout.runtime_mode,
+        )
+        .to_string_lossy()
+        .to_string(),
         workspace_dir: prepared.layout.workspace_dir.to_string_lossy().to_string(),
         runtime_dir: prepared.layout.runtime_dir.to_string_lossy().to_string(),
         npm_cache_dir: prepared.layout.npm_cache_dir.to_string_lossy().to_string(),
         npm_prefix: prepared
             .layout
             .npm_prefix
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
+        node_runtime_dir: prepared
+            .layout
+            .node_runtime_dir
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
+        git_runtime_dir: prepared
+            .layout
+            .git_runtime_dir
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
         terminal_integration: prepared.layout.terminal_integration,
@@ -1417,8 +1518,41 @@ mod tests {
             runtime_dir: root.join("runtime").to_string_lossy().to_string(),
             npm_cache_dir: root.join("npm-cache").to_string_lossy().to_string(),
             npm_prefix: None,
+            node_runtime_dir: None,
+            git_runtime_dir: None,
             terminal_integration: false,
         }
+    }
+
+    #[test]
+    fn custom_dependency_runtime_locations_are_explicit_and_cannot_overlap_storage() {
+        let root = storage_test_root("custom-dependency-locations");
+        let mut selection = test_selection(&root);
+        selection.node_runtime_dir = Some(
+            root.with_file_name("node-runtime")
+                .to_string_lossy()
+                .to_string(),
+        );
+        selection.git_runtime_dir = Some(
+            root.with_file_name("git-runtime")
+                .to_string_lossy()
+                .to_string(),
+        );
+        let layout = selected_layout(root.clone(), selection).unwrap();
+        assert_eq!(
+            layout.node_runtime_dir,
+            Some(root.with_file_name("node-runtime"))
+        );
+        assert_eq!(
+            layout.git_runtime_dir,
+            Some(root.with_file_name("git-runtime"))
+        );
+        assert!(validate_independent_locations(&layout).is_ok());
+
+        let mut overlapping = test_selection(&root);
+        overlapping.node_runtime_dir = Some(overlapping.workspace_dir.clone());
+        let overlapping = selected_layout(root, overlapping).unwrap();
+        assert!(validate_independent_locations(&overlapping).is_err());
     }
 
     struct FailAfterConfigPatch;
@@ -1655,6 +1789,47 @@ mod tests {
             serde_json::Value::String(migrated_workspace.to_string_lossy().to_string())
         );
         assert!(source.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bug_rt01_migration_rewrites_the_selected_docker_config() {
+        let root = storage_test_root("docker-runtime-config");
+        let source = root.join("source");
+        let target = root.join("target");
+        let source_workspace = source.join("workspace-docker");
+        std::fs::create_dir_all(source.join("docker")).unwrap();
+        std::fs::create_dir_all(&source_workspace).unwrap();
+        std::fs::write(
+            source.join("openclaw.json"),
+            serde_json::json!({
+                "agents": { "defaults": { "workspace": source.join("native-workspace") } }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            source.join("docker").join("openclaw.json"),
+            serde_json::json!({
+                "agents": { "defaults": { "workspace": source_workspace } }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let migrated_workspace = target.join("workspace-docker");
+        let mut layout = test_layout(&target, migrated_workspace.clone());
+        layout.runtime_mode = OpenClawRuntimeMode::Docker;
+        prepare_storage_target(&source, &target, true, layout).unwrap();
+        let migrated_config: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(target.join("docker").join("openclaw.json")).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            migrated_config["agents"]["defaults"]["workspace"],
+            serde_json::Value::String(migrated_workspace.to_string_lossy().to_string())
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

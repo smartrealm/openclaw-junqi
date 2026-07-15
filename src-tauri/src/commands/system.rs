@@ -22,12 +22,71 @@ pub struct GitStatus {
     pub source: Option<String>, // "local" or "system"
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct NodeStatus {
     pub available: bool,
     pub version: Option<String>,
     pub path: Option<String>,
     pub source: Option<String>, // "local" or "system"
+}
+
+/// A native OpenClaw executable bound to the exact Node.js runtime that was
+/// checked against the installed package's `engines.node` contract. Keeping
+/// this pair together prevents a later PATH lookup from silently selecting an
+/// incompatible Node.js executable on Windows or Unix.
+#[derive(Debug, Clone)]
+pub(crate) struct NativeOpenclawRuntime {
+    binary: PathBuf,
+    node: PathBuf,
+}
+
+impl NativeOpenclawRuntime {
+    pub(crate) fn command(&self) -> tokio::process::Command {
+        openclaw_command_with_node(&self.binary, Some(&self.node))
+    }
+}
+
+pub(crate) fn native_openclaw_runtime(
+    binary: PathBuf,
+    node: &NodeStatus,
+) -> Result<NativeOpenclawRuntime, String> {
+    if !node.available {
+        return Err("A compatible Node.js runtime is not available".to_string());
+    }
+    let node = node
+        .path
+        .as_deref()
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            "The compatible Node.js runtime did not report an executable path".to_string()
+        })?;
+    Ok(NativeOpenclawRuntime { binary, node })
+}
+
+/// Resolve the selected native OpenClaw executable and a compatible Node.js
+/// runtime without changing the machine. Mutating workflows call setup's
+/// ensure helper first, then construct this same context from its result.
+pub(crate) async fn resolve_compatible_native_openclaw_runtime(
+) -> Result<NativeOpenclawRuntime, String> {
+    let binary = resolve_openclaw_binary_async().await.ok_or_else(|| {
+        "OpenClaw is not installed; official CLI operations are unavailable".to_string()
+    })?;
+    compatible_native_openclaw_runtime(binary).await
+}
+
+pub(crate) async fn compatible_native_openclaw_runtime(
+    binary: PathBuf,
+) -> Result<NativeOpenclawRuntime, String> {
+    let requirement = node_requirement_for_openclaw_binary(&binary)?;
+    let node = check_node_for_requirement(&requirement).await?;
+    if !node.available {
+        return Err(format!(
+            "OpenClaw requires Node.js {}; no compatible runtime was found",
+            requirement.expression()
+        ));
+    }
+    native_openclaw_runtime(binary, &node)
 }
 
 #[derive(Debug, Serialize)]
@@ -71,6 +130,30 @@ async fn get_node_version(node_path: &str) -> Option<String> {
 
 #[tauri::command]
 pub async fn check_npm() -> Result<NpmStatus, String> {
+    // A user-selected portable Node.js is an explicit runtime choice. Keep its
+    // bundled npm paired with it instead of mixing it with a system npm.
+    if let (Some(node), Some(npm)) = (
+        paths::configured_node_path(),
+        paths::configured_npm_cli_path(),
+    ) {
+        if node.is_file() && npm.is_file() {
+            let mut command = tokio::process::Command::new(&node);
+            command.arg(&npm).arg("--version");
+            platform::configure_background_command(&mut command);
+            if let Ok(output) = command.output().await {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if output.status.success() && !version.is_empty() {
+                    return Ok(NpmStatus {
+                        available: true,
+                        version: Some(version),
+                        path: Some(npm.to_string_lossy().into_owned()),
+                        source: Some("local".into()),
+                    });
+                }
+            }
+        }
+    }
+
     let system_npm = platform::detect_path("npm");
     let system_npm = if system_npm.is_empty() {
         platform::bin_name("npm")
@@ -94,8 +177,8 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
 
     // Older JunQi releases installed a private Node/npm pair. Keep it as a
     // compatibility fallback, but never let it shadow a system installation.
-    let local_node = paths::local_node_path();
-    let local_npm = paths::local_npm_cli_path();
+    let local_node = paths::legacy_local_node_path();
+    let local_npm = paths::legacy_local_npm_cli_path();
     if local_node.is_file() && local_npm.is_file() {
         let mut command = tokio::process::Command::new(&local_node);
         command.arg(&local_npm).arg("--version");
@@ -121,24 +204,60 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
     })
 }
 
-/// Build an OpenClaw command without relying on Windows command-shim behavior.
-/// npm's `openclaw.cmd` is only a wrapper; invoking the package entry point with
-/// the detected Node.js executable keeps Gateway and update checks on the same
-/// runtime that passed compatibility validation.
-pub(crate) fn openclaw_command(binary: &Path) -> tokio::process::Command {
+fn portable_node_is_compatible(node: &Path) -> bool {
+    node.is_file()
+        && std::process::Command::new(node)
+            .arg("--version")
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+            .is_some_and(|version| {
+                installed_openclaw_node_requirement()
+                    .unwrap_or_else(|_| NodeRuntimeRequirement::fallback())
+                    .supports(&version)
+            })
+}
+
+fn legacy_managed_node_is_compatible() -> bool {
+    portable_node_is_compatible(&paths::legacy_local_node_path())
+}
+
+/// Build an OpenClaw command without relying on command-shim behavior when an
+/// exact compatible Node.js runtime is available. npm's `openclaw.cmd` is only
+/// a wrapper, and Unix npm launchers can drift through `env node` as well.
+pub(crate) fn openclaw_command_with_node(
+    binary: &Path,
+    node: Option<&Path>,
+) -> tokio::process::Command {
     #[cfg(windows)]
     if let Some(entry) = npm_openclaw_entry(binary) {
-        let detected = platform::detect_path("node");
-        let node = if detected.is_empty() {
-            let legacy = paths::local_node_path();
-            if legacy.is_file() {
-                legacy.to_string_lossy().into_owned()
-            } else {
-                platform::bin_name("node")
-            }
+        let node = if let Some(node) = node {
+            node.to_path_buf()
+        } else if let Some(configured) =
+            paths::configured_node_path().filter(|path| portable_node_is_compatible(path))
+        {
+            configured
         } else {
-            detected
+            let legacy = paths::legacy_local_node_path();
+            if legacy_managed_node_is_compatible() {
+                legacy
+            } else {
+                let detected = platform::detect_path("node");
+                if detected.is_empty() {
+                    PathBuf::from(platform::bin_name("node"))
+                } else {
+                    PathBuf::from(detected)
+                }
+            }
         };
+        let mut command = tokio::process::Command::new(node);
+        command.arg(entry);
+        return command;
+    }
+
+    #[cfg(not(windows))]
+    if let (Some(node), Some(entry)) = (node, npm_openclaw_entry(binary)) {
         let mut command = tokio::process::Command::new(node);
         command.arg(entry);
         return command;
@@ -147,21 +266,39 @@ pub(crate) fn openclaw_command(binary: &Path) -> tokio::process::Command {
     tokio::process::Command::new(binary)
 }
 
-#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn npm_openclaw_entry(binary: &Path) -> Option<PathBuf> {
-    let is_cmd = binary
+    if binary
         .extension()
-        .and_then(|value| value.to_str())
-        .is_some_and(|value| value.eq_ignore_ascii_case("cmd"));
-    if !is_cmd {
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
+    {
         return None;
     }
-    let entry = binary
-        .parent()?
-        .join("node_modules")
-        .join("openclaw")
-        .join("openclaw.mjs");
+    let entry = openclaw_package_dir(binary)?.join("openclaw.mjs");
     entry.is_file().then_some(entry)
+}
+
+/// Locate the npm CLI shipped with the exact Node.js executable selected for
+/// an installation. This avoids mixing a compatible Node.js with an unrelated
+/// `npm` shim from PATH after a system upgrade or a custom portable runtime.
+pub(crate) fn npm_cli_for_node(node: &Path) -> Option<PathBuf> {
+    let bin_dir = node.parent()?;
+    let direct = bin_dir
+        .join("node_modules")
+        .join("npm")
+        .join("bin")
+        .join("npm-cli.js");
+    if direct.is_file() {
+        return Some(direct);
+    }
+    let unix_global = bin_dir
+        .parent()?
+        .join("lib")
+        .join("node_modules")
+        .join("npm")
+        .join("bin")
+        .join("npm-cli.js");
+    unix_global.is_file().then_some(unix_global)
 }
 
 #[tauri::command]
@@ -186,26 +323,45 @@ pub async fn check_node() -> Result<NodeStatus, String> {
 pub(crate) async fn check_node_for_requirement(
     requirement: &NodeRuntimeRequirement,
 ) -> Result<NodeStatus, String> {
-    // System installations are authoritative. JunQi no longer shadows them
-    // with a private runtime when a compatible Node.js is already installed.
+    // An explicit portable runtime is the user's choice and must not drift to
+    // whichever Node.js happens to be first on PATH. A missing or incompatible
+    // selected runtime is reported as such so recovery can repair that exact
+    // location instead of silently changing environments.
+    if let Some(configured) = paths::configured_node_path() {
+        let path_str = configured.to_string_lossy().to_string();
+        let version = get_node_version(&path_str).await;
+        return Ok(NodeStatus {
+            available: version
+                .as_ref()
+                .is_some_and(|version| requirement.supports(version)),
+            version,
+            path: Some(path_str),
+            source: Some("local".into()),
+        });
+    }
+
+    // System Node.js is authoritative for default setup. The legacy private
+    // runtime below is only a compatibility fallback for older installations.
     let system_node = platform::detect_path("node");
     let system_node = if system_node.is_empty() {
         platform::bin_name("node")
     } else {
         system_node
     };
-    if let Some(version) = get_node_version(&system_node).await {
+    let system_version = get_node_version(&system_node).await;
+    if system_version
+        .as_ref()
+        .is_some_and(|version| requirement.supports(version))
+    {
         return Ok(NodeStatus {
-            available: requirement.supports(&version),
-            version: Some(version),
-            path: Some(system_node),
+            available: true,
+            version: system_version,
+            path: Some(system_node.clone()),
             source: Some("system".into()),
         });
     }
 
-    // Legacy JunQi runtimes remain detectable for existing users, but are a
-    // compatibility fallback rather than the default installation target.
-    let local = paths::local_node_path();
+    let local = paths::legacy_local_node_path();
     if local.exists() {
         let path_str = local.to_string_lossy().to_string();
         let version = get_node_version(&path_str).await;
@@ -218,11 +374,22 @@ pub(crate) async fn check_node_for_requirement(
                 source: Some("local".into()),
             });
         }
+        if system_version.is_none() {
+            return Ok(NodeStatus {
+                available: false,
+                version,
+                path: Some(path_str),
+                source: Some("local".into()),
+            });
+        }
+    }
+
+    if system_version.is_some() {
         return Ok(NodeStatus {
             available: false,
-            version,
-            path: Some(path_str),
-            source: Some("local".into()),
+            version: system_version,
+            path: Some(system_node),
+            source: Some("system".into()),
         });
     }
 
@@ -240,93 +407,44 @@ pub async fn check_openclaw() -> Result<OpenclawStatus, String> {
 }
 
 pub(crate) fn openclaw_search_path() -> String {
-    // These three entries mirror the three write tiers of
-    // `setup::pick_install_target`, in the same priority order, so the
-    // probe surface is exactly the set of places a canonical
-    // `npm i -g openclaw` (or its XDG/sandbox fallback) can land.
+    // Prefer locations selected by setup or reported by npm. Generic PATH is
+    // retained as the final discovery surface; do not infer a user profile or
+    // an installation directory from a machine-specific directory pattern.
     let mut path_parts = vec![
+        paths::configured_node_path()
+            .filter(|path| path.is_file())
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        legacy_managed_node_is_compatible()
+            .then(paths::legacy_local_node_path)
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        paths::configured_git_path()
+            .filter(|path| path.is_file())
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        paths::legacy_local_git_path()
+            .is_file()
+            .then(paths::legacy_local_git_path)
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        // The setup guide persists a user-selected prefix. Search its exact
+        // npm shim directory before any heuristic so restarts keep using the
+        // location the user approved.
+        paths::configured_npm_prefix()
+            .map(|prefix| paths::npm_bin_dir_for_prefix(&prefix))
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default(),
         // Tier 1: user's actual npm prefix (read from `~/.npmrc`). This is
         // the canonical `npm i -g openclaw` bin dir the user finds on PATH.
         paths::user_npm_bin_dir()
             .map(|d| d.to_string_lossy().to_string())
             .unwrap_or_default(),
-        // Tier 2: XDG fallback bin (`~/.local/bin` on Unix, `~/.local` on
-        // Windows) — where we land when the user's npm prefix isn't writable.
-        paths::local_npm_bin_dir().to_string_lossy().to_string(),
-        // Tier 3: JunQi-managed sandbox prefix, the last-resort target when
-        // neither the user prefix nor `~/.local` is writable.
-        paths::openclaw_global_bin_dir()
-            .to_string_lossy()
-            .to_string(),
     ];
-    if let Some(home) = dirs::home_dir() {
-        path_parts.push(
-            home.join(".local")
-                .join("bin")
-                .to_string_lossy()
-                .to_string(),
-        );
-        path_parts.push(
-            home.join(".npm-global")
-                .join("bin")
-                .to_string_lossy()
-                .to_string(),
-        );
-        path_parts.push(home.join(".pnpm").to_string_lossy().to_string());
-        path_parts.push(home.join(".bun").join("bin").to_string_lossy().to_string());
-        path_parts.push(
-            home.join(".volta")
-                .join("bin")
-                .to_string_lossy()
-                .to_string(),
-        );
-        path_parts.push(
-            home.join(".cargo")
-                .join("bin")
-                .to_string_lossy()
-                .to_string(),
-        );
-        // asdf / mise shims (this is where many users' `node` actually lives)
-        path_parts.push(
-            home.join(".asdf")
-                .join("shims")
-                .to_string_lossy()
-                .to_string(),
-        );
-        #[cfg(windows)]
-        {
-            // npm global bin on Windows. Prefer APPDATA but also include the
-            // canonical Roaming/npm path for Store/portable Node installs.
-            if let Ok(appdata) = std::env::var("APPDATA") {
-                path_parts.push(
-                    std::path::PathBuf::from(appdata)
-                        .join("npm")
-                        .to_string_lossy()
-                        .to_string(),
-                );
-            }
-            path_parts.push(
-                home.join("AppData")
-                    .join("Roaming")
-                    .join("npm")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            path_parts.push(
-                home.join("AppData")
-                    .join("Local")
-                    .join("pnpm")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            path_parts.push(
-                home.join("scoop")
-                    .join("shims")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-        }
-    }
     for env_key in [
         "OPENCLAW_HOME",
         "PNPM_HOME",
@@ -339,68 +457,6 @@ pub(crate) fn openclaw_search_path() -> String {
             path_parts.push(base.to_string_lossy().to_string());
             path_parts.push(base.join("bin").to_string_lossy().to_string());
         }
-    }
-    #[cfg(windows)]
-    {
-        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-            let base = std::path::PathBuf::from(localappdata);
-            path_parts.push(base.join("pnpm").to_string_lossy().to_string());
-            path_parts.push(
-                base.join("Programs")
-                    .join("OpenClaw")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            path_parts.push(
-                base.join("Programs")
-                    .join("OpenClaw")
-                    .join("bin")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            path_parts.push(
-                base.join("OpenClaw")
-                    .join("bin")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-        }
-        if let Ok(program_files) = std::env::var("ProgramFiles") {
-            let base = std::path::PathBuf::from(program_files);
-            path_parts.push(base.join("OpenClaw").to_string_lossy().to_string());
-            path_parts.push(
-                base.join("OpenClaw")
-                    .join("bin")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-        }
-        if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
-            let base = std::path::PathBuf::from(program_files_x86);
-            path_parts.push(base.join("OpenClaw").to_string_lossy().to_string());
-            path_parts.push(
-                base.join("OpenClaw")
-                    .join("bin")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-        }
-        if let Ok(chocolatey) = std::env::var("ChocolateyInstall") {
-            path_parts.push(
-                std::path::PathBuf::from(chocolatey)
-                    .join("bin")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-        }
-    }
-    // Homebrew: macOS (Apple Silicon + Intel) and the classic /usr/local prefix.
-    path_parts.push("/opt/homebrew/bin".to_string());
-    path_parts.push("/usr/local/bin".to_string());
-    #[cfg(target_os = "linux")]
-    {
-        // Linuxbrew is the Linux port of Homebrew — only present on Linux.
-        path_parts.push("/home/linuxbrew/.linuxbrew/bin".to_string());
     }
     if let Ok(existing) = std::env::var("PATH") {
         path_parts.push(existing);
@@ -444,23 +500,20 @@ fn openclaw_candidate_matches(candidate: &Path, selected: &Path) -> bool {
 }
 
 fn classify_openclaw_binary_path(path: &Path) -> Option<&'static str> {
+    if let Some(prefix) = paths::configured_npm_prefix() {
+        let bin_dir = paths::npm_bin_dir_for_prefix(&prefix);
+        for name in openclaw_binary_names() {
+            if openclaw_candidate_matches(&bin_dir.join(name), path) {
+                return Some("configured-npm-prefix");
+            }
+        }
+    }
+
     if let Some(bin_dir) = paths::user_npm_bin_dir() {
         for name in openclaw_binary_names() {
             if openclaw_candidate_matches(&bin_dir.join(name), path) {
                 return Some("user-npm-prefix");
             }
-        }
-    }
-
-    for name in openclaw_binary_names() {
-        if openclaw_candidate_matches(&paths::local_npm_bin_dir().join(name), path) {
-            return Some("xdg-fallback");
-        }
-    }
-
-    for name in openclaw_binary_names() {
-        if openclaw_candidate_matches(&paths::openclaw_global_bin_dir().join(name), path) {
-            return Some("junqi-sandbox");
         }
     }
 
@@ -493,6 +546,49 @@ pub(crate) fn resolve_openclaw_binary() -> Option<PathBuf> {
     resolve_openclaw_binary_with_source().map(|(path, _source)| path)
 }
 
+async fn npm_reported_global_prefix() -> Option<PathBuf> {
+    let npm = platform::detect_path(&platform::bin_name("npm"));
+    if npm.trim().is_empty() {
+        return None;
+    }
+    let mut command = tokio::process::Command::new(npm);
+    command
+        .args(["config", "get", "prefix"])
+        .env("PATH", platform::login_shell_path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    platform::configure_background_command(&mut command);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), command.output())
+        .await
+        .ok()?
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let prefix = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    prefix.is_absolute().then_some(prefix)
+}
+
+/// Resolve OpenClaw asynchronously using npm's own effective configuration as
+/// a final discovery source. This covers pre-existing installations whose
+/// prefix comes from a global npm config, environment, or Node manager rather
+/// than a visible `.npmrc` entry.
+pub(crate) async fn resolve_openclaw_binary_async() -> Option<PathBuf> {
+    if let Some(binary) = resolve_openclaw_binary() {
+        return Some(binary);
+    }
+    let prefix = npm_reported_global_prefix().await?;
+    let bin_dir = paths::npm_bin_dir_for_prefix(&prefix);
+    for name in openclaw_binary_names() {
+        let candidate = bin_dir.join(name);
+        if is_valid_openclaw_candidate(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)> {
     if let Ok(explicit) = std::env::var("OPENCLAW_BIN") {
         let explicit = PathBuf::from(explicit);
@@ -508,26 +604,22 @@ pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)>
         return Some((selected, source));
     }
 
+    if let Some(prefix) = paths::configured_npm_prefix() {
+        let bin_dir = paths::npm_bin_dir_for_prefix(&prefix);
+        for name in openclaw_binary_names() {
+            let candidate = bin_dir.join(name);
+            if is_valid_openclaw_candidate(&candidate) {
+                return Some((candidate, "configured-npm-prefix".into()));
+            }
+        }
+    }
+
     if let Some(bin_dir) = paths::user_npm_bin_dir() {
         for name in openclaw_binary_names() {
             let candidate = bin_dir.join(name);
             if is_valid_openclaw_candidate(&candidate) {
                 return Some((candidate, "user-npm-prefix".into()));
             }
-        }
-    }
-
-    for name in openclaw_binary_names() {
-        let candidate = paths::local_npm_bin_dir().join(name);
-        if is_valid_openclaw_candidate(&candidate) {
-            return Some((candidate, "xdg-fallback".into()));
-        }
-    }
-
-    for name in openclaw_binary_names() {
-        let candidate = paths::openclaw_global_bin_dir().join(name);
-        if is_valid_openclaw_candidate(&candidate) {
-            return Some((candidate, "junqi-sandbox".into()));
         }
     }
 
@@ -555,18 +647,24 @@ pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)>
 
 pub(crate) async fn detect_openclaw() -> OpenclawStatus {
     let search_path = openclaw_search_path();
-    let Some((path, source)) = resolve_openclaw_binary_with_source() else {
-        return OpenclawStatus {
-            installed: false,
-            version: None,
-            path: None,
-            source: None,
-            binary_found: false,
-            version_ok: false,
-            package_valid: false,
-            gateway_command_ok: false,
-            error: Some("OpenClaw binary was not found on JunQi's search path".into()),
-        };
+    let (path, source) = match resolve_openclaw_binary_with_source() {
+        Some(resolved) => resolved,
+        None => match resolve_openclaw_binary_async().await {
+            Some(path) => (path, "npm-config-prefix".to_string()),
+            None => {
+                return OpenclawStatus {
+                    installed: false,
+                    version: None,
+                    path: None,
+                    source: None,
+                    binary_found: false,
+                    version_ok: false,
+                    package_valid: false,
+                    gateway_command_ok: false,
+                    error: Some("OpenClaw binary was not found on JunQi's search path".into()),
+                };
+            }
+        },
     };
     let _ = persist_selected_openclaw_binary(&path);
     let mut status = validate_openclaw_binary(&path, &search_path).await;
@@ -689,41 +787,85 @@ fn read_openclaw_cli_version(bin: &Path) -> Option<String> {
     parse_openclaw_version(&text)
 }
 
-/// Resolve the `openclaw` package version from common npm layouts:
-/// symlinked Unix bins resolve inside node_modules/openclaw, while Windows
-/// shims usually sit beside node_modules/openclaw/package.json.
-fn read_openclaw_package_metadata(bin: &Path) -> Option<OpenclawPackageMetadata> {
-    let real = std::fs::canonicalize(bin).ok()?;
-    let mut dir = real.parent();
-    for _ in 0..6 {
-        let d = dir?;
-        if let Some(metadata) = read_openclaw_package_metadata_file(&d.join("package.json")) {
-            return Some(metadata);
+fn is_openclaw_package_dir(dir: &Path) -> bool {
+    read_openclaw_package_metadata_file(&dir.join("package.json")).is_some()
+}
+
+/// Resolve the physical `openclaw` package root from a selected executable.
+///
+/// npm can expose the same package through a Windows prefix shim, a
+/// `node_modules/.bin` shim, or a Unix symlink. The resolver starts from both
+/// the visible binary and its canonical target, then verifies `package.json`
+/// instead of assuming a user-specific global prefix.
+pub(crate) fn openclaw_package_dir(binary: &Path) -> Option<PathBuf> {
+    let canonical = std::fs::canonicalize(binary).unwrap_or_else(|_| binary.to_path_buf());
+    for candidate in [binary.to_path_buf(), canonical] {
+        let mut dir = candidate.parent();
+        for _ in 0..8 {
+            let Some(current) = dir else {
+                break;
+            };
+            if is_openclaw_package_dir(current) {
+                return Some(current.to_path_buf());
+            }
+            let nested = current.join("node_modules").join("openclaw");
+            if is_openclaw_package_dir(&nested) {
+                return Some(nested);
+            }
+            dir = current.parent();
         }
-        let nested_package_json = d.join("node_modules").join("openclaw").join("package.json");
-        if let Some(metadata) = read_openclaw_package_metadata_file(&nested_package_json) {
-            return Some(metadata);
-        }
-        dir = d.parent();
     }
     None
+}
+
+/// Derive the npm global prefix owning an installed OpenClaw package. The
+/// structure is validated through `openclaw_package_dir`; `windows` only
+/// selects npm's documented shim layout, never a hard-coded filesystem path.
+pub(crate) fn npm_prefix_for_openclaw_binary(binary: &Path, windows: bool) -> Option<PathBuf> {
+    if !binary.is_file() {
+        return None;
+    }
+    let package_dir = openclaw_package_dir(binary)?;
+    let node_modules = package_dir.parent()?;
+    if node_modules.file_name().and_then(|name| name.to_str())? != "node_modules" {
+        return None;
+    }
+    let layout_root = node_modules.parent()?.to_path_buf();
+    if windows {
+        return Some(layout_root);
+    }
+    if layout_root.file_name().and_then(|name| name.to_str()) == Some("lib") {
+        return layout_root.parent().map(Path::to_path_buf);
+    }
+    Some(layout_root)
+}
+
+fn read_openclaw_package_metadata(bin: &Path) -> Option<OpenclawPackageMetadata> {
+    let package_dir = openclaw_package_dir(bin)?;
+    read_openclaw_package_metadata_file(&package_dir.join("package.json"))
 }
 
 fn read_openclaw_pkg_version(bin: &Path) -> Option<String> {
     read_openclaw_package_metadata(bin).map(|metadata| metadata.version)
 }
 
-pub(crate) fn installed_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
-    let Some(binary) = resolve_openclaw_binary() else {
-        return Ok(NodeRuntimeRequirement::fallback());
-    };
-    let Some(metadata) = read_openclaw_package_metadata(&binary) else {
+pub(crate) fn node_requirement_for_openclaw_binary(
+    binary: &Path,
+) -> Result<NodeRuntimeRequirement, String> {
+    let Some(metadata) = read_openclaw_package_metadata(binary) else {
         return Ok(NodeRuntimeRequirement::fallback());
     };
     let Some(expression) = metadata.node_requirement else {
         return Ok(NodeRuntimeRequirement::fallback());
     };
     NodeRuntimeRequirement::parse(expression, NodeRequirementSource::InstalledPackage)
+}
+
+pub(crate) fn installed_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
+    let Some(binary) = resolve_openclaw_binary() else {
+        return Ok(NodeRuntimeRequirement::fallback());
+    };
+    node_requirement_for_openclaw_binary(&binary)
 }
 
 async fn get_git_version(git_path: &str) -> Option<String> {
@@ -794,6 +936,17 @@ pub async fn check_git() -> Result<GitStatus, String> {
     #[cfg(windows)]
     crate::commands::setup::refresh_path_from_registry();
 
+    if let Some(configured) = paths::configured_git_path() {
+        let path = configured.to_string_lossy().into_owned();
+        let version = get_git_version(&path).await;
+        return Ok(GitStatus {
+            available: version.is_some(),
+            version,
+            path: Some(path),
+            source: Some("local".into()),
+        });
+    }
+
     #[cfg(target_os = "macos")]
     {
         for git_path in macos_git_candidates() {
@@ -836,28 +989,13 @@ pub async fn check_git() -> Result<GitStatus, String> {
             });
         }
 
-        // Check default install paths (Windows)
-        #[cfg(windows)]
-        {
-            if let Some(git_path) = crate::commands::setup::find_git_in_default_paths() {
-                let path_str = git_path.to_string_lossy().to_string();
-                if let Some(version) = get_git_version(&path_str).await {
-                    return Ok(GitStatus {
-                        available: true,
-                        version: Some(version),
-                        path: Some(path_str),
-                        source: Some("system".into()),
-                    });
-                }
-            }
-        }
-
-        let legacy = paths::local_git_path();
+        let legacy = paths::legacy_local_git_path();
         if legacy.is_file() {
             let path = legacy.to_string_lossy().into_owned();
+            let version = get_git_version(&path).await;
             return Ok(GitStatus {
-                available: true,
-                version: get_git_version(&path).await,
+                available: version.is_some(),
+                version,
                 path: Some(path),
                 source: Some("local".into()),
             });
@@ -975,8 +1113,8 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 #[cfg(test)]
 mod tests {
     use super::{
-        npm_openclaw_entry, parse_openclaw_version, path_text_for_display,
-        read_openclaw_package_metadata,
+        npm_cli_for_node, npm_openclaw_entry, npm_prefix_for_openclaw_binary, openclaw_package_dir,
+        parse_openclaw_version, path_text_for_display, read_openclaw_package_metadata,
     };
 
     #[test]
@@ -995,9 +1133,72 @@ mod tests {
             .join("openclaw.mjs");
         std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
         std::fs::write(&entry, "").unwrap();
+        std::fs::write(
+            entry.parent().unwrap().join("package.json"),
+            r#"{"name":"openclaw","version":"2026.7.1"}"#,
+        )
+        .unwrap();
 
         assert_eq!(npm_openclaw_entry(&root.join("openclaw.cmd")), Some(entry));
         assert_eq!(npm_openclaw_entry(&root.join("openclaw.exe")), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn windows_npm_dot_bin_shim_uses_the_verified_package_prefix() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-openclaw-dot-bin-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let package = root.join("node_modules").join("openclaw");
+        let entry = package.join("openclaw.mjs");
+        let shim = root.join("node_modules").join(".bin").join("openclaw.cmd");
+        std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(&shim, "@echo off").unwrap();
+        std::fs::write(&entry, "").unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"name":"openclaw","version":"2026.7.1"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(openclaw_package_dir(&shim), Some(package));
+        assert_eq!(npm_openclaw_entry(&shim), Some(entry));
+        assert_eq!(
+            npm_prefix_for_openclaw_binary(&shim, true),
+            Some(root.clone())
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn npm_cli_is_derived_from_the_selected_node_layout() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-node-npm-layout-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let node = root.join("bin").join("node");
+        let npm = root
+            .join("lib")
+            .join("node_modules")
+            .join("npm")
+            .join("bin")
+            .join("npm-cli.js");
+        std::fs::create_dir_all(node.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(npm.parent().unwrap()).unwrap();
+        std::fs::write(&node, "").unwrap();
+        std::fs::write(&npm, "").unwrap();
+
+        assert_eq!(npm_cli_for_node(&node), Some(npm));
         let _ = std::fs::remove_dir_all(root);
     }
 

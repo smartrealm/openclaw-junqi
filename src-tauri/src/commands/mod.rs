@@ -20,6 +20,7 @@ pub mod gateway_logs;
 pub mod gateway_rescue;
 pub mod gateway_supervisor;
 pub mod git_neu;
+pub(crate) mod git_runtime;
 pub mod hooks;
 pub mod maintenance;
 pub mod managed_files;

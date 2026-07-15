@@ -9,6 +9,12 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const OPENCLAW_IMAGE: &str = "ghcr.io/openclaw/openclaw";
+/// Stable container name owned exclusively by JunQi. Keep every Docker entry
+/// point on this constant so terminal integration and CLI helpers cannot drift
+/// from the lifecycle manager.
+pub(crate) const OPENCLAW_CONTAINER_NAME: &str = "maxauto-openclaw";
+pub(crate) const OPENCLAW_CONTAINER_STATE_DIR: &str = "/home/node/.openclaw";
+pub(crate) const OPENCLAW_CONTAINER_CONFIG_PATH: &str = "/home/node/.openclaw/openclaw.json";
 
 #[derive(Default)]
 struct DockerPullProgress {
@@ -155,7 +161,7 @@ pub struct DockerStatus {
     pub daemon_running: bool,
 }
 
-async fn resolve_docker_bin() -> Result<String, String> {
+pub(crate) async fn resolve_docker_bin() -> Result<String, String> {
     let detected = platform::detect_path("docker");
     if !detected.is_empty()
         && tokio::process::Command::new(&detected)
@@ -244,6 +250,45 @@ async fn resolve_docker_bin() -> Result<String, String> {
     }
 
     Err("Docker CLI not found".to_string())
+}
+
+fn docker_gateway_configured_port() -> u16 {
+    let path = paths::docker_config_path();
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|config| crate::commands::config::gateway_port_from_config(&config))
+        .unwrap_or_else(crate::commands::config::default_gateway_port)
+}
+
+/// Release only the foreground Gateway child owned by this desktop process
+/// before Docker binds the same local port. External services stay untouched.
+pub(crate) async fn release_managed_native_gateway_for_docker(
+    state: &crate::state::GatewayProcess,
+    port: u16,
+) -> Result<bool, String> {
+    let native_child = {
+        let mut child = state.child.lock().map_err(|error| error.to_string())?;
+        child.take()
+    };
+    let Some(mut child) = native_child else {
+        return Ok(false);
+    };
+    crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+    crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
+    Ok(true)
+}
+
+/// Stop JunQi's named Docker container before the selected Native runtime
+/// reclaims its port. The container name is owned by JunQi, so this never
+/// targets arbitrary user containers.
+pub(crate) async fn release_managed_docker_gateway_for_native(port: u16) -> Result<bool, String> {
+    if !docker_gateway_status(None).await?.running {
+        return Ok(false);
+    }
+    stop_docker_gateway_locked().await?;
+    crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
+    Ok(true)
 }
 
 /// Check if Docker CLI is installed and the daemon is running.
@@ -391,13 +436,18 @@ pub async fn start_docker_gateway(
 ) -> Result<GatewayStatus, String> {
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate.lock_owned().await;
+    let target_port = port.unwrap_or_else(docker_gateway_configured_port);
+    // A mode switch must release JunQi's own native child before Docker binds
+    // the selected port. Do not touch an unknown external service here: a
+    // subsequent `docker run` will surface a precise port-conflict error.
+    release_managed_native_gateway_for_docker(&state, target_port).await?;
     state.transition(
         Some(crate::state::gateway_process::GatewayLifecycle::Starting),
         None,
         None,
         "start_docker_gateway: starting container",
     );
-    let result = start_docker_gateway_locked(app, port, tag).await;
+    let result = start_docker_gateway_locked(app, Some(target_port), tag).await;
     match &result {
         Ok(_) => state.transition(
             Some(crate::state::gateway_process::GatewayLifecycle::Running),
@@ -421,18 +471,20 @@ pub(crate) async fn start_docker_gateway_locked(
     port: Option<u16>,
     tag: Option<String>,
 ) -> Result<GatewayStatus, String> {
-    let port = port.unwrap_or_else(crate::commands::config::default_gateway_port);
-    let container_port = crate::commands::config::default_gateway_port();
+    let container_port = docker_gateway_configured_port();
+    let port = port.unwrap_or(container_port);
     let tag = tag.unwrap_or_else(|| "latest".to_string());
     let image = format!("{}:{}", OPENCLAW_IMAGE, tag);
-    let base_dir = paths::desktop_dir();
     // Docker mode is a self-contained alternative deployment: the whole `docker/`
     // directory is bind-mounted as the container's `~/.openclaw` home, and the
     // gateway inside binds to `lan` (0.0.0.0). This is intentionally SEPARATE from
     // native mode, which relies on the user's local openclaw config at
     // `paths::config_path()` (~/.openclaw/openclaw.json) with loopback bind.
-    let config_dir = base_dir.join("docker");
-    let config_path = config_dir.join("openclaw.json");
+    let config_path = paths::docker_config_path();
+    let config_dir = config_path
+        .parent()
+        .ok_or("Invalid Docker configuration path")?
+        .to_path_buf();
 
     // Ensure directories exist
     std::fs::create_dir_all(&config_dir)
@@ -450,18 +502,18 @@ pub(crate) async fn start_docker_gateway_locked(
     // Remove existing container if it exists (ignore errors)
     let docker_bin = resolve_docker_bin().await?;
     let _ = tokio::process::Command::new(&docker_bin)
-        .args(["rm", "-f", "maxauto-openclaw"])
+        .args(["rm", "-f", OPENCLAW_CONTAINER_NAME])
         .output()
         .await;
 
     emit(&app, "container", "Starting Docker container...", 0.15);
 
     let config_mount = format!(
-        "{}:/home/node/.openclaw",
+        "{}:{OPENCLAW_CONTAINER_STATE_DIR}",
         config_dir.to_str().ok_or("Invalid config dir path")?
     );
     let workspace_mount = format!(
-        "{}:/home/node/.openclaw/workspace",
+        "{}:{OPENCLAW_CONTAINER_STATE_DIR}/workspace",
         workspace_dir.to_str().ok_or("Invalid workspace dir path")?
     );
     // Bind to the configured loopback host so the port is not exposed to the LAN.
@@ -472,19 +524,25 @@ pub(crate) async fn start_docker_gateway_locked(
         container_port
     );
     let token_env = format!("OPENCLAW_GATEWAY_TOKEN={}", token);
+    let state_dir_env = format!("OPENCLAW_STATE_DIR={OPENCLAW_CONTAINER_STATE_DIR}");
+    let config_path_env = format!("OPENCLAW_CONFIG_PATH={OPENCLAW_CONTAINER_CONFIG_PATH}");
 
     let output = tokio::process::Command::new(&docker_bin)
         .args([
             "run",
             "-d",
             "--name",
-            "maxauto-openclaw",
+            OPENCLAW_CONTAINER_NAME,
             "-p",
             &port_mapping,
             "-e",
             &token_env,
             "-e",
             "OPENCLAW_GATEWAY_BIND=lan",
+            "-e",
+            &state_dir_env,
+            "-e",
+            &config_path_env,
             "-v",
             &config_mount,
             "-v",
@@ -540,7 +598,7 @@ pub(crate) async fn start_docker_gateway_locked(
                 "inspect",
                 "--format",
                 "{{.State.Running}}",
-                "maxauto-openclaw",
+                OPENCLAW_CONTAINER_NAME,
             ])
             .output()
             .await;
@@ -552,7 +610,7 @@ pub(crate) async fn start_docker_gateway_locked(
         if !container_running {
             // Get container logs for debugging
             let logs = tokio::process::Command::new(&docker_bin)
-                .args(["logs", "--tail", "20", "maxauto-openclaw"])
+                .args(["logs", "--tail", "20", OPENCLAW_CONTAINER_NAME])
                 .output()
                 .await;
             let log_text = logs
@@ -589,7 +647,7 @@ pub(crate) async fn start_docker_gateway_locked(
     })
 }
 
-/// Spawn `docker logs -f --tail 50 maxauto-openclaw` and pipe its lines into
+/// Spawn `docker logs -f --tail 50` for JunQi's managed container and pipe its lines into
 /// the 200-entry circular buffer. Runs as a detached tokio task; logs are
 /// tagged as `DockerStdout` / `DockerStderr` so the frontend can distinguish
 /// them from native child logs.
@@ -607,7 +665,7 @@ fn spawn_docker_log_tailer(app: AppHandle) {
             }
         };
         let mut cmd = Command::new(&docker_bin);
-        cmd.args(["logs", "-f", "--tail", "50", "maxauto-openclaw"])
+        cmd.args(["logs", "-f", "--tail", "50", OPENCLAW_CONTAINER_NAME])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
@@ -625,6 +683,10 @@ fn spawn_docker_log_tailer(app: AppHandle) {
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stdout).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    let line = crate::commands::diagnostic_output::sanitize_diagnostic_line(&line);
+                    if line.is_empty() {
+                        continue;
+                    }
                     let _ = app_out.emit("gateway-log", &line);
                     let state = app_out.state::<crate::state::GatewayProcess>();
                     push_log(&state.logs, LogSource::DockerStdout, LogLevel::Info, line);
@@ -636,6 +698,10 @@ fn spawn_docker_log_tailer(app: AppHandle) {
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    let line = crate::commands::diagnostic_output::sanitize_diagnostic_line(&line);
+                    if line.is_empty() {
+                        continue;
+                    }
                     let _ = app_err.emit("gateway-log", &line);
                     let state = app_err.state::<crate::state::GatewayProcess>();
                     push_log(&state.logs, LogSource::DockerStderr, LogLevel::Warn, line);
@@ -713,7 +779,7 @@ pub(crate) async fn stop_docker_gateway_locked() -> Result<String, String> {
     let docker_bin = resolve_docker_bin().await?;
 
     let output = tokio::process::Command::new(&docker_bin)
-        .args(["stop", "maxauto-openclaw"])
+        .args(["stop", OPENCLAW_CONTAINER_NAME])
         .output()
         .await
         .map_err(|e| format!("Failed to stop container: {}", e))?;
@@ -732,7 +798,7 @@ pub(crate) async fn stop_docker_gateway_locked() -> Result<String, String> {
 /// Check if the Docker container is running.
 #[tauri::command]
 pub async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, String> {
-    let port = port.unwrap_or_else(crate::commands::config::default_gateway_port);
+    let port = port.unwrap_or_else(docker_gateway_configured_port);
     let docker_bin = match resolve_docker_bin().await {
         Ok(bin) => bin,
         Err(_) => {
@@ -750,7 +816,7 @@ pub async fn docker_gateway_status(port: Option<u16>) -> Result<GatewayStatus, S
             "inspect",
             "--format",
             "{{.State.Running}}",
-            "maxauto-openclaw",
+            OPENCLAW_CONTAINER_NAME,
         ])
         .output()
         .await;

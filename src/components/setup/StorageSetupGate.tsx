@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, ChevronDown, Database, FolderOpen, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
+import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
@@ -16,6 +16,8 @@ interface StorageSetupStatus {
   runtimeDir: string;
   npmCacheDir: string;
   npmPrefix: string | null;
+  nodeRuntimeDir: string | null;
+  gitRuntimeDir: string | null;
   terminalIntegration: boolean;
   terminalLauncherDir: string;
   legacyDir: string;
@@ -114,6 +116,10 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
   const [customNpmCache, setCustomNpmCache] = useState(false);
   const [npmPrefix, setNpmPrefix] = useState('');
   const [customNpmPrefix, setCustomNpmPrefix] = useState(false);
+  const [nodeRuntimeDir, setNodeRuntimeDir] = useState('');
+  const [customNodeRuntime, setCustomNodeRuntime] = useState(false);
+  const [gitRuntimeDir, setGitRuntimeDir] = useState('');
+  const [customGitRuntime, setCustomGitRuntime] = useState(false);
   const [terminalIntegration, setTerminalIntegration] = useState(false);
   const [showLocations, setShowLocations] = useState(false);
   const [migrateExisting, setMigrateExisting] = useState(true);
@@ -144,6 +150,10 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
             setCustomNpmCache(result.npmCacheDir !== joinPath(result.stateDir, 'npm-cache'));
             setNpmPrefix(result.npmPrefix ?? '');
             setCustomNpmPrefix(Boolean(result.npmPrefix));
+            setNodeRuntimeDir(result.nodeRuntimeDir ?? '');
+            setCustomNodeRuntime(Boolean(result.nodeRuntimeDir));
+            setGitRuntimeDir(result.gitRuntimeDir ?? '');
+            setCustomGitRuntime(Boolean(result.gitRuntimeDir));
             setTerminalIntegration(result.terminalIntegration);
             setMigrateExisting(result.legacyExists);
           })
@@ -231,6 +241,8 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
           runtimeDir,
           npmCacheDir: customNpmCache ? npmCacheDir : joinPath(targetDir, 'npm-cache'),
           npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
+          nodeRuntimeDir: customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
+          gitRuntimeDir: customGitRuntime ? gitRuntimeDir.trim() || null : null,
           terminalIntegration,
         },
       });
@@ -241,7 +253,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     } finally {
       if (mountedRef.current) setApplying(false);
     }
-  }, [applying, customNpmCache, customNpmPrefix, migrateExisting, npmCacheDir, npmPrefix, runtimeDir, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+  }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
 
   if (loading) {
     return (
@@ -289,7 +301,9 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
       && workspaceDir.trim()
       && runtimeDir.trim()
       && (!customNpmCache || npmCacheDir.trim())
-      && (!customNpmPrefix || npmPrefix.trim()),
+      && (!customNpmPrefix || npmPrefix.trim())
+      && (!customNodeRuntime || nodeRuntimeDir.trim())
+      && (!customGitRuntime || gitRuntimeDir.trim()),
   );
 
   return (
@@ -398,7 +412,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
           >
             <span>
               <span className="block text-sm font-semibold text-aegis-text">{t('storage.installLocations', '安装位置')}</span>
-              <span className="mt-1 block text-xs text-aegis-text-muted">{t('storage.installLocationsHint', '工作区、可选 npm 缓存和终端集成')}</span>
+              <span className="mt-1 block text-xs text-aegis-text-muted">{t('storage.installLocationsHint', '工作区，以及可选的 npm、Node.js 和 Git 位置')}</span>
             </span>
             <ChevronDown size={16} className={clsx('shrink-0 text-aegis-text-dim transition-transform', showLocations && 'rotate-180')} />
           </button>
@@ -441,7 +455,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 <label className="flex cursor-pointer items-center justify-between gap-4">
                   <span>
                     <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNpmPrefix', '自定义 OpenClaw npm 安装目录')}</span>
-                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNpmPrefixHint', '关闭时读取登录终端的 npm prefix；不可写时使用用户目录回退')}</span>
+                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNpmPrefixHint', '关闭时读取登录终端的 npm prefix；不可写时请在此选择目录')}</span>
                   </span>
                   <input
                     type="checkbox"
@@ -467,6 +481,56 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                       <FolderOpen size={15} />
                     </button>
                   </div>
+                )}
+              </div>
+
+              <div className="border-b border-aegis-border/70 py-3">
+                <label className="flex cursor-pointer items-center justify-between gap-4">
+                  <span>
+                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNodeRuntime', '自定义 Node.js 运行时目录')}</span>
+                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNodeRuntimeHint', '关闭时使用系统已安装的 Node.js；开启后仅在所选目录维护便携运行时')}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={customNodeRuntime}
+                    disabled={customLocationsLocked}
+                    onChange={(event) => setCustomNodeRuntime(event.target.checked)}
+                    className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
+                  />
+                </label>
+                {customNodeRuntime && (
+                  <LocationRow
+                    icon={<Cpu size={16} />}
+                    label={t('storage.nodeRuntimeLocation', 'Node.js 运行时目录')}
+                    value={nodeRuntimeDir}
+                    disabled={customLocationsLocked}
+                    onChoose={() => void chooseExactDirectory(t('storage.nodeRuntimeChoose', '选择 Node.js 运行时目录'), setNodeRuntimeDir)}
+                  />
+                )}
+              </div>
+
+              <div className="border-b border-aegis-border/70 py-3">
+                <label className="flex cursor-pointer items-center justify-between gap-4">
+                  <span>
+                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customGitRuntime', '自定义 Git 运行时目录')}</span>
+                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customGitRuntimeHint', '关闭时使用系统已安装的 Git；开启后仅在所选目录维护便携运行时')}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={customGitRuntime}
+                    disabled={customLocationsLocked}
+                    onChange={(event) => setCustomGitRuntime(event.target.checked)}
+                    className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
+                  />
+                </label>
+                {customGitRuntime && (
+                  <LocationRow
+                    icon={<GitBranch size={16} />}
+                    label={t('storage.gitRuntimeLocation', 'Git 运行时目录')}
+                    value={gitRuntimeDir}
+                    disabled={customLocationsLocked}
+                    onChoose={() => void chooseExactDirectory(t('storage.gitRuntimeChoose', '选择 Git 运行时目录'), setGitRuntimeDir)}
+                  />
                 )}
               </div>
 

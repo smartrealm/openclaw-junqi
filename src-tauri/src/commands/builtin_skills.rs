@@ -117,7 +117,7 @@ pub fn install_builtin_skill_for_chat(
         .map_err(|_| "Built-in skill installer lock is poisoned".to_string())?;
 
     let source = materialize(&app, &spec)?;
-    let workspace = paths::read_workspace_from_config(&paths::config_path())
+    let workspace = paths::read_workspace_from_config(&paths::active_config_path())
         .unwrap_or_else(paths::default_workspace_dir);
     let target = install_into_workspace(&source, &workspace, &spec)?;
 

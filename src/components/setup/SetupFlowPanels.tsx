@@ -367,8 +367,6 @@ const TIER_BADGE: Record<InstallTarget["tier"], TierBadgeStyles> = {
   user: { border: "border-aegis-success/45", bg: "bg-aegis-success/10", text: "text-aegis-success" },
   userMissingPath: { border: "border-amber-500/45", bg: "bg-amber-500/10", text: "text-amber-200" },
   custom: { border: "border-sky-500/45", bg: "bg-sky-500/10", text: "text-sky-200" },
-  xdg: { border: "border-amber-500/45", bg: "bg-amber-500/10", text: "text-amber-200" },
-  sandbox: { border: "border-rose-500/45", bg: "bg-rose-500/10", text: "text-rose-200" },
   existing: { border: "border-sky-500/45", bg: "bg-sky-500/10", text: "text-sky-200" },
 };
 
@@ -380,13 +378,6 @@ function resolveInstallNote(target: InstallTarget, t: TFunction): string {
       return t("setup.installTarget.userMissingPath.note", "与终端 npm 的全局落点一致，但该目录尚未加入 PATH；可通过终端集成启用 `openclaw`");
     case "custom":
       return t("setup.installTarget.custom.note", "OpenClaw 将安装到你选择的 npm 全局目录；终端可用性由终端集成单独验证");
-    case "xdg":
-      return t("setup.installTarget.xdg.note", {
-        binPath: target.binPath ?? "",
-        defaultValue: "请将 {{binPath}} 加入 PATH，以便在终端使用 `openclaw`",
-      });
-    case "sandbox":
-      return t("setup.installTarget.sandbox.note", "openclaw 装在 JunQi 沙盒目录内，终端不会在 PATH 中找到，请从 JunQi 工作台启动或自行 symlink");
     case "existing":
       if (target.path && target.version) {
         return t("setup.installTarget.existing.note", {
@@ -416,10 +407,6 @@ export function InstallTargetCard({ target }: { target: InstallTarget }) {
         ? "用户 npm 前缀（未加入 PATH）"
         : target.tier === "custom"
           ? "自定义 npm 前缀"
-      : target.tier === "xdg"
-        ? "XDG 回退"
-        : target.tier === "sandbox"
-          ? "JunQi 沙盒"
           : "已安装",
   );
   const note = resolveInstallNote(target, t);
@@ -517,16 +504,8 @@ function installMethodLabel(source: string | null | undefined, target: InstallTa
       return t("setup.runtimeDetails.sourceSaved", "JunQi 已保存的 OpenClaw 路径");
     case "saved-selection:user-npm-prefix":
       return t("setup.runtimeDetails.sourceSavedUserNpm", "JunQi 已保存路径（npm 全局安装）");
-    case "saved-selection:xdg-fallback":
-      return t("setup.runtimeDetails.sourceSavedXdg", "JunQi 已保存路径（XDG 回退安装）");
-    case "saved-selection:junqi-sandbox":
-      return t("setup.runtimeDetails.sourceSavedSandbox", "JunQi 已保存路径（JunQi 沙盒安装）");
     case "user-npm-prefix":
       return t("setup.runtimeDetails.sourceUserNpm", "npm 全局安装（用户 prefix）");
-    case "xdg-fallback":
-      return t("setup.runtimeDetails.sourceXdg", "JunQi 回退安装（~/.local）");
-    case "junqi-sandbox":
-      return t("setup.runtimeDetails.sourceSandbox", "JunQi 托管安装（沙盒目录）");
     case "PATH":
       return t("setup.runtimeDetails.sourcePath", "系统 PATH 中发现");
   }
@@ -538,10 +517,6 @@ function installMethodLabel(source: string | null | undefined, target: InstallTa
       return t("setup.runtimeDetails.methodUserMissingPath", "npm 全局安装（未加入 PATH）");
     case "custom":
       return t("setup.runtimeDetails.methodCustom", "npm 全局安装（自定义 prefix）");
-    case "xdg":
-      return t("setup.runtimeDetails.methodXdg", "JunQi 回退安装（~/.local）");
-    case "sandbox":
-      return t("setup.runtimeDetails.methodSandbox", "JunQi 托管安装（沙盒目录）");
     case "existing":
       return t("setup.runtimeDetails.methodExisting", "已有安装（跳过安装）");
   }

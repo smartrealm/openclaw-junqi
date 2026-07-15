@@ -540,6 +540,7 @@ export function HooksPanel() {
 }
 
 interface NativeAppSettings {
+  language: string;
   claude_path: string;
   codex_path: string;
   send_shortcut: string;

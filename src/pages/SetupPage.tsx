@@ -227,7 +227,7 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
           title={t("setup.gatewayStoppedTitle")}
           message={flow.statusMessage || t("setup.gatewayNotRunning")}
           footer={
-            <button onClick={() => navigateSetup("choosing-mode")} className="text-xs font-medium text-aegis-text-dim hover:text-aegis-text">
+            <button onClick={flow.requestReinstall} className="text-xs font-medium text-aegis-text-dim hover:text-aegis-text">
               {t("setup.reinstallBtn")}
             </button>
           }
@@ -285,7 +285,7 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
       previousAction={{ onClick: flow.goBack }}
       nextAction={{
         label: t("setup.nextStep", "下一步"),
-        onClick: () => flow.selectMode(selectedMode),
+        onClick: () => { void flow.selectMode(selectedMode); },
         disabled: selectedMode === "docker" && !dockerAvailable,
         icon: "next",
       }}

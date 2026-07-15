@@ -16,6 +16,15 @@ export interface OpenclawStatus {
 }
 export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; }
 export interface GatewayStatus { running: boolean; port: number; pid: number | null; token: string | null; }
+export type GatewayRuntimeMode = "native" | "docker";
+export interface GatewayConfigInfo {
+  token: string | null;
+  port: number;
+  ws_url: string;
+  http_url: string;
+  config_path: string | null;
+  runtime_mode: GatewayRuntimeMode;
+}
 export interface TerminalIntegrationStatus {
   requested: boolean;
   enabled: boolean;
@@ -90,6 +99,7 @@ export const runMaintenanceScan = () => invoke<MaintenanceReport>("run_maintenan
 export const installNode = () => invoke<string>("install_node");
 export const installGit = () => invoke<string>("install_git");
 export const installOpenclaw = () => invoke<string>("install_openclaw");
+export const reinstallOpenclaw = () => invoke<string>("reinstall_openclaw");
 export const applyTerminalIntegration = () => invoke<TerminalIntegrationStatus>("apply_terminal_integration");
 export const prepareGateway = () => invoke<string>("prepare_gateway");
 export const startGateway = (port?: number) => (
@@ -98,6 +108,10 @@ export const startGateway = (port?: number) => (
 export const checkDocker = () => invoke<DockerStatus>("check_docker");
 export const pullOpenclawImage = (tag?: string) => invoke<string>("pull_openclaw_image", { tag });
 export const startDockerGateway = (port?: number, tag?: string) => invoke<GatewayStatus>("start_docker_gateway", { port, tag });
+export const detectGatewayConfig = () => invoke<GatewayConfigInfo>("detect_gateway_config");
+export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
+  invoke<void>("set_active_gateway_runtime", { mode })
+);
 
 /** Result of ensure_gateway_running — see src-tauri/src/commands/ensure.rs */
 export type GatewayMode = 'native' | 'docker' | 'unavailable';

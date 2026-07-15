@@ -4,6 +4,7 @@ import { Cpu, GitBranch, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
+import { translateSetupProgressMessage } from '@/hooks/setupProgressParams';
 
 interface RuntimeToolStatus {
   available: boolean;
@@ -17,8 +18,9 @@ interface ManagedRuntimeStatus {
   node: RuntimeToolStatus;
   nodeRequirement: string;
   nodeRequirementSource: string;
+  nodeAutoUpdateSupported: boolean;
   git: RuntimeToolStatus;
-  gitManagedByJunqi: boolean;
+  gitAutoUpdateSupported: boolean;
   nodeDownloadOrder: string[];
   gitDownloadOrder: string[];
 }
@@ -26,6 +28,7 @@ interface ManagedRuntimeStatus {
 interface SetupProgress {
   step: string;
   message: string;
+  key?: string | null;
   progress?: number;
   error?: string;
 }
@@ -49,7 +52,7 @@ function ToolRow({
   actionLabel: string;
   busy: boolean;
   disabled?: boolean;
-  onAction: () => void;
+  onAction?: () => void;
 }) {
   return (
     <div className="grid min-h-[108px] grid-cols-1 gap-3 border-t border-aegis-border/70 py-4 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
@@ -66,15 +69,21 @@ function ToolRow({
           {status.path || '—'}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onAction}
-        disabled={busy || disabled}
-        className="inline-flex h-9 min-w-[112px] items-center justify-center gap-2 justify-self-start rounded-md border border-aegis-border bg-aegis-surface px-3 text-xs font-semibold text-aegis-text hover:border-aegis-primary/50 hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-45 sm:mt-1 sm:justify-self-end"
-      >
-        {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-        {actionLabel}
-      </button>
+      {onAction ? (
+        <button
+          type="button"
+          onClick={onAction}
+          disabled={busy || disabled}
+          className="inline-flex h-9 min-w-[112px] items-center justify-center gap-2 justify-self-start rounded-md border border-aegis-border bg-aegis-surface px-3 text-xs font-semibold text-aegis-text hover:border-aegis-primary/50 hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-45 sm:mt-1 sm:justify-self-end"
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {actionLabel}
+        </button>
+      ) : (
+        <span className="inline-flex h-9 min-w-[112px] items-center justify-center justify-self-start text-xs font-medium text-aegis-text-muted sm:mt-1 sm:justify-self-end">
+          {actionLabel}
+        </span>
+      )}
     </div>
   );
 }
@@ -107,13 +116,21 @@ export function ManagedRuntimeSettingsPanel() {
   useEffect(() => subscribeTauriEvent<SetupProgress>('setup-progress', (event) => {
     const payload = event.payload;
     if (payload.step !== 'node' && payload.step !== 'git') return;
-    setLog(payload.message);
+    setLog(translateSetupProgressMessage(
+      payload.key,
+      payload.message,
+      (translationKey, options) => t(translationKey, options),
+    ));
     setProgress(typeof payload.progress === 'number' ? payload.progress : null);
     if (payload.error) setError(payload.error);
-  }), []);
+  }), [t]);
 
   const runUpdate = async (nextAction: RuntimeAction) => {
-    if (action) return;
+    if (
+      action
+      || (nextAction === 'node' && !status?.nodeAutoUpdateSupported)
+      || (nextAction === 'git' && !status?.gitAutoUpdateSupported)
+    ) return;
     setAction(nextAction);
     setProgress(0);
     setLog(t('storage.runtimeUpdateStarting', '正在解析最新兼容版本…'));
@@ -132,7 +149,7 @@ export function ManagedRuntimeSettingsPanel() {
   };
 
   const sourceLabel = (source?: RuntimeToolStatus['source']) => source === 'local'
-    ? t('storage.runtimeSourceManaged', 'JunQi 托管')
+    ? t('storage.runtimeSourceCustom', '用户选择的目录')
     : source === 'system'
       ? t('storage.runtimeSourceSystem', '系统安装')
       : t('storage.runtimeSourceUnknown', '未检测到');
@@ -151,7 +168,7 @@ export function ManagedRuntimeSettingsPanel() {
             {t('storage.runtimeSettingsTitle', 'Node.js / Git 运行时')}
           </h3>
           <p className="mt-1 text-xs leading-5 text-aegis-text-muted">
-            {t('storage.runtimeSettingsHint', '运行时独立维护；Node.js 按 OpenClaw 声明选择兼容 LTS，Windows Git 按官方 Release 更新。')}
+            {t('storage.runtimeSettingsHint', '默认使用系统已安装路径；Windows 更新使用系统包管理器，自定义目录仅更新用户选择的便携运行时。')}
           </p>
         </div>
         <button
@@ -177,21 +194,26 @@ export function ManagedRuntimeSettingsPanel() {
               source: sourceLabel(status.node.source),
               defaultValue: 'OpenClaw 要求：{{requirement}} · 依据：{{requirementSource}} · {{source}}',
             })}
-            actionLabel={action === 'node' ? t('storage.runtimeUpdating', '更新中') : t('storage.runtimeUpdateNode', '更新 Node.js')}
+            actionLabel={status.nodeAutoUpdateSupported
+              ? action === 'node' ? t('storage.runtimeUpdating', '更新中') : t('storage.runtimeUpdateNode', '更新 Node.js')
+              : t('storage.runtimeUpdateSystem', '通过系统包管理器更新')}
             busy={action === 'node'}
-            onAction={() => void runUpdate('node')}
+            onAction={status.nodeAutoUpdateSupported ? () => void runUpdate('node') : undefined}
           />
           <ToolRow
             icon={<GitBranch size={16} className="text-aegis-primary" />}
             title="Git"
             status={status.git}
-            detail={status.gitManagedByJunqi
-              ? t('storage.runtimeGitManaged', { source: sourceLabel(status.git.source), defaultValue: 'Git for Windows 系统安装 · {{source}}' })
-              : t('storage.runtimeGitSystem', '由 macOS/Linux 系统包管理器维护')}
-            actionLabel={action === 'git' ? t('storage.runtimeUpdating', '更新中') : t('storage.runtimeUpdateGit', '更新 Git')}
+            detail={t('storage.runtimeGitDetail', {
+              source: sourceLabel(status.git.source),
+              defaultValue: 'Git 来源：{{source}}',
+            })}
+            actionLabel={status.gitAutoUpdateSupported
+              ? action === 'git' ? t('storage.runtimeUpdating', '更新中') : t('storage.runtimeUpdateGit', '更新 Git')
+              : t('storage.runtimeUpdateSystem', '通过系统包管理器更新')}
             busy={action === 'git'}
-            disabled={!status.gitManagedByJunqi}
-            onAction={() => void runUpdate('git')}
+            disabled={!status.gitAutoUpdateSupported}
+            onAction={status.gitAutoUpdateSupported ? () => void runUpdate('git') : undefined}
           />
         </div>
       )}

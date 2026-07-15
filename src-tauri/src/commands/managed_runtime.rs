@@ -1,4 +1,5 @@
 use crate::commands::{setup, system};
+use crate::paths;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -8,8 +9,9 @@ pub struct ManagedRuntimeStatus {
     node: system::NodeStatus,
     node_requirement: String,
     node_requirement_source: String,
+    node_auto_update_supported: bool,
     git: system::GitStatus,
-    git_managed_by_junqi: bool,
+    git_auto_update_supported: bool,
     node_download_order: Vec<String>,
     git_download_order: Vec<String>,
 }
@@ -28,9 +30,12 @@ pub async fn get_managed_runtime_status() -> Result<ManagedRuntimeStatus, String
         node: node?,
         node_requirement: requirement.expression().to_string(),
         node_requirement_source: requirement.source().id().to_string(),
+        node_auto_update_supported: cfg!(windows),
         git: git?,
-        git_managed_by_junqi: cfg!(windows),
-        node_download_order: if cfg!(windows) {
+        git_auto_update_supported: cfg!(windows),
+        node_download_order: if paths::configured_node_runtime_dir().is_some() {
+            vec!["npmmirror.com".into(), "nodejs.org".into()]
+        } else if cfg!(windows) {
             vec![
                 "Windows Package Manager".into(),
                 "OpenJS.NodeJS.LTS / OpenJS.NodeJS".into(),
@@ -38,7 +43,9 @@ pub async fn get_managed_runtime_status() -> Result<ManagedRuntimeStatus, String
         } else {
             Vec::new()
         },
-        git_download_order: if cfg!(windows) {
+        git_download_order: if paths::configured_git_runtime_dir().is_some() {
+            vec!["npmmirror.com".into(), "GitHub".into()]
+        } else if cfg!(windows) {
             vec!["Windows Package Manager".into(), "Git.Git".into()]
         } else {
             Vec::new()

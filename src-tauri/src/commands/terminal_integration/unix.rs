@@ -1,4 +1,4 @@
-use super::{EnvironmentBinding, TerminalIntegrationBackend};
+use super::{EnvironmentBinding, TerminalIntegrationBackend, TerminalLauncherTarget};
 use crate::{paths, platform};
 use std::path::{Path, PathBuf};
 
@@ -41,20 +41,11 @@ impl TerminalIntegrationBackend for UnixBackend {
             .is_some_and(|content| content.contains(BLOCK_START) && content.contains(BLOCK_END))
     }
 
-    fn launcher_contents(binary: Option<&Path>) -> String {
-        let state = shell_quote(&paths::desktop_dir());
-        let config = shell_quote(&paths::config_path());
-        let npm = paths::configured_npm_prefix()
-            .map(|prefix| prefix.join("bin"))
-            .unwrap_or_else(paths::local_npm_bin_dir);
-        let npm = shell_quote(&npm);
-        let command = binary.map_or_else(missing_binary_command, |path| {
-            format!("exec {} \"$@\"", shell_quote(path))
-        });
-        format!(
-            "#!/bin/sh\nexport OPENCLAW_STATE_DIR={}\nexport OPENCLAW_CONFIG_PATH={}\nexport PATH={}:\"$PATH\"\n{}\n",
-            state, config, npm, command
-        )
+    fn launcher_contents(target: TerminalLauncherTarget<'_>) -> String {
+        match target {
+            TerminalLauncherTarget::Docker => docker_launcher_contents(),
+            TerminalLauncherTarget::Native(binary) => native_launcher_contents(binary),
+        }
     }
 
     fn prepare_launcher(path: &Path) -> Result<(), String> {
@@ -67,6 +58,29 @@ impl TerminalIntegrationBackend for UnixBackend {
 fn missing_binary_command() -> String {
     "printf '%s\n' 'OpenClaw is not installed yet. Finish setup in JunQi Desktop.' >&2\nexit 1"
         .into()
+}
+
+fn native_launcher_contents(binary: Option<&Path>) -> String {
+    let state = shell_quote(&paths::desktop_dir());
+    let config = shell_quote(&paths::config_path());
+    let node_path = paths::configured_node_path()
+        .and_then(|node| node.parent().map(Path::to_path_buf))
+        .map(|path| format!("export PATH={}:\"$PATH\"\n", shell_quote(&path)))
+        .unwrap_or_default();
+    let command = binary.map_or_else(missing_binary_command, |path| {
+        format!("exec {} \"$@\"", shell_quote(path))
+    });
+    format!(
+        "#!/bin/sh\nexport OPENCLAW_STATE_DIR={}\nexport OPENCLAW_CONFIG_PATH={}\n{}{}\n",
+        state, config, node_path, command
+    )
+}
+
+fn docker_launcher_contents() -> String {
+    let container = crate::commands::docker::OPENCLAW_CONTAINER_NAME;
+    format!(
+        "#!/bin/sh\nif ! command -v docker >/dev/null 2>&1; then\n  printf '%s\\n' 'Docker CLI is not available. Start Docker Desktop, then retry.' >&2\n  exit 1\nfi\nif [ -t 0 ] && [ -t 1 ]; then\n  exec docker exec -it {container} openclaw \"$@\"\nfi\nexec docker exec -i {container} openclaw \"$@\"\n"
+    )
 }
 
 fn selected_profile() -> Result<PathBuf, String> {
@@ -261,9 +275,17 @@ mod tests {
 
     #[test]
     fn launcher_never_embeds_gateway_credentials() {
-        let content = UnixBackend::launcher_contents(None);
+        let content = UnixBackend::launcher_contents(TerminalLauncherTarget::Native(None));
         assert!(content.contains("OPENCLAW_STATE_DIR"));
         assert!(content.contains("OPENCLAW_CONFIG_PATH"));
+        assert!(!content.contains("GATEWAY_TOKEN"));
+    }
+
+    #[test]
+    fn docker_launcher_delegates_without_embedding_credentials() {
+        let content = UnixBackend::launcher_contents(TerminalLauncherTarget::Docker);
+        assert!(content.contains("docker exec"));
+        assert!(content.contains("maxauto-openclaw"));
         assert!(!content.contains("GATEWAY_TOKEN"));
     }
 

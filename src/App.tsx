@@ -20,6 +20,7 @@ import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
+import { gatewayMigrationRetryDelayMs } from '@/services/gateway/openclawRepair';
 import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import {
@@ -115,8 +116,13 @@ export default function App() {
   const bootOverlayDismissedRef = useRef(false);
   const lastGatewayToastKeyRef = useRef<string | null>(null);
   const lastGatewayErrorToastRef = useRef<string | null>(null);
+  const gatewayBootErrorRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
   const manualGatewayRecoveryInFlightRef = useRef(false);
+  const pendingGatewayMigrationRetryRef = useRef<{
+    timer: number;
+    resolve: (proceed: boolean) => void;
+  } | null>(null);
   const openControlUiAfterRecoveryRef = useRef(false);
   const [bootRecoveryAttempt, setBootRecoveryAttempt] = useState(0);
   const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
@@ -326,6 +332,44 @@ export default function App() {
     }));
   }, []);
 
+  const cancelGatewayMigrationRetry = useCallback(() => {
+    const pending = pendingGatewayMigrationRetryRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingGatewayMigrationRetryRef.current = null;
+    pending.resolve(false);
+  }, []);
+
+  const waitForGatewayMigrationLock = useCallback(async (diagnostic?: string) => {
+    const delayMs = gatewayMigrationRetryDelayMs(diagnostic || '');
+    if (!delayMs) return true;
+
+    cancelGatewayMigrationRetry();
+    const seconds = Math.max(1, Math.ceil(delayMs / 1_000));
+    addBootRecoveryLog(`OpenClaw startup migration is still active; retrying after ${seconds}s`);
+    emitGatewayProgress(
+      'Waiting for OpenClaw startup migration to finish…',
+      0.36,
+      'gateway.progress.waitingForMigrationLock',
+      { seconds },
+    );
+
+    return new Promise<boolean>((resolve) => {
+      let pending!: {
+        timer: number;
+        resolve: (proceed: boolean) => void;
+      };
+      const timer = window.setTimeout(() => {
+        if (pendingGatewayMigrationRetryRef.current === pending) {
+          pendingGatewayMigrationRetryRef.current = null;
+        }
+        resolve(true);
+      }, delayMs);
+      pending = { timer, resolve };
+      pendingGatewayMigrationRetryRef.current = pending;
+    });
+  }, [addBootRecoveryLog, cancelGatewayMigrationRetry, emitGatewayProgress]);
+
   const triggerGatewayReconnect = useCallback((label = 'manual', minimumProgress = 0.30) => {
     addBootRecoveryLog(`Reconnect requested (${label})`);
     setBootRecoveryAttempt(0);
@@ -342,7 +386,8 @@ export default function App() {
     try { gatewayManager.reconnect(); } catch {}
   }, [addBootRecoveryLog, emitGatewayProgress]);
 
-  const restartGatewayFromBoot = useCallback(async () => {
+  const restartGatewayFromBoot = useCallback(async (diagnostic?: string) => {
+    if (!(await waitForGatewayMigrationLock(diagnostic))) return false;
     if (!window.aegis?.gateway?.retry) {
       const message = 'Gateway restart is unavailable in this runtime.';
       emitGatewayProgress(message, 1, 'gateway.progress.restartUnavailable', undefined, 'failed');
@@ -383,7 +428,7 @@ export default function App() {
     } finally {
       setBootRecoveryRestarting(false);
     }
-  }, [addBootRecoveryLog, emitGatewayProgress]);
+  }, [addBootRecoveryLog, emitGatewayProgress, waitForGatewayMigrationLock]);
 
   const openBootLogs = useCallback(() => {
     try { window.location.hash = '#/logs'; } catch {}
@@ -435,12 +480,12 @@ export default function App() {
           0.45,
           'gateway.progress.ensureUnhealthy',
         );
-        await restartGatewayFromBoot();
+        await restartGatewayFromBoot(result?.error ?? reason);
       } catch (err) {
         if (cancelled || useChatStore.getState().connected) return;
         addBootRecoveryLog(`ensure_gateway_running exception: ${String(err)}`);
         emitGatewayProgress('Gateway recovery failed, attempting restart…', 0.45, 'gateway.progress.ensureFailed');
-        await restartGatewayFromBoot();
+        await restartGatewayFromBoot(String(err));
       } finally {
         if (!cancelled) setBootRecoveryRestarting(false);
       }
@@ -474,8 +519,9 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      cancelGatewayMigrationRetry();
     };
-  }, [connected, bootOverlayVisible, openclawUpdateActive, setupComplete, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot]);
+  }, [connected, bootOverlayVisible, openclawUpdateActive, setupComplete, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot, cancelGatewayMigrationRetry]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
@@ -703,6 +749,7 @@ export default function App() {
     const managerUnsub = gatewayManager.onStateChange((snap) => {
       setConnectionStatus({ connected: snap.connected, connecting: snap.connecting, error: snap.error ?? undefined });
       setGatewayBootError(snap.error);
+      gatewayBootErrorRef.current = snap.error;
       setGatewayBootLogs(snap.logs);
       if (snap.logs?.stdout || snap.logs?.stderr) {
         const incoming = [snap.logs.stdout, snap.logs.stderr]
@@ -830,7 +877,7 @@ export default function App() {
         addBootRecoveryLog(`Gateway recovery requested (${source}, ${action})`);
         try {
           if (action === 'restart') {
-            await restartGatewayFromBoot();
+            await restartGatewayFromBoot(gatewayBootErrorRef.current ?? undefined);
             return;
           }
 
@@ -849,13 +896,13 @@ export default function App() {
             result?.healthy ? 'gateway.progress.gatewayHealthy' : 'gateway.progress.ensureUnhealthy',
           );
           if (!result?.healthy) {
-            await restartGatewayFromBoot();
+            await restartGatewayFromBoot(result?.error);
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           addBootRecoveryLog(`ensure_gateway_running failed: ${message}`);
           emitGatewayProgress('ensure_gateway_running call failed, restarting…', 0.45, 'gateway.progress.ensureFailed');
-          await restartGatewayFromBoot();
+          await restartGatewayFromBoot(message);
         }
       })().finally(() => {
         manualGatewayRecoveryInFlightRef.current = false;
@@ -907,7 +954,9 @@ export default function App() {
 
   const handleGatewayRetry = useCallback(() => {
     setGatewayRetrying(true);
-    void gatewayManager.restart();
+    window.dispatchEvent(new CustomEvent('aegis:manual-reconnect', {
+      detail: { action: 'restart', source: 'gateway-error-screen' },
+    }));
   }, []);
 
   const handleGatewayRecovered = useCallback(() => {
@@ -963,7 +1012,7 @@ export default function App() {
               restarting: bootRecoveryRestarting,
               logs: bootRecoveryLogs,
               onReconnect: () => triggerGatewayReconnect('button'),
-              onRestart: () => void restartGatewayFromBoot(),
+              onRestart: () => void restartGatewayFromBoot(gatewayBootErrorRef.current ?? undefined),
               onOpenLogs: openBootLogs,
             }}
           />

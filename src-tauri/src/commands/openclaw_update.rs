@@ -9,7 +9,6 @@ use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode};
 use crate::state::GatewayProcess;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::Path;
 use std::process::{Output, Stdio};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -136,11 +135,11 @@ struct RawVersionMarker {
 }
 
 fn build_openclaw_command(
-    binary: &Path,
+    runtime: &system::NativeOpenclawRuntime,
     args: &[&str],
     npm_registry: Option<NpmRegistry>,
 ) -> tokio::process::Command {
-    let mut command = system::openclaw_command(binary);
+    let mut command = runtime.command();
     command
         .args(args)
         .env("PATH", system::openclaw_search_path())
@@ -162,13 +161,13 @@ fn build_openclaw_command(
 }
 
 async fn run_openclaw_command(
-    binary: &Path,
+    runtime: &system::NativeOpenclawRuntime,
     args: &[&str],
     command_timeout: Duration,
     npm_registry: Option<NpmRegistry>,
 ) -> Result<Output, String> {
     let command_name = args.join(" ");
-    let mut command = build_openclaw_command(binary, args, npm_registry);
+    let mut command = build_openclaw_command(runtime, args, npm_registry);
     tokio::time::timeout(command_timeout, command.output())
         .await
         .map_err(|_| {
@@ -187,6 +186,10 @@ async fn run_openclaw_command(
 
 fn emit_update_progress(app: &AppHandle, message: &str, progress: f64) {
     setup_progress::emit(app, UPDATE_PROGRESS_STEP, message, progress);
+}
+
+fn emit_update_progress_keyed(app: &AppHandle, message: &str, key: &str, progress: f64) {
+    setup_progress::emit_keyed(app, UPDATE_PROGRESS_STEP, message, key, progress);
 }
 
 fn emit_update_error(app: &AppHandle, message: &str, progress: Option<f64>) {
@@ -216,13 +219,13 @@ where
 
 async fn run_openclaw_command_streaming(
     app: &AppHandle,
-    binary: &Path,
+    runtime: &system::NativeOpenclawRuntime,
     args: &[&str],
     command_timeout: Duration,
     npm_registry: Option<NpmRegistry>,
 ) -> Result<Output, String> {
     let command_name = args.join(" ");
-    let mut command = build_openclaw_command(binary, args, npm_registry);
+    let mut command = build_openclaw_command(runtime, args, npm_registry);
     let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to run OpenClaw {command_name}: {error}"))?;
@@ -237,18 +240,26 @@ async fn run_openclaw_command_streaming(
     let stdout_task = tokio::spawn(collect_stream(app.clone(), stdout, 0.65));
     let stderr_task = tokio::spawn(collect_stream(app.clone(), stderr, 0.65));
 
-    let status = tokio::time::timeout(command_timeout, child.wait())
-        .await
-        .map_err(|_| {
+    let child_pid = child.id();
+    let status = match tokio::time::timeout(command_timeout, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            crate::commands::process_control::terminate_process_tree(&mut child, child_pid).await;
+            return Err(format!(
+                "Failed to wait for OpenClaw {command_name}: {error}"
+            ));
+        }
+        Err(_) => {
+            crate::commands::process_control::terminate_process_tree(&mut child, child_pid).await;
             let source = npm_registry
                 .map(|registry| format!(" via {}", registry.label()))
                 .unwrap_or_default();
-            format!(
+            return Err(format!(
                 "OpenClaw {command_name} timed out{source} after {} seconds",
                 command_timeout.as_secs()
-            )
-        })?
-        .map_err(|error| format!("Failed to wait for OpenClaw {command_name}: {error}"))?;
+            ));
+        }
+    };
     let stdout = stdout_task
         .await
         .map_err(|error| format!("OpenClaw stdout reader stopped: {error}"))??;
@@ -264,19 +275,20 @@ async fn run_openclaw_command_streaming(
 
 async fn run_openclaw_command_with_registry_fallback(
     app: &AppHandle,
-    binary: &Path,
+    runtime: &system::NativeOpenclawRuntime,
     args: &[&str],
     command_timeout: Duration,
     selection: NpmRegistrySelection,
 ) -> (Result<Output, String>, NpmRegistry) {
     let primary = selection.primary;
-    emit_update_progress(
+    emit_update_progress_keyed(
         app,
         &format!("Running official updater via {}", primary.label()),
+        "setup.openclawUpdate.progress.runningUpdater",
         0.55,
     );
     let output =
-        run_openclaw_command_streaming(app, binary, args, command_timeout, Some(primary)).await;
+        run_openclaw_command_streaming(app, runtime, args, command_timeout, Some(primary)).await;
     if !is_network_failure(&output) {
         return (output, primary);
     }
@@ -284,29 +296,37 @@ async fn run_openclaw_command_with_registry_fallback(
     let Some(fallback) = selection.fallback else {
         return (output, primary);
     };
-    emit_update_progress(
+    emit_update_progress_keyed(
         app,
         &format!(
             "Network failure via {}; retrying via {}",
             primary.label(),
             fallback.label()
         ),
+        "setup.openclawUpdate.progress.retryingRegistry",
         0.58,
     );
     let retry =
-        run_openclaw_command_streaming(app, binary, args, command_timeout, Some(fallback)).await;
+        run_openclaw_command_streaming(app, runtime, args, command_timeout, Some(fallback)).await;
     (retry, fallback)
 }
 
-async fn ensure_update_node_runtime(app: &AppHandle) -> Result<(), String> {
-    emit_update_progress(app, "Checking Node.js runtime compatibility...", 0.08);
-    let requirement = system::installed_openclaw_node_requirement()?;
-    setup::ensure_compatible_node_runtime(app, UPDATE_PROGRESS_STEP, &requirement).await?;
-    Ok(())
+async fn ensure_update_node_runtime(
+    app: &AppHandle,
+    binary: &std::path::Path,
+) -> Result<system::NodeStatus, String> {
+    emit_update_progress_keyed(
+        app,
+        "Checking Node.js runtime compatibility...",
+        "setup.openclawUpdate.progress.nodeCompatibility",
+        0.08,
+    );
+    let requirement = system::node_requirement_for_openclaw_binary(binary)?;
+    setup::ensure_compatible_node_runtime(app, UPDATE_PROGRESS_STEP, &requirement).await
 }
 
 async fn run_npm_update_dry_run_with_registry_fallback(
-    binary: &Path,
+    runtime: &system::NativeOpenclawRuntime,
     selection: NpmRegistrySelection,
 ) -> (Result<Output, String>, NpmRegistry) {
     let args = [
@@ -319,7 +339,7 @@ async fn run_npm_update_dry_run_with_registry_fallback(
         OPENCLAW_STATUS_TIMEOUT_SECONDS,
     ];
     let primary = selection.primary;
-    let output = run_openclaw_command(binary, &args, STATUS_TIMEOUT, Some(primary)).await;
+    let output = run_openclaw_command(runtime, &args, STATUS_TIMEOUT, Some(primary)).await;
     if !should_retry_dry_run_with_fallback(&output) {
         return (output, primary);
     }
@@ -327,7 +347,7 @@ async fn run_npm_update_dry_run_with_registry_fallback(
     let Some(fallback) = selection.fallback else {
         return (output, primary);
     };
-    let retry = run_openclaw_command(binary, &args, STATUS_TIMEOUT, Some(fallback)).await;
+    let retry = run_openclaw_command(runtime, &args, STATUS_TIMEOUT, Some(fallback)).await;
     (retry, fallback)
 }
 
@@ -585,26 +605,49 @@ pub async fn check_openclaw_update(app: AppHandle) -> Result<OpenclawUpdateStatu
     let _operation_guard = update_operation()
         .try_lock()
         .map_err(|_| UPDATE_BUSY_ERROR.to_string())?;
-    emit_update_progress(&app, "Starting OpenClaw update check...", 0.02);
-    if let Err(error) = ensure_update_node_runtime(&app).await {
+    emit_update_progress_keyed(
+        &app,
+        "Starting OpenClaw update check...",
+        "setup.openclawUpdate.progress.checkStart",
+        0.02,
+    );
+    let detected = system::detect_openclaw().await;
+    if !detected.installed {
+        let error = "OpenClaw is not installed".to_string();
         emit_update_error(&app, &error, Some(0.28));
         return Err(error);
     }
-    let detected = system::detect_openclaw().await;
-    if !detected.installed {
-        return Err("OpenClaw is not installed".to_string());
-    }
-    let binary = system::resolve_openclaw_binary()
-        .ok_or_else(|| "OpenClaw executable was not found".to_string())?;
-    emit_update_progress(
+    let binary = match system::resolve_openclaw_binary_async().await {
+        Some(binary) => binary,
+        None => {
+            let error = "OpenClaw executable was not found".to_string();
+            emit_update_error(&app, &error, Some(0.28));
+            return Err(error);
+        }
+    };
+    let node = match ensure_update_node_runtime(&app, &binary).await {
+        Ok(node) => node,
+        Err(error) => {
+            emit_update_error(&app, &error, Some(0.28));
+            return Err(error);
+        }
+    };
+    let runtime = system::native_openclaw_runtime(binary.clone(), &node)?;
+    emit_update_progress_keyed(
         &app,
         &format!("OpenClaw binary: {}", system::path_for_display(&binary)),
+        "setup.openclawUpdate.progress.binary",
         0.34,
     );
-    emit_update_progress(&app, "Checking the configured update channel...", 0.4);
+    emit_update_progress_keyed(
+        &app,
+        "Checking the configured update channel...",
+        "setup.openclawUpdate.progress.channel",
+        0.4,
+    );
     let selection = npm_registry::select_npm_registry().await;
     let (dry_run_output, selected_registry) =
-        run_npm_update_dry_run_with_registry_fallback(&binary, selection).await;
+        run_npm_update_dry_run_with_registry_fallback(&runtime, selection).await;
     let dry_run_output = dry_run_output?;
 
     if !dry_run_output.status.success() {
@@ -619,7 +662,12 @@ pub async fn check_openclaw_update(app: AppHandle) -> Result<OpenclawUpdateStatu
         Ok(dry_run) if is_npm_package_dry_run(&dry_run) => {
             let status =
                 update_status_from_npm_dry_run(dry_run, detected.version, selected_registry);
-            emit_update_progress(&app, "OpenClaw update check completed", 1.0);
+            setup_progress::emit_completed_keyed(
+                &app,
+                UPDATE_PROGRESS_STEP,
+                "OpenClaw update check completed",
+                "setup.openclawUpdate.progress.checkCompleted",
+            );
             return Ok(status);
         }
         Ok(_) | Err(_) => {}
@@ -628,7 +676,7 @@ pub async fn check_openclaw_update(app: AppHandle) -> Result<OpenclawUpdateStatu
     // OpenClaw's status command internally hard-codes the public npm registry.
     // Use it only for non-npm installs, where it supplies git-specific state.
     let output = run_openclaw_command(
-        &binary,
+        &runtime,
         &[
             "update",
             "status",
@@ -651,7 +699,12 @@ pub async fn check_openclaw_update(app: AppHandle) -> Result<OpenclawUpdateStatu
 
     match parse_update_status(&output.stdout, detected.version.clone()) {
         Ok(status) => {
-            emit_update_progress(&app, "OpenClaw update check completed", 1.0);
+            setup_progress::emit_completed_keyed(
+                &app,
+                UPDATE_PROGRESS_STEP,
+                "OpenClaw update check completed",
+                "setup.openclawUpdate.progress.checkCompleted",
+            );
             Ok(status)
         }
         Err(error) => Ok(empty_update_status(
@@ -673,14 +726,7 @@ async fn stop_managed_gateway(state: &GatewayProcess) -> Result<bool, String> {
         .map_err(|error| error.to_string())?
         .take();
     if let Some(mut child) = child {
-        if let Err(error) = child.kill().await {
-            state
-                .child
-                .lock()
-                .map_err(|lock_error| lock_error.to_string())?
-                .replace(child);
-            return Err(format!("Failed to stop the managed Gateway: {}", error));
-        }
+        crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
     }
     state.transition(
         Some(GatewayLifecycle::Stopped),
@@ -709,6 +755,15 @@ pub async fn update_openclaw(
     app: AppHandle,
     state: State<'_, GatewayProcess>,
 ) -> Result<OpenclawUpdateResult, String> {
+    if matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Docker
+    ) {
+        return Err(
+            "Docker is the selected OpenClaw runtime. Refresh the Docker image and recreate its container instead of updating a native package."
+                .to_string(),
+        );
+    }
     let _update_guard = update_operation()
         .try_lock()
         .map_err(|_| UPDATE_BUSY_ERROR.to_string())?;
@@ -717,33 +772,51 @@ pub async fn update_openclaw(
         .try_lock_owned()
         .map_err(|_| "A Gateway lifecycle operation is already running".to_string())?;
 
-    emit_update_progress(&app, "Preparing the OpenClaw update...", 0.02);
-    if let Err(error) = ensure_update_node_runtime(&app).await {
+    emit_update_progress_keyed(
+        &app,
+        "Preparing the OpenClaw update...",
+        "setup.openclawUpdate.progress.preparing",
+        0.02,
+    );
+    let detected = system::detect_openclaw().await;
+    if !detected.installed {
+        let error = "OpenClaw is not installed".to_string();
         emit_update_error(&app, &error, Some(0.28));
         return Err(error);
     }
-
-    let detected = system::detect_openclaw().await;
-    if !detected.installed {
-        return Err("OpenClaw is not installed".to_string());
-    }
-    let binary = system::resolve_openclaw_binary()
-        .ok_or_else(|| "OpenClaw executable was not found".to_string())?;
-    emit_update_progress(
+    let binary = match system::resolve_openclaw_binary_async().await {
+        Some(binary) => binary,
+        None => {
+            let error = "OpenClaw executable was not found".to_string();
+            emit_update_error(&app, &error, Some(0.28));
+            return Err(error);
+        }
+    };
+    let mut node = match ensure_update_node_runtime(&app, &binary).await {
+        Ok(node) => node,
+        Err(error) => {
+            emit_update_error(&app, &error, Some(0.28));
+            return Err(error);
+        }
+    };
+    let mut runtime = system::native_openclaw_runtime(binary.clone(), &node)?;
+    emit_update_progress_keyed(
         &app,
         &format!("OpenClaw binary: {}", system::path_for_display(&binary)),
+        "setup.openclawUpdate.progress.binary",
         0.34,
     );
     // Probe before taking the managed Gateway down so the expected network
     // decision does not lengthen its maintenance window.
     let selection = npm_registry::select_npm_registry().await;
-    emit_update_progress(
+    emit_update_progress_keyed(
         &app,
         "Resolving the target OpenClaw runtime contract...",
+        "setup.openclawUpdate.progress.targetContract",
         0.36,
     );
     let (dry_run, metadata_registry) =
-        run_npm_update_dry_run_with_registry_fallback(&binary, selection.clone()).await;
+        run_npm_update_dry_run_with_registry_fallback(&runtime, selection.clone()).await;
     let npm_target = dry_run
         .as_ref()
         .ok()
@@ -768,23 +841,31 @@ pub async fn update_openclaw(
             expression,
             crate::commands::node_runtime::NodeRequirementSource::RegistryPackage,
         )?;
-        emit_update_progress(
+        emit_update_progress_keyed(
             &app,
             &format!(
                 "Target OpenClaw requires Node.js {}; validating update runtime...",
                 target_requirement.expression()
             ),
+            "setup.openclawUpdate.progress.targetNode",
             0.38,
         );
-        setup::ensure_compatible_node_runtime(&app, UPDATE_PROGRESS_STEP, &target_requirement)
-            .await?;
+        node =
+            setup::ensure_compatible_node_runtime(&app, UPDATE_PROGRESS_STEP, &target_requirement)
+                .await?;
+        runtime = system::native_openclaw_runtime(binary.clone(), &node)?;
     }
-    emit_update_progress(&app, "Stopping the managed Gateway if necessary...", 0.45);
+    emit_update_progress_keyed(
+        &app,
+        "Stopping the managed Gateway if necessary...",
+        "setup.openclawUpdate.progress.stoppingGateway",
+        0.45,
+    );
     let restore_gateway = stop_managed_gateway(&state).await?;
 
     let (output, selected_registry) = run_openclaw_command_with_registry_fallback(
         &app,
-        &binary,
+        &runtime,
         &["update", "--yes", "--no-restart", "--json"],
         UPDATE_TIMEOUT,
         selection,
@@ -836,7 +917,12 @@ pub async fn update_openclaw(
         result.npm_registry_kind = Some(selected_registry.kind);
     }
 
-    emit_update_progress(&app, "Restoring the Gateway...", 0.88);
+    emit_update_progress_keyed(
+        &app,
+        "Restoring the Gateway...",
+        "setup.openclawUpdate.progress.restoringGateway",
+        0.88,
+    );
     match restore_managed_gateway(app.clone(), state.clone(), restore_gateway).await {
         Ok(restarted) => result.gateway_restarted = restarted,
         Err(error) => result.gateway_error = Some(error),
@@ -847,7 +933,12 @@ pub async fn update_openclaw(
         result.after_version = Some(version);
     }
     if result.success {
-        emit_update_progress(&app, "OpenClaw update completed", 1.0);
+        setup_progress::emit_completed_keyed(
+            &app,
+            UPDATE_PROGRESS_STEP,
+            "OpenClaw update completed",
+            "setup.openclawUpdate.progress.updated",
+        );
     } else {
         emit_update_error(
             &app,

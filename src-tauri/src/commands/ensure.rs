@@ -8,6 +8,7 @@
 //! 多套恢复流程。
 
 use crate::commands::docker::{check_docker, docker_gateway_status, start_docker_gateway_locked};
+use crate::paths::{self, OpenClawRuntimeMode};
 use crate::state::gateway_process::{
     push_log, GatewayLifecycle, GatewayRuntimeMode, LogLevel, LogSource,
 };
@@ -46,9 +47,8 @@ async fn probe_gateway_port(port: u16) -> bool {
 }
 
 /// 从当前本机配置读取 Gateway token。
-fn read_gateway_token() -> Option<String> {
-    use crate::paths;
-    let raw = std::fs::read_to_string(&paths::config_path()).ok()?;
+fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
+    let raw = std::fs::read_to_string(config_path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
     v.get("gateway")?
         .get("auth")?
@@ -60,21 +60,12 @@ fn read_gateway_token() -> Option<String> {
 
 /// 从 JunQi 管理的 Docker 配置读取 Gateway token。
 fn read_docker_gateway_token() -> Option<String> {
-    use crate::paths;
-    let path = paths::desktop_dir().join("docker").join("openclaw.json");
-    let raw = std::fs::read_to_string(path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    v.get("gateway")?
-        .get("auth")?
-        .get("token")?
-        .as_str()
-        .map(|s| s.to_string())
+    read_gateway_token(&paths::docker_config_path())
 }
 
 /// 从 openclaw.json 读取 Gateway 端口；读不到时回退到 OpenClaw 默认端口。
 fn read_gateway_port() -> u16 {
-    use crate::paths;
-    let raw = match std::fs::read_to_string(&paths::config_path()) {
+    let raw = match std::fs::read_to_string(paths::active_config_path()) {
         Ok(raw) => raw,
         Err(_) => return crate::commands::config::default_gateway_port(),
     };
@@ -84,6 +75,95 @@ fn read_gateway_port() -> u16 {
     };
     crate::commands::config::gateway_port_from_config(&v)
         .unwrap_or_else(crate::commands::config::default_gateway_port)
+}
+
+/// Recover the explicitly selected Docker runtime without invoking native
+/// OpenClaw. Docker users should never be silently switched to a separate
+/// native state directory during a self-recovery attempt.
+async fn ensure_selected_docker_gateway(
+    app: AppHandle,
+    state: &GatewayProcess,
+    port: u16,
+) -> Result<EnsureResult, String> {
+    let docker_running = docker_gateway_status(Some(port))
+        .await
+        .map(|status| status.running)
+        .unwrap_or(false);
+    if docker_running && probe_gateway_port(port).await {
+        let token = read_docker_gateway_token();
+        state.transition(
+            Some(GatewayLifecycle::Running),
+            Some(GatewayRuntimeMode::Docker),
+            None,
+            "ensure_gateway_running: selected Docker gateway is healthy",
+        );
+        return Ok(EnsureResult {
+            mode: GatewayMode::Docker,
+            healthy: true,
+            port,
+            token,
+            attempted_fallback: false,
+            error: None,
+        });
+    }
+
+    match check_docker().await {
+        Ok(status) if status.daemon_running => {
+            crate::commands::docker::release_managed_native_gateway_for_docker(state, port).await?;
+            match start_docker_gateway_locked(app, Some(port), None).await {
+                Ok(status) => {
+                    state.transition(
+                        Some(GatewayLifecycle::Running),
+                        Some(GatewayRuntimeMode::Docker),
+                        None,
+                        "ensure_gateway_running: selected Docker gateway started",
+                    );
+                    Ok(EnsureResult {
+                        mode: GatewayMode::Docker,
+                        healthy: status.running,
+                        port: status.port,
+                        token: status.token.or_else(read_docker_gateway_token),
+                        attempted_fallback: false,
+                        error: None,
+                    })
+                }
+                Err(error) => {
+                    state.transition(
+                        Some(GatewayLifecycle::Error),
+                        Some(GatewayRuntimeMode::Docker),
+                        None,
+                        "ensure_gateway_running: selected Docker gateway failed",
+                    );
+                    Ok(EnsureResult {
+                        mode: GatewayMode::Unavailable,
+                        healthy: false,
+                        port,
+                        token: None,
+                        attempted_fallback: false,
+                        error: Some(format!("Selected Docker Gateway failed to start: {error}")),
+                    })
+                }
+            }
+        }
+        Ok(_) => Ok(EnsureResult {
+            mode: GatewayMode::Unavailable,
+            healthy: false,
+            port,
+            token: None,
+            attempted_fallback: false,
+            error: Some("Docker is selected but its daemon is unavailable".to_string()),
+        }),
+        Err(error) => Ok(EnsureResult {
+            mode: GatewayMode::Unavailable,
+            healthy: false,
+            port,
+            token: None,
+            attempted_fallback: false,
+            error: Some(format!(
+                "Docker is selected but could not be checked: {error}"
+            )),
+        }),
+    }
 }
 
 /// 冷启动/手动自救共用的 Gateway 恢复入口。
@@ -106,9 +186,15 @@ pub async fn ensure_gateway_running(
     let port = read_gateway_port();
     *state.port.lock().map_err(|e| e.to_string())? = port;
 
+    if matches!(paths::active_runtime_mode(), OpenClawRuntimeMode::Docker) {
+        return ensure_selected_docker_gateway(app, &state, port).await;
+    }
+
+    crate::commands::docker::release_managed_docker_gateway_for_native(port).await?;
+
     // 1. 本机配置端口已经可用，直接复用。
     if probe_gateway_port(port).await {
-        let token = read_gateway_token();
+        let token = read_gateway_token(&paths::config_path());
         state.transition(
             Some(GatewayLifecycle::Running),
             Some(GatewayRuntimeMode::External),
@@ -163,7 +249,9 @@ pub async fn ensure_gateway_running(
         Ok(status) => {
             for _ in 0..45 {
                 if probe_gateway_port(port).await {
-                    let token = status.token.or_else(read_gateway_token);
+                    let token = status
+                        .token
+                        .or_else(|| read_gateway_token(&paths::config_path()));
                     push_log(
                         &state.logs,
                         LogSource::Lifecycle,
@@ -216,13 +304,8 @@ pub async fn ensure_gateway_running(
             if !present {
                 // A managed child that stayed alive without becoming healthy
                 // must not coexist with the Docker fallback.
-                let old_child = {
-                    let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
-                    child_lock.take()
-                };
-                if let Some(mut child) = old_child {
-                    crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
-                }
+                crate::commands::docker::release_managed_native_gateway_for_docker(&state, port)
+                    .await?;
                 match start_docker_gateway_locked(app.clone(), Some(port), None).await {
                     Ok(status) => {
                         docker_token = status.token.or_else(read_docker_gateway_token);

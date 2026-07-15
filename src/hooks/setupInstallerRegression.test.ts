@@ -5,8 +5,10 @@ import test from 'node:test';
 const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
 const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
+const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const setupCommands = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
+const storageCommands = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
 
 test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /\{ id: "npm",\s+label: "npm"/);
@@ -17,18 +19,39 @@ test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /patchStep\("openclaw", "done", installedStatus\.version/);
 });
 
-test('bug 04 Windows setup uses standard system Node.js and Git installations', () => {
-  assert.doesNotMatch(setupCommands, /GIT_WIN_VERSION/);
-  assert.doesNotMatch(setupCommands, /launching Git installer wizard/i);
-  assert.match(setupCommands, /install_or_upgrade_winget_package\("OpenJS\.NodeJS\.LTS"\)/);
-  assert.match(setupCommands, /install_or_upgrade_winget_package\("OpenJS\.NodeJS"\)/);
-  assert.match(setupCommands, /install_or_upgrade_winget_package\("Git\.Git"\)/);
+test('bug 04 Windows setup uses system defaults unless the user selected a portable runtime', () => {
+  assert.match(setupCommands, /install_windows_system_node/);
+  assert.match(setupCommands, /install_windows_system_git/);
+  assert.match(setupCommands, /install_or_upgrade_winget_package/);
+  assert.match(setupCommands, /paths::configured_node_runtime_dir\(\)/);
+  assert.match(setupCommands, /paths::configured_git_runtime_dir\(\)/);
+  assert.match(setupCommands, /install_windows_portable_node/);
+  assert.match(setupCommands, /install_windows_portable_git/);
+  assert.match(setupCommands, /CHINA_NODE_INDEX/);
+  assert.match(setupCommands, /resolve_node_sha256/);
+  assert.match(setupCommands, /current_managed_git_artifact/);
+  assert.match(setupCommands, /activate_staged_runtime/);
   assert.match(setupCommands, /refresh_path_from_registry\(\)/);
-  assert.match(systemCommands, /System installations are authoritative/);
-  assert.doesNotMatch(systemCommands, /paths::node_bin_dir\(\)[\s\S]*path_parts/);
+  assert.match(systemCommands, /configured_node_path/);
+  assert.match(systemCommands, /legacy_local_node_path/);
+  assert.match(systemCommands, /configured_git_path/);
+  assert.match(systemCommands, /legacy_local_git_path/);
+  assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("node"\)/);
+  assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("git"\)/);
   assert.match(systemCommands, /pub async fn check_npm/);
   assert.match(systemCommands, /get_node_version[\s\S]*?configure_background_command/);
   assert.match(systemCommands, /get_git_version[\s\S]*?configure_background_command/);
+});
+
+test('dependency runtime locations are explicit onboarding choices instead of children of OpenClaw storage', () => {
+  assert.match(storageGate, /customNodeRuntime/);
+  assert.match(storageGate, /customGitRuntime/);
+  assert.match(storageGate, /nodeRuntimeDir: customNodeRuntime \? nodeRuntimeDir\.trim\(\) \|\| null : null/);
+  assert.match(storageGate, /gitRuntimeDir: customGitRuntime \? gitRuntimeDir\.trim\(\) \|\| null : null/);
+  assert.match(storageCommands, /node_runtime_dir: Option<String>/);
+  assert.match(storageCommands, /git_runtime_dir: Option<String>/);
+  assert.match(storageCommands, /custom Node\.js runtime directory/);
+  assert.match(storageCommands, /custom Git runtime directory/);
 });
 
 test('npm setup step is translated in every supported locale', () => {

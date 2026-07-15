@@ -6,7 +6,25 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 2;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 4;
+
+/// The OpenClaw runtime selected by the user during setup.
+///
+/// This belongs beside the storage bootstrap instead of a frontend cache: the
+/// active Gateway configuration must survive a desktop restart and be shared by
+/// setup, Gateway recovery, and the configuration UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenClawRuntimeMode {
+    Native,
+    Docker,
+}
+
+impl Default for OpenClawRuntimeMode {
+    fn default() -> Self {
+        Self::Native
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageBootstrap {
@@ -17,7 +35,14 @@ pub struct StorageBootstrap {
     pub runtime_dir: PathBuf,
     pub npm_cache_dir: PathBuf,
     pub npm_prefix: Option<PathBuf>,
+    /// An explicitly user-selected portable Node.js root. `None` means use
+    /// the operating-system installation discovered at runtime.
+    pub node_runtime_dir: Option<PathBuf>,
+    /// An explicitly user-selected portable Git root. `None` means use the
+    /// operating-system installation discovered at runtime.
+    pub git_runtime_dir: Option<PathBuf>,
     pub terminal_integration: bool,
+    pub runtime_mode: OpenClawRuntimeMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +58,13 @@ struct PersistedStorageBootstrap {
     #[serde(default)]
     npm_prefix: Option<PathBuf>,
     #[serde(default)]
+    node_runtime_dir: Option<PathBuf>,
+    #[serde(default)]
+    git_runtime_dir: Option<PathBuf>,
+    #[serde(default)]
     terminal_integration: bool,
+    #[serde(default)]
+    runtime_mode: OpenClawRuntimeMode,
 }
 
 impl StorageBootstrap {
@@ -49,7 +80,10 @@ impl StorageBootstrap {
             workspace_dir,
             npm_cache_dir,
             npm_prefix: None,
+            node_runtime_dir: None,
+            git_runtime_dir: None,
             terminal_integration: false,
+            runtime_mode: OpenClawRuntimeMode::Native,
         }
     }
 
@@ -69,7 +103,10 @@ impl StorageBootstrap {
             runtime_dir,
             npm_cache_dir,
             npm_prefix,
+            node_runtime_dir: None,
+            git_runtime_dir: None,
             terminal_integration,
+            runtime_mode: OpenClawRuntimeMode::Native,
         }
     }
 
@@ -89,7 +126,10 @@ impl StorageBootstrap {
             runtime_dir,
             npm_cache_dir,
             npm_prefix: value.npm_prefix,
+            node_runtime_dir: value.node_runtime_dir,
+            git_runtime_dir: value.git_runtime_dir,
             terminal_integration: value.terminal_integration,
+            runtime_mode: value.runtime_mode,
         };
         normalized.paths_are_absolute().then_some(normalized)
     }
@@ -103,7 +143,10 @@ impl StorageBootstrap {
             runtime_dir: Some(self.runtime_dir.clone()),
             npm_cache_dir: Some(self.npm_cache_dir.clone()),
             npm_prefix: self.npm_prefix.clone(),
+            node_runtime_dir: self.node_runtime_dir.clone(),
+            git_runtime_dir: self.git_runtime_dir.clone(),
             terminal_integration: self.terminal_integration,
+            runtime_mode: self.runtime_mode,
         }
     }
 
@@ -115,6 +158,14 @@ impl StorageBootstrap {
             && self.npm_cache_dir.is_absolute()
             && self
                 .npm_prefix
+                .as_ref()
+                .is_none_or(|path| path.is_absolute())
+            && self
+                .node_runtime_dir
+                .as_ref()
+                .is_none_or(|path| path.is_absolute())
+            && self
+                .git_runtime_dir
                 .as_ref()
                 .is_none_or(|path| path.is_absolute())
     }
@@ -254,35 +305,98 @@ pub fn config_path() -> PathBuf {
         .unwrap_or_else(|| desktop_dir().join("openclaw.json"))
 }
 
-// ── Node.js ────────────────────────────────────────────────────
-
-/// 返回 JunQi 管理的 Node.js 二进制路径。
-pub fn local_node_path() -> PathBuf {
-    if cfg!(windows) {
-        runtime_dir().join("node").join("node.exe")
-    } else {
-        runtime_dir().join("node").join("bin").join("node")
+/// Resolve the configuration location inside a state root for a specific
+/// runtime. Storage migration uses this instead of assuming that every active
+/// configuration is the Native `openclaw.json` file.
+pub fn config_path_for_runtime(state_dir: &Path, mode: OpenClawRuntimeMode) -> PathBuf {
+    match mode {
+        OpenClawRuntimeMode::Native => state_dir.join("openclaw.json"),
+        OpenClawRuntimeMode::Docker => state_dir.join("docker").join("openclaw.json"),
     }
 }
 
-/// 返回 JunQi 管理的 Node 安装内的 npm-cli.js 路径。
-pub fn local_npm_cli_path() -> PathBuf {
-    if cfg!(windows) {
-        runtime_dir()
-            .join("node")
-            .join("node_modules")
-            .join("npm")
-            .join("bin")
-            .join("npm-cli.js")
-    } else {
-        runtime_dir()
-            .join("node")
-            .join("lib")
-            .join("node_modules")
-            .join("npm")
-            .join("bin")
-            .join("npm-cli.js")
+/// The isolated configuration mounted into the OpenClaw Docker container.
+pub fn docker_config_path() -> PathBuf {
+    config_path_for_runtime(&desktop_dir(), OpenClawRuntimeMode::Docker)
+}
+
+/// The runtime selected during setup. Legacy bootstrap files remain native by
+/// default so upgrading JunQi never changes an existing user's runtime.
+pub fn active_runtime_mode() -> OpenClawRuntimeMode {
+    load_storage_bootstrap()
+        .map(|layout| layout.runtime_mode)
+        .unwrap_or_default()
+}
+
+/// Resolve the authoritative OpenClaw configuration for the selected runtime.
+/// Native-only process commands must continue to call `config_path()` directly.
+pub fn active_config_path() -> PathBuf {
+    match active_runtime_mode() {
+        OpenClawRuntimeMode::Native => config_path(),
+        OpenClawRuntimeMode::Docker => docker_config_path(),
     }
+}
+
+/// Persist an explicit runtime choice. Runtime selection is only valid after
+/// storage setup, which guarantees that the choice has a stable home.
+pub fn set_active_runtime_mode(mode: OpenClawRuntimeMode) -> Result<(), String> {
+    let mut layout = load_storage_bootstrap()
+        .ok_or("Storage setup must be completed before selecting an OpenClaw runtime")?;
+    layout.runtime_mode = mode;
+    save_storage_bootstrap(&layout)
+}
+
+// ── Node.js ────────────────────────────────────────────────────
+
+/// Returns a user-selected portable Node.js root. Without an explicit
+/// selection, JunQi deliberately uses the system installation rather than
+/// creating another Node.js copy beside OpenClaw data.
+pub fn configured_node_runtime_dir() -> Option<PathBuf> {
+    std::env::var_os("JUNQI_NODE_RUNTIME_DIR")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| load_storage_bootstrap().and_then(|layout| layout.node_runtime_dir))
+}
+
+fn node_binary_in(root: &Path) -> PathBuf {
+    if cfg!(windows) {
+        root.join("node.exe")
+    } else {
+        root.join("bin").join("node")
+    }
+}
+
+fn npm_cli_in_node_root(root: &Path) -> PathBuf {
+    let npm_root = if cfg!(windows) {
+        root.join("node_modules")
+    } else {
+        root.join("lib").join("node_modules")
+    };
+    npm_root.join("npm").join("bin").join("npm-cli.js")
+}
+
+/// The explicit portable Node.js executable, if the user opted into one.
+pub fn configured_node_path() -> Option<PathBuf> {
+    configured_node_runtime_dir().map(|root| node_binary_in(&root))
+}
+
+/// The portable Node.js location used by older JunQi releases. This remains a
+/// read-only compatibility fallback; new setup flows never install here unless
+/// the user explicitly selected that same directory.
+pub fn legacy_local_node_path() -> PathBuf {
+    node_binary_in(&runtime_dir().join("node"))
+}
+
+/// The npm CLI that belongs to an explicitly selected portable Node.js.
+pub fn configured_npm_cli_path() -> Option<PathBuf> {
+    configured_node_runtime_dir().map(|root| npm_cli_in_node_root(&root))
+}
+
+/// The legacy private npm CLI kept only for upgrades from older releases.
+pub fn legacy_local_npm_cli_path() -> PathBuf {
+    let legacy_root = runtime_dir().join("node");
+    npm_cli_in_node_root(&legacy_root)
 }
 
 /// Return an npm cache override only when the user selected a path distinct
@@ -319,71 +433,47 @@ pub fn terminal_launcher_dir() -> PathBuf {
     app_config_dir().join("bin")
 }
 
-/// JunQi 自己安装 OpenClaw 时交给 `npm install -g` 的全局 prefix。
-/// 这里刻意不使用 `desktop_dir().join("openclaw")`：旧的 `--prefix`
-/// 写法会生成一套平行安装，遮蔽用户自己 `npm i -g openclaw` 的结果。
-/// 现在使用真正的 npm 全局安装布局：
-/// `~/.openclaw/global/lib/node_modules/openclaw`，并生成对应的可执行 shim。
-pub fn openclaw_global_dir() -> PathBuf {
-    desktop_dir().join("global")
-}
-
 /// 返回全局 prefix 下的可执行 shim 目录：
 /// Unix 是 `<prefix>/bin`，Windows 是 `<prefix>`，因为 npm 会把
 /// `openclaw.cmd` 放在 `node_modules` 旁边。
-pub fn openclaw_global_bin_dir() -> PathBuf {
+pub fn npm_bin_dir_for_prefix(prefix: &Path) -> PathBuf {
     if cfg!(windows) {
-        openclaw_global_dir()
+        prefix.to_path_buf()
     } else {
-        openclaw_global_dir().join("bin")
-    }
-}
-
-/// XDG 兜底 prefix：当用户 npmrc 指向不可写位置时使用。
-/// 典型例子包括 macOS/Homebrew 或 apt 默认的 `/usr/local`，
-/// 以及 Windows 原生安装里的 `C:\Program Files\nodejs`。
-/// `~/.local` 在目标平台上都属于当前用户，因此 `npm install -g`
-/// 能可靠落盘；可执行文件在 Unix 上是 `~/.local/bin/openclaw`，
-/// Windows 上是 `~/.local/openclaw.cmd`。
-pub fn local_npm_prefix() -> PathBuf {
-    home_dir_or_fallback().join(".local")
-}
-
-/// 返回 `local_npm_prefix()` 下的可执行 shim 目录：
-/// Unix 是 `<prefix>/bin`，Windows 是 prefix 本身，因为
-/// `openclaw.cmd` shim 就在 prefix 目录里。
-pub fn local_npm_bin_dir() -> PathBuf {
-    if cfg!(windows) {
-        local_npm_prefix()
-    } else {
-        local_npm_prefix().join("bin")
+        prefix.join("bin")
     }
 }
 
 /// 从 `~/.npmrc` 读取用户自己的 npm 全局 prefix。
 ///
-/// 优先使用用户 prefix，而不是 JunQi 自己的 `openclaw_global_dir()`，
 /// 这样安装位置和用户在终端执行 `npm i -g openclaw` 完全一致：
 /// 同一个 prefix、同一个可执行目录、同一个 `package.json`。
-/// 用户之后也可以继续用自己的 npm 命令管理，不会被 JunQi 的影子安装覆盖。
+/// 用户之后也可以继续用自己的 npm 命令管理，不会被 JunQi 的平行安装覆盖。
 ///
 /// 当 `~/.npmrc` 不存在、不可读或没有定义 `prefix` 时返回 `None`，
-/// 调用方应继续回退到 JunQi 管理的位置。
+/// 调用方应查询 npm 的实际有效配置或要求用户明确选择前缀。
 pub fn user_npm_prefix() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let npmrc = home.join(".npmrc");
     let content = std::fs::read_to_string(&npmrc).ok()?;
+    user_npm_prefix_from_npmrc(&content)
+}
+
+fn user_npm_prefix_from_npmrc(content: &str) -> Option<PathBuf> {
     for raw in content.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let value = line
+        let Some(value) = line
             .strip_prefix("prefix=")
-            .or_else(|| line.strip_prefix("prefix ="))?;
+            .or_else(|| line.strip_prefix("prefix ="))
+        else {
+            continue;
+        };
         let value = value.trim().trim_matches(|c| c == '"' || c == '\'');
         if value.is_empty() {
-            return None;
+            continue;
         }
         return Some(PathBuf::from(value));
     }
@@ -395,11 +485,7 @@ pub fn user_npm_prefix() -> Option<PathBuf> {
 /// `openclaw.cmd` shim 就在 prefix 目录里。
 pub fn user_npm_bin_dir() -> Option<PathBuf> {
     let prefix = user_npm_prefix()?;
-    if cfg!(windows) {
-        Some(prefix)
-    } else {
-        Some(prefix.join("bin"))
-    }
+    Some(npm_bin_dir_for_prefix(&prefix))
 }
 
 /// 保存安装/检测过程中选定的 OpenClaw 二进制。
@@ -411,13 +497,32 @@ pub fn openclaw_binary_selection_path() -> PathBuf {
 
 // ── Git ────────────────────────────────────────────────────────
 
-/// 返回 JunQi 本地安装的 Git 二进制路径（Windows 是 MinGit）。
-pub fn local_git_path() -> PathBuf {
+/// Returns a user-selected portable Git root. Without an explicit selection,
+/// Git is discovered from the operating system and its configured PATH.
+pub fn configured_git_runtime_dir() -> Option<PathBuf> {
+    std::env::var_os("JUNQI_GIT_RUNTIME_DIR")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| load_storage_bootstrap().and_then(|layout| layout.git_runtime_dir))
+}
+
+fn git_binary_in(root: &Path) -> PathBuf {
     if cfg!(windows) {
-        runtime_dir().join("git").join("cmd").join("git.exe")
+        root.join("cmd").join("git.exe")
     } else {
-        runtime_dir().join("git").join("bin").join("git")
+        root.join("bin").join("git")
     }
+}
+
+pub fn configured_git_path() -> Option<PathBuf> {
+    configured_git_runtime_dir().map(|root| git_binary_in(&root))
+}
+
+/// Legacy JunQi-owned Git remains discoverable after an upgrade, but new
+/// default setup never writes to this location.
+pub fn legacy_local_git_path() -> PathBuf {
+    git_binary_in(&runtime_dir().join("git"))
 }
 
 // ── 工作区 ─────────────────────────────────────────────────────
@@ -445,6 +550,39 @@ mod storage_bootstrap_tests {
         let layout = StorageBootstrap::for_state_dir(state.clone(), None);
         assert_eq!(layout.config_path, state.join("openclaw.json"));
         assert_eq!(layout.workspace_dir, state.join("workspace"));
+    }
+
+    #[test]
+    fn npmrc_prefix_parser_continues_past_unrelated_settings() {
+        let content =
+            "registry=https://registry.npmmirror.com\nstrict-ssl=false\nprefix = /custom/npm\n";
+        assert_eq!(
+            user_npm_prefix_from_npmrc(content),
+            Some(PathBuf::from("/custom/npm"))
+        );
+    }
+
+    #[test]
+    fn custom_dependency_runtime_dirs_are_explicit_and_survive_bootstrap_round_trip() {
+        let root = std::env::temp_dir().join("junqi-runtime-selection-test");
+        let state = root.join("state");
+        let node = root.join("selected-node");
+        let git = root.join("selected-git");
+        let mut layout = StorageBootstrap::for_state_dir(state, None);
+        layout.node_runtime_dir = Some(node.clone());
+        layout.git_runtime_dir = Some(git.clone());
+
+        let restored = StorageBootstrap::from_persisted(layout.to_persisted()).unwrap();
+        assert_eq!(restored.node_runtime_dir, Some(node));
+        assert_eq!(restored.git_runtime_dir, Some(git));
+        assert_ne!(
+            restored.node_runtime_dir,
+            Some(restored.runtime_dir.join("node"))
+        );
+        assert_ne!(
+            restored.git_runtime_dir,
+            Some(restored.runtime_dir.join("git"))
+        );
     }
 
     #[test]
@@ -488,6 +626,17 @@ mod storage_bootstrap_tests {
         assert_eq!(layout.npm_cache_dir, state.join("npm-cache"));
         assert_eq!(layout.npm_prefix, None);
         assert!(!layout.terminal_integration);
+        assert_eq!(layout.runtime_mode, OpenClawRuntimeMode::Native);
+    }
+
+    #[test]
+    fn bug_rt01_runtime_selection_survives_bootstrap_round_trip() {
+        let state = std::env::temp_dir().join("junqi-runtime-selection");
+        let mut layout = StorageBootstrap::for_state_dir(state, None);
+        layout.runtime_mode = OpenClawRuntimeMode::Docker;
+
+        let restored = StorageBootstrap::from_persisted(layout.to_persisted()).unwrap();
+        assert_eq!(restored.runtime_mode, OpenClawRuntimeMode::Docker);
     }
 
     #[test]

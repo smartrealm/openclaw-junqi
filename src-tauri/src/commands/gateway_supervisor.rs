@@ -3,7 +3,7 @@
 //! Manages the child process lifecycle beyond simple spawn/kill:
 //!   - wait_for_port_free: poll until TCP TIME_WAIT clears
 //!   - find_and_kill_orphans: check for rogue listeners on our port
-//!   - terminate_owned_gateway: graceful kill with hard timeout
+//!   - terminate_owned_gateway: owned process-tree termination
 //!
 //! //!   terminateOwnedGatewayProcess   (line 24)
 //!   waitForPortFree                (line 128)
@@ -12,7 +12,7 @@
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode};
 use crate::state::GatewayProcess;
 use tokio::net::TcpListener;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{sleep, Duration};
 
 /// Poll until the port can be bound (previous occupant-TIME_WAIT cleared).
 /// Returns the elapsed ms. Times out at `timeout_ms` (default 30s).
@@ -51,17 +51,13 @@ pub async fn wait_for_port_free(port: u16, timeout_ms: u64) -> Result<u64, Strin
     }
 }
 
-/// Kill a managed child with graceful kill first, then force stop after 5s.
+/// Stop an owned Gateway command and its descendants. On Windows this delegates
+/// to `taskkill /T` through the shared process-control helper so a Node child
+/// cannot retain the port or OpenClaw migration lock after its launcher exits.
 pub async fn terminate_owned_gateway(child: &mut tokio::process::Child) {
     let pid = child.id().unwrap_or(0);
     eprintln!("[gateway_supervisor] terminating child (pid={})", pid);
-    let _ = child.kill().await;
-    match timeout(Duration::from_secs(5), child.wait()).await {
-        Ok(Ok(_)) => return,
-        _ => {
-            let _ = child.start_kill();
-        }
-    }
+    crate::commands::process_control::terminate_process_tree(child, child.id()).await;
 }
 
 /// Probe for an orphaned process on our port and kill it if found.

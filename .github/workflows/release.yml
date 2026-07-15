@@ -84,8 +84,10 @@ jobs:
     name: Build ${{ matrix.name }}
     needs: verify-version
     permissions:
-      # Tauri Action uploads signed bundles and latest.json for tagged builds.
-      contents: write
+      actions: read
+      contents: read
+    env:
+      IS_TAG_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v') }}
     strategy:
       fail-fast: false              # keep all platforms building even if one fails
       matrix:
@@ -103,6 +105,8 @@ jobs:
             bundle_args: '--bundles app,dmg'
             installer_paths: |
               src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+              src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+              src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           # Windows — native MSVC runners for both supported architectures.
           - name: Windows x64
             artifact_name: windows-x86_64
@@ -113,7 +117,9 @@ jobs:
             bundle_args: '--bundles nsis,msi'
             installer_paths: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi.sig
           - name: Windows ARM64
             artifact_name: windows-arm64
             platform: windows-11-arm
@@ -123,7 +129,9 @@ jobs:
             bundle_args: '--bundles nsis,msi'
             installer_paths: |
               src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
               src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi.sig
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
@@ -154,21 +162,125 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Tauri app
+      - name: Build macOS Tauri bundles
+        if: runner.os == 'macOS'
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Prefer a configured Developer ID; keep certificate-free builds
-          # internally valid by sealing the complete app with an ad-hoc identity.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || matrix.macos_signing_identity }}
         with:
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || (startsWith(github.event.inputs.ref, 'v') && github.event.inputs.ref || '') }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('JunQi Desktop {0}', github.ref_name) || (startsWith(github.event.inputs.ref, 'v') && format('JunQi Desktop {0}', github.event.inputs.ref) || '') }}
-          releaseBody: 'JunQi Desktop signed desktop release.'
-          updaterJsonPreferNsis: true
           args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+
+      - name: Build Windows application
+        if: runner.os == 'Windows'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --target ${{ matrix.target }} --no-bundle --ci
+
+      - name: Validate SignPath release configuration
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        shell: pwsh
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG: ${{ secrets.SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG }}
+          SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG: ${{ secrets.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+        run: |
+          $required = @(
+            'SIGNPATH_API_TOKEN',
+            'SIGNPATH_ORGANIZATION_ID',
+            'SIGNPATH_PROJECT_SLUG',
+            'SIGNPATH_SIGNING_POLICY_SLUG',
+            'SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG',
+            'SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG'
+          )
+          $missing = $required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
+          if ($missing.Count -gt 0) {
+            throw "Tagged Windows releases require SignPath Foundation configuration. Missing: $($missing -join ', ')"
+          }
+
+      - name: Upload unsigned Windows application for SignPath
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        id: upload-unsigned-windows-application
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-unsigned-app-${{ matrix.artifact_name }}
+          path: src-tauri/target/${{ matrix.target }}/release/junqi-desktop.exe
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Sign Windows application with SignPath Foundation
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ secrets.SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-windows-application.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: ${{ runner.temp }}/signpath-signed-app
+
+      - name: Activate signed Windows application
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-app" -Recurse -Filter junqi-desktop.exe | Select-Object -First 1
+          if (-not $signed) { throw 'SignPath did not return junqi-desktop.exe.' }
+          Copy-Item $signed.FullName "src-tauri/target/${{ matrix.target }}/release/junqi-desktop.exe" -Force
+
+      - name: Bundle Windows installers
+        if: runner.os == 'Windows'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri bundle --target ${{ matrix.target }} --bundles nsis,msi --ci
+
+      - name: Upload unsigned Windows installers for SignPath
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        id: upload-unsigned-windows-installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-unsigned-installers-${{ matrix.artifact_name }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Sign Windows installers with SignPath Foundation
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ secrets.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-windows-installers.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: ${{ runner.temp }}/signpath-signed-installers
+
+      - name: Re-sign Windows updater artifacts after Authenticode
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $installers = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-installers" -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.msi' }
+          if ($installers.Count -ne 2) { throw "Expected two signed Windows installers, found $($installers.Count)." }
+          foreach ($installer in $installers) {
+            pnpm tauri signer sign $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Tauri updater signing failed for $($installer.FullName)." }
+          }
 
       - name: Verify macOS disk image and app signature
         if: runner.os == 'macOS'
@@ -196,6 +308,21 @@ jobs:
           fi
           codesign --verify --deep --strict --verbose=2 "${apps[0]}"
 
+      - name: Verify Windows Authenticode signatures
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        shell: pwsh
+        run: |
+          $artifacts = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-installers" -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.msi' }
+          if (-not $artifacts) { throw 'No Windows installers were produced.' }
+          foreach ($artifact in $artifacts) {
+            $signature = Get-AuthenticodeSignature $artifact.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid Authenticode signature for $($artifact.FullName): $($signature.Status)"
+            }
+            Write-Host "Verified $($artifact.FullName) [$($signature.SignerCertificate.Subject)]"
+          }
+
       - name: List built artifacts
         if: always()
         shell: bash
@@ -203,8 +330,30 @@ jobs:
           echo "Built artifacts:"
           find "src-tauri/target" -path "*/release/bundle/*" \( -name "*.dmg" -o -name "*.app" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) 2>/dev/null | sort
 
-      - name: Upload installer artifacts
-        if: success()
+      - name: Upload macOS release artifacts
+        if: success() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: junqi-desktop-${{ matrix.artifact_name }}
+          path: ${{ matrix.installer_paths }}
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload signed Windows release artifacts
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: junqi-desktop-${{ matrix.artifact_name }}
+          path: |
+            ${{ runner.temp }}/signpath-signed-installers/**/*.exe
+            ${{ runner.temp }}/signpath-signed-installers/**/*.exe.sig
+            ${{ runner.temp }}/signpath-signed-installers/**/*.msi
+            ${{ runner.temp }}/signpath-signed-installers/**/*.msi.sig
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload unsigned Windows CI artifacts
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: junqi-desktop-${{ matrix.artifact_name }}
@@ -244,6 +393,19 @@ jobs:
           pattern: junqi-desktop-*
           path: release-assets
           merge-multiple: true
+
+      - name: Generate updater manifest from final signed artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          node scripts/generate-updater-manifest.mjs \
+            --assets-dir release-assets \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" \
+            --version "$version" \
+            --notes "JunQi Desktop $version" \
+            --output release-assets/latest.json
 
       - name: Create or update GitHub Release
         env:

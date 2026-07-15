@@ -14,7 +14,7 @@ test('BUG-IU-01 fresh storage requires onboarding before Gateway start', () => {
     setupFlow.indexOf('const completeStorageSetup'),
     setupFlow.indexOf('const repairAndRetry'),
   );
-  assert.match(completion, /if \(createdFresh\) setNeedsOnboarding\(true\)/);
+  assert.match(completion, /if \(createdFresh\) updateOnboardingRequirement\(true\)/);
   assert.match(completion, /createdFresh && \(postStorageStep === "ready" \|\| postStorageStep === "configure-openclaw"\)/);
   assert.match(setupPage, /onReady=\{flow\.completeStorageSetup\}/);
   assert.doesNotMatch(setupPage, /const finishStorage/);

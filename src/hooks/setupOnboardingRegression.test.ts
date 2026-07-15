@@ -26,8 +26,9 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   );
 
   assert.match(detection, /let cancelled = false/);
-  assert.match(detection, /await checkOpenclaw\(\);\s*if \(cancelled\) return/);
-  assert.match(detection, /await window\.aegis\.config\.detect\(\);\s*if \(cancelled\) return/);
+  assert.match(detection, /await detectGatewayConfig\(\);\s*if \(cancelled\) return/);
+  assert.match(detection, /selectedRuntime === "native" \? await checkOpenclaw\(\) : null/);
+  assert.match(setupFlow, /await window\.aegis\.config\.detect\(\);/);
   assert.match(detection, /return \(\) => \{\s*cancelled = true/);
 });
 
@@ -141,12 +142,13 @@ test('BUG-ONB-13 Docker marks Gateway running only after readiness succeeds', ()
 
 test('BUG-ONB-09 native setup verifies optional terminal integration after OpenClaw', () => {
   const openclawStep = setupFlow.indexOf('patchStep("openclaw", "done"');
-  const terminalStep = setupFlow.indexOf('await applyTerminalIntegration()', openclawStep);
+  const terminalStep = setupFlow.indexOf('await configureTerminalIntegration(runId)', openclawStep);
   const gatewayStep = setupFlow.indexOf('patchStep("gateway", "running"', terminalStep);
 
   assert.ok(openclawStep >= 0);
   assert.ok(terminalStep > openclawStep);
   assert.ok(gatewayStep > terminalStep);
+  assert.match(setupFlow, /const terminalStatus = await applyTerminalIntegration\(\)/);
   assert.match(setupFlow, /!terminalStatus\.enabled \|\| !terminalStatus\.launcherReady/);
   assert.match(setupFlow, /patchStep\("terminal", "skipped"/);
 });

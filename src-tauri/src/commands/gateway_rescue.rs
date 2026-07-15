@@ -16,7 +16,7 @@ pub struct RescueContext {
     logs: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RescueChatRequest {
     api: String,
@@ -66,7 +66,14 @@ fn tail_chars(value: &str, max_chars: usize) -> String {
 
 fn rescue_system_prompt(ctx: &RescueContext) -> String {
     let logs = ctx.logs.clone().unwrap_or_default();
-    let tail = tail_chars(&logs, 8000);
+    // Logs stay local until this exact boundary. Sanitize again here even
+    // though Gateway ingestion also redacts, because callers can send an
+    // arbitrary diagnostic context through the IPC command.
+    let error = crate::commands::diagnostic_output::sanitize_diagnostic_text(&ctx.error, 2_000);
+    let tail = crate::commands::diagnostic_output::sanitize_diagnostic_text(
+        &tail_chars(&logs, 8_000),
+        8_000,
+    );
     [
         "You are JunQi Desktop local recovery assistant.",
         "The OpenClaw Gateway cannot start, so the user is talking to you through a direct provider fallback.",
@@ -74,7 +81,7 @@ fn rescue_system_prompt(ctx: &RescueContext) -> String {
         "Prefer safe actions: explain likely cause, suggest doctor --fix, config backup/restore, port checks, and provider config validation.",
         "",
         "Gateway error:",
-        ctx.error.as_str(),
+        error.as_str(),
         "",
         "Gateway logs:",
         if tail.trim().is_empty() { "(none)" } else { tail.as_str() },
@@ -222,5 +229,19 @@ mod tests {
             endpoint("https://api.example.com", "chat/completions").unwrap(),
             "https://api.example.com/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn rescue_prompt_never_contains_credentials_from_error_or_logs() {
+        let prompt = rescue_system_prompt(&RescueContext {
+            error: "Gateway failed with api_key=super-secret".to_string(),
+            logs: Some(
+                "Authorization: Bearer hidden-token\nsk-visible-token-123456789".to_string(),
+            ),
+        });
+        assert!(!prompt.contains("super-secret"));
+        assert!(!prompt.contains("hidden-token"));
+        assert!(!prompt.contains("sk-visible-token-123456789"));
+        assert!(prompt.contains("[sensitive diagnostic redacted]"));
     }
 }

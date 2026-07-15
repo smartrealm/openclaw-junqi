@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   checkOpenclawUpdate,
   updateOpenclaw,
@@ -14,6 +15,7 @@ import {
   dispatchOpenclawUpdateMaintenanceStarted,
 } from '@/services/openclawUpdateLifecycle';
 import { normalizeSetupProgressPayload } from './setupProgressEvents';
+import { translateSetupProgressMessage } from './setupProgressParams';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 export interface OpenclawUpdateCompletion {
@@ -26,6 +28,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function useOpenclawUpdate() {
+  const { t } = useTranslation();
   const [state, dispatch] = useReducer(openclawUpdateReducer, initialOpenclawUpdateState);
   const operationId = useRef(0);
   const busy = useRef(false);
@@ -38,14 +41,18 @@ export function useOpenclawUpdate() {
       dispatch({
         type: 'progressReceived',
         progress: detail.progress,
-        message: detail.message,
+        message: translateSetupProgressMessage(
+          detail.key,
+          detail.message,
+          (translationKey, options) => t(translationKey, options),
+        ),
       });
     });
     return () => {
       operationId.current += 1;
       unlisten();
     };
-  }, []);
+  }, [t]);
 
   const check = useCallback(async (): Promise<OpenclawUpdateStatus | null> => {
     if (busy.current) return null;

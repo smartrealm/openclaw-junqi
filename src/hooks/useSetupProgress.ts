@@ -35,6 +35,9 @@ export interface SetupProgressDetail {
 interface RawSetupProgressDetail extends SetupProgressDetail {
   /** Interpolation args merged into the t() call. */
   params?: Record<string, unknown>;
+  /** Rust producers set this for terminal failures. Keep it as a compatibility
+   * fallback for older producers that have not added an explicit status yet. */
+  error?: string | null;
 }
 
 export function useSetupProgress(filterStep?: string): SetupProgressDetail | null {
@@ -51,9 +54,10 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
       const step = d.step;
       const progress = typeof d.progress === 'number' ? d.progress : 0;
       const key = typeof d.key === 'string' ? d.key : undefined;
-      const status = d.status === 'completed' || d.status === 'failed' || d.status === 'running'
+      const explicitStatus = d.status === 'completed' || d.status === 'failed' || d.status === 'running'
         ? d.status
         : undefined;
+      const status = explicitStatus ?? (typeof d.error === 'string' && d.error.trim() ? 'failed' : undefined);
       const display = key ? initialTRef.current(key, d.params ?? {}) : d.message;
       // If t() returned the key unchanged (no translation registered),
       // gracefully fall back to the raw message string.
