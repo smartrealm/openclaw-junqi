@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const petWindow = readFileSync(new URL('./PetWindow.tsx', import.meta.url), 'utf8');
 const petCommands = readFileSync(new URL('../../src-tauri/src/commands/pet.rs', import.meta.url), 'utf8');
+const petEmitter = readFileSync(new URL('./usePetStateEmitter.ts', import.meta.url), 'utf8');
 
 test('native pet dragging has an explicit completion signal on Windows', () => {
   assert.match(petCommands, /start_dragging\(\)/);
@@ -37,4 +38,12 @@ test('a successful file drop preserves the cursor target for the swallow catch s
   assert.match(petWindow, /preserveDropTargetUntilRef\.current = Date\.now\(\) \+ DROP_CATCH_MEMORY_MS/);
   assert.match(petWindow, /remainingCatchMs > 0/);
   assert.match(petWindow, /state\.emotion !== 'swallow' && state\.emotion !== 'rapidSwallow'/);
+});
+
+test('setup pet status never exposes raw installer logs or error details', () => {
+  const start = petEmitter.indexOf('function localizedSetupMessage');
+  const end = petEmitter.indexOf('function setupStepTitleKey');
+  const localizedMessage = petEmitter.slice(start, end);
+  assert.doesNotMatch(localizedMessage, /setupStatusMessage/);
+  assert.doesNotMatch(localizedMessage, /setupError/);
 });

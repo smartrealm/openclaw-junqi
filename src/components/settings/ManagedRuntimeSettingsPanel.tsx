@@ -165,11 +165,6 @@ export function ManagedRuntimeSettingsPanel() {
         </button>
       </div>
 
-      <div className="mt-4 rounded-md bg-aegis-surface/60 px-3 py-2">
-        <div className="text-xs text-aegis-text-muted">{t('storage.runtimeInstallDir', '安装目录')}</div>
-        <div className="mt-1 break-all font-mono text-xs leading-5 text-aegis-text">{status?.runtimeDir || '—'}</div>
-      </div>
-
       {status && (
         <div className="mt-3">
           <ToolRow
@@ -191,7 +186,7 @@ export function ManagedRuntimeSettingsPanel() {
             title="Git"
             status={status.git}
             detail={status.gitManagedByJunqi
-              ? t('storage.runtimeGitManaged', { source: sourceLabel(status.git.source), defaultValue: 'Windows MinGit · {{source}}' })
+              ? t('storage.runtimeGitManaged', { source: sourceLabel(status.git.source), defaultValue: 'Git for Windows 系统安装 · {{source}}' })
               : t('storage.runtimeGitSystem', '由 macOS/Linux 系统包管理器维护')}
             actionLabel={action === 'git' ? t('storage.runtimeUpdating', '更新中') : t('storage.runtimeUpdateGit', '更新 Git')}
             busy={action === 'git'}
@@ -203,16 +198,16 @@ export function ManagedRuntimeSettingsPanel() {
 
       {status && (
         <p className="text-xs leading-5 text-aegis-text-muted">
-          {status.gitDownloadOrder.length > 0
+          {status.nodeDownloadOrder.length > 0 && status.gitDownloadOrder.length > 0
             ? t('storage.runtimeDownloadOrderWithGit', {
               node: status.nodeDownloadOrder.join(' → '),
               git: status.gitDownloadOrder.join(' → '),
               defaultValue: '下载顺序：Node.js {{node}}；Git {{git}}',
             })
-            : t('storage.runtimeDownloadOrderNode', {
+            : status.nodeDownloadOrder.length > 0 ? t('storage.runtimeDownloadOrderNode', {
               node: status.nodeDownloadOrder.join(' → '),
               defaultValue: '下载顺序：Node.js {{node}}',
-            })}
+            }) : t('storage.runtimeSystemManaged', '使用操作系统或包管理器的标准安装位置')}
         </p>
       )}
 

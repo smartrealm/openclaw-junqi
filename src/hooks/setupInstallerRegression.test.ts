@@ -6,7 +6,6 @@ const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'u
 const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const setupCommands = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
-const gitRuntime = readFileSync(new URL('../../src-tauri/src/commands/git_runtime.rs', import.meta.url), 'utf8');
 const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
 
 test('bug 03 dependency versions remain visible after installation', () => {
@@ -18,14 +17,15 @@ test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /patchStep\("openclaw", "done", installedStatus\.version/);
 });
 
-test('bug 04 Windows setup uses managed MinGit and hidden dependency probes', () => {
-  assert.match(gitRuntime, /releases\/latest/);
-  assert.match(gitRuntime, /"x86_64" => "-64-bit\.zip"/);
-  assert.match(gitRuntime, /"aarch64" => "-arm64\.zip"/);
-  assert.match(gitRuntime, /sha256/);
+test('bug 04 Windows setup uses standard system Node.js and Git installations', () => {
   assert.doesNotMatch(setupCommands, /GIT_WIN_VERSION/);
   assert.doesNotMatch(setupCommands, /launching Git installer wizard/i);
-  assert.match(setupCommands, /extract_zip_preserving_root/);
+  assert.match(setupCommands, /install_or_upgrade_winget_package\("OpenJS\.NodeJS\.LTS"\)/);
+  assert.match(setupCommands, /install_or_upgrade_winget_package\("OpenJS\.NodeJS"\)/);
+  assert.match(setupCommands, /install_or_upgrade_winget_package\("Git\.Git"\)/);
+  assert.match(setupCommands, /refresh_path_from_registry\(\)/);
+  assert.match(systemCommands, /System installations are authoritative/);
+  assert.doesNotMatch(systemCommands, /paths::node_bin_dir\(\)[\s\S]*path_parts/);
   assert.match(systemCommands, /pub async fn check_npm/);
   assert.match(systemCommands, /get_node_version[\s\S]*?configure_background_command/);
   assert.match(systemCommands, /get_git_version[\s\S]*?configure_background_command/);

@@ -44,8 +44,6 @@ impl TerminalIntegrationBackend for UnixBackend {
     fn launcher_contents(binary: Option<&Path>) -> String {
         let state = shell_quote(&paths::desktop_dir());
         let config = shell_quote(&paths::config_path());
-        let node = shell_quote(&paths::node_bin_dir());
-        let git = shell_quote(&paths::git_bin_dir());
         let npm = paths::configured_npm_prefix()
             .map(|prefix| prefix.join("bin"))
             .unwrap_or_else(paths::local_npm_bin_dir);
@@ -54,8 +52,8 @@ impl TerminalIntegrationBackend for UnixBackend {
             format!("exec {} \"$@\"", shell_quote(path))
         });
         format!(
-            "#!/bin/sh\nexport OPENCLAW_STATE_DIR={}\nexport OPENCLAW_CONFIG_PATH={}\nexport PATH={}:{}:{}:\"$PATH\"\n{}\n",
-            state, config, node, git, npm, command
+            "#!/bin/sh\nexport OPENCLAW_STATE_DIR={}\nexport OPENCLAW_CONFIG_PATH={}\nexport PATH={}:\"$PATH\"\n{}\n",
+            state, config, npm, command
         )
     }
 

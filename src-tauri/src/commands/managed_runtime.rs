@@ -1,5 +1,4 @@
 use crate::commands::{setup, system};
-use crate::paths;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -23,15 +22,24 @@ pub async fn get_managed_runtime_status() -> Result<ManagedRuntimeStatus, String
         system::check_git(),
     );
     Ok(ManagedRuntimeStatus {
-        runtime_dir: paths::runtime_dir().to_string_lossy().into_owned(),
+        // Kept in the response for compatibility with older frontends. New
+        // installations use operating-system locations for Node.js and Git.
+        runtime_dir: String::new(),
         node: node?,
         node_requirement: requirement.expression().to_string(),
         node_requirement_source: requirement.source().id().to_string(),
         git: git?,
         git_managed_by_junqi: cfg!(windows),
-        node_download_order: vec!["npmmirror.com".into(), "nodejs.org".into()],
+        node_download_order: if cfg!(windows) {
+            vec![
+                "Windows Package Manager".into(),
+                "OpenJS.NodeJS.LTS / OpenJS.NodeJS".into(),
+            ]
+        } else {
+            Vec::new()
+        },
         git_download_order: if cfg!(windows) {
-            vec!["npmmirror.com".into(), "github.com".into()]
+            vec!["Windows Package Manager".into(), "Git.Git".into()]
         } else {
             Vec::new()
         },

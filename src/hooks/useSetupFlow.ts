@@ -635,12 +635,13 @@ export function useSetupFlow(
         patchStep("node", "done", nodeStatus.version ?? undefined);
       }
 
-      // npm is bundled with managed Node but remains an independently verified
-      // dependency because a system Node installation can exist without npm.
+      // npm is independently verified because a system Node installation can
+      // exist without npm. Installation keeps npm's own default cache unless
+      // the user explicitly selected an override in storage settings.
       patchStep("npm", "running", t("setup.checkingNpm", "正在检查 npm 版本…"));
       let npmStatus = await checkNpm();
       if (!npmStatus.available) {
-        patchStep("npm", "running", t("setup.installingNpm", "正在通过托管 Node.js 安装 npm…"));
+        patchStep("npm", "running", t("setup.installingNpm", "正在通过系统 Node.js 安装 npm…"));
         await installNode();
         npmStatus = await checkNpm();
       }
