@@ -60,6 +60,12 @@ interface AegisAPI {
     }>;
     probe: (data: any, provider: string, profileKey?: string) => Promise<Record<string, unknown>>;
   };
+  channelRuntime: {
+    catalog: () => Promise<Record<string, unknown>>;
+    capabilities: (channel: string) => Promise<Record<string, unknown>>;
+    status: (channel?: string, probe?: boolean) => Promise<Record<string, unknown>>;
+    logs: (channel?: string, lines?: number) => Promise<Record<string, unknown>>;
+  };
   // Gateway boot status (process-level, distinct from WebSocket connection)
   gateway?: {
     getStatus: () => Promise<{

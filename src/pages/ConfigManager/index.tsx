@@ -30,6 +30,7 @@ import { FloatingSaveButton, ChangesPill } from './components';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
+import { migrateLegacyChannelBindings } from '@/services/channelConfig';
 
 type Tab = ConfigTab;
 
@@ -966,7 +967,7 @@ export function ConfigManagerPage() {
         profiles: authProfilesForRuntime(auth.profiles, canonicalProviderId),
       },
     };
-    return normalized;
+    return migrateLegacyChannelBindings(normalized);
   };
 
   const requestConnectionFailureConfirm = (failures: string[]) => {

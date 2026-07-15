@@ -55,7 +55,8 @@ struct OpenclawBinarySelection {
     path: String,
 }
 
-const MIN_NODE_VERSION: (u32, u32, u32) = (24, 14, 0);
+pub(crate) const MANAGED_NODE_VERSION: &str = "24.15.0";
+pub(crate) const NODE_REQUIREMENT: &str = ">=22.22.3 <23, >=24.15.0 <25, or >=25.9.0";
 
 async fn get_node_version(node_path: &str) -> Option<String> {
     let mut command = tokio::process::Command::new(node_path);
@@ -115,7 +116,7 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
     })
 }
 
-fn version_meets_minimum(version: &str) -> bool {
+pub(crate) fn node_version_supported(version: &str) -> bool {
     let parts: Vec<u32> = version
         .trim_start_matches('v')
         .split('.')
@@ -125,8 +126,13 @@ fn version_meets_minimum(version: &str) -> bool {
         return false;
     }
     let (major, minor, patch) = (parts[0], parts[1], parts[2]);
-    let (req_major, req_minor, req_patch) = MIN_NODE_VERSION;
-    (major, minor, patch) >= (req_major, req_minor, req_patch)
+    match major {
+        22 => (minor, patch) >= (22, 3),
+        24 => (minor, patch) >= (15, 0),
+        25 => (minor, patch) >= (9, 0),
+        value if value > 25 => true,
+        _ => false,
+    }
 }
 
 #[tauri::command]
@@ -149,7 +155,7 @@ pub async fn check_node() -> Result<NodeStatus, String> {
     if local.exists() {
         let path_str = local.to_string_lossy().to_string();
         let version = get_node_version(&path_str).await;
-        let meets_min = version.as_ref().map_or(false, |v| version_meets_minimum(v));
+        let meets_min = version.as_ref().is_some_and(|v| node_version_supported(v));
         if meets_min {
             return Ok(NodeStatus {
                 available: true,
@@ -158,14 +164,21 @@ pub async fn check_node() -> Result<NodeStatus, String> {
                 source: Some("local".into()),
             });
         }
-        // Local node exists but is too old — fall through to system check,
-        // and if that also fails, report unavailable so setup re-installs.
+        // The managed directory is first on every OpenClaw child PATH. Do not
+        // report a compatible system Node while an incompatible managed Node
+        // would still shadow it at execution time; force managed repair.
+        return Ok(NodeStatus {
+            available: false,
+            version,
+            path: Some(path_str),
+            source: Some("local".into()),
+        });
     }
 
     // Check system node
     let system_node = platform::bin_name("node");
     if let Some(version) = get_node_version(&system_node).await {
-        if version_meets_minimum(&version) {
+        if node_version_supported(&version) {
             return Ok(NodeStatus {
                 available: true,
                 version: Some(version),
@@ -525,7 +538,7 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
 }
 
 pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) -> OpenclawStatus {
-    let path_string = path.to_string_lossy().to_string();
+    let path_string = path_for_display(path);
     let package_version = read_openclaw_pkg_version(path);
     let cli_version = read_openclaw_cli_version(path);
     let package_valid = package_version.is_some();
@@ -553,6 +566,24 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
             Some(errors.join("; "))
         },
     }
+}
+
+fn path_text_for_display(raw: &str, windows: bool) -> String {
+    if !windows {
+        return raw.to_string();
+    }
+    if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{}", rest);
+    }
+    raw.strip_prefix(r"\\?\").unwrap_or(raw).to_string()
+}
+
+pub(crate) fn display_path_text(raw: &str) -> String {
+    path_text_for_display(raw, cfg!(windows))
+}
+
+pub(crate) fn path_for_display(path: &Path) -> String {
+    display_path_text(&path.to_string_lossy())
 }
 
 fn read_openclaw_pkg_version_file(package_json: &Path) -> Option<String> {
@@ -874,7 +905,31 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 
 #[cfg(test)]
 mod tests {
-    use super::parse_openclaw_version;
+    use super::{node_version_supported, parse_openclaw_version, path_text_for_display};
+
+    #[test]
+    fn node_support_matrix_matches_openclaw_requirements() {
+        assert!(!node_version_supported("v22.22.2"));
+        assert!(node_version_supported("v22.22.3"));
+        assert!(!node_version_supported("v23.99.0"));
+        assert!(!node_version_supported("v24.14.1"));
+        assert!(node_version_supported("v24.15.0"));
+        assert!(!node_version_supported("v25.8.99"));
+        assert!(node_version_supported("v25.9.0"));
+        assert!(node_version_supported("v26.0.0"));
+    }
+
+    #[test]
+    fn windows_display_paths_hide_verbatim_prefixes() {
+        assert_eq!(
+            path_text_for_display(r"\\?\C:\Users\Wang\AppData\Roaming\npm\openclaw.cmd", true),
+            r"C:\Users\Wang\AppData\Roaming\npm\openclaw.cmd"
+        );
+        assert_eq!(
+            path_text_for_display(r"\\?\UNC\server\share\openclaw.cmd", true),
+            r"\\server\share\openclaw.cmd"
+        );
+    }
 
     #[test]
     fn parse_openclaw_version_accepts_plain_cli_output() {

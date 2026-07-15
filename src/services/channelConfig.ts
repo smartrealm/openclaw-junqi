@@ -28,6 +28,12 @@ export interface ChannelAccountReadiness {
   messages: string[];
 }
 
+export interface ChannelAccountRuntimeState {
+  enabled?: boolean | null;
+  configured?: boolean | null;
+  linked?: boolean | null;
+}
+
 export interface ChannelConfigRepository {
   detect(): Promise<{ path: string; exists: boolean }>;
   read(path: string): Promise<GatewayRuntimeConfig>;
@@ -35,7 +41,8 @@ export interface ChannelConfigRepository {
   restart(): Promise<{ success: boolean; error?: string } | null>;
 }
 
-const CHANNEL_ORDER = ['feishu', 'dingtalk', 'wecom', 'wechat', 'telegram', 'discord', 'slack', 'whatsapp', 'qqbot'];
+const CHANNEL_ORDER = ['feishu', 'dingtalk-connector', 'wecom', 'openclaw-weixin', 'telegram', 'discord', 'slack', 'whatsapp', 'qqbot'];
+type ChannelRouteBinding = NonNullable<GatewayRuntimeConfig['bindings']>[number];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -46,7 +53,24 @@ function accountLabel(id: string, account: Record<string, unknown>) {
   return typeof raw === 'string' && raw.trim() ? raw.trim() : id === 'default' ? 'Default' : id;
 }
 
-export function getChannelAccounts(cfg: ChannelConfig): ChannelAccountBinding[] {
+function routeBindingAgentId(
+  bindings: GatewayRuntimeConfig['bindings'],
+  channelId: string,
+  accountId: string,
+): string | undefined {
+  const routes = (bindings ?? []).filter((binding) => (
+    binding.type !== 'acp' && binding.match?.channel === channelId
+  ));
+  const specific = routes.find((binding) => binding.match.accountId === accountId && !binding.match.peer);
+  const channelWide = routes.find((binding) => !binding.match.accountId && !binding.match.peer);
+  return specific?.agentId ?? channelWide?.agentId;
+}
+
+export function getChannelAccounts(
+  channelId: string,
+  cfg: ChannelConfig,
+  bindings?: GatewayRuntimeConfig['bindings'],
+): ChannelAccountBinding[] {
   const accounts = cfg.accounts;
   if (isRecord(accounts)) {
     return Object.entries(accounts).map(([accountId, rawAccount]) => {
@@ -55,7 +79,8 @@ export function getChannelAccounts(cfg: ChannelConfig): ChannelAccountBinding[] 
         id: accountId,
         label: accountLabel(accountId, account),
         enabled: account.enabled !== false && cfg.enabled !== false,
-        agentId: typeof account.agentId === 'string' ? account.agentId : undefined,
+        agentId: routeBindingAgentId(bindings, channelId, accountId)
+          ?? (typeof account.agentId === 'string' ? account.agentId : undefined),
         source: 'account',
         config: account,
       };
@@ -66,7 +91,8 @@ export function getChannelAccounts(cfg: ChannelConfig): ChannelAccountBinding[] 
     id: 'default',
     label: 'Default',
     enabled: cfg.enabled !== false,
-    agentId: typeof cfg.agentId === 'string' ? cfg.agentId : undefined,
+    agentId: routeBindingAgentId(bindings, channelId, 'default')
+      ?? (typeof cfg.agentId === 'string' ? cfg.agentId : undefined),
     source: 'channel',
     config: cfg,
   }];
@@ -81,7 +107,7 @@ export function buildChannelGroups(config: GatewayRuntimeConfig | null): Channel
       enabled: cfg?.enabled !== false,
       known: Boolean(getChannelTemplate(id)),
       config: cfg,
-      accounts: getChannelAccounts(cfg),
+      accounts: getChannelAccounts(id, cfg, config?.bindings),
     }))
     .sort((a, b) => {
       const ia = CHANNEL_ORDER.indexOf(a.id);
@@ -102,8 +128,8 @@ export function getRequiredCredentialFields(channelId: string): string[] {
   if (tmpl.id === 'feishu') {
     fields.push('appId', 'appSecret');
   }
-  if (tmpl.id === 'dingtalk') {
-    fields.push('appKey', 'appSecret', 'robotCode');
+  if (tmpl.id === 'dingtalk-connector') {
+    fields.push('clientId', 'clientSecret');
   }
   if (tmpl.tokenField) {
     fields.push(tmpl.tokenField);
@@ -114,16 +140,21 @@ export function getRequiredCredentialFields(channelId: string): string[] {
 export function assessChannelAccountReadiness(
   channelId: string,
   account: ChannelAccountBinding,
+  runtime?: ChannelAccountRuntimeState,
 ): ChannelAccountReadiness {
   const messages: string[] = [];
-  if (!account.enabled) {
+  if (!account.enabled || runtime?.enabled === false) {
     messages.push('disabled');
     return { state: 'disabled', missingFields: [], messages };
   }
 
-  const missingFields = getRequiredCredentialFields(channelId)
-    .filter((field) => !hasUsableValue(account.config[field]));
-  if (missingFields.length > 0) {
+  const missingFields = runtime
+    ? []
+    : getRequiredCredentialFields(channelId)
+      .filter((field) => !hasUsableValue(account.config[field]));
+  const runtimeMissing = runtime?.configured === false
+    || (channelId === 'whatsapp' && runtime?.linked === false);
+  if (runtimeMissing || missingFields.length > 0) {
     messages.push('missing_credentials');
     return { state: 'missing_credentials', missingFields, messages };
   }
@@ -135,6 +166,23 @@ export function assessChannelAccountReadiness(
 
   messages.push('ready');
   return { state: 'ready', missingFields: [], messages };
+}
+
+export function channelAccountEditorValues(
+  account: ChannelAccountBinding | undefined,
+  defaultMediaMaxMb = 10,
+): Record<string, unknown> {
+  const config = account?.config ?? {};
+  return {
+    ...config,
+    enabled: config.enabled !== false,
+    name: accountLabel(account?.id ?? 'default', config) === 'Default'
+      ? ''
+      : accountLabel(account?.id ?? 'default', config),
+    agentId: account?.agentId
+      ?? (typeof config.agentId === 'string' ? config.agentId : ''),
+    mediaMaxMb: typeof config.mediaMaxMb === 'number' ? config.mediaMaxMb : defaultMediaMaxMb,
+  };
 }
 
 export function summarizeChannelReadiness(groups: ChannelGroupView[]) {
@@ -162,19 +210,35 @@ export function updateChannelBinding(
 ): GatewayRuntimeConfig {
   const channels = { ...(config.channels ?? {}) };
   const current = { ...(channels[channelId] ?? {}) };
+  const accountId = account.id === 'default' && account.source === 'channel' ? undefined : account.id;
+  const isManagedRoute = (binding: ChannelRouteBinding) => (
+    binding.type !== 'acp'
+    && binding.match?.channel === channelId
+    && binding.match.accountId === accountId
+    && !binding.match.peer
+    && !binding.match.guildId
+    && !binding.match.teamId
+    && !binding.match.roles?.length
+  );
+  const bindings = (config.bindings ?? []).filter((binding) => !isManagedRoute(binding));
   if (account.source === 'account') {
     const accounts = { ...((isRecord(current.accounts) ? current.accounts : {}) as Record<string, Record<string, unknown>>) };
     const nextAccount = { ...(isRecord(accounts[account.id]) ? accounts[account.id] : {}) };
-    if (agentId) nextAccount.agentId = agentId;
-    else delete nextAccount.agentId;
+    delete nextAccount.agentId;
     accounts[account.id] = nextAccount;
     current.accounts = accounts;
   } else {
-    if (agentId) current.agentId = agentId;
-    else delete current.agentId;
+    delete current.agentId;
   }
   channels[channelId] = current;
-  return { ...config, channels };
+  if (agentId) {
+    bindings.push({
+      type: 'route',
+      agentId,
+      match: { channel: channelId, ...(accountId ? { accountId } : {}) },
+    });
+  }
+  return { ...config, channels, bindings };
 }
 
 export function updateChannelEnabled(config: GatewayRuntimeConfig, channelId: string, enabled: boolean): GatewayRuntimeConfig {
@@ -186,7 +250,8 @@ export function updateChannelEnabled(config: GatewayRuntimeConfig, channelId: st
 export function removeChannel(config: GatewayRuntimeConfig, channelId: string): GatewayRuntimeConfig {
   const channels = { ...(config.channels ?? {}) };
   delete channels[channelId];
-  return { ...config, channels };
+  const bindings = (config.bindings ?? []).filter((binding) => binding.match?.channel !== channelId);
+  return { ...config, channels, bindings };
 }
 
 export function addChannel(config: GatewayRuntimeConfig, channelId: string): GatewayRuntimeConfig {
@@ -207,22 +272,24 @@ export function upsertChannelAccount(
   account: Pick<ChannelAccountBinding, 'id' | 'source'>,
   accountConfig: Record<string, unknown>,
 ): GatewayRuntimeConfig {
+  const requestedAgentId = typeof accountConfig.agentId === 'string' ? accountConfig.agentId : '';
+  const cleanConfig = { ...accountConfig };
+  delete cleanConfig.agentId;
   const channels = { ...(config.channels ?? {}) };
   const current = { ...(channels[channelId] ?? {}) };
 
   if (account.source === 'account') {
     const accounts = { ...((isRecord(current.accounts) ? current.accounts : {}) as Record<string, Record<string, unknown>>) };
-    accounts[account.id] = { ...accountConfig };
+    accounts[account.id] = cleanConfig;
     current.accounts = accounts;
     channels[channelId] = current;
-    return { ...config, channels };
+    return updateChannelBinding({ ...config, channels }, channelId, account, requestedAgentId);
   }
 
-  channels[channelId] = {
-    ...current,
-    ...accountConfig,
-  };
-  return { ...config, channels };
+  // The editor starts from the complete current object, so replacement keeps
+  // unknown official fields while allowing a user-cleared field to disappear.
+  channels[channelId] = cleanConfig;
+  return updateChannelBinding({ ...config, channels }, channelId, account, requestedAgentId);
 }
 
 export function addChannelAccount(
@@ -252,16 +319,96 @@ export function removeChannelAccount(
   delete accounts[accountId];
   current.accounts = accounts;
   channels[channelId] = current;
-  return { ...config, channels };
+  const bindings = (config.bindings ?? []).filter((binding) => !(
+    binding.match?.channel === channelId && binding.match.accountId === accountId
+  ));
+  return { ...config, channels, bindings };
+}
+
+function hasManagedBinding(
+  bindings: ChannelRouteBinding[],
+  channelId: string,
+  accountId: string | undefined,
+): boolean {
+  return bindings.some((binding) => (
+    binding.type !== 'acp'
+    && binding.match?.channel === channelId
+    && binding.match.accountId === accountId
+    && !binding.match.peer
+    && !binding.match.guildId
+    && !binding.match.teamId
+    && !binding.match.roles?.length
+  ));
+}
+
+function migrateLegacyDingtalkFields(value: Record<string, any>): Record<string, any> {
+  const next = { ...value };
+  if (next.clientId === undefined && next.appKey !== undefined) next.clientId = next.appKey;
+  if (next.clientSecret === undefined && next.appSecret !== undefined) next.clientSecret = next.appSecret;
+  if (next.endpoint === undefined && next.callbackUrl !== undefined) next.endpoint = next.callbackUrl;
+  delete next.appKey;
+  delete next.appSecret;
+  delete next.robotCode;
+  delete next.callbackUrl;
+  delete next.useStream;
+  return next;
+}
+
+export function migrateLegacyChannelBindings(config: GatewayRuntimeConfig): GatewayRuntimeConfig {
+  const bindings = (config.bindings ?? []).map((binding) => (
+    binding.match?.channel === 'dingtalk'
+      ? { ...binding, match: { ...binding.match, channel: 'dingtalk-connector' } }
+      : binding
+  ));
+  const channels: Record<string, ChannelConfig> = {};
+  for (const [channelId, rawChannel] of Object.entries(config.channels ?? {})) {
+    if (channelId === 'modelByChannel') continue;
+    const officialChannelId = channelId === 'dingtalk' ? 'dingtalk-connector' : channelId;
+    const channel = channelId === 'dingtalk'
+      ? migrateLegacyDingtalkFields({ ...(rawChannel ?? {}) })
+      : { ...(rawChannel ?? {}) } as Record<string, any>;
+    const channelAgentId = typeof channel.agentId === 'string' ? channel.agentId.trim() : '';
+    delete channel.agentId;
+    if (channelAgentId && !hasManagedBinding(bindings, officialChannelId, undefined)) {
+      bindings.push({ type: 'route', agentId: channelAgentId, match: { channel: officialChannelId } });
+    }
+    if (isRecord(channel.accounts)) {
+      const accounts: Record<string, unknown> = {};
+      for (const [accountId, rawAccount] of Object.entries(channel.accounts)) {
+        const rawAccountRecord = isRecord(rawAccount) ? { ...rawAccount } : {};
+        const account = channelId === 'dingtalk'
+          ? migrateLegacyDingtalkFields(rawAccountRecord)
+          : rawAccountRecord;
+        const accountAgentId = typeof account.agentId === 'string' ? account.agentId.trim() : '';
+        delete account.agentId;
+        if (accountAgentId && !hasManagedBinding(bindings, officialChannelId, accountId)) {
+          bindings.push({ type: 'route', agentId: accountAgentId, match: { channel: officialChannelId, accountId } });
+        }
+        accounts[accountId] = account;
+      }
+      channel.accounts = accounts;
+    }
+    channels[officialChannelId] = {
+      ...(channels[officialChannelId] ?? {}),
+      ...channel,
+    } as ChannelConfig;
+  }
+  return { ...config, channels, bindings };
 }
 
 export function removeAgentChannelBindings(config: GatewayRuntimeConfig, agentId: string): { next: GatewayRuntimeConfig; removed: number } {
   const channels = config?.channels;
-  if (!channels || typeof channels !== 'object' || Array.isArray(channels)) {
-    return { next: config, removed: 0 };
-  }
-
   let removed = 0;
+  const bindings = (config.bindings ?? []).filter((binding) => {
+    if (binding.agentId !== agentId) return true;
+    removed += 1;
+    return false;
+  });
+  if (!channels || typeof channels !== 'object' || Array.isArray(channels)) {
+    return removed === 0
+      ? { next: config, removed }
+      : { next: { ...config, bindings }, removed };
+  }
   const nextChannels: Record<string, any> = { ...channels };
 
   for (const [channelId, rawChannel] of Object.entries(channels as Record<string, any>)) {
@@ -292,7 +439,7 @@ export function removeAgentChannelBindings(config: GatewayRuntimeConfig, agentId
   }
 
   if (removed === 0) return { next: config, removed };
-  return { next: { ...config, channels: nextChannels }, removed };
+  return { next: { ...config, channels: nextChannels, bindings }, removed };
 }
 
 export async function persistChannelsOnly(configPath: string, next: GatewayRuntimeConfig): Promise<GatewayRuntimeConfig> {
@@ -324,9 +471,11 @@ export async function persistChannelsOnlyWithRepository(
   next: GatewayRuntimeConfig,
 ): Promise<GatewayRuntimeConfig> {
   const latestDiskConfig = await repository.read(configPath);
+  const normalized = migrateLegacyChannelBindings(next);
   const merged = {
     ...(latestDiskConfig as GatewayRuntimeConfig),
-    channels: next.channels ?? {},
+    channels: normalized.channels ?? {},
+    bindings: normalized.bindings ?? latestDiskConfig.bindings ?? [],
   };
   await repository.write(configPath, merged);
   return merged;

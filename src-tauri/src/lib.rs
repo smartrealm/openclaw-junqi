@@ -109,6 +109,10 @@ pub fn run() {
             commands::openclaw_provider::get_openclaw_config_schema,
             commands::openclaw_provider::get_openclaw_auth_profiles,
             commands::openclaw_provider::probe_openclaw_provider,
+            commands::openclaw_channel::get_openclaw_channel_catalog,
+            commands::openclaw_channel::get_openclaw_channel_capabilities,
+            commands::openclaw_channel::get_openclaw_channel_status,
+            commands::openclaw_channel::get_openclaw_channel_logs,
             // Pairing
             commands::pairing::list_pairing_requests,
             commands::pairing::approve_pairing_request,

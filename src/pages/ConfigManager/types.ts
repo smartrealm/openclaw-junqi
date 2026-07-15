@@ -390,6 +390,23 @@ export interface OpenClawConfig {
   secrets?: SecretsConfig;
   auth?: AuthConfig;
   agents?: AgentsSection;
+  bindings?: Array<{
+    type?: 'route' | 'acp';
+    agentId: string;
+    comment?: string;
+    match: {
+      channel: string;
+      accountId?: string;
+      peer?: { kind: 'direct' | 'group' | 'channel' | 'dm'; id: string };
+      guildId?: string;
+      teamId?: string;
+      roles?: string[];
+      [key: string]: any;
+    };
+    session?: { dmScope?: 'main' | 'per-peer' | 'per-channel-peer' | 'per-account-channel-peer' };
+    acp?: Record<string, any>;
+    [key: string]: any;
+  }>;
   tools?: ToolsConfig;
   messages?: MessagesConfig;
   commands?: {

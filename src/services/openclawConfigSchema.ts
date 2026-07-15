@@ -7,6 +7,7 @@ export interface OpenClawFieldSchema {
   anyOf?: OpenClawFieldSchema[];
   oneOf?: OpenClawFieldSchema[];
   properties?: Record<string, OpenClawFieldSchema>;
+  additionalProperties?: boolean | OpenClawFieldSchema;
   required?: string[];
   minimum?: number;
   exclusiveMinimum?: number;

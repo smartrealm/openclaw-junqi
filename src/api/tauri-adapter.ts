@@ -267,6 +267,18 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       profileKey: profileKey ?? null,
     }),
   },
+  channelRuntime: {
+    catalog: () => invoke('get_openclaw_channel_catalog'),
+    capabilities: (channel: string) => invoke('get_openclaw_channel_capabilities', { channel }),
+    status: (channel?: string, probe = false) => invoke('get_openclaw_channel_status', {
+      channel: channel ?? null,
+      probe,
+    }),
+    logs: (channel?: string, lines = 200) => invoke('get_openclaw_channel_logs', {
+      channel: channel ?? null,
+      lines,
+    }),
+  },
 
   gateway: {
     getStatus: async () => {

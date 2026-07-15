@@ -79,7 +79,7 @@ pub fn find_git_in_default_paths() -> Option<PathBuf> {
 
 // ─── Download sources ──────────────────────────────────────────────────────────
 
-const NODE_VERSION: &str = "24.14.0";
+const NODE_VERSION: &str = crate::commands::system::MANAGED_NODE_VERSION;
 const GIT_WIN_VERSION: &str = "2.47.1";
 
 fn node_filename() -> String {
@@ -915,7 +915,7 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
                     .filter_map(|s| s.parse().ok())
                     .collect();
                 parts.len() < 3
-                    || (parts[0], parts[1], parts[2]) < (24, 14, 0)
+                    || !crate::commands::system::node_version_supported(v)
                     || !bundled_npm_available
             }
             None => true,
@@ -926,7 +926,11 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
             emit_keyed(
                 &app,
                 step,
-                &format!("Node.js {} meets requirement (>= v24.14.0), skipping", ver),
+                &format!(
+                    "Node.js {} meets requirement ({}), skipping",
+                    ver,
+                    crate::commands::system::NODE_REQUIREMENT
+                ),
                 "setup.node.skip",
                 1.0,
             );
@@ -944,7 +948,11 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
         emit_keyed(
             &app,
             step,
-            &format!("Detected {} below v24.14.0, cleaning up...", ver),
+            &format!(
+                "Detected {} outside supported range ({}), cleaning up...",
+                ver,
+                crate::commands::system::NODE_REQUIREMENT
+            ),
             "setup.node.upgrade",
             0.04,
         );
@@ -1027,6 +1035,58 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
         1.0,
     );
     Ok(format!("Node.js {} installed successfully", ver))
+}
+
+/// Ensure child processes use a Node.js release accepted by OpenClaw.
+///
+/// JunQi's managed Node directory is first on the child PATH, so installing a
+/// compatible managed runtime repairs an incompatible system Node without
+/// mutating the user's global Node.js installation.
+pub(crate) async fn ensure_compatible_node_runtime(
+    app: &tauri::AppHandle,
+    context_step: &str,
+) -> Result<crate::commands::system::NodeStatus, String> {
+    let mut node = crate::commands::system::check_node().await?;
+    if !node.available {
+        emit_keyed(
+            app,
+            context_step,
+            &format!(
+                "Node.js is outside OpenClaw's supported range ({}); installing managed Node.js {}...",
+                crate::commands::system::NODE_REQUIREMENT,
+                crate::commands::system::MANAGED_NODE_VERSION
+            ),
+            "setup.node.autoRepair",
+            0.1,
+        );
+        install_node(app.clone()).await.map_err(|error| {
+            format!(
+                "Unable to install a compatible Node.js runtime (required: {}): {error}",
+                crate::commands::system::NODE_REQUIREMENT
+            )
+        })?;
+        node = crate::commands::system::check_node().await?;
+    }
+
+    if !node.available {
+        return Err(format!(
+            "OpenClaw requires Node.js {}; JunQi could not prepare a compatible runtime",
+            crate::commands::system::NODE_REQUIREMENT
+        ));
+    }
+
+    emit_keyed(
+        app,
+        context_step,
+        &format!(
+            "Node.js {} ready: {}",
+            node.version.as_deref().unwrap_or("unknown"),
+            crate::commands::system::display_path_text(node.path.as_deref().unwrap_or("node"))
+        ),
+        "setup.node.runtimeReady",
+        0.25,
+    );
+    Ok(node)
 }
 
 #[tauri::command]

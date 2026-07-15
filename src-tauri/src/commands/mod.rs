@@ -26,6 +26,8 @@ pub mod managed_files;
 pub mod notification;
 pub mod npm_registry;
 pub mod oauth;
+pub mod openclaw_channel;
+pub(crate) mod openclaw_cli;
 pub mod openclaw_provider;
 pub mod openclaw_repair;
 pub mod openclaw_update;

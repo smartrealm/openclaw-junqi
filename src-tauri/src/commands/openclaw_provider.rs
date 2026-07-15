@@ -1,29 +1,15 @@
-use crate::{commands::system, paths, platform};
+use crate::commands::{
+    openclaw_cli::{output_error, parse_cli_json, run_openclaw, validate_cli_identifier},
+    system,
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::Duration;
 
 const CONFIG_VALIDATE_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_COMMAND_TIMEOUT: Duration = Duration::from_secs(45);
 const PROBE_COMMAND_TIMEOUT: Duration = Duration::from_secs(75);
-
-fn validate_cli_identifier(value: &str, label: &str) -> Result<(), String> {
-    let mut characters = value.chars();
-    let valid = !value.is_empty()
-        && value.len() <= 128
-        && characters
-            .next()
-            .is_some_and(|character| character.is_ascii_alphanumeric())
-        && characters
-            .all(|character| character.is_ascii_alphanumeric() || "._:-".contains(character));
-    if valid {
-        Ok(())
-    } else {
-        Err(format!("Invalid {label}"))
-    }
-}
 
 struct CandidateConfig {
     path: PathBuf,
@@ -64,80 +50,6 @@ fn set_private_permissions(path: &Path) -> Result<(), String> {
 #[cfg(not(unix))]
 fn set_private_permissions(_path: &Path) -> Result<(), String> {
     Ok(())
-}
-
-struct CliOutput {
-    success: bool,
-    stdout: String,
-    stderr: String,
-}
-
-async fn run_openclaw(
-    args: &[&str],
-    config_path: Option<&Path>,
-    timeout: Duration,
-) -> Result<CliOutput, String> {
-    let binary = system::resolve_openclaw_binary().ok_or_else(|| {
-        "OpenClaw is not installed; official provider validation is unavailable".to_string()
-    })?;
-    let active_config_path = paths::config_path();
-    let mut command = tokio::process::Command::new(&binary);
-    command
-        .args(args)
-        .env("PATH", system::openclaw_search_path())
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env(
-            "OPENCLAW_CONFIG_PATH",
-            config_path.unwrap_or(active_config_path.as_path()),
-        )
-        .env("OPENCLAW_NO_RESPAWN", "1")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    platform::configure_background_command(&mut command);
-
-    let output = tokio::time::timeout(timeout, command.output())
-        .await
-        .map_err(|_| format!("OpenClaw command timed out: {}", args.join(" ")))?
-        .map_err(|error| format!("Failed to run OpenClaw {}: {error}", args.join(" ")))?;
-    Ok(CliOutput {
-        success: output.status.success(),
-        stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-    })
-}
-
-fn parse_json_payload(raw: &str) -> Result<Value, String> {
-    if let Ok(value) = serde_json::from_str(raw) {
-        return Ok(value);
-    }
-    for (index, character) in raw.char_indices() {
-        if character != '{' && character != '[' {
-            continue;
-        }
-        let mut values = serde_json::Deserializer::from_str(&raw[index..]).into_iter::<Value>();
-        if let Some(Ok(value)) = values.next() {
-            return Ok(value);
-        }
-    }
-    Err("OpenClaw did not return a JSON payload".to_string())
-}
-
-fn parse_cli_json(output: &CliOutput) -> Result<Value, String> {
-    parse_json_payload(&output.stdout).or_else(|_| parse_json_payload(&output.stderr))
-}
-
-fn output_error(label: &str, output: &CliOutput) -> String {
-    let detail = output
-        .stderr
-        .lines()
-        .chain(output.stdout.lines())
-        .map(crate::commands::diagnostic_output::sanitize_diagnostic_line)
-        .find(|line| !line.is_empty())
-        .unwrap_or_else(|| "unknown error".to_string());
-    format!("OpenClaw {label} failed: {detail}")
 }
 
 fn validation_error(payload: &Value) -> String {
@@ -303,28 +215,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn json_parser_ignores_leading_cli_warnings() {
-        let payload = parse_json_payload("warning line\n{\"valid\":true}\n").unwrap();
-        assert_eq!(payload.get("valid").and_then(Value::as_bool), Some(true));
-    }
-
-    #[test]
-    fn cli_json_parser_accepts_structured_stderr() {
-        let output = CliOutput {
-            success: false,
-            stdout: String::new(),
-            stderr: "warning\n{\"valid\":false}".to_string(),
-        };
-        assert_eq!(
-            parse_cli_json(&output)
-                .unwrap()
-                .get("valid")
-                .and_then(Value::as_bool),
-            Some(false)
-        );
-    }
-
-    #[test]
     fn validation_errors_include_every_schema_path() {
         let payload = serde_json::json!({
             "valid": false,
@@ -346,12 +236,5 @@ mod tests {
             candidate.path.clone()
         };
         assert!(!path.exists());
-    }
-
-    #[test]
-    fn cli_identifiers_reject_shell_and_flag_syntax() {
-        assert!(validate_cli_identifier("github-copilot:main", "profile ID").is_ok());
-        assert!(validate_cli_identifier("--force", "provider ID").is_err());
-        assert!(validate_cli_identifier("openai;whoami", "provider ID").is_err());
     }
 }

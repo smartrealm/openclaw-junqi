@@ -15,11 +15,12 @@ function replaceField(value: Record<string, any>, field: string, nextValue: unkn
   return next;
 }
 
-function PrimitiveField({ name, schema, value, disabled, onChange }: {
+function PrimitiveField({ name, schema, value, disabled, sensitive, onChange }: {
   name: string;
   schema: OpenClawFieldSchema;
   value: unknown;
   disabled: boolean;
+  sensitive: boolean;
   onChange: (value: unknown) => void;
 }) {
   const { t } = useTranslation();
@@ -40,7 +41,7 @@ function PrimitiveField({ name, schema, value, disabled, onChange }: {
       ) : (
         <input
           className={className}
-          type={kind === 'number' || kind === 'integer' ? 'number' : 'text'}
+          type={sensitive ? 'password' : kind === 'number' || kind === 'integer' ? 'number' : 'text'}
           min={schema.exclusiveMinimum !== undefined ? schema.exclusiveMinimum + 1 : schema.minimum}
           max={schema.maximum}
           step={kind === 'integer' ? 1 : 'any'}
@@ -63,6 +64,7 @@ export function SchemaDrivenObjectEditor({
   fields,
   value,
   exclude = [],
+  sensitiveFields = [],
   disabled = false,
   initiallyOpen = false,
   onChange,
@@ -71,12 +73,14 @@ export function SchemaDrivenObjectEditor({
   fields: Record<string, OpenClawFieldSchema>;
   value: Record<string, any>;
   exclude?: string[];
+  sensitiveFields?: string[];
   disabled?: boolean;
   initiallyOpen?: boolean;
   onChange: (value: Record<string, any>) => void;
 }) {
   const { t } = useTranslation();
   const excluded = useMemo(() => new Set(exclude), [exclude.join('\0')]);
+  const sensitive = useMemo(() => new Set(sensitiveFields), [sensitiveFields.join('\0')]);
   const editable = useMemo(() => Object.entries(fields).filter(([name]) => !excluded.has(name)), [excluded, fields]);
   const primitives = editable.filter(([, schema]) => ['string', 'number', 'integer', 'boolean'].includes(schemaValueKind(schema)));
   const structured = editable.filter(([, schema]) => !['string', 'number', 'integer', 'boolean'].includes(schemaValueKind(schema)));
@@ -96,7 +100,7 @@ export function SchemaDrivenObjectEditor({
       <div className="mt-3 space-y-4 pl-5">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {primitives.map(([name, schema]) => (
-            <PrimitiveField key={name} name={name} schema={schema} value={value[name]} disabled={disabled} onChange={(next) => onChange(replaceField(value, name, next))} />
+            <PrimitiveField key={name} name={name} schema={schema} value={value[name]} disabled={disabled} sensitive={sensitive.has(name)} onChange={(next) => onChange(replaceField(value, name, next))} />
           ))}
         </div>
         {structured.map(([name, schema]) => (

@@ -1,7 +1,7 @@
 use crate::commands::{
     gateway,
     npm_registry::{self, NpmRegistry, NpmRegistryKind, NpmRegistrySelection},
-    system,
+    setup, setup_progress, system,
 };
 use crate::paths;
 use crate::platform;
@@ -14,12 +14,14 @@ use std::process::{Output, Stdio};
 use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::{AppHandle, State};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(90);
 const OPENCLAW_STATUS_TIMEOUT_SECONDS: &str = "60";
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const UPDATE_BUSY_ERROR: &str = "An OpenClaw update operation is already running";
+const UPDATE_PROGRESS_STEP: &str = "openclaw-update";
 
 static UPDATE_OPERATION: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -183,14 +185,98 @@ async fn run_openclaw_command(
         .map_err(|error| format!("Failed to run OpenClaw {}: {}", command_name, error))
 }
 
+fn emit_update_progress(app: &AppHandle, message: &str, progress: f64) {
+    setup_progress::emit(app, UPDATE_PROGRESS_STEP, message, progress);
+}
+
+fn emit_update_error(app: &AppHandle, message: &str, progress: Option<f64>) {
+    setup_progress::emit_error(app, UPDATE_PROGRESS_STEP, message, progress);
+}
+
+async fn collect_stream<R>(app: AppHandle, stream: R, progress: f64) -> Result<Vec<u8>, String>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut reader = BufReader::new(stream).lines();
+    let mut output = Vec::new();
+    while let Some(line) = reader
+        .next_line()
+        .await
+        .map_err(|error| format!("Failed to read OpenClaw update output: {error}"))?
+    {
+        output.extend_from_slice(line.as_bytes());
+        output.push(b'\n');
+        let safe_line = redact_diagnostic_line(&line);
+        if !safe_line.trim().is_empty() {
+            emit_update_progress(&app, &safe_line, progress);
+        }
+    }
+    Ok(output)
+}
+
+async fn run_openclaw_command_streaming(
+    app: &AppHandle,
+    binary: &Path,
+    args: &[&str],
+    command_timeout: Duration,
+    npm_registry: Option<NpmRegistry>,
+) -> Result<Output, String> {
+    let command_name = args.join(" ");
+    let mut command = build_openclaw_command(binary, args, npm_registry);
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Failed to run OpenClaw {command_name}: {error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "OpenClaw update stdout was not captured".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "OpenClaw update stderr was not captured".to_string())?;
+    let stdout_task = tokio::spawn(collect_stream(app.clone(), stdout, 0.65));
+    let stderr_task = tokio::spawn(collect_stream(app.clone(), stderr, 0.65));
+
+    let status = tokio::time::timeout(command_timeout, child.wait())
+        .await
+        .map_err(|_| {
+            let source = npm_registry
+                .map(|registry| format!(" via {}", registry.label()))
+                .unwrap_or_default();
+            format!(
+                "OpenClaw {command_name} timed out{source} after {} seconds",
+                command_timeout.as_secs()
+            )
+        })?
+        .map_err(|error| format!("Failed to wait for OpenClaw {command_name}: {error}"))?;
+    let stdout = stdout_task
+        .await
+        .map_err(|error| format!("OpenClaw stdout reader stopped: {error}"))??;
+    let stderr = stderr_task
+        .await
+        .map_err(|error| format!("OpenClaw stderr reader stopped: {error}"))??;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 async fn run_openclaw_command_with_registry_fallback(
+    app: &AppHandle,
     binary: &Path,
     args: &[&str],
     command_timeout: Duration,
     selection: NpmRegistrySelection,
 ) -> (Result<Output, String>, NpmRegistry) {
     let primary = selection.primary;
-    let output = run_openclaw_command(binary, args, command_timeout, Some(primary)).await;
+    emit_update_progress(
+        app,
+        &format!("Running official updater via {}", primary.label()),
+        0.55,
+    );
+    let output =
+        run_openclaw_command_streaming(app, binary, args, command_timeout, Some(primary)).await;
     if !is_network_failure(&output) {
         return (output, primary);
     }
@@ -198,8 +284,24 @@ async fn run_openclaw_command_with_registry_fallback(
     let Some(fallback) = selection.fallback else {
         return (output, primary);
     };
-    let retry = run_openclaw_command(binary, args, command_timeout, Some(fallback)).await;
+    emit_update_progress(
+        app,
+        &format!(
+            "Network failure via {}; retrying via {}",
+            primary.label(),
+            fallback.label()
+        ),
+        0.58,
+    );
+    let retry =
+        run_openclaw_command_streaming(app, binary, args, command_timeout, Some(fallback)).await;
     (retry, fallback)
+}
+
+async fn ensure_update_node_runtime(app: &AppHandle) -> Result<(), String> {
+    emit_update_progress(app, "Checking Node.js runtime compatibility...", 0.08);
+    setup::ensure_compatible_node_runtime(app, UPDATE_PROGRESS_STEP).await?;
+    Ok(())
 }
 
 async fn run_npm_update_dry_run_with_registry_fallback(
@@ -312,17 +414,34 @@ use crate::commands::diagnostic_output::sanitize_diagnostic_line as redact_diagn
 fn output_diagnostic(output: &Output) -> Option<String> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let source = if stderr.trim().is_empty() {
-        stdout.as_ref()
-    } else {
-        stderr.as_ref()
-    };
-    let lines = source
+    diagnostic_from_text(&stderr, &stdout)
+}
+
+fn diagnostic_from_text(stderr: &str, stdout: &str) -> Option<String> {
+    let combined = format!("{stderr}\n{stdout}");
+    let all_lines = combined
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .take(4)
-        .map(redact_diagnostic_line)
         .collect::<Vec<_>>();
+    let important = all_lines.iter().copied().filter(|line| {
+        let lower = line.to_ascii_lowercase();
+        [
+            "node.js",
+            "is required",
+            "permission denied",
+            "eacces",
+            "network",
+            "econn",
+            "timed out",
+            "failed",
+            "error",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
+    });
+    let selected = important.chain(all_lines.iter().copied()).take(4);
+    let mut lines = selected.map(redact_diagnostic_line).collect::<Vec<_>>();
+    lines.dedup();
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
@@ -516,16 +635,27 @@ fn parse_update_result(output: &[u8]) -> Result<OpenclawUpdateResult, String> {
 }
 
 #[tauri::command]
-pub async fn check_openclaw_update() -> Result<OpenclawUpdateStatus, String> {
+pub async fn check_openclaw_update(app: AppHandle) -> Result<OpenclawUpdateStatus, String> {
     let _operation_guard = update_operation()
         .try_lock()
         .map_err(|_| UPDATE_BUSY_ERROR.to_string())?;
+    emit_update_progress(&app, "Starting OpenClaw update check...", 0.02);
+    if let Err(error) = ensure_update_node_runtime(&app).await {
+        emit_update_error(&app, &error, Some(0.28));
+        return Err(error);
+    }
     let detected = system::detect_openclaw().await;
     if !detected.installed {
         return Err("OpenClaw is not installed".to_string());
     }
     let binary = system::resolve_openclaw_binary()
         .ok_or_else(|| "OpenClaw executable was not found".to_string())?;
+    emit_update_progress(
+        &app,
+        &format!("OpenClaw binary: {}", system::path_for_display(&binary)),
+        0.34,
+    );
+    emit_update_progress(&app, "Checking the configured update channel...", 0.4);
     let selection = npm_registry::select_npm_registry().await;
     let (dry_run_output, selected_registry) =
         run_npm_update_dry_run_with_registry_fallback(&binary, selection).await;
@@ -541,11 +671,10 @@ pub async fn check_openclaw_update() -> Result<OpenclawUpdateStatus, String> {
 
     match parse_dry_run_update_status(&dry_run_output.stdout) {
         Ok(dry_run) if is_npm_package_dry_run(&dry_run) => {
-            return Ok(update_status_from_npm_dry_run(
-                dry_run,
-                detected.version,
-                selected_registry,
-            ));
+            let status =
+                update_status_from_npm_dry_run(dry_run, detected.version, selected_registry);
+            emit_update_progress(&app, "OpenClaw update check completed", 1.0);
+            return Ok(status);
         }
         Ok(_) | Err(_) => {}
     }
@@ -575,7 +704,10 @@ pub async fn check_openclaw_update() -> Result<OpenclawUpdateStatus, String> {
     }
 
     match parse_update_status(&output.stdout, detected.version.clone()) {
-        Ok(status) => Ok(status),
+        Ok(status) => {
+            emit_update_progress(&app, "OpenClaw update check completed", 1.0);
+            Ok(status)
+        }
         Err(error) => Ok(empty_update_status(
             detected.version,
             output_diagnostic(&output).unwrap_or(error),
@@ -639,18 +771,31 @@ pub async fn update_openclaw(
         .try_lock_owned()
         .map_err(|_| "A Gateway lifecycle operation is already running".to_string())?;
 
+    emit_update_progress(&app, "Preparing the OpenClaw update...", 0.02);
+    if let Err(error) = ensure_update_node_runtime(&app).await {
+        emit_update_error(&app, &error, Some(0.28));
+        return Err(error);
+    }
+
     let detected = system::detect_openclaw().await;
     if !detected.installed {
         return Err("OpenClaw is not installed".to_string());
     }
     let binary = system::resolve_openclaw_binary()
         .ok_or_else(|| "OpenClaw executable was not found".to_string())?;
+    emit_update_progress(
+        &app,
+        &format!("OpenClaw binary: {}", system::path_for_display(&binary)),
+        0.34,
+    );
     // Probe before taking the managed Gateway down so the expected network
     // decision does not lengthen its maintenance window.
     let selection = npm_registry::select_npm_registry().await;
+    emit_update_progress(&app, "Stopping the managed Gateway if necessary...", 0.45);
     let restore_gateway = stop_managed_gateway(&state).await?;
 
     let (output, selected_registry) = run_openclaw_command_with_registry_fallback(
+        &app,
         &binary,
         &["update", "--yes", "--json"],
         UPDATE_TIMEOUT,
@@ -711,7 +856,8 @@ pub async fn update_openclaw(
         result.npm_registry_kind = Some(selected_registry.kind);
     }
 
-    match restore_managed_gateway(app, state.clone(), restore_gateway).await {
+    emit_update_progress(&app, "Restoring the Gateway...", 0.88);
+    match restore_managed_gateway(app.clone(), state.clone(), restore_gateway).await {
         Ok(restarted) => result.gateway_restarted = restarted,
         Err(error) => result.gateway_error = Some(error),
     }
@@ -723,6 +869,18 @@ pub async fn update_openclaw(
         refreshed.version,
         gateway_restart_error,
     );
+    if result.success {
+        emit_update_progress(&app, "OpenClaw update completed", 1.0);
+    } else {
+        emit_update_error(
+            &app,
+            result
+                .error
+                .as_deref()
+                .unwrap_or("OpenClaw update did not complete"),
+            Some(1.0),
+        );
+    }
     Ok(result)
 }
 
@@ -905,6 +1063,16 @@ mod tests {
             redact_diagnostic_line("network unavailable"),
             "network unavailable"
         );
+    }
+
+    #[test]
+    fn diagnostic_prioritizes_node_runtime_errors_over_json_headers() {
+        assert!(diagnostic_from_text(
+            "openclaw: Node.js >=24.15.0 <25 is required (current: v24.14.1).",
+            r#"{ "status": "error", "mode": "npm" }"#,
+        )
+        .unwrap()
+        .starts_with("openclaw: Node.js >=24.15.0 <25 is required"));
     }
 
     #[test]

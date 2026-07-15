@@ -13,6 +13,8 @@ import {
   dispatchOpenclawUpdateMaintenanceFinished,
   dispatchOpenclawUpdateMaintenanceStarted,
 } from '@/services/openclawUpdateLifecycle';
+import { normalizeSetupProgressPayload } from './setupProgressEvents';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 export interface OpenclawUpdateCompletion {
   result: OpenclawUpdateResult;
@@ -28,8 +30,21 @@ export function useOpenclawUpdate() {
   const operationId = useRef(0);
   const busy = useRef(false);
 
-  useEffect(() => () => {
-    operationId.current += 1;
+  useEffect(() => {
+    const unlisten = subscribeTauriEvent('setup-progress', (event) => {
+      if (!busy.current) return;
+      const detail = normalizeSetupProgressPayload(event.payload);
+      if (!detail || !['openclaw-update', 'node'].includes(detail.step || '')) return;
+      dispatch({
+        type: 'progressReceived',
+        progress: detail.progress,
+        message: detail.message,
+      });
+    });
+    return () => {
+      operationId.current += 1;
+      unlisten();
+    };
   }, []);
 
   const check = useCallback(async (): Promise<OpenclawUpdateStatus | null> => {
