@@ -23,6 +23,10 @@ interface StorageSetupStatus {
   legacySizeBytes: number;
 }
 
+interface StorageConfigureResult {
+  createdFresh: boolean;
+}
+
 interface MigrationProgress {
   key?: string;
   message: string;
@@ -224,7 +228,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
       progress: 0.02,
     });
     try {
-      await invoke('configure_storage', {
+      const result = await invoke<StorageConfigureResult>('configure_storage', {
         targetDir,
         migrateExisting: !usingLegacy && status.legacyExists && migrateExisting,
         locations: {
@@ -236,9 +240,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
         },
       });
       if (!mountedRef.current) return;
-      onReadyRef.current({
-        createdFresh: !usingLegacy && (!status.legacyExists || !migrateExisting),
-      });
+      onReadyRef.current({ createdFresh: result.createdFresh });
     } catch (cause) {
       if (mountedRef.current) setError(String(cause));
     } finally {

@@ -34,6 +34,7 @@ pub struct StorageConfigureResult {
     npm_cache_dir: String,
     npm_prefix: Option<String>,
     terminal_integration: bool,
+    created_fresh: bool,
     migrated: bool,
     files_copied: u64,
     bytes_copied: u64,
@@ -742,6 +743,33 @@ struct PreviousGateway {
     port: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuntimeRestoreStrategy {
+    Docker,
+    ManagedChild,
+    SystemService,
+}
+
+impl RuntimeRestoreStrategy {
+    fn for_mode(mode: GatewayRuntimeMode) -> Self {
+        match mode {
+            GatewayRuntimeMode::Docker => Self::Docker,
+            GatewayRuntimeMode::SystemService => Self::SystemService,
+            GatewayRuntimeMode::ManagedChild
+            | GatewayRuntimeMode::External
+            | GatewayRuntimeMode::None => Self::ManagedChild,
+        }
+    }
+
+    fn restored_mode(self) -> GatewayRuntimeMode {
+        match self {
+            Self::Docker => GatewayRuntimeMode::Docker,
+            Self::ManagedChild => GatewayRuntimeMode::ManagedChild,
+            Self::SystemService => GatewayRuntimeMode::SystemService,
+        }
+    }
+}
+
 async fn wait_for_gateway(port: u16, attempts: usize) -> Result<(), String> {
     for _ in 0..attempts {
         if is_gateway_serving(port).await {
@@ -771,8 +799,9 @@ async fn start_runtime_locked(
         return Ok(());
     }
 
-    match mode {
-        GatewayRuntimeMode::Docker => {
+    let strategy = RuntimeRestoreStrategy::for_mode(mode);
+    match strategy {
+        RuntimeRestoreStrategy::Docker => {
             crate::commands::docker::start_docker_gateway_locked(app.clone(), Some(port), None)
                 .await?;
             state.transition(
@@ -782,7 +811,7 @@ async fn start_runtime_locked(
                 "storage transaction: Docker runtime restored",
             );
         }
-        GatewayRuntimeMode::ManagedChild => {
+        RuntimeRestoreStrategy::ManagedChild => {
             crate::commands::gateway::start_gateway_locked(
                 app.clone(),
                 app.state::<GatewayProcess>(),
@@ -790,9 +819,7 @@ async fn start_runtime_locked(
             )
             .await?;
         }
-        GatewayRuntimeMode::External
-        | GatewayRuntimeMode::SystemService
-        | GatewayRuntimeMode::None => {
+        RuntimeRestoreStrategy::SystemService => {
             let binary = binary.ok_or_else(|| {
                 "OpenClaw binary is unavailable; cannot restore the Gateway service".to_string()
             })?;
@@ -816,12 +843,7 @@ async fn start_runtime_locked(
     }
 
     wait_for_gateway(port, 30).await?;
-    let final_mode = match mode {
-        GatewayRuntimeMode::None | GatewayRuntimeMode::External => {
-            GatewayRuntimeMode::SystemService
-        }
-        other => other,
-    };
+    let final_mode = strategy.restored_mode();
     state.transition(
         Some(GatewayLifecycle::Running),
         Some(final_mode),
@@ -1069,6 +1091,7 @@ pub async fn configure_storage(
                 .as_ref()
                 .map(|path| path.to_string_lossy().to_string()),
             terminal_integration: layout.terminal_integration,
+            created_fresh: false,
             migrated: false,
             files_copied: 0,
             bytes_copied: 0,
@@ -1325,6 +1348,7 @@ pub async fn configure_storage(
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
         terminal_integration: prepared.layout.terminal_integration,
+        created_fresh: !migrate_existing,
         migrated: migrate_existing,
         files_copied: prepared.copied.files,
         bytes_copied: prepared.copied.bytes,
@@ -1334,6 +1358,27 @@ pub async fn configure_storage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bug_iu_04_external_and_unknown_runtimes_restore_as_managed_children() {
+        for mode in [GatewayRuntimeMode::External, GatewayRuntimeMode::None] {
+            let strategy = RuntimeRestoreStrategy::for_mode(mode);
+            assert_eq!(strategy, RuntimeRestoreStrategy::ManagedChild);
+            assert_eq!(strategy.restored_mode(), GatewayRuntimeMode::ManagedChild);
+        }
+    }
+
+    #[test]
+    fn bug_iu_04_preserves_explicit_service_and_docker_ownership() {
+        assert_eq!(
+            RuntimeRestoreStrategy::for_mode(GatewayRuntimeMode::SystemService),
+            RuntimeRestoreStrategy::SystemService
+        );
+        assert_eq!(
+            RuntimeRestoreStrategy::for_mode(GatewayRuntimeMode::Docker),
+            RuntimeRestoreStrategy::Docker
+        );
+    }
 
     fn storage_test_root(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
