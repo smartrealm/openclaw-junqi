@@ -21,6 +21,7 @@ const REPAIR_PATTERNS: &[&str] = &[
 ];
 
 const TRANSIENT_START_ERROR_PATTERNS: &[&str] = &[
+    "startup migrations are already running",
     "WebSocket closed before handshake",
     "ECONNREFUSED",
     "Gateway process exited before becoming ready",
@@ -114,6 +115,16 @@ mod tests {
         assert!(is_transient_start_failure(&[
             "ECONNREFUSED 127.0.0.1:18789".into()
         ]));
+    }
+
+    #[test]
+    fn migration_lock_contention_retries_instead_of_repairing_plugins() {
+        let error = "OpenClaw startup migrations are already running for this state directory; retry after the other gateway finishes or after 2026-07-15T04:50:45.044Z.";
+        assert!(is_transient_start_failure(&[error.into()]));
+        assert_eq!(
+            diagnose_startup_failure(&[error.into()], false),
+            RecoveryAction::Retry
+        );
     }
 
     #[test]

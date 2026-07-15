@@ -28,7 +28,11 @@ import { normalizeSetupProgressPayload } from "./setupProgressEvents";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { gateway } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
-import { runOpenClawRepair } from "@/services/gateway/openclawRepair";
+import {
+  diagnoseGatewayRecovery,
+  gatewayMigrationRetryDelayMs,
+  runOpenClawRepair,
+} from "@/services/gateway/openclawRepair";
 import { defaultGatewayWsUrl } from "@/config/runtimeDefaults";
 import {
   OpenClawWizardClient,
@@ -191,7 +195,7 @@ export function useSetupFlow(
   steps: StepState[], setSteps: (v: StepState[]) => void,
 ): SetupFlow {
   const {
-    setupStep, installMode, postStorageStep,
+    setupStep, setupError, installMode, postStorageStep,
     setSetupStep, setSetupError, setSetupComplete, setPostStorageStep,
     setGatewayRunning, setInstallMode, setSetupStatus, clearSetupLogs, appendSetupLog,
   } = useAppStore();
@@ -811,18 +815,45 @@ export function useSetupFlow(
 
   const repairAndRetry = useCallback(async () => {
     if (repairing) return;
+    const failure = setupError;
     const runId = beginRun();
     setRepairing(true);
     setSetupError(null);
-    patchStep("gateway", "running", t("setup.repairingGateway", "正在修复 OpenClaw 和插件状态…"));
-    report(t("setup.repairingGateway", "正在修复 OpenClaw 和插件状态…"));
-    appendSetupLog({
-      source: "setup",
-      step: "gateway",
-      message: t("setup.repairStarting", "开始运行 OpenClaw 官方修复流程…"),
-      level: "info",
-    });
+    const analyzingMessage = t("setup.analyzingGatewayFailure", "正在分析 Gateway 启动失败并选择恢复方式…");
+    patchStep("gateway", "running", analyzingMessage);
+    report(analyzingMessage);
+    appendSetupLog({ source: "setup", step: "gateway", message: analyzingMessage, level: "info" });
     try {
+      const recommendation = failure
+        ? await diagnoseGatewayRecovery(failure).catch(() => "repair" as const)
+        : "repair";
+      if (recommendation === "retry") {
+        const retryDelay = gatewayMigrationRetryDelayMs(failure || "");
+        if (retryDelay > 0) {
+          const waitSeconds = Math.ceil(retryDelay / 1000);
+          const message = t(
+            "setup.waitingForGatewayLock",
+            "检测到另一个 Gateway 的迁移锁，{{seconds}} 秒后自动重试…",
+            { seconds: waitSeconds },
+          );
+          patchStep("gateway", "running", message);
+          report(message);
+          appendSetupLog({ source: "setup", step: "gateway", message, level: "info" });
+          await new Promise((resolve) => window.setTimeout(resolve, retryDelay));
+          if (!isRunActive(runId)) return;
+        }
+        await startGatewayAction();
+        return;
+      }
+      const repairingMessage = t("setup.repairingGateway", "正在修复 OpenClaw 和插件状态…");
+      patchStep("gateway", "running", repairingMessage);
+      report(repairingMessage);
+      appendSetupLog({
+        source: "setup",
+        step: "gateway",
+        message: t("setup.repairStarting", "开始运行 OpenClaw 官方修复流程…"),
+        level: "info",
+      });
       await runOpenClawRepair();
       if (!isRunActive(runId)) return;
       appendSetupLog({
@@ -843,7 +874,7 @@ export function useSetupFlow(
     } finally {
       setRepairing(false);
     }
-  }, [repairing, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, setSetupStep]);
+  }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, setSetupStep]);
 
   const goBack = useCallback(() => {
     void wizardClientRef.current?.cancel().catch(() => {});

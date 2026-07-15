@@ -7,6 +7,17 @@ export function diagnoseGatewayRecovery(error: string): Promise<GatewayRecoveryR
   return invoke<GatewayRecoveryRecommendation>('diagnose_gateway_recovery', { error });
 }
 
+const MIGRATION_RETRY_PATTERN = /startup migrations are already running[\s\S]*?after\s+(\d{4}-\d{2}-\d{2}T\S+?Z)\b/i;
+const MAX_MIGRATION_RETRY_DELAY_MS = 5 * 60 * 1000;
+
+export function gatewayMigrationRetryDelayMs(error: string, now = Date.now()): number {
+  const expiresAt = MIGRATION_RETRY_PATTERN.exec(error)?.[1];
+  if (!expiresAt) return 0;
+  const timestamp = Date.parse(expiresAt);
+  if (!Number.isFinite(timestamp)) return 0;
+  return Math.min(MAX_MIGRATION_RETRY_DELAY_MS, Math.max(0, timestamp - now + 1_000));
+}
+
 export interface OpenClawRepairCoordinator {
   run: () => Promise<boolean>;
   isRepairing: () => boolean;

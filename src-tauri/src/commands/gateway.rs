@@ -1,7 +1,7 @@
 use crate::paths;
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode, GatewayRuntimeState};
 use crate::state::GatewayProcess;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::net::TcpStream;
 
@@ -26,6 +26,90 @@ pub struct GatewayStatus {
     /// The gateway auth token. Present when `running` is true so the frontend
     /// can use it directly without a second round-trip to read the config file.
     pub token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GatewayServiceProbe {
+    service: Option<GatewayServiceState>,
+    health: Option<GatewayServiceHealth>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GatewayServiceState {
+    loaded: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct GatewayServiceHealth {
+    healthy: bool,
+}
+
+fn parse_gateway_service_state(output: &[u8]) -> Option<(bool, bool)> {
+    let text = std::str::from_utf8(output).ok()?;
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    let probe = serde_json::from_str::<GatewayServiceProbe>(&text[start..=end]).ok()?;
+    Some((
+        probe.service?.loaded,
+        probe.health.map(|health| health.healthy).unwrap_or(false),
+    ))
+}
+
+async fn stop_offline_gateway_service(
+    app: &AppHandle,
+    binary: &std::path::Path,
+    search_path: &str,
+) -> Result<bool, String> {
+    let mut status_command = tokio::process::Command::new(binary);
+    status_command
+        .args(["gateway", "status", "--json"])
+        .env("PATH", search_path)
+        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
+        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    crate::platform::configure_background_command(&mut status_command);
+
+    let output =
+        match tokio::time::timeout(std::time::Duration::from_secs(15), status_command.output())
+            .await
+        {
+            Ok(Ok(output)) => output,
+            _ => return Ok(false),
+        };
+    if parse_gateway_service_state(&output.stdout) != Some((true, false)) {
+        return Ok(false);
+    }
+
+    let _ = app.emit(
+        "gateway-log",
+        "An offline OpenClaw system service is loaded; stopping it before starting the desktop-managed Gateway...",
+    );
+    let mut stop_command = tokio::process::Command::new(binary);
+    stop_command
+        .args(["gateway", "stop"])
+        .env("PATH", search_path)
+        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
+        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    crate::platform::configure_background_command(&mut stop_command);
+
+    let stopped = tokio::time::timeout(std::time::Duration::from_secs(30), stop_command.output())
+        .await
+        .map_err(|_| "Timed out while stopping the competing Gateway system service".to_string())?
+        .map_err(|error| format!("Failed to stop the competing Gateway system service: {error}"))?;
+    if !stopped.status.success() {
+        let diagnostic = String::from_utf8_lossy(&stopped.stderr).trim().to_string();
+        return Err(if diagnostic.is_empty() {
+            format!("OpenClaw gateway stop exited with {}", stopped.status)
+        } else {
+            format!("OpenClaw gateway stop failed: {diagnostic}")
+        });
+    }
+    Ok(true)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,6 +253,20 @@ mod runtime_observation_tests {
             managed_gateway_diagnostics(&state, 20, 8),
             "missing plugin entry"
         );
+    }
+
+    #[test]
+    fn gateway_service_probe_accepts_prefixed_official_json() {
+        let output = br#"warning: stale metadata
+            {"service":{"loaded":true},"health":{"healthy":false}}"#;
+        assert_eq!(parse_gateway_service_state(output), Some((true, false)));
+        assert_eq!(
+            parse_gateway_service_state(
+                br#"{"service":{"loaded":true},"health":{"healthy":true}}"#
+            ),
+            Some((true, true))
+        );
+        assert_eq!(parse_gateway_service_state(b"not json"), None);
     }
 }
 
@@ -1127,6 +1225,14 @@ pub(crate) async fn start_gateway_locked(
         .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
 
     let gw_path = augmented_path();
+    if stop_offline_gateway_service(&app, &openclaw, &gw_path).await? {
+        state.transition(
+            Some(GatewayLifecycle::Stopped),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "start_gateway: stopped competing offline system service",
+        );
+    }
 
     // Inject env.vars into the gateway process so providers that rely on
     // process-level environment variables (e.g. OPENAI_API_KEY) receive them
