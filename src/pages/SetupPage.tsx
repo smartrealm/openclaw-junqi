@@ -648,9 +648,7 @@ export function SetupPage() {
   const setupStep = useAppStore((s) => s.setupStep);
   const logs = useAppStore((s) => s.setupLogs);
   const appendSetupLog = useAppStore((s) => s.appendSetupLog);
-  const postStorageStep = useAppStore((s) => s.postStorageStep);
   const setSetupStep = useAppStore((s) => s.setSetupStep);
-  const setSetupStatus = useAppStore((s) => s.setSetupStatus);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
@@ -690,26 +688,10 @@ export function SetupPage() {
   }, [appendSetupLog]);
 
   const sharedLogs = useMemo(() => logs, [logs]);
-  const finishStorage = (result?: { createdFresh: boolean }) => {
-    const nextStep = result?.createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
-      ? "gateway-stopped"
-      : postStorageStep;
-    if (nextStep === "ready") {
-      setSetupStatus(t("setup.ready"), 100);
-    } else if (nextStep === "configure-openclaw") {
-      setSetupStatus(t("setup.wizard.title", "配置 OpenClaw"), 82);
-    } else if (nextStep === "gateway-stopped") {
-      setSetupStatus(t("setup.gatewayNotRunning"), 30);
-    } else {
-      setSetupStatus(t("setup.chooseMode"), 30);
-    }
-    setSetupStep(nextStep);
-  };
-
   switch (setupStep) {
     case "welcome": return <WelcomeScreen logs={sharedLogs} />;
     case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
-    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={finishStorage} onBack={() => setSetupStep("welcome")} />;
+    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={() => setSetupStep("welcome")} />;
     case "gateway-stopped": return <GatewayStoppedScreen flow={flow} logs={sharedLogs} />;
     case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
     case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;

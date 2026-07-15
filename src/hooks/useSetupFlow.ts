@@ -143,6 +143,7 @@ export interface SetupFlow {
   runNativeSetup: () => Promise<void>;
   runDockerSetup: () => Promise<void>;
   retrySetup: () => Promise<void>;
+  completeStorageSetup: (result?: { createdFresh: boolean }) => void;
   selectMode: (mode: "native" | "docker") => void;
   detectDocker: () => Promise<void>;
   refreshRuntime: () => Promise<{ status: OpenclawStatus; gatewayRunning: boolean }>;
@@ -190,7 +191,7 @@ export function useSetupFlow(
   steps: StepState[], setSteps: (v: StepState[]) => void,
 ): SetupFlow {
   const {
-    setupStep, installMode,
+    setupStep, installMode, postStorageStep,
     setSetupStep, setSetupError, setSetupComplete, setPostStorageStep,
     setGatewayRunning, setInstallMode, setSetupStatus, clearSetupLogs, appendSetupLog,
   } = useAppStore();
@@ -246,11 +247,6 @@ export function useSetupFlow(
     const nextProgress = advanceSetupProgress(progressRef.current, phase, localPercent);
     report(message, nextProgress);
   }, [report]);
-
-  const resetProgress = useCallback(() => {
-    progressRef.current = 0;
-    setProgress(0);
-  }, [setProgress]);
 
   const waitForGatewayReady = useCallback(async (runId: number, timeoutMs = 30_000, port?: number | null) => {
     const deadline = Date.now() + timeoutMs;
@@ -587,7 +583,6 @@ export function useSetupFlow(
 
   const runNativeSetup = useCallback(async () => {
     const runId = beginRun();
-    resetProgress();
     clearSetupLogs();
     const s = [...INITIAL_NATIVE_STEPS];
     commitSteps(s);
@@ -727,12 +722,11 @@ export function useSetupFlow(
       report(msg);
       setSetupStep("error");
     }
-  }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
+  }, [beginRun, isRunActive, setSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
       waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
-    resetProgress();
     clearSetupLogs();
     commitSteps([...INITIAL_DOCKER_STEPS]);
     try {
@@ -772,7 +766,7 @@ export function useSetupFlow(
       report(message);
       setSetupStep("error");
     }
-  }, [beginRun, resetProgress, isRunActive, setSetupStep, t, report, commitSteps,
+  }, [beginRun, isRunActive, setSetupStep, t, report, commitSteps,
       waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, needsOnboarding, startOfficialOnboarding, appendSetupLog]);
 
   const selectMode = useCallback((mode: "native" | "docker") => {
@@ -788,14 +782,32 @@ export function useSetupFlow(
 
   const retrySetup = useCallback(async () => {
     setSetupError(null);
-    setProgress(0);
     setNeedsGit(false);
     if (installMode === "docker") {
       await runDockerSetup();
     } else {
       await runNativeSetup();
     }
-  }, [installMode, setSetupError, setProgress, setNeedsGit, runDockerSetup, runNativeSetup]);
+  }, [installMode, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
+
+  const completeStorageSetup = useCallback((result?: { createdFresh: boolean }) => {
+    const createdFresh = result?.createdFresh === true;
+    if (createdFresh) setNeedsOnboarding(true);
+    const nextStep = createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
+      ? "gateway-stopped"
+      : postStorageStep;
+
+    if (nextStep === "ready") {
+      report(t("setup.ready"), 100);
+    } else if (nextStep === "configure-openclaw") {
+      report(t("setup.wizard.title", "配置 OpenClaw"), 82);
+    } else if (nextStep === "gateway-stopped") {
+      report(t("setup.gatewayNotRunning"), 30);
+    } else {
+      report(t("setup.chooseMode"), 30);
+    }
+    setSetupStep(nextStep);
+  }, [postStorageStep, report, setSetupStep, t]);
 
   const repairAndRetry = useCallback(async () => {
     if (repairing) return;
@@ -849,9 +861,8 @@ export function useSetupFlow(
   const retryGit = useCallback(() => {
     setNeedsGit(false);
     setSetupError(null);
-    setProgress(0);
     runNativeSetup();
-  }, [setNeedsGit, setSetupError, setProgress, runNativeSetup]);
+  }, [setNeedsGit, setSetupError, runNativeSetup]);
 
   const enterWorkspace = useCallback((origin?: Element | null) => {
     cancelActiveRun();
@@ -908,6 +919,7 @@ export function useSetupFlow(
     runNativeSetup,
     runDockerSetup,
     retrySetup,
+    completeStorageSetup,
     selectMode,
     detectDocker,
     refreshRuntime,

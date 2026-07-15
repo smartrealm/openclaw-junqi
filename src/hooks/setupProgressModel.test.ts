@@ -18,21 +18,23 @@ test("setup phase ranges are contiguous and never decrease", () => {
 });
 
 test("docker event progress follows pull, container, and gateway ranges", () => {
-  assert.equal(progressForSetupEvent("pull", 0, "docker"), 5);
+  assert.equal(progressForSetupEvent("pull", 0, "docker"), 31);
   assert.equal(progressForSetupEvent("pull", 100, "docker"), 65);
-  assert.equal(progressForSetupEvent("container", 50, "docker"), 75);
+  assert.equal(progressForSetupEvent("container", 0, "docker"), 66);
+  assert.equal(progressForSetupEvent("container", 100, "docker"), 84);
   assert.equal(progressForSetupEvent("gateway", 100, "docker"), 99);
   assert.equal(progressForSetupEvent("unknown", 50, "docker"), null);
 });
 
 test("local task progress is mapped into its global phase range", () => {
-  assert.equal(progressForPhase("openclaw", 0), 40);
-  assert.equal(progressForPhase("openclaw", 50), 54);
-  assert.equal(progressForPhase("openclaw", 100), 68);
+  const range = SETUP_PROGRESS_RANGES.openclaw;
+  assert.equal(progressForPhase("openclaw", 0), range.start);
+  assert.equal(progressForPhase("openclaw", 50), Math.round((range.start + range.end) / 2));
+  assert.equal(progressForPhase("openclaw", 100), range.end);
 });
 
 test("global setup progress cannot move backwards", () => {
-  assert.equal(advanceSetupProgress(75, "gatewayConfig", 0), 76);
+  assert.equal(advanceSetupProgress(80, "gatewayConfig", 0), SETUP_PROGRESS_RANGES.gatewayConfig.start);
   assert.equal(advanceSetupProgress(90, "gatewayConfig", 100), 90);
 });
 

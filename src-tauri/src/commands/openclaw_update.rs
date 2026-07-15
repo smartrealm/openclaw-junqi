@@ -446,61 +446,6 @@ fn diagnostic_from_text(stderr: &str, stdout: &str) -> Option<String> {
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
-const GATEWAY_RESTART_FAILURE_MARKERS: &[&str] = &[
-    "gateway did not become healthy after restart",
-    "gateway: restart failed",
-    "gateway restart failed after",
-    "gateway service restart failed",
-    "updated install restart failed",
-    "update restart failed",
-    "failed to restart managed gateway service",
-];
-
-fn gateway_restart_failure_diagnostic(output: &Output) -> Option<String> {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    gateway_restart_failure_diagnostic_from_text(&stderr, &stdout)
-}
-
-fn gateway_restart_failure_diagnostic_from_text(stderr: &str, stdout: &str) -> Option<String> {
-    let combined = format!("{stderr}\n{stdout}");
-    let lines = combined.lines().collect::<Vec<_>>();
-    let start = lines.iter().position(|line| {
-        let lower = line.to_ascii_lowercase();
-        GATEWAY_RESTART_FAILURE_MARKERS
-            .iter()
-            .any(|marker| lower.contains(marker))
-    })?;
-    let diagnostic = lines[start..]
-        .iter()
-        .filter(|line| !line.trim().is_empty())
-        .take(4)
-        .map(|line| redact_diagnostic_line(line))
-        .collect::<Vec<_>>();
-    (!diagnostic.is_empty()).then(|| diagnostic.join("\n"))
-}
-
-fn reconcile_installed_update_with_restart_failure(
-    result: &mut OpenclawUpdateResult,
-    detected_before: Option<&str>,
-    detected_after: Option<String>,
-    restart_error: Option<String>,
-) {
-    if let Some(after) = detected_after {
-        result.after_version = Some(after.clone());
-        if !result.success
-            && restart_error.is_some()
-            && detected_before.is_some_and(|before| before != after)
-        {
-            result.success = true;
-            result.status = "ok".to_string();
-            result.reason = None;
-            result.error = None;
-            result.gateway_error = restart_error;
-        }
-    }
-}
-
 fn empty_update_status(current_version: Option<String>, error: String) -> OpenclawUpdateStatus {
     OpenclawUpdateStatus {
         current_version,
@@ -840,19 +785,11 @@ pub async fn update_openclaw(
     let (output, selected_registry) = run_openclaw_command_with_registry_fallback(
         &app,
         &binary,
-        &["update", "--yes", "--json"],
+        &["update", "--yes", "--no-restart", "--json"],
         UPDATE_TIMEOUT,
         selection,
     )
     .await;
-
-    // OpenClaw intentionally exits non-zero when the package was replaced but
-    // the follow-up Gateway health check failed. Preserve that distinction so
-    // the UI can report a successful core update with a restart warning.
-    let gateway_restart_error = output
-        .as_ref()
-        .ok()
-        .and_then(gateway_restart_failure_diagnostic);
 
     let mut result = match output {
         Ok(output) => match parse_update_result(&output.stdout) {
@@ -906,12 +843,9 @@ pub async fn update_openclaw(
     }
 
     let refreshed = system::detect_openclaw().await;
-    reconcile_installed_update_with_restart_failure(
-        &mut result,
-        detected.version.as_deref(),
-        refreshed.version,
-        gateway_restart_error,
-    );
+    if let Some(version) = refreshed.version {
+        result.after_version = Some(version);
+    }
     if result.success {
         emit_update_progress(&app, "OpenClaw update completed", 1.0);
     } else {
@@ -1127,96 +1061,5 @@ mod tests {
         assert!(!is_network_failure(&business_error));
         assert!(contains_network_error("step stderr: ECONNRESET"));
         assert!(!contains_network_error("permission denied"));
-    }
-
-    #[test]
-    fn promotes_an_installed_core_update_with_a_restart_failure_to_warning() {
-        let mut result = OpenclawUpdateResult {
-            success: false,
-            status: "error".to_string(),
-            mode: None,
-            reason: None,
-            before_version: Some("2026.6.11".to_string()),
-            after_version: None,
-            gateway_restarted: false,
-            gateway_error: None,
-            npm_registry: None,
-            npm_registry_kind: None,
-            error: Some("OpenClaw returned an invalid JSON response".to_string()),
-        };
-
-        reconcile_installed_update_with_restart_failure(
-            &mut result,
-            Some("2026.6.11"),
-            Some("2026.7.1".to_string()),
-            Some("Gateway did not become healthy after restart.".to_string()),
-        );
-
-        assert!(result.success);
-        assert_eq!(result.status, "ok");
-        assert_eq!(result.after_version.as_deref(), Some("2026.7.1"));
-        assert_eq!(
-            result.gateway_error.as_deref(),
-            Some("Gateway did not become healthy after restart.")
-        );
-        assert_eq!(result.error, None);
-    }
-
-    #[test]
-    fn does_not_hide_non_restart_update_failures() {
-        let mut result = OpenclawUpdateResult {
-            success: false,
-            status: "error".to_string(),
-            mode: Some("npm".to_string()),
-            reason: Some("post-update-plugins".to_string()),
-            before_version: Some("2026.6.11".to_string()),
-            after_version: None,
-            gateway_restarted: false,
-            gateway_error: None,
-            npm_registry: None,
-            npm_registry_kind: None,
-            error: Some("plugin sync failed".to_string()),
-        };
-
-        reconcile_installed_update_with_restart_failure(
-            &mut result,
-            Some("2026.6.11"),
-            Some("2026.7.1".to_string()),
-            None,
-        );
-
-        assert!(!result.success);
-        assert_eq!(result.reason.as_deref(), Some("post-update-plugins"));
-        assert_eq!(result.gateway_error, None);
-    }
-
-    #[test]
-    fn extracts_restart_failure_after_unrelated_migration_warnings() {
-        let diagnostic = gateway_restart_failure_diagnostic_from_text(
-            "[state-migrations] Legacy state migration warnings\n\
-             [restart] killing 1 stale gateway process(es) before restart: 84555\n\
-             Gateway did not become healthy after restart.\n\
-             Service runtime stayed stopped.",
-            "",
-        );
-
-        assert_eq!(
-            diagnostic.as_deref(),
-            Some(
-                "Gateway did not become healthy after restart.\n\
-                 Service runtime stayed stopped."
-            )
-        );
-    }
-
-    #[test]
-    fn stale_process_cleanup_alone_is_not_a_restart_failure() {
-        assert_eq!(
-            gateway_restart_failure_diagnostic_from_text(
-                "[restart] killing 1 stale gateway process(es) before restart: 84555",
-                "",
-            ),
-            None
-        );
     }
 }
