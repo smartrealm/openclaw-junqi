@@ -2432,7 +2432,7 @@
     "gitRuntimeChoose": "Choose the Git runtime directory",
     "terminalIntegration": "Enable OpenClaw in external terminals",
     "terminalIntegrationHint": "Create a dedicated launcher and update the user PATH. This does not modify npmrc or globally replace Node.js or Git. Launcher: {{path}}",
-    "migrationLayoutLocked": "Migration preserves the relative workspace and runtime layout. Choose Create a fresh environment to edit these locations independently.",
+    "migrationLayoutLocked": "Migration preserves the workspace and internal runtime layout; Node.js, Git, and npm locations can be selected independently.",
     "progress": {
       "stoppingGateway": "Stopping the previous Gateway…",
       "copying": "Copying OpenClaw data…",
@@ -3048,6 +3048,7 @@
   "setup.openclaw.useExisting": "Using existing local OpenClaw",
   "setup.openclaw.firstInstall": "No existing OpenClaw found. Installing a managed local OpenClaw for this computer…",
   "setup.openclaw.reinstall": "Reinstalling the detected OpenClaw package…",
+  "setup.openclaw.relocate": "Installing OpenClaw into the newly selected npm directory…",
   "setup.openclaw.locateNode": "Locating Node.js executable…",
   "setup.openclaw.useLocalNode": "Using selected Node.js: {{path}}",
   "setup.openclaw.useSystemNode": "Using system Node.js",

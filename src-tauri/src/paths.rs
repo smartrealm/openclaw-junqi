@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 5;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 6;
+const NPM_NATIVE_CACHE_VERSION: u32 = 5;
 
 /// The OpenClaw runtime selected by the user during setup.
 ///
@@ -43,6 +44,9 @@ pub struct StorageBootstrap {
     /// An explicitly user-selected portable Git root. `None` means use the
     /// operating-system installation discovered at runtime.
     pub git_runtime_dir: Option<PathBuf>,
+    /// A changed npm prefix requires OpenClaw to be installed and verified at
+    /// the new location before the migrated runtime can be considered ready.
+    pub openclaw_relocation_required: bool,
     pub terminal_integration: bool,
     pub runtime_mode: OpenClawRuntimeMode,
 }
@@ -64,6 +68,8 @@ struct PersistedStorageBootstrap {
     #[serde(default)]
     git_runtime_dir: Option<PathBuf>,
     #[serde(default)]
+    openclaw_relocation_required: bool,
+    #[serde(default)]
     terminal_integration: bool,
     #[serde(default)]
     runtime_mode: OpenClawRuntimeMode,
@@ -83,6 +89,7 @@ impl StorageBootstrap {
             npm_prefix: None,
             node_runtime_dir: None,
             git_runtime_dir: None,
+            openclaw_relocation_required: false,
             terminal_integration: false,
             runtime_mode: OpenClawRuntimeMode::Native,
         }
@@ -106,6 +113,7 @@ impl StorageBootstrap {
             npm_prefix,
             node_runtime_dir: None,
             git_runtime_dir: None,
+            openclaw_relocation_required: false,
             terminal_integration,
             runtime_mode: OpenClawRuntimeMode::Native,
         }
@@ -120,7 +128,7 @@ impl StorageBootstrap {
         // owned `state_dir/npm-cache` path. Normalize that legacy marker to
         // `None`, while keeping any genuinely custom cache selection intact.
         let legacy_cache_marker = value.state_dir.join("npm-cache");
-        let npm_cache_dir = if value.version < STORAGE_BOOTSTRAP_VERSION {
+        let npm_cache_dir = if value.version < NPM_NATIVE_CACHE_VERSION {
             value
                 .npm_cache_dir
                 .filter(|path| path != &legacy_cache_marker)
@@ -137,6 +145,7 @@ impl StorageBootstrap {
             npm_prefix: value.npm_prefix,
             node_runtime_dir: value.node_runtime_dir,
             git_runtime_dir: value.git_runtime_dir,
+            openclaw_relocation_required: value.openclaw_relocation_required,
             terminal_integration: value.terminal_integration,
             runtime_mode: value.runtime_mode,
         };
@@ -154,6 +163,7 @@ impl StorageBootstrap {
             npm_prefix: self.npm_prefix.clone(),
             node_runtime_dir: self.node_runtime_dir.clone(),
             git_runtime_dir: self.git_runtime_dir.clone(),
+            openclaw_relocation_required: self.openclaw_relocation_required,
             terminal_integration: self.terminal_integration,
             runtime_mode: self.runtime_mode,
         }
@@ -434,6 +444,21 @@ pub fn configured_npm_prefix() -> Option<PathBuf> {
         .or_else(|| load_storage_bootstrap().and_then(|layout| layout.npm_prefix))
 }
 
+pub fn openclaw_relocation_required() -> bool {
+    load_storage_bootstrap().is_some_and(|layout| layout.openclaw_relocation_required)
+}
+
+pub fn complete_openclaw_relocation() -> Result<(), String> {
+    let Some(mut layout) = load_storage_bootstrap() else {
+        return Ok(());
+    };
+    if !layout.openclaw_relocation_required {
+        return Ok(());
+    }
+    layout.openclaw_relocation_required = false;
+    save_storage_bootstrap(&layout)
+}
+
 pub fn terminal_integration_requested() -> bool {
     load_storage_bootstrap()
         .map(|layout| layout.terminal_integration)
@@ -582,10 +607,12 @@ mod storage_bootstrap_tests {
         let mut layout = StorageBootstrap::for_state_dir(state, None);
         layout.node_runtime_dir = Some(node.clone());
         layout.git_runtime_dir = Some(git.clone());
+        layout.openclaw_relocation_required = true;
 
         let restored = StorageBootstrap::from_persisted(layout.to_persisted()).unwrap();
         assert_eq!(restored.node_runtime_dir, Some(node));
         assert_eq!(restored.git_runtime_dir, Some(git));
+        assert!(restored.openclaw_relocation_required);
         assert_ne!(
             restored.node_runtime_dir,
             Some(restored.runtime_dir.join("node"))
@@ -663,6 +690,24 @@ mod storage_bootstrap_tests {
         });
         let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
         let layout = StorageBootstrap::from_persisted(persisted).unwrap();
+        assert_eq!(layout.npm_cache_dir, Some(custom_cache));
+    }
+
+    #[test]
+    fn v5_explicit_state_local_npm_cache_survives_v6_upgrade() {
+        let state = std::env::temp_dir().join("junqi-v5-layout");
+        let custom_cache = state.join("npm-cache");
+        let raw = serde_json::json!({
+            "version": 5,
+            "state_dir": state,
+            "config_path": state.join("openclaw.json"),
+            "workspace_dir": state.join("workspace"),
+            "runtime_dir": state.join("runtime"),
+            "npm_cache_dir": custom_cache
+        });
+        let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
+        let layout = StorageBootstrap::from_persisted(persisted).unwrap();
+
         assert_eq!(layout.npm_cache_dir, Some(custom_cache));
     }
 

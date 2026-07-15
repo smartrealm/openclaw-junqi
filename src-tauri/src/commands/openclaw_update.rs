@@ -757,6 +757,15 @@ fn parse_update_result(output: &[u8]) -> Result<OpenclawUpdateResult, String> {
 
 #[tauri::command]
 pub async fn check_openclaw_update(app: AppHandle) -> Result<OpenclawUpdateStatus, String> {
+    if matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        if let Err(error) = system::ensure_openclaw_relocation_complete() {
+            emit_update_error(&app, &error, Some(0.02));
+            return Err(error);
+        }
+    }
     let _operation_guard = update_operation()
         .try_lock()
         .map_err(|_| UPDATE_BUSY_ERROR.to_string())?;
@@ -918,6 +927,10 @@ pub async fn update_openclaw(
             "Docker is the selected OpenClaw runtime. Refresh the Docker image and recreate its container instead of updating a native package."
                 .to_string(),
         );
+    }
+    if let Err(error) = system::ensure_openclaw_relocation_complete() {
+        emit_update_error(&app, &error, Some(0.02));
+        return Err(error);
     }
     let _update_guard = update_operation()
         .try_lock()

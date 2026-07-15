@@ -2426,7 +2426,7 @@
     "gitRuntimeChoose": "选择 Git 运行时目录",
     "terminalIntegration": "在外部终端启用 OpenClaw",
     "terminalIntegrationHint": "创建独立启动器并配置用户 PATH；不会修改 npmrc，也不会全局替换 Node.js 或 Git。启动器：{{path}}",
-    "migrationLayoutLocked": "迁移会保持现有工作区与运行时的相对布局。选择“创建全新环境”后可以分别修改这些目录。",
+    "migrationLayoutLocked": "迁移会保持现有工作区与内部运行时的相对布局；Node.js、Git 和 npm 位置可以重新选择。",
     "progress": {
       "stoppingGateway": "正在停止旧 Gateway…",
       "copying": "正在复制 OpenClaw 数据…",
@@ -3072,6 +3072,7 @@
   "setup.openclaw.useExisting": "使用本地已有 OpenClaw",
   "setup.openclaw.firstInstall": "未检测到本机已有 OpenClaw，正在为这台电脑安装 JunQi 管理的本地 OpenClaw…",
   "setup.openclaw.reinstall": "正在重新安装已检测到的 OpenClaw…",
+  "setup.openclaw.relocate": "正在将 OpenClaw 安装到新选择的 npm 目录…",
   "setup.openclaw.locateNode": "正在定位 Node.js 可执行文件…",
   "setup.openclaw.useLocalNode": "使用已选择的 Node.js：{{path}}",
   "setup.openclaw.useSystemNode": "使用系统 Node.js",

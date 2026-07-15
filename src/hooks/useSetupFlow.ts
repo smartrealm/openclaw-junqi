@@ -16,7 +16,7 @@ import {
 } from "@/stores/setup-navigation";
 import {
   checkNode, checkNpm, checkGit, checkOpenclaw,
-  installNode, installGit, installOpenclaw, reinstallOpenclaw,
+  installNode, installGit, installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
   applyTerminalIntegration,
   prepareGateway,
   checkDocker, pullOpenclawImage, detectGatewayConfig, setActiveGatewayRuntime,
@@ -140,7 +140,11 @@ export interface SetupFlow {
   runDockerSetup: () => Promise<void>;
   retrySetup: () => Promise<void>;
   requestReinstall: () => void;
-  completeStorageSetup: (result?: { createdFresh: boolean }) => void;
+  completeStorageSetup: (result?: {
+    createdFresh: boolean;
+    runtimeReconfigurationRequired?: boolean;
+    openclawRelocationRequired?: boolean;
+  }) => void;
   selectMode: (mode: InstallMode) => Promise<void>;
   detectDocker: () => Promise<void>;
   refreshRuntime: () => Promise<{ status: OpenclawStatus | null; gatewayRunning: boolean }>;
@@ -207,6 +211,7 @@ export function useSetupFlow(
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const reinstallRequestedRef = useRef(false);
+  const relocationRequestedRef = useRef(false);
   const needsOnboardingRef = useRef(needsOnboarding);
   needsOnboardingRef.current = needsOnboarding;
   const updateOnboardingRequirement = useCallback((required: boolean) => {
@@ -325,7 +330,8 @@ export function useSetupFlow(
         const oclaw = selectedRuntime === "native" ? await checkOpenclaw() : null;
         if (cancelled) return;
         setOpenclawStatus(oclaw);
-        if (selectedRuntime === "native" && !oclaw?.installed) {
+        if (selectedRuntime === "native" && (!oclaw?.installed || oclaw.relocation_required)) {
+          relocationRequestedRef.current = Boolean(oclaw?.relocation_required);
           // 从未安装过，先确定存储位置，再进入安装方式选择。
           localStorage.removeItem("junqi-setup-done");
           setPostStorageStep("choosing-mode");
@@ -716,12 +722,15 @@ export function useSetupFlow(
       setOpenclawStatus(oclawStatus);
       if (!isRunActive(runId)) return;
       const forceReinstall = reinstallRequestedRef.current;
-      if (!oclawStatus.installed || forceReinstall) {
+      const forceRelocation = relocationRequestedRef.current || oclawStatus.relocation_required;
+      if (!oclawStatus.installed || forceReinstall || forceRelocation) {
         if (!oclawStatus.installed) updateOnboardingRequirement(true);
         patchStep("openclaw", "running", t("setup.installingOpenclaw"));
         replaceSetupStep("install-openclaw");
         reportPhase("openclaw", t("setup.installingOpenclaw"), 10);
-        if (forceReinstall) {
+        if (forceRelocation) {
+          await relocateOpenclaw();
+        } else if (forceReinstall) {
           await reinstallOpenclaw();
         } else {
           await installOpenclaw();
@@ -731,6 +740,7 @@ export function useSetupFlow(
         if (!isRunActive(runId)) return;
         if (!installedStatus.installed) throw new Error(installedStatus.error || t("setup.openclawInstallFailed", "OpenClaw 安装后校验失败"));
         reinstallRequestedRef.current = false;
+        relocationRequestedRef.current = false;
         patchStep("openclaw", "done", installedStatus.version ?? undefined);
       } else {
         if (oclawStatus.path) {
@@ -877,10 +887,18 @@ export function useSetupFlow(
     }
   }, [installMode, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
 
-  const completeStorageSetup = useCallback((result?: { createdFresh: boolean }) => {
+  const completeStorageSetup = useCallback((result?: {
+    createdFresh: boolean;
+    runtimeReconfigurationRequired?: boolean;
+    openclawRelocationRequired?: boolean;
+  }) => {
     const createdFresh = result?.createdFresh === true;
+    const runtimeReconfigurationRequired = result?.runtimeReconfigurationRequired === true;
+    relocationRequestedRef.current = result?.openclawRelocationRequired === true;
     if (createdFresh) updateOnboardingRequirement(true);
-    const nextStep = createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
+    const nextStep = runtimeReconfigurationRequired
+      ? "choosing-mode"
+      : createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
       ? "gateway-stopped"
       : postStorageStep;
 

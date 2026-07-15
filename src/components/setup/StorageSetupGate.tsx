@@ -18,6 +18,7 @@ interface StorageSetupStatus {
   npmPrefix: string | null;
   nodeRuntimeDir: string | null;
   gitRuntimeDir: string | null;
+  openclawRelocationRequired: boolean;
   terminalIntegration: boolean;
   terminalLauncherDir: string;
   legacyDir: string;
@@ -27,6 +28,8 @@ interface StorageSetupStatus {
 
 interface StorageConfigureResult {
   createdFresh: boolean;
+  runtimeReconfigurationRequired: boolean;
+  openclawRelocationRequired: boolean;
 }
 
 interface MigrationProgress {
@@ -36,7 +39,11 @@ interface MigrationProgress {
 }
 
 interface StorageSetupStepProps {
-  onReady: (result?: { createdFresh: boolean }) => void;
+  onReady: (result?: {
+    createdFresh: boolean;
+    runtimeReconfigurationRequired?: boolean;
+    openclawRelocationRequired?: boolean;
+  }) => void;
   onBack: () => void;
   logs: SetupLog[];
 }
@@ -139,7 +146,10 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
           .then((result) => {
             if (!mountedRef.current) return;
             if (result.configured) {
-              onReadyRef.current({ createdFresh: false });
+              onReadyRef.current({
+                createdFresh: false,
+                openclawRelocationRequired: result.openclawRelocationRequired,
+              });
               return;
             }
             setStatus(result);
@@ -251,7 +261,11 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
         },
       });
       if (!mountedRef.current) return;
-      onReadyRef.current({ createdFresh: result.createdFresh });
+      onReadyRef.current({
+        createdFresh: result.createdFresh,
+        runtimeReconfigurationRequired: result.runtimeReconfigurationRequired,
+        openclawRelocationRequired: result.openclawRelocationRequired,
+      });
     } catch (cause) {
       if (mountedRef.current) setError(String(cause));
     } finally {
@@ -299,7 +313,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     : migrateExisting && status.legacyExists
       ? t('storage.migrateAndContinue', '迁移并继续')
       : t('storage.createAndContinue', '创建并继续');
-  const customLocationsLocked = !usingLegacy && status.legacyExists && migrateExisting;
+  const dataLayoutLocked = !usingLegacy && status.legacyExists && migrateExisting;
   const layoutComplete = Boolean(
     targetDir.trim()
       && workspaceDir.trim()
@@ -431,7 +445,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 icon={<Database size={16} />}
                 label={t('storage.workspaceLocation', 'OpenClaw 工作区')}
                 value={workspaceDir}
-                disabled={customLocationsLocked}
+                disabled={dataLayoutLocked}
                 onChoose={() => void chooseExactDirectory(t('storage.workspaceChoose', '选择 OpenClaw 工作区'), setWorkspaceDir)}
               />
               <div className="border-b border-aegis-border/70 py-3">
@@ -443,7 +457,6 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   <input
                     type="checkbox"
                     checked={customNpmCache}
-                    disabled={customLocationsLocked}
                     onChange={(event) => {
                       setCustomNpmCache(event.target.checked);
                       if (!event.target.checked) setNpmCacheDir('');
@@ -456,7 +469,6 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                     icon={<Package size={16} />}
                     label={t('storage.npmCacheLocation', 'npm 下载缓存')}
                     value={npmCacheDir}
-                    disabled={customLocationsLocked}
                     onChoose={() => void chooseExactDirectory(t('storage.npmCacheChoose', '选择 npm 下载缓存目录'), setNpmCacheDir)}
                   />
                 )}
@@ -504,7 +516,6 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   <input
                     type="checkbox"
                     checked={customNodeRuntime}
-                    disabled={customLocationsLocked}
                     onChange={(event) => setCustomNodeRuntime(event.target.checked)}
                     className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
                   />
@@ -514,7 +525,6 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                     icon={<Cpu size={16} />}
                     label={t('storage.nodeRuntimeLocation', 'Node.js 运行时目录')}
                     value={nodeRuntimeDir}
-                    disabled={customLocationsLocked}
                     onChoose={() => void chooseExactDirectory(t('storage.nodeRuntimeChoose', '选择 Node.js 运行时目录'), setNodeRuntimeDir)}
                   />
                 )}
@@ -529,7 +539,6 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   <input
                     type="checkbox"
                     checked={customGitRuntime}
-                    disabled={customLocationsLocked}
                     onChange={(event) => setCustomGitRuntime(event.target.checked)}
                     className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
                   />
@@ -539,7 +548,6 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                     icon={<GitBranch size={16} />}
                     label={t('storage.gitRuntimeLocation', 'Git 运行时目录')}
                     value={gitRuntimeDir}
-                    disabled={customLocationsLocked}
                     onChoose={() => void chooseExactDirectory(t('storage.gitRuntimeChoose', '选择 Git 运行时目录'), setGitRuntimeDir)}
                   />
                 )}
@@ -561,9 +569,9 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 />
               </label>
 
-              {customLocationsLocked && (
+              {dataLayoutLocked && (
                 <p className="border-t border-aegis-border/70 py-3 text-[11px] leading-5 text-aegis-warning">
-                  {t('storage.migrationLayoutLocked', '迁移会保持现有工作区与运行时的相对布局。选择“创建全新环境”后可以分别修改这些目录。')}
+                  {t('storage.migrationLayoutLocked', '迁移会保持现有工作区与内部运行时的相对布局；Node.js、Git 和 npm 位置可以重新选择。')}
                 </p>
               )}
             </div>

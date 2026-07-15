@@ -129,6 +129,7 @@ async fn run_selected_docker_repair(app: AppHandle, state: &GatewayProcess) -> R
 }
 
 async fn run_native_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Result<(), String> {
+    crate::commands::system::ensure_openclaw_relocation_complete()?;
     let gateway_gate = state.operation_gate.clone();
     let _gateway_guard = gateway_gate
         .try_lock_owned()

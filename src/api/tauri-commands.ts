@@ -12,6 +12,7 @@ export interface OpenclawStatus {
   version_ok: boolean;
   package_valid: boolean;
   gateway_command_ok: boolean;
+  relocation_required: boolean;
   error: string | null;
 }
 export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; }
@@ -100,6 +101,7 @@ export const installNode = () => invoke<string>("install_node");
 export const installGit = () => invoke<string>("install_git");
 export const installOpenclaw = () => invoke<string>("install_openclaw");
 export const reinstallOpenclaw = () => invoke<string>("reinstall_openclaw");
+export const relocateOpenclaw = () => invoke<string>("relocate_openclaw");
 export const applyTerminalIntegration = () => invoke<TerminalIntegrationStatus>("apply_terminal_integration");
 export const prepareGateway = () => invoke<string>("prepare_gateway");
 export const startGateway = (port?: number) => (

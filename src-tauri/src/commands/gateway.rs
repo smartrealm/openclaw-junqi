@@ -983,6 +983,8 @@ pub async fn restart_gateway(
         return result;
     }
 
+    crate::commands::system::ensure_openclaw_relocation_complete()?;
+
     state.transition(
         Some(GatewayLifecycle::Reconnecting),
         None,
@@ -1179,6 +1181,7 @@ pub(crate) async fn start_gateway_locked(
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
 ) -> Result<GatewayStatus, String> {
+    crate::commands::system::ensure_openclaw_relocation_complete()?;
     // Load config metadata once. This single read serves both port resolution
     // and env_vars injection, avoiding duplicate IO later in the function.
     let config_path = paths::config_path();

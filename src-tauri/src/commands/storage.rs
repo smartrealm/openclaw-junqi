@@ -19,6 +19,7 @@ pub struct StorageSetupStatus {
     npm_prefix: Option<String>,
     node_runtime_dir: Option<String>,
     git_runtime_dir: Option<String>,
+    openclaw_relocation_required: bool,
     terminal_integration: bool,
     terminal_launcher_dir: String,
     legacy_dir: String,
@@ -37,6 +38,8 @@ pub struct StorageConfigureResult {
     npm_prefix: Option<String>,
     node_runtime_dir: Option<String>,
     git_runtime_dir: Option<String>,
+    runtime_reconfiguration_required: bool,
+    openclaw_relocation_required: bool,
     terminal_integration: bool,
     created_fresh: bool,
     migrated: bool,
@@ -60,6 +63,37 @@ pub struct InstallLocationSelection {
 struct DirectoryStats {
     files: u64,
     bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct RuntimeLocationChanges {
+    node: bool,
+    git: bool,
+    npm_prefix: bool,
+}
+
+impl RuntimeLocationChanges {
+    fn between(current: &StorageBootstrap, next: &StorageBootstrap) -> Self {
+        Self {
+            node: current.node_runtime_dir != next.node_runtime_dir,
+            git: current.git_runtime_dir != next.git_runtime_dir,
+            npm_prefix: current.npm_prefix != next.npm_prefix,
+        }
+    }
+
+    fn requires_setup(self) -> bool {
+        self.node || self.git || self.npm_prefix
+    }
+}
+
+fn apply_runtime_location_transition(
+    current: &StorageBootstrap,
+    next: &mut StorageBootstrap,
+) -> bool {
+    let changes = RuntimeLocationChanges::between(current, next);
+    let native = matches!(next.runtime_mode, OpenClawRuntimeMode::Native);
+    next.openclaw_relocation_required = current.openclaw_relocation_required || changes.npm_prefix;
+    native && (changes.requires_setup() || current.openclaw_relocation_required)
 }
 
 fn emit_progress(app: &AppHandle, key: &'static str, message: &'static str, progress: f64) {
@@ -573,15 +607,16 @@ impl StorageReconfiguration {
         })
     }
 
-    fn apply(self, layout: &StorageBootstrap) -> Result<(), String> {
-        self.apply_with::<SystemReconfigurationOperations>(layout)
+    fn apply(self, layout: &StorageBootstrap, sync_terminal: bool) -> Result<(), String> {
+        self.apply_with::<SystemReconfigurationOperations>(layout, sync_terminal)
     }
 
     fn apply_with<O: ReconfigurationOperations>(
         self,
         layout: &StorageBootstrap,
+        sync_terminal: bool,
     ) -> Result<(), String> {
-        let result = self.apply_changes::<O>(layout);
+        let result = self.apply_changes::<O>(layout, sync_terminal);
         match result {
             Ok(()) => Ok(()),
             Err(error) => Err(self.rollback::<O>(error)),
@@ -591,11 +626,14 @@ impl StorageReconfiguration {
     fn apply_changes<O: ReconfigurationOperations>(
         &self,
         layout: &StorageBootstrap,
+        sync_terminal: bool,
     ) -> Result<(), String> {
         O::ensure_layout(layout)?;
         O::patch_workspace(&self.config_snapshot.path, &layout.workspace_dir)?;
         O::save_bootstrap(layout)?;
-        O::sync_terminal()?;
+        if sync_terminal {
+            O::sync_terminal()?;
+        }
         Ok(())
     }
 
@@ -1084,6 +1122,7 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
             .git_runtime_dir
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
+        openclaw_relocation_required: layout.openclaw_relocation_required,
         terminal_integration: layout.terminal_integration,
         terminal_launcher_dir: paths::terminal_launcher_dir().to_string_lossy().to_string(),
         legacy_dir: legacy.to_string_lossy().to_string(),
@@ -1159,6 +1198,18 @@ pub async fn configure_storage(
     if let Some(existing) = old_bootstrap.as_ref() {
         layout.runtime_mode = existing.runtime_mode;
     }
+    let existing_layout = old_bootstrap.clone().unwrap_or_else(|| {
+        StorageBootstrap::for_state_dir(
+            source.clone(),
+            Some(configured_workspace(
+                &source,
+                &source,
+                OpenClawRuntimeMode::Native,
+            )),
+        )
+    });
+    let native_runtime_reconfiguration =
+        apply_runtime_location_transition(&existing_layout, &mut layout);
     let binary = crate::commands::system::resolve_openclaw_binary_async().await;
     let port = std::fs::read_to_string(&old_config)
         .ok()
@@ -1167,18 +1218,60 @@ pub async fn configure_storage(
         .unwrap_or_else(crate::commands::config::default_gateway_port);
 
     if target == source {
-        let existing_layout = old_bootstrap.clone().unwrap_or_else(|| {
-            StorageBootstrap::for_state_dir(
-                source.clone(),
-                Some(configured_workspace(
-                    &source,
-                    &source,
-                    OpenClawRuntimeMode::Native,
-                )),
-            )
-        });
         validate_location_changes(&layout, Some(&existing_layout))?;
-        StorageReconfiguration::begin(old_bootstrap, &old_config, &layout)?.apply(&layout)?;
+        let previous = PreviousGateway {
+            reachable: is_gateway_serving(port).await,
+            runtime: state.runtime_snapshot()?,
+            port,
+        };
+        if native_runtime_reconfiguration && previous.reachable {
+            stop_all_locked(&state, binary.as_deref(), &source, &old_config).await;
+            if let Err(error) =
+                crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
+            {
+                let failure = format!(
+                    "Gateway did not stop cleanly; runtime locations were not changed: {}",
+                    error
+                );
+                let restore = start_runtime_locked(
+                    &app,
+                    &state,
+                    previous.runtime.mode,
+                    previous.port,
+                    binary.as_deref(),
+                    &source,
+                    &old_config,
+                )
+                .await
+                .err()
+                .map(|error| format!("restore previous Gateway: {}", error))
+                .into_iter()
+                .collect();
+                return Err(append_rollback_errors(failure, restore));
+            }
+        }
+        if let Err(error) = StorageReconfiguration::begin(old_bootstrap, &old_config, &layout)?
+            .apply(&layout, !native_runtime_reconfiguration)
+        {
+            if native_runtime_reconfiguration && previous.reachable {
+                let mut errors = Vec::new();
+                if let Err(restore_error) = start_runtime_locked(
+                    &app,
+                    &state,
+                    previous.runtime.mode,
+                    previous.port,
+                    binary.as_deref(),
+                    &source,
+                    &old_config,
+                )
+                .await
+                {
+                    errors.push(format!("restore previous Gateway: {}", restore_error));
+                }
+                return Err(append_rollback_errors(error, errors));
+            }
+            return Err(error);
+        }
         return Ok(StorageConfigureResult {
             state_dir: layout.state_dir.to_string_lossy().to_string(),
             config_path: paths::active_config_path().to_string_lossy().to_string(),
@@ -1200,6 +1293,8 @@ pub async fn configure_storage(
                 .git_runtime_dir
                 .as_ref()
                 .map(|path| path.to_string_lossy().to_string()),
+            runtime_reconfiguration_required: native_runtime_reconfiguration,
+            openclaw_relocation_required: layout.openclaw_relocation_required,
             terminal_integration: layout.terminal_integration,
             created_fresh: false,
             migrated: false,
@@ -1218,16 +1313,6 @@ pub async fn configure_storage(
         ));
     }
     if migrate_existing {
-        let existing_layout = old_bootstrap.clone().unwrap_or_else(|| {
-            StorageBootstrap::for_state_dir(
-                source.clone(),
-                Some(configured_workspace(
-                    &source,
-                    &source,
-                    OpenClawRuntimeMode::Native,
-                )),
-            )
-        });
         let expected_workspace =
             configured_workspace(&source, &target, existing_layout.runtime_mode);
         let expected_runtime =
@@ -1236,14 +1321,9 @@ pub async fn configure_storage(
         let expected_cache = existing_layout.npm_cache_dir.as_ref().map(|cache| {
             map_workspace_to_target(cache, &source, &target).unwrap_or_else(|| cache.clone())
         });
-        if layout.workspace_dir != expected_workspace
-            || layout.runtime_dir != expected_runtime
-            || layout.npm_cache_dir != expected_cache
-            || layout.node_runtime_dir != existing_layout.node_runtime_dir
-            || layout.git_runtime_dir != existing_layout.git_runtime_dir
-        {
+        if layout.workspace_dir != expected_workspace || layout.runtime_dir != expected_runtime {
             return Err(
-                "Custom workspace, runtime, cache, Node.js, or Git locations require a fresh setup; migration preserves the existing layout"
+                "Custom workspace or managed runtime locations require a fresh setup; migration preserves the OpenClaw data layout"
                     .into(),
             );
         }
@@ -1409,13 +1489,15 @@ pub async fn configure_storage(
             .await;
         return Err(failure);
     }
-    if let Err(error) = crate::commands::terminal_integration::sync_terminal_integration() {
-        let failure = rollback.run(RollbackPolicy::AFTER_SWITCH, error).await;
-        let _ = crate::commands::terminal_integration::sync_terminal_integration();
-        return Err(failure);
+    if !native_runtime_reconfiguration {
+        if let Err(error) = crate::commands::terminal_integration::sync_terminal_integration() {
+            let failure = rollback.run(RollbackPolicy::AFTER_SWITCH, error).await;
+            let _ = crate::commands::terminal_integration::sync_terminal_integration();
+            return Err(failure);
+        }
     }
 
-    if migrate_existing && previous.reachable {
+    if migrate_existing && previous.reachable && !native_runtime_reconfiguration {
         emit_progress(
             &app,
             "storage.progress.startingGateway",
@@ -1486,6 +1568,8 @@ pub async fn configure_storage(
             .git_runtime_dir
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
+        runtime_reconfiguration_required: native_runtime_reconfiguration,
+        openclaw_relocation_required: prepared.layout.openclaw_relocation_required,
         terminal_integration: prepared.layout.terminal_integration,
         created_fresh: !migrate_existing,
         migrated: migrate_existing,
@@ -1582,6 +1666,46 @@ mod tests {
         assert!(validate_independent_locations(&overlapping).is_err());
     }
 
+    #[test]
+    fn migration_allows_independent_dependency_locations_to_change() {
+        let root = storage_test_root("migration-runtime-locations");
+        let current = StorageBootstrap::for_state_dir(root.join("old-state"), None);
+        let mut next = StorageBootstrap::for_state_dir(root.join("new-state"), None);
+        next.workspace_dir = root.join("new-state").join("workspace");
+        next.runtime_dir = root.join("new-state").join("runtime");
+        next.npm_cache_dir = Some(root.join("npm-cache"));
+        next.npm_prefix = Some(root.join("npm-prefix"));
+        next.node_runtime_dir = Some(root.join("node"));
+        next.git_runtime_dir = Some(root.join("git"));
+
+        assert!(validate_location_changes(&next, Some(&current)).is_ok());
+        assert!(apply_runtime_location_transition(&current, &mut next));
+        assert!(next.openclaw_relocation_required);
+    }
+
+    #[test]
+    fn migration_keeps_pending_openclaw_relocation_until_install_succeeds() {
+        let root = storage_test_root("pending-openclaw-relocation");
+        let mut current = StorageBootstrap::for_state_dir(root.join("old-state"), None);
+        current.openclaw_relocation_required = true;
+        let mut next = current.clone();
+
+        assert!(apply_runtime_location_transition(&current, &mut next));
+        assert!(next.openclaw_relocation_required);
+    }
+
+    #[test]
+    fn docker_migration_defers_host_openclaw_relocation_until_native_is_selected() {
+        let root = storage_test_root("docker-openclaw-relocation");
+        let mut current = StorageBootstrap::for_state_dir(root.join("old-state"), None);
+        current.runtime_mode = OpenClawRuntimeMode::Docker;
+        let mut next = current.clone();
+        next.npm_prefix = Some(root.join("new-prefix"));
+
+        assert!(!apply_runtime_location_transition(&current, &mut next));
+        assert!(next.openclaw_relocation_required);
+    }
+
     struct FailAfterConfigPatch;
 
     impl ReconfigurationOperations for FailAfterConfigPatch {
@@ -1624,7 +1748,7 @@ mod tests {
 
         let transaction = StorageReconfiguration::begin(None, &config_path, &layout).unwrap();
         let error = transaction
-            .apply_with::<FailAfterConfigPatch>(&layout)
+            .apply_with::<FailAfterConfigPatch>(&layout, true)
             .unwrap_err();
 
         assert!(error.contains("injected bootstrap failure"));

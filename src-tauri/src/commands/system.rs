@@ -107,6 +107,7 @@ pub struct OpenclawStatus {
     pub version_ok: bool,
     pub package_valid: bool,
     pub gateway_command_ok: bool,
+    pub relocation_required: bool,
     pub error: Option<String>,
 }
 
@@ -555,6 +556,19 @@ pub(crate) fn resolve_openclaw_binary() -> Option<PathBuf> {
     resolve_openclaw_binary_with_source().map(|(path, _source)| path)
 }
 
+/// A storage migration that changes npm's global prefix is incomplete until
+/// OpenClaw has been installed and validated at the new target. Returning an
+/// old saved binary during that window would silently undo the user's choice.
+pub(crate) fn ensure_openclaw_relocation_complete() -> Result<(), String> {
+    if paths::openclaw_relocation_required() {
+        return Err(
+            "OpenClaw's npm location changed. Complete the pending installation in the setup guide before continuing."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 async fn npm_reported_global_prefix() -> Option<PathBuf> {
     let npm = platform::detect_path(&platform::bin_name("npm"));
     if npm.trim().is_empty() {
@@ -584,6 +598,9 @@ async fn npm_reported_global_prefix() -> Option<PathBuf> {
 /// prefix comes from a global npm config, environment, or Node manager rather
 /// than a visible `.npmrc` entry.
 pub(crate) async fn resolve_openclaw_binary_async() -> Option<PathBuf> {
+    if paths::openclaw_relocation_required() {
+        return None;
+    }
     if let Some(binary) = resolve_openclaw_binary() {
         return Some(binary);
     }
@@ -599,6 +616,14 @@ pub(crate) async fn resolve_openclaw_binary_async() -> Option<PathBuf> {
 }
 
 pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)> {
+    // Do not fall through to a saved binary, PATH, or npm's old effective
+    // prefix while a migration has explicitly requested a new installation.
+    // The setup installer validates the target directly and clears this state
+    // only after that validation succeeds.
+    if paths::openclaw_relocation_required() {
+        return None;
+    }
+
     if let Ok(explicit) = std::env::var("OPENCLAW_BIN") {
         let explicit = PathBuf::from(explicit);
         if is_valid_openclaw_candidate(&explicit) {
@@ -661,6 +686,7 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
         None => match resolve_openclaw_binary_async().await {
             Some(path) => (path, "npm-config-prefix".to_string()),
             None => {
+                let relocation_required = paths::openclaw_relocation_required();
                 return OpenclawStatus {
                     installed: false,
                     version: None,
@@ -670,7 +696,15 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
                     version_ok: false,
                     package_valid: false,
                     gateway_command_ok: false,
-                    error: Some("OpenClaw binary was not found on JunQi's search path".into()),
+                    relocation_required,
+                    error: Some(
+                        if relocation_required {
+                            "OpenClaw needs to be installed in the selected npm location before it can run"
+                        } else {
+                            "OpenClaw binary was not found on JunQi's search path"
+                        }
+                        .into(),
+                    ),
                 };
             }
         },
@@ -704,6 +738,7 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
         version_ok,
         package_valid,
         gateway_command_ok,
+        relocation_required: paths::openclaw_relocation_required(),
         error: if installed {
             None
         } else {

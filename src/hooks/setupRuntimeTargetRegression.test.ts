@@ -29,7 +29,10 @@ test('BUG-RT-01 restores the persisted Docker target before setup detection', ()
   assert.match(detection, /const selectedRuntime = runtimeTarget\.runtime_mode;/);
   assert.match(detection, /setInstallMode\(selectedRuntime\);/);
   assert.match(detection, /selectedRuntime === "native" \? await checkOpenclaw\(\) : null/);
-  assert.match(detection, /selectedRuntime === "native" && !oclaw\?\.installed/);
+  assert.match(
+    detection,
+    /selectedRuntime === "native" && \(!oclaw\?\.installed \|\| oclaw\.relocation_required\)/,
+  );
   const refreshRuntime = setupFlow.slice(
     setupFlow.indexOf('const refreshRuntime = useCallback'),
     setupFlow.indexOf('\n  return {', setupFlow.indexOf('const refreshRuntime = useCallback')),

@@ -1733,7 +1733,7 @@ fn remove_broken_openclaw_install(prefix: &std::path::Path) -> Result<(), String
 
 #[tauri::command]
 pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
-    install_openclaw_impl(app, false).await
+    install_openclaw_impl(app, OpenclawInstallMode::Normal).await
 }
 
 /// Reinstall the selected OpenClaw package even when a binary is still
@@ -1741,17 +1741,88 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
 /// detection so a user-visible "reinstall" action has real repair semantics.
 #[tauri::command]
 pub async fn reinstall_openclaw(app: tauri::AppHandle) -> Result<String, String> {
-    install_openclaw_impl(app, true).await
+    install_openclaw_impl(app, OpenclawInstallMode::ReinstallExisting).await
+}
+
+#[tauri::command]
+pub async fn relocate_openclaw(app: tauri::AppHandle) -> Result<String, String> {
+    if !paths::openclaw_relocation_required() {
+        return Err("OpenClaw relocation was not requested by storage migration".into());
+    }
+    install_openclaw_impl(app, OpenclawInstallMode::Relocate).await
 }
 
 fn existing_npm_prefix_for_reinstall(binary: &Path, windows: bool) -> Option<PathBuf> {
     crate::commands::system::npm_prefix_for_openclaw_binary(binary, windows)
 }
 
-async fn install_openclaw_impl(app: tauri::AppHandle, force: bool) -> Result<String, String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenclawInstallMode {
+    Normal,
+    ReinstallExisting,
+    Relocate,
+}
+
+impl OpenclawInstallMode {
+    /// Every install entry point honors a persisted relocation request. This
+    /// keeps future callers from reusing the old npm prefix while a storage
+    /// migration is unfinished.
+    fn for_current_storage(self) -> Self {
+        if paths::openclaw_relocation_required() {
+            Self::Relocate
+        } else {
+            self
+        }
+    }
+
+    fn forces_npm_install(self) -> bool {
+        !matches!(self, Self::Normal)
+    }
+}
+
+fn paths_refer_to_same_location(left: &Path, right: &Path) -> bool {
+    let left = std::fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+    let right = std::fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+
+    #[cfg(windows)]
+    {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn verify_relocated_openclaw_prefix(binary: &Path, expected_prefix: &Path) -> Result<(), String> {
+    let installed_prefix =
+        crate::commands::system::npm_prefix_for_openclaw_binary(binary, cfg!(windows)).ok_or_else(
+            || {
+                format!(
+                    "OpenClaw was installed but its npm prefix could not be verified: {}",
+                    binary.display()
+                )
+            },
+        )?;
+    if paths_refer_to_same_location(&installed_prefix, expected_prefix) {
+        return Ok(());
+    }
+    Err(format!(
+        "OpenClaw was installed at {}, but the selected npm directory is {}",
+        installed_prefix.display(),
+        expected_prefix.display()
+    ))
+}
+
+async fn install_openclaw_impl(
+    app: tauri::AppHandle,
+    mode: OpenclawInstallMode,
+) -> Result<String, String> {
     let step = "openclaw";
     let install_lock = OPENCLAW_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
     let _install_guard = install_lock.lock().await;
+    let mode = mode.for_current_storage();
 
     emit_keyed(
         &app,
@@ -1761,7 +1832,7 @@ async fn install_openclaw_impl(app: tauri::AppHandle, force: bool) -> Result<Str
         0.02,
     );
     let existing = crate::commands::system::detect_openclaw().await;
-    if existing.installed && !force {
+    if existing.installed && matches!(mode, OpenclawInstallMode::Normal) {
         let detail = match (&existing.version, &existing.path) {
             (Some(version), Some(path)) => {
                 format!("Using existing OpenClaw {} at {}", version, path)
@@ -1776,7 +1847,7 @@ async fn install_openclaw_impl(app: tauri::AppHandle, force: bool) -> Result<Str
         return Ok(detail);
     }
 
-    if force && existing.installed {
+    if matches!(mode, OpenclawInstallMode::ReinstallExisting) && existing.installed {
         emit_keyed(
             &app,
             step,
@@ -1786,13 +1857,23 @@ async fn install_openclaw_impl(app: tauri::AppHandle, force: bool) -> Result<Str
         );
     }
 
-    emit_keyed(
-        &app,
-        step,
-        "No existing OpenClaw was found; installing a managed local OpenClaw for this computer...",
-        "setup.openclaw.firstInstall",
-        0.03,
-    );
+    if matches!(mode, OpenclawInstallMode::Relocate) {
+        emit_keyed(
+            &app,
+            step,
+            "Moving OpenClaw to the newly selected npm directory...",
+            "setup.openclaw.relocate",
+            0.03,
+        );
+    } else if matches!(mode, OpenclawInstallMode::Normal) {
+        emit_keyed(
+            &app,
+            step,
+            "No existing OpenClaw was found; installing a managed local OpenClaw for this computer...",
+            "setup.openclaw.firstInstall",
+            0.03,
+        );
+    }
 
     let target_requirement = target_openclaw_node_requirement().await?;
     let compatible_node = ensure_compatible_node_runtime(&app, step, &target_requirement).await?;
@@ -1848,17 +1929,19 @@ async fn install_openclaw_impl(app: tauri::AppHandle, force: bool) -> Result<Str
     // ② Resolve the install prefix dynamically. An explicit setup choice
     // wins; otherwise use the login terminal's actual npm prefix. No
     // user-specific path is hard-coded here and no hidden prefix is created.
-    let openclaw_prefix = if force {
-        existing
+    let openclaw_prefix = match mode {
+        OpenclawInstallMode::ReinstallExisting => existing
             .path
             .as_deref()
             .and_then(|path| existing_npm_prefix_for_reinstall(Path::new(path), cfg!(windows)))
             .ok_or_else(|| {
                 "The detected OpenClaw is not an npm installation JunQi can safely replace in place. Update or reinstall it with its original package manager, then retry."
                     .to_string()
-            })?
-    } else {
-        pick_install_target(&app, step).await?
+            })?,
+        OpenclawInstallMode::Relocate => {
+            pick_install_target(&app, step).await?
+        }
+        OpenclawInstallMode::Normal => pick_install_target(&app, step).await?,
     };
     emit_keyed(
         &app,
@@ -1887,7 +1970,7 @@ async fn install_openclaw_impl(app: tauri::AppHandle, force: bool) -> Result<Str
         npm_cli.as_deref(),
         &openclaw_prefix,
         "openclaw",
-        force,
+        mode.forces_npm_install(),
         0.10,
         0.90,
     )
@@ -1935,7 +2018,13 @@ async fn install_openclaw_impl(app: tauri::AppHandle, force: bool) -> Result<Str
                 .unwrap_or_else(|| "unknown validation error".into())
         ));
     }
+    if matches!(mode, OpenclawInstallMode::Relocate) {
+        verify_relocated_openclaw_prefix(&openclaw_bin, &openclaw_prefix)?;
+    }
     crate::commands::system::persist_selected_openclaw_binary(&openclaw_bin)?;
+    if matches!(mode, OpenclawInstallMode::Relocate) {
+        paths::complete_openclaw_relocation()?;
+    }
     if paths::terminal_integration_requested() {
         crate::commands::terminal_integration::sync_terminal_integration()?;
     }
@@ -1970,6 +2059,7 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
                 .to_string(),
         );
     }
+    crate::commands::system::ensure_openclaw_relocation_complete()?;
     let step = "gateway";
 
     // ⓘ Stage 1: detect local runtime

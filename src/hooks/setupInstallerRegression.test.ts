@@ -9,6 +9,7 @@ const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.t
 const setupCommands = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
 const storageCommands = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
+const nezhaUnixPlatform = readFileSync(new URL('../../src-tauri/src/nezha/platform/unix.rs', import.meta.url), 'utf8');
 
 test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /\{ id: "npm",\s+label: "npm"/);
@@ -39,6 +40,9 @@ test('bug 04 Windows setup uses system defaults unless the user selected a porta
   assert.match(systemCommands, /legacy_local_git_path/);
   assert.doesNotMatch(systemCommands, /macos_git_candidates/);
   assert.doesNotMatch(systemCommands, /\.npm-global"\)\.join\("bin"\)\.join\("git"\)/);
+  assert.doesNotMatch(nezhaUnixPlatform, /\.npm-global/);
+  assert.match(nezhaUnixPlatform, /configured_npm_prefix\(\)/);
+  assert.match(nezhaUnixPlatform, /user_npm_bin_dir\(\)/);
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("node"\)/);
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("git"\)/);
   assert.match(systemCommands, /pub async fn check_npm/);

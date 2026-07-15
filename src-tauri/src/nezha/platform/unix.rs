@@ -117,20 +117,44 @@ fn parse_shell_env_output(stdout: &[u8]) -> Option<Vec<(String, String)>> {
 }
 
 fn build_fallback_path() -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
     let current = std::env::var("PATH").unwrap_or_default();
-    let extras = [
-        format!("{home}/.local/bin"),
-        format!("{home}/.npm-global/bin"),
-        "/opt/homebrew/bin".to_string(),
-        "/opt/homebrew/sbin".to_string(),
-        "/usr/local/bin".to_string(),
-        "/usr/bin".to_string(),
-        "/bin".to_string(),
-        "/usr/sbin".to_string(),
-        "/sbin".to_string(),
-    ];
-    let mut parts: Vec<String> = extras.to_vec();
+    let mut parts = Vec::new();
+
+    // Preserve the user's actual npm layout instead of guessing a conventional
+    // home-directory npm bin location.
+    for npm_bin in [
+        crate::paths::configured_npm_prefix().map(|prefix| crate::paths::npm_bin_dir_for_prefix(&prefix)),
+        crate::paths::user_npm_bin_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let value = npm_bin.to_string_lossy().to_string();
+        if !value.is_empty() && !parts.contains(&value) {
+            parts.push(value);
+        }
+    }
+
+    if let Some(home) = home_dir() {
+        let local_bin = home.join(".local").join("bin").to_string_lossy().to_string();
+        if !local_bin.is_empty() && !parts.contains(&local_bin) {
+            parts.push(local_bin);
+        }
+    }
+
+    for path in [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ] {
+        if !parts.iter().any(|part| part == path) {
+            parts.push(path.to_string());
+        }
+    }
     for path in current.split(':') {
         if !path.is_empty() && !parts.iter().any(|part| part == path) {
             parts.push(path.to_string());

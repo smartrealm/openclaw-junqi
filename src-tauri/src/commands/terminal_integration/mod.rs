@@ -168,6 +168,12 @@ fn updated_windows_path(current: &str, launcher: &str, enabled: bool) -> String 
 }
 
 pub(crate) fn sync_terminal_integration() -> Result<TerminalIntegrationStatus, String> {
+    if matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        crate::commands::system::ensure_openclaw_relocation_complete()?;
+    }
     TerminalIntegrationService::<ActiveBackend>::sync(paths::terminal_integration_requested())
 }
 
