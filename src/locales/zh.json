@@ -1318,13 +1318,21 @@
     "loadingConfig": "正在读取模型配置…",
     "noTarget": "没有找到可直连的大模型配置。你可以临时填写一个模型用于本次自救，不会写入 openclaw.json。",
     "configReadFailed": "读取 OpenClaw 配置失败。你仍可临时填写一个模型用于本次自救。",
-    "readyMessage": "我可以不经过 Gateway，直接使用当前配置的大模型帮你分析启动失败原因。你可以直接发送“帮我诊断并给出修复步骤”。",
+    "readyMessage": "可以不经过 Gateway，直接使用已配置且可鉴权的模型分析启动失败原因。",
     "sendFailed": "直连模型失败：{{error}}",
+    "authFailed": "{{provider}} 拒绝了当前凭据（401）。请更新该供应商的 API Key，或切换其他诊断模型。",
+    "permissionFailed": "{{provider}} 拒绝了当前凭据的访问权限（403）。请检查模型权限或切换其他诊断模型。",
+    "sendFailedForTarget": "{{model}} 直连失败：{{error}}",
     "sending": "正在分析…",
-    "safetyHint": "只发送错误文本和日志摘要，不会发送 API Key。",
+    "safetyHint": "API Key 仅用于向所选模型服务鉴权，不会写入诊断正文或日志。",
     "placeholder": "例如：帮我诊断 Gateway 为什么启动失败，并给出最稳妥的修复步骤。",
     "send": "发送",
     "targetLabel": "诊断模型",
+    "credentialLabel": "凭据来源",
+    "credentialManual": "临时凭据",
+    "credentialEnvironment": "环境变量",
+    "credentialProfile": "认证配置",
+    "credentialProvider": "供应商配置",
     "sourcePrimary": "默认",
     "sourceConfigured": "候选",
     "manualTarget": "临时模型",
@@ -2495,8 +2503,8 @@
         "description": "按您的选择配置独立启动器与终端 PATH"
       },
       "gateway": {
-        "title": "Gateway",
-        "description": "写入本地配置并启动控制通道"
+        "title": "OpenClaw Gateway",
+        "description": "验证 Gateway 配置并准备启动控制通道"
       },
       "pull": {
         "title": "Docker 镜像",
@@ -3013,6 +3021,7 @@
   "setup.installComplete": "必需组件已安装完成",
   "setup.installCompleteSubtitle": "安装与配置已完成。下一步只会启动 Gateway，启动后仍需手动进入工作台。",
   "setup.installCompleteGatewayPending": "Gateway 配置已准备，点击启动 Gateway 继续。",
+  "setup.gatewayPrepareWillRetry": "Gateway 准备检查未完成：{{error}}。点击启动时将自动重试。",
   "setup.installPanel.gatewayPendingHint": "必需组件已完成。点击启动 Gateway 进入下一步。",
   "setup.node.check": "正在检测已安装的 Node.js 版本…",
   "setup.node.skip": "Node.js 已满足 OpenClaw 版本要求，跳过安装",

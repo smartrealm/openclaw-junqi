@@ -1320,13 +1320,21 @@
     "loadingConfig": "Reading model config…",
     "noTarget": "No directly usable model config was found. You can enter a temporary model for this rescue session; it will not be written to openclaw.json.",
     "configReadFailed": "Failed to read OpenClaw config. You can still enter a temporary model for this rescue session.",
-    "readyMessage": "I can analyze this startup failure through your configured model without using Gateway. You can send: “Diagnose this and give me the safest repair steps.”",
+    "readyMessage": "A configured model with usable credentials can analyze the startup failure without Gateway.",
     "sendFailed": "Direct model call failed: {{error}}",
+    "authFailed": "{{provider}} rejected the current credential (401). Update its API key or select another diagnostic model.",
+    "permissionFailed": "{{provider}} denied access for the current credential (403). Check model permissions or select another diagnostic model.",
+    "sendFailedForTarget": "Direct call to {{model}} failed: {{error}}",
     "sending": "Analyzing…",
-    "safetyHint": "Only the error text and log summary are sent. API keys are not sent in the prompt.",
+    "safetyHint": "The API key is used only to authenticate with the selected model service; it is not included in diagnostic text or logs.",
     "placeholder": "Example: diagnose why Gateway cannot start and give me the safest repair steps.",
     "send": "Send",
     "targetLabel": "Diagnostic model",
+    "credentialLabel": "Credential",
+    "credentialManual": "Temporary credential",
+    "credentialEnvironment": "Environment variable",
+    "credentialProfile": "Auth profile",
+    "credentialProvider": "Provider config",
     "sourcePrimary": "Default",
     "sourceConfigured": "Candidate",
     "manualTarget": "Temporary model",
@@ -2501,8 +2509,8 @@
         "description": "Configure the launcher and terminal PATH when selected"
       },
       "gateway": {
-        "title": "Gateway",
-        "description": "Write local config and start the control channel"
+        "title": "OpenClaw Gateway",
+        "description": "Validate Gateway configuration and prepare the control channel"
       },
       "pull": {
         "title": "Docker image",
@@ -2989,6 +2997,7 @@
   "setup.installComplete": "Required components installed",
   "setup.installCompleteSubtitle": "Installation and configuration are complete. The next step only starts Gateway; you still enter the workspace manually afterward.",
   "setup.installCompleteGatewayPending": "Gateway configuration is ready. Start Gateway to continue.",
+  "setup.gatewayPrepareWillRetry": "Gateway preparation did not complete: {{error}}. Starting Gateway will retry automatically.",
   "setup.installPanel.gatewayPendingHint": "Required components are complete. Start Gateway to move to the next step.",
   "setup.node.check": "Checking installed Node.js version…",
   "setup.node.skip": "Node.js meets the OpenClaw runtime requirement; skipping install",
