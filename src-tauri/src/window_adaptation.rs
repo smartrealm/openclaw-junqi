@@ -264,8 +264,10 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         let calls = Arc::new(AtomicUsize::new(0));
         let worker_calls = Arc::clone(&calls);
+        let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
         let worker = tokio::spawn(run_debounced(rx, Duration::from_millis(20), move || {
             worker_calls.fetch_add(1, Ordering::SeqCst);
+            action_tx.send(()).unwrap();
         }));
 
         tx.send(()).await.unwrap();
@@ -273,11 +275,17 @@ mod tests {
         tx.send(()).await.unwrap();
         tokio::time::sleep(Duration::from_millis(5)).await;
         tx.send(()).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(35)).await;
+        tokio::time::timeout(Duration::from_secs(2), action_rx.recv())
+            .await
+            .expect("debounced action did not run")
+            .expect("debounced action channel closed");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
         tx.send(()).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(35)).await;
+        tokio::time::timeout(Duration::from_secs(2), action_rx.recv())
+            .await
+            .expect("second debounced action did not run")
+            .expect("debounced action channel closed");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         drop(tx);
         worker.await.unwrap();
