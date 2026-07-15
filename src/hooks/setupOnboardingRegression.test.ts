@@ -58,14 +58,16 @@ test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () =
   assert.match(stopped, /flow\.needsOnboarding \? "configure-openclaw" : "ready"/);
 });
 
-test('BUG-ONB-05 Docker mode selection is a keyboard-operable native button', () => {
+test('BUG-ONB-05 install mode selection is explicit and confirmed by Next', () => {
   const mode = setupPage.slice(
     setupPage.indexOf('function ModeSelectScreen'),
     setupPage.indexOf('function ProgressScreen'),
   );
 
-  assert.match(mode, /<button\s+type="button"\s+disabled=\{!dockerAvailable\}[\s\S]*?flow\.selectMode\("docker"\)/);
-  assert.doesNotMatch(mode, /onClick=\{\(\) => dockerAvailable && flow\.selectMode\("docker"\)\}/);
+  assert.match(mode, /aria-pressed=\{selectedMode === "native"\}[\s\S]*?setSelectedMode\("native"\)/);
+  assert.match(mode, /disabled=\{!dockerAvailable\}[\s\S]*?aria-pressed=\{selectedMode === "docker"\}[\s\S]*?setSelectedMode\("docker"\)/);
+  assert.match(mode, /label: t\("setup\.nextStep"[\s\S]*?flow\.selectMode\(selectedMode\)/);
+  assert.doesNotMatch(mode, /flow\.selectMode\("(?:native|docker)"\)/);
 });
 
 test('BUG-ONB-06 every setup message is complete in all supported locales', () => {
@@ -100,6 +102,41 @@ test('BUG-ONB-08 the product summary is not constrained to an awkward narrow lin
     setupPage.indexOf('function DetectingScreen'),
   );
   assert.doesNotMatch(welcome, /max-w-\[42ch\]/);
+  assert.match(welcome, /min-\[520px\]:whitespace-nowrap/);
+});
+
+test('BUG-ONB-11 Back navigation returns to history instead of a hard-coded screen', () => {
+  const goBack = setupFlow.slice(
+    setupFlow.indexOf('const goBack = useCallback'),
+    setupFlow.indexOf('const retryGit = useCallback'),
+  );
+
+  assert.match(goBack, /goBackSetup\("welcome"\)/);
+  assert.doesNotMatch(goBack, /replaceSetupStep\("choosing-mode"\)/);
+  assert.match(setupPage, /onBack=\{flow\.goBack\}/);
+});
+
+test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () => {
+  const stopped = setupPage.slice(
+    setupPage.indexOf('function GatewayStoppedScreen'),
+    setupPage.indexOf('function ModeSelectScreen'),
+  );
+
+  assert.match(stopped, /setup\.openclawDetectedTitle/);
+  assert.doesNotMatch(stopped, /setup\.foundOclaw/);
+});
+
+test('BUG-ONB-13 Docker marks Gateway running only after readiness succeeds', () => {
+  const docker = setupFlow.slice(
+    setupFlow.indexOf('const runDockerSetup = useCallback'),
+    setupFlow.indexOf('const selectMode = useCallback'),
+  );
+  const readyCheck = docker.indexOf('await waitForGatewayReady');
+  const runningCommit = docker.indexOf('setGatewayRunning(true)');
+
+  assert.ok(readyCheck >= 0);
+  assert.ok(runningCommit > readyCheck);
+  assert.match(docker, /catch \(err: any\)[\s\S]*?setGatewayRunning\(false\)/);
 });
 
 test('BUG-ONB-09 native setup verifies optional terminal integration after OpenClaw', () => {

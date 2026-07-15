@@ -163,15 +163,16 @@ test('BUG-ST01 storage bootstrap is stable and environment overrides remain supp
 
 test('BUG-ST02 storage decision is an explicit post-detection setup step', () => {
   const store = source('src/stores/app-store.ts');
+  const navigation = source('src/stores/setup-navigation.ts');
   const flow = source('src/hooks/useSetupFlow.ts');
   const setup = source('src/pages/SetupPage.tsx');
   const gate = source('src/components/setup/StorageSetupGate.tsx');
   const main = source('src/main.tsx');
-  assert.match(store, /\| "storage"/);
+  assert.match(navigation, /\| "storage"/);
   assert.match(store, /postStorageStep/);
-  assert.match(flow, /setPostStorageStep\("choosing-mode"\)[\s\S]*setSetupStep\("storage"\)/);
-  assert.match(flow, /setPostStorageStep\("gateway-stopped"\)[\s\S]*setSetupStep\("storage"\)/);
-  assert.match(flow, /setPostStorageStep\(onboardingRequired \? "configure-openclaw" : "ready"\)[\s\S]*setSetupStep\("storage"\)/);
+  assert.match(flow, /setPostStorageStep\("choosing-mode"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
+  assert.match(flow, /setPostStorageStep\("gateway-stopped"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
+  assert.match(flow, /setPostStorageStep\(onboardingRequired \? "configure-openclaw" : "ready"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
   assert.match(setup, /case "storage"[\s\S]*<StorageSetupStep/);
   assert.match(gate, /get_storage_setup_status/);
   assert.match(gate, /configure_storage/);

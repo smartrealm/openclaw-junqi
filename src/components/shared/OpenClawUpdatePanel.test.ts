@@ -10,3 +10,10 @@ test('OpenClaw update progress has a visible determinate fill through completion
   assert.match(source, /width: `\$\{progressPercent\}%`/);
   assert.match(source, /backgroundColor: 'rgb\(var\(--aegis-primary\)\)'/);
 });
+
+test('OpenClaw update status uses semantic icon colors', () => {
+  assert.match(source, /indicator === 'current'[\s\S]*?CheckCircle2[\s\S]*?text-aegis-success/);
+  assert.match(source, /indicator === 'available'[\s\S]*?Download[\s\S]*?text-aegis-warning/);
+  assert.match(source, /indicator === 'error'[\s\S]*?CircleAlert[\s\S]*?text-aegis-danger/);
+  assert.match(source, /data-state=\{indicator\}/);
+});

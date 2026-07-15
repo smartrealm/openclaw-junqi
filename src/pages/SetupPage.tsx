@@ -6,7 +6,6 @@
 import {
   Check,
   CheckCircle2,
-  ChevronRight,
   Container,
   Circle,
   Globe2,
@@ -46,74 +45,21 @@ import clsx from "clsx";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
 import { OpenClawUpdatePanel } from "@/components/shared/OpenClawUpdatePanel";
 import type { OpenClawWizardStep } from "@/services/openclawWizard";
-
-function setupStepMessageKey(step: SetupStep): string {
-  switch (step) {
-    case "welcome":
-      return "setup.petWelcome";
-    case "detecting":
-      return "setup.detecting";
-    case "storage":
-      return "storage.title";
-    case "gateway-stopped":
-      return "setup.gatewayNotRunning";
-    case "choosing-mode":
-      return "setup.chooseMode";
-    case "git-missing":
-      return "setup.gitRequired";
-    case "ready":
-      return "setup.ready";
-    case "error":
-      return "pet.status.error";
-    case "checking":
-    case "install-git":
-    case "install-node":
-    case "install-openclaw":
-    case "install-complete":
-      return "setup.installComplete";
-    case "configure-openclaw":
-      return "setup.wizard.title";
-    default:
-      return "setup.settingUp";
-  }
-}
-
-function setupStepProgress(step: SetupStep): number {
-  switch (step) {
-    case "welcome":
-      return 0;
-    case "detecting":
-    case "gateway-stopped":
-    case "choosing-mode":
-      return 18;
-    case "storage":
-      return 24;
-    case "git-missing":
-    case "checking":
-    case "install-git":
-    case "install-node":
-    case "install-openclaw":
-    case "error":
-      return 52;
-    case "install-complete":
-      return 68;
-    case "configure-openclaw":
-      return 82;
-    case "ready":
-      return 100;
-    default:
-      return 0;
-  }
-}
+import {
+  setupStepMessageKey,
+  setupStepProgress,
+  type InstallMode,
+  type SetupNavigationMode,
+} from "@/stores/setup-navigation";
 
 function useSetupNavigation() {
   const { t } = useTranslation();
-  const setSetupStep = useAppStore((s) => s.setSetupStep);
+  const navigateSetup = useAppStore((s) => s.navigateSetup);
   const setSetupStatus = useAppStore((s) => s.setSetupStatus);
 
-  return (step: SetupStep) => {
+  return (step: SetupStep, mode: SetupNavigationMode = "push") => {
     setSetupStatus(t(setupStepMessageKey(step)), setupStepProgress(step));
-    setSetupStep(step);
+    navigateSetup(step, mode);
   };
 }
 
@@ -223,11 +169,11 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
       nextAction={{ label: t("setup.nextStep", "下一步"), onClick: () => navigateSetup("detecting") }}
     >
       <div className="mb-6 grid gap-4 border-b border-aegis-border pb-5 md:grid-cols-[1fr_auto] md:items-end">
-        <div>
+        <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-aegis-primary">JunQi Desktop</div>
           <div className="mt-2 text-[11px] font-medium uppercase tracking-wider text-aegis-text-dim">{t("setup.companyLabel")}</div>
           <div className="mt-0.5 text-base font-semibold text-aegis-text">{t("setup.companyName")}</div>
-          <p className="mt-3 text-sm leading-6 text-aegis-text-muted" dir="auto">
+          <p className="mt-3 text-sm leading-6 text-aegis-text-muted min-[520px]:whitespace-nowrap" dir="auto">
             {t("setup.productIntro")}
           </p>
         </div>
@@ -242,14 +188,13 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
 
 function DetectingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const navigateSetup = useSetupNavigation();
   return (
     <SetupShell
       active={1}
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.runtimeSubtitle")}
       logs={logs}
-      previousAction={{ onClick: () => navigateSetup("welcome") }}
+      previousAction={{ onClick: flow.goBack }}
       nextAction={{ label: flow.statusMessage || t("setup.detecting"), disabled: true, loading: true, icon: "none" }}
     >
       <StatusPanel
@@ -268,10 +213,10 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
   return (
     <SetupShell
       active={1}
-      title={t("setup.foundOclaw")}
+      title={t("setup.openclawDetectedTitle")}
       subtitle={t("setup.gatewayNotRunning")}
       logs={logs}
-      previousAction={{ onClick: () => navigateSetup("welcome") }}
+      previousAction={{ onClick: flow.goBack }}
       nextAction={{ label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }}
       wide
     >
@@ -310,8 +255,19 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
 
 function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const navigateSetup = useSetupNavigation();
+  const [selectedMode, setSelectedMode] = useState<InstallMode>(flow.installMode);
   const dockerAvailable = flow.dockerStatus?.available && flow.dockerStatus?.daemon_running;
+  useEffect(() => {
+    if (
+      selectedMode === "docker"
+      && flow.dockerStatus !== null
+      && !flow.checkingDocker
+      && !dockerAvailable
+    ) {
+      setSelectedMode("native");
+    }
+  }, [dockerAvailable, flow.checkingDocker, flow.dockerStatus, selectedMode]);
+
   const dockerStatusText = flow.checkingDocker
     ? t("setup.checkingDocker")
     : dockerAvailable
@@ -326,38 +282,64 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.chooseMode")}
       logs={logs}
-      previousAction={{ onClick: () => navigateSetup("welcome") }}
-      nextAction={{ label: t("setup.modeNative"), onClick: () => flow.selectMode("native"), icon: "next" }}
+      previousAction={{ onClick: flow.goBack }}
+      nextAction={{
+        label: t("setup.nextStep", "下一步"),
+        onClick: () => flow.selectMode(selectedMode),
+        disabled: selectedMode === "docker" && !dockerAvailable,
+        icon: "next",
+      }}
     >
       <div className="grid gap-4 md:grid-cols-2">
-        <button onClick={() => flow.selectMode("native")} className="group flex min-h-[168px] flex-col rounded-lg border border-aegis-border bg-aegis-surface/50 p-5 text-left transition-colors hover:border-aegis-primary hover:bg-aegis-primary/5">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="rounded-lg bg-aegis-primary/10 p-2 text-aegis-primary"><Monitor size={18} /></div>
-            <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeNative")}</h3>
+        <button
+          type="button"
+          aria-pressed={selectedMode === "native"}
+          onClick={() => setSelectedMode("native")}
+          className={clsx(
+            "group flex min-h-[168px] flex-col rounded-lg border p-5 text-left transition-colors",
+            selectedMode === "native"
+              ? "border-aegis-primary bg-aegis-primary/8 ring-1 ring-aegis-primary/25"
+              : "border-aegis-border bg-aegis-surface/50 hover:border-aegis-primary hover:bg-aegis-primary/5",
+          )}
+        >
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-aegis-primary/10 p-2 text-aegis-primary"><Monitor size={18} /></div>
+              <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeNative")}</h3>
+            </div>
+            {selectedMode === "native"
+              ? <CheckCircle2 size={19} className="shrink-0 text-aegis-primary" />
+              : <Circle size={19} className="shrink-0 text-aegis-text-dim" />}
           </div>
           <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeNativeDesc")}</p>
-          <span className="mt-auto inline-flex items-center gap-1 pt-4 text-xs font-medium text-aegis-primary">
-            {t("setup.selectAndContinue")} <ChevronRight size={14} />
-          </span>
         </button>
 
         <div
           className={clsx(
-            "flex min-h-[168px] flex-col rounded-lg border border-aegis-border bg-aegis-surface/50 p-5 text-left transition-colors",
+            "flex min-h-[168px] flex-col rounded-lg border p-5 text-left transition-colors",
+            selectedMode === "docker"
+              ? "border-aegis-primary bg-aegis-primary/8 ring-1 ring-aegis-primary/25"
+              : "border-aegis-border bg-aegis-surface/50",
             dockerAvailable ? "hover:border-aegis-primary hover:bg-aegis-primary/5 focus-within:border-aegis-primary" : "opacity-80",
           )}
         >
           <button
             type="button"
             disabled={!dockerAvailable}
-            onClick={() => flow.selectMode("docker")}
+            aria-pressed={selectedMode === "docker"}
+            onClick={() => setSelectedMode("docker")}
             className="flex flex-1 flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 disabled:cursor-not-allowed"
           >
-            <div className="mb-4 flex items-center gap-3">
-              <div className={clsx("rounded-lg p-2", dockerAvailable ? "bg-aegis-success/10 text-aegis-success" : "bg-aegis-text-dim/10 text-aegis-text-dim")}>
-                <Container size={18} />
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={clsx("rounded-lg p-2", dockerAvailable ? "bg-aegis-success/10 text-aegis-success" : "bg-aegis-text-dim/10 text-aegis-text-dim")}>
+                  <Container size={18} />
+                </div>
+                <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeDocker")}</h3>
               </div>
-              <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeDocker")}</h3>
+              {selectedMode === "docker"
+                ? <CheckCircle2 size={19} className="shrink-0 text-aegis-primary" />
+                : <Circle size={19} className="shrink-0 text-aegis-text-dim" />}
             </div>
             <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeDockerDesc")}</p>
             <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", dockerAvailable ? "text-aegis-success" : "text-aegis-danger")}>
@@ -648,7 +630,6 @@ export function SetupPage() {
   const setupStep = useAppStore((s) => s.setupStep);
   const logs = useAppStore((s) => s.setupLogs);
   const appendSetupLog = useAppStore((s) => s.appendSetupLog);
-  const setSetupStep = useAppStore((s) => s.setSetupStep);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
@@ -691,7 +672,7 @@ export function SetupPage() {
   switch (setupStep) {
     case "welcome": return <WelcomeScreen logs={sharedLogs} />;
     case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
-    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={() => setSetupStep("welcome")} />;
+    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} />;
     case "gateway-stopped": return <GatewayStoppedScreen flow={flow} logs={sharedLogs} />;
     case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
     case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;
