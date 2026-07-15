@@ -25,12 +25,20 @@ test('generic winget package installation command is not exposed', () => {
   assert.doesNotMatch(lib, /commands::setup::install_winget_package/);
 });
 
-test('Windows bootstrap is offline and runtime downloads are China-first', () => {
+test('Windows bootstrap is offline and runtime installation respects the selected path policy', () => {
   assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'offlineInstaller');
   assert.deepEqual(tauri.plugins.updater.endpoints, []);
+  // No custom runtime directory means standard system installation. A
+  // user-selected portable directory is the only path that downloads archives.
+  assert.match(setup, /install_windows_system_node/);
+  assert.match(setup, /install_windows_system_git/);
+  assert.match(setup, /install_or_upgrade_winget_package/);
+  assert.match(setup, /paths::configured_node_runtime_dir\(\)/);
+  assert.match(setup, /paths::configured_git_runtime_dir\(\)/);
+  assert.match(setup, /install_windows_portable_node/);
+  assert.match(setup, /install_windows_portable_git/);
   assert.match(setup, /CHINA_NODE_INDEX/);
   assert.match(setup, /resolve_node_sha256/);
-  assert.doesNotMatch(setup, /install_or_upgrade_winget_package/);
   assert.match(setup, /npmmirror\.com\/mirrors\/node/);
 });
 

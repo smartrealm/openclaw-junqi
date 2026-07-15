@@ -1,5 +1,7 @@
 #[cfg(windows)]
-use crate::commands::git_runtime::current_managed_git_artifact;
+use crate::commands::git_runtime::{
+    resolve_latest_managed_git_artifact, verified_fallback_managed_git_artifact,
+};
 use crate::commands::node_runtime::{
     current_platform_artifact, select_preferred_release, NodeDistributionRelease,
     NodeRequirementSource, NodeRuntimeRequirement,
@@ -19,8 +21,11 @@ use std::sync::{
 static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static NODE_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static GIT_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+#[cfg_attr(not(windows), allow(dead_code))]
 const RUNTIME_NETWORK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+#[cfg_attr(not(windows), allow(dead_code))]
 const CHINA_NODE_INDEX: &str = "https://npmmirror.com/mirrors/node/index.json";
+#[cfg_attr(not(windows), allow(dead_code))]
 const OFFICIAL_NODE_INDEX: &str = "https://nodejs.org/dist/index.json";
 
 struct TemporaryDirectory(PathBuf);
@@ -31,6 +36,7 @@ impl Drop for TemporaryDirectory {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn runtime_binary(root: &Path, tool: &str) -> PathBuf {
     match (tool, cfg!(windows)) {
         ("node", true) => root.join("node.exe"),
@@ -41,6 +47,7 @@ fn runtime_binary(root: &Path, tool: &str) -> PathBuf {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn staged_npm_cli(root: &Path) -> PathBuf {
     let npm_root = if cfg!(windows) {
         root.join("node_modules")
@@ -50,6 +57,7 @@ fn staged_npm_cli(root: &Path) -> PathBuf {
     npm_root.join("npm").join("bin").join("npm-cli.js")
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn activate_staged_runtime(staging: &Path, target: &Path, name: &str) -> Result<(), String> {
     let parent = target
         .parent()
@@ -177,6 +185,7 @@ fn node_sources(version: &str) -> Vec<(String, &'static str)> {
     ]
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 async fn download_with_fallback(
     app: &tauri::AppHandle,
     step: &str,
@@ -252,6 +261,7 @@ async fn download_with_fallback(
     Err(format!("所有下载源均失败。最后错误：{last_error}"))
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn extract_zip(
     app: &tauri::AppHandle,
     step: &str,
@@ -423,7 +433,6 @@ async fn npm_install_with_fallback(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    let configured_cache = paths::configured_npm_cache_dir();
     std::fs::create_dir_all(global_prefix).ok();
     let registry_selection = npm_registry::select_npm_registry().await;
     let expected_version = registry_selection.package_version.clone();
@@ -522,9 +531,7 @@ async fn npm_install_with_fallback(
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
-        if let Some(cache) = configured_cache.as_deref() {
-            cmd.env("npm_config_cache", cache);
-        }
+        crate::commands::system::apply_configured_npm_cache(&mut cmd);
         platform::configure_background_command(&mut cmd);
 
         let mut child = match cmd.spawn() {
@@ -702,6 +709,7 @@ async fn npm_install_with_fallback(
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
+#[cfg_attr(not(windows), allow(dead_code))]
 async fn fetch_node_distribution_index(
     client: &reqwest::Client,
     url: &str,
@@ -719,6 +727,7 @@ async fn fetch_node_distribution_index(
         .ok()
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 async fn resolve_managed_node_version(
     requirement: &NodeRuntimeRequirement,
 ) -> Result<String, String> {
@@ -758,6 +767,7 @@ fn parse_shasums(text: &str, filename: &str) -> Option<String> {
     })
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 async fn resolve_node_sha256(version: &str) -> Result<String, String> {
     let filename = node_filename(version);
     let sources = [
@@ -996,35 +1006,13 @@ async fn install_or_upgrade_winget_package(package_id: &str) -> Result<(), Strin
                 .into(),
         );
     }
-    let common = [
-        "-e",
-        "--id",
-        package_id,
-        "--silent",
-        "--disable-interactivity",
-        "--accept-source-agreements",
-        "--accept-package-agreements",
-    ];
-    let run = |verb: &str| {
-        let winget = winget.clone();
-        async move {
-            let mut command = tokio::process::Command::new(winget);
-            command.arg(verb).args(common);
-            platform::configure_background_command(&mut command);
-            tokio::time::timeout(std::time::Duration::from_secs(20 * 60), command.output())
-                .await
-                .map_err(|_| format!("winget {verb} timed out for {package_id}"))?
-                .map_err(|error| format!("Failed to run winget {verb} for {package_id}: {error}"))
-        }
-    };
-
-    if run("upgrade")
+    if run_winget_package_command(&winget, "upgrade", package_id)
         .await
         .is_ok_and(|output| output.status.success())
     {
         return Ok(());
     }
-    let install = run("install").await?;
+    let install = run_winget_package_command(&winget, "install", package_id).await?;
     if install.status.success() {
         return Ok(());
     }
@@ -1040,6 +1028,30 @@ async fn install_or_upgrade_winget_package(package_id: &str) -> Result<(), Strin
     } else {
         format!("winget could not install {package_id}: {diagnostic}")
     })
+}
+
+#[cfg(windows)]
+async fn run_winget_package_command(
+    winget: &str,
+    verb: &str,
+    package_id: &str,
+) -> Result<std::process::Output, String> {
+    let mut command = tokio::process::Command::new(winget);
+    command.args([
+        verb,
+        "-e",
+        "--id",
+        package_id,
+        "--silent",
+        "--disable-interactivity",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+    ]);
+    platform::configure_background_command(&mut command);
+    tokio::time::timeout(std::time::Duration::from_secs(20 * 60), command.output())
+        .await
+        .map_err(|_| format!("winget {verb} timed out for {package_id}"))?
+        .map_err(|error| format!("Failed to run winget {verb} for {package_id}: {error}"))
 }
 
 /// Ensure child processes use a system Node.js release accepted by OpenClaw.
@@ -1231,7 +1243,28 @@ async fn install_windows_portable_git(
         }
     }
 
-    let artifact = current_managed_git_artifact(std::env::consts::ARCH)?;
+    emit(
+        &app,
+        "git",
+        "Resolving the latest verified Git for Windows release...",
+        0.04,
+    );
+    let artifact = match resolve_latest_managed_git_artifact(std::env::consts::ARCH).await {
+        Ok(artifact) => artifact,
+        Err(error) => {
+            let fallback = verified_fallback_managed_git_artifact(std::env::consts::ARCH)?;
+            emit(
+                &app,
+                "git",
+                &format!(
+                    "Could not resolve current Git for Windows metadata ({error}); using verified fallback v{}.",
+                    fallback.version
+                ),
+                0.04,
+            );
+            fallback
+        }
+    };
     emit(
         &app,
         "git",
@@ -1246,13 +1279,13 @@ async fn install_windows_portable_git(
     std::fs::create_dir_all(&temp_dir)
         .map_err(|error| format!("Failed to create Git temporary directory: {error}"))?;
     let _temp_cleanup = TemporaryDirectory(temp_dir.clone());
-    let archive = temp_dir.join(artifact.filename);
+    let archive = temp_dir.join(&artifact.filename);
     download_with_fallback(
         &app,
         "git",
         &artifact.sources(),
         &archive,
-        artifact.sha256,
+        &artifact.sha256,
         0.05,
         0.55,
     )

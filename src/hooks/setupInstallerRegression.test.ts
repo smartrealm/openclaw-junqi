@@ -29,13 +29,16 @@ test('bug 04 Windows setup uses system defaults unless the user selected a porta
   assert.match(setupCommands, /install_windows_portable_git/);
   assert.match(setupCommands, /CHINA_NODE_INDEX/);
   assert.match(setupCommands, /resolve_node_sha256/);
-  assert.match(setupCommands, /current_managed_git_artifact/);
+  assert.match(setupCommands, /resolve_latest_managed_git_artifact/);
+  assert.match(setupCommands, /verified_fallback_managed_git_artifact/);
   assert.match(setupCommands, /activate_staged_runtime/);
   assert.match(setupCommands, /refresh_path_from_registry\(\)/);
   assert.match(systemCommands, /configured_node_path/);
   assert.match(systemCommands, /legacy_local_node_path/);
   assert.match(systemCommands, /configured_git_path/);
   assert.match(systemCommands, /legacy_local_git_path/);
+  assert.doesNotMatch(systemCommands, /macos_git_candidates/);
+  assert.doesNotMatch(systemCommands, /\.npm-global"\)\.join\("bin"\)\.join\("git"\)/);
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("node"\)/);
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("git"\)/);
   assert.match(systemCommands, /pub async fn check_npm/);

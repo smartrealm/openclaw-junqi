@@ -14,7 +14,7 @@ interface StorageSetupStatus {
   configPath: string;
   workspaceDir: string;
   runtimeDir: string;
-  npmCacheDir: string;
+  npmCacheDir: string | null;
   npmPrefix: string | null;
   nodeRuntimeDir: string | null;
   gitRuntimeDir: string | null;
@@ -146,8 +146,8 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
             setTargetDir(result.legacyDir);
             setWorkspaceDir(result.workspaceDir);
             setRuntimeDir(result.runtimeDir);
-            setNpmCacheDir(result.npmCacheDir);
-            setCustomNpmCache(result.npmCacheDir !== joinPath(result.stateDir, 'npm-cache'));
+            setNpmCacheDir(result.npmCacheDir ?? '');
+            setCustomNpmCache(Boolean(result.npmCacheDir));
             setNpmPrefix(result.npmPrefix ?? '');
             setCustomNpmPrefix(Boolean(result.npmPrefix));
             setNodeRuntimeDir(result.nodeRuntimeDir ?? '');
@@ -206,14 +206,18 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     if (status && shouldMigrate) {
       setWorkspaceDir(remapChildPath(status.workspaceDir, status.legacyDir, target));
       setRuntimeDir(remapChildPath(status.runtimeDir, status.legacyDir, target));
-      setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, target));
+      if (customNpmCache && status.npmCacheDir) {
+        setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, target));
+      }
     } else {
       setWorkspaceDir(joinPath(target, 'workspace'));
       setRuntimeDir(joinPath(target, 'runtime'));
-      setNpmCacheDir(joinPath(target, 'npm-cache'));
+    }
+    if (!customNpmCache) {
+      setNpmCacheDir('');
     }
     setError(null);
-  }, [status, t]);
+  }, [customNpmCache, status, t]);
 
   const chooseExactDirectory = useCallback(async (title: string, apply: (path: string) => void) => {
     const selected = await open({ directory: true, multiple: false, title });
@@ -239,7 +243,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
         locations: {
           workspaceDir,
           runtimeDir,
-          npmCacheDir: customNpmCache ? npmCacheDir : joinPath(targetDir, 'npm-cache'),
+          npmCacheDir: customNpmCache ? npmCacheDir.trim() || null : null,
           npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
           nodeRuntimeDir: customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
           gitRuntimeDir: customGitRuntime ? gitRuntimeDir.trim() || null : null,
@@ -329,7 +333,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
               setTargetDir(status.legacyDir);
               setWorkspaceDir(status.workspaceDir);
               setRuntimeDir(status.runtimeDir);
-              setNpmCacheDir(status.npmCacheDir);
+              setNpmCacheDir(status.npmCacheDir ?? '');
               setMigrateExisting(false);
               setError(null);
             }}
@@ -381,7 +385,11 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   setMigrateExisting(true);
                   setWorkspaceDir(remapChildPath(status.workspaceDir, status.legacyDir, targetDir));
                   setRuntimeDir(remapChildPath(status.runtimeDir, status.legacyDir, targetDir));
-                  setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, targetDir));
+                  if (customNpmCache && status.npmCacheDir) {
+                    setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, targetDir));
+                  } else {
+                    setNpmCacheDir('');
+                  }
                 }}
                 className="mt-1 accent-[rgb(var(--aegis-primary))]"
               />
@@ -395,7 +403,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   setMigrateExisting(false);
                   setWorkspaceDir(joinPath(targetDir, 'workspace'));
                   setRuntimeDir(joinPath(targetDir, 'runtime'));
-                  setNpmCacheDir(joinPath(targetDir, 'npm-cache'));
+                  if (!customNpmCache) setNpmCacheDir('');
                 }}
                 className="mt-1 accent-[rgb(var(--aegis-primary))]"
               />
@@ -436,7 +444,10 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                     type="checkbox"
                     checked={customNpmCache}
                     disabled={customLocationsLocked}
-                    onChange={(event) => setCustomNpmCache(event.target.checked)}
+                    onChange={(event) => {
+                      setCustomNpmCache(event.target.checked);
+                      if (!event.target.checked) setNpmCacheDir('');
+                    }}
                     className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
                   />
                 </label>

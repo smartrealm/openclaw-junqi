@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 4;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 5;
 
 /// The OpenClaw runtime selected by the user during setup.
 ///
@@ -33,7 +33,9 @@ pub struct StorageBootstrap {
     pub config_path: PathBuf,
     pub workspace_dir: PathBuf,
     pub runtime_dir: PathBuf,
-    pub npm_cache_dir: PathBuf,
+    /// An explicitly user-selected npm cache directory. `None` leaves cache
+    /// resolution to npm for the current system user.
+    pub npm_cache_dir: Option<PathBuf>,
     pub npm_prefix: Option<PathBuf>,
     /// An explicitly user-selected portable Node.js root. `None` means use
     /// the operating-system installation discovered at runtime.
@@ -71,14 +73,13 @@ impl StorageBootstrap {
     pub fn for_state_dir(state_dir: PathBuf, workspace_dir: Option<PathBuf>) -> Self {
         let config_path = state_dir.join("openclaw.json");
         let workspace_dir = workspace_dir.unwrap_or_else(|| state_dir.join("workspace"));
-        let npm_cache_dir = state_dir.join("npm-cache");
         Self {
             version: STORAGE_BOOTSTRAP_VERSION,
             runtime_dir: state_dir.clone(),
             state_dir,
             config_path,
             workspace_dir,
-            npm_cache_dir,
+            npm_cache_dir: None,
             npm_prefix: None,
             node_runtime_dir: None,
             git_runtime_dir: None,
@@ -91,7 +92,7 @@ impl StorageBootstrap {
         state_dir: PathBuf,
         workspace_dir: PathBuf,
         runtime_dir: PathBuf,
-        npm_cache_dir: PathBuf,
+        npm_cache_dir: Option<PathBuf>,
         npm_prefix: Option<PathBuf>,
         terminal_integration: bool,
     ) -> Self {
@@ -115,9 +116,17 @@ impl StorageBootstrap {
             return None;
         }
         let runtime_dir = value.runtime_dir.unwrap_or_else(|| value.state_dir.clone());
-        let npm_cache_dir = value
-            .npm_cache_dir
-            .unwrap_or_else(|| value.state_dir.join("npm-cache"));
+        // Versions before v5 represented "use npm's default" with a JunQi
+        // owned `state_dir/npm-cache` path. Normalize that legacy marker to
+        // `None`, while keeping any genuinely custom cache selection intact.
+        let legacy_cache_marker = value.state_dir.join("npm-cache");
+        let npm_cache_dir = if value.version < STORAGE_BOOTSTRAP_VERSION {
+            value
+                .npm_cache_dir
+                .filter(|path| path != &legacy_cache_marker)
+        } else {
+            value.npm_cache_dir
+        };
         let normalized = Self {
             version: STORAGE_BOOTSTRAP_VERSION,
             state_dir: value.state_dir,
@@ -141,7 +150,7 @@ impl StorageBootstrap {
             config_path: self.config_path.clone(),
             workspace_dir: self.workspace_dir.clone(),
             runtime_dir: Some(self.runtime_dir.clone()),
-            npm_cache_dir: Some(self.npm_cache_dir.clone()),
+            npm_cache_dir: self.npm_cache_dir.clone(),
             npm_prefix: self.npm_prefix.clone(),
             node_runtime_dir: self.node_runtime_dir.clone(),
             git_runtime_dir: self.git_runtime_dir.clone(),
@@ -155,7 +164,10 @@ impl StorageBootstrap {
             && self.config_path.is_absolute()
             && self.workspace_dir.is_absolute()
             && self.runtime_dir.is_absolute()
-            && self.npm_cache_dir.is_absolute()
+            && self
+                .npm_cache_dir
+                .as_ref()
+                .is_none_or(|path| path.is_absolute())
             && self
                 .npm_prefix
                 .as_ref()
@@ -399,12 +411,11 @@ pub fn legacy_local_npm_cli_path() -> PathBuf {
     npm_cli_in_node_root(&legacy_root)
 }
 
-/// Return an npm cache override only when the user selected a path distinct
-/// from the layout default. Otherwise npm owns its platform-native cache path.
+/// Return an npm cache override only when the user explicitly selected one.
+/// Otherwise npm owns its platform-native cache path and can react to changes
+/// in the user's own Node.js/npm configuration.
 pub fn configured_npm_cache_dir() -> Option<PathBuf> {
-    let layout = load_storage_bootstrap()?;
-    let legacy_default = layout.state_dir.join("npm-cache");
-    (layout.npm_cache_dir != legacy_default).then_some(layout.npm_cache_dir)
+    load_storage_bootstrap().and_then(|layout| layout.npm_cache_dir)
 }
 
 pub fn runtime_dir() -> PathBuf {
@@ -612,7 +623,7 @@ mod storage_bootstrap_tests {
     }
 
     #[test]
-    fn v1_bootstrap_keeps_legacy_runtime_and_cache_locations() {
+    fn v1_bootstrap_moves_legacy_cache_marker_back_to_npm_default() {
         let state = std::env::temp_dir().join("junqi-v1-layout");
         let raw = serde_json::json!({
             "version": 1,
@@ -623,10 +634,36 @@ mod storage_bootstrap_tests {
         let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
         let layout = StorageBootstrap::from_persisted(persisted).unwrap();
         assert_eq!(layout.runtime_dir, state);
-        assert_eq!(layout.npm_cache_dir, state.join("npm-cache"));
+        assert_eq!(layout.npm_cache_dir, None);
         assert_eq!(layout.npm_prefix, None);
         assert!(!layout.terminal_integration);
         assert_eq!(layout.runtime_mode, OpenClawRuntimeMode::Native);
+    }
+
+    #[test]
+    fn fresh_bootstrap_does_not_persist_an_npm_cache_override() {
+        let state = std::env::temp_dir().join("junqi-native-npm-cache-default");
+        let layout = StorageBootstrap::for_state_dir(state, None);
+
+        assert_eq!(layout.npm_cache_dir, None);
+        assert_eq!(layout.to_persisted().npm_cache_dir, None);
+    }
+
+    #[test]
+    fn v4_custom_npm_cache_survives_the_native_default_migration() {
+        let state = std::env::temp_dir().join("junqi-v4-layout");
+        let custom_cache = state.with_file_name("custom-npm-cache");
+        let raw = serde_json::json!({
+            "version": 4,
+            "state_dir": state,
+            "config_path": state.join("openclaw.json"),
+            "workspace_dir": state.join("workspace"),
+            "runtime_dir": state.join("runtime"),
+            "npm_cache_dir": custom_cache
+        });
+        let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
+        let layout = StorageBootstrap::from_persisted(persisted).unwrap();
+        assert_eq!(layout.npm_cache_dir, Some(custom_cache));
     }
 
     #[test]

@@ -169,6 +169,7 @@ async fn run_native_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> R
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    crate::commands::system::apply_configured_npm_cache(&mut command);
     crate::platform::configure_background_command(&mut command);
 
     let mut child = command

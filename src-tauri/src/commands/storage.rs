@@ -15,7 +15,7 @@ pub struct StorageSetupStatus {
     config_path: String,
     workspace_dir: String,
     runtime_dir: String,
-    npm_cache_dir: String,
+    npm_cache_dir: Option<String>,
     npm_prefix: Option<String>,
     node_runtime_dir: Option<String>,
     git_runtime_dir: Option<String>,
@@ -33,7 +33,7 @@ pub struct StorageConfigureResult {
     config_path: String,
     workspace_dir: String,
     runtime_dir: String,
-    npm_cache_dir: String,
+    npm_cache_dir: Option<String>,
     npm_prefix: Option<String>,
     node_runtime_dir: Option<String>,
     git_runtime_dir: Option<String>,
@@ -49,7 +49,7 @@ pub struct StorageConfigureResult {
 pub struct InstallLocationSelection {
     workspace_dir: String,
     runtime_dir: String,
-    npm_cache_dir: String,
+    npm_cache_dir: Option<String>,
     npm_prefix: Option<String>,
     node_runtime_dir: Option<String>,
     git_runtime_dir: Option<String>,
@@ -244,8 +244,10 @@ fn layout_locations(layout: &StorageBootstrap) -> Vec<(&'static str, &Path)> {
     let mut locations = vec![
         ("workspace", layout.workspace_dir.as_path()),
         ("managed runtime", layout.runtime_dir.as_path()),
-        ("npm cache", layout.npm_cache_dir.as_path()),
     ];
+    if let Some(cache) = &layout.npm_cache_dir {
+        locations.push(("npm cache", cache.as_path()));
+    }
     if let Some(prefix) = &layout.npm_prefix {
         locations.push(("npm global prefix", prefix.as_path()));
     }
@@ -300,7 +302,8 @@ fn selected_layout(
 ) -> Result<StorageBootstrap, String> {
     let workspace = required_absolute_path("Workspace directory", &selection.workspace_dir)?;
     let runtime = required_absolute_path("Managed runtime directory", &selection.runtime_dir)?;
-    let npm_cache = required_absolute_path("npm cache directory", &selection.npm_cache_dir)?;
+    let npm_cache =
+        optional_absolute_path("npm cache directory", selection.npm_cache_dir.as_deref())?;
     let npm_prefix = optional_absolute_path("npm global prefix", selection.npm_prefix.as_deref())?;
     let node_runtime = optional_absolute_path(
         "custom Node.js runtime directory",
@@ -326,10 +329,10 @@ fn selected_layout(
 
 fn layout_with_npm_cache(
     current: &StorageBootstrap,
-    npm_cache_dir: &str,
+    npm_cache_dir: Option<&str>,
 ) -> Result<StorageBootstrap, String> {
     let mut updated = current.clone();
-    updated.npm_cache_dir = required_absolute_path("npm cache directory", npm_cache_dir)?;
+    updated.npm_cache_dir = optional_absolute_path("npm cache directory", npm_cache_dir)?;
     validate_location_changes(&updated, Some(current))?;
     Ok(updated)
 }
@@ -350,13 +353,21 @@ fn ensure_layout_directories(layout: &StorageBootstrap) -> Result<(), String> {
         ("OpenClaw state", &layout.state_dir),
         ("workspace", &layout.workspace_dir),
         ("managed runtime", &layout.runtime_dir),
-        ("npm cache", &layout.npm_cache_dir),
     ] {
         std::fs::create_dir_all(path).map_err(|error| {
             format!(
                 "Failed to create {} directory {}: {}",
                 label,
                 path.display(),
+                error
+            )
+        })?;
+    }
+    if let Some(cache) = &layout.npm_cache_dir {
+        std::fs::create_dir_all(cache).map_err(|error| {
+            format!(
+                "Failed to create npm cache directory {}: {}",
+                cache.display(),
                 error
             )
         })?;
@@ -623,8 +634,10 @@ fn layout_directories(layout: &StorageBootstrap) -> Vec<PathBuf> {
         layout.state_dir.clone(),
         layout.workspace_dir.clone(),
         layout.runtime_dir.clone(),
-        layout.npm_cache_dir.clone(),
     ];
+    if let Some(cache) = &layout.npm_cache_dir {
+        directories.push(cache.clone());
+    }
     if let Some(prefix) = &layout.npm_prefix {
         directories.push(prefix.clone());
     }
@@ -1055,7 +1068,10 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
         config_path: paths::active_config_path().to_string_lossy().to_string(),
         workspace_dir: layout.workspace_dir.to_string_lossy().to_string(),
         runtime_dir: layout.runtime_dir.to_string_lossy().to_string(),
-        npm_cache_dir: layout.npm_cache_dir.to_string_lossy().to_string(),
+        npm_cache_dir: layout
+            .npm_cache_dir
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
         npm_prefix: layout
             .npm_prefix
             .as_ref()
@@ -1088,32 +1104,36 @@ pub async fn update_npm_cache_directory(
     let current = paths::load_storage_bootstrap()
         .ok_or("Storage setup must be completed before changing the npm cache directory")?;
     let reset_to_default = npm_cache_dir.trim().is_empty();
-    let updated = if reset_to_default {
-        let default_cache = current.state_dir.join("npm-cache");
-        layout_with_npm_cache(&current, &default_cache.to_string_lossy())?
-    } else {
-        layout_with_npm_cache(&current, &npm_cache_dir)?
-    };
-    let directory = updated.npm_cache_dir.clone();
-    let existed = directory.exists();
-    std::fs::create_dir_all(&directory).map_err(|error| {
-        format!(
-            "Failed to create npm cache directory {}: {}",
-            directory.display(),
-            error
-        )
-    })?;
-    verify_directory_writable(&directory)?;
+    let updated = layout_with_npm_cache(
+        &current,
+        (!reset_to_default).then_some(npm_cache_dir.as_str()),
+    )?;
+    let directory = updated.npm_cache_dir.as_ref();
+    let existed = directory.is_some_and(|path| path.exists());
+    if let Some(directory) = directory {
+        std::fs::create_dir_all(directory).map_err(|error| {
+            format!(
+                "Failed to create npm cache directory {}: {}",
+                directory.display(),
+                error
+            )
+        })?;
+        verify_directory_writable(directory)?;
+    }
     if let Err(error) = paths::save_storage_bootstrap(&updated) {
         if !existed {
-            let _ = std::fs::remove_dir(&directory);
+            if let Some(directory) = directory {
+                let _ = std::fs::remove_dir(directory);
+            }
         }
         return Err(error);
     }
     Ok(if reset_to_default {
         String::new()
     } else {
-        directory.to_string_lossy().to_string()
+        directory
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default()
     })
 }
 
@@ -1164,7 +1184,10 @@ pub async fn configure_storage(
             config_path: paths::active_config_path().to_string_lossy().to_string(),
             workspace_dir: layout.workspace_dir.to_string_lossy().to_string(),
             runtime_dir: layout.runtime_dir.to_string_lossy().to_string(),
-            npm_cache_dir: layout.npm_cache_dir.to_string_lossy().to_string(),
+            npm_cache_dir: layout
+                .npm_cache_dir
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string()),
             npm_prefix: layout
                 .npm_prefix
                 .as_ref()
@@ -1210,9 +1233,9 @@ pub async fn configure_storage(
         let expected_runtime =
             map_workspace_to_target(&existing_layout.runtime_dir, &source, &target)
                 .unwrap_or(existing_layout.runtime_dir);
-        let expected_cache =
-            map_workspace_to_target(&existing_layout.npm_cache_dir, &source, &target)
-                .unwrap_or(existing_layout.npm_cache_dir);
+        let expected_cache = existing_layout.npm_cache_dir.as_ref().map(|cache| {
+            map_workspace_to_target(cache, &source, &target).unwrap_or_else(|| cache.clone())
+        });
         if layout.workspace_dir != expected_workspace
             || layout.runtime_dir != expected_runtime
             || layout.npm_cache_dir != expected_cache
@@ -1228,7 +1251,7 @@ pub async fn configure_storage(
             target.clone(),
             expected_workspace,
             expected_runtime,
-            expected_cache,
+            expected_cache.clone(),
             existing_layout.npm_prefix,
             existing_layout.terminal_integration,
         );
@@ -1443,7 +1466,11 @@ pub async fn configure_storage(
         .to_string(),
         workspace_dir: prepared.layout.workspace_dir.to_string_lossy().to_string(),
         runtime_dir: prepared.layout.runtime_dir.to_string_lossy().to_string(),
-        npm_cache_dir: prepared.layout.npm_cache_dir.to_string_lossy().to_string(),
+        npm_cache_dir: prepared
+            .layout
+            .npm_cache_dir
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
         npm_prefix: prepared
             .layout
             .npm_prefix
@@ -1506,7 +1533,7 @@ mod tests {
             target.to_path_buf(),
             workspace,
             target.to_path_buf(),
-            target.join("npm-cache"),
+            Some(target.join("npm-cache")),
             None,
             false,
         )
@@ -1516,7 +1543,7 @@ mod tests {
         InstallLocationSelection {
             workspace_dir: root.join("workspace").to_string_lossy().to_string(),
             runtime_dir: root.join("runtime").to_string_lossy().to_string(),
-            npm_cache_dir: root.join("npm-cache").to_string_lossy().to_string(),
+            npm_cache_dir: None,
             npm_prefix: None,
             node_runtime_dir: None,
             git_runtime_dir: None,
@@ -1590,7 +1617,7 @@ mod tests {
             root.clone(),
             root.join("workspace-new"),
             root.join("runtime-new"),
-            root.join("cache-new"),
+            Some(root.join("cache-new")),
             Some(root.join("prefix-new")),
             false,
         );
@@ -1627,7 +1654,7 @@ mod tests {
         assert!(selected_layout(root.clone(), traversal).is_err());
 
         let mut duplicate = test_selection(&root);
-        duplicate.npm_cache_dir = duplicate.runtime_dir.clone();
+        duplicate.npm_cache_dir = Some(duplicate.runtime_dir.clone());
         let duplicate = selected_layout(root.clone(), duplicate).unwrap();
         assert!(validate_independent_locations(&duplicate).is_err());
 
@@ -1644,27 +1671,35 @@ mod tests {
             root.clone(),
             root.join("workspace"),
             root.join("runtime"),
-            root.join("cache-old"),
+            Some(root.join("cache-old")),
             None,
             false,
         );
         let next_cache = root.join("cache-new");
-        let updated = layout_with_npm_cache(&current, &next_cache.to_string_lossy()).unwrap();
+        let next_cache_text = next_cache.to_string_lossy().to_string();
+        let updated = layout_with_npm_cache(&current, Some(&next_cache_text)).unwrap();
 
-        assert_eq!(updated.npm_cache_dir, next_cache);
+        assert_eq!(updated.npm_cache_dir, Some(next_cache));
         assert_eq!(updated.runtime_dir, current.runtime_dir);
         assert_eq!(updated.workspace_dir, current.workspace_dir);
-        assert!(layout_with_npm_cache(&current, &current.runtime_dir.to_string_lossy()).is_err());
+        let colliding_path = current.runtime_dir.to_string_lossy().to_string();
+        assert!(layout_with_npm_cache(&current, Some(&colliding_path)).is_err());
+        assert_eq!(
+            layout_with_npm_cache(&current, None).unwrap().npm_cache_dir,
+            None
+        );
     }
 
     #[test]
     fn install_layout_rejects_nested_and_symlinked_locations() {
         let root = storage_test_root("layout-overlap");
         let mut nested = test_selection(&root);
-        nested.npm_cache_dir = PathBuf::from(&nested.runtime_dir)
-            .join("nested-cache")
-            .to_string_lossy()
-            .to_string();
+        nested.npm_cache_dir = Some(
+            PathBuf::from(&nested.runtime_dir)
+                .join("nested-cache")
+                .to_string_lossy()
+                .to_string(),
+        );
         let nested = selected_layout(root.clone(), nested).unwrap();
         assert!(validate_independent_locations(&nested).is_err());
 
@@ -1679,7 +1714,7 @@ mod tests {
                 root.join("state"),
                 real.join("workspace"),
                 alias,
-                root.join("cache"),
+                Some(root.join("cache")),
                 None,
                 false,
             );

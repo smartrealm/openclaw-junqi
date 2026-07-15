@@ -1342,10 +1342,9 @@ pub(crate) async fn start_gateway_locked(
         // io::Error which was opaque to the user.
         if e.kind() == std::io::ErrorKind::NotFound {
             format!(
-                "openclaw not found on PATH (current PATH={:?}). \
-                 If openclaw is installed under ~/.npm-global/bin, \
-                 run 'export PATH=$HOME/.npm-global/bin:$PATH' \
-                 or set OPENCLAW_BIN env var. Underlying error: {}",
+                "openclaw could not be launched from the resolved runtime (current PATH={:?}). \
+                 Ensure the npm executable directory that owns this OpenClaw installation is on PATH, \
+                 then retry setup. Underlying error: {}",
                 std::env::var("PATH").unwrap_or_default(),
                 e,
             )

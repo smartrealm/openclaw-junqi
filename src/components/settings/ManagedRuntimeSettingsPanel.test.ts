@@ -27,7 +27,8 @@ test('runtime commands use system defaults and China-first packages only for exp
   assert.match(setup, /install_windows_portable_git/);
   assert.match(setup, /npmmirror\.com\/mirrors\/node/);
   assert.match(setup, /resolve_node_sha256/);
-  assert.match(setup, /current_managed_git_artifact/);
+  assert.match(setup, /resolve_latest_managed_git_artifact/);
+  assert.match(setup, /verified_fallback_managed_git_artifact/);
   assert.match(setup, /NODE_INSTALL_LOCK/);
   assert.match(setup, /GIT_INSTALL_LOCK/);
   assert.match(managedRuntime, /setup::update_managed_node_runtime/);

@@ -27,6 +27,7 @@ where
     Ok(matches!(value, serde_json::Value::String(ref name) if !name.trim().is_empty()))
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn current_platform_artifact() -> String {
     let arch = match std::env::consts::ARCH {
         "aarch64" => "arm64",

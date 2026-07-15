@@ -204,6 +204,15 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
     })
 }
 
+/// Apply the user's explicit npm cache choice to a child npm/OpenClaw process.
+/// When no override exists, leave the variable unset so npm resolves the
+/// active user's native cache location itself.
+pub(crate) fn apply_configured_npm_cache(command: &mut tokio::process::Command) {
+    if let Some(cache) = paths::configured_npm_cache_dir() {
+        command.env("npm_config_cache", cache);
+    }
+}
+
 fn portable_node_is_compatible(node: &Path) -> bool {
     node.is_file()
         && std::process::Command::new(node)
@@ -881,31 +890,6 @@ async fn get_git_version(git_path: &str) -> Option<String> {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn xcode_tools_available() -> bool {
-    std::process::Command::new("xcode-select")
-        .arg("-p")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-#[cfg(target_os = "macos")]
-fn macos_git_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Some(home) = dirs::home_dir() {
-        candidates.push(home.join(".local").join("bin").join("git"));
-        candidates.push(home.join(".npm-global").join("bin").join("git"));
-        candidates.push(home.join(".asdf").join("shims").join("git"));
-    }
-    candidates.push(PathBuf::from("/opt/homebrew/bin/git"));
-    candidates.push(PathBuf::from("/usr/local/bin/git"));
-    if xcode_tools_available() {
-        candidates.push(PathBuf::from("/usr/bin/git"));
-    }
-    candidates
-}
-
 #[tauri::command]
 pub async fn open_folder(path: String) -> Result<(), String> {
     let expanded = if path.starts_with("~/") || path == "~" {
@@ -947,66 +931,42 @@ pub async fn check_git() -> Result<GitStatus, String> {
         });
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        for git_path in macos_git_candidates() {
-            if !git_path.exists() {
-                continue;
-            }
-            let path_str = git_path.to_string_lossy().to_string();
-            if let Some(version) = get_git_version(&path_str).await {
-                return Ok(GitStatus {
-                    available: true,
-                    version: Some(version),
-                    path: Some(path_str),
-                    source: Some("system".into()),
-                });
-            }
-        }
+    // System Git is discovered through the current PATH on every platform.
+    // Do not infer package-manager or home-directory locations: the system
+    // installation (or an explicitly selected portable directory above) is
+    // the only authoritative source for new setups.
+    let detected_git = platform::detect_path("git");
+    let system_git = if detected_git.is_empty() {
+        platform::bin_name("git")
+    } else {
+        detected_git
+    };
+    if let Some(version) = get_git_version(&system_git).await {
         return Ok(GitStatus {
-            available: false,
-            version: None,
-            path: None,
-            source: None,
+            available: true,
+            version: Some(version),
+            path: Some(system_git),
+            source: Some("system".into()),
         });
     }
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        // Check system git
-        let detected_git = platform::detect_path("git");
-        let system_git = if detected_git.is_empty() {
-            platform::bin_name("git")
-        } else {
-            detected_git
-        };
-        if let Some(version) = get_git_version(&system_git).await {
-            return Ok(GitStatus {
-                available: true,
-                version: Some(version),
-                path: Some(system_git.into()),
-                source: Some("system".into()),
-            });
-        }
-
-        let legacy = paths::legacy_local_git_path();
-        if legacy.is_file() {
-            let path = legacy.to_string_lossy().into_owned();
-            let version = get_git_version(&path).await;
-            return Ok(GitStatus {
-                available: version.is_some(),
-                version,
-                path: Some(path),
-                source: Some("local".into()),
-            });
-        }
-        Ok(GitStatus {
-            available: false,
-            version: None,
-            path: None,
-            source: None,
-        })
+    let legacy = paths::legacy_local_git_path();
+    if legacy.is_file() {
+        let path = legacy.to_string_lossy().into_owned();
+        let version = get_git_version(&path).await;
+        return Ok(GitStatus {
+            available: version.is_some(),
+            version,
+            path: Some(path),
+            source: Some("local".into()),
+        });
     }
+    Ok(GitStatus {
+        available: false,
+        version: None,
+        path: None,
+        source: None,
+    })
 }
 
 // ── get_terminal_env ──────────────────────────────────────────────────────

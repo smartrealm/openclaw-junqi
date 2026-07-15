@@ -288,6 +288,7 @@ fn build_openclaw_command(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    system::apply_configured_npm_cache(&mut command);
     if let Some(registry) = npm_registry {
         // Child-process-only config: this must not mutate ~/.npmrc or global npm settings.
         command
