@@ -51,6 +51,7 @@ export function OpenClawUpdatePanel({
   const npmRegistryLabel = npmRegistryKind
     ? t(`setup.openclawUpdate.registry.${npmRegistryKind}`)
     : npmRegistry;
+  const progressPercent = Math.max(0, Math.min(100, Math.round(update.progress ?? 0)));
 
   const handleUpdate = async () => {
     setConfirming(false);
@@ -225,20 +226,23 @@ export function OpenClawUpdatePanel({
               </span>
             </span>
             <span className="shrink-0 font-mono tabular-nums">
-              {Math.round(update.progress ?? 0)}%
+              {progressPercent}%
             </span>
           </div>
           <div
-            className="h-1.5 overflow-hidden bg-aegis-border/40"
+            className="h-2 overflow-hidden rounded-full bg-[rgb(var(--aegis-overlay)/0.14)]"
             role="progressbar"
             aria-label={t('setup.openclawUpdate.progress')}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={Math.round(update.progress ?? 0)}
+            aria-valuenow={progressPercent}
           >
             <div
-              className="h-full bg-aegis-primary transition-[width] duration-300"
-              style={{ width: `${Math.max(2, update.progress ?? 0)}%` }}
+              className="h-full rounded-full transition-[width] duration-300"
+              style={{
+                width: `${progressPercent}%`,
+                backgroundColor: 'rgb(var(--aegis-primary))',
+              }}
             />
           </div>
           {update.logs.length > 0 && (

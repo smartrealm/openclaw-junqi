@@ -90,6 +90,14 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   assert.doesNotMatch(setup, /waitForGatewayReady\(runId, 30_000, status\?\.port\)/);
 });
 
+test('offline system services are stopped before the desktop-managed Gateway starts', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  assert.match(gateway, /args\(\["gateway", "status", "--json"\]\)/);
+  assert.match(gateway, /parse_gateway_service_state\(&output\.stdout\) != Some\(\(true, false\)\)/);
+  assert.match(gateway, /args\(\["gateway", "stop"\]\)/);
+  assert.match(gateway, /stop_offline_gateway_service\(&app, &openclaw, &gw_path\)\.await\?/);
+});
+
 test('setup self-rescue commands are registered and use official plugin convergence repair', () => {
   const repair = source('src-tauri/src/commands/openclaw_repair.rs');
   const lib = source('src-tauri/src/lib.rs');
