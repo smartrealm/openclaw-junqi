@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, Download, ExternalLink, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, RefreshCw, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { useOpenclawUpdate } from '@/hooks/useOpenclawUpdate';
 import { Alert } from './alert';
@@ -212,6 +212,42 @@ export function OpenClawUpdatePanel({
           <Alert tone="info" size="sm" title={t('setup.openclawUpdate.updating')}>
             {t('setup.openclawUpdate.restartHint')}
           </Alert>
+        </div>
+      )}
+
+      {(update.checking || update.updating || update.logs.length > 0) && (
+        <div className="mt-3 border-t border-aegis-border/50 pt-3" aria-live="polite">
+          <div className="mb-2 flex items-center justify-between gap-3 text-xs text-aegis-text-dim">
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <TerminalSquare size={13} className="shrink-0" />
+              <span className="truncate">
+                {update.logs[update.logs.length - 1] || t('setup.openclawUpdate.preparing')}
+              </span>
+            </span>
+            <span className="shrink-0 font-mono tabular-nums">
+              {Math.round(update.progress ?? 0)}%
+            </span>
+          </div>
+          <div
+            className="h-1.5 overflow-hidden bg-aegis-border/40"
+            role="progressbar"
+            aria-label={t('setup.openclawUpdate.progress')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(update.progress ?? 0)}
+          >
+            <div
+              className="h-full bg-aegis-primary transition-[width] duration-300"
+              style={{ width: `${Math.max(2, update.progress ?? 0)}%` }}
+            />
+          </div>
+          {update.logs.length > 0 && (
+            <div className="mt-2 max-h-40 overflow-y-auto bg-black/20 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-dim">
+              {update.logs.map((line, index) => (
+                <div key={`${index}-${line}`} className="break-all">{line}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

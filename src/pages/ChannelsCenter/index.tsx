@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Bot, Check, ChevronDown, Copy, ExternalLink, ListFilter, Loader2, MessageSquare, Pencil, Plus, Power, RefreshCw, Save, Settings2, ShieldCheck, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Link2, ListFilter, Loader2, LogOut, MessageSquare, Pencil, Play, Plus, Power, QrCode, RefreshCw, Save, Settings2, ShieldCheck, Square, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { gateway } from '@/services/gateway';
 import type { LogEntry } from '@/api/tauri-commands';
 import type { AgentConfig, GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
-import { CHANNEL_TEMPLATES, getChannelTemplate, type ChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
+import { getChannelTemplate } from '@/pages/ConfigManager/channelTemplates';
+import { ChannelOfficialSchemaEditor } from '@/pages/ConfigManager/ChannelOfficialSchemaEditor';
 import {
   assessChannelAccountReadiness,
   addChannelAccount,
-  addChannel,
   buildChannelGroups,
+  channelAccountEditorValues,
   persistChannelsOnly,
   removeChannelAccount,
   removeChannel,
@@ -26,6 +28,21 @@ import {
   type ChannelGroupView,
   type ChannelAccountBinding,
 } from '@/services/channelConfig';
+import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
+import {
+  buildChannelLoginCommand,
+  buildChannelSetupCommand,
+  channelAccountStatus,
+  channelLinkMode,
+  loadOfficialChannelCapability,
+  loadOfficialChannelCatalog,
+  redactChannelSecrets,
+  type ChannelsRuntimeSnapshot,
+  type OfficialChannelCatalog,
+  type OfficialChannelCatalogEntry,
+  type OfficialChannelCapability,
+} from '@/services/openclawChannelRuntime';
+import { ChannelQrLoginDialog } from './ChannelQrLoginDialog';
 
 function channelName(t: ReturnType<typeof useTranslation>['t'], id: string) {
   return t(`config.channel.${id}`, { defaultValue: getChannelTemplate(id)?.id ?? id });
@@ -91,6 +108,15 @@ function readinessClasses(readiness: ChannelAccountReadiness, gatewayHealthy: bo
   return 'bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim border-[rgb(var(--aegis-overlay)/0.08)]';
 }
 
+function officialAccountReadiness(
+  channelId: string,
+  account: ChannelAccountBinding,
+  snapshot: ChannelsRuntimeSnapshot | null,
+): ChannelAccountReadiness {
+  const runtime = channelAccountStatus(snapshot, channelId, account.id);
+  return assessChannelAccountReadiness(channelId, account, runtime);
+}
+
 function textValue(config: Record<string, unknown>, key: string, fallback = '') {
   const value = config[key];
   return typeof value === 'string' ? value : fallback;
@@ -99,11 +125,6 @@ function textValue(config: Record<string, unknown>, key: string, fallback = '') 
 function boolValue(config: Record<string, unknown>, key: string, fallback: boolean) {
   const value = config[key];
   return typeof value === 'boolean' ? value : fallback;
-}
-
-function numberValue(config: Record<string, unknown>, key: string, fallback: number) {
-  const value = config[key];
-  return typeof value === 'number' ? value : fallback;
 }
 
 interface ChannelAccountModalProps {
@@ -118,18 +139,13 @@ interface ChannelAccountModalProps {
 
 function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDelete }: ChannelAccountModalProps) {
   const tmpl = getChannelTemplate(state.group.id);
-  const config = state.account?.config ?? {};
   const [accountId, setAccountId] = useState(state.account?.id ?? nextAccountId(state.group.id, [state.group]));
-  const [values, setValues] = useState<Record<string, unknown>>(() => ({
-    ...config,
-    enabled: config.enabled !== false,
-    name: textValue(config, 'name', state.account?.label === 'Default' ? '' : state.account?.label ?? ''),
-    agentId: textValue(config, 'agentId'),
-    mediaMaxMb: numberValue(config, 'mediaMaxMb', tmpl?.defaultMediaMaxMb ?? 10),
-  }));
+  const [values, setValues] = useState<Record<string, unknown>>(() => (
+    channelAccountEditorValues(state.account, tmpl?.defaultMediaMaxMb ?? 10)
+  ));
 
   const trimmedAccountId = accountId.trim();
-  const accountIdValid = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$/.test(trimmedAccountId);
+  const accountIdValid = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(trimmedAccountId);
   const duplicateAccountId = state.mode === 'new' && state.group.accounts.some((account) => account.id === trimmedAccountId);
   const canSave = accountIdValid && !duplicateAccountId && !saving;
 
@@ -137,12 +153,9 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
     setValues((prev) => ({ ...prev, [key]: value }));
   };
 
-  const credentialFields = getCredentialFields(tmpl);
-  const connectionModes = getImConnectionModes(t, state.group.id);
-
   return (
     <div className="fixed inset-0 z-[2147482000] bg-black/45 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-[620px] max-h-[88vh] overflow-hidden rounded-2xl border border-[rgb(var(--aegis-overlay)/0.12)] bg-aegis-bg shadow-2xl">
+      <div className="w-full max-w-[620px] max-h-[88vh] overflow-hidden rounded-lg border border-[rgb(var(--aegis-overlay)/0.12)] bg-aegis-bg shadow-2xl">
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-[rgb(var(--aegis-overlay)/0.08)]">
           <div className="min-w-0">
             <h3 className="text-[16px] font-extrabold text-aegis-text">
@@ -220,136 +233,16 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
             </Field>
           </section>
 
-          {connectionModes.length > 0 && (
-            <section className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <SectionTitle>{t('channelsCenter.integrationMode', 'Integration mode')}</SectionTitle>
-                {tmpl?.docsUrl && (
-                  <button
-                    type="button"
-                    onClick={() => window.open(tmpl.docsUrl, '_blank', 'noopener,noreferrer')}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] px-2 py-1 text-[10px] font-bold text-aegis-text-dim hover:border-aegis-primary/25 hover:text-aegis-primary"
-                  >
-                    <ExternalLink size={11} />
-                    {t('channelsCenter.openDocs', 'Open docs')}
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {connectionModes.map((mode) => (
-                  <div
-                    key={mode.label}
-                    className={clsx(
-                      'rounded-lg border px-3 py-2',
-                      mode.enabled
-                        ? 'border-aegis-primary/20 bg-aegis-primary/10'
-                        : 'border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] opacity-75'
-                    )}
-                  >
-                    <div className={clsx(
-                      'text-[11px] font-extrabold',
-                      mode.enabled ? 'text-aegis-primary' : 'text-aegis-text-muted'
-                    )}>
-                      {mode.label}
-                    </div>
-                    <div className="mt-1 text-[10px] leading-relaxed text-aegis-text-dim">
-                      {mode.description}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {credentialFields.length > 0 && (
-            <section className="space-y-3">
-              <SectionTitle>{t('channelsCenter.credentials', 'Credentials')}</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {credentialFields.map((field) => (
-                  <Field key={field.key} label={field.label}>
-                    <input
-                      type={field.secret ? 'password' : 'text'}
-                      value={textValue(values, field.key)}
-                      onChange={(e) => setField(field.key, e.target.value)}
-                      placeholder={field.placeholder}
-                      className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text font-mono focus:outline-none focus:border-aegis-primary/40"
-                    />
-                  </Field>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {tmpl && (
-            <section className="space-y-3">
-              <SectionTitle>{t('channelsCenter.routingPolicy', 'Routing policy')}</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {tmpl.supportsDmPolicy && (
-                  <Field label={t('config.dmPolicy', 'DM policy')}>
-                    <select
-                      value={textValue(values, 'dmPolicy', tmpl.defaultDmPolicy ?? '')}
-                      onChange={(e) => setField('dmPolicy', e.target.value)}
-                      className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-aegis-bg px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
-                    >
-                      {(tmpl.dmPolicyOptions ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
-                    </select>
-                  </Field>
-                )}
-                {tmpl.supportsGroupPolicy && (
-                  <Field label={t('config.groupPolicy', 'Group policy')}>
-                    <select
-                      value={textValue(values, 'groupPolicy', tmpl.defaultGroupPolicy ?? '')}
-                      onChange={(e) => setField('groupPolicy', e.target.value)}
-                      className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-aegis-bg px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
-                    >
-                      {(tmpl.groupPolicyOptions ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
-                    </select>
-                  </Field>
-                )}
-                {tmpl.defaultMediaMaxMb !== undefined && (
-                  <Field label={t('config.mediaMaxMb', 'Media max MB')}>
-                    <input
-                      type="number"
-                      min={1}
-                      max={500}
-                      value={String(numberValue(values, 'mediaMaxMb', tmpl.defaultMediaMaxMb))}
-                      onChange={(e) => setField('mediaMaxMb', Number(e.target.value))}
-                      className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
-                    />
-                  </Field>
-                )}
-              </div>
-            </section>
-          )}
-
-          {tmpl?.extraFields && tmpl.extraFields.length > 0 && (
-            <section className="space-y-3">
-              <SectionTitle>{t('channelsCenter.options', 'Options')}</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {tmpl.extraFields.map((field) => (
-                  <Field key={field.key} label={t(field.labelKey, field.key)}>
-                    {field.type === 'boolean' ? (
-                      <label className="flex items-center justify-between rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
-                        <span className="text-[12px] text-aegis-text">{t('config.enabled', 'Enabled')}</span>
-                        <input
-                          type="checkbox"
-                          checked={boolValue(values, field.key, Boolean(field.defaultValue))}
-                          onChange={(e) => setField(field.key, e.target.checked)}
-                        />
-                      </label>
-                    ) : (
-                      <input
-                        type={field.type === 'number' ? 'number' : 'text'}
-                        value={String(values[field.key] ?? field.defaultValue ?? '')}
-                        onChange={(e) => setField(field.key, field.type === 'number' ? Number(e.target.value) : e.target.value)}
-                        className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
-                      />
-                    )}
-                  </Field>
-                ))}
-              </div>
-            </section>
-          )}
+          <section className="space-y-3">
+            <ChannelOfficialSchemaEditor
+              channelId={state.group.id}
+              value={values}
+              account={state.account?.source === 'account' || state.mode === 'new'}
+              initiallyOpen
+              disabled={saving}
+              onChange={setValues}
+            />
+          </section>
         </div>
 
         <div className="flex items-center gap-2 px-5 py-4 border-t border-[rgb(var(--aegis-overlay)/0.08)]">
@@ -381,74 +274,6 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
   );
 }
 
-function getCredentialFields(tmpl?: ChannelTemplate) {
-  if (!tmpl) return [];
-  const fields: Array<{ key: string; label: string; placeholder?: string; secret?: boolean }> = [];
-  if (tmpl.id === 'feishu') {
-    fields.push(
-      { key: 'appId', label: 'App ID' },
-      { key: 'appSecret', label: 'App Secret', secret: true },
-    );
-  }
-  if (tmpl.id === 'dingtalk') {
-    fields.push(
-      { key: 'appKey', label: 'App Key' },
-      { key: 'appSecret', label: 'App Secret', secret: true },
-      { key: 'robotCode', label: 'Robot Code' },
-    );
-  }
-  if (tmpl.tokenField) {
-    fields.push({
-      key: tmpl.tokenField,
-      label: tmpl.tokenField,
-      placeholder: tmpl.tokenEnvKey ? `env:${tmpl.tokenEnvKey}` : undefined,
-      secret: /token|secret|key/i.test(tmpl.tokenField),
-    });
-  }
-  return fields;
-}
-
-function getImConnectionModes(t: ReturnType<typeof useTranslation>['t'], channelId: string) {
-  if (channelId === 'feishu') {
-    return [
-      {
-        label: t('channelsCenter.modeHttpsCallback', 'HTTPS callback'),
-        description: t('channelsCenter.feishuHttpsHint', 'Use Feishu event subscription callback with app credentials.'),
-        enabled: true,
-      },
-      {
-        label: t('channelsCenter.modeQrAuth', 'QR authorization'),
-        description: t('channelsCenter.qrAuthGatewayRequired', 'Requires a real Gateway login-session API before it can be enabled.'),
-        enabled: false,
-      },
-    ];
-  }
-  if (channelId === 'dingtalk') {
-    return [
-      {
-        label: t('channelsCenter.modeStream', 'Stream'),
-        description: t('channelsCenter.dingtalkStreamHint', 'Use DingTalk Stream mode with appKey, appSecret, and robotCode.'),
-        enabled: true,
-      },
-      {
-        label: t('channelsCenter.modeHttpsCallback', 'HTTPS callback'),
-        description: t('channelsCenter.dingtalkHttpsHint', 'Use a public HTTPS callback URL when Stream is disabled.'),
-        enabled: true,
-      },
-      {
-        label: t('channelsCenter.modeQrAuth', 'QR authorization'),
-        description: t('channelsCenter.qrAuthGatewayRequired', 'Requires a real Gateway login-session API before it can be enabled.'),
-        enabled: false,
-      },
-    ];
-  }
-  return [];
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <div className="text-[10px] uppercase tracking-widest font-extrabold text-aegis-text-muted">{children}</div>;
-}
-
 function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <label className="block">
@@ -476,6 +301,14 @@ export function ChannelsCenterPage() {
   const [gatewayActionBusy, setGatewayActionBusy] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
+  const [catalog, setCatalog] = useState<OfficialChannelCatalog>({ source: 'openclaw-cli', entries: [] });
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ChannelsRuntimeSnapshot | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [accountActionBusy, setAccountActionBusy] = useState('');
+  const [channelLogPayloads, setChannelLogPayloads] = useState<Record<string, unknown>>({});
+  const [channelLogsBusy, setChannelLogsBusy] = useState('');
+  const [qrTarget, setQrTarget] = useState<{ channelId: string; accountId: string } | null>(null);
+  const [capabilityByChannel, setCapabilityByChannel] = useState<Record<string, OfficialChannelCapability | null>>({});
   const savingRef = useRef(false);
   const gatewayRefreshTimersRef = useRef<number[]>([]);
 
@@ -519,6 +352,36 @@ export function ChannelsCenterPage() {
     }
   }, [t]);
 
+  const loadOfficialState = useCallback(async (probe = false, channelId?: string) => {
+    setRuntimeLoading(true);
+    try {
+      const [nextCatalog, nextSnapshot] = await Promise.all([
+        loadOfficialChannelCatalog(probe),
+        gateway.call('channels.status', {
+          probe,
+          timeoutMs: probe ? 15000 : 8000,
+          ...(channelId ? { channel: channelId } : {}),
+        }).catch(() => window.aegis.channelRuntime.status(channelId, probe)),
+      ]);
+      setCatalog(nextCatalog);
+      if (channelId) {
+        const partial = nextSnapshot as ChannelsRuntimeSnapshot;
+        setRuntimeSnapshot((current) => ({
+          ...(current ?? {}),
+          ...partial,
+          channelAccounts: { ...(current?.channelAccounts ?? {}), ...(partial.channelAccounts ?? {}) },
+          channels: { ...(current?.channels ?? {}), ...(partial.channels ?? {}) },
+        }));
+      } else {
+        setRuntimeSnapshot(nextSnapshot as ChannelsRuntimeSnapshot);
+      }
+    } catch (reason: any) {
+      setError(reason?.message || String(reason));
+    } finally {
+      setRuntimeLoading(false);
+    }
+  }, []);
+
   const clearGatewayRefreshTimers = useCallback(() => {
     gatewayRefreshTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     gatewayRefreshTimersRef.current = [];
@@ -530,24 +393,39 @@ export function ChannelsCenterPage() {
       const timerId = window.setTimeout(() => {
         void loadGatewaySnapshot();
         void load();
+        void loadOfficialState(false);
       }, delay);
       gatewayRefreshTimersRef.current.push(timerId);
     });
-  }, [clearGatewayRefreshTimers, loadGatewaySnapshot, load]);
+  }, [clearGatewayRefreshTimers, loadGatewaySnapshot, load, loadOfficialState]);
 
   useEffect(() => {
     void load();
     void loadGatewaySnapshot();
+    void loadOfficialState(false);
     return () => clearGatewayRefreshTimers();
-  }, [clearGatewayRefreshTimers, load, loadGatewaySnapshot]);
+  }, [clearGatewayRefreshTimers, load, loadGatewaySnapshot, loadOfficialState]);
 
+  const officialChannelIds = useMemo(() => new Set(catalog.entries.map((entry) => entry.id)), [catalog]);
   const groups = useMemo(() =>
-    buildChannelGroups(config).map((group) => ({ ...group, name: channelName(t, group.id) })),
-    [config, t]
+    buildChannelGroups(config).map((group) => ({
+      ...group,
+      known: group.known || officialChannelIds.has(group.id),
+      name: channelName(t, group.id),
+    })),
+    [config, officialChannelIds, t]
   );
   const agents = useMemo(() => (config?.agents?.list ?? []) as AgentConfig[], [config]);
   const accountCount = groups.reduce((sum, group) => sum + group.accounts.length, 0);
-  const readinessSummary = useMemo(() => summarizeChannelReadiness(groups), [groups]);
+  const readinessSummary = useMemo(() => {
+    const summary = summarizeChannelReadiness([]);
+    for (const group of groups) {
+      for (const account of group.accounts) {
+        summary[officialAccountReadiness(group.id, account, runtimeSnapshot).state] += 1;
+      }
+    }
+    return summary;
+  }, [groups, runtimeSnapshot]);
   const focusedAgent = useMemo(() => (
     focusedAgentId ? agents.find((agent) => agent.id === focusedAgentId) : undefined
   ), [agents, focusedAgentId]);
@@ -559,12 +437,12 @@ export function ChannelsCenterPage() {
         accounts: group.accounts.filter((account) => {
           const matchesAgent = !focusedAgentId || account.agentId === focusedAgentId || !account.agentId;
           const matchesReadiness = readinessFilter === 'all'
-            || assessChannelAccountReadiness(group.id, account).state === readinessFilter;
+            || officialAccountReadiness(group.id, account, runtimeSnapshot).state === readinessFilter;
           return matchesAgent && matchesReadiness;
         }),
       }))
       .filter((group) => group.accounts.length > 0);
-  }, [groups, focusedAgentId, readinessFilter]);
+  }, [groups, focusedAgentId, readinessFilter, runtimeSnapshot]);
 
   useEffect(() => {
     if (!focusedAgentId || filteredGroups.length === 0) return;
@@ -572,7 +450,7 @@ export function ChannelsCenterPage() {
   }, [focusedAgentId, filteredGroups]);
 
   const filteredAccountCount = filteredGroups.reduce((sum, group) => sum + group.accounts.length, 0);
-  const addableTemplates = CHANNEL_TEMPLATES.filter(tmpl => !groups.some(group => group.id === tmpl.id));
+  const addableEntries = catalog.entries.filter((entry) => !groups.some((group) => group.id === entry.id));
   const gatewayHealthy = Boolean(gatewayStatus?.running && gatewayStatus?.ready);
   const gatewayStateLabel = gatewayLoading
     ? t('channelsCenter.gatewayChecking', 'Checking Gateway')
@@ -618,6 +496,70 @@ export function ChannelsCenterPage() {
     void saveConfig(updateChannelBinding(config, group.id, account, agentId), t('channelsCenter.bindingUpdated', 'Binding updated.'));
   };
 
+  const openChannelTerminal = (command: string) => {
+    enqueueTerminalCommand({ command });
+    navigate('/terminal');
+  };
+
+  const handleLinkAccount = (
+    entry: OfficialChannelCatalogEntry | undefined,
+    group: ChannelGroupWithName,
+    account: ChannelAccountBinding,
+  ) => {
+    const mode = channelLinkMode(group.id, entry?.installed === true);
+    if (mode === 'embedded_qr') {
+      setQrTarget({ channelId: group.id, accountId: account.id });
+      return;
+    }
+    if (mode === 'terminal_login') {
+      openChannelTerminal(buildChannelLoginCommand(group.id, account.id));
+      return;
+    }
+    openChannelTerminal(buildChannelSetupCommand(group.id, account.id));
+  };
+
+  const handleAccountRuntimeAction = async (
+    method: 'channels.start' | 'channels.stop' | 'channels.logout',
+    group: ChannelGroupWithName,
+    account: ChannelAccountBinding,
+  ) => {
+    const key = `${method}:${group.id}:${account.id}`;
+    if (accountActionBusy) return;
+    setAccountActionBusy(key);
+    try {
+      await gateway.call(method, {
+        channel: group.id,
+        ...(account.id !== 'default' ? { accountId: account.id } : {}),
+      });
+      await loadOfficialState(true, group.id);
+    } catch (reason: any) {
+      showAlert(t('channelsCenter.channelActionFailed', 'Channel action failed'), reason?.message || String(reason), 'error');
+    } finally {
+      setAccountActionBusy('');
+    }
+  };
+
+  const handleChannelLogs = async (channelId: string) => {
+    if (channelLogsBusy) return;
+    if (Object.prototype.hasOwnProperty.call(channelLogPayloads, channelId)) {
+      setChannelLogPayloads((current) => {
+        const next = { ...current };
+        delete next[channelId];
+        return next;
+      });
+      return;
+    }
+    setChannelLogsBusy(channelId);
+    try {
+      const payload = await window.aegis.channelRuntime.logs(channelId, 200);
+      setChannelLogPayloads((current) => ({ ...current, [channelId]: redactChannelSecrets(payload) }));
+    } catch (reason: any) {
+      showAlert(t('channelsCenter.logsFailed', 'Unable to load channel logs'), reason?.message || String(reason), 'error');
+    } finally {
+      setChannelLogsBusy('');
+    }
+  };
+
   const handleGatewayRestart = async () => {
     if (gatewayActionBusy) return;
     setGatewayActionBusy(true);
@@ -640,6 +582,7 @@ export function ChannelsCenterPage() {
     const payload = {
       status: gatewayStatus,
       logs: gatewayLogs,
+      officialRuntime: redactChannelSecrets(runtimeSnapshot),
       channels: groups.map((group) => ({
         id: group.id,
         enabled: group.enabled,
@@ -649,7 +592,7 @@ export function ChannelsCenterPage() {
           enabled: account.enabled,
           source: account.source,
           agentId: account.agentId ?? null,
-          readiness: assessChannelAccountReadiness(group.id, account),
+          readiness: officialAccountReadiness(group.id, account, runtimeSnapshot),
         })),
       })),
     };
@@ -706,11 +649,17 @@ export function ChannelsCenterPage() {
     );
   };
 
-  const handleAdd = (channelId: string) => {
-    if (!config) return;
-    const next = addChannel(config, channelId);
-    setExpanded(channelId);
-    void saveConfig(next, t('channelsCenter.channelAdded', 'Channel added.'));
+  const handleAdd = (entry: OfficialChannelCatalogEntry) => {
+    openChannelTerminal(buildChannelSetupCommand(entry.id));
+  };
+
+  const handleExpand = (group: ChannelGroupWithName, open: boolean) => {
+    setExpanded(open ? null : group.id);
+    if (!open && !Object.prototype.hasOwnProperty.call(capabilityByChannel, group.id)) {
+      void loadOfficialChannelCapability(group.id)
+        .then((capability) => setCapabilityByChannel((current) => ({ ...current, [group.id]: capability })))
+        .catch(() => setCapabilityByChannel((current) => ({ ...current, [group.id]: null })));
+    }
   };
 
   return (
@@ -722,11 +671,12 @@ export function ChannelsCenterPage() {
           </h1>
           <p className="text-[12px] text-aegis-text-dim mt-0.5">
             {t('channelsCenter.subtitle', 'Connect agents to Feishu, DingTalk, Telegram, Discord and other message channels.')}
+            <span className="ml-2 font-mono text-[10px] text-aegis-text-muted">{catalog.version || catalog.source}</span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => void load()} disabled={loading || saving} title={t('common.refresh', 'Refresh')} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.05)] disabled:opacity-50">
-            <RefreshCw size={15} className={loading ? 'animate-spin' : undefined} />
+          <button onClick={() => { void load(); void loadOfficialState(false); }} disabled={loading || saving || runtimeLoading} title={t('common.refresh', 'Refresh')} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.05)] disabled:opacity-50">
+            <RefreshCw size={15} className={loading || runtimeLoading ? 'animate-spin' : undefined} />
           </button>
           <button onClick={() => setDiagnosticsOpen((open) => !open)} className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text text-[11px] font-semibold">
             <TerminalSquare size={14} />
@@ -942,7 +892,7 @@ export function ChannelsCenterPage() {
                   const originalAccountCount = groups.find((item) => item.id === group.id)?.accounts.length ?? group.accounts.length;
                   return (
                     <div key={group.id} className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] overflow-hidden">
-                      <button onClick={() => setExpanded(open ? null : group.id)} className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[rgb(var(--aegis-overlay)/0.03)]">
+                      <button onClick={() => handleExpand(group, open)} className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[rgb(var(--aegis-overlay)/0.03)]">
                         <div className="w-8 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] flex items-center justify-center text-[10px] font-bold text-aegis-text-muted">
                           {channelIcon(group.id)}
                         </div>
@@ -969,7 +919,7 @@ export function ChannelsCenterPage() {
                               <ShieldCheck size={13} />
                               {group.enabled ? t('channelsCenter.disable', 'Disable') : t('channelsCenter.enable', 'Enable')}
                             </button>
-                            {getChannelTemplate(group.id)?.supportsMultiAccount && (
+                            {capabilityByChannel[group.id]?.schema.accounts?.additionalProperties && (
                               <button
                                 onClick={() => setEditingAccount({ mode: 'new', group })}
                                 disabled={saving}
@@ -979,13 +929,17 @@ export function ChannelsCenterPage() {
                                 {t('channelsCenter.addAccount', 'Add account')}
                               </button>
                             )}
-                            <button onClick={() => navigate('/config?tab=channels')} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
-                              <Settings2 size={13} />
-                              {t('channelsCenter.advancedConfig', 'Advanced config')}
+                            <button onClick={() => void loadOfficialState(true, group.id)} disabled={runtimeLoading} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text disabled:opacity-50">
+                              <Activity size={13} />
+                              {t('channelsCenter.probe', 'Probe')}
                             </button>
-                            <button onClick={() => navigator.clipboard.writeText(JSON.stringify(group.config, null, 2)).catch(() => undefined)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
+                            <button onClick={() => void handleChannelLogs(group.id)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
+                              {channelLogsBusy === group.id ? <Loader2 size={13} className="animate-spin" /> : <TerminalSquare size={13} />}
+                              {t('channelsCenter.channelLogs', 'Channel logs')}
+                            </button>
+                            <button onClick={() => navigator.clipboard.writeText(JSON.stringify(redactChannelSecrets(group.config), null, 2)).catch(() => undefined)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
                               <Copy size={13} />
-                              {t('common.copy', 'Copy')}
+                              {t('channelsCenter.copyRedacted', 'Copy redacted')}
                             </button>
                             <button onClick={() => handleRemove(group)} disabled={saving} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-aegis-danger/25 bg-aegis-danger/10 text-[12px] font-semibold text-aegis-danger">
                               <Trash2 size={13} />
@@ -993,9 +947,14 @@ export function ChannelsCenterPage() {
                             </button>
                           </div>
 
+                          {Object.prototype.hasOwnProperty.call(channelLogPayloads, group.id) && (
+                            <pre className="max-h-64 overflow-auto rounded-md border border-aegis-border bg-aegis-bg p-3 text-[10px] leading-relaxed text-aegis-text-muted whitespace-pre-wrap break-all">{JSON.stringify(channelLogPayloads[group.id], null, 2)}</pre>
+                          )}
+
                           <div className="space-y-2">
                             {group.accounts.map((account) => {
-                              const readiness = assessChannelAccountReadiness(group.id, account);
+                              const runtime = channelAccountStatus(runtimeSnapshot, group.id, account.id);
+                              const readiness = officialAccountReadiness(group.id, account, runtimeSnapshot);
                               const readinessLabel = readiness.state === 'ready' && !gatewayHealthy
                                 ? t('channelsCenter.waitingGateway', 'Waiting for Gateway')
                                 : t(`channelsCenter.readiness.${readiness.state}`, readiness.state);
@@ -1005,8 +964,13 @@ export function ChannelsCenterPage() {
                                   ? t('channelsCenter.gatewayOfflineHint', 'Gateway is offline. Restart or refresh Gateway to activate this account.')
                                   : t(`channelsCenter.readinessHint.${readiness.state}`, '');
 
+                              const catalogEntry = catalog.entries.find((entry) => entry.id === group.id);
+                              const linkMode = channelLinkMode(group.id, catalogEntry?.installed === true);
+                              const runtimeBusyPrefix = `${group.id}:${account.id}`;
+
                               return (
-                                <div key={account.id} className="grid grid-cols-1 md:grid-cols-[1fr_220px_auto] gap-3 items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg px-3 py-2.5">
+                                <div key={account.id} className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg px-3 py-2.5">
+                                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
                                   <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <MessageSquare size={13} className="text-aegis-text-dim" />
@@ -1022,6 +986,15 @@ export function ChannelsCenterPage() {
                                         {readinessHint}
                                       </div>
                                     )}
+                                    {runtime && (
+                                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-aegis-text-muted">
+                                        <span>{t('channelsCenter.configuredState', 'Configured')}: {String(runtime.configured ?? false)}</span>
+                                        <span>{t('channelsCenter.linkedState', 'Linked')}: {String(runtime.linked ?? false)}</span>
+                                        <span>{t('channelsCenter.runningState', 'Running')}: {String(runtime.running ?? false)}</span>
+                                        <span>{t('channelsCenter.connectedState', 'Connected')}: {String(runtime.connected ?? false)}</span>
+                                        {runtime.lastError && <span className="basis-full text-aegis-danger">{runtime.lastError}</span>}
+                                      </div>
+                                    )}
                                   </div>
                                   <select
                                     value={account.agentId ?? ''}
@@ -1034,7 +1007,25 @@ export function ChannelsCenterPage() {
                                       <option key={agent.id} value={agent.id}>{agent.name || agent.id}</option>
                                     ))}
                                   </select>
-                                  <div className="flex items-center justify-end gap-1.5">
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-aegis-border pt-2">
+                                    {linkMode !== 'none' && (
+                                      <button onClick={() => handleLinkAccount(catalogEntry, group, account)} disabled={Boolean(accountActionBusy)} className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 text-aegis-primary text-[11px] font-bold disabled:opacity-50">
+                                        {linkMode === 'embedded_qr' ? <QrCode size={12} /> : <Link2 size={12} />}
+                                        {linkMode === 'embedded_qr' ? t('channelsCenter.showQr', 'Show QR') : t('channelsCenter.linkAccount', 'Link account')}
+                                      </button>
+                                    )}
+                                    <button onClick={() => void handleAccountRuntimeAction('channels.start', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.startAccount', 'Start account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-success/20 text-aegis-success disabled:opacity-50">
+                                      {accountActionBusy === `channels.start:${runtimeBusyPrefix}` ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                                    </button>
+                                    <button onClick={() => void handleAccountRuntimeAction('channels.stop', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.stopAccount', 'Stop account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-border text-aegis-text-muted disabled:opacity-50">
+                                      {accountActionBusy === `channels.stop:${runtimeBusyPrefix}` ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
+                                    </button>
+                                    {(runtime?.linked || linkMode !== 'none') && (
+                                      <button onClick={() => void handleAccountRuntimeAction('channels.logout', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.logoutAccount', 'Log out account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-warning/20 text-aegis-warning disabled:opacity-50">
+                                        {accountActionBusy === `channels.logout:${runtimeBusyPrefix}` ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />}
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => setEditingAccount({ mode: 'edit', group, account })}
                                       disabled={saving}
@@ -1071,14 +1062,14 @@ export function ChannelsCenterPage() {
               {t('channelsCenter.addChannels', 'Add channels')}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {addableTemplates.map((tmpl) => (
-                <button key={tmpl.id} onClick={() => handleAdd(tmpl.id)} disabled={!config || saving} className="flex items-center gap-3 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] px-3 py-2.5 text-left hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04] disabled:opacity-50">
+              {addableEntries.map((entry) => (
+                <button key={entry.id} onClick={() => handleAdd(entry)} disabled={!config || saving} className="flex items-center gap-3 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] px-3 py-2.5 text-left hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04] disabled:opacity-50">
                   <div className="w-8 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] flex items-center justify-center text-[10px] font-bold text-aegis-text-muted">
-                    {channelIcon(tmpl.id)}
+                    {channelIcon(entry.id)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold text-aegis-text">{channelName(t, tmpl.id)}</div>
-                    <div className="text-[10px] text-aegis-text-dim truncate">{tmpl.supportsMultiAccount ? t('channelsCenter.multiAccount', 'Multi-account') : t('channelsCenter.singleAccount', 'Single account')}</div>
+                    <div className="text-[13px] font-bold text-aegis-text">{channelName(t, entry.id)}</div>
+                    <div className="text-[10px] text-aegis-text-dim truncate">{entry.installed ? t('channelsCenter.installed', 'Installed') : t('channelsCenter.installable', 'Installable')} · {entry.origin}</div>
                   </div>
                   <Plus size={14} className="text-aegis-primary" />
                 </button>
@@ -1098,6 +1089,16 @@ export function ChannelsCenterPage() {
           onClose={() => setEditingAccount(null)}
           onSave={(accountId, accountConfig) => { void handleSaveAccount(accountId, accountConfig); }}
           onDelete={(account) => handleDeleteAccount(editingAccount.group, account)}
+        />
+      )}
+      {qrTarget?.channelId === 'whatsapp' && (
+        <ChannelQrLoginDialog
+          accountId={qrTarget.accountId}
+          onClose={() => setQrTarget(null)}
+          onConnected={() => {
+            void loadOfficialState(true, qrTarget.channelId);
+            scheduleGatewayRefresh();
+          }}
         />
       )}
     </PageTransition>

@@ -1,18 +1,35 @@
-const fs = require('fs');
-const path = require('path');
-const { pathToFileURL } = require('url');
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const templatesPath = path.join(repoRoot, 'src', 'pages', 'ConfigManager', 'providerTemplates.ts');
 const outputPath = path.join(repoRoot, 'src', 'generated', 'providerCatalog.generated.ts');
 const mediaOutputPath = path.join(repoRoot, 'src', 'generated', 'mediaCatalog.generated.ts');
 const runIfMissingOnly = process.argv.includes('--if-missing');
+const allowTemplateFallback = process.argv.includes('--allow-template-fallback');
+
+function resolveOpenClawBin() {
+  if (process.env.OPENCLAW_BIN) return process.env.OPENCLAW_BIN;
+  const executable = process.platform === 'win32' ? 'openclaw.cmd' : 'openclaw';
+  const candidates = String(process.env.PATH || '')
+    .split(path.delimiter)
+    .filter((directory) => directory && !directory.replaceAll('\\', '/').includes('/node_modules/.bin'))
+    .map((directory) => path.join(directory, executable));
+  return candidates.find((candidate) => fs.existsSync(candidate)) || executable;
+}
+
+const openclawBin = resolveOpenClawBin();
 
 const bundledOpenClawRoot = (() => {
   const candidates = [
+    process.env.OPENCLAW_PACKAGE_ROOT,
     path.join(repoRoot, 'resources', `node-${process.arch}`, 'node_modules', 'openclaw'),
     path.join(repoRoot, 'resources', 'node', 'node_modules', 'openclaw'),
-  ];
+  ].filter(Boolean);
   return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'package.json'))) || null;
 })();
 
@@ -112,6 +129,60 @@ function normalizeInput(input) {
 function getSupportsImage(input) {
   const normalizedInput = normalizeInput(input);
   return normalizedInput ? normalizedInput.includes('image') : undefined;
+}
+
+function loadOfficialCliCatalog() {
+  const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'junqi-provider-catalog-'));
+  const isolatedConfig = path.join(isolatedRoot, 'openclaw.json');
+  fs.writeFileSync(isolatedConfig, '{}', 'utf8');
+  try {
+    const raw = execFileSync(openclawBin, ['models', 'list', '--all', '--json'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 60_000,
+      shell: process.platform === 'win32',
+      env: {
+        ...process.env,
+        OPENCLAW_CONFIG_PATH: isolatedConfig,
+        OPENCLAW_STATE_DIR: path.join(isolatedRoot, 'state'),
+        OPENCLAW_NO_RESPAWN: '1',
+      },
+    });
+    const payload = JSON.parse(raw.slice(raw.indexOf('{')));
+    if (!Array.isArray(payload.models) || payload.models.length === 0) {
+      throw new Error('OpenClaw returned an empty model catalog');
+    }
+    const version = execFileSync(openclawBin, ['--version'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15_000,
+      shell: process.platform === 'win32',
+    }).trim();
+    const byProvider = {};
+    for (const model of payload.models) {
+      const key = String(model?.key || '').trim();
+      const slash = key.indexOf('/');
+      if (slash <= 0) continue;
+      const providerId = normalizeProviderId(key.slice(0, slash));
+      const normalizedId = normalizeModelId(providerId, key);
+      if (!normalizedId) continue;
+      (byProvider[providerId] ||= []).push({
+        id: normalizedId,
+        suggestedAlias: typeof model.name === 'string' ? model.name : undefined,
+        supportsImage: String(model.input || '').toLowerCase().includes('image'),
+      });
+    }
+    return { version, providers: byProvider };
+  } catch (error) {
+    if (!allowTemplateFallback) {
+      throw new Error(
+        `Official OpenClaw catalog is required. Set OPENCLAW_BIN or use --allow-template-fallback explicitly. ${error.message}`,
+      );
+    }
+    return null;
+  } finally {
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
+  }
 }
 
 function collectModelsFromProvider(providerId, rows) {
@@ -336,12 +407,16 @@ async function generate() {
   }
 
   const fromTemplates = extractTemplates();
-  const providerIds = Object.keys(fromTemplates);
+  const officialCatalog = loadOfficialCliCatalog();
+  const sourceMap = officialCatalog
+    ? { ...fromTemplates, ...officialCatalog.providers }
+    : fromTemplates;
+  const providerIds = Object.keys(sourceMap);
   const finalMap = {};
   for (const providerId of providerIds) {
     const templateRows = fromTemplates[providerId] || [];
-    const templateModels = collectModelsFromProvider(providerId, templateRows);
-    const enriched = await enrichModelsWithExtensionMetadata(providerId, templateModels);
+    const sourceModels = collectModelsFromProvider(providerId, sourceMap[providerId] || []);
+    const enriched = await enrichModelsWithExtensionMetadata(providerId, sourceModels);
     finalMap[providerId] = mergeTemplateMetadata(providerId, enriched, templateRows);
   }
 
@@ -355,6 +430,11 @@ async function generate() {
     '  suggestedAlias?: string;',
     '  supportsImage?: boolean;',
     '};',
+    '',
+    'export const GENERATED_PROVIDER_CATALOG_META = ' + JSON.stringify({
+      source: officialCatalog ? 'openclaw-cli' : 'template-fallback',
+      version: officialCatalog?.version ?? null,
+    }, null, 2) + ' as const;',
     '',
     'export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalogModel[]> = ' +
       `${JSON.stringify(finalMap, null, 2)} as const;`,
@@ -374,9 +454,15 @@ async function generate() {
       `${JSON.stringify(videoModels, null, 2)} as const;`,
     '',
   ].join('\n');
-  fs.writeFileSync(mediaOutputPath, mediaContent, 'utf8');
+  let wroteMediaCatalog = false;
+  if (bundledOpenClawRoot || !fs.existsSync(mediaOutputPath)) {
+    fs.writeFileSync(mediaOutputPath, mediaContent, 'utf8');
+    wroteMediaCatalog = true;
+  } else {
+    console.log(`[Catalog] Preserve media catalog (OpenClaw package root unavailable): ${mediaOutputPath}`);
+  }
   console.log(`Generated: ${outputPath}`);
-  console.log(`Generated: ${mediaOutputPath}`);
+  if (wroteMediaCatalog) console.log(`Generated: ${mediaOutputPath}`);
 }
 
 generate().catch((error) => {

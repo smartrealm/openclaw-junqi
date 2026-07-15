@@ -76,8 +76,8 @@ export const CHANNEL_TEMPLATES: ChannelTemplate[] = [
 
   // ── 2. DingTalk ──
   {
-    id: 'dingtalk',
-    nameKey: 'config.channel.dingtalk',
+    id: 'dingtalk-connector',
+    nameKey: 'config.channel.dingtalk-connector',
     icon: '',
     colorClass: 'from-sky-600 to-blue-700',
     // appKey + appSecret + robotCode are handled as channel-specific fields.

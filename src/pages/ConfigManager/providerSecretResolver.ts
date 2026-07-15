@@ -135,8 +135,8 @@ export function resolveProviderSecret(
 
   return (
     readProfileSecret(profile) ??
-    readTemplateEnvSecret(config, providerId, template) ??
     readProviderConfigSecret(config, providerId) ??
+    readTemplateEnvSecret(config, providerId, template) ??
     { configured: false, source: 'none', providerId, profileKey }
   );
 }

@@ -53,6 +53,7 @@ export function buildEditableProviderModels(
   for (const [ref, entry] of orderedAgentModels) {
     const canonicalRef = normalizeModelRef(providerId, ref);
     if (!canonicalRef) continue;
+    if (stripProviderPrefix(providerId, canonicalRef) === '*') continue;
     models[canonicalRef] = { ...(models[canonicalRef] ?? {}), ...entry };
   }
 
@@ -216,6 +217,7 @@ function upsertProviderModel(params: {
   providerId: string;
   modelRef: string;
   supportsImage?: boolean;
+  providerPatch?: Partial<ModelProviderModelEntry>;
 }): GatewayRuntimeConfig {
   const providers = { ...(params.config.models?.providers ?? {}) };
   const { providerKey, matchingKeys, config: current } = mergeEquivalentProviderConfigs(
@@ -228,8 +230,9 @@ function upsertProviderModel(params: {
   const existingModel = index >= 0 ? currentModels[index] : undefined;
   const nextModel: ModelProviderModelEntry = {
     ...(existingModel ?? {}),
+    ...(params.providerPatch ?? {}),
     id: rawId,
-    name: existingModel?.name || rawId,
+    name: params.providerPatch?.name || existingModel?.name || rawId,
     ...(typeof params.supportsImage === 'boolean'
       ? { input: setImageCapability(existingModel, params.supportsImage) }
       : {}),
@@ -290,6 +293,7 @@ export function addProviderModel(params: {
 }): GatewayRuntimeConfig {
   const modelRef = normalizeModelRef(params.providerId, params.modelId);
   if (!modelRef) return params.config;
+  if (stripProviderPrefix(params.providerId, modelRef) === '*') return params.config;
   const withProviderModel = upsertProviderModel({ ...params, config: params.config, modelRef });
   const alias = params.alias?.trim();
   const next = upsertAgentModel({
@@ -317,10 +321,11 @@ export function updateProviderModel(params: {
   modelRef: string;
   alias?: string;
   supportsImage?: boolean;
+  providerPatch?: Partial<ModelProviderModelEntry>;
 }): GatewayRuntimeConfig {
   const normalizedRef = normalizeModelRef(params.providerId, params.modelRef);
   if (!normalizedRef) return params.config;
-  const withProviderModel = typeof params.supportsImage === 'boolean'
+  const withProviderModel = typeof params.supportsImage === 'boolean' || params.providerPatch
     ? upsertProviderModel({ ...params, config: params.config, modelRef: normalizedRef })
     : params.config;
   const next = upsertAgentModel({

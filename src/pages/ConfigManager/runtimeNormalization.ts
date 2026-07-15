@@ -125,6 +125,7 @@ export function normalizeModelsProvidersForRuntime(params: {
       hasExplicitModels = true;
       for (const model of models) {
           const strippedId = params.stripProviderPrefix(canonicalId, String(model?.id ?? ''));
+          if (strippedId === '*') continue;
           const generatedSupport = knownModelIds.has(strippedId)
             ? generatedRows.find(
               (row) => params.stripProviderPrefix(canonicalId, row.id) === strippedId
@@ -152,6 +153,9 @@ export function normalizeModelsProvidersForRuntime(params: {
       if (modelProvider !== canonicalId) continue;
 
       const strippedId = params.stripProviderPrefix(canonicalId, normalizedRef);
+      // `provider/*` is an agents.defaults.models allowlist entry, never a
+      // concrete row in models.providers.<provider>.models.
+      if (strippedId === '*') continue;
       if (!strippedId || normalizedModels.has(strippedId)) continue;
       const generatedSupport = generatedRows.find(
         (row) => params.stripProviderPrefix(canonicalId, row.id) === strippedId

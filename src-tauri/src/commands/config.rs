@@ -135,6 +135,7 @@ pub async fn write_config(
         "Gateway or storage maintenance is running; try saving again shortly".to_string()
     })?;
     let value = parse_openclaw_config_json(&json)?;
+    crate::commands::openclaw_provider::validate_candidate_config(&value).await?;
     let path = paths::config_path();
     write_openclaw_config_value(&path, &value)?;
     Ok("Config saved".into())

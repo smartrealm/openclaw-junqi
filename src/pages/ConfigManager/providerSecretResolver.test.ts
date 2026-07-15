@@ -74,6 +74,17 @@ test('resolveProviderSecret treats provider apiKey SecretRef objects as configur
   assert.equal(secret.value, undefined);
 });
 
+test('BUG-MP-07 explicit SecretRef takes precedence over a legacy template env value', () => {
+  const secret = resolveProviderSecret({
+    env: { vars: { OPENAI_API_KEY: 'legacy-value' } },
+    models: { providers: { openai: {
+      apiKey: { source: 'env', provider: 'system-env', id: 'OPENAI_API_KEY' },
+    } } },
+  }, 'openai', { id: 'openai', envKey: 'OPENAI_API_KEY' });
+  assert.equal(secret.source, 'provider-apiKey-secret-ref');
+  assert.equal(secret.value, undefined);
+});
+
 test('resolveProviderSecret treats any provider apiKey env refs as configured even when Desktop has no plaintext value', () => {
   const secret = resolveProviderSecret(
     {

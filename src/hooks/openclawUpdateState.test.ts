@@ -62,3 +62,30 @@ test('successful update retains the refreshed runtime status', () => {
   assert.equal(next.status?.currentVersion, '2026.7.1');
   assert.equal(next.result?.gatewayRestarted, true);
 });
+
+test('update progress remains monotonic and suppresses adjacent duplicate logs', () => {
+  let next = openclawUpdateReducer(initialOpenclawUpdateState, { type: 'updateStarted' });
+  next = openclawUpdateReducer(next, {
+    type: 'progressReceived',
+    progress: 40,
+    message: 'Checking Node.js runtime',
+  });
+  next = openclawUpdateReducer(next, {
+    type: 'progressReceived',
+    progress: 20,
+    message: 'Checking Node.js runtime',
+  });
+
+  assert.equal(next.progress, 40);
+  assert.deepEqual(next.logs, ['Checking Node.js runtime']);
+
+  for (let index = 0; index < 205; index += 1) {
+    next = openclawUpdateReducer(next, {
+      type: 'progressReceived',
+      progress: null,
+      message: `line-${index}`,
+    });
+  }
+  assert.equal(next.logs.length, 200);
+  assert.equal(next.logs[0], 'line-5');
+});

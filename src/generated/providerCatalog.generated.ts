@@ -4,35 +4,75 @@ export type GeneratedProviderCatalogModel = {
   supportsImage?: boolean;
 };
 
+export const GENERATED_PROVIDER_CATALOG_META = {
+  "source": "openclaw-cli",
+  "version": "OpenClaw 2026.7.1 (2d2ddc4)"
+} as const;
+
 export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalogModel[]> = {
   "anthropic": [
     {
-      "id": "anthropic/claude-haiku-3.5",
-      "suggestedAlias": "haiku"
+      "id": "anthropic/claude-fable-5",
+      "suggestedAlias": "Claude Fable 5"
+    },
+    {
+      "id": "anthropic/claude-haiku-4-5",
+      "suggestedAlias": "Claude Haiku 4.5"
+    },
+    {
+      "id": "anthropic/claude-haiku-4-5-20251001",
+      "suggestedAlias": "Claude Haiku 4.5"
+    },
+    {
+      "id": "anthropic/claude-mythos-5",
+      "suggestedAlias": "Claude Mythos 5"
     },
     {
       "id": "anthropic/claude-opus-4-6",
-      "suggestedAlias": "opus"
+      "suggestedAlias": "Claude Opus 4.6"
+    },
+    {
+      "id": "anthropic/claude-opus-4-7",
+      "suggestedAlias": "Claude Opus 4.7"
+    },
+    {
+      "id": "anthropic/claude-opus-4-8",
+      "suggestedAlias": "Claude Opus 4.8"
     },
     {
       "id": "anthropic/claude-sonnet-4-6",
-      "suggestedAlias": "sonnet"
+      "suggestedAlias": "Claude Sonnet 4.6"
+    },
+    {
+      "id": "anthropic/claude-sonnet-5",
+      "suggestedAlias": "Claude Sonnet 5"
     }
   ],
   "openai": [
     {
-      "id": "openai/gpt-4o",
-      "suggestedAlias": "gpt4o",
+      "id": "openai/gpt-5.5",
+      "suggestedAlias": "gpt-5.5",
       "supportsImage": true
     },
     {
-      "id": "openai/gpt-4o-mini",
-      "suggestedAlias": "gpt-mini",
+      "id": "openai/gpt-5.6",
+      "suggestedAlias": "gpt-5.6",
       "supportsImage": true
     },
     {
-      "id": "openai/gpt-5.4",
-      "suggestedAlias": "gpt-5.4"
+      "id": "openai/gpt-5.6-luna",
+      "suggestedAlias": "gpt-5.6-luna",
+      "supportsImage": true
+    },
+    {
+      "id": "openai/gpt-5.6-sol",
+      "suggestedAlias": "gpt-5.6-sol",
+      "supportsImage": true
+    },
+    {
+      "id": "openai/gpt-5.6-terra",
+      "suggestedAlias": "gpt-5.6-terra",
+      "supportsImage": true
     }
   ],
   "google": [
@@ -138,6 +178,11 @@ export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalog
       "supportsImage": true
     },
     {
+      "id": "xai/grok-4.3",
+      "suggestedAlias": "grok-4.3",
+      "supportsImage": true
+    },
+    {
       "id": "xai/grok-code-fast-1",
       "suggestedAlias": "grok-code"
     }
@@ -145,34 +190,38 @@ export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalog
   "mistral": [
     {
       "id": "mistral/codestral-latest",
-      "suggestedAlias": "codestral"
+      "suggestedAlias": "Codestral (latest)"
     },
     {
       "id": "mistral/devstral-medium-latest",
-      "suggestedAlias": "devstral"
+      "suggestedAlias": "Devstral 2 (latest)"
     },
     {
       "id": "mistral/magistral-small",
-      "suggestedAlias": "magistral"
+      "suggestedAlias": "Magistral Small"
     },
     {
       "id": "mistral/mistral-large-latest",
-      "suggestedAlias": "mistral-large",
+      "suggestedAlias": "Mistral Large (latest)",
       "supportsImage": true
     },
     {
       "id": "mistral/mistral-medium-2508",
-      "suggestedAlias": "mistral-medium",
+      "suggestedAlias": "Mistral Medium 3.1",
       "supportsImage": true
     },
     {
+      "id": "mistral/mistral-medium-3-5",
+      "suggestedAlias": "Mistral Medium 3.5"
+    },
+    {
       "id": "mistral/mistral-small-latest",
-      "suggestedAlias": "mistral-small",
+      "suggestedAlias": "Mistral Small (latest)",
       "supportsImage": true
     },
     {
       "id": "mistral/pixtral-large-latest",
-      "suggestedAlias": "pixtral-large",
+      "suggestedAlias": "Pixtral Large (latest)",
       "supportsImage": true
     }
   ],
@@ -206,39 +255,24 @@ export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalog
   ],
   "together": [
     {
-      "id": "together/deepseek-ai/DeepSeek-R1",
-      "suggestedAlias": "ds-r1"
-    },
-    {
-      "id": "together/deepseek-ai/DeepSeek-V3.1",
-      "suggestedAlias": "ds-v3.1"
+      "id": "together/deepseek-ai/DeepSeek-V4-Pro",
+      "suggestedAlias": "DeepSeek V4 Pro"
     },
     {
       "id": "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
-      "suggestedAlias": "llama-3.3"
+      "suggestedAlias": "Llama 3.3 70B Instruct Turbo"
     },
     {
-      "id": "together/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-      "suggestedAlias": "llama-mav",
-      "supportsImage": true
+      "id": "together/moonshotai/Kimi-K2.6",
+      "suggestedAlias": "Kimi K2.6 FP4"
     },
     {
-      "id": "together/meta-llama/Llama-4-Scout-17B-16E-Instruct",
-      "suggestedAlias": "llama-scout",
-      "supportsImage": true
+      "id": "together/Qwen/Qwen2.5-7B-Instruct-Turbo",
+      "suggestedAlias": "Qwen2.5 7B Instruct Turbo"
     },
     {
-      "id": "together/moonshotai/Kimi-K2-Instruct-0905",
-      "suggestedAlias": "kimi-k2"
-    },
-    {
-      "id": "together/moonshotai/Kimi-K2.5",
-      "suggestedAlias": "kimi-k2.5",
-      "supportsImage": true
-    },
-    {
-      "id": "together/zai-org/GLM-4.7",
-      "suggestedAlias": "glm-4.7"
+      "id": "together/zai-org/GLM-5.1",
+      "suggestedAlias": "GLM 5.1 FP4"
     }
   ],
   "kilocode": [
@@ -321,65 +355,89 @@ export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalog
   "nvidia": [
     {
       "id": "nvidia/minimaxai/minimax-m2.5",
-      "suggestedAlias": "minimax-m2.5"
+      "suggestedAlias": "MiniMax M2.5"
+    },
+    {
+      "id": "nvidia/minimaxai/minimax-m2.7",
+      "suggestedAlias": "Minimax M2.7"
     },
     {
       "id": "nvidia/moonshotai/kimi-k2.5",
-      "suggestedAlias": "kimi-k2.5"
+      "suggestedAlias": "Kimi K2.5"
     },
     {
-      "id": "nvidia/nvidia/nemotron-3-super-120b-a12b",
-      "suggestedAlias": "nemotron-super"
+      "id": "nvidia/nemotron-3-super-120b-a12b",
+      "suggestedAlias": "NVIDIA Nemotron 3 Super 120B"
+    },
+    {
+      "id": "nvidia/nemotron-3-ultra-550b-a55b",
+      "suggestedAlias": "NVIDIA Nemotron 3 Ultra 550B"
+    },
+    {
+      "id": "nvidia/z-ai/glm-5.1",
+      "suggestedAlias": "GLM 5.1"
     },
     {
       "id": "nvidia/z-ai/glm5",
-      "suggestedAlias": "glm-5"
+      "suggestedAlias": "GLM-5"
     }
   ],
   "github-copilot": [
     {
-      "id": "github-copilot/claude-sonnet-4.5",
-      "suggestedAlias": "sonnet-4.5"
+      "id": "github-copilot/claude-opus-4.6",
+      "suggestedAlias": "Claude Opus 4.6"
+    },
+    {
+      "id": "github-copilot/claude-opus-4.7",
+      "suggestedAlias": "Claude Opus 4.7"
+    },
+    {
+      "id": "github-copilot/claude-opus-4.8",
+      "suggestedAlias": "Claude Opus 4.8"
     },
     {
       "id": "github-copilot/claude-sonnet-4.6",
-      "suggestedAlias": "sonnet-4.6"
+      "suggestedAlias": "Claude Sonnet 4.6"
     },
     {
-      "id": "github-copilot/gpt-4.1",
-      "suggestedAlias": "gpt-4.1"
+      "id": "github-copilot/gemini-2.5-pro",
+      "suggestedAlias": "Gemini 2.5 Pro"
     },
     {
-      "id": "github-copilot/gpt-4.1-mini",
-      "suggestedAlias": "gpt-4.1-mini"
+      "id": "github-copilot/gemini-3-flash",
+      "suggestedAlias": "Gemini 3 Flash"
     },
     {
-      "id": "github-copilot/gpt-4.1-nano",
-      "suggestedAlias": "gpt-4.1-nano"
+      "id": "github-copilot/gemini-3.1-pro",
+      "suggestedAlias": "Gemini 3.1 Pro"
     },
     {
-      "id": "github-copilot/gpt-4o",
-      "suggestedAlias": "gpt-4o"
+      "id": "github-copilot/goldeneye",
+      "suggestedAlias": "Goldeneye"
     },
     {
-      "id": "github-copilot/gpt-5.2-codex",
-      "suggestedAlias": "gpt-5.2-codex"
+      "id": "github-copilot/gpt-5.3-codex",
+      "suggestedAlias": "GPT-5.3-Codex"
     },
     {
       "id": "github-copilot/gpt-5.4",
-      "suggestedAlias": "gpt-5.4"
+      "suggestedAlias": "GPT-5.4"
     },
     {
-      "id": "github-copilot/o1",
-      "suggestedAlias": "o1"
+      "id": "github-copilot/gpt-5.4-mini",
+      "suggestedAlias": "GPT-5.4 mini"
     },
     {
-      "id": "github-copilot/o1-mini",
-      "suggestedAlias": "o1-mini"
+      "id": "github-copilot/gpt-5.4-nano",
+      "suggestedAlias": "GPT-5.4 nano"
     },
     {
-      "id": "github-copilot/o3-mini",
-      "suggestedAlias": "o3-mini"
+      "id": "github-copilot/gpt-5.5",
+      "suggestedAlias": "GPT-5.5"
+    },
+    {
+      "id": "github-copilot/raptor-mini",
+      "suggestedAlias": "Raptor mini"
     }
   ],
   "minimax": [
@@ -394,26 +452,13 @@ export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalog
   ],
   "moonshot": [
     {
-      "id": "moonshot/kimi-k2-thinking",
-      "suggestedAlias": "kimi-thinking"
-    },
-    {
-      "id": "moonshot/kimi-k2-thinking-turbo",
-      "suggestedAlias": "kimi-think-t"
-    },
-    {
-      "id": "moonshot/kimi-k2-turbo",
-      "suggestedAlias": "kimi-turbo"
-    },
-    {
-      "id": "moonshot/kimi-k2.5",
-      "suggestedAlias": "kimi-k2.5",
-      "supportsImage": true
-    },
-    {
       "id": "moonshot/kimi-k2.6",
-      "suggestedAlias": "kimi-k2.6",
+      "suggestedAlias": "Kimi K2.6",
       "supportsImage": true
+    },
+    {
+      "id": "moonshot/kimi-k2.7-code",
+      "suggestedAlias": "Kimi K2.7 Code"
     }
   ],
   "zai": [
@@ -476,11 +521,11 @@ export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalog
   "deepseek": [
     {
       "id": "deepseek/deepseek-chat",
-      "suggestedAlias": "deepseek-chat"
+      "suggestedAlias": "DeepSeek Chat"
     },
     {
       "id": "deepseek/deepseek-reasoner",
-      "suggestedAlias": "deepseek-r"
+      "suggestedAlias": "DeepSeek Reasoner"
     }
   ],
   "siliconflow": [],
@@ -539,41 +584,41 @@ export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalog
   "volcengine": [
     {
       "id": "volcengine/deepseek-v3-2-251201",
-      "suggestedAlias": "deepseek-v3.2",
+      "suggestedAlias": "DeepSeek V3.2",
       "supportsImage": true
     },
     {
       "id": "volcengine/doubao-seed-1-8-251228",
-      "suggestedAlias": "doubao-1.8",
+      "suggestedAlias": "Doubao Seed 1.8",
       "supportsImage": true
     },
     {
       "id": "volcengine/doubao-seed-code-preview-251028",
-      "suggestedAlias": "doubao-code",
+      "suggestedAlias": "doubao-seed-code-preview-251028",
       "supportsImage": true
     },
     {
-      "id": "volcengine/moonshotai/kimi-k2.5",
-      "suggestedAlias": "kimi-k2.5"
+      "id": "volcengine/glm-4-7-251222",
+      "suggestedAlias": "GLM 4.7"
     },
     {
-      "id": "volcengine/zai-org/glm-4.7",
-      "suggestedAlias": "glm-4.7"
+      "id": "volcengine/kimi-k2-5-260127",
+      "suggestedAlias": "Kimi K2.5"
     }
   ],
   "xiaomi": [
     {
       "id": "xiaomi/mimo-v2-flash",
-      "suggestedAlias": "mimo-flash"
+      "suggestedAlias": "Xiaomi MiMo V2 Flash"
     },
     {
       "id": "xiaomi/mimo-v2-omni",
-      "suggestedAlias": "mimo-omni",
+      "suggestedAlias": "Xiaomi MiMo V2 Omni",
       "supportsImage": true
     },
     {
       "id": "xiaomi/mimo-v2-pro",
-      "suggestedAlias": "mimo-pro"
+      "suggestedAlias": "Xiaomi MiMo V2 Pro"
     }
   ],
   "kimi-coding": [
@@ -597,5 +642,145 @@ export const GENERATED_PROVIDER_CATALOG: Record<string, GeneratedProviderCatalog
     }
   ],
   "vllm": [],
-  "custom": []
+  "custom": [],
+  "byteplus": [
+    {
+      "id": "byteplus/glm-4-7-251222",
+      "suggestedAlias": "GLM 4.7"
+    },
+    {
+      "id": "byteplus/kimi-k2-5-260127",
+      "suggestedAlias": "Kimi K2.5"
+    },
+    {
+      "id": "byteplus/seed-1-8-251228",
+      "suggestedAlias": "Seed 1.8"
+    }
+  ],
+  "byteplus-plan": [
+    {
+      "id": "byteplus-plan/ark-code-latest",
+      "suggestedAlias": "Ark Coding Plan"
+    },
+    {
+      "id": "byteplus-plan/doubao-seed-code",
+      "suggestedAlias": "Doubao Seed Code"
+    },
+    {
+      "id": "byteplus-plan/glm-4.7",
+      "suggestedAlias": "GLM 4.7 Coding"
+    },
+    {
+      "id": "byteplus-plan/kimi-k2-thinking",
+      "suggestedAlias": "Kimi K2 Thinking"
+    },
+    {
+      "id": "byteplus-plan/kimi-k2.5",
+      "suggestedAlias": "Kimi K2.5 Coding"
+    }
+  ],
+  "claude-cli": [
+    {
+      "id": "claude-cli/claude-opus-4-6",
+      "suggestedAlias": "Claude Opus 4.6 (Claude CLI)"
+    },
+    {
+      "id": "claude-cli/claude-opus-4-7",
+      "suggestedAlias": "Claude Opus 4.7 (Claude CLI)"
+    },
+    {
+      "id": "claude-cli/claude-opus-4-8",
+      "suggestedAlias": "Claude Opus 4.8 (Claude CLI)"
+    },
+    {
+      "id": "claude-cli/claude-sonnet-4-6",
+      "suggestedAlias": "Claude Sonnet 4.6 (Claude CLI)"
+    },
+    {
+      "id": "claude-cli/claude-sonnet-5",
+      "suggestedAlias": "Claude Sonnet 5 (Claude CLI)"
+    }
+  ],
+  "cohere": [
+    {
+      "id": "cohere/command-a-03-2025",
+      "suggestedAlias": "Command A"
+    }
+  ],
+  "meta": [
+    {
+      "id": "meta/muse-spark-1.1",
+      "suggestedAlias": "Muse Spark 1.1"
+    }
+  ],
+  "novita": [
+    {
+      "id": "novita/deepseek/deepseek-r1-0528",
+      "suggestedAlias": "DeepSeek R1 0528"
+    },
+    {
+      "id": "novita/deepseek/deepseek-v3-0324",
+      "suggestedAlias": "DeepSeek V3 0324"
+    },
+    {
+      "id": "novita/minimax/minimax-m2.7",
+      "suggestedAlias": "MiniMax M2.7"
+    },
+    {
+      "id": "novita/moonshotai/kimi-k2.5",
+      "suggestedAlias": "Kimi K2.5"
+    },
+    {
+      "id": "novita/qwen/qwen3-235b-a22b-fp8",
+      "suggestedAlias": "Qwen3 235B A22B FP8"
+    },
+    {
+      "id": "novita/zai-org/glm-5",
+      "suggestedAlias": "GLM-5"
+    }
+  ],
+  "ollama-cloud": [
+    {
+      "id": "ollama-cloud/glm-5.1:cloud",
+      "suggestedAlias": "glm-5.1:cloud"
+    },
+    {
+      "id": "ollama-cloud/glm-5.2:cloud",
+      "suggestedAlias": "glm-5.2:cloud"
+    },
+    {
+      "id": "ollama-cloud/kimi-k2.5:cloud",
+      "suggestedAlias": "kimi-k2.5:cloud"
+    },
+    {
+      "id": "ollama-cloud/minimax-m2.7:cloud",
+      "suggestedAlias": "minimax-m2.7:cloud"
+    }
+  ],
+  "volcengine-plan": [
+    {
+      "id": "volcengine-plan/ark-code-latest",
+      "suggestedAlias": "Ark Coding Plan"
+    },
+    {
+      "id": "volcengine-plan/doubao-seed-code",
+      "suggestedAlias": "Doubao Seed Code"
+    },
+    {
+      "id": "volcengine-plan/doubao-seed-code-preview-251028",
+      "suggestedAlias": "Doubao Seed Code Preview"
+    },
+    {
+      "id": "volcengine-plan/glm-4.7",
+      "suggestedAlias": "GLM 4.7 Coding"
+    },
+    {
+      "id": "volcengine-plan/kimi-k2-thinking",
+      "suggestedAlias": "Kimi K2 Thinking"
+    },
+    {
+      "id": "volcengine-plan/kimi-k2.5",
+      "suggestedAlias": "Kimi K2.5 Coding"
+    }
+  ]
 } as const;

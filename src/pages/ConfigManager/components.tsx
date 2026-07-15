@@ -19,9 +19,10 @@ interface MaskedInputProps {
   placeholder?: string;
   className?: string;
   id?: string;
+  disabled?: boolean;
 }
 
-export function MaskedInput({ value, onChange, placeholder, className, id }: MaskedInputProps) {
+export function MaskedInput({ value, onChange, placeholder, className, id, disabled = false }: MaskedInputProps) {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
 
@@ -31,12 +32,14 @@ export function MaskedInput({ value, onChange, placeholder, className, id }: Mas
         id={id}
         type={visible ? 'text' : 'password'}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={clsx(
           'w-full bg-aegis-surface border border-aegis-border rounded-lg px-3 py-2 pr-20',
           'text-aegis-text text-sm font-mono placeholder:text-aegis-text-muted',
           'outline-none focus:border-aegis-primary transition-colors duration-200',
+          'disabled:cursor-not-allowed disabled:opacity-50',
           className
         )}
         spellCheck={false}
@@ -44,12 +47,14 @@ export function MaskedInput({ value, onChange, placeholder, className, id }: Mas
       />
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setVisible((v) => !v)}
         className={clsx(
           'absolute right-2 top-1/2 -translate-y-1/2',
           'flex items-center gap-1 px-2 py-1 rounded text-xs font-bold',
           'bg-aegis-primary/10 text-aegis-primary border border-aegis-primary/20',
-          'hover:bg-aegis-primary/20 transition-colors duration-200'
+          'hover:bg-aegis-primary/20 transition-colors duration-200',
+          'disabled:cursor-not-allowed disabled:opacity-50'
         )}
       >
         {visible ? (

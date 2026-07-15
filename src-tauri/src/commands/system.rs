@@ -1,3 +1,4 @@
+use crate::commands::node_runtime::{NodeRequirementSource, NodeRuntimeRequirement};
 use crate::paths;
 use crate::platform;
 use serde::{Deserialize, Serialize};
@@ -54,8 +55,6 @@ pub struct OpenclawStatus {
 struct OpenclawBinarySelection {
     path: String,
 }
-
-const MIN_NODE_VERSION: (u32, u32, u32) = (24, 14, 0);
 
 async fn get_node_version(node_path: &str) -> Option<String> {
     let mut command = tokio::process::Command::new(node_path);
@@ -115,20 +114,6 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
     })
 }
 
-fn version_meets_minimum(version: &str) -> bool {
-    let parts: Vec<u32> = version
-        .trim_start_matches('v')
-        .split('.')
-        .filter_map(|s| s.parse().ok())
-        .collect();
-    if parts.len() < 3 {
-        return false;
-    }
-    let (major, minor, patch) = (parts[0], parts[1], parts[2]);
-    let (req_major, req_minor, req_patch) = MIN_NODE_VERSION;
-    (major, minor, patch) >= (req_major, req_minor, req_patch)
-}
-
 #[tauri::command]
 pub async fn get_platform_info() -> Result<PlatformInfo, String> {
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
@@ -144,12 +129,19 @@ pub async fn get_platform_info() -> Result<PlatformInfo, String> {
 
 #[tauri::command]
 pub async fn check_node() -> Result<NodeStatus, String> {
+    let requirement = installed_openclaw_node_requirement()?;
+    check_node_for_requirement(&requirement).await
+}
+
+pub(crate) async fn check_node_for_requirement(
+    requirement: &NodeRuntimeRequirement,
+) -> Result<NodeStatus, String> {
     // Check local node first
     let local = paths::local_node_path();
     if local.exists() {
         let path_str = local.to_string_lossy().to_string();
         let version = get_node_version(&path_str).await;
-        let meets_min = version.as_ref().map_or(false, |v| version_meets_minimum(v));
+        let meets_min = version.as_ref().is_some_and(|v| requirement.supports(v));
         if meets_min {
             return Ok(NodeStatus {
                 available: true,
@@ -158,14 +150,21 @@ pub async fn check_node() -> Result<NodeStatus, String> {
                 source: Some("local".into()),
             });
         }
-        // Local node exists but is too old — fall through to system check,
-        // and if that also fails, report unavailable so setup re-installs.
+        // The managed directory is first on every OpenClaw child PATH. Do not
+        // report a compatible system Node while an incompatible managed Node
+        // would still shadow it at execution time; force managed repair.
+        return Ok(NodeStatus {
+            available: false,
+            version,
+            path: Some(path_str),
+            source: Some("local".into()),
+        });
     }
 
     // Check system node
     let system_node = platform::bin_name("node");
     if let Some(version) = get_node_version(&system_node).await {
-        if version_meets_minimum(&version) {
+        if requirement.supports(&version) {
             return Ok(NodeStatus {
                 available: true,
                 version: Some(version),
@@ -173,6 +172,12 @@ pub async fn check_node() -> Result<NodeStatus, String> {
                 source: Some("system".into()),
             });
         }
+        return Ok(NodeStatus {
+            available: false,
+            version: Some(version),
+            path: Some(system_node),
+            source: Some("system".into()),
+        });
     }
 
     Ok(NodeStatus {
@@ -525,7 +530,7 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
 }
 
 pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) -> OpenclawStatus {
-    let path_string = path.to_string_lossy().to_string();
+    let path_string = path_for_display(path);
     let package_version = read_openclaw_pkg_version(path);
     let cli_version = read_openclaw_cli_version(path);
     let package_valid = package_version.is_some();
@@ -555,16 +560,52 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
     }
 }
 
-fn read_openclaw_pkg_version_file(package_json: &Path) -> Option<String> {
+fn path_text_for_display(raw: &str, windows: bool) -> String {
+    if !windows {
+        return raw.to_string();
+    }
+    if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{}", rest);
+    }
+    raw.strip_prefix(r"\\?\").unwrap_or(raw).to_string()
+}
+
+pub(crate) fn display_path_text(raw: &str) -> String {
+    path_text_for_display(raw, cfg!(windows))
+}
+
+pub(crate) fn path_for_display(path: &Path) -> String {
+    display_path_text(&path.to_string_lossy())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OpenclawPackageMetadata {
+    version: String,
+    node_requirement: Option<String>,
+}
+
+fn read_openclaw_package_metadata_file(package_json: &Path) -> Option<OpenclawPackageMetadata> {
     let raw = std::fs::read_to_string(package_json).ok()?;
     let value = serde_json::from_str::<serde_json::Value>(&raw).ok()?;
     if value.get("name").and_then(|name| name.as_str()) != Some("openclaw") {
         return None;
     }
-    value
+    let version = value
         .get("version")
         .and_then(|version| version.as_str())
-        .map(|version| version.to_string())
+        .filter(|version| !version.trim().is_empty())?
+        .to_string();
+    let node_requirement = value
+        .get("engines")
+        .and_then(|engines| engines.get("node"))
+        .and_then(|node| node.as_str())
+        .map(str::trim)
+        .filter(|requirement| !requirement.is_empty())
+        .map(str::to_string);
+    Some(OpenclawPackageMetadata {
+        version,
+        node_requirement,
+    })
 }
 
 fn parse_openclaw_version(output: &str) -> Option<String> {
@@ -606,21 +647,38 @@ fn read_openclaw_cli_version(bin: &Path) -> Option<String> {
 /// Resolve the `openclaw` package version from common npm layouts:
 /// symlinked Unix bins resolve inside node_modules/openclaw, while Windows
 /// shims usually sit beside node_modules/openclaw/package.json.
-fn read_openclaw_pkg_version(bin: &Path) -> Option<String> {
+fn read_openclaw_package_metadata(bin: &Path) -> Option<OpenclawPackageMetadata> {
     let real = std::fs::canonicalize(bin).ok()?;
     let mut dir = real.parent();
     for _ in 0..6 {
         let d = dir?;
-        if let Some(version) = read_openclaw_pkg_version_file(&d.join("package.json")) {
-            return Some(version);
+        if let Some(metadata) = read_openclaw_package_metadata_file(&d.join("package.json")) {
+            return Some(metadata);
         }
         let nested_package_json = d.join("node_modules").join("openclaw").join("package.json");
-        if let Some(version) = read_openclaw_pkg_version_file(&nested_package_json) {
-            return Some(version);
+        if let Some(metadata) = read_openclaw_package_metadata_file(&nested_package_json) {
+            return Some(metadata);
         }
         dir = d.parent();
     }
     None
+}
+
+fn read_openclaw_pkg_version(bin: &Path) -> Option<String> {
+    read_openclaw_package_metadata(bin).map(|metadata| metadata.version)
+}
+
+pub(crate) fn installed_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
+    let Some(binary) = resolve_openclaw_binary() else {
+        return Ok(NodeRuntimeRequirement::fallback());
+    };
+    let Some(metadata) = read_openclaw_package_metadata(&binary) else {
+        return Ok(NodeRuntimeRequirement::fallback());
+    };
+    let Some(expression) = metadata.node_requirement else {
+        return Ok(NodeRuntimeRequirement::fallback());
+    };
+    NodeRuntimeRequirement::parse(expression, NodeRequirementSource::InstalledPackage)
 }
 
 async fn get_git_version(git_path: &str) -> Option<String> {
@@ -874,7 +932,45 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 
 #[cfg(test)]
 mod tests {
-    use super::parse_openclaw_version;
+    use super::{parse_openclaw_version, path_text_for_display, read_openclaw_package_metadata};
+
+    #[test]
+    fn package_metadata_reads_version_and_node_engine_from_windows_shim_layout() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-openclaw-metadata-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let package = root.join("node_modules").join("openclaw");
+        std::fs::create_dir_all(&package).unwrap();
+        let shim = root.join("openclaw.cmd");
+        std::fs::write(&shim, "@echo off").unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"name":"openclaw","version":"2026.7.1","engines":{"node":">=24.15.0 <25"}}"#,
+        )
+        .unwrap();
+
+        let metadata = read_openclaw_package_metadata(&shim).unwrap();
+        assert_eq!(metadata.version, "2026.7.1");
+        assert_eq!(metadata.node_requirement.as_deref(), Some(">=24.15.0 <25"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn windows_display_paths_hide_verbatim_prefixes() {
+        assert_eq!(
+            path_text_for_display(r"\\?\C:\Users\Wang\AppData\Roaming\npm\openclaw.cmd", true),
+            r"C:\Users\Wang\AppData\Roaming\npm\openclaw.cmd"
+        );
+        assert_eq!(
+            path_text_for_display(r"\\?\UNC\server\share\openclaw.cmd", true),
+            r"\\server\share\openclaw.cmd"
+        );
+    }
 
     #[test]
     fn parse_openclaw_version_accepts_plain_cli_output() {

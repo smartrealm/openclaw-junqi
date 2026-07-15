@@ -1,8 +1,17 @@
+use crate::commands::git_runtime::{
+    select_managed_git_artifact, GitForWindowsRelease, ManagedGitArtifact,
+    GIT_FOR_WINDOWS_LATEST_RELEASE,
+};
+use crate::commands::node_runtime::{
+    current_platform_artifact, select_preferred_release, NodeDistributionRelease,
+    NodeRequirementSource, NodeRuntimeRequirement,
+};
 use crate::commands::npm_registry;
 use crate::commands::process_control::terminate_process_tree;
 use crate::commands::setup_progress::{emit, emit_keyed};
 use crate::paths;
 use crate::platform;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -10,6 +19,11 @@ use std::sync::{
 };
 
 static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+static NODE_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+static GIT_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+const NODE_INDEX_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(12);
+const OFFICIAL_NODE_INDEX: &str = "https://nodejs.org/dist/index.json";
+const CHINA_NODE_INDEX: &str = "https://npmmirror.com/mirrors/node/index.json";
 
 struct TemporaryDirectory(PathBuf);
 
@@ -17,6 +31,49 @@ impl Drop for TemporaryDirectory {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+fn runtime_binary(root: &Path, tool: &str) -> PathBuf {
+    match (tool, cfg!(windows)) {
+        ("node", true) => root.join("node.exe"),
+        ("node", false) => root.join("bin").join("node"),
+        ("git", true) => root.join("cmd").join("git.exe"),
+        ("git", false) => root.join("bin").join("git"),
+        _ => root.join(tool),
+    }
+}
+
+fn staged_npm_cli(root: &Path) -> PathBuf {
+    let npm_root = if cfg!(windows) {
+        root.join("node_modules")
+    } else {
+        root.join("lib").join("node_modules")
+    };
+    npm_root.join("npm").join("bin").join("npm-cli.js")
+}
+
+fn activate_staged_runtime(staging: &Path, target: &Path, name: &str) -> Result<(), String> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("Managed {name} target has no parent directory"))?;
+    let backup = parent.join(format!(".{name}-backup-{}", uuid::Uuid::new_v4()));
+
+    if target.exists() {
+        std::fs::rename(target, &backup)
+            .map_err(|error| format!("Failed to stage existing managed {name}: {error}"))?;
+    }
+    if let Err(error) = std::fs::rename(staging, target) {
+        if backup.exists() {
+            if let Err(rollback_error) = std::fs::rename(&backup, target) {
+                return Err(format!(
+                    "Failed to activate managed {name} update: {error}; rollback also failed: {rollback_error}"
+                ));
+            }
+        }
+        return Err(format!("Failed to activate managed {name} update: {error}"));
+    }
+    let _ = std::fs::remove_dir_all(backup);
+    Ok(())
 }
 
 // ─── Platform helpers ──────────────────────────────────────────────────────────
@@ -79,59 +136,32 @@ pub fn find_git_in_default_paths() -> Option<PathBuf> {
 
 // ─── Download sources ──────────────────────────────────────────────────────────
 
-const NODE_VERSION: &str = "24.14.0";
-const GIT_WIN_VERSION: &str = "2.47.1";
-
-fn node_filename() -> String {
+fn node_filename(version: &str) -> String {
     let arch = if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
         "x64"
     };
     if cfg!(windows) {
-        format!("node-v{}-win-{}.zip", NODE_VERSION, arch)
+        format!("node-v{}-win-{}.zip", version, arch)
     } else if cfg!(target_os = "macos") {
-        format!("node-v{}-darwin-{}.tar.gz", NODE_VERSION, arch)
+        format!("node-v{}-darwin-{}.tar.gz", version, arch)
     } else {
-        format!("node-v{}-linux-{}.tar.gz", NODE_VERSION, arch)
+        format!("node-v{}-linux-{}.tar.gz", version, arch)
     }
 }
 
 /// (url, display_label) pairs — CN mirror first, official fallback.
-fn node_sources() -> Vec<(String, &'static str)> {
-    let f = node_filename();
+fn node_sources(version: &str) -> Vec<(String, &'static str)> {
+    let f = node_filename(version);
     vec![
         (
-            format!("https://npmmirror.com/mirrors/node/v{}/{}", NODE_VERSION, f),
+            format!("https://npmmirror.com/mirrors/node/v{}/{}", version, f),
             "npmmirror.com（国内）",
         ),
         (
-            format!("https://nodejs.org/dist/v{}/{}", NODE_VERSION, f),
+            format!("https://nodejs.org/dist/v{}/{}", version, f),
             "nodejs.org（官方）",
-        ),
-    ]
-}
-
-fn git_win_filename() -> String {
-    format!("MinGit-{}-64-bit.zip", GIT_WIN_VERSION)
-}
-
-fn git_win_sources() -> Vec<(String, &'static str)> {
-    let f = git_win_filename();
-    vec![
-        (
-            format!(
-                "https://registry.npmmirror.com/-/binary/git-for-windows/v{}.windows.1/{}",
-                GIT_WIN_VERSION, f
-            ),
-            "npmmirror.com（国内）",
-        ),
-        (
-            format!(
-                "https://github.com/git-for-windows/git/releases/download/v{}.windows.1/{}",
-                GIT_WIN_VERSION, f
-            ),
-            "GitHub（官方）",
         ),
     ]
 }
@@ -146,6 +176,7 @@ async fn download_with_fallback(
     step: &str,
     sources: &[(String, &'static str)],
     dest: &PathBuf,
+    expected_sha256: Option<&str>,
     prog_start: f64,
     prog_end: f64,
 ) -> Result<u64, String> {
@@ -281,6 +312,20 @@ async fn download_with_fallback(
                 );
             }
             continue;
+        }
+
+        if let Some(expected) = expected_sha256 {
+            let actual = format!("{:x}", Sha256::digest(&data));
+            if !actual.eq_ignore_ascii_case(expected) {
+                last_err = format!("SHA-256 mismatch from {label}");
+                emit(
+                    app,
+                    step,
+                    &format!("{} 完整性校验失败，切换备用源...", label),
+                    prog_start,
+                );
+                continue;
+            }
         }
 
         std::fs::write(dest, &data).map_err(|e| format!("写入文件失败: {}", e))?;
@@ -879,8 +924,97 @@ async fn npm_install_with_fallback(
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
+async fn fetch_node_distribution_index(
+    client: &reqwest::Client,
+    url: &str,
+) -> Option<Vec<NodeDistributionRelease>> {
+    client
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json::<Vec<NodeDistributionRelease>>()
+        .await
+        .ok()
+}
+
+async fn resolve_managed_node_version(
+    requirement: &NodeRuntimeRequirement,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(NODE_INDEX_TIMEOUT)
+        .timeout(NODE_INDEX_TIMEOUT)
+        .user_agent("JunQi Desktop Node.js release resolver")
+        .build()
+        .map_err(|error| format!("Failed to initialize Node.js release resolver: {error}"))?;
+    let (official, mirror) = tokio::join!(
+        fetch_node_distribution_index(&client, OFFICIAL_NODE_INDEX),
+        fetch_node_distribution_index(&client, CHINA_NODE_INDEX),
+    );
+    let releases = official.as_deref().or(mirror.as_deref());
+    if let Some(version) = releases.and_then(|items| {
+        select_preferred_release(requirement, items, &current_platform_artifact())
+    }) {
+        return Ok(version);
+    }
+    Err(format!(
+        "Unable to resolve a published Node.js release for this platform that satisfies OpenClaw requirement {}",
+        requirement.expression()
+    ))
+}
+
+async fn target_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
+    let selection = npm_registry::select_npm_registry().await;
+    if let Some(expression) = selection.node_requirement {
+        return NodeRuntimeRequirement::parse(expression, NodeRequirementSource::RegistryPackage);
+    }
+    crate::commands::system::installed_openclaw_node_requirement()
+}
+
+async fn resolve_managed_git_artifact() -> Result<ManagedGitArtifact, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(NODE_INDEX_TIMEOUT)
+        .timeout(NODE_INDEX_TIMEOUT)
+        .user_agent("JunQi Desktop managed runtime resolver")
+        .build()
+        .map_err(|error| format!("Failed to initialize Git release resolver: {error}"))?;
+    let release = client
+        .get(GIT_FOR_WINDOWS_LATEST_RELEASE)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|error| format!("Failed to query Git-for-Windows releases: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("Git-for-Windows release query failed: {error}"))?
+        .json::<GitForWindowsRelease>()
+        .await
+        .map_err(|error| format!("Invalid Git-for-Windows release metadata: {error}"))?;
+    select_managed_git_artifact(&release, std::env::consts::ARCH)
+}
+
 #[tauri::command]
 pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
+    let requirement = target_openclaw_node_requirement().await?;
+    install_node_for_requirement(app, requirement, false).await
+}
+
+pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result<String, String> {
+    let requirement = crate::commands::system::installed_openclaw_node_requirement()?;
+    install_node_for_requirement(app, requirement, true).await
+}
+
+async fn install_node_for_requirement(
+    app: tauri::AppHandle,
+    requirement: NodeRuntimeRequirement,
+    force: bool,
+) -> Result<String, String> {
+    let _guard = NODE_INSTALL_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
     let step = "node";
     let node_dir = paths::runtime_dir().join("node");
     let node_bin = paths::local_node_path();
@@ -908,32 +1042,32 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
 
         let bundled_npm_available = paths::local_npm_cli_path().is_file();
         let needs_upgrade = match &version_str {
-            Some(v) => {
-                let parts: Vec<u32> = v
-                    .trim_start_matches('v')
-                    .split('.')
-                    .filter_map(|s| s.parse().ok())
-                    .collect();
-                parts.len() < 3
-                    || (parts[0], parts[1], parts[2]) < (24, 14, 0)
-                    || !bundled_npm_available
-            }
+            Some(v) => !requirement.supports(v) || !bundled_npm_available,
             None => true,
         };
 
-        if !needs_upgrade {
+        if !needs_upgrade && !force {
             let ver = version_str.unwrap_or_default();
             emit_keyed(
                 &app,
                 step,
-                &format!("Node.js {} meets requirement (>= v24.14.0), skipping", ver),
+                &format!(
+                    "Node.js {} meets requirement ({}), skipping",
+                    ver,
+                    requirement.expression()
+                ),
                 "setup.node.skip",
                 1.0,
             );
             return Ok(format!("Node.js {} already installed", ver));
         }
 
-        let ver = if !bundled_npm_available {
+        let ver = if force {
+            format!(
+                "{}; user requested latest compatible release",
+                version_str.unwrap_or_else(|| "current Node.js".into())
+            )
+        } else if !bundled_npm_available {
             format!(
                 "{} with missing bundled npm",
                 version_str.unwrap_or_else(|| "unknown Node.js".into())
@@ -944,44 +1078,66 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
         emit_keyed(
             &app,
             step,
-            &format!("Detected {} below v24.14.0, cleaning up...", ver),
+            &format!(
+                "Detected {}; preparing a managed runtime that satisfies {}...",
+                ver,
+                requirement.expression()
+            ),
             "setup.node.upgrade",
             0.04,
         );
-        let _ = std::fs::remove_dir_all(&node_dir);
     }
 
     // ② Download (CN mirror first, official fallback)
+    let node_version = resolve_managed_node_version(&requirement).await?;
     emit_keyed(
         &app,
         step,
         &format!(
             "Preparing to download Node.js v{}, prefer CN mirror...",
-            NODE_VERSION
+            node_version
         ),
         "setup.node.prepareDownload",
         0.05,
     );
-    let temp_dir = paths::desktop_dir().join("tmp");
+    let temp_dir = paths::desktop_dir()
+        .join("tmp")
+        .join(format!("node-download-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
-    let archive_path = temp_dir.join(node_filename());
+    let _temp_cleanup = TemporaryDirectory(temp_dir.clone());
+    let archive_path = temp_dir.join(node_filename(&node_version));
 
-    download_with_fallback(&app, step, &node_sources(), &archive_path, 0.06, 0.60).await?;
+    download_with_fallback(
+        &app,
+        step,
+        &node_sources(&node_version),
+        &archive_path,
+        None,
+        0.06,
+        0.60,
+    )
+    .await?;
 
-    // ③ Extract
-    std::fs::create_dir_all(&node_dir).map_err(|e| format!("Failed to create node dir: {}", e))?;
+    // Extract into an isolated directory so a failed update keeps the active runtime.
+    let staging_dir = paths::runtime_dir().join(format!(".node-stage-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&staging_dir)
+        .map_err(|e| format!("Failed to create Node.js staging directory: {}", e))?;
+    let _staging_cleanup = TemporaryDirectory(staging_dir.clone());
     emit_keyed(
         &app,
         step,
-        &format!("Extracting to {}...", node_dir.display()),
+        &format!(
+            "Extracting to staging directory {}...",
+            staging_dir.display()
+        ),
         "setup.node.extract",
         0.62,
     );
 
     if cfg!(windows) {
-        extract_zip(&app, step, &archive_path, &node_dir, 0.62, 0.90)?;
+        extract_zip(&app, step, &archive_path, &staging_dir, 0.62, 0.90)?;
     } else {
-        extract_targz(&app, step, &archive_path, &node_dir, 0.62, 0.90)?;
+        extract_targz(&app, step, &archive_path, &staging_dir, 0.62, 0.90)?;
     }
 
     // ④ Cleanup
@@ -1003,7 +1159,12 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
         "setup.node.verify",
         0.96,
     );
-    let mut version_command = tokio::process::Command::new(&node_bin);
+    let staged_node = runtime_binary(&staging_dir, "node");
+    if !staged_npm_cli(&staging_dir).is_file() {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        return Err("Downloaded Node.js runtime does not contain bundled npm".into());
+    }
+    let mut version_command = tokio::process::Command::new(&staged_node);
     version_command.arg("--version");
     platform::configure_background_command(&mut version_command);
     let ver = version_command
@@ -1017,7 +1178,16 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
                 None
             }
         })
-        .unwrap_or_else(|| "unknown version".into());
+        .filter(|version| requirement.supports(version))
+        .ok_or_else(|| {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            format!(
+                "Downloaded Node.js runtime does not satisfy OpenClaw requirement {}",
+                requirement.expression()
+            )
+        })?;
+
+    activate_staged_runtime(&staging_dir, &node_dir, "node")?;
 
     emit_keyed(
         &app,
@@ -1029,8 +1199,81 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
     Ok(format!("Node.js {} installed successfully", ver))
 }
 
+/// Ensure child processes use a Node.js release accepted by OpenClaw.
+///
+/// JunQi's managed Node directory is first on the child PATH, so installing a
+/// compatible managed runtime repairs an incompatible system Node without
+/// mutating the user's global Node.js installation.
+pub(crate) async fn ensure_compatible_node_runtime(
+    app: &tauri::AppHandle,
+    context_step: &str,
+    requirement: &NodeRuntimeRequirement,
+) -> Result<crate::commands::system::NodeStatus, String> {
+    let mut node = crate::commands::system::check_node_for_requirement(requirement).await?;
+    if !node.available {
+        emit_keyed(
+            app,
+            context_step,
+            &format!(
+                "Node.js is outside OpenClaw's supported range ({} from {}); resolving a compatible managed release...",
+                requirement.expression(),
+                requirement.source().label()
+            ),
+            "setup.node.autoRepair",
+            0.1,
+        );
+        install_node_for_requirement(app.clone(), requirement.clone(), false)
+            .await
+            .map_err(|error| {
+                format!(
+                    "Unable to install a compatible Node.js runtime (required: {}): {error}",
+                    requirement.expression()
+                )
+            })?;
+        node = crate::commands::system::check_node_for_requirement(requirement).await?;
+    }
+
+    if !node.available {
+        return Err(format!(
+            "OpenClaw requires Node.js {}; JunQi could not prepare a compatible runtime",
+            requirement.expression()
+        ));
+    }
+
+    emit_keyed(
+        app,
+        context_step,
+        &format!(
+            "Node.js {} ready: {}",
+            node.version.as_deref().unwrap_or("unknown"),
+            crate::commands::system::display_path_text(node.path.as_deref().unwrap_or("node"))
+        ),
+        "setup.node.runtimeReady",
+        0.25,
+    );
+    Ok(node)
+}
+
 #[tauri::command]
 pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
+    install_git_impl(app, false).await
+}
+
+pub(crate) async fn update_managed_git_runtime(app: tauri::AppHandle) -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err(
+            "Git is managed by the operating system on macOS/Linux; use the platform package manager"
+                .into(),
+        );
+    }
+    install_git_impl(app, true).await
+}
+
+async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, String> {
+    let _guard = GIT_INSTALL_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
     let step = "git";
 
     // ① Detect
@@ -1057,7 +1300,7 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
             .filter(|output| output.status.success())
             .map(|_| PathBuf::from(&system_git))
     };
-    if let Some(git_path) = existing_git {
+    if let Some(git_path) = existing_git.filter(|_| !force) {
         let mut command = tokio::process::Command::new(&git_path);
         command.arg("--version");
         platform::configure_background_command(&mut command);
@@ -1081,27 +1324,47 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
     if cfg!(windows) {
         // ── Windows: extract managed MinGit without a wizard or console ───────
 
+        let artifact = resolve_managed_git_artifact().await?;
+
         emit(
             &app,
             step,
             &format!(
                 "Preparing managed MinGit v{} (China mirror first)...",
-                GIT_WIN_VERSION
+                artifact.version
             ),
             0.04,
         );
 
-        let temp_dir = paths::desktop_dir().join("tmp");
+        let temp_dir = paths::desktop_dir()
+            .join("tmp")
+            .join(format!("git-download-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp dir: {}", e))?;
-        let archive_path = temp_dir.join(git_win_filename());
+        let _temp_cleanup = TemporaryDirectory(temp_dir.clone());
+        let archive_path = temp_dir.join(&artifact.filename);
 
-        download_with_fallback(&app, step, &git_win_sources(), &archive_path, 0.05, 0.55).await?;
+        download_with_fallback(
+            &app,
+            step,
+            &artifact.sources(),
+            &archive_path,
+            Some(&artifact.sha256),
+            0.05,
+            0.55,
+        )
+        .await?;
         let git_dir = paths::runtime_dir().join("git");
-        let _ = std::fs::remove_dir_all(&git_dir);
-        std::fs::create_dir_all(&git_dir)
-            .map_err(|e| format!("Failed to prepare managed Git directory: {}", e))?;
-        extract_zip_preserving_root(&app, step, &archive_path, &git_dir, 0.56, 0.92)?;
+        let staging_dir = paths::runtime_dir().join(format!(".git-stage-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&staging_dir)
+            .map_err(|e| format!("Failed to prepare managed Git staging directory: {}", e))?;
+        let _staging_cleanup = TemporaryDirectory(staging_dir.clone());
+        if let Err(error) =
+            extract_zip_preserving_root(&app, step, &archive_path, &staging_dir, 0.56, 0.88)
+        {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
 
         let _ = std::fs::remove_file(&archive_path);
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1114,7 +1377,8 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
             0.95,
         );
 
-        let mut command = tokio::process::Command::new(&local_git);
+        let staged_git = runtime_binary(&staging_dir, "git");
+        let mut command = tokio::process::Command::new(&staged_git);
         command.arg("--version");
         platform::configure_background_command(&mut command);
         let version = command
@@ -1125,8 +1389,11 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
             .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
             .filter(|version| !version.is_empty())
             .ok_or_else(|| {
+                let _ = std::fs::remove_dir_all(&staging_dir);
                 "Managed Git extraction finished, but git.exe could not be verified".to_string()
             })?;
+
+        activate_staged_runtime(&staging_dir, &git_dir, "git")?;
         emit_keyed(
             &app,
             step,
@@ -1519,6 +1786,9 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         0.03,
     );
 
+    let target_requirement = target_openclaw_node_requirement().await?;
+    ensure_compatible_node_runtime(&app, step, &target_requirement).await?;
+
     // ① 定位 Node.js 二进制
     emit_keyed(
         &app,
@@ -1860,6 +2130,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn staged_runtime_activation_replaces_target_and_removes_backup() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-runtime-activation-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let target = root.join("node");
+        let staging = root.join(".node-stage");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(target.join("version"), "old").unwrap();
+        std::fs::write(staging.join("version"), "new").unwrap();
+
+        activate_staged_runtime(&staging, &target, "node").unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(target.join("version")).unwrap(),
+            "new"
+        );
+        assert!(!staging.exists());
+        assert!(std::fs::read_dir(&root).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("backup")));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn npm_prefix_normalization_rejects_ambiguous_values() {
         assert_eq!(normalize_npm_prefix(Path::new("")), None);
         assert_eq!(normalize_npm_prefix(Path::new("undefined")), None);
@@ -1869,21 +2167,6 @@ mod tests {
         assert_eq!(normalize_npm_prefix(&absolute), Some(absolute));
         assert!(normalize_npm_prefix(Path::new("~/junqi-npm-prefix"))
             .is_some_and(|path| path.is_absolute()));
-    }
-
-    #[test]
-    fn managed_windows_git_sources_use_non_interactive_mingit_archives() {
-        let filename = git_win_filename();
-        let sources = git_win_sources();
-
-        assert_eq!(filename, format!("MinGit-{}-64-bit.zip", GIT_WIN_VERSION));
-        assert_eq!(sources.len(), 2);
-        assert!(sources.iter().all(|(url, _)| url.ends_with(&filename)));
-        assert!(sources.iter().all(|(url, _)| url.starts_with("https://")));
-        assert!(sources.iter().any(|(url, _)| url.contains("npmmirror.com")));
-        assert!(sources
-            .iter()
-            .any(|(url, _)| url.contains("github.com/git-for-windows")));
     }
 
     #[test]

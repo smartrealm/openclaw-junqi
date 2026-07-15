@@ -11,7 +11,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --import ./test-setup.ts --import tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\" && node --test scripts/check-boundaries.test.mjs",
+    "test": "node --import ./test-setup.ts --import tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\" && node --test \"scripts/*.test.mjs\"",
     "verify:openclaw-docs": "tsx scripts/verify-openclaw-command-links.ts",
     "test:rust": "cd src-tauri && cargo test --lib",
     "test:watch": "node --import ./test-setup.ts --import tsx --test --watch src/**/*.test.ts src/**/*.test.tsx",

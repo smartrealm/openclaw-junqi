@@ -36,6 +36,7 @@ import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePan
 import { MaintenanceCenter } from '@/components/settings/MaintenanceCenter';
 import { TerminalSettingsPanel } from '@/components/settings/TerminalSettingsPanel';
 import { NpmCacheSettingsPanel } from '@/components/settings/NpmCacheSettingsPanel';
+import { ManagedRuntimeSettingsPanel } from '@/components/settings/ManagedRuntimeSettingsPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
@@ -1126,6 +1127,8 @@ export function SettingsPageFull() {
       {activeTab === 'storage' && (
         <>
       <GatewayLifecyclePanel variant="full" />
+
+      <ManagedRuntimeSettingsPanel />
 
       <NpmCacheSettingsPanel />
 
