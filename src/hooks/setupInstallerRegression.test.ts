@@ -76,6 +76,17 @@ test('installation steps and activity log use aligned fixed-height viewports', (
   assert.equal((setupFlowPanels.match(/h-\[390px\]/g) ?? []).length, 2);
   assert.equal((setupFlowPanels.match(/h-\[342px\]/g) ?? []).length, 2);
   assert.match(setupFlowPanels, /flex h-12 items-center border-b/);
+  assert.match(setupFlowPanels, /rowRefs\.current\.get\(current\.id\)/);
+  assert.match(setupFlowPanels, /viewport\.scrollTo\(\{/);
+});
+
+test('Gateway is an explicit visible setup step that prepares the bundled OpenClaw service', () => {
+  assert.match(setupFlowPanels, /titleFallback: "OpenClaw Gateway"/);
+  assert.match(setupFlowPanels, /descriptionFallback: "验证 Gateway 配置并准备启动控制通道"/);
+  assert.match(setupFlow, /await prepareGateway\(\)/);
+  assert.match(setupFlow, /gatewayPrepareWarning \?\? t\("setup\.installCompleteGatewayPending"/);
+  assert.match(setupFlow, /level: "warn"/);
+  assert.match(setupFlow, /reportPhase\("awaitingGatewayStart"/);
 });
 
 test('installation footer reports the current step instead of a live log message', () => {

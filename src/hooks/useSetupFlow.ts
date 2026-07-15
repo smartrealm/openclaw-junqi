@@ -697,14 +697,26 @@ export function useSetupFlow(
       patchStep("gateway", "running", t("setup.preparingGateway"));
       setSetupStep("install-openclaw");
       reportPhase("gatewayPrepare", t("setup.preparingGateway"));
+      let gatewayPrepareWarning: string | null = null;
       try {
         await prepareGateway();
       } catch (e) {
-        // 即便 Rust 端 prepare 失败也要继续尝试 start_gateway
+        // start_gateway performs its own validation, so this remains recoverable.
+        // Keep the warning visible instead of claiming preparation succeeded.
+        const message = e instanceof Error ? e.message : String(e);
+        gatewayPrepareWarning = t("setup.gatewayPrepareWillRetry", {
+          error: message,
+          defaultValue: "Gateway 准备检查未完成：{{error}}。点击启动时将自动重试。",
+        });
+        appendSetupLog({ source: "setup", step: "gateway", message: gatewayPrepareWarning, level: "warn" });
         debugWarn('gateway', '[setup] prepare_gateway failed, continuing to start_gateway:', e);
       }
       if (!isRunActive(runId)) return;
-      patchStep("gateway", "pending", t("setup.installCompleteGatewayPending", "Gateway 配置已准备，点击启动 Gateway 继续。"));
+      patchStep(
+        "gateway",
+        "pending",
+        gatewayPrepareWarning ?? t("setup.installCompleteGatewayPending", "Gateway 配置已准备，点击启动 Gateway 继续。"),
+      );
       reportPhase("awaitingGatewayStart", t("setup.installComplete", "必需组件已安装完成"));
       setSetupStep("install-complete");
     } catch (err: any) {

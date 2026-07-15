@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Bot, CheckCircle2, FileText, HeartPulse, Loader2, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, ChevronUp, FileText, HeartPulse, Loader2, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { GatewayRescueChat } from './GatewayRescueChat';
 import {
@@ -101,24 +101,37 @@ export function GatewaySelfRescuePanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-bold text-aegis-text">
-              <ShieldCheck size={15} className="text-aegis-primary" />
-              <span>{t('gatewaySelfRescue.title', 'Gateway 自救中心')}</span>
+              {showAiRescue ? <Bot size={15} className="text-aegis-primary" /> : <ShieldCheck size={15} className="text-aegis-primary" />}
+              <span>{showAiRescue ? t('gatewaySelfRescue.aiRescue', 'AI 诊断') : t('gatewaySelfRescue.title', 'Gateway 自救中心')}</span>
             </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-aegis-text-muted">
-              {t('gatewaySelfRescue.subtitle', '统一处理 Gateway 重连、官方修复和 AI 诊断。')}
-            </p>
+            {!showAiRescue && (
+              <p className="mt-1 text-[11px] leading-relaxed text-aegis-text-muted">
+                {t('gatewaySelfRescue.subtitle', '统一处理 Gateway 重连、官方修复和 AI 诊断。')}
+              </p>
+            )}
           </div>
-          <span className={clsx(
-            'shrink-0 rounded-md border px-2 py-1 text-[10px] font-semibold',
-            connected && !busy && 'border-aegis-success/25 bg-aegis-success/10 text-aegis-success',
-            busy && 'border-aegis-warning/25 bg-aegis-warning/10 text-aegis-warning',
-            !connected && !busy && 'border-aegis-danger/25 bg-aegis-danger/10 text-aegis-danger',
-          )}>
-            {statusLabel}
-          </span>
+          {showAiRescue ? (
+            <button
+              type="button"
+              onClick={() => setShowAiRescue(false)}
+              className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-aegis-text-muted hover:bg-white/[0.05] hover:text-aegis-text"
+            >
+              <ChevronUp size={13} />
+              {t('gatewaySelfRescue.hideAiRescue', '收起 AI 诊断')}
+            </button>
+          ) : (
+            <span className={clsx(
+              'shrink-0 rounded-md border px-2 py-1 text-[10px] font-semibold',
+              connected && !busy && 'border-aegis-success/25 bg-aegis-success/10 text-aegis-success',
+              busy && 'border-aegis-warning/25 bg-aegis-warning/10 text-aegis-warning',
+              !connected && !busy && 'border-aegis-danger/25 bg-aegis-danger/10 text-aegis-danger',
+            )}>
+              {statusLabel}
+            </span>
+          )}
         </div>
 
-        <div className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1.5 text-[11px]">
+        {!showAiRescue && <div className="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-1.5 text-[11px]">
           {port != null && (
             <>
               <span className="text-aegis-text-muted">{t('gatewaySelfRescue.port', '端口')}</span>
@@ -137,9 +150,9 @@ export function GatewaySelfRescuePanel({
               </span>
             </>
           )}
-        </div>
+        </div>}
 
-        {busy && (
+        {busy && !showAiRescue && (
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
             <div
               className="h-full rounded-full bg-aegis-warning transition-all duration-300"
@@ -149,7 +162,7 @@ export function GatewaySelfRescuePanel({
         )}
       </div>
 
-      <div className="space-y-2 px-3.5 py-3">
+      {!showAiRescue && <div className="space-y-2 px-3.5 py-3">
         {recommendation && (
           <div className="flex items-center justify-between rounded-lg border border-aegis-border/60 bg-white/[0.02] px-3 py-2 text-[10.5px]">
             <span className="text-aegis-text-muted">{t('gatewaySelfRescue.recommendation', '建议操作')}</span>
@@ -238,10 +251,10 @@ export function GatewaySelfRescuePanel({
         <div className="rounded-lg border border-aegis-border/60 bg-white/[0.02] px-3 py-2 text-[10.5px] leading-relaxed text-aegis-text-muted">
           {t('gatewaySelfRescue.hint', '先重连/重启；仍失败再运行自动修复；配置或日志不明朗时使用 AI 诊断。')}
         </div>
-      </div>
+      </div>}
 
       {showAiRescue && (
-        <div className="border-t border-aegis-border px-3.5 pb-3">
+        <div className="max-h-[min(560px,70vh)] overflow-y-auto px-3.5 py-3">
           <GatewayRescueChat
             error={error || progressMessage || t('gatewaySelfRescue.defaultAiContext', 'Gateway 需要诊断。')}
             logs={logs}

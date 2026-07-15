@@ -60,9 +60,9 @@ export const STEP_META: Record<string, { titleKey: string; titleFallback: string
   },
   gateway: {
     titleKey: "setup.installSteps.gateway.title",
-    titleFallback: "Gateway",
+    titleFallback: "OpenClaw Gateway",
     descriptionKey: "setup.installSteps.gateway.description",
-    descriptionFallback: "写入本地配置并启动控制通道",
+    descriptionFallback: "验证 Gateway 配置并准备启动控制通道",
   },
   pull: {
     titleKey: "setup.installSteps.pull.title",
@@ -672,15 +672,38 @@ export function installStepTitle(step: StepState | null, t: TFunction): string |
 function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: StepState[]; awaitingGatewayStart?: boolean }) {
   const { t } = useTranslation();
   const visibleSteps = steps.length > 0 ? steps : [{ id: "gateway", label: "Gateway", status: "pending" as const }];
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const current = currentStepOf(visibleSteps);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const row = current ? rowRefs.current.get(current.id) : null;
+    if (!viewport || !row) return;
+    const viewportTop = viewport.scrollTop;
+    const viewportBottom = viewportTop + viewport.clientHeight;
+    const rowTop = row.offsetTop;
+    const rowBottom = rowTop + row.offsetHeight;
+    if (rowTop >= viewportTop && rowBottom <= viewportBottom) return;
+    viewport.scrollTo({
+      top: Math.max(0, rowTop - (viewport.clientHeight - row.offsetHeight) / 2),
+      behavior: "smooth",
+    });
+  }, [current?.id, current?.status]);
+
   return (
     <section className="h-[390px] overflow-hidden bg-aegis-elevated">
       <div className="flex h-12 items-center border-b border-aegis-border px-4">
         <div className="text-sm font-semibold text-aegis-text">{t("setup.installPanel.timeline", "执行步骤")}</div>
       </div>
-      <div className="h-[342px] overflow-auto px-4 py-2">
+      <div ref={viewportRef} className="h-[342px] overflow-auto px-4 py-2">
       {visibleSteps.map((s, index) => (
         <div
           key={s.id}
+          ref={(node) => {
+            if (node) rowRefs.current.set(s.id, node);
+            else rowRefs.current.delete(s.id);
+          }}
           className={clsx(
             "relative grid grid-cols-[34px_1fr] gap-3 py-3",
             index < visibleSteps.length - 1 && "after:absolute after:left-[16px] after:top-11 after:h-[calc(100%-34px)] after:w-px after:bg-aegis-border",
