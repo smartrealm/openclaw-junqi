@@ -133,13 +133,11 @@ async fn get_node_version(node_path: &str) -> Option<String> {
 pub async fn check_npm() -> Result<NpmStatus, String> {
     // A user-selected portable Node.js is an explicit runtime choice. Keep its
     // bundled npm paired with it instead of mixing it with a system npm.
-    if let (Some(node), Some(npm)) = (
-        paths::configured_node_path(),
-        paths::configured_npm_cli_path(),
-    ) {
-        if node.is_file() && npm.is_file() {
+    if let Some(node) = paths::configured_node_path() {
+        let npm = paths::configured_npm_cli_path();
+        if let Some(npm) = npm.as_ref().filter(|npm| node.is_file() && npm.is_file()) {
             let mut command = tokio::process::Command::new(&node);
-            command.arg(&npm).arg("--version");
+            command.arg(npm).arg("--version");
             platform::configure_background_command(&mut command);
             if let Ok(output) = command.output().await {
                 let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -153,6 +151,12 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
                 }
             }
         }
+        return Ok(NpmStatus {
+            available: false,
+            version: None,
+            path: npm.map(|path| path.to_string_lossy().into_owned()),
+            source: Some("local".into()),
+        });
     }
 
     let system_npm = platform::detect_path("npm");

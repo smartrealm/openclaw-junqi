@@ -59,16 +59,18 @@ impl<B: TerminalIntegrationBackend> TerminalIntegrationService<B> {
         paths::terminal_launcher_dir().join(B::LAUNCHER_FILENAME)
     }
 
-    fn sync(requested: bool) -> Result<TerminalIntegrationStatus, String> {
+    fn sync(
+        requested: bool,
+        native_binary_override: Option<&Path>,
+    ) -> Result<TerminalIntegrationStatus, String> {
         let binding = if requested {
             let runtime = paths::active_runtime_mode();
-            let binary = matches!(runtime, paths::OpenClawRuntimeMode::Native)
+            let detected_binary = matches!(runtime, paths::OpenClawRuntimeMode::Native)
                 .then(crate::commands::system::resolve_openclaw_binary)
                 .flatten();
+            let binary = native_binary_override.or(detected_binary.as_deref());
             let target = match runtime {
-                paths::OpenClawRuntimeMode::Native => {
-                    TerminalLauncherTarget::Native(binary.as_deref())
-                }
+                paths::OpenClawRuntimeMode::Native => TerminalLauncherTarget::Native(binary),
                 paths::OpenClawRuntimeMode::Docker => TerminalLauncherTarget::Docker,
             };
             Self::write_launcher(target)?;
@@ -174,7 +176,24 @@ pub(crate) fn sync_terminal_integration() -> Result<TerminalIntegrationStatus, S
     ) {
         crate::commands::system::ensure_openclaw_relocation_complete()?;
     }
-    TerminalIntegrationService::<ActiveBackend>::sync(paths::terminal_integration_requested())
+    TerminalIntegrationService::<ActiveBackend>::sync(paths::terminal_integration_requested(), None)
+}
+
+/// Sync against the binary already validated by a relocation. The normal
+/// resolver deliberately hides binaries until the relocation is committed.
+pub(crate) fn sync_terminal_integration_for_relocation(
+    binary: &Path,
+) -> Result<TerminalIntegrationStatus, String> {
+    if !matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        return Err("OpenClaw relocation terminal sync requires the Native runtime".into());
+    }
+    TerminalIntegrationService::<ActiveBackend>::sync(
+        paths::terminal_integration_requested(),
+        Some(binary),
+    )
 }
 
 #[tauri::command]

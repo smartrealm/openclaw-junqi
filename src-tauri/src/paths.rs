@@ -270,6 +270,64 @@ pub(crate) fn atomic_write_text(path: &Path, content: &str) -> Result<(), String
     Ok(())
 }
 
+fn normalize_existing_path_prefix(path: &Path) -> PathBuf {
+    let mut cursor = path;
+    let mut missing = Vec::new();
+    while !cursor.exists() {
+        let Some(name) = cursor.file_name() else {
+            break;
+        };
+        missing.push(name.to_os_string());
+        let Some(parent) = cursor.parent() else {
+            break;
+        };
+        cursor = parent;
+    }
+    let mut normalized = std::fs::canonicalize(cursor).unwrap_or_else(|_| cursor.to_path_buf());
+    for component in missing.into_iter().rev() {
+        normalized.push(component);
+    }
+    normalized
+}
+
+fn path_identity_key(path: &Path) -> String {
+    let value = normalize_existing_path_prefix(path)
+        .to_string_lossy()
+        .to_string();
+    if cfg!(windows) {
+        value.replace('/', "\\").to_lowercase()
+    } else {
+        value
+    }
+}
+
+pub(crate) fn paths_refer_to_same_location(left: &Path, right: &Path) -> bool {
+    path_identity_key(left) == path_identity_key(right)
+}
+
+pub(crate) fn optional_paths_refer_to_same_location(
+    left: Option<&Path>,
+    right: Option<&Path>,
+) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => paths_refer_to_same_location(left, right),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+pub(crate) fn paths_overlap(left: &Path, right: &Path) -> bool {
+    let left = path_identity_key(left);
+    let right = path_identity_key(right);
+    let separator = if cfg!(windows) { '\\' } else { '/' };
+    if left == right {
+        return true;
+    }
+    let left_prefix = format!("{}{}", left.trim_end_matches(separator), separator);
+    let right_prefix = format!("{}{}", right.trim_end_matches(separator), separator);
+    left.starts_with(&right_prefix) || right.starts_with(&left_prefix)
+}
+
 #[cfg(not(windows))]
 fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
     std::fs::rename(source, target)
@@ -448,12 +506,18 @@ pub fn openclaw_relocation_required() -> bool {
     load_storage_bootstrap().is_some_and(|layout| layout.openclaw_relocation_required)
 }
 
-pub fn complete_openclaw_relocation() -> Result<(), String> {
+pub fn complete_openclaw_relocation(expected_npm_prefix: Option<&Path>) -> Result<(), String> {
     let Some(mut layout) = load_storage_bootstrap() else {
         return Ok(());
     };
     if !layout.openclaw_relocation_required {
         return Ok(());
+    }
+    if !optional_paths_refer_to_same_location(layout.npm_prefix.as_deref(), expected_npm_prefix) {
+        return Err(
+            "The selected npm prefix changed while OpenClaw was being installed; retry migration for the current location"
+                .into(),
+        );
     }
     layout.openclaw_relocation_required = false;
     save_storage_bootstrap(&layout)
@@ -621,6 +685,30 @@ mod storage_bootstrap_tests {
             restored.git_runtime_dir,
             Some(restored.runtime_dir.join("git"))
         );
+    }
+
+    #[test]
+    fn bug_wrm_05_relocation_prefix_comparison_rejects_a_changed_selection() {
+        let root = std::env::temp_dir().join("junqi-relocation-prefix-comparison");
+        let first = root.join("first");
+        let second = root.join("second");
+        let nested = first.join("nested");
+        std::fs::create_dir_all(&first).unwrap();
+
+        assert!(optional_paths_refer_to_same_location(
+            Some(&first),
+            Some(&first.join("."))
+        ));
+        assert!(!optional_paths_refer_to_same_location(
+            Some(&first),
+            Some(&second)
+        ));
+        assert!(optional_paths_refer_to_same_location(None, None));
+        assert!(!optional_paths_refer_to_same_location(Some(&first), None));
+        assert!(paths_overlap(&first, &nested));
+        assert!(!paths_overlap(&first, &second));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

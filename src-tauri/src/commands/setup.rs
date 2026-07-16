@@ -11,6 +11,7 @@ use crate::commands::process_control::terminate_process_tree;
 use crate::commands::setup_progress::{emit, emit_keyed};
 use crate::paths;
 use crate::platform;
+use crate::state::GatewayProcess;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -921,7 +922,8 @@ async fn install_windows_portable_node(
     target: PathBuf,
 ) -> Result<String, String> {
     let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
-    if current.available && !force {
+    let configured_npm = paths::configured_npm_cli_path();
+    if portable_node_runtime_is_complete(current.available, configured_npm.as_deref()) && !force {
         return Ok(format!(
             "Node.js {} already installed at {}",
             current.version.unwrap_or_default(),
@@ -995,6 +997,11 @@ async fn install_windows_portable_node(
         "Node.js {detected} installed at {}",
         target.display()
     ))
+}
+
+#[cfg(any(windows, test))]
+fn portable_node_runtime_is_complete(node_available: bool, npm_cli: Option<&Path>) -> bool {
+    node_available && npm_cli.is_some_and(Path::is_file)
 }
 
 #[cfg(windows)]
@@ -1732,24 +1739,33 @@ fn remove_broken_openclaw_install(prefix: &std::path::Path) -> Result<(), String
 }
 
 #[tauri::command]
-pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
-    install_openclaw_impl(app, OpenclawInstallMode::Normal).await
+pub async fn install_openclaw(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<String, String> {
+    install_openclaw_impl(app, state, OpenclawInstallMode::Normal).await
 }
 
 /// Reinstall the selected OpenClaw package even when a binary is still
 /// detectable. This is deliberately separate from normal first-install
 /// detection so a user-visible "reinstall" action has real repair semantics.
 #[tauri::command]
-pub async fn reinstall_openclaw(app: tauri::AppHandle) -> Result<String, String> {
-    install_openclaw_impl(app, OpenclawInstallMode::ReinstallExisting).await
+pub async fn reinstall_openclaw(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<String, String> {
+    install_openclaw_impl(app, state, OpenclawInstallMode::ReinstallExisting).await
 }
 
 #[tauri::command]
-pub async fn relocate_openclaw(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn relocate_openclaw(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<String, String> {
     if !paths::openclaw_relocation_required() {
         return Err("OpenClaw relocation was not requested by storage migration".into());
     }
-    install_openclaw_impl(app, OpenclawInstallMode::Relocate).await
+    install_openclaw_impl(app, state, OpenclawInstallMode::Relocate).await
 }
 
 fn existing_npm_prefix_for_reinstall(binary: &Path, windows: bool) -> Option<PathBuf> {
@@ -1780,21 +1796,6 @@ impl OpenclawInstallMode {
     }
 }
 
-fn paths_refer_to_same_location(left: &Path, right: &Path) -> bool {
-    let left = std::fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
-    let right = std::fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
-
-    #[cfg(windows)]
-    {
-        left.to_string_lossy()
-            .eq_ignore_ascii_case(&right.to_string_lossy())
-    }
-    #[cfg(not(windows))]
-    {
-        left == right
-    }
-}
-
 fn verify_relocated_openclaw_prefix(binary: &Path, expected_prefix: &Path) -> Result<(), String> {
     let installed_prefix =
         crate::commands::system::npm_prefix_for_openclaw_binary(binary, cfg!(windows)).ok_or_else(
@@ -1805,7 +1806,7 @@ fn verify_relocated_openclaw_prefix(binary: &Path, expected_prefix: &Path) -> Re
                 )
             },
         )?;
-    if paths_refer_to_same_location(&installed_prefix, expected_prefix) {
+    if paths::paths_refer_to_same_location(&installed_prefix, expected_prefix) {
         return Ok(());
     }
     Err(format!(
@@ -1815,14 +1816,45 @@ fn verify_relocated_openclaw_prefix(binary: &Path, expected_prefix: &Path) -> Re
     ))
 }
 
+#[derive(Debug, Clone)]
+struct OpenclawRelocationRequest {
+    expected_npm_prefix: Option<PathBuf>,
+}
+
+impl OpenclawRelocationRequest {
+    fn capture() -> Result<Self, String> {
+        let layout = paths::load_storage_bootstrap()
+            .ok_or("Storage setup must be completed before relocating OpenClaw")?;
+        if !layout.openclaw_relocation_required {
+            return Err("OpenClaw relocation is no longer pending".into());
+        }
+        Ok(Self {
+            expected_npm_prefix: layout.npm_prefix,
+        })
+    }
+
+    fn commit(&self, binary: &Path, installed_prefix: &Path) -> Result<(), String> {
+        verify_relocated_openclaw_prefix(binary, installed_prefix)?;
+        crate::commands::terminal_integration::sync_terminal_integration_for_relocation(binary)?;
+        crate::commands::system::persist_selected_openclaw_binary(binary)?;
+        paths::complete_openclaw_relocation(self.expected_npm_prefix.as_deref())
+    }
+}
+
 async fn install_openclaw_impl(
     app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
     mode: OpenclawInstallMode,
 ) -> Result<String, String> {
     let step = "openclaw";
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
     let install_lock = OPENCLAW_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
     let _install_guard = install_lock.lock().await;
     let mode = mode.for_current_storage();
+    let relocation = matches!(mode, OpenclawInstallMode::Relocate)
+        .then(OpenclawRelocationRequest::capture)
+        .transpose()?;
 
     emit_keyed(
         &app,
@@ -2018,15 +2050,13 @@ async fn install_openclaw_impl(
                 .unwrap_or_else(|| "unknown validation error".into())
         ));
     }
-    if matches!(mode, OpenclawInstallMode::Relocate) {
-        verify_relocated_openclaw_prefix(&openclaw_bin, &openclaw_prefix)?;
-    }
-    crate::commands::system::persist_selected_openclaw_binary(&openclaw_bin)?;
-    if matches!(mode, OpenclawInstallMode::Relocate) {
-        paths::complete_openclaw_relocation()?;
-    }
-    if paths::terminal_integration_requested() {
-        crate::commands::terminal_integration::sync_terminal_integration()?;
+    if let Some(relocation) = relocation {
+        relocation.commit(&openclaw_bin, &openclaw_prefix)?;
+    } else {
+        if paths::terminal_integration_requested() {
+            crate::commands::terminal_integration::sync_terminal_integration()?;
+        }
+        crate::commands::system::persist_selected_openclaw_binary(&openclaw_bin)?;
     }
 
     let installed_version = verified.version.unwrap_or_else(|| "unknown version".into());
@@ -2251,6 +2281,20 @@ mod tests {
         let sources = node_sources("24.18.1");
         assert!(sources[0].0.starts_with("https://npmmirror.com/"));
         assert!(sources[1].0.starts_with("https://nodejs.org/"));
+    }
+
+    #[test]
+    fn bug_wrm_06_portable_node_requires_its_bundled_npm() {
+        let root = test_dir("portable-node-completeness");
+        let npm = root.join("npm-cli.js");
+
+        assert!(!portable_node_runtime_is_complete(true, None));
+        assert!(!portable_node_runtime_is_complete(true, Some(&npm)));
+        std::fs::write(&npm, "// npm").unwrap();
+        assert!(portable_node_runtime_is_complete(true, Some(&npm)));
+        assert!(!portable_node_runtime_is_complete(false, Some(&npm)));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

@@ -75,9 +75,18 @@ struct RuntimeLocationChanges {
 impl RuntimeLocationChanges {
     fn between(current: &StorageBootstrap, next: &StorageBootstrap) -> Self {
         Self {
-            node: current.node_runtime_dir != next.node_runtime_dir,
-            git: current.git_runtime_dir != next.git_runtime_dir,
-            npm_prefix: current.npm_prefix != next.npm_prefix,
+            node: optional_locations_differ(
+                current.node_runtime_dir.as_deref(),
+                next.node_runtime_dir.as_deref(),
+            ),
+            git: optional_locations_differ(
+                current.git_runtime_dir.as_deref(),
+                next.git_runtime_dir.as_deref(),
+            ),
+            npm_prefix: optional_locations_differ(
+                current.npm_prefix.as_deref(),
+                next.npm_prefix.as_deref(),
+            ),
         }
     }
 
@@ -228,43 +237,11 @@ fn optional_absolute_path(label: &str, raw: Option<&str>) -> Result<Option<PathB
         .transpose()
 }
 
-fn normalize_existing_prefix(path: &Path) -> PathBuf {
-    let mut cursor = path;
-    let mut missing = Vec::new();
-    while !cursor.exists() {
-        let Some(name) = cursor.file_name() else {
-            break;
-        };
-        missing.push(name.to_os_string());
-        let Some(parent) = cursor.parent() else {
-            break;
-        };
-        cursor = parent;
-    }
-    let mut normalized = std::fs::canonicalize(cursor).unwrap_or_else(|_| cursor.to_path_buf());
-    for component in missing.into_iter().rev() {
-        normalized.push(component);
-    }
-    normalized
+fn optional_locations_differ(left: Option<&Path>, right: Option<&Path>) -> bool {
+    !paths::optional_paths_refer_to_same_location(left, right)
 }
 
-fn comparable_path(path: &Path) -> String {
-    let value = normalize_existing_prefix(path)
-        .to_string_lossy()
-        .to_string();
-    if cfg!(windows) {
-        value.replace('/', "\\").to_lowercase()
-    } else {
-        value
-    }
-}
-
-fn locations_overlap(left: &Path, right: &Path) -> bool {
-    let left = comparable_path(left);
-    let right = comparable_path(right);
-    path_strings_overlap(&left, &right, if cfg!(windows) { '\\' } else { '/' })
-}
-
+#[cfg(test)]
 fn path_strings_overlap(left: &str, right: &str, separator: char) -> bool {
     if left == right {
         return true;
@@ -302,7 +279,7 @@ fn validate_location_changes(
     let existing_locations = existing.map(layout_locations).unwrap_or_default();
     for (index, (left_label, left)) in locations.iter().enumerate() {
         for (right_label, right) in locations.iter().skip(index + 1) {
-            if locations_overlap(left, right) {
+            if paths::paths_overlap(left, right) {
                 let overlap_is_unchanged = existing.is_some()
                     && existing_locations
                         .iter()
@@ -312,7 +289,7 @@ fn validate_location_changes(
                         .iter()
                         .find(|(label, _)| label == right_label)
                         .is_some_and(|(_, path)| path == right)
-                    && locations_overlap(left, right);
+                    && paths::paths_overlap(left, right);
                 if overlap_is_unchanged {
                     continue;
                 }
@@ -1217,14 +1194,14 @@ pub async fn configure_storage(
         .and_then(|config| crate::commands::config::gateway_port_from_config(&config))
         .unwrap_or_else(crate::commands::config::default_gateway_port);
 
-    if target == source {
+    if paths::paths_refer_to_same_location(&target, &source) {
         validate_location_changes(&layout, Some(&existing_layout))?;
         let previous = PreviousGateway {
             reachable: is_gateway_serving(port).await,
             runtime: state.runtime_snapshot()?,
             port,
         };
-        if native_runtime_reconfiguration && previous.reachable {
+        if native_runtime_reconfiguration {
             stop_all_locked(&state, binary.as_deref(), &source, &old_config).await;
             if let Err(error) =
                 crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
@@ -1233,20 +1210,30 @@ pub async fn configure_storage(
                     "Gateway did not stop cleanly; runtime locations were not changed: {}",
                     error
                 );
-                let restore = start_runtime_locked(
-                    &app,
-                    &state,
-                    previous.runtime.mode,
-                    previous.port,
-                    binary.as_deref(),
-                    &source,
-                    &old_config,
-                )
-                .await
-                .err()
-                .map(|error| format!("restore previous Gateway: {}", error))
-                .into_iter()
-                .collect();
+                let restore = if previous.reachable {
+                    start_runtime_locked(
+                        &app,
+                        &state,
+                        previous.runtime.mode,
+                        previous.port,
+                        binary.as_deref(),
+                        &source,
+                        &old_config,
+                    )
+                    .await
+                    .err()
+                    .map(|error| format!("restore previous Gateway: {}", error))
+                    .into_iter()
+                    .collect()
+                } else {
+                    state.transition(
+                        Some(GatewayLifecycle::Error),
+                        Some(GatewayRuntimeMode::External),
+                        None,
+                        "storage reconfiguration: target port remains occupied",
+                    );
+                    Vec::new()
+                };
                 return Err(append_rollback_errors(failure, restore));
             }
         }
@@ -1692,6 +1679,18 @@ mod tests {
 
         assert!(apply_runtime_location_transition(&current, &mut next));
         assert!(next.openclaw_relocation_required);
+    }
+
+    #[test]
+    fn bug_wrm_path_comparison_ignores_equivalent_existing_paths() {
+        let root = storage_test_root("equivalent-runtime-locations");
+        std::fs::create_dir_all(&root).unwrap();
+        let equivalent = root.join(".");
+
+        assert!(!optional_locations_differ(Some(&root), Some(&equivalent)));
+        assert!(optional_locations_differ(Some(&root), None));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
