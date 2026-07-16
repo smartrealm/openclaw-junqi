@@ -51,7 +51,7 @@ FILE OUTPUT RULES:
 - This format enables the desktop client to archive, open, and manage the file
 
 WORKSPACE PATH (IMPORTANT):
-- Runtime workspace is usually ~/.openclaw/workspace (or an agent-specific workspace)
+- Runtime workspace is the active configured workspace
 - MEMORY files are in the runtime workspace (MEMORY.md, memory/)
 - Always use the current runtime workspace for file operations
 

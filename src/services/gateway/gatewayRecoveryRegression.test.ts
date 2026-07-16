@@ -82,7 +82,9 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const setup = source('src/hooks/useSetupFlow.ts');
   assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60/);
-  assert.match(gateway, /child\.try_wait\(\)[\s\S]*is_gateway_serving\(port\)\.await/);
+  assert.match(gateway, /child\.try_wait\(\)[\s\S]*is_gateway_healthy\(port\)\.await/);
+  assert.match(gateway, /http:\/\/\{\}:\{\}\/health/);
+  assert.doesNotMatch(gateway, /TcpStream::connect/);
   assert.match(gateway, /terminate_owned_gateway\(&mut child\)\.await/);
   assert.match(gateway, /Recent Gateway output/);
   assert.match(gateway, /managed child health check passed/);
@@ -360,7 +362,7 @@ test('BUG-GL11 offline recovery shares the App route and exposes determinate pro
   assert.match(app, /openControlUiAfterRecoveryRef/);
   assert.match(settings, /openControlUi:\s*true/);
   assert.match(console, /configured_gateway_port/);
-  assert.match(console, /is_gateway_serving\(port\)/);
+  assert.match(console, /is_gateway_healthy\(port\)/);
 });
 
 test('BUG-06 stalled boot exposes the complete self-rescue center', () => {
@@ -436,6 +438,44 @@ test('Windows recovery terminates the owned process tree before a new Gateway st
   assert.match(supervisor, /terminate_process_tree\(child, child\.id\(\)\)\.await/);
   assert.match(processControl, /taskkill/);
   assert.match(processControl, /"\/T", "\/F"/);
+});
+
+test('BUG-WSR-08 explicit Gateway stop also terminates the owned tree before returning', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const stop = gateway.slice(
+    gateway.indexOf('pub async fn stop_gateway'),
+    gateway.indexOf('pub async fn gateway_status'),
+  );
+
+  assert.match(stop, /terminate_owned_gateway\(&mut child\)\.await/);
+  assert.match(stop, /wait_for_port_free\(port, 30_000\)\s*\.await/);
+  assert.doesNotMatch(stop, /child\s*\.kill\(\)/);
+});
+
+test('BUG-WSR-09 direct-provider failure text crosses the IPC boundary only after sanitization', () => {
+  const rescue = source('src-tauri/src/commands/gateway_rescue.rs');
+  assert.match(rescue, /fn provider_error_message/);
+  assert.match(rescue, /sanitize_diagnostic_text\(&message, 1_000\)/);
+  assert.match(rescue, /fn rescue_transport_error/);
+  assert.match(rescue, /let message = provider_error_message\(&payload\)/);
+  assert.match(rescue, /return Err\(format!\("\{\} \{\}", status\.as_u16\(\), message\)\)/);
+});
+
+test('BUG-WSR-13 a failed owned-port release aborts restart instead of launching another Gateway', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const restart = gateway.slice(
+    gateway.indexOf('pub async fn restart_gateway'),
+    gateway.indexOf('pub async fn restart_local_gateway'),
+  );
+  const start = gateway.slice(
+    gateway.indexOf('pub(crate) async fn start_gateway_locked'),
+    gateway.indexOf('pub async fn stop_gateway'),
+  );
+
+  assert.match(restart, /owned child terminated but port remained occupied/);
+  assert.doesNotMatch(restart, /Gateway port release is still pending/);
+  assert.match(start, /start_gateway: owned child terminated but port remained occupied/);
+  assert.doesNotMatch(start, /let _ = crate::commands::gateway_supervisor::wait_for_port_free\(port, 30_000\)/);
 });
 
 test('native recovery resolves the actual npm installation instead of profile-directory guesses', () => {

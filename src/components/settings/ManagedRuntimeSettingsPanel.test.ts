@@ -21,17 +21,24 @@ test('storage settings exposes independent system tool lifecycle actions', () =>
   assert.match(panel, /nodeRequirement/);
 });
 
-test('runtime commands reuse system tools and install missing tools from China-first packages', () => {
-  assert.doesNotMatch(setup, /install_windows_system_node/);
-  assert.doesNotMatch(setup, /install_windows_system_git/);
-  assert.doesNotMatch(setup, /install_or_upgrade_winget_package/);
-  assert.match(setup, /install_managed_node_runtime/);
+test('runtime commands use domestic vendor installers for system defaults and reserve archives for custom directories', () => {
+  assert.match(setup, /install_windows_system_node/);
+  assert.match(setup, /install_windows_system_node_from_mirrors/);
+  assert.match(setup, /install_windows_system_node_with_winget/);
+  assert.match(setup, /install_windows_system_git/);
+  assert.match(setup, /install_windows_system_git_from_mirrors/);
+  assert.match(setup, /install_or_upgrade_winget_package/);
+  assert.match(setup, /WINGET_NODE_LTS_PACKAGE/);
+  assert.match(setup, /WINGET_GIT_PACKAGE/);
+  assert.match(setup, /install_portable_node_runtime/);
   assert.match(setup, /install_windows_portable_git/);
-  assert.match(setup, /default_managed_node_runtime_dir/);
-  assert.match(setup, /default_managed_git_runtime_dir/);
+  assert.doesNotMatch(setup, /default_managed_(node|git)_runtime_dir/);
   assert.match(nodeRuntime, /npmmirror\.com\/mirrors\/node/);
+  assert.match(nodeRuntime, /node_installer_sources/);
   assert.match(setup, /resolve_node_sha256/);
   assert.match(setup, /verified_managed_git_artifact/);
+  assert.match(setup, /verified_system_git_installer_artifact/);
+  assert.match(setup, /run_windows_installer/);
   assert.doesNotMatch(setup, /resolve_latest_managed_git_artifact/);
   assert.match(setup, /NODE_INSTALL_LOCK/);
   assert.match(setup, /GIT_INSTALL_LOCK/);
@@ -39,8 +46,10 @@ test('runtime commands reuse system tools and install missing tools from China-f
   assert.match(managedRuntime, /setup::update_managed_git_runtime/);
   assert.match(managedRuntime, /node_runtime::node_download_order\(\)/);
   assert.match(managedRuntime, /git_runtime::managed_git_download_order\(\)/);
-  assert.match(managedRuntime, /managed_update_supported/);
-  assert.match(panel, /source === 'managed'/);
+  assert.match(managedRuntime, /runtime_update_supported/);
+  assert.match(managedRuntime, /system_node_update/);
+  assert.match(managedRuntime, /system_git_update/);
+  assert.doesNotMatch(panel, /source === 'managed'/);
   assert.match(gitRuntime, /GIT_DISTRIBUTION_SOURCES/);
   assert.doesNotMatch(managedRuntime, /Windows Package Manager/);
   assert.doesNotMatch(managedRuntime, /GitHub/);
@@ -49,8 +58,12 @@ test('runtime commands reuse system tools and install missing tools from China-f
 });
 
 test('fresh install and existing-install update use distinct OpenClaw contracts', () => {
-  assert.match(setup, /install_node[\s\S]*target_openclaw_node_requirement\(\)/);
+  assert.match(setup, /async fn setup_node_requirement[\s\S]*resolve_openclaw_binary_async[\s\S]*required_node_requirement_for_openclaw_binary[\s\S]*target_openclaw_node_requirement/);
+  assert.match(setup, /install_node[\s\S]*setup_node_requirement\(\)/);
   assert.match(setup, /update_managed_node_runtime[\s\S]*installed_openclaw_node_requirement\(\)/);
   assert.match(updater, /resolve_openclaw_node_requirement\(metadata_registry, version\)/);
-  assert.match(updater, /ensure_compatible_node_runtime\(&app, UPDATE_PROGRESS_STEP, &target_requirement\)/);
+  assert.match(updater, /resolve_update_target_contract/);
+  assert.match(updater, /ensure_compatible_node_runtime\([\s\S]*?&target\.node_requirement/);
+  assert.match(updater, /validate_updated_runtime_contract/);
+  assert.match(updater, /mark_update_failure/);
 });

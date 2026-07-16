@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type RuntimeToolSource = 'system' | 'managed' | 'custom';
+export type RuntimeToolSource = 'system' | 'custom';
 export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }
 export interface NpmStatus { available: boolean; version: string | null; path: string | null; source: string | null; }
 export interface GitStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }
@@ -18,6 +18,7 @@ export interface OpenclawStatus {
 }
 export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; }
 export interface GatewayStatus { running: boolean; port: number; pid: number | null; token: string | null; }
+export interface SetupNodeStatus { node: NodeStatus; requirement: string; }
 export type GatewayRuntimeMode = "native" | "docker";
 export interface GatewayConfigInfo {
   token: string | null;
@@ -92,6 +93,7 @@ export interface MaintenanceReport {
 }
 
 export const checkNode = () => invoke<NodeStatus>("check_node");
+export const checkSetupNode = () => invoke<SetupNodeStatus>("check_setup_node");
 export const checkNpm = () => invoke<NpmStatus>("check_npm");
 export const checkGit = () => invoke<GitStatus>("check_git");
 export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");

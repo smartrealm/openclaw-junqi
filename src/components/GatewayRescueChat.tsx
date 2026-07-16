@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, ChevronDown, ChevronRight, KeyRound, Loader2, Send, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
@@ -19,6 +19,8 @@ interface GatewayRescueChatProps {
   logs?: string;
 }
 
+const MANUAL_TARGET_KEY = '__junqi_manual_rescue_target__';
+
 export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
   const { t } = useTranslation();
   const [target, setTarget] = useState<GatewayRescueTarget | null>(null);
@@ -34,7 +36,17 @@ export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
   const [manualBaseUrl, setManualBaseUrl] = useState('');
   const [manualModelId, setManualModelId] = useState('');
   const [manualApiKey, setManualApiKey] = useState('');
+  const mountedRef = useRef(false);
+  const requestIdRef = useRef(0);
   const context = useMemo(() => ({ error, logs }), [error, logs]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +91,10 @@ export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
       setTargetError(t('gatewayRescue.manualIncomplete', '请完整填写 Base URL、API Key 和模型 ID。'));
       return;
     }
+    requestIdRef.current += 1;
     setTarget(manual);
+    setMessages([]);
+    setSending(false);
     setTargetError(null);
     setRequestError(null);
     setManualOpen(false);
@@ -89,14 +104,20 @@ export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
     const text = draft.trim();
     if (!text || !target || sending) return;
     const nextMessages: GatewayRescueMessage[] = [...messages, { role: 'user', content: text }];
+    const requestId = ++requestIdRef.current;
+    const isCurrentRequest = () => (
+      mountedRef.current && requestIdRef.current === requestId
+    );
     setMessages(nextMessages);
     setDraft('');
     setSending(true);
     setRequestError(null);
     try {
       const reply = await sendGatewayRescueMessage(target, nextMessages, context);
+      if (!isCurrentRequest()) return;
       setMessages([...nextMessages, { role: 'assistant', content: reply }]);
     } catch (err: any) {
+      if (!isCurrentRequest()) return;
       const kind = classifyGatewayRescueFailure(err);
       const rawError = err?.message || String(err);
       setRequestError(kind === 'authentication'
@@ -105,11 +126,12 @@ export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
           ? t('gatewayRescue.permissionFailed', { provider: target.providerId, defaultValue: '{{provider}} 拒绝了当前凭据的访问权限（403）。请检查模型权限或切换其他诊断模型。' })
           : t('gatewayRescue.sendFailedForTarget', { model: target.modelRef, error: rawError, defaultValue: '{{model}} 直连失败：{{error}}' }));
     } finally {
-      setSending(false);
+      if (isCurrentRequest()) setSending(false);
     }
   }, [context, draft, messages, sending, t, target]);
 
   const targetKey = target ? gatewayRescueTargetKey(target) : '';
+  const selectedTargetKey = targetKey || MANUAL_TARGET_KEY;
   const credentialLabel = target?.credentialSource === 'manual'
     ? t('gatewayRescue.credentialManual', '临时凭据')
     : target?.credentialSource.includes('env') || target?.credentialSource.startsWith('template-')
@@ -135,55 +157,56 @@ export function GatewayRescueChat({ error, logs }: GatewayRescueChatProps) {
               </div>
             )}
 
-            {targets.length > 1 ? (
-              <div className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
-                <span className="text-[11px] font-medium text-aegis-text-muted">
-                  {t('gatewayRescue.targetLabel', '诊断模型')}
+            <div className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
+              <span className="text-[11px] font-medium text-aegis-text-muted">
+                {t('gatewayRescue.targetLabel', '诊断模型')}
+              </span>
+              <label className="block">
+                <span className="sr-only">{t('gatewayRescue.targetLabel', '诊断模型')}</span>
+                <span className="relative block">
+                  <select
+                    value={selectedTargetKey}
+                    onChange={(event) => {
+                      requestIdRef.current += 1;
+                      setSending(false);
+                      setMessages([]);
+                      setRequestError(null);
+                      if (event.target.value === MANUAL_TARGET_KEY) {
+                        setTarget(null);
+                        setManualOpen(true);
+                        return;
+                      }
+                      const next = targets.find((item) => gatewayRescueTargetKey(item) === event.target.value);
+                      if (!next) return;
+                      setTarget(next);
+                      setManualOpen(false);
+                      setTargetError(null);
+                    }}
+                    className="w-full appearance-none truncate rounded-lg border border-aegis-border bg-black/20 py-2 pl-2.5 pr-9 text-xs text-aegis-text-primary focus:border-aegis-primary/50 focus:outline-none"
+                  >
+                    {target?.source === 'manual' && (
+                      <option value={targetKey}>
+                        {t('gatewayRescue.manualTarget', '临时模型')} · {target.modelRef}
+                      </option>
+                    )}
+                    {targets.map((item) => (
+                      <option key={gatewayRescueTargetKey(item)} value={gatewayRescueTargetKey(item)}>
+                        {item.modelRef} · {item.source === 'primary'
+                          ? t('gatewayRescue.sourcePrimary', '默认')
+                          : t('gatewayRescue.sourceConfigured', '候选')}
+                      </option>
+                    ))}
+                    <option value={MANUAL_TARGET_KEY}>
+                      {t('gatewayRescue.useManual', '使用临时模型')}
+                    </option>
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-aegis-text-muted"
+                  />
                 </span>
-                <label className="block">
-                  <span className="sr-only">{t('gatewayRescue.targetLabel', '诊断模型')}</span>
-                  <span className="relative block">
-                    <select
-                      value={targetKey}
-                      onChange={(event) => {
-                        const next = targets.find((item) => gatewayRescueTargetKey(item) === event.target.value);
-                        if (!next) return;
-                        setTarget(next);
-                        setTargetError(null);
-                        setRequestError(null);
-                      }}
-                      className="w-full appearance-none truncate rounded-lg border border-aegis-border bg-black/20 py-2 pl-2.5 pr-9 text-xs text-aegis-text-primary focus:border-aegis-primary/50 focus:outline-none"
-                    >
-                      {target?.source === 'manual' && (
-                        <option value={targetKey}>
-                          {t('gatewayRescue.manualTarget', '临时模型')} · {target.modelRef}
-                        </option>
-                      )}
-                      {targets.map((item) => (
-                        <option key={gatewayRescueTargetKey(item)} value={gatewayRescueTargetKey(item)}>
-                          {item.modelRef} · {item.source === 'primary'
-                            ? t('gatewayRescue.sourcePrimary', '默认')
-                            : t('gatewayRescue.sourceConfigured', '候选')}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={14}
-                      className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-aegis-text-muted"
-                    />
-                  </span>
-                </label>
-              </div>
-            ) : target ? (
-              <div className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-2 text-[11px]">
-                <span className="font-medium text-aegis-text-muted">
-                  {t('gatewayRescue.targetLabel', '诊断模型')}
-                </span>
-                <span className="truncate font-medium text-aegis-text-primary" title={target.modelRef}>
-                  {target.modelRef}
-                </span>
-              </div>
-            ) : null}
+              </label>
+            </div>
 
             {target && (
               <div className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-2 text-[11px]">

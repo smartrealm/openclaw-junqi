@@ -34,7 +34,6 @@ pub struct NodeStatus {
 #[serde(rename_all = "lowercase")]
 pub enum RuntimeToolSource {
     System,
-    Managed,
     Custom,
 }
 
@@ -188,27 +187,6 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
         }
     }
 
-    // Older JunQi releases installed a private Node/npm pair. Keep it as a
-    // compatibility fallback, but never let it shadow a system installation.
-    let local_node = paths::legacy_local_node_path();
-    let local_npm = paths::legacy_local_npm_cli_path();
-    if local_node.is_file() && local_npm.is_file() {
-        let mut command = tokio::process::Command::new(&local_node);
-        command.arg(&local_npm).arg("--version");
-        platform::configure_background_command(&mut command);
-        if let Ok(output) = command.output().await {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if output.status.success() && !version.is_empty() {
-                return Ok(NpmStatus {
-                    available: true,
-                    version: Some(version),
-                    path: Some(local_npm.to_string_lossy().into_owned()),
-                    source: Some("local".into()),
-                });
-            }
-        }
-    }
-
     Ok(NpmStatus {
         available: false,
         version: None,
@@ -226,6 +204,7 @@ pub(crate) fn apply_configured_npm_cache(command: &mut tokio::process::Command) 
     }
 }
 
+#[cfg(windows)]
 fn portable_node_is_compatible(node: &Path) -> bool {
     node.is_file()
         && std::process::Command::new(node)
@@ -239,10 +218,6 @@ fn portable_node_is_compatible(node: &Path) -> bool {
                     .unwrap_or_else(|_| NodeRuntimeRequirement::fallback())
                     .supports(&version)
             })
-}
-
-fn legacy_managed_node_is_compatible() -> bool {
-    portable_node_is_compatible(&paths::legacy_local_node_path())
 }
 
 /// Build an OpenClaw command without relying on command-shim behavior when an
@@ -261,16 +236,11 @@ pub(crate) fn openclaw_command_with_node(
         {
             configured
         } else {
-            let legacy = paths::legacy_local_node_path();
-            if legacy_managed_node_is_compatible() {
-                legacy
+            let detected = platform::detect_path("node");
+            if detected.is_empty() {
+                PathBuf::from(platform::bin_name("node"))
             } else {
-                let detected = platform::detect_path("node");
-                if detected.is_empty() {
-                    PathBuf::from(platform::bin_name("node"))
-                } else {
-                    PathBuf::from(detected)
-                }
+                PathBuf::from(detected)
             }
         };
         let mut command = tokio::process::Command::new(node);
@@ -362,8 +332,8 @@ pub(crate) async fn check_node_for_requirement(
         });
     }
 
-    // System Node.js is authoritative for default setup. The legacy private
-    // runtime below is only a compatibility fallback for older installations.
+    // System Node.js is authoritative unless the user explicitly selected a
+    // portable runtime above.
     let system_node = platform::detect_path("node");
     let system_node = if system_node.is_empty() {
         platform::bin_name("node")
@@ -381,29 +351,6 @@ pub(crate) async fn check_node_for_requirement(
             path: Some(system_node.clone()),
             source: Some(RuntimeToolSource::System),
         });
-    }
-
-    let local = paths::legacy_local_node_path();
-    if local.exists() {
-        let path_str = local.to_string_lossy().to_string();
-        let version = get_node_version(&path_str).await;
-        let meets_min = version.as_ref().is_some_and(|v| requirement.supports(v));
-        if meets_min {
-            return Ok(NodeStatus {
-                available: true,
-                version,
-                path: Some(path_str),
-                source: Some(RuntimeToolSource::Managed),
-            });
-        }
-        if system_version.is_none() {
-            return Ok(NodeStatus {
-                available: false,
-                version,
-                path: Some(path_str),
-                source: Some(RuntimeToolSource::Managed),
-            });
-        }
     }
 
     if system_version.is_some() {
@@ -438,19 +385,8 @@ pub(crate) fn openclaw_search_path() -> String {
             .and_then(|path| path.parent().map(Path::to_path_buf))
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_default(),
-        legacy_managed_node_is_compatible()
-            .then(paths::legacy_local_node_path)
-            .and_then(|path| path.parent().map(Path::to_path_buf))
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_default(),
         paths::configured_git_path()
             .filter(|path| path.is_file())
-            .and_then(|path| path.parent().map(Path::to_path_buf))
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_default(),
-        paths::legacy_local_git_path()
-            .is_file()
-            .then(paths::legacy_local_git_path)
             .and_then(|path| path.parent().map(Path::to_path_buf))
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_default(),
@@ -917,6 +853,39 @@ pub(crate) fn node_requirement_for_openclaw_binary(
     NodeRuntimeRequirement::parse(expression, NodeRequirementSource::InstalledPackage)
 }
 
+/// Read the package contract from a concrete installed OpenClaw binary.
+/// Installation and update flows use this strict form after npm completes so
+/// an incomplete or unexpected package can never inherit JunQi's legacy
+/// fallback range and be reported as valid.
+pub(crate) fn required_node_requirement_for_openclaw_binary(
+    binary: &Path,
+) -> Result<NodeRuntimeRequirement, String> {
+    let metadata = read_openclaw_package_metadata(binary).ok_or_else(|| {
+        format!(
+            "Installed OpenClaw package metadata is unavailable for {}",
+            binary.display()
+        )
+    })?;
+    let expression = metadata.node_requirement.ok_or_else(|| {
+        format!(
+            "Installed OpenClaw package {} does not declare engines.node",
+            metadata.version
+        )
+    })?;
+    NodeRuntimeRequirement::parse(expression, NodeRequirementSource::InstalledPackage)
+}
+
+pub(crate) fn openclaw_package_version_for_binary(binary: &Path) -> Result<String, String> {
+    read_openclaw_package_metadata(binary)
+        .map(|metadata| metadata.version)
+        .ok_or_else(|| {
+            format!(
+                "Installed OpenClaw package metadata is unavailable for {}",
+                binary.display()
+            )
+        })
+}
+
 pub(crate) fn installed_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
     let Some(binary) = resolve_openclaw_binary() else {
         return Ok(NodeRuntimeRequirement::fallback());
@@ -997,17 +966,6 @@ pub async fn check_git() -> Result<GitStatus, String> {
         });
     }
 
-    let legacy = paths::legacy_local_git_path();
-    if legacy.is_file() {
-        let path = legacy.to_string_lossy().into_owned();
-        let version = get_git_version(&path).await;
-        return Ok(GitStatus {
-            available: version.is_some(),
-            version,
-            path: Some(path),
-            source: Some(RuntimeToolSource::Managed),
-        });
-    }
     Ok(GitStatus {
         available: false,
         version: None,
@@ -1120,9 +1078,10 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 #[cfg(test)]
 mod tests {
     use super::{
-        npm_cli_for_node, npm_openclaw_entry, npm_prefix_for_openclaw_binary, openclaw_package_dir,
+        node_requirement_for_openclaw_binary, npm_cli_for_node, npm_openclaw_entry,
+        npm_prefix_for_openclaw_binary, openclaw_package_dir, openclaw_package_version_for_binary,
         parse_openclaw_version, path_text_for_display, read_openclaw_package_metadata,
-        RuntimeToolSource,
+        required_node_requirement_for_openclaw_binary, RuntimeToolSource,
     };
 
     #[test]
@@ -1130,10 +1089,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(RuntimeToolSource::System).unwrap(),
             "system"
-        );
-        assert_eq!(
-            serde_json::to_value(RuntimeToolSource::Managed).unwrap(),
-            "managed"
         );
         assert_eq!(
             serde_json::to_value(RuntimeToolSource::Custom).unwrap(),
@@ -1249,6 +1204,40 @@ mod tests {
         let metadata = read_openclaw_package_metadata(&shim).unwrap();
         assert_eq!(metadata.version, "2026.7.1");
         assert_eq!(metadata.node_requirement.as_deref(), Some(">=24.15.0 <25"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn strict_package_contract_rejects_missing_engines_while_status_keeps_legacy_fallback() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-openclaw-strict-contract-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let package = root.join("node_modules").join("openclaw");
+        let shim = root.join("openclaw.cmd");
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(&shim, "@echo off").unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"name":"openclaw","version":"2026.7.1"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            openclaw_package_version_for_binary(&shim).unwrap(),
+            "2026.7.1"
+        );
+        assert!(required_node_requirement_for_openclaw_binary(&shim).is_err());
+        assert_eq!(
+            node_requirement_for_openclaw_binary(&shim)
+                .unwrap()
+                .expression(),
+            "*"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

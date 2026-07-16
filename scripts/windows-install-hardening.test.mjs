@@ -27,32 +27,58 @@ test('generic winget package installation command is not exposed', () => {
   assert.doesNotMatch(lib, /commands::setup::install_winget_package/);
 });
 
-test('Windows package uses the small WebView2 bootstrapper and respects the selected path policy', () => {
+test('Windows package uses the small WebView2 bootstrapper and standard system runtime defaults', () => {
   assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'downloadBootstrapper');
   assert.deepEqual(tauri.plugins.updater.endpoints, []);
-  // Existing system tools are reused. Missing or incompatible tools are
-  // installed into a JunQi-managed or explicitly selected portable directory.
-  assert.doesNotMatch(setup, /install_windows_system_node/);
-  assert.doesNotMatch(setup, /install_windows_system_git/);
-  assert.doesNotMatch(setup, /install_or_upgrade_winget_package/);
+  // Existing system tools are reused. Missing tools download vendor artifacts
+  // from domestic mirrors while validating against Node's independent official
+  // publisher manifest. Archives remain available only for an explicit
+  // portable selection.
+  assert.match(setup, /install_windows_system_node/);
+  assert.match(setup, /install_windows_system_node_from_mirrors/);
+  assert.match(setup, /install_windows_system_node_with_winget/);
+  assert.match(setup, /install_windows_system_git/);
+  assert.match(setup, /install_windows_system_git_from_mirrors/);
+  assert.match(setup, /install_or_upgrade_winget_package/);
   assert.match(setup, /paths::configured_node_runtime_dir\(\)/);
   assert.match(setup, /paths::configured_git_runtime_dir\(\)/);
-  assert.match(setup, /install_managed_node_runtime/);
+  assert.match(setup, /install_portable_node_runtime/);
   assert.match(setup, /install_windows_portable_git/);
-  assert.match(setup, /default_managed_node_runtime_dir/);
-  assert.match(setup, /default_managed_git_runtime_dir/);
+  assert.doesNotMatch(setup, /default_managed_(node|git)_runtime_dir/);
+  assert.doesNotMatch(setup, /runtime_dir\(\)\.join\("node"\)/);
+  assert.doesNotMatch(setup, /runtime_dir\(\)\.join\("git"\)/);
   assert.doesNotMatch(setup, /NODE_DISTRIBUTION_(BASES|SOURCES)/);
   assert.match(nodeRuntime, /NODE_DISTRIBUTION_SOURCES/);
+  assert.match(nodeRuntime, /node_installer_sources/);
   assert.match(setup, /resolve_node_sha256/);
   assert.match(nodeRuntime, /npmmirror\.com\/mirrors\/node/);
   assert.match(nodeRuntime, /mirrors\.aliyun\.com\/nodejs-release/);
   assert.match(nodeRuntime, /mirrors\.cloud\.tencent\.com\/nodejs-release/);
   assert.match(nodeRuntime, /mirrors\.huaweicloud\.com\/nodejs/);
-  assert.doesNotMatch(nodeRuntime, /nodejs\.org\/dist/);
+  assert.match(nodeRuntime, /NODE_OFFICIAL_RELEASE_BASE/);
+  assert.match(nodeRuntime, /nodejs\.org\/dist/);
+  const nodeArchiveCatalog = nodeRuntime.slice(
+    nodeRuntime.indexOf('const NODE_DISTRIBUTION_SOURCES'),
+    nodeRuntime.indexOf('const NODE_OFFICIAL_RELEASE_BASE'),
+  );
+  assert.doesNotMatch(nodeArchiveCatalog, /nodejs\.org\/dist/);
   assert.doesNotMatch(setup, /resolve_latest_managed_git_artifact/);
   assert.match(gitRuntime, /registry\.npmmirror\.com\/.*git-for-windows/);
   assert.match(gitRuntime, /mirrors\.huaweicloud\.com\/git-for-windows/);
+  assert.match(gitRuntime, /git_for_windows_installer/);
   assert.doesNotMatch(gitRuntime, /GitHub（备用）/);
+
+  const nodeDefaultInstall = setup.slice(
+    setup.indexOf('async fn install_windows_system_node('),
+    setup.indexOf('async fn install_windows_system_node_from_mirrors('),
+  );
+  assert.ok(nodeDefaultInstall.indexOf('install_windows_system_node_from_mirrors') < nodeDefaultInstall.indexOf('install_windows_system_node_with_winget'));
+
+  const gitDefaultInstall = setup.slice(
+    setup.indexOf('async fn install_windows_system_git('),
+    setup.indexOf('async fn install_windows_system_git_from_mirrors('),
+  );
+  assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('install_or_upgrade_winget_package'));
 });
 
 test('Windows releases require and verify Authenticode signatures', () => {

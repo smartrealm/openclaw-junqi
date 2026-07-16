@@ -64,6 +64,23 @@ impl ManagedNodePlatform {
         )
     }
 
+    /// Windows vendor installers use the same release catalog as portable
+    /// archives but let the official MSI choose its standard installation
+    /// location. Other platforms do not expose this artifact type.
+    pub(crate) fn installer_distribution_artifact(self) -> Option<String> {
+        (self.archive_format == NodeArchiveFormat::Zip)
+            .then(|| format!("{}-{}-msi", self.distribution_os, self.architecture))
+    }
+
+    pub(crate) fn installer_filename(self, version: &str) -> Option<String> {
+        (self.archive_format == NodeArchiveFormat::Zip).then(|| {
+            format!(
+                "node-v{version}-{}-{}.msi",
+                self.archive_os, self.architecture
+            )
+        })
+    }
+
     pub(crate) fn extracted_root(self, version: &str) -> Option<String> {
         (self.archive_format == NodeArchiveFormat::TarGz)
             .then(|| format!("node-v{version}-{}-{}", self.archive_os, self.architecture))
@@ -109,6 +126,7 @@ const NODE_DISTRIBUTION_SOURCES: &[NodeDistributionSource] = &[
         display_name: "华为云",
     },
 ];
+const NODE_OFFICIAL_RELEASE_BASE: &str = "https://nodejs.org/dist";
 
 pub(crate) fn node_index_sources() -> Vec<String> {
     NODE_DISTRIBUTION_SOURCES
@@ -118,10 +136,12 @@ pub(crate) fn node_index_sources() -> Vec<String> {
 }
 
 pub(crate) fn node_checksum_sources(version: &str) -> Vec<String> {
-    NODE_DISTRIBUTION_SOURCES
-        .iter()
-        .map(|source| format!("{}/v{version}/SHASUMS256.txt", source.base_url))
-        .collect()
+    // Archives may come from domestic mirrors for reachability, but the
+    // verification manifest must not share their trust boundary. Node.js
+    // publishes this immutable release manifest at its official origin.
+    vec![format!(
+        "{NODE_OFFICIAL_RELEASE_BASE}/v{version}/SHASUMS256.txt"
+    )]
 }
 
 pub(crate) fn node_archive_sources(
@@ -129,6 +149,27 @@ pub(crate) fn node_archive_sources(
     version: &str,
 ) -> Vec<(String, &'static str)> {
     let filename = platform.archive_filename(version);
+    NODE_DISTRIBUTION_SOURCES
+        .iter()
+        .map(|source| {
+            (
+                format!("{}/v{version}/{filename}", source.base_url),
+                source.log_label,
+            )
+        })
+        .collect()
+}
+
+/// Domestic mirrors host the official Windows MSI alongside the portable ZIP.
+/// The MSI is used only for the default system-runtime path, never for a
+/// user-selected portable runtime directory.
+pub(crate) fn node_installer_sources(
+    platform: ManagedNodePlatform,
+    version: &str,
+) -> Vec<(String, &'static str)> {
+    let Some(filename) = platform.installer_filename(version) else {
+        return Vec::new();
+    };
     NODE_DISTRIBUTION_SOURCES
         .iter()
         .map(|source| {
@@ -314,8 +355,16 @@ mod tests {
         let windows = ManagedNodePlatform::for_target("windows", "x86_64").unwrap();
         assert_eq!(windows.distribution_artifact(), "win-x64-zip");
         assert_eq!(
+            windows.installer_distribution_artifact().as_deref(),
+            Some("win-x64-msi")
+        );
+        assert_eq!(
             windows.archive_filename("24.18.1"),
             "node-v24.18.1-win-x64.zip"
+        );
+        assert_eq!(
+            windows.installer_filename("24.18.1").as_deref(),
+            Some("node-v24.18.1-win-x64.msi")
         );
         assert_eq!(windows.extracted_root("24.18.1"), None);
 
@@ -339,19 +388,24 @@ mod tests {
         let indexes = node_index_sources();
         let checksums = node_checksum_sources("24.18.1");
         let archives = node_archive_sources(platform, "24.18.1");
+        let installers = node_installer_sources(platform, "24.18.1");
         let order = node_download_order();
 
         assert_eq!(indexes.len(), NODE_DISTRIBUTION_SOURCES.len());
-        assert_eq!(indexes.len(), checksums.len());
         assert_eq!(indexes.len(), archives.len());
+        assert_eq!(indexes.len(), installers.len());
         assert_eq!(indexes.len(), order.len());
-        for ((index, checksum), (archive, _)) in
-            indexes.iter().zip(checksums.iter()).zip(archives.iter())
-        {
+        for (index, (archive, _)) in indexes.iter().zip(archives.iter()) {
             let base = index.strip_suffix("/index.json").unwrap();
-            assert!(checksum.starts_with(base));
             assert!(archive.starts_with(base));
         }
         assert!(indexes.iter().all(|url| !url.contains("nodejs.org")));
+        assert_eq!(
+            checksums,
+            vec!["https://nodejs.org/dist/v24.18.1/SHASUMS256.txt".to_string()]
+        );
+        assert!(installers
+            .iter()
+            .all(|(url, _)| url.ends_with("node-v24.18.1-win-x64.msi")));
     }
 }

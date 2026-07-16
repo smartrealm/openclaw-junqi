@@ -1,4 +1,4 @@
-use crate::commands::gateway::is_gateway_serving;
+use crate::commands::gateway::is_gateway_healthy;
 use crate::paths::{self, OpenClawRuntimeMode, StorageBootstrap};
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode, GatewayRuntimeState};
 use crate::state::GatewayProcess;
@@ -256,7 +256,7 @@ fn path_strings_overlap(left: &str, right: &str, separator: char) -> bool {
 fn layout_locations(layout: &StorageBootstrap) -> Vec<(&'static str, &Path)> {
     let mut locations = vec![
         ("workspace", layout.workspace_dir.as_path()),
-        ("managed runtime", layout.runtime_dir.as_path()),
+        ("OpenClaw internal runtime", layout.runtime_dir.as_path()),
     ];
     if let Some(cache) = &layout.npm_cache_dir {
         locations.push(("npm cache", cache.as_path()));
@@ -314,7 +314,10 @@ fn selected_layout(
     selection: InstallLocationSelection,
 ) -> Result<StorageBootstrap, String> {
     let workspace = required_absolute_path("Workspace directory", &selection.workspace_dir)?;
-    let runtime = required_absolute_path("Managed runtime directory", &selection.runtime_dir)?;
+    let runtime = required_absolute_path(
+        "OpenClaw internal runtime directory",
+        &selection.runtime_dir,
+    )?;
     let npm_cache =
         optional_absolute_path("npm cache directory", selection.npm_cache_dir.as_deref())?;
     let npm_prefix = optional_absolute_path("npm global prefix", selection.npm_prefix.as_deref())?;
@@ -328,10 +331,10 @@ fn selected_layout(
     )?;
     let capabilities = crate::commands::runtime_policy::ManagedRuntimeCapabilities::current();
     if node_runtime.is_some() && !capabilities.node {
-        return Err("Custom managed Node.js is only supported on Windows and macOS".into());
+        return Err("Custom portable Node.js is only supported on Windows and macOS".into());
     }
     if git_runtime.is_some() && !capabilities.git {
-        return Err("Custom managed Git is only supported on Windows".into());
+        return Err("Custom portable Git is only supported on Windows".into());
     }
 
     let mut layout = StorageBootstrap::with_locations(
@@ -372,7 +375,7 @@ fn ensure_layout_directories(layout: &StorageBootstrap) -> Result<(), String> {
     for (label, path) in [
         ("OpenClaw state", &layout.state_dir),
         ("workspace", &layout.workspace_dir),
-        ("managed runtime", &layout.runtime_dir),
+        ("OpenClaw internal runtime", &layout.runtime_dir),
     ] {
         std::fs::create_dir_all(path).map_err(|error| {
             format!(
@@ -860,7 +863,7 @@ impl RuntimeRestoreStrategy {
 
 async fn wait_for_gateway(port: u16, attempts: usize) -> Result<(), String> {
     for _ in 0..attempts {
-        if is_gateway_serving(port).await {
+        if is_gateway_healthy(port).await {
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -877,7 +880,7 @@ async fn start_runtime_locked(
     state_dir: &Path,
     config_path: &Path,
 ) -> Result<(), String> {
-    if is_gateway_serving(port).await {
+    if is_gateway_healthy(port).await {
         state.transition(
             Some(GatewayLifecycle::Running),
             Some(mode),
@@ -1209,7 +1212,7 @@ pub async fn configure_storage(
     if paths::paths_refer_to_same_location(&target, &source) {
         validate_location_changes(&layout, Some(&existing_layout))?;
         let previous = PreviousGateway {
-            reachable: is_gateway_serving(port).await,
+            reachable: is_gateway_healthy(port).await,
             runtime: state.runtime_snapshot()?,
             port,
         };
@@ -1322,7 +1325,7 @@ pub async fn configure_storage(
         });
         if layout.workspace_dir != expected_workspace || layout.runtime_dir != expected_runtime {
             return Err(
-                "Custom workspace or managed runtime locations require a fresh setup; migration preserves the OpenClaw data layout"
+                "Custom workspace or OpenClaw internal runtime locations require a fresh setup; migration preserves the OpenClaw data layout"
                     .into(),
             );
         }
@@ -1353,7 +1356,7 @@ pub async fn configure_storage(
     }
 
     let previous = PreviousGateway {
-        reachable: is_gateway_serving(port).await,
+        reachable: is_gateway_healthy(port).await,
         runtime: state.runtime_snapshot()?,
         port,
     };
@@ -1377,7 +1380,7 @@ pub async fn configure_storage(
     if let Err(error) = crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
     {
         if previous.reachable {
-            if is_gateway_serving(port).await {
+            if is_gateway_healthy(port).await {
                 state.transition(
                     Some(GatewayLifecycle::Running),
                     Some(previous.runtime.mode),

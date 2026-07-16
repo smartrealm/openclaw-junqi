@@ -88,6 +88,22 @@ function detectPlatform(): string {
   return "unknown";
 }
 
+interface StorageRuntimePaths {
+  stateDir: string;
+  workspaceDir: string;
+}
+
+async function readStorageRuntimePaths(): Promise<StorageRuntimePaths | null> {
+  try {
+    const status = await invoke<Partial<StorageRuntimePaths>>('get_storage_setup_status');
+    if (typeof status.stateDir !== 'string' || !status.stateDir.trim()) return null;
+    if (typeof status.workspaceDir !== 'string' || !status.workspaceDir.trim()) return null;
+    return { stateDir: status.stateDir, workspaceDir: status.workspaceDir };
+  } catch {
+    return null;
+  }
+}
+
 // Guard: in a plain browser (no Tauri runtime, e.g. headless screenshots),
 // getCurrentWindow()/listen() throw at module load. Wrap so the adapter boots.
 let appWindow: any = null;
@@ -481,13 +497,18 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     read: async (path: string) => { try { const { readFile } = await import("@tauri-apps/plugin-fs"); const c = await readFile(path); const t = new TextDecoder().decode(c); const ext = path.split(".").pop()?.toLowerCase() || ""; const img = ["png","jpg","jpeg","gif","webp","svg"]; const is = img.includes(ext); return { name: path.split("/").pop()||path, path, base64: is ? btoa(String.fromCharCode(...c)) : btoa(t), mimeType: is ? `image/${ext}` : "application/octet-stream", isImage: is, size: c.length }; } catch { return null; } },
     openSharedFolder: async () => {
       try {
-        // Read configured workspace from config, fall back to default
         const config = await invoke<{ raw: string }>("read_config");
         const parsed = JSON.parse(config.raw || "{}");
-        const workspace = parsed?.agents?.defaults?.workspace || "~/.openclaw/workspace";
-        await invoke("open_folder", { path: workspace });
+        const configuredWorkspace = parsed?.agents?.defaults?.workspace;
+        const workspace = typeof configuredWorkspace === 'string' && configuredWorkspace.trim()
+          ? configuredWorkspace
+          : (await readStorageRuntimePaths())?.workspaceDir;
+        if (workspace) await invoke("open_folder", { path: workspace });
       } catch {
-        try { await invoke("open_folder", { path: "~/.openclaw/workspace" }); } catch {}
+        const paths = await readStorageRuntimePaths();
+        if (paths?.workspaceDir) {
+          try { await invoke("open_folder", { path: paths.workspaceDir }); } catch {}
+        }
       }
     },
   },
@@ -608,7 +629,16 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       }
     },
   },
-  logs: { openElectronLogFile: async () => { try { await invoke("open_folder", { path: "~/.openclaw" }); return { success: true }; } catch { return { success: false }; } } },
+  logs: { openElectronLogFile: async () => {
+    const paths = await readStorageRuntimePaths();
+    if (!paths?.stateDir) return { success: false, error: 'Storage location is unavailable' };
+    try {
+      await invoke("open_folder", { path: paths.stateDir });
+      return { success: true, path: paths.stateDir };
+    } catch (error) {
+      return { success: false, path: paths.stateDir, error: String(error) };
+    }
+  } },
   secrets: { audit: async () => ({ success: false }), reload: async () => ({ success: false }) },
   agentAuth: { syncMain: async () => ({ success: true }), rehydrateMainRuntime: async () => ({ success: true }) },
   skills: { listManaged: async () => ({ success: true, skills: [] }), importFolder: async () => ({ success: false }), importZip: async () => ({ success: false }), delete: async () => ({ success: false }) },

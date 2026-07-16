@@ -15,7 +15,6 @@ interface RuntimeToolStatus {
 }
 
 interface ManagedRuntimeStatus {
-  runtimeDir: string;
   node: RuntimeToolStatus;
   nodeRequirement: string;
   nodeRequirementSource: string;
@@ -151,8 +150,6 @@ export function ManagedRuntimeSettingsPanel() {
 
   const sourceLabel = (source?: RuntimeToolStatus['source']) => source === 'custom'
     ? t('storage.runtimeSourceCustom', '用户选择的目录')
-    : source === 'managed'
-      ? t('storage.runtimeSourceManaged', 'JunQi 托管')
     : source === 'system'
       ? t('storage.runtimeSourceSystem', '系统安装')
       : t('storage.runtimeSourceUnknown', '未检测到');
@@ -171,7 +168,7 @@ export function ManagedRuntimeSettingsPanel() {
             {t('storage.runtimeSettingsTitle', 'Node.js / Git 运行时')}
           </h3>
           <p className="mt-1 text-xs leading-5 text-aegis-text-muted">
-            {t('storage.runtimeSettingsHint', '默认使用系统已安装路径；Windows 更新使用系统包管理器，自定义目录仅更新用户选择的便携运行时。')}
+            {t('storage.runtimeSettingsHint', '默认使用系统已安装路径；Windows 优先使用国内镜像的官方安装器，包管理器仅作兜底；自定义目录仅更新用户选择的便携运行时。')}
           </p>
         </div>
         <button

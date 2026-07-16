@@ -41,6 +41,9 @@ pub fn run() {
             commands::gateway_rescue::gateway_rescue_chat,
             state::gateway_diagnostics::diagnose_gateway_recovery,
             commands::openclaw_repair::repair_openclaw,
+            commands::plugin_recovery::list_broken_gateway_plugins,
+            commands::plugin_recovery::heal_openclaw_plugin,
+            commands::plugin_recovery::disable_openclaw_plugin,
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,
@@ -61,6 +64,7 @@ pub fn run() {
             // System
             commands::system::get_platform_info,
             commands::system::check_node,
+            commands::setup::check_setup_node,
             commands::system::check_npm,
             commands::system::check_git,
             commands::system::check_openclaw,

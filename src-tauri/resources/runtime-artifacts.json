@@ -12,5 +12,19 @@
       "filename": "MinGit-2.55.0.3-arm64.zip",
       "sha256": "f7748965d5068e81ad93ca1923650db6742d6e22332b1ae7567a841c59f6bde5"
     }
+  },
+  "gitForWindowsInstaller": {
+    "x86_64": {
+      "version": "2.55.0.windows.3",
+      "tag": "v2.55.0.windows.3",
+      "filename": "Git-2.55.0.3-64-bit.exe",
+      "sha256": "af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca"
+    },
+    "aarch64": {
+      "version": "2.55.0.windows.3",
+      "tag": "v2.55.0.windows.3",
+      "filename": "Git-2.55.0.3-arm64.exe",
+      "sha256": "e3d7f5a2214f214f0a93cf0d8915dab236a0e91c7de6de70a7dbde9a61c794db"
+    }
   }
 }

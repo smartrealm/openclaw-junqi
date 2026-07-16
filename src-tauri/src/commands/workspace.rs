@@ -1,10 +1,8 @@
 // ── Workspace path accessor ──────────────────────────────────────────────────
 //
-// Exposes the agent's runtime workspace directory (`~/.openclaw/workspace` by
-// default, or the user-configured `agents.defaults.workspace` from
-// openclaw.json) so the frontend can scope per-workspace queries (file
-// mention, project files list, etc.) without re-implementing the config
-// resolution logic.
+// Exposes the agent's runtime workspace directory (the configured storage
+// default or `agents.defaults.workspace` from openclaw.json) so the frontend
+// can scope per-workspace queries without re-implementing config resolution.
 //
 // Reuses `paths::read_workspace_from_config` + `paths::default_workspace_dir`.
 

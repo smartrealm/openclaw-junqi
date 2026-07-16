@@ -10,6 +10,7 @@ const CHINA_NPM_REGISTRY: NpmRegistry = NpmRegistry {
     url: "https://registry.npmmirror.com",
 };
 const REGISTRY_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+const OPENCLAW_PACKAGE_NAME: &str = "openclaw";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +61,35 @@ impl NpmRegistrySelection {
     }
 }
 
+/// A pinned OpenClaw package release together with the Node.js contract read
+/// from the selected registry metadata. Installation callers must retain this
+/// object through runtime validation and `npm install`, rather than resolving
+/// `latest` independently at each stage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpenclawReleaseTarget {
+    version: String,
+    node_requirement: String,
+    registries: Vec<NpmRegistry>,
+}
+
+impl OpenclawReleaseTarget {
+    pub(crate) fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub(crate) fn node_requirement(&self) -> &str {
+        &self.node_requirement
+    }
+
+    pub(crate) fn package_spec(&self) -> String {
+        format!("{OPENCLAW_PACKAGE_NAME}@{}", self.version)
+    }
+
+    pub(crate) fn registries(&self) -> &[NpmRegistry] {
+        &self.registries
+    }
+}
+
 #[derive(Debug)]
 struct RegistryProbe {
     registry: NpmRegistry,
@@ -105,7 +135,7 @@ pub async fn select_npm_registry() -> NpmRegistrySelection {
 
 async fn probe_registry(client: &reqwest::Client, registry: NpmRegistry) -> Option<RegistryProbe> {
     let response = client
-        .get(format!("{}/openclaw/latest", registry.url))
+        .get(format!("{}/{OPENCLAW_PACKAGE_NAME}/latest", registry.url))
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
         .await
@@ -116,6 +146,9 @@ async fn probe_registry(client: &reqwest::Client, registry: NpmRegistry) -> Opti
 
     let metadata = response.json::<PackageMetadata>().await.ok()?;
     let version = metadata.version.filter(|value| !value.trim().is_empty())?;
+    if !is_valid_openclaw_package_version(&version) {
+        return None;
+    }
     let node_requirement = metadata
         .engines
         .and_then(|engines| engines.node)
@@ -139,18 +172,64 @@ async fn probe_registry(client: &reqwest::Client, registry: NpmRegistry) -> Opti
     })
 }
 
+fn is_valid_openclaw_package_version(version: &str) -> bool {
+    !version.is_empty()
+        && version.len() <= 64
+        && version
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_digit())
+        && version
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character))
+}
+
+fn require_valid_openclaw_package_version(version: &str) -> Result<(), String> {
+    if is_valid_openclaw_package_version(version) {
+        return Ok(());
+    }
+    Err("Invalid OpenClaw package version".to_string())
+}
+
+/// Resolve one concrete package release and its Node.js contract. A missing
+/// contract is a hard failure for installation: using a local fallback can
+/// accept a runtime that the package about to be installed does not support.
+pub(crate) async fn resolve_latest_openclaw_release_target() -> Result<OpenclawReleaseTarget, String>
+{
+    let selection = select_npm_registry().await;
+    let version = selection.package_version.clone().ok_or_else(|| {
+        "Unable to determine the target OpenClaw package version from npm metadata".to_string()
+    })?;
+    require_valid_openclaw_package_version(&version)?;
+
+    let node_requirement = match selection.node_requirement.clone() {
+        Some(requirement) => requirement,
+        None => resolve_openclaw_node_requirement(selection.primary, &version)
+            .await?
+            .ok_or_else(|| {
+                format!(
+                    "OpenClaw {version} does not publish an engines.node requirement; installation was not started"
+                )
+            })?,
+    };
+    if node_requirement.trim().is_empty() {
+        return Err(format!(
+            "OpenClaw {version} returned an empty engines.node requirement; installation was not started"
+        ));
+    }
+
+    Ok(OpenclawReleaseTarget {
+        version,
+        node_requirement,
+        registries: selection.candidates(),
+    })
+}
+
 pub async fn fetch_openclaw_node_requirement(
     registry: NpmRegistry,
     version: &str,
 ) -> Result<Option<String>, String> {
-    if version.is_empty()
-        || version.len() > 64
-        || !version
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || ".-_".contains(character))
-    {
-        return Err("Invalid OpenClaw package version".to_string());
-    }
+    require_valid_openclaw_package_version(version)?;
     let client = reqwest::Client::builder()
         .connect_timeout(REGISTRY_PROBE_TIMEOUT)
         .timeout(REGISTRY_PROBE_TIMEOUT)
@@ -158,7 +237,10 @@ pub async fn fetch_openclaw_node_requirement(
         .build()
         .map_err(|error| format!("Failed to initialize npm metadata resolver: {error}"))?;
     let response = client
-        .get(format!("{}/openclaw/{}", registry.url, version))
+        .get(format!(
+            "{}/{OPENCLAW_PACKAGE_NAME}/{}",
+            registry.url, version
+        ))
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
         .await
@@ -306,5 +388,23 @@ mod tests {
         assert_eq!(selection.primary.kind, NpmRegistryKind::ChinaMirror);
         assert_eq!(selection.fallback, Some(OFFICIAL_NPM_REGISTRY));
         assert_eq!(selection.node_requirement.as_deref(), Some(">=26"));
+    }
+
+    #[test]
+    fn release_target_pins_a_validated_version_for_every_registry_attempt() {
+        let target = OpenclawReleaseTarget {
+            version: "2026.7.1".to_string(),
+            node_requirement: ">=24.15.0 <25".to_string(),
+            registries: vec![CHINA_NPM_REGISTRY, OFFICIAL_NPM_REGISTRY],
+        };
+
+        assert_eq!(target.package_spec(), "openclaw@2026.7.1");
+        assert_eq!(
+            target.registries(),
+            &[CHINA_NPM_REGISTRY, OFFICIAL_NPM_REGISTRY]
+        );
+        assert!(is_valid_openclaw_package_version("2026.7.1-beta.2"));
+        assert!(!is_valid_openclaw_package_version("latest"));
+        assert!(!is_valid_openclaw_package_version("2026.7.1/../../other"));
     }
 }

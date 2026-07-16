@@ -476,8 +476,98 @@ async fn ensure_update_node_runtime(
         "setup.openclawUpdate.progress.nodeCompatibility",
         0.08,
     );
-    let requirement = system::node_requirement_for_openclaw_binary(binary)?;
+    let requirement = system::required_node_requirement_for_openclaw_binary(binary)?;
     setup::ensure_compatible_node_runtime(app, UPDATE_PROGRESS_STEP, &requirement).await
+}
+
+#[derive(Debug, Clone)]
+struct UpdateTargetContract {
+    version: String,
+    node_requirement: crate::commands::node_runtime::NodeRuntimeRequirement,
+}
+
+/// Resolve the exact npm package contract reported by OpenClaw's dry-run.
+/// A package update must never proceed with a best-effort `latest` contract:
+/// it can otherwise replace the package with a Node.js-incompatible release.
+async fn resolve_update_target_contract(
+    dry_run: &RawDryRunUpdateStatus,
+    metadata_registry: NpmRegistry,
+) -> Result<Option<UpdateTargetContract>, String> {
+    let install_kind = dry_run
+        .install_kind
+        .as_deref()
+        .ok_or_else(|| "OpenClaw update dry-run did not report an install kind".to_string())?;
+    if install_kind != "package" {
+        return Ok(None);
+    }
+    if !is_npm_package_dry_run(dry_run) {
+        return Err(
+            "OpenClaw package update dry-run did not confirm npm package replacement; update was not started"
+                .to_string(),
+        );
+    }
+    let version = dry_run
+        .target_version
+        .as_deref()
+        .filter(|version| !version.trim().is_empty())
+        .ok_or_else(|| {
+            "OpenClaw package update target version is unavailable; update was not started"
+                .to_string()
+        })?;
+    let expression = npm_registry::resolve_openclaw_node_requirement(metadata_registry, version)
+        .await?
+        .ok_or_else(|| {
+            format!(
+                "OpenClaw {version} does not publish an engines.node requirement; update was not started"
+            )
+        })?;
+    let node_requirement = crate::commands::node_runtime::NodeRuntimeRequirement::parse(
+        expression,
+        crate::commands::node_runtime::NodeRequirementSource::RegistryPackage,
+    )?;
+    Ok(Some(UpdateTargetContract {
+        version: version.to_string(),
+        node_requirement,
+    }))
+}
+
+/// Verify the actual package after replacement, including its strict
+/// `engines.node` metadata. This remains mandatory for non-npm update modes,
+/// whose target contract cannot be known before the official updater runs.
+async fn validate_updated_runtime_contract(
+    app: &AppHandle,
+    binary: &std::path::Path,
+    expected: Option<&UpdateTargetContract>,
+) -> Result<(), String> {
+    let installed_version = system::openclaw_package_version_for_binary(binary)?;
+    if let Some(expected) = expected {
+        if installed_version != expected.version {
+            return Err(format!(
+                "OpenClaw package version mismatch after update: expected {}, found {}",
+                expected.version, installed_version
+            ));
+        }
+    }
+    let installed_requirement = system::required_node_requirement_for_openclaw_binary(binary)?;
+    if let Some(expected) = expected {
+        if installed_requirement.expression() != expected.node_requirement.expression() {
+            return Err(format!(
+                "OpenClaw {} changed its Node.js requirement during update: expected {}, found {}",
+                installed_version,
+                expected.node_requirement.expression(),
+                installed_requirement.expression()
+            ));
+        }
+    }
+    setup::ensure_compatible_node_runtime(app, UPDATE_PROGRESS_STEP, &installed_requirement)
+        .await?;
+    Ok(())
+}
+
+fn mark_update_failure(result: &mut OpenclawUpdateResult, error: impl Into<String>) {
+    result.success = false;
+    result.status = "error".to_string();
+    result.error = Some(error.into());
 }
 
 async fn run_npm_update_dry_run_with_registry_fallback(
@@ -985,42 +1075,51 @@ pub async fn update_openclaw(
     );
     let (dry_run, metadata_registry) =
         run_npm_update_dry_run_with_registry_fallback(&runtime, selection.clone()).await;
-    let npm_target = dry_run
-        .as_ref()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| parse_dry_run_update_status(&output.stdout).ok())
-        .filter(is_npm_package_dry_run);
-    let target_expression = if let Some(target) = npm_target.as_ref() {
-        if let Some(version) = target.target_version.as_deref() {
-            npm_registry::resolve_openclaw_node_requirement(metadata_registry, version)
-                .await
-                .ok()
-                .flatten()
-                .or_else(|| selection.node_requirement.clone())
-        } else {
-            selection.node_requirement.clone()
+    let dry_run_output = match dry_run {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            let error = output_diagnostic(&output).unwrap_or_else(|| {
+                format!("OpenClaw update dry-run exited with {}", output.status)
+            });
+            emit_update_error(&app, &error, Some(0.38));
+            return Err(error);
         }
-    } else {
-        None
+        Err(error) => {
+            emit_update_error(&app, &error, Some(0.38));
+            return Err(error);
+        }
     };
-    if let Some(expression) = target_expression.as_deref() {
-        let target_requirement = crate::commands::node_runtime::NodeRuntimeRequirement::parse(
-            expression,
-            crate::commands::node_runtime::NodeRequirementSource::RegistryPackage,
-        )?;
+    let dry_run_status = match parse_dry_run_update_status(&dry_run_output.stdout) {
+        Ok(status) => status,
+        Err(error) => {
+            emit_update_error(&app, &error, Some(0.38));
+            return Err(error);
+        }
+    };
+    let target_contract =
+        match resolve_update_target_contract(&dry_run_status, metadata_registry).await {
+            Ok(contract) => contract,
+            Err(error) => {
+                emit_update_error(&app, &error, Some(0.38));
+                return Err(error);
+            }
+        };
+    if let Some(target) = target_contract.as_ref() {
         emit_update_progress_keyed(
             &app,
             &format!(
                 "Target OpenClaw requires Node.js {}; validating update runtime...",
-                target_requirement.expression()
+                target.node_requirement.expression()
             ),
             "setup.openclawUpdate.progress.targetNode",
             0.38,
         );
-        node =
-            setup::ensure_compatible_node_runtime(&app, UPDATE_PROGRESS_STEP, &target_requirement)
-                .await?;
+        node = setup::ensure_compatible_node_runtime(
+            &app,
+            UPDATE_PROGRESS_STEP,
+            &target.node_requirement,
+        )
+        .await?;
         runtime = system::native_openclaw_runtime(binary.clone(), &node)?;
     }
     emit_update_progress_keyed(
@@ -1085,6 +1184,23 @@ pub async fn update_openclaw(
         result.npm_registry_kind = Some(selected_registry.kind);
     }
 
+    if result.success {
+        if let Err(error) =
+            validate_updated_runtime_contract(&app, &binary, target_contract.as_ref()).await
+        {
+            mark_update_failure(
+                &mut result,
+                format!("OpenClaw package was updated but runtime validation failed: {error}"),
+            );
+        }
+    }
+    if result.success && result.mode.as_deref() == Some("npm") && target_contract.is_none() {
+        mark_update_failure(
+            &mut result,
+            "OpenClaw performed an npm package update without a validated target contract",
+        );
+    }
+
     emit_update_progress_keyed(
         &app,
         "Restoring the Gateway...",
@@ -1092,8 +1208,28 @@ pub async fn update_openclaw(
         0.88,
     );
     match restore_managed_gateway(app.clone(), state.clone(), restore_gateway).await {
-        Ok(restarted) => result.gateway_restarted = restarted,
-        Err(error) => result.gateway_error = Some(error),
+        Ok(restarted) => {
+            result.gateway_restarted = restarted;
+            if restore_gateway && !restarted {
+                let error = "Gateway did not report ready after the OpenClaw update".to_string();
+                result.gateway_error = Some(error.clone());
+                if result.success {
+                    mark_update_failure(
+                        &mut result,
+                        format!("OpenClaw was updated, but Gateway recovery failed: {error}"),
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            result.gateway_error = Some(error.clone());
+            if result.success {
+                mark_update_failure(
+                    &mut result,
+                    format!("OpenClaw was updated, but Gateway recovery failed: {error}"),
+                );
+            }
+        }
     }
 
     let refreshed = system::detect_openclaw().await;

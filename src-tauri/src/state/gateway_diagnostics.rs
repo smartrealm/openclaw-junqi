@@ -28,8 +28,14 @@ const TRANSIENT_START_ERROR_PATTERNS: &[&str] = &[
     "Timed out waiting for connect.challenge",
     "Connect handshake timeout",
     "gateway starting",
-    "Port ",
 ];
+
+fn is_port_contention(normalized: &str) -> bool {
+    normalized.contains("eaddrinuse")
+        || normalized.contains("address already in use")
+        || (normalized.contains("port")
+            && (normalized.contains("occupied") || normalized.contains("already in use")))
+}
 
 /// Returns true when any stderr line looks like an OpenClaw config validation
 /// failure — actionable by the user (fix the JSON, provider key, etc.).
@@ -57,6 +63,7 @@ pub fn is_transient_start_failure(stderr_lines: &[String]) -> bool {
         TRANSIENT_START_ERROR_PATTERNS
             .iter()
             .any(|pat| normalized.contains(&pat.to_lowercase()))
+            || is_port_contention(&normalized)
     })
 }
 
@@ -144,6 +151,20 @@ mod tests {
     fn port_occupied_is_transient() {
         assert!(is_transient_start_failure(&[
             "Port 18789 still occupied after 500ms".into()
+        ]));
+    }
+
+    #[test]
+    fn unrelated_port_text_is_not_treated_as_a_listener_conflict() {
+        assert!(!is_transient_start_failure(&[
+            "Port configuration contains an unsupported key".into()
+        ]));
+    }
+
+    #[test]
+    fn eaddrinuse_is_transient() {
+        assert!(is_transient_start_failure(&[
+            "listen EADDRINUSE: address already in use 127.0.0.1:18789".into()
         ]));
     }
 
