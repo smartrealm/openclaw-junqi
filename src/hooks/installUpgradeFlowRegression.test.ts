@@ -52,3 +52,21 @@ test('BUG-IU-05 setup progress stays after storage and reaches 100', () => {
   assert.equal(progressForSetupEvent('container', 100, 'docker'), 84);
   assert.equal(progressForPhase('ready', 100), 100);
 });
+
+test('BUG-CPI-04 package updates require a target Node contract before Gateway shutdown', () => {
+  const preflight = updater.slice(
+    updater.indexOf('let (dry_run, metadata_registry)'),
+    updater.indexOf('let restore_gateway = stop_managed_gateway'),
+  );
+  const completion = updater.slice(
+    updater.indexOf('if result.mode.as_deref()'),
+    updater.indexOf('let refreshed = system::detect_openclaw'),
+  );
+
+  assert.match(preflight, /parse_dry_run_update_status/);
+  assert.match(preflight, /resolve_update_target_contract/);
+  assert.match(preflight, /emit_update_error\(&app, &error, Some\(0\.38\)\);[\s\S]*return Err\(error\)/);
+  assert.match(preflight, /ensure_compatible_node_runtime[\s\S]*target\.node_requirement/);
+  assert.match(completion, /validate_updated_runtime_contract/);
+  assert.match(completion, /Gateway recovery failed[\s\S]*mark_update_failure/);
+});

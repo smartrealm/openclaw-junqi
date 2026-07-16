@@ -625,6 +625,43 @@ function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
   );
 }
 
+function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
+  const { t } = useTranslation();
+  const requirement = flow.nodeRequirement ?? t("setup.nodeRequirementUnknown", "OpenClaw 所需版本");
+  const message = t("setup.nodeRequiredDesc", { requirement });
+  return (
+    <SetupShell
+      active={2}
+      title={t("setup.nodeRequired")}
+      subtitle={message}
+      logs={logs}
+      previousAction={{ onClick: () => flow.goBack() }}
+      nextAction={{ label: t("setup.nodeRetry"), onClick: () => flow.retryNode(), icon: "none" }}
+    >
+      <div className="space-y-3">
+        <StatusPanel
+          icon={<Package size={22} />}
+          tone="danger"
+          eyebrow={t("setup.steps.install.title")}
+          title={t("setup.nodeRequired")}
+          message={message}
+        />
+        <p className="text-sm leading-6 text-aegis-text-secondary">
+          {t("setup.nodeRequiredInstallHint")}
+        </p>
+        <a
+          href="https://nodejs.org/en/download/"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex text-sm font-medium text-aegis-primary hover:underline"
+        >
+          {t("setup.nodeDownload")}
+        </a>
+      </div>
+    </SetupShell>
+  );
+}
+
 export function SetupPage() {
   const { t } = useTranslation();
   const setupStep = useAppStore((s) => s.setupStep);
@@ -684,6 +721,7 @@ export function SetupPage() {
     case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
     case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
     case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
+    case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
     default: return <DetectingScreen flow={flow} logs={sharedLogs} />;
   }
 }

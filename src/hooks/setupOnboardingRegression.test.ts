@@ -5,6 +5,8 @@ import test from 'node:test';
 const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'utf8');
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
+const adapter = readFileSync(new URL('../api/tauri-adapter.ts', import.meta.url), 'utf8');
+const setupCommand = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 
 function flattenMessages(value: unknown, prefix = '', result: Record<string, unknown> = {}): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
@@ -159,4 +161,21 @@ test('BUG-ONB-10 setup leaves system tools and npm cache at their native default
   assert.match(storageGate, /npmCacheDir: customNpmCache \? npmCacheDir\.trim\(\) \|\| null : null/);
   assert.match(storageGate, /npmCacheDir: string \| null/);
   assert.match(storageGate, /关闭时使用 npm 在当前系统和用户下的默认缓存位置/);
+});
+
+test('BUG-CPI-03 macOS missing Node enters a recoverable system-runtime step', () => {
+  assert.match(setupFlow, /const setupNode = await checkSetupNode\(\)/);
+  assert.match(setupFlow, /window\.aegis\?\.platform === "darwin" && nodeStatus\.source !== "custom"/);
+  assert.match(setupFlow, /replaceSetupStep\("node-missing"\)/);
+  assert.match(setupFlow, /const retryNode = useCallback/);
+  assert.match(setupPage, /function NodeMissingScreen/);
+  assert.match(setupPage, /flow\.retryNode\(\)/);
+});
+
+test('BUG-CPI-06 workspace and Gateway progress paths are resolved from storage state', () => {
+  assert.match(adapter, /async function readStorageRuntimePaths/);
+  assert.match(adapter, /get_storage_setup_status/);
+  assert.doesNotMatch(adapter, /~\/\.openclaw/);
+  assert.match(setupCommand, /let config_path = paths::config_path\(\)/);
+  assert.match(setupCommand, /Reading gateway port from \{\}\.\.\./);
 });

@@ -232,7 +232,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"
 #[tauri::command]
 pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
     let port = crate::commands::gateway::configured_gateway_port();
-    if !crate::commands::gateway::is_gateway_serving(port).await {
+    if !crate::commands::gateway::is_gateway_healthy(port).await {
         return Err(format!(
             "OpenClaw Gateway is not ready on {}:{}. Start or reconnect it before opening Control UI.",
             crate::commands::config::default_gateway_host(),

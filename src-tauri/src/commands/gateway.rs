@@ -3,7 +3,6 @@ use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode, Gatewa
 use crate::state::GatewayProcess;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::net::TcpStream;
 
 fn write_json_atomic(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(value)
@@ -274,6 +273,50 @@ mod runtime_observation_tests {
             Some((true, true))
         );
         assert_eq!(parse_gateway_service_state(b"not json"), None);
+    }
+
+    #[test]
+    fn gateway_health_requires_the_documented_openclaw_identity_payload() {
+        assert!(gateway_health_payload_is_healthy(
+            &serde_json::json!({ "ok": true, "status": "live" })
+        ));
+        assert!(!gateway_health_payload_is_healthy(
+            &serde_json::json!({ "ok": true })
+        ));
+        assert!(!gateway_health_payload_is_healthy(
+            &serde_json::json!({ "status": "live" })
+        ));
+        assert!(!gateway_health_payload_is_healthy(
+            &serde_json::json!({ "ok": true, "status": "ready" })
+        ));
+    }
+
+    async fn serve_health_response_once(body: &str) -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 512];
+            let _ = stream.read(&mut request).await;
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn gateway_health_probe_accepts_only_the_live_openclaw_response() {
+        let healthy_port = serve_health_response_once(r#"{"ok":true,"status":"live"}"#).await;
+        assert!(is_gateway_healthy(healthy_port).await);
+
+        let unrelated_port = serve_health_response_once(r#"{"ok":true}"#).await;
+        assert!(!is_gateway_healthy(unrelated_port).await);
     }
 }
 
@@ -729,21 +772,42 @@ pub async fn get_gateway_token() -> Result<String, String> {
         .ok_or_else(|| "No gateway token found in config".into())
 }
 
-/// Returns true if a local listener accepts TCP connections on the gateway port.
+/// Returns true only when the local OpenClaw Gateway exposes its dedicated
+/// health endpoint. A raw TCP connection proves only that *some* process owns
+/// the port; treating it as success lets an unrelated local service bypass the
+/// installer and later fail during the WebSocket handshake.
 ///
-/// This must stay quiet. A previous implementation used a WebSocket upgrade as
-/// a health probe, but Gateway logs every incomplete WS handshake as
-/// "closed before connect". Startup calls this from several paths, so the
-/// upgrade probe could flood Gateway logs even though the app was only checking
-/// liveness. The real protocol handshake is owned by the frontend connection.
-pub async fn is_gateway_serving(port: u16) -> bool {
-    tokio::time::timeout(
-        std::time::Duration::from_millis(700),
-        TcpStream::connect((crate::commands::config::default_gateway_host(), port)),
-    )
-    .await
-    .map(|result| result.is_ok())
-    .unwrap_or(false)
+/// `/health` is OpenClaw's documented, payload-free monitoring endpoint. It
+/// avoids the noisy incomplete WebSocket handshakes produced by protocol probes
+/// while still verifying the service identity and readiness.
+fn gateway_health_payload_is_healthy(payload: &serde_json::Value) -> bool {
+    payload.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
+        && payload.get("status").and_then(serde_json::Value::as_str) == Some("live")
+}
+
+pub async fn is_gateway_healthy(port: u16) -> bool {
+    let endpoint = format!(
+        "http://{}:{}/health",
+        crate::commands::config::default_gateway_host(),
+        port
+    );
+    let client = match reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(400))
+        .timeout(std::time::Duration::from_millis(700))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return false,
+    };
+    let response = match client.get(endpoint).send().await {
+        Ok(response) if response.status().is_success() => response,
+        _ => return false,
+    };
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map(|payload| gateway_health_payload_is_healthy(&payload))
+        .unwrap_or(false)
 }
 
 fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
@@ -755,7 +819,7 @@ fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
 async fn wait_for_gateway_reachable(port: u16, timeout_secs: u64) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
     while std::time::Instant::now() < deadline {
-        if is_gateway_serving(port).await {
+        if is_gateway_healthy(port).await {
             return true;
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -1211,7 +1275,7 @@ pub(crate) async fn start_gateway_locked(
 
     // If a gateway is already serving on JunQi's configured port, connect to it.
     // Do not probe unrelated desktop ports; those may belong to another app.
-    if is_gateway_serving(port).await {
+    if is_gateway_healthy(port).await {
         *state.port.lock().map_err(|e| e.to_string())? = port;
         state.transition(
             Some(GatewayLifecycle::Running),
@@ -1228,6 +1292,17 @@ pub(crate) async fn start_gateway_locked(
             pid: None,
             token: existing_token,
         });
+    }
+
+    // A non-Gateway process on the configured port cannot be recovered by
+    // spawning another child. Report the collision before doing runtime repair
+    // or replacing an owned child, so the user gets an actionable diagnosis
+    // instead of a misleading readiness timeout.
+    if !crate::commands::gateway_supervisor::is_port_available(port).await {
+        return Err(format!(
+            "Port {} is occupied by a process that is not a healthy OpenClaw Gateway. Stop that process or choose another Gateway port, then retry.",
+            port
+        ));
     }
 
     // OpenClaw enforces a non-contiguous Node.js support matrix. Repair the
@@ -1434,7 +1509,7 @@ pub(crate) async fn start_gateway_locked(
             }
         }
 
-        if is_gateway_serving(port).await {
+        if is_gateway_healthy(port).await {
             break;
         }
 
@@ -1590,7 +1665,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         // Probe the local gateway port so `running` reflects "ready to serve",
         // not just "process is alive". Returning false here
         // causes the UI to keep waiting — BootTimelineOverlay will retry.
-        if is_gateway_serving(port).await {
+        if is_gateway_healthy(port).await {
             if can_reconcile {
                 reconcile_runtime_observation(
                     &state,
@@ -1622,7 +1697,7 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
     }
 
     // 2. No managed child: probe JunQi's configured OpenClaw port only.
-    if is_gateway_serving(port).await {
+    if is_gateway_healthy(port).await {
         if can_reconcile {
             *state.port.lock().map_err(|e| e.to_string())? = port;
             reconcile_runtime_observation(
@@ -1667,7 +1742,7 @@ pub async fn probe_gateway_port(port: Option<u16>) -> Result<bool, String> {
         Some(p) => p,
         None => ConfigMetadata::load(&paths::active_config_path()).port,
     };
-    Ok(is_gateway_serving(target_port).await)
+    Ok(is_gateway_healthy(target_port).await)
 }
 
 /// Run `openclaw doctor` and return the output

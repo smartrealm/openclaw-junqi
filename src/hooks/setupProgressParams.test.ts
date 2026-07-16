@@ -138,6 +138,11 @@ const CASES: Record<string, Case> = {
     message: "OpenClaw binary: C:\\Users\\Wei\\AppData\\Roaming\\npm\\openclaw.cmd",
     expected: { path: "C:\\Users\\Wei\\AppData\\Roaming\\npm\\openclaw.cmd" },
   },
+  ".readPort": {
+    key: "setup.gateway.readPort",
+    message: "Reading gateway port from C:\\Users\\Wei\\OpenClaw Data\\openclaw.json...",
+    expected: { path: "C:\\Users\\Wei\\OpenClaw Data\\openclaw.json" },
+  },
   ".targetNode": {
     key: "setup.openclawUpdate.progress.targetNode",
     message: "Target OpenClaw requires Node.js >=24.15.0 <25; validating update runtime...",
@@ -163,7 +168,7 @@ const CASES: Record<string, Case> = {
   },
   ".alreadyUp": {
     key: "setup.gateway.alreadyUp",
-    message: "Port 18789 already listening",
+    message: "OpenClaw Gateway health check passed on port 18789; skipping start",
     expected: { port: "18789" },
   },
   ".probe": {

@@ -16,7 +16,8 @@ const nezhaUnixPlatform = readFileSync(new URL('../../src-tauri/src/nezha/platfo
 
 test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /\{ id: "npm",\s+label: "npm"/);
-  assert.match(setupFlow, /const installedNode = await checkNode\(\)/);
+  assert.match(setupFlow, /const installedSetupNode = await checkSetupNode\(\)/);
+  assert.match(setupFlow, /const installedNode = installedSetupNode\.node/);
   assert.match(setupFlow, /patchStep\("node", "done", installedNode\.version/);
   assert.match(setupFlow, /npmStatus = await checkNpm\(\)/);
   assert.match(setupFlow, /patchStep\("npm", "done", npmStatus\.version/);

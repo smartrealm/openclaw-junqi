@@ -14,6 +14,20 @@ use crate::state::GatewayProcess;
 use tokio::net::TcpListener;
 use tokio::time::{sleep, Duration};
 
+/// Returns whether JunQi can bind the configured loopback port immediately.
+/// This is deliberately separate from Gateway health checks: a bound port
+/// proves only availability for spawning, never that its current owner is
+/// OpenClaw.
+pub async fn is_port_available(port: u16) -> bool {
+    TcpListener::bind(format!(
+        "{}:{}",
+        crate::commands::config::default_gateway_host(),
+        port
+    ))
+    .await
+    .is_ok()
+}
+
 /// Poll until the port can be bound (previous occupant-TIME_WAIT cleared).
 /// Returns the elapsed ms. Times out at `timeout_ms` (default 30s).
 pub async fn wait_for_port_free(port: u16, timeout_ms: u64) -> Result<u64, String> {
@@ -27,27 +41,17 @@ pub async fn wait_for_port_free(port: u16, timeout_ms: u64) -> Result<u64, Strin
                 port, timeout_ms,
             ));
         }
-        match TcpListener::bind(format!(
-            "{}:{}",
-            crate::commands::config::default_gateway_host(),
-            port
-        ))
-        .await
-        {
-            Ok(_) => {
-                return Ok(elapsed);
-            }
-            Err(_) => {
-                if !logged {
-                    eprintln!(
-                        "[gateway_supervisor] waiting for port {} to become available...",
-                        port
-                    );
-                    logged = true;
-                }
-                sleep(Duration::from_millis(500)).await;
-            }
+        if is_port_available(port).await {
+            return Ok(elapsed);
         }
+        if !logged {
+            eprintln!(
+                "[gateway_supervisor] waiting for port {} to become available...",
+                port
+            );
+            logged = true;
+        }
+        sleep(Duration::from_millis(500)).await;
     }
 }
 
@@ -63,14 +67,7 @@ pub async fn terminate_owned_gateway(child: &mut tokio::process::Child) {
 /// Probe for an orphaned process on our port and kill it if found.
 /// Returns true if we freed the port (orphan was killed, now port is free).
 pub async fn find_and_kill_orphans(port: u16) -> bool {
-    if TcpListener::bind(format!(
-        "{}:{}",
-        crate::commands::config::default_gateway_host(),
-        port
-    ))
-    .await
-    .is_ok()
-    {
+    if is_port_available(port).await {
         return false; // port is already free
     }
     // Something is listening. Try to identify and kill it.

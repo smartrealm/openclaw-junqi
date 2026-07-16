@@ -853,6 +853,39 @@ pub(crate) fn node_requirement_for_openclaw_binary(
     NodeRuntimeRequirement::parse(expression, NodeRequirementSource::InstalledPackage)
 }
 
+/// Read the package contract from a concrete installed OpenClaw binary.
+/// Installation and update flows use this strict form after npm completes so
+/// an incomplete or unexpected package can never inherit JunQi's legacy
+/// fallback range and be reported as valid.
+pub(crate) fn required_node_requirement_for_openclaw_binary(
+    binary: &Path,
+) -> Result<NodeRuntimeRequirement, String> {
+    let metadata = read_openclaw_package_metadata(binary).ok_or_else(|| {
+        format!(
+            "Installed OpenClaw package metadata is unavailable for {}",
+            binary.display()
+        )
+    })?;
+    let expression = metadata.node_requirement.ok_or_else(|| {
+        format!(
+            "Installed OpenClaw package {} does not declare engines.node",
+            metadata.version
+        )
+    })?;
+    NodeRuntimeRequirement::parse(expression, NodeRequirementSource::InstalledPackage)
+}
+
+pub(crate) fn openclaw_package_version_for_binary(binary: &Path) -> Result<String, String> {
+    read_openclaw_package_metadata(binary)
+        .map(|metadata| metadata.version)
+        .ok_or_else(|| {
+            format!(
+                "Installed OpenClaw package metadata is unavailable for {}",
+                binary.display()
+            )
+        })
+}
+
 pub(crate) fn installed_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
     let Some(binary) = resolve_openclaw_binary() else {
         return Ok(NodeRuntimeRequirement::fallback());
@@ -1045,9 +1078,10 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 #[cfg(test)]
 mod tests {
     use super::{
-        npm_cli_for_node, npm_openclaw_entry, npm_prefix_for_openclaw_binary, openclaw_package_dir,
+        node_requirement_for_openclaw_binary, npm_cli_for_node, npm_openclaw_entry,
+        npm_prefix_for_openclaw_binary, openclaw_package_dir, openclaw_package_version_for_binary,
         parse_openclaw_version, path_text_for_display, read_openclaw_package_metadata,
-        RuntimeToolSource,
+        required_node_requirement_for_openclaw_binary, RuntimeToolSource,
     };
 
     #[test]
@@ -1170,6 +1204,40 @@ mod tests {
         let metadata = read_openclaw_package_metadata(&shim).unwrap();
         assert_eq!(metadata.version, "2026.7.1");
         assert_eq!(metadata.node_requirement.as_deref(), Some(">=24.15.0 <25"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn strict_package_contract_rejects_missing_engines_while_status_keeps_legacy_fallback() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-openclaw-strict-contract-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let package = root.join("node_modules").join("openclaw");
+        let shim = root.join("openclaw.cmd");
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(&shim, "@echo off").unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"name":"openclaw","version":"2026.7.1"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            openclaw_package_version_for_binary(&shim).unwrap(),
+            "2026.7.1"
+        );
+        assert!(required_node_requirement_for_openclaw_binary(&shim).is_err());
+        assert_eq!(
+            node_requirement_for_openclaw_binary(&shim)
+                .unwrap()
+                .expression(),
+            "*"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

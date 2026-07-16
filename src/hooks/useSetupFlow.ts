@@ -15,7 +15,7 @@ import {
   type SetupStep,
 } from "@/stores/setup-navigation";
 import {
-  checkNode, checkNpm, checkGit, checkOpenclaw,
+  checkSetupNode, checkNpm, checkGit, checkOpenclaw,
   installNode, installGit, installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
   applyTerminalIntegration,
   prepareGateway,
@@ -124,6 +124,7 @@ export interface SetupFlow {
   openclawStatus: OpenclawStatus | null;
   checkingDocker: boolean;
   needsGit: boolean;
+  nodeRequirement: string | null;
   steps: StepState[];
   installTarget: InstallTarget | null;
   wizardStep: OpenClawWizardStep | null;
@@ -150,6 +151,7 @@ export interface SetupFlow {
   refreshRuntime: () => Promise<{ status: OpenclawStatus | null; gatewayRunning: boolean }>;
   goBack: () => void;
   retryGit: () => void;
+  retryNode: () => void;
   enterWorkspace: (origin?: Element | null) => void;
 }
 
@@ -210,6 +212,7 @@ export function useSetupFlow(
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
+  const [nodeRequirement, setNodeRequirement] = useState<string | null>(null);
   const reinstallRequestedRef = useRef(false);
   const relocationRequestedRef = useRef(false);
   const needsOnboardingRef = useRef(needsOnboarding);
@@ -234,6 +237,7 @@ export function useSetupFlow(
   const beginRun = useCallback(() => {
     activeRunRef.current += 1;
     setInstallTarget(null);
+    setNodeRequirement(null);
     return activeRunRef.current;
   }, [setInstallTarget]);
   const cancelActiveRun = useCallback(() => {
@@ -687,15 +691,28 @@ export function useSetupFlow(
       // Node
       patchStep("node", "running", t("setup.checkingNode"));
       reportPhase("node", t("setup.checkingNode"));
-      const nodeStatus = await checkNode();
+      const setupNode = await checkSetupNode();
+      const nodeStatus = setupNode.node;
+      setNodeRequirement(setupNode.requirement);
       if (!isRunActive(runId)) return;
       if (!nodeStatus.available) {
+        const useMacSystemRecovery = window.aegis?.platform === "darwin" && nodeStatus.source !== "custom";
+        if (useMacSystemRecovery) {
+          const message = t("setup.nodeRequiredDesc", { requirement: setupNode.requirement });
+          patchStep("node", "error", message);
+          setSetupError(null);
+          replaceSetupStep("node-missing");
+          reportPhase("node", message, 100);
+          return;
+        }
         patchStep("node", "running", t("setup.installingNode"));
         replaceSetupStep("install-node");
         reportPhase("node", t("setup.installingNode"), 20);
         await installNode();
         if (!isRunActive(runId)) return;
-        const installedNode = await checkNode();
+        const installedSetupNode = await checkSetupNode();
+        const installedNode = installedSetupNode.node;
+        setNodeRequirement(installedSetupNode.requirement);
         if (!installedNode.available) throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
         patchStep("node", "done", installedNode.version ?? undefined);
       } else {
@@ -1008,6 +1025,7 @@ export function useSetupFlow(
     cancelActiveRun();
     setSetupError(null);
     setNeedsGit(false);
+    setNodeRequirement(null);
     let destination = goBackSetup("welcome");
     while (isStaleSetupBackDestination(destination, gatewayRunning)) {
       destination = goBackSetup("welcome");
@@ -1023,6 +1041,12 @@ export function useSetupFlow(
     setSetupError(null);
     runNativeSetup();
   }, [setNeedsGit, setSetupError, runNativeSetup]);
+
+  const retryNode = useCallback(() => {
+    setNodeRequirement(null);
+    setSetupError(null);
+    runNativeSetup();
+  }, [setSetupError, runNativeSetup]);
 
   const enterWorkspace = useCallback((origin?: Element | null) => {
     cancelActiveRun();
@@ -1071,7 +1095,7 @@ export function useSetupFlow(
   }, [setGatewayRunning, setPostStorageStep, commitSteps, setInstallMode]);
 
   return {
-    progress, statusMessage, installMode, dockerStatus, openclawStatus, checkingDocker, needsGit, steps,
+    progress, statusMessage, installMode, dockerStatus, openclawStatus, checkingDocker, needsGit, nodeRequirement, steps,
     installTarget,
     wizardStep,
     wizardSubmitting,
@@ -1093,6 +1117,7 @@ export function useSetupFlow(
     refreshRuntime,
     goBack,
     retryGit,
+    retryNode,
     enterWorkspace,
   };
 }

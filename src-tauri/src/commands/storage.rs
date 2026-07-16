@@ -1,4 +1,4 @@
-use crate::commands::gateway::is_gateway_serving;
+use crate::commands::gateway::is_gateway_healthy;
 use crate::paths::{self, OpenClawRuntimeMode, StorageBootstrap};
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode, GatewayRuntimeState};
 use crate::state::GatewayProcess;
@@ -863,7 +863,7 @@ impl RuntimeRestoreStrategy {
 
 async fn wait_for_gateway(port: u16, attempts: usize) -> Result<(), String> {
     for _ in 0..attempts {
-        if is_gateway_serving(port).await {
+        if is_gateway_healthy(port).await {
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -880,7 +880,7 @@ async fn start_runtime_locked(
     state_dir: &Path,
     config_path: &Path,
 ) -> Result<(), String> {
-    if is_gateway_serving(port).await {
+    if is_gateway_healthy(port).await {
         state.transition(
             Some(GatewayLifecycle::Running),
             Some(mode),
@@ -1212,7 +1212,7 @@ pub async fn configure_storage(
     if paths::paths_refer_to_same_location(&target, &source) {
         validate_location_changes(&layout, Some(&existing_layout))?;
         let previous = PreviousGateway {
-            reachable: is_gateway_serving(port).await,
+            reachable: is_gateway_healthy(port).await,
             runtime: state.runtime_snapshot()?,
             port,
         };
@@ -1356,7 +1356,7 @@ pub async fn configure_storage(
     }
 
     let previous = PreviousGateway {
-        reachable: is_gateway_serving(port).await,
+        reachable: is_gateway_healthy(port).await,
         runtime: state.runtime_snapshot()?,
         port,
     };
@@ -1380,7 +1380,7 @@ pub async fn configure_storage(
     if let Err(error) = crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
     {
         if previous.reachable {
-            if is_gateway_serving(port).await {
+            if is_gateway_healthy(port).await {
                 state.transition(
                     Some(GatewayLifecycle::Running),
                     Some(previous.runtime.mode),

@@ -58,8 +58,12 @@ test('runtime commands use domestic vendor installers for system defaults and re
 });
 
 test('fresh install and existing-install update use distinct OpenClaw contracts', () => {
-  assert.match(setup, /install_node[\s\S]*target_openclaw_node_requirement\(\)/);
+  assert.match(setup, /async fn setup_node_requirement[\s\S]*resolve_openclaw_binary_async[\s\S]*required_node_requirement_for_openclaw_binary[\s\S]*target_openclaw_node_requirement/);
+  assert.match(setup, /install_node[\s\S]*setup_node_requirement\(\)/);
   assert.match(setup, /update_managed_node_runtime[\s\S]*installed_openclaw_node_requirement\(\)/);
   assert.match(updater, /resolve_openclaw_node_requirement\(metadata_registry, version\)/);
-  assert.match(updater, /ensure_compatible_node_runtime\(&app, UPDATE_PROGRESS_STEP, &target_requirement\)/);
+  assert.match(updater, /resolve_update_target_contract/);
+  assert.match(updater, /ensure_compatible_node_runtime\([\s\S]*?&target\.node_requirement/);
+  assert.match(updater, /validate_updated_runtime_contract/);
+  assert.match(updater, /mark_update_failure/);
 });

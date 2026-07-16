@@ -433,9 +433,10 @@ async fn wait_for_process_activity(
     }
 }
 
-/// Run `npm install -g <pkg>` against a user-writable global prefix with
-/// live output streaming. The registry order is selected from verified package
-/// metadata and current network latency, then returns Ok on first success.
+/// Run `npm install -g <pinned-package>` against a user-writable global prefix
+/// with live output streaming. The release contract is resolved once before
+/// this function, so its registry order, version and Node.js requirement stay
+/// aligned throughout a single installation attempt.
 ///
 /// We deliberately use `-g` plus an `npm_config_prefix` env var rather than
 /// `npm install --prefix <dir>`: `--prefix` is the project-local install
@@ -449,7 +450,7 @@ async fn npm_install_with_fallback(
     node_cmd: &str,
     npm_cli: Option<&str>,
     global_prefix: &std::path::Path,
-    pkg: &str,
+    target: &npm_registry::OpenclawReleaseTarget,
     force: bool,
     prog_start: f64,
     prog_end: f64,
@@ -460,9 +461,8 @@ async fn npm_install_with_fallback(
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     std::fs::create_dir_all(global_prefix).ok();
-    let registry_selection = npm_registry::select_npm_registry().await;
-    let expected_version = registry_selection.package_version.clone();
-    let registries = registry_selection.candidates();
+    let package_spec = target.package_spec();
+    let registries = target.registries().to_vec();
     let mut last_err = String::new();
     let total_regs = registries.len();
     let registry_order = registries
@@ -474,12 +474,9 @@ async fn npm_install_with_fallback(
         app,
         step,
         &format!(
-            "npm source order: {}{}",
+            "npm source order: {}; OpenClaw target = {}",
             registry_order,
-            expected_version
-                .as_deref()
-                .map(|version| format!("; OpenClaw latest = {}", version))
-                .unwrap_or_default()
+            target.version(),
         ),
         prog_start,
     );
@@ -516,7 +513,7 @@ async fn npm_install_with_fallback(
                 reg_idx + 1,
                 total_regs,
                 reg_label,
-                pkg
+                package_spec
             ),
             prog_start,
         );
@@ -548,7 +545,7 @@ async fn npm_install_with_fallback(
             // until npm has successfully replaced it.
             cmd.arg("--force");
         }
-        cmd.arg(pkg)
+        cmd.arg(&package_spec)
             .env("PATH", &path_env)
             .env("npm_config_prefix", &npm_prefix_str)
             // This is deliberately process-scoped. Do not alter user or global npmrc.
@@ -707,7 +704,7 @@ async fn npm_install_with_fallback(
             emit(
                 app,
                 step,
-                &format!("{} installed (via {}) ✓", pkg, reg_label),
+                &format!("{} installed (via {}) ✓", package_spec, reg_label),
                 prog_end,
             );
             return Ok(());
@@ -837,17 +834,61 @@ async fn resolve_node_sha256_for_filename(version: &str, filename: &str) -> Resu
     ))
 }
 
-async fn target_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
-    let selection = npm_registry::select_npm_registry().await;
-    if let Some(expression) = selection.node_requirement {
-        return NodeRuntimeRequirement::parse(expression, NodeRequirementSource::RegistryPackage);
+struct OpenclawInstallTarget {
+    release: npm_registry::OpenclawReleaseTarget,
+    node_requirement: NodeRuntimeRequirement,
+}
+
+async fn target_openclaw_install_target() -> Result<OpenclawInstallTarget, String> {
+    let release = npm_registry::resolve_latest_openclaw_release_target().await?;
+    let node_requirement = NodeRuntimeRequirement::parse(
+        release.node_requirement(),
+        NodeRequirementSource::RegistryPackage,
+    )?;
+    Ok(OpenclawInstallTarget {
+        release,
+        node_requirement,
+    })
+}
+
+pub(crate) async fn target_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
+    Ok(target_openclaw_install_target().await?.node_requirement)
+}
+
+/// Setup has two runtime contracts: an existing local OpenClaw package is
+/// authoritative for a reuse path, while a machine without OpenClaw must
+/// resolve the exact target package before installing anything. Keeping this
+/// distinction prevents an offline registry from blocking a healthy existing
+/// installation and prevents a fresh installation from using a broad fallback.
+async fn setup_node_requirement() -> Result<NodeRuntimeRequirement, String> {
+    if let Some(binary) = crate::commands::system::resolve_openclaw_binary_async().await {
+        return crate::commands::system::required_node_requirement_for_openclaw_binary(&binary);
     }
-    crate::commands::system::installed_openclaw_node_requirement()
+    target_openclaw_node_requirement().await
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupNodeStatus {
+    pub node: crate::commands::system::NodeStatus,
+    pub requirement: String,
+}
+
+/// Check the current Node.js runtime against the active setup contract: the
+/// installed package when one exists, otherwise the exact target release.
+#[tauri::command]
+pub async fn check_setup_node() -> Result<SetupNodeStatus, String> {
+    let target = setup_node_requirement().await?;
+    let node = crate::commands::system::check_node_for_requirement(&target).await?;
+    Ok(SetupNodeStatus {
+        node,
+        requirement: target.expression().to_string(),
+    })
 }
 
 #[tauri::command]
 pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
-    let requirement = target_openclaw_node_requirement().await?;
+    let requirement = setup_node_requirement().await?;
     install_node_for_requirement(app, requirement, false).await
 }
 
@@ -2160,8 +2201,9 @@ async fn install_openclaw_impl(
         );
     }
 
-    let target_requirement = target_openclaw_node_requirement().await?;
-    let compatible_node = ensure_compatible_node_runtime(&app, step, &target_requirement).await?;
+    let target = target_openclaw_install_target().await?;
+    let compatible_node =
+        ensure_compatible_node_runtime(&app, step, &target.node_requirement).await?;
 
     // ① 定位 Node.js 二进制
     emit_keyed(
@@ -2254,7 +2296,7 @@ async fn install_openclaw_impl(
         &node_cmd,
         npm_cli.as_deref(),
         &openclaw_prefix,
-        "openclaw",
+        &target.release,
         mode.forces_npm_install(),
         0.10,
         0.90,
@@ -2301,6 +2343,34 @@ async fn install_openclaw_impl(
             verified
                 .error
                 .unwrap_or_else(|| "unknown validation error".into())
+        ));
+    }
+    let installed_package_version =
+        crate::commands::system::openclaw_package_version_for_binary(&openclaw_bin)?;
+    if installed_package_version != target.release.version() {
+        return Err(format!(
+            "OpenClaw package version mismatch after installation: expected {}, found {}",
+            target.release.version(),
+            installed_package_version
+        ));
+    }
+    let installed_requirement =
+        crate::commands::system::required_node_requirement_for_openclaw_binary(&openclaw_bin)?;
+    if installed_requirement.expression() != target.node_requirement.expression() {
+        return Err(format!(
+            "OpenClaw {} changed its Node.js requirement during installation: expected {}, found {}",
+            installed_package_version,
+            target.node_requirement.expression(),
+            installed_requirement.expression()
+        ));
+    }
+    let post_install_node =
+        crate::commands::system::check_node_for_requirement(&installed_requirement).await?;
+    if !post_install_node.available {
+        return Err(format!(
+            "OpenClaw {} requires Node.js {}, but the selected runtime is no longer compatible after installation",
+            installed_package_version,
+            installed_requirement.expression()
         ));
     }
     if let Some(relocation) = relocation {
@@ -2394,16 +2464,17 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     // ⓘ Stage 2: config port probing
+    let config_path = paths::config_path();
     emit_keyed(
         &app,
         step,
-        "Reading gateway port from ~/.openclaw/openclaw.json...",
+        &format!("Reading gateway port from {}...", config_path.display()),
         "setup.gateway.readPort",
         0.32,
     );
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
-    let port = std::fs::read_to_string(paths::config_path())
+    let port = std::fs::read_to_string(&config_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
         .and_then(|cfg| crate::commands::config::gateway_port_from_config(&cfg))
@@ -2433,13 +2504,13 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         0.52,
     );
 
-    let reachable = crate::commands::gateway::is_gateway_serving(port).await;
+    let reachable = crate::commands::gateway::is_gateway_healthy(port).await;
     if reachable {
         emit_keyed(
             &app,
             step,
             &format!(
-                "Port {} already in use - assuming Gateway is running, skipping start",
+                "OpenClaw Gateway health check passed on port {}; skipping start",
                 port
             ),
             "setup.gateway.alreadyUp",

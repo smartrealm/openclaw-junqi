@@ -61,6 +61,7 @@ pub fn run() {
             // System
             commands::system::get_platform_info,
             commands::system::check_node,
+            commands::setup::check_setup_node,
             commands::system::check_npm,
             commands::system::check_git,
             commands::system::check_openclaw,

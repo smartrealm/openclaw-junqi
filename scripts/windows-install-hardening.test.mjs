@@ -30,9 +30,10 @@ test('generic winget package installation command is not exposed', () => {
 test('Windows package uses the small WebView2 bootstrapper and standard system runtime defaults', () => {
   assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'downloadBootstrapper');
   assert.deepEqual(tauri.plugins.updater.endpoints, []);
-  // Existing system tools are reused. Missing tools use the vendor installer
-  // from domestic mirrors, which keeps the vendor-selected default path.
-  // Archives remain available only for an explicit portable selection.
+  // Existing system tools are reused. Missing tools download vendor artifacts
+  // from domestic mirrors while validating against Node's independent official
+  // publisher manifest. Archives remain available only for an explicit
+  // portable selection.
   assert.match(setup, /install_windows_system_node/);
   assert.match(setup, /install_windows_system_node_from_mirrors/);
   assert.match(setup, /install_windows_system_node_with_winget/);
@@ -54,7 +55,13 @@ test('Windows package uses the small WebView2 bootstrapper and standard system r
   assert.match(nodeRuntime, /mirrors\.aliyun\.com\/nodejs-release/);
   assert.match(nodeRuntime, /mirrors\.cloud\.tencent\.com\/nodejs-release/);
   assert.match(nodeRuntime, /mirrors\.huaweicloud\.com\/nodejs/);
-  assert.doesNotMatch(nodeRuntime, /nodejs\.org\/dist/);
+  assert.match(nodeRuntime, /NODE_OFFICIAL_RELEASE_BASE/);
+  assert.match(nodeRuntime, /nodejs\.org\/dist/);
+  const nodeArchiveCatalog = nodeRuntime.slice(
+    nodeRuntime.indexOf('const NODE_DISTRIBUTION_SOURCES'),
+    nodeRuntime.indexOf('const NODE_OFFICIAL_RELEASE_BASE'),
+  );
+  assert.doesNotMatch(nodeArchiveCatalog, /nodejs\.org\/dist/);
   assert.doesNotMatch(setup, /resolve_latest_managed_git_artifact/);
   assert.match(gitRuntime, /registry\.npmmirror\.com\/.*git-for-windows/);
   assert.match(gitRuntime, /mirrors\.huaweicloud\.com\/git-for-windows/);

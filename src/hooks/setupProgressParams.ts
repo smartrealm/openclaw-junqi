@@ -146,6 +146,10 @@ export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
     extract: capture(/^OpenClaw binary:\s+(.+)$/, "path"),
   },
   {
+    suffix: ".readPort",
+    extract: capture(/^Reading gateway port from\s+(.+?)(?:\.\.\.|…)?$/, "path"),
+  },
+  {
     suffix: ".targetNode",
     extract: capture(/^Target OpenClaw requires Node\.js\s+(.+?);/, "requirement"),
   },
@@ -162,7 +166,7 @@ export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
   },
   {
     suffix: [".portResolved", ".alreadyUp"],
-    extract: capture(/(?:Target port =|Port)\s+(\d+)/, "port"),
+    extract: capture(/(?:Target port =|[Pp]ort)\s+(\d+)/, "port"),
   },
   {
     suffix: ".probe",

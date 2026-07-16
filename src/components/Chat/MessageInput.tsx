@@ -149,7 +149,7 @@ export function MessageInput() {
   const [allSkills, setAllSkills] = useState<Array<{ name: string; description?: string }>>([]);
   // Workspace files for @ file mention. Fetched lazily on first `@` keystroke
   // (cheaper than eagerly loading on mount), then refreshed in the background.
-  // Path = ~/.openclaw/workspace (or user-configured `agents.defaults.workspace`).
+  // Path comes from the active configured workspace, resolved natively.
   const [workspaceFiles, setWorkspaceFiles] = useState<Array<{ name: string; path: string }>>([]);
   const [workspaceFilesLoaded, setWorkspaceFilesLoaded] = useState(false);
   const [atPicker, setAtPicker] = useState<{ open: boolean; query: string; idx: number }>({ open: false, query: '', idx: 0 });

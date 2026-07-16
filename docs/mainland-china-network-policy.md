@@ -18,8 +18,9 @@ offline bundle.
 - Missing or incompatible Node.js uses the official Windows MSI and its
   vendor-selected standard installation directory. JunQi resolves a version
   from the active OpenClaw requirement, downloads the MSI through domestic
-  mirrors, and verifies it with the publisher `SHASUMS256.txt`; it does not set
-  a private installation directory. If the required MSI is unavailable for the
+  mirrors, and verifies it against the publisher `SHASUMS256.txt` fetched from
+  the independent official Node.js release origin; it does not set a private
+  installation directory. If the required MSI is unavailable for the
   current architecture or every domestic source fails, Windows Package Manager
   is a logged fallback rather than the default path.
 - Missing Git uses the full Git for Windows installer and its standard

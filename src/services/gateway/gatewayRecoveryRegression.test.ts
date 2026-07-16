@@ -82,7 +82,9 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const setup = source('src/hooks/useSetupFlow.ts');
   assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60/);
-  assert.match(gateway, /child\.try_wait\(\)[\s\S]*is_gateway_serving\(port\)\.await/);
+  assert.match(gateway, /child\.try_wait\(\)[\s\S]*is_gateway_healthy\(port\)\.await/);
+  assert.match(gateway, /http:\/\/\{\}:\{\}\/health/);
+  assert.doesNotMatch(gateway, /TcpStream::connect/);
   assert.match(gateway, /terminate_owned_gateway\(&mut child\)\.await/);
   assert.match(gateway, /Recent Gateway output/);
   assert.match(gateway, /managed child health check passed/);
@@ -360,7 +362,7 @@ test('BUG-GL11 offline recovery shares the App route and exposes determinate pro
   assert.match(app, /openControlUiAfterRecoveryRef/);
   assert.match(settings, /openControlUi:\s*true/);
   assert.match(console, /configured_gateway_port/);
-  assert.match(console, /is_gateway_serving\(port\)/);
+  assert.match(console, /is_gateway_healthy\(port\)/);
 });
 
 test('BUG-06 stalled boot exposes the complete self-rescue center', () => {

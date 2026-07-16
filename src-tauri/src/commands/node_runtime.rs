@@ -126,6 +126,7 @@ const NODE_DISTRIBUTION_SOURCES: &[NodeDistributionSource] = &[
         display_name: "华为云",
     },
 ];
+const NODE_OFFICIAL_RELEASE_BASE: &str = "https://nodejs.org/dist";
 
 pub(crate) fn node_index_sources() -> Vec<String> {
     NODE_DISTRIBUTION_SOURCES
@@ -135,10 +136,12 @@ pub(crate) fn node_index_sources() -> Vec<String> {
 }
 
 pub(crate) fn node_checksum_sources(version: &str) -> Vec<String> {
-    NODE_DISTRIBUTION_SOURCES
-        .iter()
-        .map(|source| format!("{}/v{version}/SHASUMS256.txt", source.base_url))
-        .collect()
+    // Archives may come from domestic mirrors for reachability, but the
+    // verification manifest must not share their trust boundary. Node.js
+    // publishes this immutable release manifest at its official origin.
+    vec![format!(
+        "{NODE_OFFICIAL_RELEASE_BASE}/v{version}/SHASUMS256.txt"
+    )]
 }
 
 pub(crate) fn node_archive_sources(
@@ -389,18 +392,18 @@ mod tests {
         let order = node_download_order();
 
         assert_eq!(indexes.len(), NODE_DISTRIBUTION_SOURCES.len());
-        assert_eq!(indexes.len(), checksums.len());
         assert_eq!(indexes.len(), archives.len());
         assert_eq!(indexes.len(), installers.len());
         assert_eq!(indexes.len(), order.len());
-        for ((index, checksum), (archive, _)) in
-            indexes.iter().zip(checksums.iter()).zip(archives.iter())
-        {
+        for (index, (archive, _)) in indexes.iter().zip(archives.iter()) {
             let base = index.strip_suffix("/index.json").unwrap();
-            assert!(checksum.starts_with(base));
             assert!(archive.starts_with(base));
         }
         assert!(indexes.iter().all(|url| !url.contains("nodejs.org")));
+        assert_eq!(
+            checksums,
+            vec!["https://nodejs.org/dist/v24.18.1/SHASUMS256.txt".to_string()]
+        );
         assert!(installers
             .iter()
             .all(|(url, _)| url.ends_with("node-v24.18.1-win-x64.msi")));

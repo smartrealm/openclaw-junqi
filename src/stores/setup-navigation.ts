@@ -7,6 +7,7 @@ export type SetupStep =
   | "checking"
   | "install-git"
   | "git-missing"
+  | "node-missing"
   | "install-node"
   | "install-openclaw"
   | "install-complete"
@@ -42,6 +43,8 @@ export function setupStepMessageKey(step: SetupStep): string {
       return "setup.chooseMode";
     case "git-missing":
       return "setup.gitRequired";
+    case "node-missing":
+      return "setup.nodeRequired";
     case "ready":
       return "setup.ready";
     case "error":
@@ -68,6 +71,7 @@ export function setupStepProgress(step: SetupStep): number {
     case "storage":
       return 24;
     case "git-missing":
+    case "node-missing":
     case "checking":
     case "install-git":
     case "install-node":

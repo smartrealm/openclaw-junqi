@@ -41,9 +41,9 @@ pub struct EnsureResult {
     pub error: Option<String>,
 }
 
-/// 确认指定端口是否能接受 Gateway TCP 连接。
+/// 确认指定端口上的 OpenClaw Gateway 已通过健康校验。
 async fn probe_gateway_port(port: u16) -> bool {
-    crate::commands::gateway::is_gateway_serving(port).await
+    crate::commands::gateway::is_gateway_healthy(port).await
 }
 
 /// 从当前本机配置读取 Gateway token。
