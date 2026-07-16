@@ -114,7 +114,10 @@ test('BUG-WRM-06 an explicit portable Node never falls through to system npm', (
   const npmCheck = system.slice(system.indexOf('pub async fn check_npm'), system.indexOf('fn portable_node_is_compatible'));
   assert.match(npmCheck, /if let Some\(node\) = paths::configured_node_path\(\)/);
   assert.ok(npmCheck.indexOf('return Ok(NpmStatus') < npmCheck.indexOf('let system_npm'));
-  assert.match(setup, /portable_node_runtime_is_complete\(current\.available, configured_npm\.as_deref\(\)\)/);
+  assert.match(setup, /let target_node = runtime_binary\(&target, "node"\)/);
+  assert.match(setup, /let target_npm = staged_npm_cli\(&target\)/);
+  assert.match(setup, /if !force && target_npm\.is_file\(\)/);
+  assert.match(setup, /requirement\.supports\(&version\)/);
 });
 
 test('BUG-WRM-07 terminal integration succeeds before relocation is committed', () => {

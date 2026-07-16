@@ -428,9 +428,9 @@ pub fn set_active_runtime_mode(mode: OpenClawRuntimeMode) -> Result<(), String> 
 
 // ── Node.js ────────────────────────────────────────────────────
 
-/// Returns a user-selected portable Node.js root. Without an explicit
-/// selection, JunQi deliberately uses the system installation rather than
-/// creating another Node.js copy beside OpenClaw data.
+/// Returns a user-selected managed Node.js root. Without an explicit selection,
+/// JunQi first uses a compatible system installation and otherwise falls back
+/// to its default managed runtime on supported platforms.
 pub fn configured_node_runtime_dir() -> Option<PathBuf> {
     std::env::var_os("JUNQI_NODE_RUNTIME_DIR")
         .filter(|value| !value.is_empty())
@@ -461,11 +461,15 @@ pub fn configured_node_path() -> Option<PathBuf> {
     configured_node_runtime_dir().map(|root| node_binary_in(&root))
 }
 
-/// The portable Node.js location used by older JunQi releases. This remains a
-/// read-only compatibility fallback; new setup flows never install here unless
-/// the user explicitly selected that same directory.
+/// Default JunQi-managed Node.js root used when no compatible system runtime
+/// exists and the user did not select another portable location.
+pub fn default_managed_node_runtime_dir() -> PathBuf {
+    runtime_dir().join("node")
+}
+
+/// Compatibility name for the default managed Node.js executable.
 pub fn legacy_local_node_path() -> PathBuf {
-    node_binary_in(&runtime_dir().join("node"))
+    node_binary_in(&default_managed_node_runtime_dir())
 }
 
 /// The npm CLI that belongs to an explicitly selected portable Node.js.
@@ -475,8 +479,7 @@ pub fn configured_npm_cli_path() -> Option<PathBuf> {
 
 /// The legacy private npm CLI kept only for upgrades from older releases.
 pub fn legacy_local_npm_cli_path() -> PathBuf {
-    let legacy_root = runtime_dir().join("node");
-    npm_cli_in_node_root(&legacy_root)
+    npm_cli_in_node_root(&default_managed_node_runtime_dir())
 }
 
 /// Return an npm cache override only when the user explicitly selected one.
@@ -597,8 +600,8 @@ pub fn openclaw_binary_selection_path() -> PathBuf {
 
 // ── Git ────────────────────────────────────────────────────────
 
-/// Returns a user-selected portable Git root. Without an explicit selection,
-/// Git is discovered from the operating system and its configured PATH.
+/// Returns a user-selected portable Git root. This selection is supported on
+/// Windows; macOS and Linux discover Git from the operating system and PATH.
 pub fn configured_git_runtime_dir() -> Option<PathBuf> {
     std::env::var_os("JUNQI_GIT_RUNTIME_DIR")
         .filter(|value| !value.is_empty())
@@ -619,10 +622,15 @@ pub fn configured_git_path() -> Option<PathBuf> {
     configured_git_runtime_dir().map(|root| git_binary_in(&root))
 }
 
-/// Legacy JunQi-owned Git remains discoverable after an upgrade, but new
-/// default setup never writes to this location.
+/// Default JunQi-managed Git root used when no system Git exists and the user
+/// did not select another portable location.
+pub fn default_managed_git_runtime_dir() -> PathBuf {
+    runtime_dir().join("git")
+}
+
+/// Compatibility name for the default managed Git executable.
 pub fn legacy_local_git_path() -> PathBuf {
-    git_binary_in(&runtime_dir().join("git"))
+    git_binary_in(&default_managed_git_runtime_dir())
 }
 
 // ── 工作区 ─────────────────────────────────────────────────────
@@ -684,6 +692,23 @@ mod storage_bootstrap_tests {
         assert_ne!(
             restored.git_runtime_dir,
             Some(restored.runtime_dir.join("git"))
+        );
+    }
+
+    #[test]
+    fn default_managed_dependency_dirs_stay_under_the_runtime_root() {
+        assert_eq!(
+            default_managed_node_runtime_dir(),
+            runtime_dir().join("node")
+        );
+        assert_eq!(default_managed_git_runtime_dir(), runtime_dir().join("git"));
+        assert_eq!(
+            legacy_local_node_path(),
+            node_binary_in(&default_managed_node_runtime_dir())
+        );
+        assert_eq!(
+            legacy_local_git_path(),
+            git_binary_in(&default_managed_git_runtime_dir())
         );
     }
 

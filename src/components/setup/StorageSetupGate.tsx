@@ -18,6 +18,8 @@ interface StorageSetupStatus {
   npmPrefix: string | null;
   nodeRuntimeDir: string | null;
   gitRuntimeDir: string | null;
+  customNodeRuntimeSupported: boolean;
+  customGitRuntimeSupported: boolean;
   openclawRelocationRequired: boolean;
   terminalIntegration: boolean;
   terminalLauncherDir: string;
@@ -161,9 +163,9 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
             setNpmPrefix(result.npmPrefix ?? '');
             setCustomNpmPrefix(Boolean(result.npmPrefix));
             setNodeRuntimeDir(result.nodeRuntimeDir ?? '');
-            setCustomNodeRuntime(Boolean(result.nodeRuntimeDir));
+            setCustomNodeRuntime(result.customNodeRuntimeSupported && Boolean(result.nodeRuntimeDir));
             setGitRuntimeDir(result.gitRuntimeDir ?? '');
-            setCustomGitRuntime(Boolean(result.gitRuntimeDir));
+            setCustomGitRuntime(result.customGitRuntimeSupported && Boolean(result.gitRuntimeDir));
             setTerminalIntegration(result.terminalIntegration);
             setMigrateExisting(result.legacyExists);
           })
@@ -255,8 +257,8 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
           runtimeDir,
           npmCacheDir: customNpmCache ? npmCacheDir.trim() || null : null,
           npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
-          nodeRuntimeDir: customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
-          gitRuntimeDir: customGitRuntime ? gitRuntimeDir.trim() || null : null,
+          nodeRuntimeDir: status.customNodeRuntimeSupported && customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
+          gitRuntimeDir: status.customGitRuntimeSupported && customGitRuntime ? gitRuntimeDir.trim() || null : null,
           terminalIntegration,
         },
       });
@@ -507,51 +509,55 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 )}
               </div>
 
-              <div className="border-b border-aegis-border/70 py-3">
-                <label className="flex cursor-pointer items-center justify-between gap-4">
-                  <span>
-                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNodeRuntime', '自定义 Node.js 运行时目录')}</span>
-                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNodeRuntimeHint', '关闭时使用系统已安装的 Node.js；开启后仅在所选目录维护便携运行时')}</span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={customNodeRuntime}
-                    onChange={(event) => setCustomNodeRuntime(event.target.checked)}
-                    className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
-                  />
-                </label>
-                {customNodeRuntime && (
-                  <LocationRow
-                    icon={<Cpu size={16} />}
-                    label={t('storage.nodeRuntimeLocation', 'Node.js 运行时目录')}
-                    value={nodeRuntimeDir}
-                    onChoose={() => void chooseExactDirectory(t('storage.nodeRuntimeChoose', '选择 Node.js 运行时目录'), setNodeRuntimeDir)}
-                  />
-                )}
-              </div>
+              {status.customNodeRuntimeSupported && (
+                <div className="border-b border-aegis-border/70 py-3">
+                  <label className="flex cursor-pointer items-center justify-between gap-4">
+                    <span>
+                      <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNodeRuntime', '自定义 Node.js 运行时目录')}</span>
+                      <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNodeRuntimeHint', '关闭时优先复用系统 Node.js，缺失或不兼容时使用默认托管目录；开启后在所选目录维护运行时')}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={customNodeRuntime}
+                      onChange={(event) => setCustomNodeRuntime(event.target.checked)}
+                      className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
+                    />
+                  </label>
+                  {customNodeRuntime && (
+                    <LocationRow
+                      icon={<Cpu size={16} />}
+                      label={t('storage.nodeRuntimeLocation', 'Node.js 运行时目录')}
+                      value={nodeRuntimeDir}
+                      onChoose={() => void chooseExactDirectory(t('storage.nodeRuntimeChoose', '选择 Node.js 运行时目录'), setNodeRuntimeDir)}
+                    />
+                  )}
+                </div>
+              )}
 
-              <div className="border-b border-aegis-border/70 py-3">
-                <label className="flex cursor-pointer items-center justify-between gap-4">
-                  <span>
-                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customGitRuntime', '自定义 Git 运行时目录')}</span>
-                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customGitRuntimeHint', '关闭时使用系统已安装的 Git；开启后仅在所选目录维护便携运行时')}</span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={customGitRuntime}
-                    onChange={(event) => setCustomGitRuntime(event.target.checked)}
-                    className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
-                  />
-                </label>
-                {customGitRuntime && (
-                  <LocationRow
-                    icon={<GitBranch size={16} />}
-                    label={t('storage.gitRuntimeLocation', 'Git 运行时目录')}
-                    value={gitRuntimeDir}
-                    onChoose={() => void chooseExactDirectory(t('storage.gitRuntimeChoose', '选择 Git 运行时目录'), setGitRuntimeDir)}
-                  />
-                )}
-              </div>
+              {status.customGitRuntimeSupported && (
+                <div className="border-b border-aegis-border/70 py-3">
+                  <label className="flex cursor-pointer items-center justify-between gap-4">
+                    <span>
+                      <span className="block text-xs font-semibold text-aegis-text">{t('storage.customGitRuntime', '自定义 Git 运行时目录')}</span>
+                      <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customGitRuntimeHint', '关闭时使用系统已安装的 Git；开启后仅在所选目录维护便携运行时')}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={customGitRuntime}
+                      onChange={(event) => setCustomGitRuntime(event.target.checked)}
+                      className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
+                    />
+                  </label>
+                  {customGitRuntime && (
+                    <LocationRow
+                      icon={<GitBranch size={16} />}
+                      label={t('storage.gitRuntimeLocation', 'Git 运行时目录')}
+                      value={gitRuntimeDir}
+                      onChoose={() => void chooseExactDirectory(t('storage.gitRuntimeChoose', '选择 Git 运行时目录'), setGitRuntimeDir)}
+                    />
+                  )}
+                </div>
+              )}
 
               <label className="flex cursor-pointer items-start justify-between gap-4 py-3">
                 <span className="flex min-w-0 gap-3">

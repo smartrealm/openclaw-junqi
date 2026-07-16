@@ -4,6 +4,150 @@ use serde::Deserialize;
 pub(crate) const FALLBACK_NODE_REQUIREMENT: &str = "*";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NodeArchiveFormat {
+    Zip,
+    TarGz,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ManagedNodePlatform {
+    distribution_os: &'static str,
+    archive_os: &'static str,
+    architecture: &'static str,
+    pub(crate) archive_format: NodeArchiveFormat,
+}
+
+impl ManagedNodePlatform {
+    pub(crate) fn for_target(os: &str, architecture: &str) -> Result<Self, String> {
+        let architecture = match architecture {
+            "aarch64" => "arm64",
+            "x86_64" => "x64",
+            other => return Err(format!("Unsupported Node.js architecture: {other}")),
+        };
+        match os {
+            "windows" => Ok(Self {
+                distribution_os: "win",
+                archive_os: "win",
+                architecture,
+                archive_format: NodeArchiveFormat::Zip,
+            }),
+            "macos" => Ok(Self {
+                distribution_os: "osx",
+                archive_os: "darwin",
+                architecture,
+                archive_format: NodeArchiveFormat::TarGz,
+            }),
+            other => Err(format!("Managed Node.js is not supported on {other}")),
+        }
+    }
+
+    pub(crate) fn current() -> Result<Self, String> {
+        Self::for_target(std::env::consts::OS, std::env::consts::ARCH)
+    }
+
+    pub(crate) fn distribution_artifact(self) -> String {
+        let format = match self.archive_format {
+            NodeArchiveFormat::Zip => "zip",
+            NodeArchiveFormat::TarGz => "tar",
+        };
+        format!("{}-{}-{format}", self.distribution_os, self.architecture)
+    }
+
+    pub(crate) fn archive_filename(self, version: &str) -> String {
+        let extension = match self.archive_format {
+            NodeArchiveFormat::Zip => "zip",
+            NodeArchiveFormat::TarGz => "tar.gz",
+        };
+        format!(
+            "node-v{version}-{}-{}.{}",
+            self.archive_os, self.architecture, extension
+        )
+    }
+
+    pub(crate) fn extracted_root(self, version: &str) -> Option<String> {
+        (self.archive_format == NodeArchiveFormat::TarGz)
+            .then(|| format!("node-v{version}-{}-{}", self.archive_os, self.architecture))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NodeDistributionSource {
+    base_url: &'static str,
+    log_label: &'static str,
+    display_name: &'static str,
+}
+
+const NODE_DISTRIBUTION_SOURCES: &[NodeDistributionSource] = &[
+    NodeDistributionSource {
+        base_url: "https://npmmirror.com/mirrors/node",
+        log_label: "npmmirror.com（国内）",
+        display_name: "npmmirror.com",
+    },
+    NodeDistributionSource {
+        base_url: "https://mirrors.aliyun.com/nodejs-release",
+        log_label: "阿里云镜像（国内）",
+        display_name: "阿里云",
+    },
+    NodeDistributionSource {
+        base_url: "https://mirrors.cloud.tencent.com/nodejs-release",
+        log_label: "腾讯云镜像（国内）",
+        display_name: "腾讯云",
+    },
+    NodeDistributionSource {
+        base_url: "https://mirrors.ustc.edu.cn/node",
+        log_label: "中科大镜像（国内）",
+        display_name: "中科大",
+    },
+    NodeDistributionSource {
+        base_url: "https://mirror.nju.edu.cn/nodejs-release",
+        log_label: "南京大学镜像（国内）",
+        display_name: "南京大学",
+    },
+    NodeDistributionSource {
+        base_url: "https://mirrors.huaweicloud.com/nodejs",
+        log_label: "华为云镜像（国内）",
+        display_name: "华为云",
+    },
+];
+
+pub(crate) fn node_index_sources() -> Vec<String> {
+    NODE_DISTRIBUTION_SOURCES
+        .iter()
+        .map(|source| format!("{}/index.json", source.base_url))
+        .collect()
+}
+
+pub(crate) fn node_checksum_sources(version: &str) -> Vec<String> {
+    NODE_DISTRIBUTION_SOURCES
+        .iter()
+        .map(|source| format!("{}/v{version}/SHASUMS256.txt", source.base_url))
+        .collect()
+}
+
+pub(crate) fn node_archive_sources(
+    platform: ManagedNodePlatform,
+    version: &str,
+) -> Vec<(String, &'static str)> {
+    let filename = platform.archive_filename(version);
+    NODE_DISTRIBUTION_SOURCES
+        .iter()
+        .map(|source| {
+            (
+                format!("{}/v{version}/{filename}", source.base_url),
+                source.log_label,
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn node_download_order() -> Vec<String> {
+    NODE_DISTRIBUTION_SOURCES
+        .iter()
+        .map(|source| source.display_name.to_string())
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NodeRequirementSource {
     InstalledPackage,
     RegistryPackage,
@@ -25,22 +169,6 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(matches!(value, serde_json::Value::String(ref name) if !name.trim().is_empty()))
-}
-
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn current_platform_artifact() -> String {
-    let arch = match std::env::consts::ARCH {
-        "aarch64" => "arm64",
-        "x86_64" => "x64",
-        other => other,
-    };
-    if cfg!(windows) {
-        format!("win-{arch}-zip")
-    } else if cfg!(target_os = "macos") {
-        format!("osx-{arch}-tar")
-    } else {
-        format!("linux-{arch}")
-    }
 }
 
 pub(crate) fn select_preferred_release(
@@ -179,5 +307,51 @@ mod tests {
             select_preferred_release(&requirement, &releases, "win-x64-zip").as_deref(),
             Some("24.18.1")
         );
+    }
+
+    #[test]
+    fn bug_rp_02_platform_model_owns_index_and_archive_names() {
+        let windows = ManagedNodePlatform::for_target("windows", "x86_64").unwrap();
+        assert_eq!(windows.distribution_artifact(), "win-x64-zip");
+        assert_eq!(
+            windows.archive_filename("24.18.1"),
+            "node-v24.18.1-win-x64.zip"
+        );
+        assert_eq!(windows.extracted_root("24.18.1"), None);
+
+        let macos = ManagedNodePlatform::for_target("macos", "aarch64").unwrap();
+        assert_eq!(macos.distribution_artifact(), "osx-arm64-tar");
+        assert_eq!(
+            macos.archive_filename("24.18.1"),
+            "node-v24.18.1-darwin-arm64.tar.gz"
+        );
+        assert_eq!(
+            macos.extracted_root("24.18.1").as_deref(),
+            Some("node-v24.18.1-darwin-arm64")
+        );
+        assert!(ManagedNodePlatform::for_target("linux", "x86_64").is_err());
+        assert!(ManagedNodePlatform::for_target("macos", "riscv64").is_err());
+    }
+
+    #[test]
+    fn bug_rp_03_node_urls_and_ui_order_share_one_catalog() {
+        let platform = ManagedNodePlatform::for_target("windows", "x86_64").unwrap();
+        let indexes = node_index_sources();
+        let checksums = node_checksum_sources("24.18.1");
+        let archives = node_archive_sources(platform, "24.18.1");
+        let order = node_download_order();
+
+        assert_eq!(indexes.len(), NODE_DISTRIBUTION_SOURCES.len());
+        assert_eq!(indexes.len(), checksums.len());
+        assert_eq!(indexes.len(), archives.len());
+        assert_eq!(indexes.len(), order.len());
+        for ((index, checksum), (archive, _)) in
+            indexes.iter().zip(checksums.iter()).zip(archives.iter())
+        {
+            let base = index.strip_suffix("/index.json").unwrap();
+            assert!(checksum.starts_with(base));
+            assert!(archive.starts_with(base));
+        }
+        assert!(indexes.iter().all(|url| !url.contains("nodejs.org")));
     }
 }

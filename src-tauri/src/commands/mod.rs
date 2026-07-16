@@ -41,6 +41,7 @@ pub mod project_config;
 pub mod provider_oauth;
 pub mod pty_neu;
 pub mod quickchat;
+pub(crate) mod runtime_policy;
 pub mod screenshot;
 pub mod secret_store;
 pub mod session_analytics;

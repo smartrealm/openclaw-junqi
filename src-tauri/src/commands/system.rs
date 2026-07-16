@@ -19,7 +19,7 @@ pub struct GitStatus {
     pub available: bool,
     pub version: Option<String>,
     pub path: Option<String>,
-    pub source: Option<String>, // "local" or "system"
+    pub source: Option<RuntimeToolSource>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,7 +27,15 @@ pub struct NodeStatus {
     pub available: bool,
     pub version: Option<String>,
     pub path: Option<String>,
-    pub source: Option<String>, // "local" or "system"
+    pub source: Option<RuntimeToolSource>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RuntimeToolSource {
+    System,
+    Managed,
+    Custom,
 }
 
 /// A native OpenClaw executable bound to the exact Node.js runtime that was
@@ -350,7 +358,7 @@ pub(crate) async fn check_node_for_requirement(
                 .is_some_and(|version| requirement.supports(version)),
             version,
             path: Some(path_str),
-            source: Some("local".into()),
+            source: Some(RuntimeToolSource::Custom),
         });
     }
 
@@ -371,7 +379,7 @@ pub(crate) async fn check_node_for_requirement(
             available: true,
             version: system_version,
             path: Some(system_node.clone()),
-            source: Some("system".into()),
+            source: Some(RuntimeToolSource::System),
         });
     }
 
@@ -385,7 +393,7 @@ pub(crate) async fn check_node_for_requirement(
                 available: true,
                 version,
                 path: Some(path_str),
-                source: Some("local".into()),
+                source: Some(RuntimeToolSource::Managed),
             });
         }
         if system_version.is_none() {
@@ -393,7 +401,7 @@ pub(crate) async fn check_node_for_requirement(
                 available: false,
                 version,
                 path: Some(path_str),
-                source: Some("local".into()),
+                source: Some(RuntimeToolSource::Managed),
             });
         }
     }
@@ -403,7 +411,7 @@ pub(crate) async fn check_node_for_requirement(
             available: false,
             version: system_version,
             path: Some(system_node),
-            source: Some("system".into()),
+            source: Some(RuntimeToolSource::System),
         });
     }
 
@@ -966,7 +974,7 @@ pub async fn check_git() -> Result<GitStatus, String> {
             available: version.is_some(),
             version,
             path: Some(path),
-            source: Some("local".into()),
+            source: Some(RuntimeToolSource::Custom),
         });
     }
 
@@ -985,7 +993,7 @@ pub async fn check_git() -> Result<GitStatus, String> {
             available: true,
             version: Some(version),
             path: Some(system_git),
-            source: Some("system".into()),
+            source: Some(RuntimeToolSource::System),
         });
     }
 
@@ -997,7 +1005,7 @@ pub async fn check_git() -> Result<GitStatus, String> {
             available: version.is_some(),
             version,
             path: Some(path),
-            source: Some("local".into()),
+            source: Some(RuntimeToolSource::Managed),
         });
     }
     Ok(GitStatus {
@@ -1114,7 +1122,24 @@ mod tests {
     use super::{
         npm_cli_for_node, npm_openclaw_entry, npm_prefix_for_openclaw_binary, openclaw_package_dir,
         parse_openclaw_version, path_text_for_display, read_openclaw_package_metadata,
+        RuntimeToolSource,
     };
+
+    #[test]
+    fn bug_rp_04_runtime_tool_sources_have_distinct_wire_values() {
+        assert_eq!(
+            serde_json::to_value(RuntimeToolSource::System).unwrap(),
+            "system"
+        );
+        assert_eq!(
+            serde_json::to_value(RuntimeToolSource::Managed).unwrap(),
+            "managed"
+        );
+        assert_eq!(
+            serde_json::to_value(RuntimeToolSource::Custom).unwrap(),
+            "custom"
+        );
+    }
 
     #[test]
     fn windows_npm_shim_resolves_to_package_entry_point() {

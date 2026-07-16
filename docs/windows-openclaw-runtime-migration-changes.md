@@ -11,8 +11,12 @@ Windows 用户迁移 OpenClaw 数据时，可以独立重新选择 Node.js、Git
 ## 用户可见变化
 
 - 迁移现有数据时，工作区和内部运行时保持原有相对布局；Node.js、Git、npm 缓存和 npm prefix 可以分别调整。
-- 自定义 Node.js 目录使用便携运行时；关闭自定义后使用 Windows 系统 Node.js。
-- 自定义 Git 目录使用便携 Git；关闭自定义后使用 Windows PATH 中的系统 Git。
+- 自定义 Node.js 目录使用便携运行时；关闭自定义后优先复用兼容的系统 Node.js，缺失或不兼容时安装到 JunQi 默认托管目录。
+- 自定义 Git 目录使用便携 Git；关闭自定义后优先复用 Windows PATH 中的系统 Git，缺失时安装到 JunQi 默认托管目录。
+- Windows 默认托管安装不再调用 winget；Node.js 使用六个国内镜像回退，Git 使用 npmmirror 与华为云回退。
+- Git 制品版本、架构文件名与 SHA-256 位于独立受审清单，安装逻辑不写死具体版号；国内镜像索引缺少可信摘要，因此不会无校验地自动追逐最新版。
+- macOS 优先复用兼容的系统 Node.js，缺失或不兼容时从相同国内镜像安装 ARM64/Intel 对应的托管运行时；Git 继续由系统或 Apple Command Line Tools 管理。
+- macOS 不再显示或接受自定义 Git 运行时目录，避免保存后端无法安装的无效配置。
 - npm 缓存仅影响后续 npm 下载，不修改用户 npmrc。
 - npm prefix 变化会触发 OpenClaw 在新位置重新安装和物理路径校验。
 - 安装日志和进度继续通过现有 setup progress 事件显示。

@@ -19,6 +19,8 @@ pub struct StorageSetupStatus {
     npm_prefix: Option<String>,
     node_runtime_dir: Option<String>,
     git_runtime_dir: Option<String>,
+    custom_node_runtime_supported: bool,
+    custom_git_runtime_supported: bool,
     openclaw_relocation_required: bool,
     terminal_integration: bool,
     terminal_launcher_dir: String,
@@ -324,6 +326,13 @@ fn selected_layout(
         "custom Git runtime directory",
         selection.git_runtime_dir.as_deref(),
     )?;
+    let capabilities = crate::commands::runtime_policy::ManagedRuntimeCapabilities::current();
+    if node_runtime.is_some() && !capabilities.node {
+        return Err("Custom managed Node.js is only supported on Windows and macOS".into());
+    }
+    if git_runtime.is_some() && !capabilities.git {
+        return Err("Custom managed Git is only supported on Windows".into());
+    }
 
     let mut layout = StorageBootstrap::with_locations(
         state_dir,
@@ -1077,6 +1086,7 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
     let layout = bootstrap
         .clone()
         .unwrap_or_else(|| StorageBootstrap::for_state_dir(legacy.clone(), None));
+    let capabilities = crate::commands::runtime_policy::ManagedRuntimeCapabilities::current();
     Ok(StorageSetupStatus {
         configured,
         state_dir: layout.state_dir.to_string_lossy().to_string(),
@@ -1099,6 +1109,8 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
             .git_runtime_dir
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
+        custom_node_runtime_supported: capabilities.node,
+        custom_git_runtime_supported: capabilities.git,
         openclaw_relocation_required: layout.openclaw_relocation_required,
         terminal_integration: layout.terminal_integration,
         terminal_launcher_dir: paths::terminal_launcher_dir().to_string_lossy().to_string(),
@@ -1631,26 +1643,43 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
         );
-        selection.git_runtime_dir = Some(
-            root.with_file_name("git-runtime")
-                .to_string_lossy()
-                .to_string(),
-        );
+        #[cfg(windows)]
+        {
+            selection.git_runtime_dir = Some(
+                root.with_file_name("git-runtime")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
         let layout = selected_layout(root.clone(), selection).unwrap();
         assert_eq!(
             layout.node_runtime_dir,
             Some(root.with_file_name("node-runtime"))
         );
+        #[cfg(windows)]
         assert_eq!(
             layout.git_runtime_dir,
             Some(root.with_file_name("git-runtime"))
         );
+        #[cfg(not(windows))]
+        assert_eq!(layout.git_runtime_dir, None);
         assert!(validate_independent_locations(&layout).is_ok());
 
         let mut overlapping = test_selection(&root);
         overlapping.node_runtime_dir = Some(overlapping.workspace_dir.clone());
         let overlapping = selected_layout(root, overlapping).unwrap();
         assert!(validate_independent_locations(&overlapping).is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_layout_rejects_a_custom_git_runtime() {
+        let root = storage_test_root("unsupported-custom-git");
+        let mut selection = test_selection(&root);
+        selection.git_runtime_dir = Some(root.with_file_name("git-runtime").display().to_string());
+        assert!(selected_layout(root, selection)
+            .unwrap_err()
+            .contains("only supported on Windows"));
     }
 
     #[test]

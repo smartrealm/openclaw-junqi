@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: string | null; }
+export type RuntimeToolSource = 'system' | 'managed' | 'custom';
+export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }
 export interface NpmStatus { available: boolean; version: string | null; path: string | null; source: string | null; }
-export interface GitStatus { available: boolean; version: string | null; path: string | null; source: string | null; }
+export interface GitStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }
 export interface OpenclawStatus {
   installed: boolean;
   version: string | null;

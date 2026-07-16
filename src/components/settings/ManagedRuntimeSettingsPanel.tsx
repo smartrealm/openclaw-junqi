@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Cpu, GitBranch, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlassCard } from '@/components/shared/GlassCard';
+import type { RuntimeToolSource } from '@/api/tauri-commands';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { translateSetupProgressMessage } from '@/hooks/setupProgressParams';
 
@@ -10,7 +11,7 @@ interface RuntimeToolStatus {
   available: boolean;
   version?: string;
   path?: string;
-  source?: 'local' | 'system';
+  source?: RuntimeToolSource;
 }
 
 interface ManagedRuntimeStatus {
@@ -148,8 +149,10 @@ export function ManagedRuntimeSettingsPanel() {
     }
   };
 
-  const sourceLabel = (source?: RuntimeToolStatus['source']) => source === 'local'
+  const sourceLabel = (source?: RuntimeToolStatus['source']) => source === 'custom'
     ? t('storage.runtimeSourceCustom', '用户选择的目录')
+    : source === 'managed'
+      ? t('storage.runtimeSourceManaged', 'JunQi 托管')
     : source === 'system'
       ? t('storage.runtimeSourceSystem', '系统安装')
       : t('storage.runtimeSourceUnknown', '未检测到');

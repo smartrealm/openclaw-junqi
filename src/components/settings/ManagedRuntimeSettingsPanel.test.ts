@@ -6,6 +6,8 @@ const panel = readFileSync(new URL('./ManagedRuntimeSettingsPanel.tsx', import.m
 const settings = readFileSync(new URL('../../pages/SettingsPage.tsx', import.meta.url), 'utf8');
 const setup = readFileSync(new URL('../../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 const managedRuntime = readFileSync(new URL('../../../src-tauri/src/commands/managed_runtime.rs', import.meta.url), 'utf8');
+const nodeRuntime = readFileSync(new URL('../../../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
+const gitRuntime = readFileSync(new URL('../../../src-tauri/src/commands/git_runtime.rs', import.meta.url), 'utf8');
 const lib = readFileSync(new URL('../../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 const updater = readFileSync(new URL('../../../src-tauri/src/commands/openclaw_update.rs', import.meta.url), 'utf8');
 
@@ -19,20 +21,29 @@ test('storage settings exposes independent system tool lifecycle actions', () =>
   assert.match(panel, /nodeRequirement/);
 });
 
-test('runtime commands use system defaults and China-first packages only for explicit portable locations', () => {
-  assert.match(setup, /install_windows_system_node/);
-  assert.match(setup, /install_windows_system_git/);
-  assert.match(setup, /install_or_upgrade_winget_package/);
-  assert.match(setup, /install_windows_portable_node/);
+test('runtime commands reuse system tools and install missing tools from China-first packages', () => {
+  assert.doesNotMatch(setup, /install_windows_system_node/);
+  assert.doesNotMatch(setup, /install_windows_system_git/);
+  assert.doesNotMatch(setup, /install_or_upgrade_winget_package/);
+  assert.match(setup, /install_managed_node_runtime/);
   assert.match(setup, /install_windows_portable_git/);
-  assert.match(setup, /npmmirror\.com\/mirrors\/node/);
+  assert.match(setup, /default_managed_node_runtime_dir/);
+  assert.match(setup, /default_managed_git_runtime_dir/);
+  assert.match(nodeRuntime, /npmmirror\.com\/mirrors\/node/);
   assert.match(setup, /resolve_node_sha256/);
-  assert.match(setup, /resolve_latest_managed_git_artifact/);
-  assert.match(setup, /verified_fallback_managed_git_artifact/);
+  assert.match(setup, /verified_managed_git_artifact/);
+  assert.doesNotMatch(setup, /resolve_latest_managed_git_artifact/);
   assert.match(setup, /NODE_INSTALL_LOCK/);
   assert.match(setup, /GIT_INSTALL_LOCK/);
   assert.match(managedRuntime, /setup::update_managed_node_runtime/);
   assert.match(managedRuntime, /setup::update_managed_git_runtime/);
+  assert.match(managedRuntime, /node_runtime::node_download_order\(\)/);
+  assert.match(managedRuntime, /git_runtime::managed_git_download_order\(\)/);
+  assert.match(managedRuntime, /managed_update_supported/);
+  assert.match(panel, /source === 'managed'/);
+  assert.match(gitRuntime, /GIT_DISTRIBUTION_SOURCES/);
+  assert.doesNotMatch(managedRuntime, /Windows Package Manager/);
+  assert.doesNotMatch(managedRuntime, /GitHub/);
   assert.match(lib, /commands::managed_runtime::update_managed_node/);
   assert.match(lib, /commands::managed_runtime::update_managed_git/);
 });

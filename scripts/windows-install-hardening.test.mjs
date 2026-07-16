@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const setup = readFileSync(new URL('../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const gitRuntime = readFileSync(new URL('../src-tauri/src/commands/git_runtime.rs', import.meta.url), 'utf8');
+const nodeRuntime = readFileSync(new URL('../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
 const lib = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 const tauri = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
@@ -25,21 +27,32 @@ test('generic winget package installation command is not exposed', () => {
   assert.doesNotMatch(lib, /commands::setup::install_winget_package/);
 });
 
-test('Windows bootstrap is offline and runtime installation respects the selected path policy', () => {
-  assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'offlineInstaller');
+test('Windows package uses the small WebView2 bootstrapper and respects the selected path policy', () => {
+  assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'embedBootstrapper');
   assert.deepEqual(tauri.plugins.updater.endpoints, []);
-  // No custom runtime directory means standard system installation. A
-  // user-selected portable directory is the only path that downloads archives.
-  assert.match(setup, /install_windows_system_node/);
-  assert.match(setup, /install_windows_system_git/);
-  assert.match(setup, /install_or_upgrade_winget_package/);
+  // Existing system tools are reused. Missing or incompatible tools are
+  // installed into a JunQi-managed or explicitly selected portable directory.
+  assert.doesNotMatch(setup, /install_windows_system_node/);
+  assert.doesNotMatch(setup, /install_windows_system_git/);
+  assert.doesNotMatch(setup, /install_or_upgrade_winget_package/);
   assert.match(setup, /paths::configured_node_runtime_dir\(\)/);
   assert.match(setup, /paths::configured_git_runtime_dir\(\)/);
-  assert.match(setup, /install_windows_portable_node/);
+  assert.match(setup, /install_managed_node_runtime/);
   assert.match(setup, /install_windows_portable_git/);
-  assert.match(setup, /CHINA_NODE_INDEX/);
+  assert.match(setup, /default_managed_node_runtime_dir/);
+  assert.match(setup, /default_managed_git_runtime_dir/);
+  assert.doesNotMatch(setup, /NODE_DISTRIBUTION_(BASES|SOURCES)/);
+  assert.match(nodeRuntime, /NODE_DISTRIBUTION_SOURCES/);
   assert.match(setup, /resolve_node_sha256/);
-  assert.match(setup, /npmmirror\.com\/mirrors\/node/);
+  assert.match(nodeRuntime, /npmmirror\.com\/mirrors\/node/);
+  assert.match(nodeRuntime, /mirrors\.aliyun\.com\/nodejs-release/);
+  assert.match(nodeRuntime, /mirrors\.cloud\.tencent\.com\/nodejs-release/);
+  assert.match(nodeRuntime, /mirrors\.huaweicloud\.com\/nodejs/);
+  assert.doesNotMatch(nodeRuntime, /nodejs\.org\/dist/);
+  assert.doesNotMatch(setup, /resolve_latest_managed_git_artifact/);
+  assert.match(gitRuntime, /registry\.npmmirror\.com\/.*git-for-windows/);
+  assert.match(gitRuntime, /mirrors\.huaweicloud\.com\/git-for-windows/);
+  assert.doesNotMatch(gitRuntime, /GitHub（备用）/);
 });
 
 test('Windows releases require and verify Authenticode signatures', () => {
