@@ -354,14 +354,14 @@ pub async fn ensure_gateway_running(
             let err = "Docker container up but gateway port never became reachable within 30s"
                 .to_string();
             push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
-            return Ok(EnsureResult {
+            Ok(EnsureResult {
                 mode: GatewayMode::Unavailable,
                 healthy: false,
                 port,
                 token: None,
                 attempted_fallback: true,
                 error: Some(err),
-            });
+            })
         }
         Ok(_) => {
             let err = format!("{}; Docker is unavailable", native_error);

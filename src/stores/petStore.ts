@@ -117,6 +117,8 @@ interface PetSettings {
   dragOver: boolean;
   /** Sound effects — pet can play a soft "munch" on drop. Toggleable from settings. */
   soundEnabled: boolean;
+  /** Lets the companion derive a readable caption palette from nearby desktop pixels. */
+  backdropContrastEnabled: boolean;
 
   setPetVisible: (v: boolean) => void;
   setEnabled: (v: boolean) => void;
@@ -130,6 +132,7 @@ interface PetSettings {
   setDragActive: (v: boolean, paths?: string[]) => void;
   setDragOver: (v: boolean) => void;
   setSoundEnabled: (v: boolean) => void;
+  setBackdropContrastEnabled: (v: boolean) => void;
 }
 
 export const usePetStore = create<PetSettings>()(
@@ -164,6 +167,7 @@ export const usePetStore = create<PetSettings>()(
       dragCount: 0,
       dragOver: false,
       soundEnabled: true,
+      backdropContrastEnabled: true,
       setEnabled: (enabled) => set({ enabled }),
       setPosition: (position) => set({ position }),
       setClickThrough: (clickThrough) => set({ clickThrough }),
@@ -189,10 +193,11 @@ export const usePetStore = create<PetSettings>()(
         })),
       setDragOver: (v) => set({ dragOver: v }),
       setSoundEnabled: (v) => set({ soundEnabled: v }),
+      setBackdropContrastEnabled: (backdropContrastEnabled) => set({ backdropContrastEnabled }),
     }),
     {
       name: 'aegis-pet-settings',
-      version: 5,
+      version: 6,
       migrate: (persisted, persistedVersion) => {
         const p = (persisted as Partial<PetSettings>) || {};
         const pomodoro: Partial<PomodoroState> = p.pomodoro || {};
@@ -211,11 +216,12 @@ export const usePetStore = create<PetSettings>()(
             completedDate: pomodoro.completedDate ?? '',
           },
           soundEnabled: p.soundEnabled ?? true,
+          backdropContrastEnabled: p.backdropContrastEnabled ?? true,
         };
       },
       // customAsset (data URL) stays out of localStorage. pomodoro: persist
       // config + daily count + cycle progress; runtime (running/paused/phase/endsAt/...) resets.
-      partialize: ({ enabled, position, clickThrough, skin, pomodoro, soundEnabled }) => ({
+      partialize: ({ enabled, position, clickThrough, skin, pomodoro, soundEnabled, backdropContrastEnabled }) => ({
         enabled,
         position,
         clickThrough,
@@ -230,6 +236,7 @@ export const usePetStore = create<PetSettings>()(
           completedDate: pomodoro.completedDate,
         },
         soundEnabled,
+        backdropContrastEnabled,
       }),
       merge: (persisted, current) => {
         const p = (persisted as Partial<PetSettings>) || {};

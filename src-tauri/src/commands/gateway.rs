@@ -716,10 +716,8 @@ fn ensure_paired_devices_full_scopes(base_dir: &std::path::Path) {
         for (_device_id, entry) in obj.iter_mut() {
             if let Some(entry_obj) = entry.as_object_mut() {
                 // Only patch operator-role devices
-                let is_operator = entry_obj
-                    .get("role")
-                    .and_then(|r| r.as_str())
-                    .map_or(false, |r| r == "operator");
+                let is_operator =
+                    entry_obj.get("role").and_then(|r| r.as_str()) == Some("operator");
                 if !is_operator {
                     continue;
                 }
@@ -1743,33 +1741,4 @@ pub async fn probe_gateway_port(port: Option<u16>) -> Result<bool, String> {
         None => ConfigMetadata::load(&paths::active_config_path()).port,
     };
     Ok(is_gateway_healthy(target_port).await)
-}
-
-/// Run `openclaw doctor` and return the output
-#[tauri::command]
-pub async fn run_doctor() -> Result<String, String> {
-    let output = crate::commands::openclaw_cli::run_openclaw(
-        &["doctor"],
-        None,
-        std::time::Duration::from_secs(120),
-    )
-    .await?;
-
-    let mut result = output.stdout;
-    if !output.stderr.is_empty() {
-        if !result.is_empty() {
-            result.push('\n');
-        }
-        result.push_str(&output.stderr);
-    }
-
-    if result.trim().is_empty() {
-        result = if output.success {
-            "Doctor check passed with no output.".into()
-        } else {
-            "Doctor exited without diagnostic output.".into()
-        };
-    }
-
-    Ok(result)
 }

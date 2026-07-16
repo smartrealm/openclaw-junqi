@@ -6,6 +6,7 @@ import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
 import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
+import { resolvePetBackdropTextStyle, type PetBackdropReading } from './backdropContrast';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
 const STATUS_LABEL: Record<PetEmotion, string> = {
@@ -155,15 +156,31 @@ function useResolvedPetTheme(): { themeName: PetThemeName; isDark: boolean } {
  * `bubbleKey` follows the bubble's logical type, so AnimatePresence cross-fades
  * when the type changes but leaves within-type updates untouched.
  */
-export function PetBubble({ state, dragging, hovered }: { state: PetState; dragging?: boolean; hovered?: boolean }) {
+export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetState; dragging?: boolean; hovered?: boolean; backdrop?: PetBackdropReading | null }) {
   const { t } = useTranslation();
   const { themeName, isDark } = useResolvedPetTheme();
   const emotionColor = useEmotionColor(themeName);
   const dragMeta = useDragKindMeta(themeName);
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
-  const textPalette = resolvePetTextPalette(themeName);
-  const readableText = (color: string) => solidPetTextStyle(color, petTextShadowForTheme(themeName));
+  const backdropStyle = resolvePetBackdropTextStyle(backdrop ?? null);
+  const baseTextPalette = resolvePetTextPalette(themeName);
+  const textPalette = backdropStyle
+    ? {
+        ...baseTextPalette,
+        primary: backdropStyle.foreground,
+        secondary: backdropStyle.foreground,
+        danger: backdropStyle.foreground,
+      }
+    : baseTextPalette;
+  const readableText = (color: string) => backdropStyle
+    ? {
+        ...solidPetTextStyle(color, backdropStyle.shadow),
+        WebkitTextStroke: `1px ${backdropStyle.stroke}`,
+        WebkitTextStrokeWidth: 1,
+        WebkitTextStrokeColor: backdropStyle.stroke,
+      }
+    : solidPetTextStyle(color, petTextShadowForTheme(themeName));
 
   // Operation-hint carousel, shown only while the cursor is over the pet
   // AND the pet is idle (i.e. the tip branch is the rendered body — busy
@@ -202,6 +219,11 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
     overflowWrap: 'anywhere',
     wordBreak: 'normal',
     whiteSpace: 'normal',
+    ...(backdropStyle ? {
+      background: backdropStyle.bubble,
+      borderRadius: 6,
+      padding: '2px 6px',
+    } : {}),
   };
 
   let body: ReactNode = null;

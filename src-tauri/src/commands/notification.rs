@@ -200,8 +200,6 @@ fn sanitize_text(s: &str, max_len: usize) -> String {
     cleaned
 }
 
-/// Return persisted notifications with `isRead` merged from the local store.
-
 /// Push a notification from another backend module (e.g. agent_task_pty).
 pub fn push_local_notification(level: &str, title: &str, body: &str, url: Option<&str>) {
     let _ = persist_notification(create_notification(level, title, body, url));

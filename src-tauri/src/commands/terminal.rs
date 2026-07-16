@@ -369,11 +369,8 @@ pub async fn terminal_kill(id: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn constants_are_sane() {
-        assert!(MAX_STREAMS_PER_USER >= 1);
-        assert!(MAX_STREAMS_PER_SERVER >= 1);
-    }
+    const _: () = assert!(MAX_STREAMS_PER_USER >= 1);
+    const _: () = assert!(MAX_STREAMS_PER_SERVER >= 1);
 
     #[test]
     fn natural_exit_cleanup_releases_the_registry_slot() {

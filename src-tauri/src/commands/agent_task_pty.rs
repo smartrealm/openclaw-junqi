@@ -412,9 +412,9 @@ fn resume_arguments(agent: &str, session_id: &str) -> Option<Vec<String>> {
     }
 }
 
-#[tauri::command]
-pub async fn run_task(
-    app: AppHandle,
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskLaunchRequest {
     task_id: String,
     project_path: String,
     prompt: String,
@@ -424,9 +424,27 @@ pub async fn run_task(
     texts: Option<Vec<String>>,
     cols: Option<u16>,
     rows: Option<u16>,
-    on_output: Channel<String>,
     resume_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn run_task(
+    app: AppHandle,
+    request: TaskLaunchRequest,
+    on_output: Channel<String>,
 ) -> Result<(), String> {
+    let TaskLaunchRequest {
+        task_id,
+        project_path,
+        prompt,
+        agent,
+        permission_mode,
+        images,
+        texts,
+        cols,
+        rows,
+        resume_id,
+    } = request;
     // A retry reuses the task id. Retire the previous PTY generation before
     // installing the new one so its reader cannot remain alive in parallel.
     reset_task_process_inner(&task_id);
@@ -1090,7 +1108,7 @@ mod tests {
         append_task_output, claude_project_directory_name, cleanup_task_attachments,
         decode_task_image, permission_flag, prompt_with_attachments, prompt_with_project_prefix,
         resume_arguments, safe_task_id, task_final_status, task_notification_url,
-        task_output_buffers, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+        task_output_buffers, TaskLaunchRequest, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
     };
 
     #[test]
@@ -1171,6 +1189,26 @@ mod tests {
     #[test]
     fn task_attachment_paths_are_safe_on_windows_and_unix() {
         assert_eq!(safe_task_id("agent-task:run/1"), "agent-task_run_1");
+    }
+
+    #[test]
+    fn task_launch_request_uses_the_frontend_camel_case_contract() {
+        let request: TaskLaunchRequest = serde_json::from_value(serde_json::json!({
+            "taskId": "task-1",
+            "projectPath": "/workspace",
+            "prompt": "review",
+            "agent": "codex",
+            "permissionMode": "ask",
+            "images": [],
+            "texts": [],
+            "cols": 220,
+            "rows": 50,
+            "resumeId": "session-1"
+        }))
+        .unwrap();
+        assert_eq!(request.task_id, "task-1");
+        assert_eq!(request.project_path, "/workspace");
+        assert_eq!(request.resume_id.as_deref(), Some("session-1"));
     }
 
     #[test]

@@ -15,15 +15,11 @@ const STORAGE_BOOTSTRAP_VERSION: u32 = 7;
 /// setup, Gateway recovery, and the configuration UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OpenClawRuntimeMode {
+    #[default]
     Native,
     Docker,
-}
-
-impl Default for OpenClawRuntimeMode {
-    fn default() -> Self {
-        Self::Native
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -641,6 +637,71 @@ pub fn default_workspace_dir() -> PathBuf {
         .unwrap_or_else(|| desktop_dir().join("workspace"))
 }
 
+fn normalize_absolute_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
+fn resolve_openclaw_user_path_from(raw: &str, home: &Path, cwd: &Path) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("OpenClaw path cannot be empty".to_string());
+    }
+
+    let expanded = if trimmed == "~" {
+        home.to_path_buf()
+    } else if trimmed.starts_with("~/") || trimmed.starts_with("~\\") {
+        home.join(trimmed[2..].trim_start_matches(['/', '\\']))
+    } else {
+        PathBuf::from(trimmed)
+    };
+    let absolute = if expanded.is_absolute() {
+        expanded
+    } else {
+        cwd.join(expanded)
+    };
+    Ok(normalize_absolute_path(&absolute))
+}
+
+/// Match OpenClaw's `resolveUserPath`: trim, expand `~`, then resolve relative
+/// paths from the process working directory without requiring the path to exist.
+pub fn resolve_openclaw_user_path(raw: &str) -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Unable to resolve the user home directory")?;
+    let cwd = std::env::current_dir()
+        .map_err(|error| format!("Unable to resolve the current directory: {}", error))?;
+    resolve_openclaw_user_path_from(raw, &home, &cwd)
+}
+
+/// 从 openclaw.json 读取并解析用户配置的工作区路径。
+/// 配置不存在、无效或未指定工作区时返回 None。
+pub fn read_workspace_from_config(config_path: &std::path::Path) -> Option<PathBuf> {
+    let raw = std::fs::read_to_string(config_path).ok()?;
+    let config: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let workspace = config
+        .get("agents")?
+        .get("defaults")?
+        .get("workspace")?
+        .as_str()?;
+    resolve_openclaw_user_path(workspace).ok()
+}
+
+// ── 设备 ───────────────────────────────────────────────────────
+
+/// 返回保存配对状态的设备目录。
+#[allow(dead_code)]
+pub fn devices_dir() -> PathBuf {
+    desktop_dir().join("devices")
+}
+
 #[cfg(test)]
 mod storage_bootstrap_tests {
     use super::*;
@@ -904,69 +965,4 @@ mod storage_bootstrap_tests {
             cwd.join("agent-data")
         );
     }
-}
-
-fn normalize_absolute_path(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
-}
-
-fn resolve_openclaw_user_path_from(raw: &str, home: &Path, cwd: &Path) -> Result<PathBuf, String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err("OpenClaw path cannot be empty".to_string());
-    }
-
-    let expanded = if trimmed == "~" {
-        home.to_path_buf()
-    } else if trimmed.starts_with("~/") || trimmed.starts_with("~\\") {
-        home.join(trimmed[2..].trim_start_matches(['/', '\\']))
-    } else {
-        PathBuf::from(trimmed)
-    };
-    let absolute = if expanded.is_absolute() {
-        expanded
-    } else {
-        cwd.join(expanded)
-    };
-    Ok(normalize_absolute_path(&absolute))
-}
-
-/// Match OpenClaw's `resolveUserPath`: trim, expand `~`, then resolve relative
-/// paths from the process working directory without requiring the path to exist.
-pub fn resolve_openclaw_user_path(raw: &str) -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Unable to resolve the user home directory")?;
-    let cwd = std::env::current_dir()
-        .map_err(|error| format!("Unable to resolve the current directory: {}", error))?;
-    resolve_openclaw_user_path_from(raw, &home, &cwd)
-}
-
-/// 从 openclaw.json 读取并解析用户配置的工作区路径。
-/// 配置不存在、无效或未指定工作区时返回 None。
-pub fn read_workspace_from_config(config_path: &std::path::Path) -> Option<PathBuf> {
-    let raw = std::fs::read_to_string(config_path).ok()?;
-    let config: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let workspace = config
-        .get("agents")?
-        .get("defaults")?
-        .get("workspace")?
-        .as_str()?;
-    resolve_openclaw_user_path(workspace).ok()
-}
-
-// ── 设备 ───────────────────────────────────────────────────────
-
-/// 返回保存配对状态的设备目录。
-#[allow(dead_code)]
-pub fn devices_dir() -> PathBuf {
-    desktop_dir().join("devices")
 }

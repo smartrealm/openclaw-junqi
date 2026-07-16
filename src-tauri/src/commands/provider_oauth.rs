@@ -113,8 +113,6 @@ fn build_authorize_url(cfg: &OAuthConfig, state: &str, challenge: &str) -> Strin
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token: Option<String>,
-    refresh_token: Option<String>,
-    expires_in: Option<u64>,
 }
 
 async fn exchange_code(
@@ -218,10 +216,7 @@ pub async fn start_provider_oauth(
 
     // 2. Build and open authorize URL.
     let url = build_authorize_url(cfg, &state, &challenge);
-    use tauri_plugin_shell::ShellExt;
-    app.shell()
-        .open(url, None)
-        .map_err(|e| format!("open browser: {e}"))?;
+    open::that(&url).map_err(|e| format!("open browser: {e}"))?;
 
     // 3. ALL synchronous from here — no task spawn. The Tauri command
     //    blocks until the callback arrives (up to 180s). This avoids

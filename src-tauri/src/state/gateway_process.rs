@@ -41,8 +41,6 @@ pub struct GatewayRuntimeState {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LogLevel {
-    Trace,
-    Debug,
     Info,
     Warn,
     Error,

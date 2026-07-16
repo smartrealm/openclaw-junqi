@@ -11,6 +11,9 @@ use tauri::{Emitter, Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // GUI-launched processes on macOS can miss the user's login PATH. Resolve
+    // it before Tauri starts worker threads so child tools inherit it reliably.
+    commands::app_settings::prime_login_shell_path();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -134,6 +137,7 @@ pub fn run() {
             commands::docker::docker_gateway_status,
             // Desktop Pet (companion)
             commands::pet::emit_pet_state,
+            commands::pet_backdrop::get_pet_backdrop_reading,
             commands::pet::open_pet_window,
             commands::pet::close_pet_window,
             commands::pet::toggle_pet_window,
@@ -306,7 +310,7 @@ pub fn run() {
             // and always_on_top so it doesn't take its own Dock slot.
             #[cfg(target_os = "macos")]
             {
-                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                app.set_activation_policy(tauri::ActivationPolicy::Regular);
                 // Force every window's icon to our bundled junqi icon at runtime.
                 // This is essential for `cargo run` / `tauri dev` because the
                 // binary has no .app bundle and the parent process (Xcode,
@@ -375,17 +379,14 @@ pub fn run() {
                                 );
                                 commands::terminal_drop::emit_hover(
                                     &app_for_dd,
-                                    commands::terminal_drop::target_at(
-                                        position.x as f64,
-                                        position.y as f64,
-                                    ),
+                                    commands::terminal_drop::target_at(position.x, position.y),
                                 );
                             }
                             tauri::DragDropEvent::Over { position, .. } => {
-                                let local_x = position.x as f64 / scale;
-                                let local_y = position.y as f64 / scale;
-                                let gx = (position.x as f64 + win_pos_x) / scale;
-                                let gy = (position.y as f64 + win_pos_y) / scale;
+                                let local_x = position.x / scale;
+                                let local_y = position.y / scale;
+                                let gx = (position.x + win_pos_x) / scale;
+                                let gy = (position.y + win_pos_y) / scale;
                                 let _ = app_for_dd.emit(
                                     "aegis:drag-move",
                                     serde_json::json!({
@@ -420,10 +421,7 @@ pub fn run() {
                                 );
                                 commands::terminal_drop::emit_hover(
                                     &app_for_dd,
-                                    commands::terminal_drop::target_at(
-                                        position.x as f64,
-                                        position.y as f64,
-                                    ),
+                                    commands::terminal_drop::target_at(position.x, position.y),
                                 );
                             }
                             tauri::DragDropEvent::Leave => {
@@ -431,10 +429,8 @@ pub fn run() {
                                 commands::quickchat::ResourceDropCoordinator::leave(&app_for_dd);
                             }
                             tauri::DragDropEvent::Drop { paths, position } => {
-                                let target_id = commands::terminal_drop::target_at(
-                                    position.x as f64,
-                                    position.y as f64,
-                                );
+                                let target_id =
+                                    commands::terminal_drop::target_at(position.x, position.y);
                                 commands::terminal_drop::clear_hover(&app_for_dd);
                                 if let Some(target_id) = target_id {
                                     if commands::terminal_drop::emit_file_drop(

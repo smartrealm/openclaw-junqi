@@ -20,6 +20,7 @@ pub mod gateway_logs;
 pub mod gateway_rescue;
 pub mod gateway_supervisor;
 pub mod git_neu;
+#[cfg(any(windows, test))]
 pub(crate) mod git_runtime;
 pub mod hooks;
 pub mod maintenance;
@@ -36,6 +37,7 @@ pub mod openclaw_repair;
 pub mod openclaw_update;
 pub mod pairing;
 pub mod pet;
+pub mod pet_backdrop;
 pub mod plugin_recovery;
 pub mod process_control;
 pub mod project_config;

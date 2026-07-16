@@ -2723,6 +2723,8 @@
       "hide": "隐藏",
       "sound": "提示音",
       "soundHint": "拖动文件时播放轻柔提示音",
+      "backdropContrast": "自动调整文字对比度",
+      "backdropContrastHint": "根据萌宠附近桌面颜色调整提示文字，不保存桌面图像",
       "animatedTitle": "3D 动画萌宠",
       "animatedHint": "在当前会话中用 @hatch-pet 创建有动作和视线方向的 3D 萌宠",
       "animatedUsing": "正在使用：{{name}}",

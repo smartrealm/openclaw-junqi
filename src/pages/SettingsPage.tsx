@@ -73,7 +73,7 @@ export function SettingsPageFull() {
   }, [budgetLimit]);
   const { connected, connecting } = useChatStore();
   const prefersDark = usePrefersDark();
-  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petIdea, setPetIdea] = useState('');
   const [preparingPetSkill, setPreparingPetSkill] = useState(false);
@@ -812,6 +812,14 @@ export function SettingsPageFull() {
               style={{ transform: petSoundEnabled ? 'translateX(16px)' : 'translateX(0)' }}
             />
           </button>
+        </div>
+
+        <div className="flex items-center justify-between mt-4">
+          <div>
+            <div className="text-[13px] text-aegis-text">{t('pet.settings.backdropContrast', '自动调整文字对比度')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.backdropContrastHint', '根据萌宠附近桌面颜色调整提示文字，不保存桌面图像')}</div>
+          </div>
+          <Toggle enabled={backdropContrastEnabled} onChange={setBackdropContrastEnabled} />
         </div>
 
         {/* Custom static upload */}

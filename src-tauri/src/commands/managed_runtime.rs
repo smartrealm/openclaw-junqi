@@ -1,4 +1,6 @@
-use crate::commands::{git_runtime, node_runtime, setup, system};
+#[cfg(windows)]
+use crate::commands::git_runtime;
+use crate::commands::{node_runtime, setup, system};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -56,10 +58,20 @@ pub async fn get_managed_runtime_status() -> Result<ManagedRuntimeStatus, String
         } else {
             Vec::new()
         },
-        git_download_order: if git_uses_custom_runtime && capabilities.git {
-            git_runtime::managed_git_download_order()
-        } else {
-            Vec::new()
+        git_download_order: {
+            #[cfg(windows)]
+            {
+                if git_uses_custom_runtime && capabilities.git {
+                    git_runtime::managed_git_download_order()
+                } else {
+                    Vec::new()
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = (git_uses_custom_runtime, capabilities);
+                Vec::new()
+            }
         },
     })
 }
