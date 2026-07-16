@@ -1634,6 +1634,7 @@ mod tests {
         }
     }
 
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn custom_dependency_runtime_locations_are_explicit_and_cannot_overlap_storage() {
         let root = storage_test_root("custom-dependency-locations");
@@ -1669,6 +1670,21 @@ mod tests {
         overlapping.node_runtime_dir = Some(overlapping.workspace_dir.clone());
         let overlapping = selected_layout(root, overlapping).unwrap();
         assert!(validate_independent_locations(&overlapping).is_err());
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    #[test]
+    fn unsupported_platform_rejects_a_custom_node_runtime() {
+        let root = storage_test_root("unsupported-custom-node");
+        let mut selection = test_selection(&root);
+        selection.node_runtime_dir = Some(
+            root.with_file_name("node-runtime")
+                .to_string_lossy()
+                .to_string(),
+        );
+        assert!(selected_layout(root, selection)
+            .unwrap_err()
+            .contains("only supported on Windows and macOS"));
     }
 
     #[cfg(not(windows))]
