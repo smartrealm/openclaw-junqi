@@ -21,6 +21,14 @@ test('pet transparency is owned by the native window and every DOM root', () => 
   assert.match(petWindow, /appRoot\.style\.backgroundColor = 'transparent'/);
 });
 
+test('backdrop contrast refreshes from events and never uses a rapid capture loop', () => {
+  assert.match(petWindow, /BACKDROP_DEBOUNCE_MS = 400/);
+  assert.match(petWindow, /BACKDROP_FALLBACK_REFRESH_MS = 90_000/);
+  assert.match(petWindow, /subscribeTauriEvent<\{ x: number; y: number \}>\('pet-moved'/);
+  assert.match(petWindow, /new Event\(BACKDROP_REFRESH_EVENT\)/);
+  assert.doesNotMatch(petWindow, /setInterval\(scheduleRefresh, 1_800\)/);
+});
+
 test('drag feedback scales the character instead of the transparent window root', () => {
   assert.doesNotMatch(petWindow, /transform: dragging \? 'scale\(1\.08\)'/);
   assert.match(petWindow, /dragging=\{dragging\}/);

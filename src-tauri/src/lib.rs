@@ -134,6 +134,7 @@ pub fn run() {
             commands::docker::docker_gateway_status,
             // Desktop Pet (companion)
             commands::pet::emit_pet_state,
+            commands::pet_backdrop::get_pet_backdrop_reading,
             commands::pet::open_pet_window,
             commands::pet::close_pet_window,
             commands::pet::toggle_pet_window,

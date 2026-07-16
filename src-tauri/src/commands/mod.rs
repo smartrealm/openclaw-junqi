@@ -36,6 +36,7 @@ pub mod openclaw_repair;
 pub mod openclaw_update;
 pub mod pairing;
 pub mod pet;
+pub mod pet_backdrop;
 pub mod plugin_recovery;
 pub mod process_control;
 pub mod project_config;

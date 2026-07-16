@@ -16,6 +16,7 @@ import { isThemeSetting, type ThemeSetting } from '@/theme/types';
 import { playPetSfx } from './petSounds';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { PetPositionScheduler } from './petPositionScheduler';
+import type { PetBackdropReading } from './backdropContrast';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
@@ -28,6 +29,9 @@ const SNAP_THRESHOLD = 90;
 const SNAP_MARGIN = 6;
 const DROP_CATCH_MEMORY_MS = 1_200;
 const PENDING_PACKAGE_AFTER_KEY = 'junqi:pet-package-pending-after';
+const BACKDROP_REFRESH_EVENT = 'junqi:pet-backdrop-refresh';
+const BACKDROP_DEBOUNCE_MS = 400;
+const BACKDROP_FALLBACK_REFRESH_MS = 90_000;
 
 const createPositionScheduler = () => new PetPositionScheduler((point) =>
   invoke('set_pet_position', { x: point.x, y: point.y }),
@@ -55,6 +59,7 @@ export default function PetWindow() {
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [backdrop, setBackdrop] = useState<PetBackdropReading | null>(null);
   // True while the magnetic-snap glide is moving the window. The window moving
   // under a still cursor makes hovered flicker (mouseenter/leave), which would
   // make the tip bubble strobe — so we suppress hover-driven tips while snapping.
@@ -154,6 +159,41 @@ export default function PetWindow() {
   }, [theme]);
 
   useEffect(() => {
+    let alive = true;
+    let debounceTimer: number | null = null;
+    const readBackdrop = () => invoke<PetBackdropReading>('get_pet_backdrop_reading')
+      .then((reading) => { if (alive) setBackdrop(reading); })
+      .catch(() => { if (alive) setBackdrop(null); });
+    const scheduleRefresh = () => {
+      if (debounceTimer != null) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null;
+        void readBackdrop();
+      }, BACKDROP_DEBOUNCE_MS);
+    };
+    const onVisibility = () => {
+      if (!document.hidden) scheduleRefresh();
+    };
+    window.addEventListener(BACKDROP_REFRESH_EVENT, scheduleRefresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    scheduleRefresh();
+    // Wallpaper changes have no portable event. This is deliberately sparse:
+    // normal updates come from pet movement/layout events, never a screenshot loop.
+    const fallbackTimer = window.setInterval(scheduleRefresh, BACKDROP_FALLBACK_REFRESH_MS);
+    return () => {
+      alive = false;
+      if (debounceTimer != null) window.clearTimeout(debounceTimer);
+      window.clearInterval(fallbackTimer);
+      window.removeEventListener(BACKDROP_REFRESH_EVENT, scheduleRefresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(new Event(BACKDROP_REFRESH_EVENT));
+  }, [dragging, hovered, state.emotion, state.message, state.taskLabel]);
+
+  useEffect(() => {
     document.documentElement.style.background = 'transparent';
     document.documentElement.style.backgroundColor = 'transparent';
     document.body.style.background = 'transparent';
@@ -224,6 +264,7 @@ export default function PetWindow() {
         }
         positionRef.current = e.payload;
         petPosRef.current = e.payload;
+        window.dispatchEvent(new Event(BACKDROP_REFRESH_EVENT));
       }),
     ];
     // CRITICAL: PetWindow is a SEPARATE webview from the main window — its
@@ -673,7 +714,7 @@ export default function PetWindow() {
         userSelect: 'none',
       }}
     >
-      <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} />
+      <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} backdrop={backdrop} />
       <div style={{ position: 'relative' }}>
         <PetCharacter
           emotion={state.emotion}
