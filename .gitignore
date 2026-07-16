@@ -12,3 +12,10 @@ target/
 # Sibling project checked out next to this one for cross-reference.
 # Add it back if you ever start a monorepo merge.
 hexclaw-desktop/
+
+# Local research and agent scratch output. Curated conclusions belong in docs/.
+/.learnings/
+/release-artifacts/
+**/__pycache__/
+/WebView2国内源调研/
+/Windows运行时国内源调研/
