@@ -174,8 +174,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target ${{ matrix.target }} --no-bundle --ci
 
-      - name: Validate SignPath release configuration
+      - name: Resolve SignPath release configuration
         if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        id: signpath-config
         shell: pwsh
         env:
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -195,11 +196,14 @@ jobs:
           )
           $missing = $required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
           if ($missing.Count -gt 0) {
-            throw "Tagged Windows releases require SignPath Foundation configuration. Missing: $($missing -join ', ')"
+            Write-Warning "SignPath Foundation is not configured. Windows installers will be released unsigned. Missing: $($missing -join ', ')"
+            "enabled=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "enabled=true" >> $env:GITHUB_OUTPUT
           }
 
       - name: Upload unsigned Windows application for SignPath
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         id: upload-unsigned-windows-application
         uses: actions/upload-artifact@v7
         with:
@@ -209,7 +213,7 @@ jobs:
           if-no-files-found: error
 
       - name: Sign Windows application with SignPath Foundation
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -222,7 +226,7 @@ jobs:
           output-artifact-directory: ${{ runner.temp }}/signpath-signed-app
 
       - name: Activate signed Windows application
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         shell: pwsh
         run: |
           $signed = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-app" -Recurse -Filter junqi-desktop.exe | Select-Object -First 1
@@ -237,7 +241,7 @@ jobs:
         run: pnpm tauri bundle --target ${{ matrix.target }} --bundles nsis,msi --ci
 
       - name: Upload unsigned Windows installers for SignPath
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         id: upload-unsigned-windows-installers
         uses: actions/upload-artifact@v7
         with:
@@ -249,7 +253,7 @@ jobs:
           if-no-files-found: error
 
       - name: Sign Windows installers with SignPath Foundation
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -262,7 +266,7 @@ jobs:
           output-artifact-directory: ${{ runner.temp }}/signpath-signed-installers
 
       - name: Re-sign Windows updater artifacts after Authenticode
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -303,7 +307,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "${apps[0]}"
 
       - name: Verify Windows Authenticode signatures
-        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         shell: pwsh
         run: |
           $artifacts = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-installers" -Recurse -File |
@@ -345,7 +349,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload signed Windows NSIS installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: junqi-desktop-${{ matrix.artifact_name }}-nsis
@@ -356,7 +360,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload signed Windows English MSI installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: junqi-desktop-${{ matrix.artifact_name }}-msi-en-us
@@ -367,7 +371,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload signed Windows Chinese MSI installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: junqi-desktop-${{ matrix.artifact_name }}-msi-zh-cn
@@ -378,7 +382,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload unsigned Windows NSIS installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE != 'true'
+        if: success() && runner.os == 'Windows' && (env.IS_TAG_RELEASE != 'true' || steps.signpath-config.outputs.enabled != 'true')
         uses: actions/upload-artifact@v7
         with:
           name: junqi-desktop-${{ matrix.artifact_name }}-nsis
@@ -389,7 +393,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload unsigned Windows English MSI installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE != 'true'
+        if: success() && runner.os == 'Windows' && (env.IS_TAG_RELEASE != 'true' || steps.signpath-config.outputs.enabled != 'true')
         uses: actions/upload-artifact@v7
         with:
           name: junqi-desktop-${{ matrix.artifact_name }}-msi-en-us
@@ -400,7 +404,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload unsigned Windows Chinese MSI installer
-        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE != 'true'
+        if: success() && runner.os == 'Windows' && (env.IS_TAG_RELEASE != 'true' || steps.signpath-config.outputs.enabled != 'true')
         uses: actions/upload-artifact@v7
         with:
           name: junqi-desktop-${{ matrix.artifact_name }}-msi-zh-cn
@@ -421,6 +425,7 @@ jobs:
       contents: write
     env:
       RELEASE_TAG: ${{ github.event.inputs.ref || github.ref_name }}
+      SIGNPATH_CONFIGURED: ${{ secrets.SIGNPATH_API_TOKEN != '' && secrets.SIGNPATH_ORGANIZATION_ID != '' && secrets.SIGNPATH_PROJECT_SLUG != '' && secrets.SIGNPATH_SIGNING_POLICY_SLUG != '' && secrets.SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG != '' && secrets.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG != '' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -443,7 +448,7 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Generate updater manifest from final signed artifacts
+      - name: Generate updater manifest from final release artifacts
         shell: bash
         run: |
           set -euo pipefail
@@ -472,13 +477,19 @@ jobs:
 
           tag="$RELEASE_TAG"
           title="JunQi Desktop ${tag#v}"
+          if [ "$SIGNPATH_CONFIGURED" = "true" ]; then
+            notes="Windows installers are Authenticode-signed through SignPath Foundation."
+          else
+            notes="Windows installers are not Authenticode-signed yet. Windows may show a SmartScreen warning until SignPath Foundation signing is configured."
+          fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$tag" --notes "$notes" --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$tag" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$title" \
-              --generate-notes
+              --notes "$notes"
           fi
 
   release:
