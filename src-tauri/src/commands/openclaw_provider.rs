@@ -130,7 +130,7 @@ pub async fn get_openclaw_provider_catalog(
                 .is_some_and(|key| key.to_lowercase().starts_with(&prefix))
         });
     }
-    let version = if let Some(path) = system::resolve_openclaw_binary() {
+    let version = if let Some(path) = system::resolve_openclaw_binary_async().await {
         system::validate_openclaw_binary(&path, &system::openclaw_search_path())
             .await
             .version

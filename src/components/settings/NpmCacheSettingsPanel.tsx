@@ -7,23 +7,7 @@ import { GlassCard } from '@/components/shared/GlassCard';
 
 interface StorageSetupStatus {
   configured: boolean;
-  stateDir: string;
-  npmCacheDir: string;
-}
-
-function samePath(left: string, right: string): boolean {
-  const windowsPath = left.includes('\\') || right.includes('\\') || /^[A-Za-z]:/.test(left + right);
-  const normalize = (value: string) => value.replace(/[\\/]+$/, '').replaceAll('\\', '/');
-  const normalizedLeft = normalize(left);
-  const normalizedRight = normalize(right);
-  return windowsPath
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
-}
-
-function defaultCacheMarker(stateDir: string): string {
-  const separator = stateDir.includes('\\') ? '\\' : '/';
-  return `${stateDir.replace(/[\\/]+$/, '')}${separator}npm-cache`;
+  npmCacheDir: string | null;
 }
 
 export function NpmCacheSettingsPanel() {
@@ -42,9 +26,7 @@ export function NpmCacheSettingsPanel() {
       .then((status) => {
         if (!active) return;
         setConfigured(status.configured);
-        const customPath = samePath(status.npmCacheDir, defaultCacheMarker(status.stateDir))
-          ? ''
-          : status.npmCacheDir;
+        const customPath = status.npmCacheDir ?? '';
         setSavedPath(customPath);
         setDraftPath(customPath);
       })

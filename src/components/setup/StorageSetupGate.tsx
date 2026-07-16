@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, ChevronDown, Database, FolderOpen, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
+import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
@@ -14,8 +14,11 @@ interface StorageSetupStatus {
   configPath: string;
   workspaceDir: string;
   runtimeDir: string;
-  npmCacheDir: string;
+  npmCacheDir: string | null;
   npmPrefix: string | null;
+  nodeRuntimeDir: string | null;
+  gitRuntimeDir: string | null;
+  openclawRelocationRequired: boolean;
   terminalIntegration: boolean;
   terminalLauncherDir: string;
   legacyDir: string;
@@ -25,6 +28,8 @@ interface StorageSetupStatus {
 
 interface StorageConfigureResult {
   createdFresh: boolean;
+  runtimeReconfigurationRequired: boolean;
+  openclawRelocationRequired: boolean;
 }
 
 interface MigrationProgress {
@@ -34,7 +39,11 @@ interface MigrationProgress {
 }
 
 interface StorageSetupStepProps {
-  onReady: (result?: { createdFresh: boolean }) => void;
+  onReady: (result?: {
+    createdFresh: boolean;
+    runtimeReconfigurationRequired?: boolean;
+    openclawRelocationRequired?: boolean;
+  }) => void;
   onBack: () => void;
   logs: SetupLog[];
 }
@@ -114,6 +123,10 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
   const [customNpmCache, setCustomNpmCache] = useState(false);
   const [npmPrefix, setNpmPrefix] = useState('');
   const [customNpmPrefix, setCustomNpmPrefix] = useState(false);
+  const [nodeRuntimeDir, setNodeRuntimeDir] = useState('');
+  const [customNodeRuntime, setCustomNodeRuntime] = useState(false);
+  const [gitRuntimeDir, setGitRuntimeDir] = useState('');
+  const [customGitRuntime, setCustomGitRuntime] = useState(false);
   const [terminalIntegration, setTerminalIntegration] = useState(false);
   const [showLocations, setShowLocations] = useState(false);
   const [migrateExisting, setMigrateExisting] = useState(true);
@@ -133,17 +146,24 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
           .then((result) => {
             if (!mountedRef.current) return;
             if (result.configured) {
-              onReadyRef.current({ createdFresh: false });
+              onReadyRef.current({
+                createdFresh: false,
+                openclawRelocationRequired: result.openclawRelocationRequired,
+              });
               return;
             }
             setStatus(result);
             setTargetDir(result.legacyDir);
             setWorkspaceDir(result.workspaceDir);
             setRuntimeDir(result.runtimeDir);
-            setNpmCacheDir(result.npmCacheDir);
-            setCustomNpmCache(result.npmCacheDir !== joinPath(result.stateDir, 'npm-cache'));
+            setNpmCacheDir(result.npmCacheDir ?? '');
+            setCustomNpmCache(Boolean(result.npmCacheDir));
             setNpmPrefix(result.npmPrefix ?? '');
             setCustomNpmPrefix(Boolean(result.npmPrefix));
+            setNodeRuntimeDir(result.nodeRuntimeDir ?? '');
+            setCustomNodeRuntime(Boolean(result.nodeRuntimeDir));
+            setGitRuntimeDir(result.gitRuntimeDir ?? '');
+            setCustomGitRuntime(Boolean(result.gitRuntimeDir));
             setTerminalIntegration(result.terminalIntegration);
             setMigrateExisting(result.legacyExists);
           })
@@ -196,14 +216,18 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     if (status && shouldMigrate) {
       setWorkspaceDir(remapChildPath(status.workspaceDir, status.legacyDir, target));
       setRuntimeDir(remapChildPath(status.runtimeDir, status.legacyDir, target));
-      setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, target));
+      if (customNpmCache && status.npmCacheDir) {
+        setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, target));
+      }
     } else {
       setWorkspaceDir(joinPath(target, 'workspace'));
       setRuntimeDir(joinPath(target, 'runtime'));
-      setNpmCacheDir(joinPath(target, 'npm-cache'));
+    }
+    if (!customNpmCache) {
+      setNpmCacheDir('');
     }
     setError(null);
-  }, [status, t]);
+  }, [customNpmCache, status, t]);
 
   const chooseExactDirectory = useCallback(async (title: string, apply: (path: string) => void) => {
     const selected = await open({ directory: true, multiple: false, title });
@@ -229,19 +253,25 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
         locations: {
           workspaceDir,
           runtimeDir,
-          npmCacheDir: customNpmCache ? npmCacheDir : joinPath(targetDir, 'npm-cache'),
+          npmCacheDir: customNpmCache ? npmCacheDir.trim() || null : null,
           npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
+          nodeRuntimeDir: customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
+          gitRuntimeDir: customGitRuntime ? gitRuntimeDir.trim() || null : null,
           terminalIntegration,
         },
       });
       if (!mountedRef.current) return;
-      onReadyRef.current({ createdFresh: result.createdFresh });
+      onReadyRef.current({
+        createdFresh: result.createdFresh,
+        runtimeReconfigurationRequired: result.runtimeReconfigurationRequired,
+        openclawRelocationRequired: result.openclawRelocationRequired,
+      });
     } catch (cause) {
       if (mountedRef.current) setError(String(cause));
     } finally {
       if (mountedRef.current) setApplying(false);
     }
-  }, [applying, customNpmCache, customNpmPrefix, migrateExisting, npmCacheDir, npmPrefix, runtimeDir, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+  }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
 
   if (loading) {
     return (
@@ -283,13 +313,15 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     : migrateExisting && status.legacyExists
       ? t('storage.migrateAndContinue', '迁移并继续')
       : t('storage.createAndContinue', '创建并继续');
-  const customLocationsLocked = !usingLegacy && status.legacyExists && migrateExisting;
+  const dataLayoutLocked = !usingLegacy && status.legacyExists && migrateExisting;
   const layoutComplete = Boolean(
     targetDir.trim()
       && workspaceDir.trim()
       && runtimeDir.trim()
       && (!customNpmCache || npmCacheDir.trim())
-      && (!customNpmPrefix || npmPrefix.trim()),
+      && (!customNpmPrefix || npmPrefix.trim())
+      && (!customNodeRuntime || nodeRuntimeDir.trim())
+      && (!customGitRuntime || gitRuntimeDir.trim()),
   );
 
   return (
@@ -315,7 +347,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
               setTargetDir(status.legacyDir);
               setWorkspaceDir(status.workspaceDir);
               setRuntimeDir(status.runtimeDir);
-              setNpmCacheDir(status.npmCacheDir);
+              setNpmCacheDir(status.npmCacheDir ?? '');
               setMigrateExisting(false);
               setError(null);
             }}
@@ -367,7 +399,11 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   setMigrateExisting(true);
                   setWorkspaceDir(remapChildPath(status.workspaceDir, status.legacyDir, targetDir));
                   setRuntimeDir(remapChildPath(status.runtimeDir, status.legacyDir, targetDir));
-                  setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, targetDir));
+                  if (customNpmCache && status.npmCacheDir) {
+                    setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, targetDir));
+                  } else {
+                    setNpmCacheDir('');
+                  }
                 }}
                 className="mt-1 accent-[rgb(var(--aegis-primary))]"
               />
@@ -381,7 +417,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   setMigrateExisting(false);
                   setWorkspaceDir(joinPath(targetDir, 'workspace'));
                   setRuntimeDir(joinPath(targetDir, 'runtime'));
-                  setNpmCacheDir(joinPath(targetDir, 'npm-cache'));
+                  if (!customNpmCache) setNpmCacheDir('');
                 }}
                 className="mt-1 accent-[rgb(var(--aegis-primary))]"
               />
@@ -398,7 +434,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
           >
             <span>
               <span className="block text-sm font-semibold text-aegis-text">{t('storage.installLocations', '安装位置')}</span>
-              <span className="mt-1 block text-xs text-aegis-text-muted">{t('storage.installLocationsHint', '工作区、可选 npm 缓存和终端集成')}</span>
+              <span className="mt-1 block text-xs text-aegis-text-muted">{t('storage.installLocationsHint', '工作区，以及可选的 npm、Node.js 和 Git 位置')}</span>
             </span>
             <ChevronDown size={16} className={clsx('shrink-0 text-aegis-text-dim transition-transform', showLocations && 'rotate-180')} />
           </button>
@@ -409,7 +445,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 icon={<Database size={16} />}
                 label={t('storage.workspaceLocation', 'OpenClaw 工作区')}
                 value={workspaceDir}
-                disabled={customLocationsLocked}
+                disabled={dataLayoutLocked}
                 onChoose={() => void chooseExactDirectory(t('storage.workspaceChoose', '选择 OpenClaw 工作区'), setWorkspaceDir)}
               />
               <div className="border-b border-aegis-border/70 py-3">
@@ -421,8 +457,10 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   <input
                     type="checkbox"
                     checked={customNpmCache}
-                    disabled={customLocationsLocked}
-                    onChange={(event) => setCustomNpmCache(event.target.checked)}
+                    onChange={(event) => {
+                      setCustomNpmCache(event.target.checked);
+                      if (!event.target.checked) setNpmCacheDir('');
+                    }}
                     className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
                   />
                 </label>
@@ -431,7 +469,6 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                     icon={<Package size={16} />}
                     label={t('storage.npmCacheLocation', 'npm 下载缓存')}
                     value={npmCacheDir}
-                    disabled={customLocationsLocked}
                     onChoose={() => void chooseExactDirectory(t('storage.npmCacheChoose', '选择 npm 下载缓存目录'), setNpmCacheDir)}
                   />
                 )}
@@ -441,7 +478,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 <label className="flex cursor-pointer items-center justify-between gap-4">
                   <span>
                     <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNpmPrefix', '自定义 OpenClaw npm 安装目录')}</span>
-                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNpmPrefixHint', '关闭时读取登录终端的 npm prefix；不可写时使用用户目录回退')}</span>
+                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNpmPrefixHint', '关闭时读取登录终端的 npm prefix；不可写时请在此选择目录')}</span>
                   </span>
                   <input
                     type="checkbox"
@@ -470,6 +507,52 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 )}
               </div>
 
+              <div className="border-b border-aegis-border/70 py-3">
+                <label className="flex cursor-pointer items-center justify-between gap-4">
+                  <span>
+                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNodeRuntime', '自定义 Node.js 运行时目录')}</span>
+                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNodeRuntimeHint', '关闭时使用系统已安装的 Node.js；开启后仅在所选目录维护便携运行时')}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={customNodeRuntime}
+                    onChange={(event) => setCustomNodeRuntime(event.target.checked)}
+                    className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
+                  />
+                </label>
+                {customNodeRuntime && (
+                  <LocationRow
+                    icon={<Cpu size={16} />}
+                    label={t('storage.nodeRuntimeLocation', 'Node.js 运行时目录')}
+                    value={nodeRuntimeDir}
+                    onChoose={() => void chooseExactDirectory(t('storage.nodeRuntimeChoose', '选择 Node.js 运行时目录'), setNodeRuntimeDir)}
+                  />
+                )}
+              </div>
+
+              <div className="border-b border-aegis-border/70 py-3">
+                <label className="flex cursor-pointer items-center justify-between gap-4">
+                  <span>
+                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customGitRuntime', '自定义 Git 运行时目录')}</span>
+                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customGitRuntimeHint', '关闭时使用系统已安装的 Git；开启后仅在所选目录维护便携运行时')}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={customGitRuntime}
+                    onChange={(event) => setCustomGitRuntime(event.target.checked)}
+                    className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
+                  />
+                </label>
+                {customGitRuntime && (
+                  <LocationRow
+                    icon={<GitBranch size={16} />}
+                    label={t('storage.gitRuntimeLocation', 'Git 运行时目录')}
+                    value={gitRuntimeDir}
+                    onChoose={() => void chooseExactDirectory(t('storage.gitRuntimeChoose', '选择 Git 运行时目录'), setGitRuntimeDir)}
+                  />
+                )}
+              </div>
+
               <label className="flex cursor-pointer items-start justify-between gap-4 py-3">
                 <span className="flex min-w-0 gap-3">
                   <Terminal size={16} className="mt-0.5 shrink-0 text-aegis-text-dim" />
@@ -486,9 +569,9 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                 />
               </label>
 
-              {customLocationsLocked && (
+              {dataLayoutLocked && (
                 <p className="border-t border-aegis-border/70 py-3 text-[11px] leading-5 text-aegis-warning">
-                  {t('storage.migrationLayoutLocked', '迁移会保持现有工作区与运行时的相对布局。选择“创建全新环境”后可以分别修改这些目录。')}
+                  {t('storage.migrationLayoutLocked', '迁移会保持现有工作区与内部运行时的相对布局；Node.js、Git 和 npm 位置可以重新选择。')}
                 </p>
               )}
             </div>

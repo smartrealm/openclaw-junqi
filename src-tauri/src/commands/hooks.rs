@@ -531,12 +531,16 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
 }
 
 fn detect_node() -> Option<String> {
+    if let Some(configured) = crate::paths::configured_node_path().filter(|path| path.is_file()) {
+        return Some(configured.to_string_lossy().into_owned());
+    }
+
     let detected = crate::platform::detect_path("node");
     if !detected.is_empty() {
         return Some(detected);
     }
 
-    let legacy = crate::paths::local_node_path();
+    let legacy = crate::paths::legacy_local_node_path();
     legacy
         .is_file()
         .then(|| legacy.to_string_lossy().into_owned())

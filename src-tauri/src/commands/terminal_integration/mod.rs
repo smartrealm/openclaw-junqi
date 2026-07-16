@@ -31,13 +31,21 @@ struct EnvironmentBinding {
     profile_path: Option<PathBuf>,
 }
 
+/// The launcher is generated from the selected runtime rather than from the
+/// accidental presence of a host-side OpenClaw binary. This keeps Docker
+/// terminal integration useful on a clean Docker-only installation.
+pub(super) enum TerminalLauncherTarget<'a> {
+    Native(Option<&'a Path>),
+    Docker,
+}
+
 trait TerminalIntegrationBackend {
     const LAUNCHER_FILENAME: &'static str;
 
     fn apply_environment(enabled: bool) -> Result<EnvironmentBinding, String>;
     fn detect_environment() -> EnvironmentBinding;
     fn is_environment_configured(binding: &EnvironmentBinding) -> bool;
-    fn launcher_contents(binary: Option<&Path>) -> String;
+    fn launcher_contents(target: TerminalLauncherTarget<'_>) -> String;
 
     fn prepare_launcher(_path: &Path) -> Result<(), String> {
         Ok(())
@@ -51,9 +59,21 @@ impl<B: TerminalIntegrationBackend> TerminalIntegrationService<B> {
         paths::terminal_launcher_dir().join(B::LAUNCHER_FILENAME)
     }
 
-    fn sync(requested: bool) -> Result<TerminalIntegrationStatus, String> {
+    fn sync(
+        requested: bool,
+        native_binary_override: Option<&Path>,
+    ) -> Result<TerminalIntegrationStatus, String> {
         let binding = if requested {
-            Self::write_launcher(crate::commands::system::resolve_openclaw_binary().as_deref())?;
+            let runtime = paths::active_runtime_mode();
+            let detected_binary = matches!(runtime, paths::OpenClawRuntimeMode::Native)
+                .then(crate::commands::system::resolve_openclaw_binary)
+                .flatten();
+            let binary = native_binary_override.or(detected_binary.as_deref());
+            let target = match runtime {
+                paths::OpenClawRuntimeMode::Native => TerminalLauncherTarget::Native(binary),
+                paths::OpenClawRuntimeMode::Docker => TerminalLauncherTarget::Docker,
+            };
+            Self::write_launcher(target)?;
             B::apply_environment(true)?
         } else {
             let binding = B::apply_environment(false)?;
@@ -67,12 +87,12 @@ impl<B: TerminalIntegrationBackend> TerminalIntegrationService<B> {
         Self::build_status(requested, B::detect_environment())
     }
 
-    fn write_launcher(binary: Option<&Path>) -> Result<(), String> {
+    fn write_launcher(target: TerminalLauncherTarget<'_>) -> Result<(), String> {
         let directory = paths::terminal_launcher_dir();
         std::fs::create_dir_all(&directory)
             .map_err(|error| format!("Failed to create terminal launcher directory: {}", error))?;
         let path = Self::launcher_path();
-        paths::atomic_write_text(&path, &B::launcher_contents(binary))?;
+        paths::atomic_write_text(&path, &B::launcher_contents(target))?;
         B::prepare_launcher(&path)
     }
 
@@ -89,11 +109,16 @@ impl<B: TerminalIntegrationBackend> TerminalIntegrationService<B> {
         let launcher = Self::launcher_path();
         let enabled = requested && launcher.is_file() && B::is_environment_configured(&binding);
         let current_path_has_launcher = current_path_contains(&paths::terminal_launcher_dir());
+        let runtime_ready = match paths::active_runtime_mode() {
+            paths::OpenClawRuntimeMode::Native => {
+                crate::commands::system::resolve_openclaw_binary().is_some()
+            }
+            paths::OpenClawRuntimeMode::Docker => true,
+        };
         TerminalIntegrationStatus {
             requested,
             enabled,
-            launcher_ready: launcher.is_file()
-                && crate::commands::system::resolve_openclaw_binary().is_some(),
+            launcher_ready: launcher.is_file() && runtime_ready,
             launcher_dir: paths::terminal_launcher_dir().to_string_lossy().to_string(),
             launcher_path: launcher.to_string_lossy().to_string(),
             profile_path: binding
@@ -145,7 +170,30 @@ fn updated_windows_path(current: &str, launcher: &str, enabled: bool) -> String 
 }
 
 pub(crate) fn sync_terminal_integration() -> Result<TerminalIntegrationStatus, String> {
-    TerminalIntegrationService::<ActiveBackend>::sync(paths::terminal_integration_requested())
+    if matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        crate::commands::system::ensure_openclaw_relocation_complete()?;
+    }
+    TerminalIntegrationService::<ActiveBackend>::sync(paths::terminal_integration_requested(), None)
+}
+
+/// Sync against the binary already validated by a relocation. The normal
+/// resolver deliberately hides binaries until the relocation is committed.
+pub(crate) fn sync_terminal_integration_for_relocation(
+    binary: &Path,
+) -> Result<TerminalIntegrationStatus, String> {
+    if !matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        return Err("OpenClaw relocation terminal sync requires the Native runtime".into());
+    }
+    TerminalIntegrationService::<ActiveBackend>::sync(
+        paths::terminal_integration_requested(),
+        Some(binary),
+    )
 }
 
 #[tauri::command]

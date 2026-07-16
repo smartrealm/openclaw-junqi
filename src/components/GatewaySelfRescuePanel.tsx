@@ -45,13 +45,14 @@ export function GatewaySelfRescuePanel({
 }: GatewaySelfRescuePanelProps) {
   const { t } = useTranslation();
   const [doctorFixState, setDoctorFixState] = useState<DoctorFixState>('idle');
+  const [doctorFixError, setDoctorFixError] = useState<string | null>(null);
   const [showAiRescue, setShowAiRescue] = useState(false);
   const [recommendation, setRecommendation] = useState<GatewayRecoveryRecommendation | null>(null);
   const globalRepairing = useOpenClawRepairing();
 
   useEffect(() => {
     let active = true;
-    const diagnostic = error || progressMessage;
+    const diagnostic = doctorFixError || error || progressMessage;
     if (!diagnostic) {
       setRecommendation(null);
       return () => { active = false; };
@@ -60,7 +61,7 @@ export function GatewaySelfRescuePanel({
       .then((value) => { if (active) setRecommendation(value); })
       .catch(() => { if (active) setRecommendation(null); });
     return () => { active = false; };
-  }, [error, progressMessage]);
+  }, [doctorFixError, error, progressMessage]);
 
   const doctorFixBusy = doctorFixState === 'running' || globalRepairing;
   const actionDisabled = busy || doctorFixBusy;
@@ -80,12 +81,20 @@ export function GatewaySelfRescuePanel({
   const runDoctorFix = async () => {
     if (actionDisabled) return;
     setDoctorFixState('running');
+    setDoctorFixError(null);
     try {
       const repaired = await runOpenClawRepair();
       setDoctorFixState(repaired ? 'success' : 'failed');
-      if (repaired) onPrimaryAction();
-    } catch {
+      if (repaired) {
+        onPrimaryAction();
+      } else {
+        setDoctorFixError(t('gatewaySelfRescue.doctorFixNoResult', '官方修复未返回成功状态。请查看执行记录后重试。'));
+      }
+    } catch (repairError) {
       setDoctorFixState('failed');
+      setDoctorFixError(repairError instanceof Error
+        ? repairError.message
+        : String(repairError));
     } finally {
       window.setTimeout(() => setDoctorFixState('idle'), 4_000);
     }
@@ -175,6 +184,14 @@ export function GatewaySelfRescuePanel({
             </span>
           </div>
         )}
+        {doctorFixError && (
+          <div
+            role="alert"
+            className="rounded-lg border border-aegis-danger/25 bg-aegis-danger/[0.07] px-3 py-2 text-[10.5px] leading-relaxed text-red-300 whitespace-pre-wrap"
+          >
+            {doctorFixError}
+          </div>
+        )}
         <button
           onClick={onPrimaryAction}
           disabled={actionDisabled}
@@ -256,7 +273,7 @@ export function GatewaySelfRescuePanel({
       {showAiRescue && (
         <div className="max-h-[min(560px,70vh)] overflow-y-auto px-3.5 py-3">
           <GatewayRescueChat
-            error={error || progressMessage || t('gatewaySelfRescue.defaultAiContext', 'Gateway 需要诊断。')}
+            error={doctorFixError || error || progressMessage || t('gatewaySelfRescue.defaultAiContext', 'Gateway 需要诊断。')}
             logs={logs}
           />
         </div>

@@ -6,6 +6,9 @@ const panel = readFileSync(new URL('./NpmCacheSettingsPanel.tsx', import.meta.ur
 const settings = readFileSync(new URL('../../pages/SettingsPage.tsx', import.meta.url), 'utf8');
 const storage = readFileSync(new URL('../../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
 const lib = readFileSync(new URL('../../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+const setup = readFileSync(new URL('../../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const updater = readFileSync(new URL('../../../src-tauri/src/commands/openclaw_update.rs', import.meta.url), 'utf8');
+const repair = readFileSync(new URL('../../../src-tauri/src/commands/openclaw_repair.rs', import.meta.url), 'utf8');
 
 test('npm cache remains user-configurable after runtime installation', () => {
   assert.match(settings, /activeTab === 'storage'[\s\S]*<NpmCacheSettingsPanel \/>/);
@@ -21,6 +24,12 @@ test('npm cache update has a dedicated validated backend command', () => {
   assert.match(storage, /verify_directory_writable/);
   assert.match(storage, /validate_location_changes\(&updated, Some\(current\)\)/);
   assert.match(lib, /commands::storage::update_npm_cache_directory/);
+});
+
+test('the explicit npm cache override reaches install, update, and repair commands', () => {
+  assert.match(setup, /apply_configured_npm_cache\(&mut cmd\)/);
+  assert.match(updater, /system::apply_configured_npm_cache\(&mut command\)/);
+  assert.match(repair, /system::apply_configured_npm_cache\(&mut command\)/);
 });
 
 test('npm cache settings and running step labels exist in every locale', () => {

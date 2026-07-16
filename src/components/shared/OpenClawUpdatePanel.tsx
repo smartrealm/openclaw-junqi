@@ -1,8 +1,9 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, Download, ExternalLink, RefreshCw, TerminalSquare } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Download, ExternalLink, RefreshCw, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { useOpenclawUpdate } from '@/hooks/useOpenclawUpdate';
+import { resolveOpenclawUpdateIndicator } from './openclawUpdateIndicator';
 import { Alert } from './alert';
 import { Button } from './button';
 
@@ -34,9 +35,9 @@ export function OpenClawUpdatePanel({
   const [confirming, setConfirming] = useState(false);
   const status = update.status;
   const displayedVersion = status?.currentVersion || update.result?.afterVersion || currentVersion || null;
-  const hasChecked = status !== null;
-  const available = Boolean(status?.available && !status.error);
-  const upToDate = hasChecked && !available && !status?.error;
+  const indicator = resolveOpenclawUpdateIndicator(update.phase, status);
+  const available = indicator === 'available';
+  const upToDate = indicator === 'current';
 
   const channelLabel = status?.channel
     ? t(`setup.openclawUpdate.channel.${status.channel}`, { defaultValue: status.channel })
@@ -137,19 +138,35 @@ export function OpenClawUpdatePanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <RefreshCw size={15} className="shrink-0 text-aegis-primary" />
+            <span
+              data-testid="openclaw-update-status-icon"
+              data-state={indicator}
+              className="inline-flex shrink-0"
+              aria-hidden="true"
+            >
+              {indicator === 'current' ? (
+                <CheckCircle2 size={15} className="text-aegis-success" />
+              ) : indicator === 'available' ? (
+                <Download size={15} className="text-aegis-warning" />
+              ) : indicator === 'error' ? (
+                <CircleAlert size={15} className="text-aegis-danger" />
+              ) : (
+                <RefreshCw
+                  size={15}
+                  className={clsx('text-aegis-primary', indicator === 'busy' && 'animate-spin')}
+                />
+              )}
+            </span>
             <h3 id={titleId} className="text-sm font-semibold text-aegis-text">
               {t('setup.openclawUpdate.title')}
             </h3>
             {upToDate && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-aegis-success">
-                <CheckCircle2 size={12} />
+              <span className="inline-flex items-center text-[11px] font-medium text-aegis-success">
                 {t('setup.openclawUpdate.upToDate')}
               </span>
             )}
             {available && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-aegis-warning">
-                <Download size={12} />
+              <span className="inline-flex items-center text-[11px] font-medium text-aegis-warning">
                 {t('setup.openclawUpdate.available')}
               </span>
             )}

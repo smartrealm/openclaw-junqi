@@ -45,7 +45,7 @@ async fn require_installed_channel(channel: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_openclaw_channel_catalog() -> Result<OfficialChannelCatalog, String> {
     let payload = channel_catalog_payload().await?;
-    let version = if let Some(path) = system::resolve_openclaw_binary() {
+    let version = if let Some(path) = system::resolve_openclaw_binary_async().await {
         system::validate_openclaw_binary(&path, &system::openclaw_search_path())
             .await
             .version

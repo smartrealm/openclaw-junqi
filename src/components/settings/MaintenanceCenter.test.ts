@@ -76,12 +76,16 @@ test('BUG-M04 findings and Gateway failures have application-native actions', ()
 test('BUG-M05 and BUG-M06 raw Doctor execution is not exposed or logged', () => {
   const lib = source('src-tauri/src/lib.rs');
   const maintenance = source('src-tauri/src/commands/maintenance.rs');
+  const cli = source('src-tauri/src/commands/openclaw_cli.rs');
   const repair = source('src-tauri/src/commands/openclaw_repair.rs');
   const center = source('src/components/settings/MaintenanceCenter.tsx');
   assert.doesNotMatch(lib, /commands::gateway::run_doctor/);
   assert.match(repair, /sanitize_diagnostic_line/);
   assert.match(repair, /REPAIR_TAIL_CAPACITY/);
-  assert.match(maintenance, /configure_background_command\(&mut command\)/);
+  // Process-launch safety belongs to the shared runtime-aware CLI adapter,
+  // which maintenance now reuses for both Native and Docker targets.
+  assert.match(cli, /configure_background_command\(&mut command\)/);
+  assert.match(maintenance, /resolve_active_openclaw_target\(\)/);
   assert.doesNotMatch(maintenance, /cmd\.exe|powershell|Command::new\("cmd"/i);
   assert.doesNotMatch(center, /openclaw doctor --fix/i);
 });

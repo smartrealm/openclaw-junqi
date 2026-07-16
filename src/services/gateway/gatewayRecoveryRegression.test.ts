@@ -10,7 +10,7 @@ function source(path: string): string {
 test('BUG-01 ensure flow attempts managed native gateway before Docker fallback', () => {
   const rust = source('src-tauri/src/commands/ensure.rs');
   const nativeStart = rust.indexOf('crate::commands::gateway::start_gateway_locked(');
-  const dockerFallback = rust.indexOf('match check_docker().await');
+  const dockerFallback = rust.lastIndexOf('match check_docker().await');
   assert.ok(nativeStart >= 0, 'ensure flow must invoke the already-locked native start implementation');
   assert.ok(dockerFallback > nativeStart, 'Docker fallback must run after native startup');
 });
@@ -86,8 +86,7 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   assert.match(gateway, /terminate_owned_gateway\(&mut child\)\.await/);
   assert.match(gateway, /Recent Gateway output/);
   assert.match(gateway, /managed child health check passed/);
-  assert.match(setup, /waitForGatewayReady\(runId, 10_000, status\?\.port\)/);
-  assert.doesNotMatch(setup, /waitForGatewayReady\(runId, 30_000, status\?\.port\)/);
+  assert.match(setup, /waitForGatewayReady\(runId, isDockerRuntime \? 30_000 : 10_000, status\?\.port\)/);
 });
 
 test('offline system services are stopped before the desktop-managed Gateway starts', () => {
@@ -95,7 +94,7 @@ test('offline system services are stopped before the desktop-managed Gateway sta
   assert.match(gateway, /args\(\["gateway", "status", "--json"\]\)/);
   assert.match(gateway, /parse_gateway_service_state\(&output\.stdout\) != Some\(\(true, false\)\)/);
   assert.match(gateway, /args\(\["gateway", "stop"\]\)/);
-  assert.match(gateway, /stop_offline_gateway_service\(&app, &openclaw, &gw_path\)\.await\?/);
+  assert.match(gateway, /stop_offline_gateway_service\(&app, &runtime, &gw_path\)\.await\?/);
 });
 
 test('setup self-rescue commands are registered and use official plugin convergence repair', () => {
@@ -124,7 +123,8 @@ test('BUG-GSC04 Rust canonical state has one atomic writer', () => {
   assert.match(state, /pub fn runtime_snapshot\([\s\S]*self\.runtime\.lock/);
   assert.match(state, /pub fn transition\([\s\S]*self\.runtime\.lock/);
   assert.doesNotMatch(supervisor, /transition_lifecycle|transition_runtime|\.runtime\.lock/);
-  assert.doesNotMatch(gatewayCommand, /runtime_mode|\.lifecycle\.lock|transition_lifecycle|transition_runtime/);
+  assert.match(gatewayCommand, /paths::active_runtime_mode\(\)/);
+  assert.doesNotMatch(gatewayCommand, /\.runtime\.lock|\.lifecycle\.lock|transition_lifecycle|transition_runtime/);
 });
 
 test('BUG-GSC08 gateway observation is read-only while lifecycle ownership is busy', () => {
@@ -163,15 +163,16 @@ test('BUG-ST01 storage bootstrap is stable and environment overrides remain supp
 
 test('BUG-ST02 storage decision is an explicit post-detection setup step', () => {
   const store = source('src/stores/app-store.ts');
+  const navigation = source('src/stores/setup-navigation.ts');
   const flow = source('src/hooks/useSetupFlow.ts');
   const setup = source('src/pages/SetupPage.tsx');
   const gate = source('src/components/setup/StorageSetupGate.tsx');
   const main = source('src/main.tsx');
-  assert.match(store, /\| "storage"/);
+  assert.match(navigation, /\| "storage"/);
   assert.match(store, /postStorageStep/);
-  assert.match(flow, /setPostStorageStep\("choosing-mode"\)[\s\S]*setSetupStep\("storage"\)/);
-  assert.match(flow, /setPostStorageStep\("gateway-stopped"\)[\s\S]*setSetupStep\("storage"\)/);
-  assert.match(flow, /setPostStorageStep\(onboardingRequired \? "configure-openclaw" : "ready"\)[\s\S]*setSetupStep\("storage"\)/);
+  assert.match(flow, /setPostStorageStep\("choosing-mode"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
+  assert.match(flow, /setPostStorageStep\("gateway-stopped"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
+  assert.match(flow, /setPostStorageStep\(onboardingRequired \? "configure-openclaw" : "ready"\)[\s\S]*navigateSetup\("storage", "replace"\)/);
   assert.match(setup, /case "storage"[\s\S]*<StorageSetupStep/);
   assert.match(gate, /get_storage_setup_status/);
   assert.match(gate, /configure_storage/);
@@ -414,4 +415,41 @@ test('OpenClaw updates reuse boot recovery UI without racing the updater restart
   assert.match(app, /handleUpdateMaintenanceStarted[\s\S]*useBootSequenceStore\.getState\(\)\.reset\(\)/);
   assert.match(app, /if \(openclawUpdateActive\) return/);
   assert.match(app, /OPENCLAW_UPDATE_MAINTENANCE_FINISHED/);
+});
+
+test('migration-lock failures wait for OpenClaw expiry before another restart attempt', () => {
+  const app = source('src/App.tsx');
+  const recovery = source('src/services/gateway/openclawRepair.ts');
+
+  assert.match(recovery, /MAX_MIGRATION_RETRY_DELAY_MS = 5 \* 60 \* 1000/);
+  assert.match(app, /gatewayMigrationRetryDelayMs/);
+  assert.match(app, /waitForGatewayMigrationLock/);
+  assert.match(app, /gateway\.progress\.waitingForMigrationLock/);
+  assert.match(app, /restartGatewayFromBoot\(result\?\.error/);
+  assert.match(app, /cancelGatewayMigrationRetry/);
+});
+
+test('Windows recovery terminates the owned process tree before a new Gateway starts', () => {
+  const supervisor = source('src-tauri/src/commands/gateway_supervisor.rs');
+  const processControl = source('src-tauri/src/commands/process_control.rs');
+
+  assert.match(supervisor, /terminate_process_tree\(child, child\.id\(\)\)\.await/);
+  assert.match(processControl, /taskkill/);
+  assert.match(processControl, /"\/T", "\/F"/);
+});
+
+test('native recovery resolves the actual npm installation instead of profile-directory guesses', () => {
+  const system = source('src-tauri/src/commands/system.rs');
+  const paths = source('src-tauri/src/paths.rs');
+  const search = system.slice(
+    system.indexOf('pub(crate) fn openclaw_search_path'),
+    system.indexOf('fn openclaw_binary_names'),
+  );
+
+  assert.match(system, /NativeOpenclawRuntime/);
+  assert.match(system, /npm_reported_global_prefix/);
+  assert.match(system, /resolve_openclaw_binary_async/);
+  assert.match(search, /configured_npm_prefix/);
+  assert.match(paths, /npm_bin_dir_for_prefix/);
+  assert.doesNotMatch(search, /AppData|ProgramFiles|homebrew/);
 });

@@ -1,6 +1,6 @@
 [package]
 name = "junqi-desktop"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
 
 [lib]
@@ -57,7 +57,7 @@ keyring = { version = "3.6.3", default-features = false, features = ["apple-nati
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Storage_FileSystem", "Win32_System_Environment", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

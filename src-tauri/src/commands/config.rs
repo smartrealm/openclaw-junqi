@@ -74,7 +74,7 @@ pub struct ConfigValidation {
 
 #[tauri::command]
 pub async fn read_config() -> Result<ConfigData, String> {
-    let path = paths::config_path();
+    let path = paths::active_config_path();
     if path.exists() {
         let raw =
             std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {}", e))?;
@@ -93,7 +93,7 @@ pub async fn read_config() -> Result<ConfigData, String> {
 
 #[tauri::command]
 pub async fn validate_openclaw_config() -> ConfigValidation {
-    let path = paths::config_path();
+    let path = paths::active_config_path();
     validate_openclaw_config_path(&path)
 }
 
@@ -136,7 +136,7 @@ pub async fn write_config(
     })?;
     let value = parse_openclaw_config_json(&json)?;
     crate::commands::openclaw_provider::validate_candidate_config(&value).await?;
-    let path = paths::config_path();
+    let path = paths::active_config_path();
     write_openclaw_config_value(&path, &value)?;
     Ok("Config saved".into())
 }
@@ -269,6 +269,7 @@ pub struct GatewayConfigInfo {
     pub ws_url: String,
     pub http_url: String,
     pub config_path: Option<String>,
+    pub runtime_mode: paths::OpenClawRuntimeMode,
 }
 
 fn extract_token_from_config(raw: &str) -> Option<String> {
@@ -289,19 +290,17 @@ fn extract_port_from_config(raw: &str) -> Option<u16> {
 
 #[tauri::command]
 pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
-    let path = paths::config_path();
+    let path = paths::active_config_path();
     let mut token: Option<String> = None;
     let mut port = default_gateway_port();
     let mut found_path: Option<String> = None;
 
     if path.exists() {
+        found_path = Some(path.to_string_lossy().to_string());
         if let Ok(raw) = std::fs::read_to_string(&path) {
             token = extract_token_from_config(&raw);
             if let Some(p) = extract_port_from_config(&raw) {
                 port = p;
-            }
-            if token.is_some() {
-                found_path = Some(path.to_string_lossy().to_string());
             }
         }
     }
@@ -312,13 +311,30 @@ pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
         ws_url: format!("ws://{}:{}", default_gateway_host(), port),
         http_url: format!("http://{}:{}", default_gateway_host(), port),
         config_path: found_path,
+        runtime_mode: paths::active_runtime_mode(),
     })
+}
+
+/// Commit the user's explicit Native/Docker selection before any Gateway work
+/// begins. The operation gate prevents storage migration and runtime selection
+/// from racing over the same bootstrap file.
+#[tauri::command]
+pub async fn set_active_gateway_runtime(
+    state: State<'_, GatewayProcess>,
+    mode: paths::OpenClawRuntimeMode,
+) -> Result<(), String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
+        "Gateway or storage maintenance is running; choose the runtime after it completes"
+            .to_string()
+    })?;
+    paths::set_active_runtime_mode(mode)
 }
 
 /// 直接从配置文件读取供应商 API Key（未脱敏）。
 #[tauri::command]
 pub async fn read_provider_api_key(provider_key: String) -> Result<Option<String>, String> {
-    let path = paths::config_path();
+    let path = paths::active_config_path();
     if !path.exists() {
         return Ok(None);
     }

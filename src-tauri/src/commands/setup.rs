@@ -1,9 +1,18 @@
-use crate::commands::node_runtime::{NodeRequirementSource, NodeRuntimeRequirement};
+#[cfg(windows)]
+use crate::commands::git_runtime::{
+    resolve_latest_managed_git_artifact, verified_fallback_managed_git_artifact,
+};
+use crate::commands::node_runtime::{
+    current_platform_artifact, select_preferred_release, NodeDistributionRelease,
+    NodeRequirementSource, NodeRuntimeRequirement,
+};
 use crate::commands::npm_registry;
 use crate::commands::process_control::terminate_process_tree;
 use crate::commands::setup_progress::{emit, emit_keyed};
 use crate::paths;
 use crate::platform;
+use crate::state::GatewayProcess;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -13,6 +22,12 @@ use std::sync::{
 static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static NODE_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static GIT_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+#[cfg_attr(not(windows), allow(dead_code))]
+const RUNTIME_NETWORK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+#[cfg_attr(not(windows), allow(dead_code))]
+const CHINA_NODE_INDEX: &str = "https://npmmirror.com/mirrors/node/index.json";
+#[cfg_attr(not(windows), allow(dead_code))]
+const OFFICIAL_NODE_INDEX: &str = "https://nodejs.org/dist/index.json";
 
 struct TemporaryDirectory(PathBuf);
 
@@ -22,62 +37,275 @@ impl Drop for TemporaryDirectory {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
+fn runtime_binary(root: &Path, tool: &str) -> PathBuf {
+    match (tool, cfg!(windows)) {
+        ("node", true) => root.join("node.exe"),
+        ("node", false) => root.join("bin").join("node"),
+        ("git", true) => root.join("cmd").join("git.exe"),
+        ("git", false) => root.join("bin").join("git"),
+        _ => root.join(tool),
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn staged_npm_cli(root: &Path) -> PathBuf {
+    let npm_root = if cfg!(windows) {
+        root.join("node_modules")
+    } else {
+        root.join("lib").join("node_modules")
+    };
+    npm_root.join("npm").join("bin").join("npm-cli.js")
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn activate_staged_runtime(staging: &Path, target: &Path, name: &str) -> Result<(), String> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("Managed {name} target has no parent directory"))?;
+    let backup = parent.join(format!(".{name}-backup-{}", uuid::Uuid::new_v4()));
+    if target.exists() {
+        std::fs::rename(target, &backup)
+            .map_err(|error| format!("Failed to stage existing managed {name}: {error}"))?;
+    }
+    if let Err(error) = std::fs::rename(staging, target) {
+        if backup.exists() {
+            std::fs::rename(&backup, target).map_err(|rollback_error| {
+                format!(
+                    "Failed to activate managed {name}: {error}; rollback failed: {rollback_error}"
+                )
+            })?;
+        }
+        return Err(format!("Failed to activate managed {name}: {error}"));
+    }
+    let _ = std::fs::remove_dir_all(backup);
+    Ok(())
+}
+
 // ─── Platform helpers ──────────────────────────────────────────────────────────
 
 #[cfg(windows)]
 pub fn refresh_path_from_registry() {
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW;
     use winreg::enums::*;
-    use winreg::RegKey;
+    use winreg::{RegKey, RegValue};
 
-    let mut parts: Vec<String> = Vec::new();
+    fn registry_string(value: &RegValue) -> Option<OsString> {
+        let mut wide = value
+            .bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        while wide.last() == Some(&0) {
+            wide.pop();
+        }
+        if value.vtype != REG_EXPAND_SZ {
+            return Some(OsString::from_wide(&wide));
+        }
+
+        wide.push(0);
+        let required = unsafe { ExpandEnvironmentStringsW(wide.as_ptr(), std::ptr::null_mut(), 0) };
+        if required == 0 {
+            return None;
+        }
+        let mut expanded = vec![0_u16; required as usize];
+        let written = unsafe {
+            ExpandEnvironmentStringsW(wide.as_ptr(), expanded.as_mut_ptr(), expanded.len() as u32)
+        };
+        if written == 0 || written > required {
+            return None;
+        }
+        expanded.truncate(written.saturating_sub(1) as usize);
+        Some(OsString::from_wide(&expanded))
+    }
+
+    fn push_unique(parts: &mut Vec<OsString>, value: OsString) {
+        for entry in std::env::split_paths(&value) {
+            if entry.as_os_str().is_empty() {
+                continue;
+            }
+            let marker = entry.to_string_lossy();
+            if !parts
+                .iter()
+                .any(|existing| existing.to_string_lossy().eq_ignore_ascii_case(&marker))
+            {
+                parts.push(entry.into_os_string());
+            }
+        }
+    }
+
+    let mut parts: Vec<OsString> = Vec::new();
     if let Ok(env) = RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey(r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
     {
         if let Ok(val) = env.get_raw_value("Path") {
-            let wide: Vec<u16> = val
-                .bytes
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .collect();
-            let s = OsString::from_wide(&wide);
-            if let Some(s) = s.to_str() {
-                parts.extend(s.trim_end_matches('\0').split(';').map(|p| p.to_string()));
+            if let Some(value) = registry_string(&val) {
+                push_unique(&mut parts, value);
             }
         }
     }
     if let Ok(env) = RegKey::predef(HKEY_CURRENT_USER).open_subkey("Environment") {
         if let Ok(val) = env.get_raw_value("Path") {
-            let wide: Vec<u16> = val
-                .bytes
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .collect();
-            let s = OsString::from_wide(&wide);
-            if let Some(s) = s.to_str() {
-                parts.extend(s.trim_end_matches('\0').split(';').map(|p| p.to_string()));
+            if let Some(value) = registry_string(&val) {
+                push_unique(&mut parts, value);
             }
         }
     }
+    if let Some(current) = std::env::var_os("PATH") {
+        push_unique(&mut parts, current);
+    }
     if !parts.is_empty() {
-        std::env::set_var("PATH", parts.join(";"));
+        if let Ok(joined) = std::env::join_paths(parts) {
+            std::env::set_var("PATH", joined);
+        }
     }
 }
 
-#[cfg(windows)]
-pub fn find_git_in_default_paths() -> Option<PathBuf> {
-    let candidates = [
-        r"C:\Program Files\Git\cmd\git.exe",
-        r"C:\Program Files (x86)\Git\cmd\git.exe",
-    ];
-    for p in &candidates {
-        let path = PathBuf::from(p);
-        if path.exists() {
-            return Some(path);
+fn node_filename(version: &str) -> String {
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "x64"
+    };
+    format!("node-v{version}-win-{arch}.zip")
+}
+
+fn node_sources(version: &str) -> Vec<(String, &'static str)> {
+    let filename = node_filename(version);
+    vec![
+        (
+            format!("https://npmmirror.com/mirrors/node/v{version}/{filename}"),
+            "npmmirror.com（国内）",
+        ),
+        (
+            format!("https://nodejs.org/dist/v{version}/{filename}"),
+            "nodejs.org（备用）",
+        ),
+    ]
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+async fn download_with_fallback(
+    app: &tauri::AppHandle,
+    step: &str,
+    sources: &[(String, &'static str)],
+    dest: &Path,
+    expected_sha256: &str,
+    prog_start: f64,
+    prog_end: f64,
+) -> Result<u64, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(RUNTIME_NETWORK_TIMEOUT)
+        .timeout(std::time::Duration::from_secs(600))
+        .user_agent("JunQi Desktop runtime downloader")
+        .build()
+        .map_err(|error| format!("Failed to initialize downloader: {error}"))?;
+    let mut last_error = "no download source responded".to_string();
+    for (index, (url, label)) in sources.iter().enumerate() {
+        emit(
+            app,
+            step,
+            &format!(
+                "【下载 {}/{}】正在连接 {}...",
+                index + 1,
+                sources.len(),
+                label
+            ),
+            prog_start,
+        );
+        let response = match client.get(url).send().await {
+            Ok(response) => match response.error_for_status() {
+                Ok(response) => response,
+                Err(error) => {
+                    last_error = format!("{label}: {error}");
+                    continue;
+                }
+            },
+            Err(error) => {
+                last_error = format!("{label}: {error}");
+                continue;
+            }
+        };
+        let total = response.content_length().unwrap_or(0);
+        let bytes = match response.bytes().await {
+            Ok(bytes) if !bytes.is_empty() => bytes,
+            Ok(_) => {
+                last_error = format!("{label}: empty response");
+                continue;
+            }
+            Err(error) => {
+                last_error = format!("{label}: {error}");
+                continue;
+            }
+        };
+        let actual = format!("{:x}", Sha256::digest(&bytes));
+        if !actual.eq_ignore_ascii_case(expected_sha256) {
+            last_error = format!("{label}: SHA-256 mismatch");
+            continue;
+        }
+        std::fs::write(dest, &bytes)
+            .map_err(|error| format!("Failed to write {}: {error}", dest.display()))?;
+        emit(
+            app,
+            step,
+            &format!(
+                "Download verified via {} ({:.1} MB)",
+                label,
+                total.max(bytes.len() as u64) as f64 / 1024.0 / 1024.0
+            ),
+            prog_end,
+        );
+        return Ok(bytes.len() as u64);
+    }
+    Err(format!("所有下载源均失败。最后错误：{last_error}"))
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn extract_zip(
+    app: &tauri::AppHandle,
+    step: &str,
+    archive: &Path,
+    dest: &Path,
+    strip_top_level: bool,
+    progress: f64,
+) -> Result<(), String> {
+    let file =
+        std::fs::File::open(archive).map_err(|error| format!("Failed to open archive: {error}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|error| format!("Failed to read zip archive: {error}"))?;
+    emit(
+        app,
+        step,
+        &format!("Extracting {} files...", archive.len()),
+        progress,
+    );
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
+        let Some(mut relative) = entry.enclosed_name() else {
+            continue;
+        };
+        if strip_top_level {
+            relative = relative.components().skip(1).collect();
+            if relative.as_os_str().is_empty() {
+                continue;
+            }
+        }
+        let output = dest.join(relative);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&output).map_err(|error| error.to_string())?;
+        } else {
+            if let Some(parent) = output.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let mut file = std::fs::File::create(&output)
+                .map_err(|error| format!("Failed to create {}: {error}", output.display()))?;
+            std::io::copy(&mut entry, &mut file)
+                .map_err(|error| format!("Failed to extract {}: {error}", output.display()))?;
         }
     }
-    None
+    Ok(())
 }
 
 // ─── npm install with registry fallback ───────────────────────────────────────
@@ -197,6 +425,7 @@ async fn npm_install_with_fallback(
     npm_cli: Option<&str>,
     global_prefix: &std::path::Path,
     pkg: &str,
+    force: bool,
     prog_start: f64,
     prog_end: f64,
 ) -> Result<(), String> {
@@ -205,7 +434,6 @@ async fn npm_install_with_fallback(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    let configured_cache = paths::configured_npm_cache_dir();
     std::fs::create_dir_all(global_prefix).ok();
     let registry_selection = npm_registry::select_npm_registry().await;
     let expected_version = registry_selection.package_version.clone();
@@ -288,22 +516,23 @@ async fn npm_install_with_fallback(
             "--fetch-timeout=120000",
             "--no-fund",
             "--no-audit",
-            pkg,
-        ])
-        .env("PATH", &path_env)
-        .env("npm_config_prefix", &npm_prefix_str)
-        // This is deliberately process-scoped. Do not alter user or global npmrc.
-        .env("npm_config_registry", registry.url)
-        .env("NPM_CONFIG_REGISTRY", registry.url)
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
-        .env("GIT_CONFIG_VALUE_0", "ssh://git@github.com/")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-        if let Some(cache) = configured_cache.as_deref() {
-            cmd.env("npm_config_cache", cache);
+        ]);
+        if force {
+            // An explicit reinstall must not be short-circuited by npm's
+            // existing-package metadata. Keep the current payload in place
+            // until npm has successfully replaced it.
+            cmd.arg("--force");
         }
+        cmd.arg(pkg)
+            .env("PATH", &path_env)
+            .env("npm_config_prefix", &npm_prefix_str)
+            // This is deliberately process-scoped. Do not alter user or global npmrc.
+            .env("npm_config_registry", registry.url)
+            .env("NPM_CONFIG_REGISTRY", registry.url)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        crate::commands::system::apply_configured_npm_cache(&mut cmd);
         platform::configure_background_command(&mut cmd);
 
         let mut child = match cmd.spawn() {
@@ -481,6 +710,96 @@ async fn npm_install_with_fallback(
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
+#[cfg_attr(not(windows), allow(dead_code))]
+async fn fetch_node_distribution_index(
+    client: &reqwest::Client,
+    url: &str,
+) -> Option<Vec<NodeDistributionRelease>> {
+    client
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json::<Vec<NodeDistributionRelease>>()
+        .await
+        .ok()
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+async fn resolve_managed_node_version(
+    requirement: &NodeRuntimeRequirement,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(RUNTIME_NETWORK_TIMEOUT)
+        .timeout(RUNTIME_NETWORK_TIMEOUT)
+        .user_agent("JunQi Desktop Node.js release resolver")
+        .build()
+        .map_err(|error| format!("Failed to initialize Node.js resolver: {error}"))?;
+    let releases =
+        if let Some(mirror) = fetch_node_distribution_index(&client, CHINA_NODE_INDEX).await {
+            mirror
+        } else {
+            fetch_node_distribution_index(&client, OFFICIAL_NODE_INDEX)
+                .await
+                .ok_or_else(|| "Node.js 国内镜像与备用官方索引均不可用".to_string())?
+        };
+    select_preferred_release(requirement, &releases, &current_platform_artifact()).ok_or_else(
+        || {
+            format!(
+                "No published Node.js release for this platform satisfies OpenClaw requirement {}",
+                requirement.expression()
+            )
+        },
+    )
+}
+
+fn parse_shasums(text: &str, filename: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        let digest = fields.next()?;
+        let listed = fields.next()?.trim_start_matches('*');
+        (listed == filename
+            && digest.len() == 64
+            && digest.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| digest.to_ascii_lowercase())
+    })
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+async fn resolve_node_sha256(version: &str) -> Result<String, String> {
+    let filename = node_filename(version);
+    let sources = [
+        format!("https://npmmirror.com/mirrors/node/v{version}/SHASUMS256.txt"),
+        format!("https://nodejs.org/dist/v{version}/SHASUMS256.txt"),
+    ];
+    let client = reqwest::Client::builder()
+        .connect_timeout(RUNTIME_NETWORK_TIMEOUT)
+        .timeout(RUNTIME_NETWORK_TIMEOUT)
+        .user_agent("JunQi Desktop Node.js checksum resolver")
+        .build()
+        .map_err(|error| format!("Failed to initialize checksum resolver: {error}"))?;
+    for source in sources {
+        let Ok(response) = client.get(source).send().await else {
+            continue;
+        };
+        let Ok(response) = response.error_for_status() else {
+            continue;
+        };
+        let Ok(text) = response.text().await else {
+            continue;
+        };
+        if let Some(digest) = parse_shasums(&text, &filename) {
+            return Ok(digest);
+        }
+    }
+    Err(format!(
+        "Unable to obtain a publisher SHA-256 for Node.js {filename}"
+    ))
+}
+
 async fn target_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
     let selection = npm_registry::select_npm_registry().await;
     if let Some(expression) = selection.node_requirement {
@@ -512,7 +831,10 @@ async fn install_node_for_requirement(
 
     #[cfg(windows)]
     {
-        return install_windows_system_node(app, requirement, force).await;
+        return match paths::configured_node_runtime_dir() {
+            Some(target) => install_windows_portable_node(app, requirement, force, target).await,
+            None => install_windows_system_node(app, requirement, force).await,
+        };
     }
 
     #[cfg(not(windows))]
@@ -548,6 +870,7 @@ async fn install_windows_system_node(
             current.path.unwrap_or_default()
         ));
     }
+
     emit_keyed(
         &app,
         "node",
@@ -580,8 +903,8 @@ async fn install_windows_system_node(
     emit_keyed(
         &app,
         "node",
-        "Node.js system installation is ready",
-        "setup.node.done",
+        "A compatible system Node.js runtime is ready",
+        "setup.node.systemReady",
         1.0,
     );
     Ok(format!(
@@ -592,8 +915,137 @@ async fn install_windows_system_node(
 }
 
 #[cfg(windows)]
+async fn install_windows_portable_node(
+    app: tauri::AppHandle,
+    requirement: NodeRuntimeRequirement,
+    force: bool,
+    target: PathBuf,
+) -> Result<String, String> {
+    let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
+    let configured_npm = paths::configured_npm_cli_path();
+    if portable_node_runtime_is_complete(current.available, configured_npm.as_deref()) && !force {
+        return Ok(format!(
+            "Node.js {} already installed at {}",
+            current.version.unwrap_or_default(),
+            current.path.unwrap_or_default()
+        ));
+    }
+
+    let version = resolve_managed_node_version(&requirement).await?;
+    emit_keyed(
+        &app,
+        "node",
+        &format!("Preparing to download Node.js v{version}, China mirror first..."),
+        "setup.node.prepareDownload",
+        0.05,
+    );
+    let sha256 = resolve_node_sha256(&version).await?;
+    let temp_dir =
+        std::env::temp_dir().join(format!("junqi-node-download-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|error| format!("Failed to create Node.js temporary directory: {error}"))?;
+    let _temp_cleanup = TemporaryDirectory(temp_dir.clone());
+    let archive = temp_dir.join(node_filename(&version));
+    download_with_fallback(
+        &app,
+        "node",
+        &node_sources(&version),
+        &archive,
+        &sha256,
+        0.08,
+        0.60,
+    )
+    .await?;
+
+    let parent = target
+        .parent()
+        .ok_or("Selected Node.js runtime directory has no parent")?;
+    let staging = parent.join(format!(".junqi-node-stage-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&staging)
+        .map_err(|error| format!("Failed to prepare Node.js staging directory: {error}"))?;
+    let _staging_cleanup = TemporaryDirectory(staging.clone());
+    extract_zip(&app, "node", &archive, &staging, true, 0.65)?;
+    let staged_node = runtime_binary(&staging, "node");
+    if !staged_npm_cli(&staging).is_file() {
+        return Err("Downloaded Node.js runtime does not contain bundled npm".into());
+    }
+    let mut command = tokio::process::Command::new(&staged_node);
+    command.arg("--version");
+    platform::configure_background_command(&mut command);
+    let detected = command
+        .output()
+        .await
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|version| requirement.supports(version))
+        .ok_or_else(|| {
+            format!(
+                "Downloaded Node.js does not satisfy OpenClaw requirement {}",
+                requirement.expression()
+            )
+        })?;
+    activate_staged_runtime(&staging, &target, "node")?;
+    emit_keyed(
+        &app,
+        "node",
+        &format!("Node.js {detected} installed in the selected directory"),
+        "setup.node.done",
+        1.0,
+    );
+    Ok(format!(
+        "Node.js {detected} installed at {}",
+        target.display()
+    ))
+}
+
+#[cfg(any(windows, test))]
+fn portable_node_runtime_is_complete(node_available: bool, npm_cli: Option<&Path>) -> bool {
+    node_available && npm_cli.is_some_and(Path::is_file)
+}
+
+#[cfg(windows)]
 async fn install_or_upgrade_winget_package(package_id: &str) -> Result<(), String> {
-    let common = [
+    let winget = platform::detect_path("winget");
+    if winget.is_empty() {
+        return Err(
+            "Windows Package Manager (winget) is unavailable. Install the dependency with its standard system installer or select an explicit portable runtime directory in JunQi."
+                .into(),
+        );
+    }
+    if run_winget_package_command(&winget, "upgrade", package_id)
+        .await
+        .is_ok_and(|output| output.status.success())
+    {
+        return Ok(());
+    }
+    let install = run_winget_package_command(&winget, "install", package_id).await?;
+    if install.status.success() {
+        return Ok(());
+    }
+    let diagnostic = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&install.stdout).trim(),
+        String::from_utf8_lossy(&install.stderr).trim()
+    )
+    .trim()
+    .to_string();
+    Err(if diagnostic.is_empty() {
+        format!("winget could not install {package_id}")
+    } else {
+        format!("winget could not install {package_id}: {diagnostic}")
+    })
+}
+
+#[cfg(windows)]
+async fn run_winget_package_command(
+    winget: &str,
+    verb: &str,
+    package_id: &str,
+) -> Result<std::process::Output, String> {
+    let mut command = tokio::process::Command::new(winget);
+    command.args([
+        verb,
         "-e",
         "--id",
         package_id,
@@ -601,43 +1053,12 @@ async fn install_or_upgrade_winget_package(package_id: &str) -> Result<(), Strin
         "--disable-interactivity",
         "--accept-source-agreements",
         "--accept-package-agreements",
-    ];
-    let upgrade = tokio::process::Command::new("winget")
-        .arg("upgrade")
-        .args(common)
-        .output()
-        .await;
-    if upgrade.as_ref().is_ok_and(|output| output.status.success()) {
-        return Ok(());
-    }
-    let install = tokio::process::Command::new("winget")
-        .arg("install")
-        .args(common)
-        .output()
+    ]);
+    platform::configure_background_command(&mut command);
+    tokio::time::timeout(std::time::Duration::from_secs(20 * 60), command.output())
         .await
-        .map_err(|error| format!("Failed to launch winget: {error}"))?;
-    if install.status.success() {
-        return Ok(());
-    }
-
-    // `winget upgrade` and `winget install` may both use a non-zero exit code
-    // when the requested package is already installed and no update exists.
-    // Treat an exact installed-package match as success; callers still verify
-    // the executable and its version before continuing.
-    let listed = tokio::process::Command::new("winget")
-        .args(["list", "-e", "--id", package_id, "--disable-interactivity"])
-        .output()
-        .await;
-    if listed.as_ref().is_ok_and(|output| output.status.success()) {
-        return Ok(());
-    }
-
-    let diagnostic = String::from_utf8_lossy(&install.stderr).trim().to_string();
-    Err(if diagnostic.is_empty() {
-        format!("winget could not install {package_id}")
-    } else {
-        format!("winget could not install {package_id}: {diagnostic}")
-    })
+        .map_err(|_| format!("winget {verb} timed out for {package_id}"))?
+        .map_err(|error| format!("Failed to run winget {verb} for {package_id}: {error}"))
 }
 
 /// Ensure child processes use a system Node.js release accepted by OpenClaw.
@@ -723,39 +1144,15 @@ async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, 
         "setup.git.check",
         0.02,
     );
-    let detected_git = platform::detect_path("git");
-    let system_git = if detected_git.is_empty() {
-        platform::bin_name("git")
-    } else {
-        detected_git
-    };
+    #[cfg(windows)]
+    if let Some(target) = paths::configured_git_runtime_dir() {
+        return install_windows_portable_git(app, force, target).await;
+    }
 
-    let existing_git = {
-        let mut command = tokio::process::Command::new(&system_git);
-        command.arg("--version");
-        platform::configure_background_command(&mut command);
-        command
-            .output()
-            .await
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|_| PathBuf::from(&system_git))
-            .or_else(|| {
-                paths::local_git_path()
-                    .is_file()
-                    .then(paths::local_git_path)
-            })
-    };
-    if let Some(git_path) = existing_git.filter(|_| !force) {
-        let mut command = tokio::process::Command::new(&git_path);
-        command.arg("--version");
-        platform::configure_background_command(&mut command);
-        let version = command
-            .output()
-            .await
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let existing_git = crate::commands::system::check_git().await?;
+    if existing_git.available && !force {
+        let version = existing_git
+            .version
             .unwrap_or_else(|| "unknown version".into());
         emit_keyed(
             &app,
@@ -769,33 +1166,7 @@ async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, 
 
     #[cfg(windows)]
     {
-        emit_keyed(
-            &app,
-            step,
-            "Installing Git to the official Windows default location...",
-            "setup.git.systemInstall",
-            0.10,
-        );
-        install_or_upgrade_winget_package("Git.Git").await?;
-        refresh_path_from_registry();
-        let installed = crate::commands::system::check_git().await?;
-        if !installed.available {
-            return Err(
-                "Git installation completed but git.exe was not detected on the system PATH".into(),
-            );
-        }
-        emit_keyed(
-            &app,
-            step,
-            "Git system installation is ready",
-            "setup.git.done",
-            1.0,
-        );
-        return Ok(format!(
-            "Git {} installed at {}",
-            installed.version.unwrap_or_default(),
-            installed.path.unwrap_or_default()
-        ));
+        return install_windows_system_git(app).await;
     }
 
     #[cfg(target_os = "macos")]
@@ -823,6 +1194,141 @@ async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, 
     }
 }
 
+#[cfg(windows)]
+async fn install_windows_system_git(app: tauri::AppHandle) -> Result<String, String> {
+    emit_keyed(
+        &app,
+        "git",
+        "Installing Git to the official Windows default location...",
+        "setup.git.systemInstall",
+        0.10,
+    );
+    install_or_upgrade_winget_package("Git.Git").await?;
+    refresh_path_from_registry();
+    let installed = crate::commands::system::check_git().await?;
+    if !installed.available {
+        return Err(
+            "Git installation completed but git.exe was not detected on the system PATH".into(),
+        );
+    }
+    emit_keyed(
+        &app,
+        "git",
+        "System Git is ready",
+        "setup.git.systemReady",
+        1.0,
+    );
+    Ok(format!(
+        "Git {} installed at {}",
+        installed.version.unwrap_or_default(),
+        installed.path.unwrap_or_default()
+    ))
+}
+
+#[cfg(windows)]
+async fn install_windows_portable_git(
+    app: tauri::AppHandle,
+    force: bool,
+    target: PathBuf,
+) -> Result<String, String> {
+    let configured = paths::configured_git_path()
+        .ok_or("A custom Git runtime directory was selected but could not be resolved")?;
+    if configured.is_file() && !force {
+        let mut command = tokio::process::Command::new(&configured);
+        command.arg("--version");
+        platform::configure_background_command(&mut command);
+        if let Ok(output) = command.output().await {
+            if output.status.success() {
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !version.is_empty() {
+                    return Ok(format!(
+                        "Git {version} already installed at {}",
+                        configured.display()
+                    ));
+                }
+            }
+        }
+    }
+
+    emit(
+        &app,
+        "git",
+        "Resolving the latest verified Git for Windows release...",
+        0.04,
+    );
+    let artifact = match resolve_latest_managed_git_artifact(std::env::consts::ARCH).await {
+        Ok(artifact) => artifact,
+        Err(error) => {
+            let fallback = verified_fallback_managed_git_artifact(std::env::consts::ARCH)?;
+            emit(
+                &app,
+                "git",
+                &format!(
+                    "Could not resolve current Git for Windows metadata ({error}); using verified fallback v{}.",
+                    fallback.version
+                ),
+                0.04,
+            );
+            fallback
+        }
+    };
+    emit(
+        &app,
+        "git",
+        &format!(
+            "Preparing portable Git v{} for the selected directory (China mirror first)...",
+            artifact.version
+        ),
+        0.04,
+    );
+    let temp_dir =
+        std::env::temp_dir().join(format!("junqi-git-download-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|error| format!("Failed to create Git temporary directory: {error}"))?;
+    let _temp_cleanup = TemporaryDirectory(temp_dir.clone());
+    let archive = temp_dir.join(&artifact.filename);
+    download_with_fallback(
+        &app,
+        "git",
+        &artifact.sources(),
+        &archive,
+        &artifact.sha256,
+        0.05,
+        0.55,
+    )
+    .await?;
+
+    let parent = target
+        .parent()
+        .ok_or("Selected Git runtime directory has no parent")?;
+    let staging = parent.join(format!(".junqi-git-stage-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&staging)
+        .map_err(|error| format!("Failed to prepare Git staging directory: {error}"))?;
+    let _staging_cleanup = TemporaryDirectory(staging.clone());
+    extract_zip(&app, "git", &archive, &staging, false, 0.62)?;
+    let staged_git = runtime_binary(&staging, "git");
+    let mut command = tokio::process::Command::new(&staged_git);
+    command.arg("--version");
+    platform::configure_background_command(&mut command);
+    let version = command
+        .output()
+        .await
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|version| !version.is_empty())
+        .ok_or("Portable Git extraction finished, but git.exe could not be verified")?;
+    activate_staged_runtime(&staging, &target, "git")?;
+    emit_keyed(
+        &app,
+        "git",
+        &format!("Git {version} installed in the selected directory"),
+        "setup.git.done",
+        1.0,
+    );
+    Ok(format!("Git {version} installed at {}", target.display()))
+}
+
 /// Pick the directory we hand to `npm install -g` for the openclaw install.
 ///
 /// Order of preference:
@@ -831,11 +1337,11 @@ async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, 
 ///    matches what `npm i -g openclaw` from the user's terminal would
 ///    resolve to — same bin, same `package.json`, same place the user
 ///    can then manage with `npm i -g openclaw@latest`.
-/// 3. Whatever is hard-coded in `~/.npmrc` (`prefix=...`).
-/// 4. The user-owned `~/.local` fallback.
-/// 5. Fall back to the JunQi-managed sandbox at
-///    `paths::openclaw_global_dir()` if neither is writable, so the
-///    install never silently fails.
+/// 3. Whatever is configured in `~/.npmrc` (`prefix=...`).
+///
+/// There is intentionally no hidden user-home or JunQi-owned fallback. If
+/// npm's effective prefix is not writable, the installation guide asks for an
+/// explicit choice instead of creating a second global OpenClaw installation.
 async fn login_npm_prefix() -> Option<PathBuf> {
     let npm = platform::detect_path(&platform::bin_name("npm"));
     if npm.is_empty() {
@@ -933,49 +1439,16 @@ async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> Result<PathB
             );
             return Ok(prefix);
         }
-        // User's npm prefix exists but isn't writable (typical case:
-        // default `prefix=/usr/local` from a Homebrew/apt/Stock-Windows
-        // install). Fall through to the XDG tier.
+        return Err(format!(
+            "npm reports global prefix {}, but it is not writable. Choose a custom OpenClaw npm directory in the installation guide or update npm's own prefix.",
+            prefix.display()
+        ));
     }
 
-    // Tier 2: XDG Base Directory fallback at `~/.local`. User-owned on
-    // every platform we ship to, so `npm install -g` always lands and
-    // the bin ends up in a place the user can put on PATH.
-    let local = paths::local_npm_prefix();
-    if try_use_prefix(&local) {
-        let bin = paths::local_npm_bin_dir();
-        emit_keyed(
-            app,
-            step,
-            &format!(
-                "User npm prefix not writable; using XDG fallback {} (add {} to your PATH to use openclaw from terminal)",
-                local.display(),
-                bin.display()
-            ),
-            "setup.openclaw.localNpmPrefix",
-            0.075,
-        );
-        return Ok(local);
-    }
-
-    // Tier 3: JunQi-managed sandbox under the selected state directory.
-    // Caller will surface the path so the user can still run
-    // `openclaw` from JunQi even if their terminal can't find it.
-    // We announce the resolved sandbox path through
-    // `setup.openclaw.sandboxNpmPrefix` so the frontend can surface a
-    // dedicated install-location card just like tiers 1/2.
-    let sandbox = paths::openclaw_global_dir();
-    emit_keyed(
-        app,
-        step,
-        &format!(
-            "User npm prefix and ~/.local both unwritable; using JunQi sandbox {}",
-            sandbox.display()
-        ),
-        "setup.openclaw.sandboxNpmPrefix",
-        0.075,
-    );
-    Ok(sandbox)
+    Err(
+        "npm did not report an absolute global prefix. Install Node.js/npm normally, or choose a custom OpenClaw npm directory in the installation guide."
+            .into(),
+    )
 }
 
 /// Decide whether `path` is a usable install target. Returns true when
@@ -1015,8 +1488,12 @@ fn openclaw_node_modules_dir(prefix: &std::path::Path) -> PathBuf {
     }
 }
 
+fn windows_openclaw_package_dir(prefix: &std::path::Path) -> PathBuf {
+    prefix.join("node_modules").join("openclaw")
+}
+
 fn validate_staged_openclaw_install(prefix: &std::path::Path) -> Result<(), String> {
-    let package_dir = openclaw_node_modules_dir(prefix).join("openclaw");
+    let package_dir = windows_openclaw_package_dir(prefix);
     let package_json = package_dir.join("package.json");
     let launcher = prefix.join("openclaw.cmd");
     if package_json.is_file() && launcher.is_file() {
@@ -1028,15 +1505,82 @@ fn validate_staged_openclaw_install(prefix: &std::path::Path) -> Result<(), Stri
     ))
 }
 
+const OPENCLAW_PROMOTION_MARKER: &str = ".junqi-openclaw-promotion.json";
+const OPENCLAW_PROMOTION_BACKUP: &str = ".junqi-openclaw-promotion-backup";
+const OPENCLAW_PROMOTION_STAGED_SHIMS: &str = ".junqi-openclaw-promotion-shims";
+const OPENCLAW_SHIMS: [&str; 3] = ["openclaw", "openclaw.cmd", "openclaw.ps1"];
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct OpenClawPromotionState {
+    had_existing_package: bool,
+    existing_shims: Vec<String>,
+}
+
+fn recover_interrupted_openclaw_promotion(target_prefix: &Path) -> Result<(), String> {
+    let marker = target_prefix.join(OPENCLAW_PROMOTION_MARKER);
+    if !marker.is_file() {
+        return Ok(());
+    }
+    let state: OpenClawPromotionState = serde_json::from_str(
+        &std::fs::read_to_string(&marker)
+            .map_err(|error| format!("Cannot read OpenClaw promotion marker: {error}"))?,
+    )
+    .map_err(|error| format!("Cannot parse OpenClaw promotion marker: {error}"))?;
+    let target_package = windows_openclaw_package_dir(target_prefix);
+    let backup_root = target_prefix.join(OPENCLAW_PROMOTION_BACKUP);
+    let backup_package = backup_root.join("package");
+    let backup_shims = backup_root.join("shims");
+
+    if backup_package.exists() {
+        if target_package.exists() {
+            std::fs::remove_dir_all(&target_package)
+                .map_err(|error| format!("Cannot remove partial OpenClaw package: {error}"))?;
+        }
+        std::fs::rename(&backup_package, &target_package)
+            .map_err(|error| format!("Cannot restore previous OpenClaw package: {error}"))?;
+    } else if !state.had_existing_package && target_package.exists() {
+        std::fs::remove_dir_all(&target_package)
+            .map_err(|error| format!("Cannot remove interrupted OpenClaw package: {error}"))?;
+    }
+
+    for shim in OPENCLAW_SHIMS {
+        let target = target_prefix.join(shim);
+        let backup = backup_shims.join(shim);
+        if backup.is_file() {
+            if target.exists() {
+                std::fs::remove_file(&target)
+                    .map_err(|error| format!("Cannot remove partial launcher {shim}: {error}"))?;
+            }
+            std::fs::rename(&backup, &target)
+                .map_err(|error| format!("Cannot restore launcher {shim}: {error}"))?;
+        } else if !state.existing_shims.iter().any(|name| name == shim) && target.exists() {
+            std::fs::remove_file(&target)
+                .map_err(|error| format!("Cannot remove interrupted launcher {shim}: {error}"))?;
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&backup_root);
+    let _ = std::fs::remove_dir_all(target_prefix.join(OPENCLAW_PROMOTION_STAGED_SHIMS));
+    std::fs::remove_file(&marker)
+        .map_err(|error| format!("Cannot clear OpenClaw promotion marker: {error}"))
+}
+
 async fn promote_staged_openclaw_install(
     staging_prefix: &std::path::Path,
     target_prefix: &std::path::Path,
 ) -> Result<(), String> {
-    let staged_package = openclaw_node_modules_dir(staging_prefix).join("openclaw");
-    let target_node_modules = openclaw_node_modules_dir(target_prefix);
+    std::fs::create_dir_all(target_prefix)
+        .map_err(|error| format!("Cannot prepare OpenClaw target: {error}"))?;
+    recover_interrupted_openclaw_promotion(target_prefix)?;
+
+    let staged_package = windows_openclaw_package_dir(staging_prefix);
+    let target_node_modules = target_prefix.join("node_modules");
     let target_package = target_node_modules.join("openclaw");
-    let backup_package =
-        target_node_modules.join(format!(".junqi-openclaw-backup-{}", std::process::id()));
+    let backup_root = target_prefix.join(OPENCLAW_PROMOTION_BACKUP);
+    let backup_package = backup_root.join("package");
+    let backup_shims = backup_root.join("shims");
+    let staged_shims = target_prefix.join(OPENCLAW_PROMOTION_STAGED_SHIMS);
+    let marker = target_prefix.join(OPENCLAW_PROMOTION_MARKER);
     let mut last_error = String::new();
 
     for attempt in 0..6 {
@@ -1047,43 +1591,79 @@ async fn promote_staged_openclaw_install(
                 error
             )
         })?;
-        let _ = std::fs::remove_dir_all(&backup_package);
-
-        let had_existing_package = target_package.exists();
-        if had_existing_package {
-            if let Err(error) = std::fs::rename(&target_package, &backup_package) {
-                last_error = format!(
-                    "Cannot move the current OpenClaw installation because it is in use: {}",
-                    error
-                );
-                if attempt < 5 {
-                    tokio::time::sleep(std::time::Duration::from_millis(250 * (attempt + 1))).await;
-                }
-                continue;
+        let _ = std::fs::remove_dir_all(&backup_root);
+        let _ = std::fs::remove_dir_all(&staged_shims);
+        std::fs::create_dir_all(&staged_shims)
+            .map_err(|error| format!("Cannot stage OpenClaw launchers: {error}"))?;
+        for shim in OPENCLAW_SHIMS {
+            let source = staging_prefix.join(shim);
+            if source.is_file() {
+                std::fs::copy(&source, staged_shims.join(shim))
+                    .map_err(|error| format!("Cannot stage OpenClaw launcher {shim}: {error}"))?;
             }
         }
+        if !staged_shims.join("openclaw.cmd").is_file() {
+            return Err("The staged OpenClaw installation has no Windows command launcher".into());
+        }
 
-        match std::fs::rename(&staged_package, &target_package) {
-            Ok(()) => {
-                for shim in ["openclaw", "openclaw.cmd", "openclaw.ps1"] {
-                    let source = staging_prefix.join(shim);
-                    if source.is_file() {
-                        std::fs::copy(&source, target_prefix.join(shim)).map_err(|error| {
-                            format!("Cannot install the OpenClaw launcher {}: {}", shim, error)
-                        })?;
-                    }
+        let state = OpenClawPromotionState {
+            had_existing_package: target_package.exists(),
+            existing_shims: OPENCLAW_SHIMS
+                .iter()
+                .filter(|shim| target_prefix.join(shim).is_file())
+                .map(|shim| (*shim).to_string())
+                .collect(),
+        };
+        paths::atomic_write_text(
+            &marker,
+            &serde_json::to_string(&state)
+                .map_err(|error| format!("Cannot serialize OpenClaw promotion state: {error}"))?,
+        )?;
+
+        let activation = (|| -> Result<(), String> {
+            std::fs::create_dir_all(&backup_shims)
+                .map_err(|error| format!("Cannot prepare OpenClaw backup: {error}"))?;
+            if state.had_existing_package {
+                std::fs::rename(&target_package, &backup_package).map_err(|error| {
+                    format!("Cannot move the current OpenClaw installation because it is in use: {error}")
+                })?;
+            }
+            for shim in &state.existing_shims {
+                std::fs::rename(target_prefix.join(shim), backup_shims.join(shim))
+                    .map_err(|error| format!("Cannot back up launcher {shim}: {error}"))?;
+            }
+
+            std::fs::rename(&staged_package, &target_package)
+                .map_err(|error| format!("Cannot activate the staged OpenClaw package: {error}"))?;
+            for shim in OPENCLAW_SHIMS {
+                let source = staged_shims.join(shim);
+                if source.is_file() {
+                    std::fs::rename(&source, target_prefix.join(shim))
+                        .map_err(|error| format!("Cannot activate launcher {shim}: {error}"))?;
                 }
-                let _ = std::fs::remove_dir_all(&backup_package);
+            }
+            validate_staged_openclaw_install(target_prefix)
+        })();
+
+        match activation {
+            Ok(()) => {
+                std::fs::remove_file(&marker)
+                    .map_err(|error| format!("Cannot finalize OpenClaw promotion: {error}"))?;
+                let _ = std::fs::remove_dir_all(&backup_root);
+                let _ = std::fs::remove_dir_all(&staged_shims);
                 return Ok(());
             }
             Err(error) => {
-                last_error = format!(
-                    "Cannot activate the staged OpenClaw package at {}: {}",
-                    target_package.display(),
-                    error
-                );
-                if had_existing_package {
-                    let _ = std::fs::rename(&backup_package, &target_package);
+                last_error = error;
+                if let Err(rollback_error) = recover_interrupted_openclaw_promotion(target_prefix) {
+                    return Err(format!(
+                        "OpenClaw activation failed: {last_error}; rollback also failed: {rollback_error}"
+                    ));
+                }
+                if !staged_package.exists() {
+                    return Err(format!(
+                        "OpenClaw activation failed and was rolled back: {last_error}"
+                    ));
                 }
             }
         }
@@ -1159,10 +1739,122 @@ fn remove_broken_openclaw_install(prefix: &std::path::Path) -> Result<(), String
 }
 
 #[tauri::command]
-pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn install_openclaw(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<String, String> {
+    install_openclaw_impl(app, state, OpenclawInstallMode::Normal).await
+}
+
+/// Reinstall the selected OpenClaw package even when a binary is still
+/// detectable. This is deliberately separate from normal first-install
+/// detection so a user-visible "reinstall" action has real repair semantics.
+#[tauri::command]
+pub async fn reinstall_openclaw(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<String, String> {
+    install_openclaw_impl(app, state, OpenclawInstallMode::ReinstallExisting).await
+}
+
+#[tauri::command]
+pub async fn relocate_openclaw(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+) -> Result<String, String> {
+    if !paths::openclaw_relocation_required() {
+        return Err("OpenClaw relocation was not requested by storage migration".into());
+    }
+    install_openclaw_impl(app, state, OpenclawInstallMode::Relocate).await
+}
+
+fn existing_npm_prefix_for_reinstall(binary: &Path, windows: bool) -> Option<PathBuf> {
+    crate::commands::system::npm_prefix_for_openclaw_binary(binary, windows)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenclawInstallMode {
+    Normal,
+    ReinstallExisting,
+    Relocate,
+}
+
+impl OpenclawInstallMode {
+    /// Every install entry point honors a persisted relocation request. This
+    /// keeps future callers from reusing the old npm prefix while a storage
+    /// migration is unfinished.
+    fn for_current_storage(self) -> Self {
+        if paths::openclaw_relocation_required() {
+            Self::Relocate
+        } else {
+            self
+        }
+    }
+
+    fn forces_npm_install(self) -> bool {
+        !matches!(self, Self::Normal)
+    }
+}
+
+fn verify_relocated_openclaw_prefix(binary: &Path, expected_prefix: &Path) -> Result<(), String> {
+    let installed_prefix =
+        crate::commands::system::npm_prefix_for_openclaw_binary(binary, cfg!(windows)).ok_or_else(
+            || {
+                format!(
+                    "OpenClaw was installed but its npm prefix could not be verified: {}",
+                    binary.display()
+                )
+            },
+        )?;
+    if paths::paths_refer_to_same_location(&installed_prefix, expected_prefix) {
+        return Ok(());
+    }
+    Err(format!(
+        "OpenClaw was installed at {}, but the selected npm directory is {}",
+        installed_prefix.display(),
+        expected_prefix.display()
+    ))
+}
+
+#[derive(Debug, Clone)]
+struct OpenclawRelocationRequest {
+    expected_npm_prefix: Option<PathBuf>,
+}
+
+impl OpenclawRelocationRequest {
+    fn capture() -> Result<Self, String> {
+        let layout = paths::load_storage_bootstrap()
+            .ok_or("Storage setup must be completed before relocating OpenClaw")?;
+        if !layout.openclaw_relocation_required {
+            return Err("OpenClaw relocation is no longer pending".into());
+        }
+        Ok(Self {
+            expected_npm_prefix: layout.npm_prefix,
+        })
+    }
+
+    fn commit(&self, binary: &Path, installed_prefix: &Path) -> Result<(), String> {
+        verify_relocated_openclaw_prefix(binary, installed_prefix)?;
+        crate::commands::terminal_integration::sync_terminal_integration_for_relocation(binary)?;
+        crate::commands::system::persist_selected_openclaw_binary(binary)?;
+        paths::complete_openclaw_relocation(self.expected_npm_prefix.as_deref())
+    }
+}
+
+async fn install_openclaw_impl(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+    mode: OpenclawInstallMode,
+) -> Result<String, String> {
     let step = "openclaw";
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
     let install_lock = OPENCLAW_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
     let _install_guard = install_lock.lock().await;
+    let mode = mode.for_current_storage();
+    let relocation = matches!(mode, OpenclawInstallMode::Relocate)
+        .then(OpenclawRelocationRequest::capture)
+        .transpose()?;
 
     emit_keyed(
         &app,
@@ -1172,7 +1864,7 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         0.02,
     );
     let existing = crate::commands::system::detect_openclaw().await;
-    if existing.installed {
+    if existing.installed && matches!(mode, OpenclawInstallMode::Normal) {
         let detail = match (&existing.version, &existing.path) {
             (Some(version), Some(path)) => {
                 format!("Using existing OpenClaw {} at {}", version, path)
@@ -1187,16 +1879,36 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         return Ok(detail);
     }
 
-    emit_keyed(
-        &app,
-        step,
-        "No existing OpenClaw was found; installing a managed local OpenClaw for this computer...",
-        "setup.openclaw.firstInstall",
-        0.03,
-    );
+    if matches!(mode, OpenclawInstallMode::ReinstallExisting) && existing.installed {
+        emit_keyed(
+            &app,
+            step,
+            "Reinstalling the detected OpenClaw package...",
+            "setup.openclaw.reinstall",
+            0.03,
+        );
+    }
+
+    if matches!(mode, OpenclawInstallMode::Relocate) {
+        emit_keyed(
+            &app,
+            step,
+            "Moving OpenClaw to the newly selected npm directory...",
+            "setup.openclaw.relocate",
+            0.03,
+        );
+    } else if matches!(mode, OpenclawInstallMode::Normal) {
+        emit_keyed(
+            &app,
+            step,
+            "No existing OpenClaw was found; installing a managed local OpenClaw for this computer...",
+            "setup.openclaw.firstInstall",
+            0.03,
+        );
+    }
 
     let target_requirement = target_openclaw_node_requirement().await?;
-    ensure_compatible_node_runtime(&app, step, &target_requirement).await?;
+    let compatible_node = ensure_compatible_node_runtime(&app, step, &target_requirement).await?;
 
     // ① 定位 Node.js 二进制
     emit_keyed(
@@ -1206,8 +1918,7 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         "setup.openclaw.locateNode",
         0.05,
     );
-    let detected_node = crate::commands::system::check_node().await?;
-    let node_cmd = if let Some(path) = detected_node.path.filter(|_| detected_node.available) {
+    let node_cmd = if let Some(path) = compatible_node.path.filter(|_| compatible_node.available) {
         emit_keyed(
             &app,
             step,
@@ -1220,17 +1931,22 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         return Err("A compatible system Node.js installation was not detected".into());
     };
 
-    // 检查 npm-cli.js
-    let local_npm_cli = paths::local_npm_cli_path();
-    let npm_cli = if detected_node.source.as_deref() == Some("local") && local_npm_cli.exists() {
+    // Use the npm bundled with the exact Node.js runtime selected above when
+    // it is available. This keeps installation and later Gateway execution on
+    // one verified Node.js release instead of mixing PATH shims.
+    let npm_cli = crate::commands::system::npm_cli_for_node(Path::new(&node_cmd));
+    let npm_cli = if let Some(npm_cli) = npm_cli {
         emit_keyed(
             &app,
             step,
-            &format!("Using local npm: {}", local_npm_cli.display()),
-            "setup.openclaw.useLocalNpm",
+            &format!(
+                "Using npm bundled with selected Node.js: {}",
+                npm_cli.display()
+            ),
+            "setup.openclaw.useNodeNpm",
             0.07,
         );
-        Some(local_npm_cli.to_string_lossy().to_string())
+        Some(npm_cli.to_string_lossy().to_string())
     } else {
         emit_keyed(
             &app,
@@ -1243,9 +1959,22 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     };
 
     // ② Resolve the install prefix dynamically. An explicit setup choice
-    // wins; otherwise use the login terminal's npm prefix, then user-owned
-    // fallbacks. No user-specific path is hard-coded here.
-    let openclaw_prefix = pick_install_target(&app, step).await?;
+    // wins; otherwise use the login terminal's actual npm prefix. No
+    // user-specific path is hard-coded here and no hidden prefix is created.
+    let openclaw_prefix = match mode {
+        OpenclawInstallMode::ReinstallExisting => existing
+            .path
+            .as_deref()
+            .and_then(|path| existing_npm_prefix_for_reinstall(Path::new(path), cfg!(windows)))
+            .ok_or_else(|| {
+                "The detected OpenClaw is not an npm installation JunQi can safely replace in place. Update or reinstall it with its original package manager, then retry."
+                    .to_string()
+            })?,
+        OpenclawInstallMode::Relocate => {
+            pick_install_target(&app, step).await?
+        }
+        OpenclawInstallMode::Normal => pick_install_target(&app, step).await?,
+    };
     emit_keyed(
         &app,
         step,
@@ -1254,7 +1983,7 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         0.08,
     );
     std::fs::create_dir_all(&openclaw_prefix).ok();
-    if !cfg!(windows) {
+    if !cfg!(windows) && !existing.installed {
         remove_broken_openclaw_install(&openclaw_prefix)?;
     }
 
@@ -1273,6 +2002,7 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
         npm_cli.as_deref(),
         &openclaw_prefix,
         "openclaw",
+        mode.forces_npm_install(),
         0.10,
         0.90,
     )
@@ -1289,8 +2019,8 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
     // `npm i -g <prefix>` 写出来的 bin 在 `<prefix>/bin/<name>`，部分
     // 环境下也可能落在 `<prefix>/node_modules/.bin/<name>`，优先前者
     // 后者兜底。`openclaw_prefix` 已经是 `pick_install_target` 选出来的
-    // 真实落点（用户 npm prefix 或 JunQi sandbox），不要再回退到硬编码
-    // 的 global 目录。
+    // 真实落点（用户 npm prefix 或显式选择的前缀），不要再回退到任何
+    // 隐藏的全局目录。
     let mut openclaw_bin = if cfg!(windows) {
         openclaw_prefix.join("openclaw.cmd")
     } else {
@@ -1320,9 +2050,13 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
                 .unwrap_or_else(|| "unknown validation error".into())
         ));
     }
-    crate::commands::system::persist_selected_openclaw_binary(&openclaw_bin)?;
-    if paths::terminal_integration_requested() {
-        crate::commands::terminal_integration::sync_terminal_integration()?;
+    if let Some(relocation) = relocation {
+        relocation.commit(&openclaw_bin, &openclaw_prefix)?;
+    } else {
+        if paths::terminal_integration_requested() {
+            crate::commands::terminal_integration::sync_terminal_integration()?;
+        }
+        crate::commands::system::persist_selected_openclaw_binary(&openclaw_bin)?;
     }
 
     let installed_version = verified.version.unwrap_or_else(|| "unknown version".into());
@@ -1346,6 +2080,16 @@ pub async fn install_openclaw(app: tauri::AppHandle) -> Result<String, String> {
 /// 进度平滑推进。
 #[tauri::command]
 pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
+    if matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Docker
+    ) {
+        return Err(
+            "Docker is the selected OpenClaw runtime. Start its container instead of preparing a native Gateway."
+                .to_string(),
+        );
+    }
+    crate::commands::system::ensure_openclaw_relocation_complete()?;
     let step = "gateway";
 
     // ⓘ Stage 1: detect local runtime
@@ -1478,57 +2222,33 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     Ok(format!("Gateway prepared on port {}", port))
 }
 
-/// Install a package via winget (Windows only).
-#[tauri::command]
-pub async fn install_winget_package(package_id: String) -> Result<String, String> {
-    if !package_id
-        .chars()
-        .all(|c| c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | '/'))
-    {
-        return Err("Invalid package ID".into());
-    }
-
-    #[cfg(not(windows))]
-    {
-        let _ = package_id;
-        return Err("winget 仅在 Windows 上可用".into());
-    }
-
-    #[cfg(windows)]
-    {
-        let output = tokio::process::Command::new("winget")
-            .args([
-                "install",
-                "-e",
-                "--id",
-                &package_id,
-                "--accept-source-agreements",
-                "--accept-package-agreements",
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("执行 winget 失败: {}", e))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        if output.status.success() {
-            refresh_path_from_registry();
-            Ok(format!("{}\n{}", stdout, stderr).trim().to_string())
-        } else {
-            Err(format!(
-                "winget install 失败（退出码 {}）:\n{}\n{}",
-                output.status.code().unwrap_or(-1),
-                stdout,
-                stderr
-            ))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_dir(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "junqi-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn write_windows_openclaw(prefix: &Path, version: &str) {
+        let package = windows_openclaw_package_dir(prefix);
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            format!(r#"{{"name":"openclaw","version":"{version}"}}"#),
+        )
+        .unwrap();
+        std::fs::write(prefix.join("openclaw.cmd"), format!("@echo {version}\r\n")).unwrap();
+    }
 
     #[test]
     fn npm_prefix_normalization_rejects_ambiguous_values() {
@@ -1540,6 +2260,41 @@ mod tests {
         assert_eq!(normalize_npm_prefix(&absolute), Some(absolute));
         assert!(normalize_npm_prefix(Path::new("~/junqi-npm-prefix"))
             .is_some_and(|path| path.is_absolute()));
+    }
+
+    #[test]
+    fn node_checksum_parser_requires_the_exact_archive_name() {
+        let digest = "a".repeat(64);
+        let checksums = format!(
+            "{digest}  node-v24.18.1-win-x64.zip\n{}  node-v24.18.1-win-arm64.zip\n",
+            "b".repeat(64)
+        );
+        assert_eq!(
+            parse_shasums(&checksums, "node-v24.18.1-win-x64.zip"),
+            Some(digest)
+        );
+        assert_eq!(parse_shasums(&checksums, "node-v24.18.1-win-x86.zip"), None);
+    }
+
+    #[test]
+    fn node_runtime_download_uses_the_china_mirror_first() {
+        let sources = node_sources("24.18.1");
+        assert!(sources[0].0.starts_with("https://npmmirror.com/"));
+        assert!(sources[1].0.starts_with("https://nodejs.org/"));
+    }
+
+    #[test]
+    fn bug_wrm_06_portable_node_requires_its_bundled_npm() {
+        let root = test_dir("portable-node-completeness");
+        let npm = root.join("npm-cli.js");
+
+        assert!(!portable_node_runtime_is_complete(true, None));
+        assert!(!portable_node_runtime_is_complete(true, Some(&npm)));
+        std::fs::write(&npm, "// npm").unwrap();
+        assert!(portable_node_runtime_is_complete(true, Some(&npm)));
+        assert!(!portable_node_runtime_is_complete(false, Some(&npm)));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1575,6 +2330,91 @@ mod tests {
         let output = npm_log_line_for_display(&"x".repeat(1_500)).expect("line remains visible");
         assert_eq!(output.chars().count(), 1_001);
         assert!(output.ends_with('…'));
+    }
+
+    #[tokio::test]
+    async fn openclaw_promotion_replaces_package_and_clears_transaction() {
+        let root = test_dir("openclaw-promote");
+        let staging = root.join("staging");
+        let target = root.join("target");
+        write_windows_openclaw(&staging, "2.0.0");
+        write_windows_openclaw(&target, "1.0.0");
+
+        promote_staged_openclaw_install(&staging, &target)
+            .await
+            .unwrap();
+
+        let package =
+            std::fs::read_to_string(windows_openclaw_package_dir(&target).join("package.json"))
+                .unwrap();
+        assert!(package.contains("2.0.0"));
+        assert!(!target.join(OPENCLAW_PROMOTION_MARKER).exists());
+        assert!(!target.join(OPENCLAW_PROMOTION_BACKUP).exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn interrupted_openclaw_promotion_restores_package_and_launcher() {
+        let root = test_dir("openclaw-rollback");
+        let target = root.join("target");
+        let backup = target.join(OPENCLAW_PROMOTION_BACKUP);
+        write_windows_openclaw(&target, "2.0.0");
+        write_windows_openclaw(&backup, "1.0.0");
+        std::fs::create_dir_all(backup.join("shims")).unwrap();
+        std::fs::rename(
+            windows_openclaw_package_dir(&backup),
+            backup.join("package"),
+        )
+        .unwrap();
+        std::fs::rename(
+            backup.join("openclaw.cmd"),
+            backup.join("shims").join("openclaw.cmd"),
+        )
+        .unwrap();
+        paths::atomic_write_text(
+            &target.join(OPENCLAW_PROMOTION_MARKER),
+            &serde_json::to_string(&OpenClawPromotionState {
+                had_existing_package: true,
+                existing_shims: vec!["openclaw.cmd".into()],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        recover_interrupted_openclaw_promotion(&target).unwrap();
+
+        let package =
+            std::fs::read_to_string(windows_openclaw_package_dir(&target).join("package.json"))
+                .unwrap();
+        assert!(package.contains("1.0.0"));
+        assert!(std::fs::read_to_string(target.join("openclaw.cmd"))
+            .unwrap()
+            .contains("1.0.0"));
+        assert!(!target.join(OPENCLAW_PROMOTION_MARKER).exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn reinstall_resolves_the_detected_npm_prefix_in_place() {
+        let root = test_dir("openclaw-reinstall-prefix");
+        write_windows_openclaw(&root, "1.0.0");
+        let dot_bin = root.join("node_modules").join(".bin").join("openclaw.cmd");
+        std::fs::create_dir_all(dot_bin.parent().unwrap()).unwrap();
+        std::fs::write(&dot_bin, "@echo off\r\n").unwrap();
+
+        assert_eq!(
+            existing_npm_prefix_for_reinstall(&root.join("openclaw.cmd"), true),
+            Some(root.clone())
+        );
+        assert_eq!(
+            existing_npm_prefix_for_reinstall(&dot_bin, true),
+            Some(root.clone())
+        );
+        assert_eq!(
+            existing_npm_prefix_for_reinstall(&root.join("elsewhere").join("openclaw.cmd"), true),
+            None
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]

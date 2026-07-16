@@ -1,7 +1,9 @@
 use crate::commands::diagnostic_output::sanitize_diagnostic_line;
 use crate::commands::process_control::terminate_process_tree;
-use crate::commands::setup_progress::emit;
-use crate::state::gateway_process::{push_log, LogLevel, LogSource};
+use crate::commands::setup_progress::{emit, emit_completed, emit_error};
+use crate::state::gateway_process::{
+    push_log, GatewayLifecycle, GatewayRuntimeMode, LogLevel, LogSource,
+};
 use crate::state::GatewayProcess;
 use std::collections::VecDeque;
 use std::process::Stdio;
@@ -56,7 +58,78 @@ async fn stream_repair_output<R>(
     }
 }
 
-pub async fn run_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Result<(), String> {
+/// Docker has no host-side package to repair. Its equivalent recovery is to
+/// refresh the selected image and recreate JunQi's owned container, while
+/// retaining the selected Docker configuration and workspace.
+async fn run_selected_docker_repair(app: AppHandle, state: &GatewayProcess) -> Result<(), String> {
+    let gateway_gate = state.operation_gate.clone();
+    let _gateway_guard = gateway_gate
+        .try_lock_owned()
+        .map_err(|_| "Gateway 正在执行其他操作，请稍后再试".to_string())?;
+    let port = crate::commands::gateway::configured_gateway_port();
+    state.transition(
+        Some(GatewayLifecycle::Starting),
+        Some(GatewayRuntimeMode::Docker),
+        None,
+        "openclaw_repair: refreshing selected Docker runtime",
+    );
+    push_log(
+        &state.logs,
+        LogSource::Lifecycle,
+        LogLevel::Info,
+        "Refreshing selected OpenClaw Docker image and recreating its container",
+    );
+    emit(
+        &app,
+        "gateway",
+        "Refreshing the selected OpenClaw Docker image...",
+        0.08,
+    );
+
+    let result = async {
+        crate::commands::docker::release_managed_native_gateway_for_docker(state, port).await?;
+        crate::commands::docker::pull_openclaw_image(app.clone(), Some("latest".to_string()))
+            .await?;
+        crate::commands::docker::start_docker_gateway_locked(app.clone(), Some(port), None).await
+    }
+    .await;
+
+    match result {
+        Ok(status) if status.running => {
+            state.transition(
+                Some(GatewayLifecycle::Running),
+                Some(GatewayRuntimeMode::Docker),
+                None,
+                "openclaw_repair: selected Docker runtime recreated",
+            );
+            emit_completed(&app, "gateway", "Docker Gateway repair completed");
+            Ok(())
+        }
+        Ok(_) => {
+            let error =
+                "Docker Gateway did not report a healthy state after recreation".to_string();
+            state.transition(
+                Some(GatewayLifecycle::Error),
+                Some(GatewayRuntimeMode::Docker),
+                None,
+                "openclaw_repair: selected Docker runtime remained unhealthy",
+            );
+            Err(error)
+        }
+        Err(error) => {
+            state.transition(
+                Some(GatewayLifecycle::Error),
+                Some(GatewayRuntimeMode::Docker),
+                None,
+                "openclaw_repair: selected Docker runtime repair failed",
+            );
+            Err(error)
+        }
+    }
+}
+
+async fn run_native_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Result<(), String> {
+    crate::commands::system::ensure_openclaw_relocation_complete()?;
     let gateway_gate = state.operation_gate.clone();
     let _gateway_guard = gateway_gate
         .try_lock_owned()
@@ -76,9 +149,16 @@ pub async fn run_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Resu
         0.08,
     );
 
-    let binary = crate::commands::gateway::resolve_openclaw_binary()
+    let binary = crate::commands::system::resolve_openclaw_binary_async()
+        .await
         .ok_or_else(|| "OpenClaw binary not found; cannot run repair".to_string())?;
-    let mut command = crate::commands::system::openclaw_command(&binary);
+    let requirement = crate::commands::system::node_requirement_for_openclaw_binary(&binary)?;
+    let node =
+        crate::commands::setup::ensure_compatible_node_runtime(&app, "gateway", &requirement)
+            .await
+            .map_err(|error| format!("OpenClaw repair runtime preparation failed: {error}"))?;
+    let runtime = crate::commands::system::native_openclaw_runtime(binary, &node)?;
+    let mut command = runtime.command();
     command
         .args(REPAIR_ARGS)
         .env("PATH", crate::commands::system::openclaw_search_path())
@@ -90,6 +170,7 @@ pub async fn run_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Resu
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    crate::commands::system::apply_configured_npm_cache(&mut command);
     crate::platform::configure_background_command(&mut command);
 
     let mut child = command
@@ -156,8 +237,23 @@ pub async fn run_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Resu
         LogLevel::Info,
         "OpenClaw official repair completed",
     );
-    emit(&app, "gateway", "OpenClaw repair completed", 1.0);
+    emit_completed(&app, "gateway", "OpenClaw repair completed");
     Ok(())
+}
+
+pub async fn run_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Result<(), String> {
+    let result = if matches!(
+        crate::paths::active_runtime_mode(),
+        crate::paths::OpenClawRuntimeMode::Docker
+    ) {
+        run_selected_docker_repair(app.clone(), state).await
+    } else {
+        run_native_openclaw_repair(app.clone(), state).await
+    };
+    if let Err(error) = &result {
+        emit_error(&app, "gateway", error, Some(1.0));
+    }
+    result
 }
 
 #[tauri::command]

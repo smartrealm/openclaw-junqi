@@ -10,6 +10,7 @@ test("structured setup events retain step, error, and normalized local progress"
       progress: 0.5,
       error: null,
       key: null,
+      status: null,
     }),
     {
       step: "pull",
@@ -17,6 +18,7 @@ test("structured setup events retain step, error, and normalized local progress"
       progress: 50,
       error: null,
       key: null,
+      status: null,
     },
   );
 });
@@ -28,6 +30,7 @@ test("plain legacy events remain readable without inventing metadata", () => {
     progress: null,
     error: null,
     key: null,
+    status: null,
   });
 });
 

@@ -1,4 +1,6 @@
-use super::{updated_windows_path, EnvironmentBinding, TerminalIntegrationBackend};
+use super::{
+    updated_windows_path, EnvironmentBinding, TerminalIntegrationBackend, TerminalLauncherTarget,
+};
 use crate::paths;
 use std::path::Path;
 
@@ -32,19 +34,37 @@ impl TerminalIntegrationBackend for WindowsBackend {
             })
     }
 
-    fn launcher_contents(binary: Option<&Path>) -> String {
-        let command = binary.map_or_else(missing_binary_command, |path| {
-            format!("call \"{}\" %*", batch_escape(path))
-        });
-        let npm = paths::configured_npm_prefix().unwrap_or_else(paths::local_npm_prefix);
-        format!(
-            "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"OPENCLAW_STATE_DIR={}\"\r\nset \"OPENCLAW_CONFIG_PATH={}\"\r\nset \"PATH={};%PATH%\"\r\n{}\r\n",
+    fn launcher_contents(target: TerminalLauncherTarget<'_>) -> String {
+        match target {
+            TerminalLauncherTarget::Docker => docker_launcher_contents(),
+            TerminalLauncherTarget::Native(binary) => native_launcher_contents(binary),
+        }
+    }
+}
+
+fn native_launcher_contents(binary: Option<&Path>) -> String {
+    let command = binary.map_or_else(missing_binary_command, |path| {
+        format!("call \"{}\" %*", batch_escape(path))
+    });
+    let node_bin =
+        paths::configured_node_path().and_then(|node| node.parent().map(Path::to_path_buf));
+    let node_path = node_bin
+        .map(|path| format!("set \"PATH={};%PATH%\"\r\n", batch_escape(&path)))
+        .unwrap_or_default();
+    format!(
+            "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"OPENCLAW_STATE_DIR={}\"\r\nset \"OPENCLAW_CONFIG_PATH={}\"\r\n{}{}\r\n",
             batch_escape(&paths::desktop_dir()),
             batch_escape(&paths::config_path()),
-            batch_escape(&npm),
+            node_path,
             command
         )
-    }
+}
+
+fn docker_launcher_contents() -> String {
+    let container = crate::commands::docker::OPENCLAW_CONTAINER_NAME;
+    format!(
+        "@echo off\r\nsetlocal DisableDelayedExpansion\r\ndocker version >nul 2>&1\r\nif errorlevel 1 (\r\n  echo Docker CLI is not available. Start Docker Desktop, then retry. 1>&2\r\n  exit /b 1\r\n)\r\ndocker exec -i {container} openclaw %*\r\n"
+    )
 }
 
 fn missing_binary_command() -> String {

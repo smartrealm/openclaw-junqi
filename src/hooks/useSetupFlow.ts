@@ -8,17 +8,27 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/app-store";
 import {
+  isStaleSetupBackDestination,
+  setupStepMessageKey,
+  setupStepProgress,
+  type InstallMode,
+  type SetupStep,
+} from "@/stores/setup-navigation";
+import {
   checkNode, checkNpm, checkGit, checkOpenclaw,
-  installNode, installGit, installOpenclaw,
+  installNode, installGit, installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
   applyTerminalIntegration,
   prepareGateway,
-  checkDocker, pullOpenclawImage,
+  checkDocker, pullOpenclawImage, detectGatewayConfig, setActiveGatewayRuntime,
   type DockerStatus,
   type OpenclawStatus,
 } from "@/api/tauri-commands";
 import { debugWarn } from "@/utils/debugLog";
 import { subscribeTauriEvent } from "@/utils/tauriEvents";
-import { setupProgressI18nParams } from "./setupProgressParams";
+import {
+  setupProgressI18nParams,
+  translateSetupProgressMessage,
+} from "./setupProgressParams";
 import {
   advanceSetupProgress,
   progressForSetupEvent,
@@ -51,7 +61,7 @@ export interface StepState {
   progress?: number;
 }
 
-export type InstallTargetTier = "user" | "userMissingPath" | "custom" | "xdg" | "sandbox" | "existing";
+export type InstallTargetTier = "user" | "userMissingPath" | "custom" | "existing";
 
 export interface InstallTarget {
   /**
@@ -61,21 +71,12 @@ export interface InstallTarget {
    *  - "userMissingPath": same npm prefix as the user's terminal, but
    *    its bin directory is not currently on the login-shell PATH.
    *  - "custom": explicit global prefix selected during setup.
-   *  - "xdg": fell back to `~/.local` because the user prefix was
-   *    not writable. User must add `binPath` to PATH to use
-   *    `openclaw` from terminal.
-   *  - "sandbox": both the user prefix AND `~/.local` were
-   *    unwritable, so the install lands in JunQi's managed
-   *    `~/.openclaw/global/`. `openclaw` will not be on PATH; user
-   *    must run it via JunQi or symlink it.
    *  - "existing": an `openclaw` install was already on disk before
    *    setup ran, so we skipped the install. The card surfaces the
    *    detected path and version.
    */
   tier: InstallTargetTier;
   path: string;
-  /** Bin directory surfaced when a fallback requires manual PATH setup. */
-  binPath?: string;
   /** Only set for the `existing` tier, when a version string was returned. */
   version?: string;
 }
@@ -84,8 +85,6 @@ const INSTALL_TARGET_KEYS = {
   user: "setup.openclaw.userNpmPrefix",
   userMissingPath: "setup.openclaw.userNpmPrefixMissingPath",
   custom: "setup.openclaw.customNpmPrefix",
-  xdg: "setup.openclaw.localNpmPrefix",
-  sandbox: "setup.openclaw.sandboxNpmPrefix",
   existing: "setup.openclaw.useExisting",
 } as const;
 
@@ -97,8 +96,6 @@ function pickInstallTargetFromProgress(
     key !== INSTALL_TARGET_KEYS.user &&
     key !== INSTALL_TARGET_KEYS.userMissingPath &&
     key !== INSTALL_TARGET_KEYS.custom &&
-    key !== INSTALL_TARGET_KEYS.xdg &&
-    key !== INSTALL_TARGET_KEYS.sandbox &&
     key !== INSTALL_TARGET_KEYS.existing
   ) {
     return null;
@@ -107,12 +104,6 @@ function pickInstallTargetFromProgress(
   // the UI path stays in lockstep with the message formatting.
   const params = setupProgressI18nParams(key, message);
   if (!params.path) return null;
-  if (key === INSTALL_TARGET_KEYS.xdg) {
-    return { tier: "xdg", path: params.path, binPath: params.binPath };
-  }
-  if (key === INSTALL_TARGET_KEYS.sandbox) {
-    return { tier: "sandbox", path: params.path };
-  }
   if (key === INSTALL_TARGET_KEYS.userMissingPath) {
     return { tier: "userMissingPath", path: params.path };
   }
@@ -128,6 +119,7 @@ function pickInstallTargetFromProgress(
 export interface SetupFlow {
   progress: number;
   statusMessage: string;
+  installMode: InstallMode;
   dockerStatus: DockerStatus | null;
   openclawStatus: OpenclawStatus | null;
   checkingDocker: boolean;
@@ -147,10 +139,15 @@ export interface SetupFlow {
   runNativeSetup: () => Promise<void>;
   runDockerSetup: () => Promise<void>;
   retrySetup: () => Promise<void>;
-  completeStorageSetup: (result?: { createdFresh: boolean }) => void;
-  selectMode: (mode: "native" | "docker") => void;
+  requestReinstall: () => void;
+  completeStorageSetup: (result?: {
+    createdFresh: boolean;
+    runtimeReconfigurationRequired?: boolean;
+    openclawRelocationRequired?: boolean;
+  }) => void;
+  selectMode: (mode: InstallMode) => Promise<void>;
   detectDocker: () => Promise<void>;
-  refreshRuntime: () => Promise<{ status: OpenclawStatus; gatewayRunning: boolean }>;
+  refreshRuntime: () => Promise<{ status: OpenclawStatus | null; gatewayRunning: boolean }>;
   goBack: () => void;
   retryGit: () => void;
   enterWorkspace: (origin?: Element | null) => void;
@@ -168,18 +165,23 @@ const INITIAL_NATIVE_STEPS: StepState[] = [
 const INITIAL_DOCKER_STEPS: StepState[] = [
   { id: "pull",      label: "Docker Image",  status: "pending" },
   { id: "container", label: "Container",     status: "pending" },
+  { id: "terminal",  label: "Terminal",      status: "pending" },
   { id: "gateway",   label: "Gateway",       status: "pending" },
 ];
 
 function cacheGatewayTarget(port?: number | null, token?: string | null): void {
-  if (!port && !token) return;
+  if (!port && token === undefined) return;
   try {
     const current = JSON.parse(localStorage.getItem("aegis-config") || "{}");
     const next = {
       ...current,
       ...(port ? { gatewayUrl: defaultGatewayWsUrl(port) } : {}),
-      ...(token ? { gatewayToken: token } : {}),
     };
+    if (token === null) {
+      delete next.gatewayToken;
+    } else if (token) {
+      next.gatewayToken = token;
+    }
     localStorage.setItem("aegis-config", JSON.stringify(next));
   } catch {
     // Best effort: connection resolution can still fall back to config files.
@@ -195,8 +197,9 @@ export function useSetupFlow(
   steps: StepState[], setSteps: (v: StepState[]) => void,
 ): SetupFlow {
   const {
-    setupStep, setupError, installMode, postStorageStep,
-    setSetupStep, setSetupError, setSetupComplete, setPostStorageStep,
+    setupStep, setupError, installMode, postStorageStep, gatewayRunning,
+    replaceSetupStep, navigateSetup, goBackSetup,
+    setSetupError, setSetupComplete, setPostStorageStep,
     setGatewayRunning, setInstallMode, setSetupStatus, clearSetupLogs, appendSetupLog,
   } = useAppStore();
   const { t } = useTranslation();
@@ -207,6 +210,14 @@ export function useSetupFlow(
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
+  const reinstallRequestedRef = useRef(false);
+  const relocationRequestedRef = useRef(false);
+  const needsOnboardingRef = useRef(needsOnboarding);
+  needsOnboardingRef.current = needsOnboarding;
+  const updateOnboardingRequirement = useCallback((required: boolean) => {
+    needsOnboardingRef.current = required;
+    setNeedsOnboarding(required);
+  }, []);
   const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
   if (!wizardClientRef.current) {
     wizardClientRef.current = new OpenClawWizardClient((method, params) => gateway.call(method, params));
@@ -252,6 +263,15 @@ export function useSetupFlow(
     report(message, nextProgress);
   }, [report]);
 
+  const presentSetupStep = useCallback((step: SetupStep) => {
+    const message = t(setupStepMessageKey(step));
+    const nextProgress = setupStepProgress(step);
+    progressRef.current = nextProgress;
+    setStatusMessage(message);
+    setProgress(nextProgress);
+    setSetupStatus(message, nextProgress);
+  }, [setProgress, setSetupStatus, setStatusMessage, t]);
+
   const waitForGatewayReady = useCallback(async (runId: number, timeoutMs = 30_000, port?: number | null) => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -275,42 +295,57 @@ export function useSetupFlow(
     throw new Error(t("setup.gatewayReadyTimeout", "Gateway did not become ready in time."));
   }, [isRunActive, t]);
 
+  const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
+    try {
+      const detected = await window.aegis.config.detect();
+      const loaded = await window.aegis.config.read(detected.path);
+      return requiresOpenClawOnboarding(detected.exists, loaded.data);
+    } catch {
+      // A missing or unreadable selected-runtime config must stay in the
+      // official onboarding path instead of allowing an unconfigured workspace.
+      return true;
+    }
+  }, []);
+
   // ── 挂载后自动检测 ──
-  // 探测顺序：check_openclaw → probe_gateway_port（Rust 侧从
-  // openclaw.json 读取实际端口）。检测只能推进向导步骤，不能写入
+  // 先读取后端持久化的运行时选择；只有 Native 才检查宿主机 OpenClaw。
+  // 然后 probe_gateway_port（Rust 侧从选定配置读取实际端口）。检测只能推进向导步骤，不能写入
   // “已完成”标记；该标记必须由用户点击“进入工作台”后写入。
   useEffect(() => {
     if (setupStep !== "detecting") return;
     let cancelled = false;
     void (async () => {
       report(t("setup.detecting"), 0);
+      setGatewayRunning(false);
       try {
-        const oclaw = await checkOpenclaw();
+        const runtimeTarget = await detectGatewayConfig();
+        if (cancelled) return;
+        const selectedRuntime = runtimeTarget.runtime_mode;
+        setInstallMode(selectedRuntime);
+        cacheGatewayTarget(runtimeTarget.port, runtimeTarget.token);
+
+        // A Docker runtime is self-contained. Its host may intentionally have
+        // no OpenClaw package, so checking it would produce a false "fresh
+        // install" result and route the next action to Native.
+        const oclaw = selectedRuntime === "native" ? await checkOpenclaw() : null;
         if (cancelled) return;
         setOpenclawStatus(oclaw);
-        if (!oclaw.installed) {
+        if (selectedRuntime === "native" && (!oclaw?.installed || oclaw.relocation_required)) {
+          relocationRequestedRef.current = Boolean(oclaw?.relocation_required);
           // 从未安装过，先确定存储位置，再进入安装方式选择。
           localStorage.removeItem("junqi-setup-done");
           setPostStorageStep("choosing-mode");
           report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-          setSetupStep("storage");
+          navigateSetup("storage", "replace");
           return;
         }
-        let onboardingRequired = true;
-        try {
-          const detected = await window.aegis.config.detect();
-          if (cancelled) return;
-          const loaded = await window.aegis.config.read(detected.path);
-          if (cancelled) return;
-          onboardingRequired = requiresOpenClawOnboarding(detected.exists, loaded.data);
-          setNeedsOnboarding(onboardingRequired);
-        } catch {
-          setNeedsOnboarding(true);
-        }
-        if (oclaw.path) {
+        const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
+        if (cancelled) return;
+        updateOnboardingRequirement(onboardingRequired);
+        if (oclaw?.path) {
           setInstallTarget({ tier: "existing", path: oclaw.path, version: oclaw.version ?? undefined });
         }
-        // OpenClaw 已安装，继续探测 Gateway 是否已监听。这里不直接
+        // 选定运行时已满足探测条件，继续检查 Gateway 是否已监听。这里不直接
         // 进入工作台，避免用户在向导中前后切换时被跳过确认步骤。
         try {
           // 不传端口时由 Rust 读取配置；读取失败时使用共享运行时默认值。
@@ -321,7 +356,7 @@ export function useSetupFlow(
             commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
             setPostStorageStep(onboardingRequired ? "configure-openclaw" : "ready");
             report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-            setSetupStep("storage");
+            navigateSetup("storage", "replace");
             return;
           }
         } catch {
@@ -331,19 +366,19 @@ export function useSetupFlow(
         // Installed but gateway not responding → ask the user to start it.
         setPostStorageStep("gateway-stopped");
         report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-        setSetupStep("storage");
+        navigateSetup("storage", "replace");
       } catch {
         if (cancelled) return;
         setOpenclawStatus(null);
         setPostStorageStep("choosing-mode");
         report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
-        setSetupStep("storage");
+        navigateSetup("storage", "replace");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [setupStep, report, t, setGatewayRunning, setPostStorageStep, setSetupStep, commitSteps]);
+  }, [setupStep, report, t, setGatewayRunning, setPostStorageStep, navigateSetup, commitSteps, resolveActiveRuntimeOnboardingRequirement, updateOnboardingRequirement, setInstallMode]);
 
   // ── Docker detect after the welcome step ──
   useEffect(() => {
@@ -374,10 +409,11 @@ export function useSetupFlow(
           return;
         }
         // Prefer i18n-resolved text; fall back to the raw Rust message.
-        const translated = key
-          ? String(t(key as string, { defaultValue: message, ...setupProgressI18nParams(key, message) }))
-          : "";
-        const display = key && translated !== key && !translated.includes("{{") ? translated : message;
+        const display = translateSetupProgressMessage(
+          key,
+          message,
+          (translationKey, options) => t(translationKey, options),
+        );
         // Capture the resolved install target so the UI can surface
         // a dedicated "Install location" card. Reuses the same rule
         // table that drives i18next substitution, so the displayed
@@ -452,6 +488,26 @@ export function useSetupFlow(
     });
   }
 
+  async function configureTerminalIntegration(runId: number): Promise<void> {
+    patchStep("terminal", "running", t("setup.configuringTerminal", "正在配置终端命令…"));
+    const terminalStatus = await applyTerminalIntegration();
+    if (!isRunActive(runId)) return;
+    if (!terminalStatus.requested) {
+      patchStep("terminal", "skipped", t("setup.terminalIntegrationDisabled", "未启用外部终端集成"));
+      return;
+    }
+    if (!terminalStatus.enabled || !terminalStatus.launcherReady) {
+      throw new Error(t("setup.terminalIntegrationFailed", "终端启动器未能完成配置"));
+    }
+    patchStep(
+      "terminal",
+      "done",
+      terminalStatus.terminalRestartRequired
+        ? t("setup.terminalRestartRequired", "已配置；打开新的终端窗口后生效")
+        : t("setup.terminalIntegrationReady", "终端命令已就绪"),
+    );
+  }
+
   const waitForGatewayConnection = useCallback(async (timeoutMs = 20_000) => {
     gatewayManager.reconnect();
     const deadline = Date.now() + timeoutMs;
@@ -464,7 +520,7 @@ export function useSetupFlow(
 
   const refreshGatewayConnectionTarget = useCallback(async () => {
     try {
-      const target = await invoke<{ port: number; token: string | null }>("detect_gateway_config");
+      const target = await detectGatewayConfig();
       cacheGatewayTarget(target.port, target.token);
       gatewayManager.reconnect();
     } catch {
@@ -478,10 +534,11 @@ export function useSetupFlow(
     }
     if (result.done || result.status === "done") {
       setWizardStep(null);
-      setNeedsOnboarding(false);
+      updateOnboardingRequirement(false);
+      setPostStorageStep("ready");
       await refreshGatewayConnectionTarget();
       report(t("setup.ready"), 100);
-      setSetupStep("ready");
+      replaceSetupStep("ready");
       return;
     }
     if (!result.step) {
@@ -489,8 +546,8 @@ export function useSetupFlow(
     }
     setWizardStep(result.step);
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
-    setSetupStep("configure-openclaw");
-  }, [refreshGatewayConnectionTarget, report, setSetupStep, t]);
+    replaceSetupStep("configure-openclaw");
+  }, [refreshGatewayConnectionTarget, report, setPostStorageStep, replaceSetupStep, t, updateOnboardingRequirement]);
 
   const startOfficialOnboarding = useCallback(async () => {
     setWizardError(null);
@@ -503,11 +560,11 @@ export function useSetupFlow(
       const message = error instanceof Error ? error.message : String(error);
       setWizardError(message);
       setSetupError(message);
-      setSetupStep("configure-openclaw");
+      replaceSetupStep("configure-openclaw");
     } finally {
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, setSetupError, setSetupStep, waitForGatewayConnection]);
+  }, [applyWizardResult, setSetupError, replaceSetupStep, waitForGatewayConnection]);
 
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
     if (wizardSubmitting) return;
@@ -542,7 +599,12 @@ export function useSetupFlow(
   // ── Actions ──
   const startGatewayAction = useCallback(async () => {
     const runId = beginRun();
-    setSetupStep("checking");
+    setGatewayRunning(false);
+    if (setupStep === "gateway-stopped" || setupStep === "install-complete") {
+      navigateSetup("checking", "push");
+    } else {
+      replaceSetupStep("checking");
+    }
     reportPhase("gatewayConfig", t("setup.gatewayReadingConfig", "正在读取 Gateway 配置…"));
     if (stepsRef.current.some((s) => s.id === "gateway")) {
       patchStep("gateway", "running", t("setup.startingGateway"));
@@ -550,13 +612,17 @@ export function useSetupFlow(
       commitSteps([{ id: "gateway", label: "Gateway", status: "running", detail: t("setup.startingGateway") }]);
     }
     try {
-      const status: any = await gatewayManager.startForSetup();
+      const isDockerRuntime = installMode === "docker";
+      const status: any = isDockerRuntime
+        ? await gatewayManager.startDockerForSetup()
+        : await gatewayManager.startForSetup();
       cacheGatewayTarget(status?.port, status?.token);
       patchStep("gateway", "running", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       reportPhase("gatewayPort", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
-      await waitForGatewayReady(runId, 10_000, status?.port);
+      await waitForGatewayReady(runId, isDockerRuntime ? 30_000 : 10_000, status?.port);
       if (!isRunActive(runId)) return;
       setGatewayRunning(true);
+      setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
       if (stepsRef.current.some((s) => s.id === "gateway")) {
         patchStep("gateway", "done");
       } else {
@@ -564,15 +630,16 @@ export function useSetupFlow(
       }
       reportPhase("ready", t("setup.gatewayConnected", "Gateway 已连接"));
       if (!isRunActive(runId)) return;
-      if (needsOnboarding) {
+      if (needsOnboardingRef.current) {
         await startOfficialOnboarding();
       } else {
         await new Promise((r) => setTimeout(r, 600));
         if (!isRunActive(runId)) return;
-        setSetupStep("ready");
+        replaceSetupStep("ready");
       }
     } catch (e: any) {
       if (!isRunActive(runId)) return;
+      setGatewayRunning(false);
       if (stepsRef.current.some((s) => s.id === "gateway")) {
         patchStep("gateway", "error", String(e?.message ?? e));
       } else {
@@ -581,9 +648,9 @@ export function useSetupFlow(
       appendSetupLog({ source: "setup", message: String(e?.message ?? e), step: "gateway", level: "error" });
       setSetupError(e?.message || String(e));
       report(e?.message || String(e));
-      setSetupStep("error");
+      replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setSetupError, needsOnboarding, startOfficialOnboarding, appendSetupLog]);
+  }, [beginRun, isRunActive, setupStep, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, startOfficialOnboarding, appendSetupLog, installMode]);
 
   const runNativeSetup = useCallback(async () => {
     const runId = beginRun();
@@ -591,7 +658,7 @@ export function useSetupFlow(
     const s = [...INITIAL_NATIVE_STEPS];
     commitSteps(s);
     try {
-      setSetupStep("checking");
+      replaceSetupStep("checking");
 
       // Git
       patchStep("git", "running", t("setup.checkingGit"));
@@ -603,12 +670,12 @@ export function useSetupFlow(
         if (!isWindows) {
           patchStep("git", "error", t("setup.gitRequiredDesc"));
           setNeedsGit(true);
-          setSetupStep("git-missing");
+          replaceSetupStep("git-missing");
           reportPhase("git", t("setup.gitRequiredDesc"), 100);
           return;
         }
         patchStep("git", "running", t("setup.installingGit", "正在静默安装 Git…"));
-        setSetupStep("install-git");
+        replaceSetupStep("install-git");
         await installGit();
         const installedGit = await checkGit();
         if (!installedGit.available) throw new Error(t("setup.gitRequiredDesc"));
@@ -624,7 +691,7 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return;
       if (!nodeStatus.available) {
         patchStep("node", "running", t("setup.installingNode"));
-        setSetupStep("install-node");
+        replaceSetupStep("install-node");
         reportPhase("node", t("setup.installingNode"), 20);
         await installNode();
         if (!isRunActive(runId)) return;
@@ -654,16 +721,26 @@ export function useSetupFlow(
       const oclawStatus = await checkOpenclaw();
       setOpenclawStatus(oclawStatus);
       if (!isRunActive(runId)) return;
-      if (!oclawStatus.installed) {
-        setNeedsOnboarding(true);
+      const forceReinstall = reinstallRequestedRef.current;
+      const forceRelocation = relocationRequestedRef.current || oclawStatus.relocation_required;
+      if (!oclawStatus.installed || forceReinstall || forceRelocation) {
+        if (!oclawStatus.installed) updateOnboardingRequirement(true);
         patchStep("openclaw", "running", t("setup.installingOpenclaw"));
-        setSetupStep("install-openclaw");
+        replaceSetupStep("install-openclaw");
         reportPhase("openclaw", t("setup.installingOpenclaw"), 10);
-        await installOpenclaw();
+        if (forceRelocation) {
+          await relocateOpenclaw();
+        } else if (forceReinstall) {
+          await reinstallOpenclaw();
+        } else {
+          await installOpenclaw();
+        }
         const installedStatus = await checkOpenclaw();
         setOpenclawStatus(installedStatus);
         if (!isRunActive(runId)) return;
         if (!installedStatus.installed) throw new Error(installedStatus.error || t("setup.openclawInstallFailed", "OpenClaw 安装后校验失败"));
+        reinstallRequestedRef.current = false;
+        relocationRequestedRef.current = false;
         patchStep("openclaw", "done", installedStatus.version ?? undefined);
       } else {
         if (oclawStatus.path) {
@@ -672,30 +749,17 @@ export function useSetupFlow(
         patchStep("openclaw", "done", oclawStatus.version ?? undefined);
       }
 
-      // The launcher can only be verified after a concrete OpenClaw binary
-      // has been selected. This operation is idempotent on retries.
-      patchStep("terminal", "running", t("setup.configuringTerminal", "正在配置终端命令…"));
-      const terminalStatus = await applyTerminalIntegration();
+      // The launcher is generated only after the selected runtime is ready.
+      // This is shared by Native and Docker so their terminal contracts stay
+      // aligned while keeping their launch mechanisms separate.
+      await configureTerminalIntegration(runId);
       if (!isRunActive(runId)) return;
-      if (!terminalStatus.requested) {
-        patchStep("terminal", "skipped", t("setup.terminalIntegrationDisabled", "未启用外部终端集成"));
-      } else if (!terminalStatus.enabled || !terminalStatus.launcherReady) {
-        throw new Error(t("setup.terminalIntegrationFailed", "终端启动器未能完成配置"));
-      } else {
-        patchStep(
-          "terminal",
-          "done",
-          terminalStatus.terminalRestartRequired
-            ? t("setup.terminalRestartRequired", "已配置；打开新的终端窗口后生效")
-            : t("setup.terminalIntegrationReady", "终端命令已就绪"),
-        );
-      }
 
       // Gateway — 准备阶段。前端 `setup-progress` 监听会把 Rust 端
       // 通过 `prepare_gateway` 流式上报的每一条 step="gateway" 文案
       // 原样展示到 statusMessage 上，与 install_* 的呈现形态完全一致。
       patchStep("gateway", "running", t("setup.preparingGateway"));
-      setSetupStep("install-openclaw");
+      replaceSetupStep("install-openclaw");
       reportPhase("gatewayPrepare", t("setup.preparingGateway"));
       let gatewayPrepareWarning: string | null = null;
       try {
@@ -718,24 +782,24 @@ export function useSetupFlow(
         gatewayPrepareWarning ?? t("setup.installCompleteGatewayPending", "Gateway 配置已准备，点击启动 Gateway 继续。"),
       );
       reportPhase("awaitingGatewayStart", t("setup.installComplete", "必需组件已安装完成"));
-      setSetupStep("install-complete");
+      replaceSetupStep("install-complete");
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       const msg = err?.message || String(err);
       failRunningStep(msg);
       setSetupError(msg);
       report(msg);
-      setSetupStep("error");
+      replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog]);
+  }, [beginRun, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
+      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
     clearSetupLogs();
     commitSteps([...INITIAL_DOCKER_STEPS]);
     try {
-      setSetupStep("checking");
+      replaceSetupStep("checking");
 
       patchStep("pull", "running", t("setup.pullingImage"));
       report(t("setup.pullingImage"), 10);
@@ -748,42 +812,70 @@ export function useSetupFlow(
       const gatewayStatus = await gatewayManager.startDockerForSetup();
       if (!isRunActive(runId)) return;
       cacheGatewayTarget(gatewayStatus.port, gatewayStatus.token);
-      setGatewayRunning(true);
       patchStep("container", "done");
+
+      // Storage setup may have created a Native launcher before the user chose
+      // Docker. Refresh it now that the container is ready so `openclaw` in an
+      // external terminal delegates to this selected runtime instead.
+      await configureTerminalIntegration(runId);
+      if (!isRunActive(runId)) return;
 
       patchStep("gateway", "running", t("setup.waitingGateway"));
       report(t("setup.waitingGateway"), 90);
       await waitForGatewayReady(runId, 30_000, gatewayStatus.port);
       if (!isRunActive(runId)) return;
+      setGatewayRunning(true);
       patchStep("gateway", "done");
+      setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
 
-      if (needsOnboarding) {
+      if (needsOnboardingRef.current) {
         await startOfficialOnboarding();
       } else {
         report(t("setup.ready"), 100);
-        setSetupStep("ready");
+        replaceSetupStep("ready");
       }
     } catch (err: any) {
       if (!isRunActive(runId)) return;
+      setGatewayRunning(false);
       const message = err?.message || String(err);
       failRunningStep(message);
       setSetupError(message);
       report(message);
-      setSetupStep("error");
+      replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, setSetupStep, t, report, commitSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, needsOnboarding, startOfficialOnboarding, appendSetupLog]);
+  }, [beginRun, isRunActive, replaceSetupStep, t, report, commitSteps,
+      waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, clearSetupLogs, startOfficialOnboarding, appendSetupLog]);
 
-  const selectMode = useCallback((mode: "native" | "docker") => {
-    setInstallMode(mode);
+  const selectMode = useCallback(async (mode: InstallMode) => {
+    setSetupError(null);
+    try {
+      await setActiveGatewayRuntime(mode);
+      setInstallMode(mode);
+      updateOnboardingRequirement(await resolveActiveRuntimeOnboardingRequirement());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+      setSetupError(message);
+      report(message);
+      replaceSetupStep("error");
+      return;
+    }
+    navigateSetup("checking", "push");
     if (mode === "native") {
       commitSteps([...INITIAL_NATIVE_STEPS]);
-      runNativeSetup();
+      await runNativeSetup();
     } else {
+      reinstallRequestedRef.current = false;
       commitSteps([...INITIAL_DOCKER_STEPS]);
-      runDockerSetup();
+      await runDockerSetup();
     }
-  }, [setInstallMode, runNativeSetup, runDockerSetup, commitSteps]);
+  }, [setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement]);
+
+  const requestReinstall = useCallback(() => {
+    reinstallRequestedRef.current = true;
+    setSetupError(null);
+    navigateSetup("choosing-mode", "push");
+  }, [setSetupError, navigateSetup]);
 
   const retrySetup = useCallback(async () => {
     setSetupError(null);
@@ -795,10 +887,18 @@ export function useSetupFlow(
     }
   }, [installMode, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
 
-  const completeStorageSetup = useCallback((result?: { createdFresh: boolean }) => {
+  const completeStorageSetup = useCallback((result?: {
+    createdFresh: boolean;
+    runtimeReconfigurationRequired?: boolean;
+    openclawRelocationRequired?: boolean;
+  }) => {
     const createdFresh = result?.createdFresh === true;
-    if (createdFresh) setNeedsOnboarding(true);
-    const nextStep = createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
+    const runtimeReconfigurationRequired = result?.runtimeReconfigurationRequired === true;
+    relocationRequestedRef.current = result?.openclawRelocationRequired === true;
+    if (createdFresh) updateOnboardingRequirement(true);
+    const nextStep = runtimeReconfigurationRequired
+      ? "choosing-mode"
+      : createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
       ? "gateway-stopped"
       : postStorageStep;
 
@@ -811,8 +911,8 @@ export function useSetupFlow(
     } else {
       report(t("setup.chooseMode"), 30);
     }
-    setSetupStep(nextStep);
-  }, [postStorageStep, report, setSetupStep, t]);
+    navigateSetup(nextStep, "push");
+  }, [postStorageStep, report, navigateSetup, t, updateOnboardingRequirement]);
 
   const repairAndRetry = useCallback(async () => {
     if (repairing) return;
@@ -846,6 +946,30 @@ export function useSetupFlow(
         await startGatewayAction();
         return;
       }
+      if (installMode === "docker") {
+        const repairingMessage = t(
+          "setup.repairingDocker",
+          "正在刷新 Docker 镜像并重建 Gateway…",
+        );
+        patchStep("gateway", "running", repairingMessage);
+        report(repairingMessage);
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message: t("setup.dockerRepairStarting", "正在刷新选定的 Docker 镜像…"),
+          level: "info",
+        });
+        await pullOpenclawImage("latest");
+        if (!isRunActive(runId)) return;
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message: t("setup.dockerRepairComplete", "镜像已刷新，正在重新创建 Docker Gateway…"),
+          level: "info",
+        });
+        await startGatewayAction();
+        return;
+      }
       const repairingMessage = t("setup.repairingGateway", "正在修复 OpenClaw 和插件状态…");
       patchStep("gateway", "running", repairingMessage);
       report(repairingMessage);
@@ -871,11 +995,11 @@ export function useSetupFlow(
       appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
       setSetupError(message);
       report(message);
-      setSetupStep("error");
+      replaceSetupStep("error");
     } finally {
       setRepairing(false);
     }
-  }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, setSetupStep]);
+  }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode]);
 
   const goBack = useCallback(() => {
     void wizardClientRef.current?.cancel().catch(() => {});
@@ -883,12 +1007,16 @@ export function useSetupFlow(
     setWizardError(null);
     cancelActiveRun();
     setSetupError(null);
-    setProgress(0);
     setNeedsGit(false);
-    commitSteps([]);
-    report(t("setup.chooseMode"), 18);
-    setSetupStep("choosing-mode");
-  }, [cancelActiveRun, setSetupError, setProgress, setNeedsGit, commitSteps, report, t, setSetupStep]);
+    let destination = goBackSetup("welcome");
+    while (isStaleSetupBackDestination(destination, gatewayRunning)) {
+      destination = goBackSetup("welcome");
+    }
+    if (destination === "welcome" || destination === "choosing-mode") {
+      commitSteps([]);
+    }
+    presentSetupStep(destination);
+  }, [cancelActiveRun, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, commitSteps, presentSetupStep]);
 
   const retryGit = useCallback(() => {
     setNeedsGit(false);
@@ -914,9 +1042,13 @@ export function useSetupFlow(
   }, [setCheckingDocker, setDockerStatus]);
 
   const refreshRuntime = useCallback(async () => {
-    const status = await checkOpenclaw();
+    const runtimeTarget = await detectGatewayConfig();
+    const selectedRuntime = runtimeTarget.runtime_mode;
+    setInstallMode(selectedRuntime);
+    cacheGatewayTarget(runtimeTarget.port, runtimeTarget.token);
+    const status = selectedRuntime === "native" ? await checkOpenclaw() : null;
     setOpenclawStatus(status);
-    if (status.path) {
+    if (status?.path) {
       setInstallTarget((current) => current
         ? { ...current, path: status.path!, version: status.version ?? undefined }
         : { tier: "existing", path: status.path!, version: status.version ?? undefined });
@@ -924,6 +1056,9 @@ export function useSetupFlow(
 
     const gatewayRunning = await invoke<boolean>("probe_gateway_port", {}).catch(() => false);
     setGatewayRunning(gatewayRunning);
+    if (gatewayRunning) {
+      setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
+    }
     const currentSteps = stepsRef.current;
     if (currentSteps.some((step) => step.id === "gateway")) {
       commitSteps(currentSteps.map((step) => step.id === "gateway"
@@ -933,10 +1068,10 @@ export function useSetupFlow(
       commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
     }
     return { status, gatewayRunning };
-  }, [setGatewayRunning, commitSteps]);
+  }, [setGatewayRunning, setPostStorageStep, commitSteps, setInstallMode]);
 
   return {
-    progress, statusMessage, dockerStatus, openclawStatus, checkingDocker, needsGit, steps,
+    progress, statusMessage, installMode, dockerStatus, openclawStatus, checkingDocker, needsGit, steps,
     installTarget,
     wizardStep,
     wizardSubmitting,
@@ -951,6 +1086,7 @@ export function useSetupFlow(
     runNativeSetup,
     runDockerSetup,
     retrySetup,
+    requestReinstall,
     completeStorageSetup,
     selectMode,
     detectDocker,

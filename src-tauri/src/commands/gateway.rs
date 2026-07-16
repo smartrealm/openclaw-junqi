@@ -57,10 +57,10 @@ fn parse_gateway_service_state(output: &[u8]) -> Option<(bool, bool)> {
 
 async fn stop_offline_gateway_service(
     app: &AppHandle,
-    binary: &std::path::Path,
+    runtime: &crate::commands::system::NativeOpenclawRuntime,
     search_path: &str,
 ) -> Result<bool, String> {
-    let mut status_command = crate::commands::system::openclaw_command(binary);
+    let mut status_command = runtime.command();
     status_command
         .args(["gateway", "status", "--json"])
         .env("PATH", search_path)
@@ -86,7 +86,7 @@ async fn stop_offline_gateway_service(
         "gateway-log",
         "An offline OpenClaw system service is loaded; stopping it before starting the desktop-managed Gateway...",
     );
-    let mut stop_command = crate::commands::system::openclaw_command(binary);
+    let mut stop_command = runtime.command();
     stop_command
         .args(["gateway", "stop"])
         .env("PATH", search_path)
@@ -136,12 +136,19 @@ fn runtime_after_observation(
             (GatewayLifecycle::Stopped, GatewayRuntimeMode::None)
         }
         GatewayObservation::EndpointHealthy => {
-            let mode = match current.mode {
-                GatewayRuntimeMode::External
-                | GatewayRuntimeMode::SystemService
-                | GatewayRuntimeMode::Docker => current.mode,
-                GatewayRuntimeMode::None | GatewayRuntimeMode::ManagedChild => {
+            let mode = if matches!(
+                paths::active_runtime_mode(),
+                paths::OpenClawRuntimeMode::Docker
+            ) {
+                GatewayRuntimeMode::Docker
+            } else {
+                match current.mode {
                     GatewayRuntimeMode::External
+                    | GatewayRuntimeMode::SystemService
+                    | GatewayRuntimeMode::Docker => current.mode,
+                    GatewayRuntimeMode::None | GatewayRuntimeMode::ManagedChild => {
+                        GatewayRuntimeMode::External
+                    }
                 }
             };
             (GatewayLifecycle::Running, mode)
@@ -405,11 +412,6 @@ fn augmented_path() -> String {
     crate::commands::system::openclaw_search_path()
 }
 
-/// Resolve `openclaw` on the augmented PATH — same as desktop's resolveOpenclawBinary.
-pub fn resolve_openclaw_binary() -> Option<std::path::PathBuf> {
-    crate::commands::system::resolve_openclaw_binary()
-}
-
 /// Lightweight snapshot of the fields we need from openclaw.json at gateway startup.
 /// Parsed once per launch to avoid redundant disk reads across callers.
 struct ConfigMetadata {
@@ -449,7 +451,7 @@ impl ConfigMetadata {
 /// Resolve the user-configured Gateway port for commands that need to target
 /// the Control UI without assuming OpenClaw's default port.
 pub(crate) fn configured_gateway_port() -> u16 {
-    ConfigMetadata::load(&paths::config_path()).port
+    ConfigMetadata::load(&paths::active_config_path()).port
 }
 
 /// Read the gateway auth token from the config file.
@@ -708,7 +710,7 @@ fn ensure_paired_devices_full_scopes(base_dir: &std::path::Path) {
 /// Read the gateway auth token from the config file
 #[tauri::command]
 pub async fn get_gateway_token() -> Result<String, String> {
-    let config_path = paths::config_path();
+    let config_path = paths::active_config_path();
     if !config_path.exists() {
         return Err("Config not found".into());
     }
@@ -871,6 +873,10 @@ fn spawn_log_reader(
         let state = app.state::<crate::state::GatewayProcess>();
         let mut lines = BufReader::new(reader).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            let line = crate::commands::diagnostic_output::sanitize_diagnostic_line(&line);
+            if line.is_empty() {
+                continue;
+            }
             let _ = app.emit("gateway-log", &line);
             push_log(&state.logs, source, LogLevel::Info, line);
         }
@@ -890,6 +896,10 @@ fn spawn_restart_log_reader(
         let state = app.state::<crate::state::GatewayProcess>();
         let mut lines = BufReader::new(reader).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            let line = crate::commands::diagnostic_output::sanitize_diagnostic_line(&line);
+            if line.is_empty() {
+                continue;
+            }
             let _ = app.emit("gateway-restart-progress", &line);
             let _ = app.emit("gateway-log", &line);
             push_log(&state.logs, source, LogLevel::Info, line);
@@ -903,7 +913,7 @@ pub async fn restart_gateway(
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
 ) -> Result<GatewayStatus, String> {
-    let config_path = paths::config_path();
+    let config_path = paths::active_config_path();
     let meta = ConfigMetadata::load(&config_path);
     let port = port.unwrap_or(meta.port);
     use std::sync::atomic::Ordering;
@@ -940,6 +950,40 @@ pub async fn restart_gateway(
     let _restart_completion_guard = RestartCompletionGuard {
         generation: &state.restart_completed_generation,
     };
+
+    if matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Docker
+    ) {
+        crate::commands::docker::release_managed_native_gateway_for_docker(&state, port).await?;
+        state.transition(
+            Some(GatewayLifecycle::Reconnecting),
+            Some(GatewayRuntimeMode::Docker),
+            Some(true),
+            "restart_gateway: recreating selected Docker container",
+        );
+        emit_restart_progress(&app, "Recreating the selected OpenClaw Docker container...");
+        let result =
+            crate::commands::docker::start_docker_gateway_locked(app.clone(), Some(port), None)
+                .await;
+        match &result {
+            Ok(_) => state.transition(
+                Some(GatewayLifecycle::Running),
+                Some(GatewayRuntimeMode::Docker),
+                Some(false),
+                "restart_gateway: Docker container is healthy",
+            ),
+            Err(_) => state.transition(
+                Some(GatewayLifecycle::Error),
+                Some(GatewayRuntimeMode::Docker),
+                Some(false),
+                "restart_gateway: Docker container restart failed",
+            ),
+        }
+        return result;
+    }
+
+    crate::commands::system::ensure_openclaw_relocation_complete()?;
 
     state.transition(
         Some(GatewayLifecycle::Reconnecting),
@@ -987,14 +1031,22 @@ pub async fn restart_gateway(
         }
     }
 
-    let openclaw = resolve_openclaw_binary()
+    let openclaw = crate::commands::system::resolve_openclaw_binary_async()
+        .await
         .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
+    let node_requirement =
+        crate::commands::system::node_requirement_for_openclaw_binary(&openclaw)?;
+    let node =
+        crate::commands::setup::ensure_compatible_node_runtime(&app, "gateway", &node_requirement)
+            .await
+            .map_err(|error| format!("Gateway runtime repair failed: {error}"))?;
+    let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
     let gw_path = augmented_path();
 
     // Restart the installed Gateway service (launchd/systemd/schtasks). This is
     // the real local OpenClaw restart path; unlike start_gateway(), it does not
     // simply return success when an external listener is already serving.
-    let mut cmd = crate::commands::system::openclaw_command(&openclaw);
+    let mut cmd = runtime.command();
     cmd.args(["gateway", "--port", &port.to_string(), "restart"])
         .env("PATH", &gw_path)
         .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
@@ -1103,8 +1155,23 @@ pub async fn start_gateway(
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
 ) -> Result<GatewayStatus, String> {
+    if matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Docker
+    ) {
+        return crate::commands::docker::start_docker_gateway(app, state, port, None).await;
+    }
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate.lock_owned().await;
+    let target_port = port.unwrap_or_else(|| ConfigMetadata::load(&paths::config_path()).port);
+    if crate::commands::docker::release_managed_docker_gateway_for_native(target_port).await? {
+        state.transition(
+            Some(GatewayLifecycle::Stopped),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "start_gateway: stopped selected Docker container before Native start",
+        );
+    }
     start_gateway_locked(app, state, port).await
 }
 
@@ -1114,6 +1181,7 @@ pub(crate) async fn start_gateway_locked(
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
 ) -> Result<GatewayStatus, String> {
+    crate::commands::system::ensure_openclaw_relocation_complete()?;
     // Load config metadata once. This single read serves both port resolution
     // and env_vars injection, avoiding duplicate IO later in the function.
     let config_path = paths::config_path();
@@ -1157,10 +1225,15 @@ pub(crate) async fn start_gateway_locked(
     // OpenClaw enforces a non-contiguous Node.js support matrix. Repair the
     // desktop-managed runtime before spawning so an incompatible system Node
     // cannot produce a crash/retry loop (notably Node 24.14.x on Windows).
-    let node_requirement = crate::commands::system::installed_openclaw_node_requirement()?;
-    crate::commands::setup::ensure_compatible_node_runtime(&app, "gateway", &node_requirement)
+    let openclaw = crate::commands::system::resolve_openclaw_binary_async()
         .await
-        .map_err(|error| format!("Gateway runtime repair failed: {error}"))?;
+        .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
+    let node_requirement =
+        crate::commands::system::node_requirement_for_openclaw_binary(&openclaw)?;
+    let node =
+        crate::commands::setup::ensure_compatible_node_runtime(&app, "gateway", &node_requirement)
+            .await
+            .map_err(|error| format!("Gateway runtime repair failed: {error}"))?;
 
     // Nothing is serving — (re)start our own managed child. We only ever kill
     // our OWN previously-spawned child here, never a foreign process.
@@ -1220,12 +1293,10 @@ pub(crate) async fn start_gateway_locked(
         let _ = std::fs::create_dir_all(&default_workspace);
     }
 
-    // Find openclaw on PATH (same approach as openclaw-desktop)
-    let openclaw = resolve_openclaw_binary()
-        .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
+    let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
 
     let gw_path = augmented_path();
-    if stop_offline_gateway_service(&app, &openclaw, &gw_path).await? {
+    if stop_offline_gateway_service(&app, &runtime, &gw_path).await? {
         state.transition(
             Some(GatewayLifecycle::Stopped),
             Some(GatewayRuntimeMode::None),
@@ -1240,7 +1311,7 @@ pub(crate) async fn start_gateway_locked(
     // ConfigMetadata already parsed env.vars above — no additional disk IO here.
     let extra_env_vars = meta.env_vars;
 
-    let mut cmd = crate::commands::system::openclaw_command(&openclaw);
+    let mut cmd = runtime.command();
     cmd.args([
         "gateway",
         "run",
@@ -1274,10 +1345,9 @@ pub(crate) async fn start_gateway_locked(
         // io::Error which was opaque to the user.
         if e.kind() == std::io::ErrorKind::NotFound {
             format!(
-                "openclaw not found on PATH (current PATH={:?}). \
-                 If openclaw is installed under ~/.npm-global/bin, \
-                 run 'export PATH=$HOME/.npm-global/bin:$PATH' \
-                 or set OPENCLAW_BIN env var. Underlying error: {}",
+                "openclaw could not be launched from the resolved runtime (current PATH={:?}). \
+                 Ensure the npm executable directory that owns this OpenClaw installation is on PATH, \
+                 then retry setup. Underlying error: {}",
                 std::env::var("PATH").unwrap_or_default(),
                 e,
             )
@@ -1424,7 +1494,7 @@ pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, St
 
 #[tauri::command]
 pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayStatus, String> {
-    let config_path = paths::config_path();
+    let config_path = paths::active_config_path();
     let configured_port = ConfigMetadata::load(&config_path).port;
     let state_port = *state.port.lock().map_err(|e| e.to_string())?;
     let port = if configured_port > 0 {
@@ -1562,7 +1632,7 @@ pub async fn probe_gateway_port(port: Option<u16>) -> Result<bool, String> {
     // don't run on the shared default port.
     let target_port = match port {
         Some(p) => p,
-        None => ConfigMetadata::load(&paths::config_path()).port,
+        None => ConfigMetadata::load(&paths::active_config_path()).port,
     };
     Ok(is_gateway_serving(target_port).await)
 }
@@ -1570,43 +1640,26 @@ pub async fn probe_gateway_port(port: Option<u16>) -> Result<bool, String> {
 /// Run `openclaw doctor` and return the output
 #[tauri::command]
 pub async fn run_doctor() -> Result<String, String> {
-    let openclaw = resolve_openclaw_binary()
-        .ok_or_else(|| "OpenClaw not found. Run: npm install -g openclaw".to_string())?;
-    let base_dir = paths::desktop_dir();
-    let config_path = paths::config_path();
+    let output = crate::commands::openclaw_cli::run_openclaw(
+        &["doctor"],
+        None,
+        std::time::Duration::from_secs(120),
+    )
+    .await?;
 
-    let mut cmd = crate::commands::system::openclaw_command(&openclaw);
-    cmd.arg("doctor")
-        .env("PATH", &augmented_path())
-        .env("OPENCLAW_STATE_DIR", &base_dir)
-        .env("OPENCLAW_CONFIG_PATH", &config_path);
-
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(0x08000000);
-    }
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run doctor: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    let mut result = stdout;
-    if !stderr.is_empty() {
+    let mut result = output.stdout;
+    if !output.stderr.is_empty() {
         if !result.is_empty() {
             result.push('\n');
         }
-        result.push_str(&stderr);
+        result.push_str(&output.stderr);
     }
 
     if result.trim().is_empty() {
-        result = if output.status.success() {
+        result = if output.success {
             "Doctor check passed with no output.".into()
         } else {
-            format!("Doctor exited with code: {}", output.status)
+            "Doctor exited without diagnostic output.".into()
         };
     }
 

@@ -11,6 +11,7 @@ import { ConnectionRetryPolicy } from './ConnectionRetryPolicy';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import i18n from '@/i18n';
+import { gatewayLocaleForLanguage } from './gatewayLocale';
 
 // OpenClaw 2026.5.x introduced a newer WS protocol while older installs still
 // negotiate protocol 3. Advertise a compatible range so Desktop can connect to
@@ -28,9 +29,7 @@ export function detectPlatform(): string {
 
 // ── Locale from app language ──
 export function getAppLocale(): string {
-  const lang = i18n.language || 'en';
-  if (lang.startsWith('ar')) return 'ar-SA';
-  return 'en-US';
+  return gatewayLocaleForLanguage(i18n.language);
 }
 
 // ── Shared chat message type ──

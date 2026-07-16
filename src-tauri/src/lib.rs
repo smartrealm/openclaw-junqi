@@ -91,8 +91,9 @@ pub fn run() {
             commands::managed_runtime::update_managed_git,
             commands::managed_runtime::get_managed_runtime_status,
             commands::setup::install_openclaw,
+            commands::setup::reinstall_openclaw,
+            commands::setup::relocate_openclaw,
             commands::setup::prepare_gateway,
-            commands::setup::install_winget_package,
             // Control UI (Console)
             commands::console::open_control_ui,
             commands::console::return_to_desktop,
@@ -108,6 +109,7 @@ pub fn run() {
             commands::config::write_config,
             commands::config::read_provider_api_key,
             commands::config::detect_gateway_config,
+            commands::config::set_active_gateway_runtime,
             commands::openclaw_provider::get_openclaw_provider_catalog,
             commands::openclaw_provider::get_openclaw_config_schema,
             commands::openclaw_provider::get_openclaw_auth_profiles,
@@ -252,6 +254,7 @@ pub fn run() {
             commands::project_config::write_agent_config_file,
             // App settings (ported from nezha app_settings.rs, simplified)
             commands::app_settings::load_app_settings,
+            commands::app_settings::set_application_language,
             commands::app_settings::save_terminal_scrollback,
             commands::app_settings::save_terminal_shift_enter_newline,
             commands::app_settings::save_app_settings,
