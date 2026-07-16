@@ -1035,17 +1035,19 @@ export function AgentRunView({
         }
       }
       await invoke('run_task', {
-        taskId,
-        projectPath: actualPath,
-        prompt: taskPrompt,
-        agent,
-        permissionMode: perm,
-        images: attachedImages.map((image) => image.src),
-        texts: textAttachments.map((attachment) => attachment.text),
-        cols: 220,
-        rows: 50,
+        request: {
+          taskId,
+          projectPath: actualPath,
+          prompt: taskPrompt,
+          agent,
+          permissionMode: perm,
+          images: attachedImages.map((image) => image.src),
+          texts: textAttachments.map((attachment) => attachment.text),
+          cols: 220,
+          rows: 50,
+          resumeId: resumeIdRef.current,
+        },
         onOutput,
-        resumeId: resumeIdRef.current,
       });
     } catch (e) {
       const failureReason = String(e);

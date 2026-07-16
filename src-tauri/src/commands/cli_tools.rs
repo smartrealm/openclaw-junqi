@@ -1,4 +1,4 @@
-/// 扫描用户 PATH，检测常见 AI CLI 和开发工具。
+//! 扫描用户 PATH，检测常见 AI CLI 和开发工具。
 
 type Label = &'static str;
 type Icon = &'static str;

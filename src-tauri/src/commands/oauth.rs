@@ -299,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn read_token_from_extracts_oauthAccount_accessToken() {
+    fn read_token_from_extracts_oauth_account_access_token() {
         let dir = std::env::temp_dir().join(format!(
             "junqi-oauth-good-{}-{}",
             std::process::id(),

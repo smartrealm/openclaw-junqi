@@ -47,9 +47,10 @@ fn endpoint(base_url: &str, suffix: &str) -> Result<String, String> {
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if last == "v1beta" || last == "v1" {
-        Ok(format!("{}/{}", base, suffix))
-    } else if last.starts_with('v') && last[1..].chars().all(|c| c.is_ascii_digit()) {
+    if last == "v1beta"
+        || last == "v1"
+        || (last.starts_with('v') && last[1..].chars().all(|c| c.is_ascii_digit()))
+    {
         Ok(format!("{}/{}", base, suffix))
     } else {
         Ok(format!("{}/v1/{}", base, suffix))

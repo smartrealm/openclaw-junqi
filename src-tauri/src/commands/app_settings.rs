@@ -254,7 +254,9 @@ fn load_settings_unlocked() -> AppSettings {
         Ok(r) => r,
         Err(_) => return AppSettings::default(),
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    let mut settings = serde_json::from_str::<AppSettings>(&raw).unwrap_or_default();
+    settings.send_shortcut = normalize_send_shortcut(settings.send_shortcut);
+    settings
 }
 
 fn agent_program_from_settings(settings: &AppSettings, agent: &str) -> String {

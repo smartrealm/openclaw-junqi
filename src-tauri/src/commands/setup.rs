@@ -444,17 +444,30 @@ async fn wait_for_process_activity(
 /// global install. `-g` gives us the real global layout
 /// (`<prefix>/bin/openclaw`, `<prefix>/lib/node_modules/openclaw/...`) and
 /// respects whatever the user already has on `PATH` via `detect_openclaw`.
-async fn npm_install_with_fallback(
-    app: &tauri::AppHandle,
-    step: &str,
-    node_cmd: &str,
-    npm_cli: Option<&str>,
-    global_prefix: &std::path::Path,
-    target: &npm_registry::OpenclawReleaseTarget,
+struct NpmInstallRequest<'a> {
+    app: &'a tauri::AppHandle,
+    step: &'a str,
+    node_cmd: &'a str,
+    npm_cli: Option<&'a str>,
+    global_prefix: &'a std::path::Path,
+    target: &'a npm_registry::OpenclawReleaseTarget,
     force: bool,
-    prog_start: f64,
-    prog_end: f64,
-) -> Result<(), String> {
+    progress: std::ops::Range<f64>,
+}
+
+async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(), String> {
+    let NpmInstallRequest {
+        app,
+        step,
+        node_cmd,
+        npm_cli,
+        global_prefix,
+        target,
+        force,
+        progress,
+    } = request;
+    let prog_start = progress.start;
+    let prog_end = progress.end;
     let path_env = crate::commands::system::openclaw_search_path();
     let install_nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -946,10 +959,10 @@ async fn install_node_for_requirement(
                 ));
             }
         }
-        return Err(format!(
+        Err(format!(
             "Node.js {} is required. Install or update Node.js in its standard system location, then retry.",
             requirement.expression()
-        ));
+        ))
     }
 
     #[cfg(all(not(windows), not(target_os = "macos")))]
@@ -1750,10 +1763,8 @@ async fn pick_install_target(app: &tauri::AppHandle, step: &str) -> Result<PathB
 /// file into it. `false` means the caller should fall through to the
 /// next fallback tier.
 fn try_use_prefix(path: &std::path::Path) -> bool {
-    if !path.exists() {
-        if std::fs::create_dir_all(path).is_err() {
-            return false;
-        }
+    if !path.exists() && std::fs::create_dir_all(path).is_err() {
+        return false;
     }
     // Probe-write into the dir itself. Use a per-process unique name
     // so concurrent installs can't collide on the probe file.
@@ -2290,17 +2301,16 @@ async fn install_openclaw_impl(
         0.10,
     );
 
-    npm_install_with_fallback(
-        &app,
+    npm_install_with_fallback(NpmInstallRequest {
+        app: &app,
         step,
-        &node_cmd,
-        npm_cli.as_deref(),
-        &openclaw_prefix,
-        &target.release,
-        mode.forces_npm_install(),
-        0.10,
-        0.90,
-    )
+        node_cmd: &node_cmd,
+        npm_cli: npm_cli.as_deref(),
+        global_prefix: &openclaw_prefix,
+        target: &target.release,
+        force: mode.forces_npm_install(),
+        progress: 0.10..0.90,
+    })
     .await?;
 
     // ④ 验证

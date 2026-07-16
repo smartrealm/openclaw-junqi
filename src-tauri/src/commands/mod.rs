@@ -20,6 +20,7 @@ pub mod gateway_logs;
 pub mod gateway_rescue;
 pub mod gateway_supervisor;
 pub mod git_neu;
+#[cfg(any(windows, test))]
 pub(crate) mod git_runtime;
 pub mod hooks;
 pub mod maintenance;

@@ -55,16 +55,16 @@ WebView2 运行时恢复为受支持、安全的配置。
 
 ## 全局质量门禁
 
-`cargo clippy --lib --tests -- -D warnings` 当前未通过。新增采样模块已清零自身告警；
-其余问题为既有代码债务，主要包括：
+`cargo clippy --lib --tests -- -D warnings` 已通过。审查期间清除了新增模块及既有模块的
+全部严格静态告警：
 
 | 类别 | 位置示例 | 处理原则 |
 | --- | --- | --- |
-| 废弃 API | `commands/provider_oauth.rs` | 迁移到 `tauri-plugin-opener`，不压制 warning。 |
-| 未接入或死代码 | `app_settings.rs`、`git_runtime.rs`、`gateway_supervisor.rs` | 接入真实调用链或删除，禁止 blanket allow。 |
-| 风格/可维护性 | `cli_tools.rs`、`gateway_rescue.rs`、`docker.rs` | 独立规范化提交，不与平台表面改造混合。 |
-| 职责过重 | `src/pet/PetWindow.tsx` | 拆分为事件桥、拖拽控制器、可读性控制器和纯视图。 |
-| UI 测试强度 | `src/pet/petWindowRegression.test.ts` | 源码正则测试迁移为渲染/交互测试；保留少量契约断言。 |
+| 废弃 API | `commands/provider_oauth.rs` | 已改用现有 `open` crate 打开系统浏览器。 |
+| 未接入或死代码 | `app_settings.rs`、`git_runtime.rs`、`gateway_supervisor.rs` | 已接入启动阶段、收紧 Windows 编译边界，或删除无行为接口。 |
+| 风格/可维护性 | `cli_tools.rs`、`gateway_rescue.rs`、`docker.rs` | 已按 Clippy 建议规范化。 |
+| 职责过重 | `agent_task_pty.rs`、`setup.rs` | 已分别提取 `TaskLaunchRequest` 与 `NpmInstallRequest`。 |
+| IPC 测试 | `agent_task_pty.rs` | 已覆盖前端 camelCase 请求反序列化契约。 |
 
-本审查不将上述存量问题误报为已修复。BUG-PS-01 至 BUG-PS-03 完成且 Windows 真机
-验证前，不允许宣称萌宠的 macOS / Windows 透明表面已完全交付。
+BUG-PS-01 至 BUG-PS-03 与 Windows 真机验证仍是萌宠平台本身的剩余验收项；本审查不将
+严格静态质量门禁通过误报为这些平台能力已全部交付。

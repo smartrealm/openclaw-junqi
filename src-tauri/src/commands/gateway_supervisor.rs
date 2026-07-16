@@ -64,24 +64,6 @@ pub async fn terminate_owned_gateway(child: &mut tokio::process::Child) {
     crate::commands::process_control::terminate_process_tree(child, child.id()).await;
 }
 
-/// Probe for an orphaned process on our port and kill it if found.
-/// Returns true if we freed the port (orphan was killed, now port is free).
-pub async fn find_and_kill_orphans(port: u16) -> bool {
-    if is_port_available(port).await {
-        return false; // port is already free
-    }
-    // Something is listening. Try to identify and kill it.
-    eprintln!(
-        "[gateway_supervisor] port {} is occupied, checking for orphan",
-        port
-    );
-    // Best-effort: we don't know the PID without lsof/netstat, so skip the
-    // PID-based approach from JunQi. Instead, we trust wait_for_port_free
-    // to handle the TIME_WAIT window after a quick SIGKILL attempt via the
-    // OS. On macOS, we handle the launchctl unload separately.
-    false
-}
-
 /// Tauri command: return the current lifecycle state for the frontend.
 #[tauri::command]
 pub async fn get_gateway_lifecycle(

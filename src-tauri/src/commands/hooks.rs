@@ -7,23 +7,11 @@ use std::sync::{Mutex, OnceLock};
 /// Hook install status — mirrors nezha's `HookInstallStatus`.
 /// `script_installed` and `settings_linked` track the two halves of
 /// installation. They're `false` until `ensure_installed` runs successfully.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct HookInstallStatus {
     pub script_installed: bool,
     pub settings_linked: bool,
     pub codex_installed: bool,
-    pub script_path: Option<String>,
-}
-
-impl Default for HookInstallStatus {
-    fn default() -> Self {
-        Self {
-            script_installed: false,
-            settings_linked: false,
-            codex_installed: false,
-            script_path: None,
-        }
-    }
 }
 
 /// Per-agent readiness — what `get_hook_readiness` returns as a JSON array.
@@ -91,7 +79,6 @@ pub fn ensure_installed() -> HookInstallStatus {
                 settings_linked: true,
                 codex_installed: install_codex_hooks(&node_path_str, &script_path_str)
                     .unwrap_or(false),
-                script_path: Some(script_path_str),
             };
             let _ = settings_path_str; // kept for future settings_linked parity
             cache_status(status.clone());
@@ -262,12 +249,6 @@ fn install_codex_hooks(node_path: &str, script_path: &str) -> Result<bool, Strin
     Ok(true)
 }
 
-/// Remove hooks from both agents' config files. Stub.
-pub fn uninstall() -> Result<(), String> {
-    cache_status(HookInstallStatus::default());
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,7 +302,6 @@ mod tests {
         assert!(!s.script_installed);
         assert!(!s.settings_linked);
         assert!(!s.codex_installed);
-        assert!(s.script_path.is_none());
     }
 
     #[test]
@@ -367,13 +347,11 @@ mod tests {
             script_installed: true,
             settings_linked: true,
             codex_installed: true,
-            script_path: Some("/tmp/test-hook.mjs".to_string()),
         };
         cache_status(injected.clone());
         let read_back = current_status();
-        assert_eq!(read_back.script_installed, true);
-        assert_eq!(read_back.settings_linked, true);
-        assert_eq!(read_back.script_path.as_deref(), Some("/tmp/test-hook.mjs"));
+        assert!(read_back.script_installed);
+        assert!(read_back.settings_linked);
 
         // Reset for other tests.
         cache_status(HookInstallStatus::default());
@@ -394,7 +372,6 @@ mod tests {
             script_installed: true,
             settings_linked: true,
             codex_installed: true,
-            script_path: Some("/fake/path".to_string()),
         });
         assert!(usable_for("claude"));
         assert!(usable_for("codex"));
@@ -460,69 +437,68 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
         let claude_min = "2.1.87";
         let codex_min = "0.131.0";
 
-        let mut out: Vec<HookAgentReadiness> = Vec::new();
-
-        out.push(match claude_version {
-            None => HookAgentReadiness {
-                agent: "claude".to_string(),
-                usable: false,
-                reason: Some("not_installed".to_string()),
-                detected_version: None,
-                min_version: Some(claude_min.to_string()),
+        let out = vec![
+            match claude_version {
+                None => HookAgentReadiness {
+                    agent: "claude".to_string(),
+                    usable: false,
+                    reason: Some("not_installed".to_string()),
+                    detected_version: None,
+                    min_version: Some(claude_min.to_string()),
+                },
+                Some(ver) if !node_present => HookAgentReadiness {
+                    agent: "claude".to_string(),
+                    usable: false,
+                    reason: Some("no_node".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(claude_min.to_string()),
+                },
+                Some(ver) if version_lt(&ver, claude_min) => HookAgentReadiness {
+                    agent: "claude".to_string(),
+                    usable: false,
+                    reason: Some("version_too_low".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(claude_min.to_string()),
+                },
+                Some(ver) => HookAgentReadiness {
+                    agent: "claude".to_string(),
+                    usable: usable_for("claude"),
+                    reason: (!usable_for("claude")).then(|| "not_installed".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(claude_min.to_string()),
+                },
             },
-            Some(ver) if !node_present => HookAgentReadiness {
-                agent: "claude".to_string(),
-                usable: false,
-                reason: Some("no_node".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(claude_min.to_string()),
+            match codex_version {
+                None => HookAgentReadiness {
+                    agent: "codex".to_string(),
+                    usable: false,
+                    reason: Some("not_installed".to_string()),
+                    detected_version: None,
+                    min_version: Some(codex_min.to_string()),
+                },
+                Some(ver) if !node_present => HookAgentReadiness {
+                    agent: "codex".to_string(),
+                    usable: false,
+                    reason: Some("no_node".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(codex_min.to_string()),
+                },
+                Some(ver) if version_lt(&ver, codex_min) => HookAgentReadiness {
+                    agent: "codex".to_string(),
+                    usable: false,
+                    reason: Some("version_too_low".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(codex_min.to_string()),
+                },
+                Some(ver) => HookAgentReadiness {
+                    agent: "codex".to_string(),
+                    usable: usable_for("codex"),
+                    reason: (!usable_for("codex")).then(|| "not_installed".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(codex_min.to_string()),
+                },
             },
-            Some(ver) if version_lt(&ver, claude_min) => HookAgentReadiness {
-                agent: "claude".to_string(),
-                usable: false,
-                reason: Some("version_too_low".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(claude_min.to_string()),
-            },
-            Some(ver) => HookAgentReadiness {
-                agent: "claude".to_string(),
-                usable: usable_for("claude"),
-                reason: (!usable_for("claude")).then(|| "not_installed".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(claude_min.to_string()),
-            },
-        });
-
-        out.push(match codex_version {
-            None => HookAgentReadiness {
-                agent: "codex".to_string(),
-                usable: false,
-                reason: Some("not_installed".to_string()),
-                detected_version: None,
-                min_version: Some(codex_min.to_string()),
-            },
-            Some(ver) if !node_present => HookAgentReadiness {
-                agent: "codex".to_string(),
-                usable: false,
-                reason: Some("no_node".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(codex_min.to_string()),
-            },
-            Some(ver) if version_lt(&ver, codex_min) => HookAgentReadiness {
-                agent: "codex".to_string(),
-                usable: false,
-                reason: Some("version_too_low".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(codex_min.to_string()),
-            },
-            Some(ver) => HookAgentReadiness {
-                agent: "codex".to_string(),
-                usable: usable_for("codex"),
-                reason: (!usable_for("codex")).then(|| "not_installed".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(codex_min.to_string()),
-            },
-        });
+        ];
 
         Ok::<Vec<HookAgentReadiness>, String>(out)
     })

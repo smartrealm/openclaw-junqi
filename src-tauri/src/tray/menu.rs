@@ -58,7 +58,7 @@ pub fn update_tray_language<R: Runtime>(app: &AppHandle<R>, language: &str) -> t
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_handle = app.handle();
     let language = crate::commands::app_settings::application_language();
-    let menu = build_menu(&app_handle, labels_for_language(&language))?;
+    let menu = build_menu(app_handle, labels_for_language(&language))?;
 
     let _tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().cloned().expect("app icon"))

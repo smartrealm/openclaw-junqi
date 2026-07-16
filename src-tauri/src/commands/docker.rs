@@ -495,7 +495,7 @@ pub(crate) async fn start_docker_gateway_locked(
 
     // Read workspace from config, with fallback to default
     let workspace_dir = paths::read_workspace_from_config(&config_path)
-        .unwrap_or_else(|| paths::default_workspace_dir());
+        .unwrap_or_else(paths::default_workspace_dir);
     std::fs::create_dir_all(&workspace_dir)
         .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
 

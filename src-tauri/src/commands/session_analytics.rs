@@ -610,7 +610,7 @@ fn render_session_markdown(messages: &[SessionMessage], meta: &ExportTaskMeta) -
                 }
             }
         }
-        let _ = writeln!(out, "");
+        let _ = writeln!(out);
     }
     out
 }

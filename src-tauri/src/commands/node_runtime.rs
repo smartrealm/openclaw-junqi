@@ -67,11 +67,13 @@ impl ManagedNodePlatform {
     /// Windows vendor installers use the same release catalog as portable
     /// archives but let the official MSI choose its standard installation
     /// location. Other platforms do not expose this artifact type.
+    #[cfg(any(windows, test))]
     pub(crate) fn installer_distribution_artifact(self) -> Option<String> {
         (self.archive_format == NodeArchiveFormat::Zip)
             .then(|| format!("{}-{}-msi", self.distribution_os, self.architecture))
     }
 
+    #[cfg(any(windows, test))]
     pub(crate) fn installer_filename(self, version: &str) -> Option<String> {
         (self.archive_format == NodeArchiveFormat::Zip).then(|| {
             format!(
@@ -163,6 +165,7 @@ pub(crate) fn node_archive_sources(
 /// Domestic mirrors host the official Windows MSI alongside the portable ZIP.
 /// The MSI is used only for the default system-runtime path, never for a
 /// user-selected portable runtime directory.
+#[cfg(any(windows, test))]
 pub(crate) fn node_installer_sources(
     platform: ManagedNodePlatform,
     version: &str,

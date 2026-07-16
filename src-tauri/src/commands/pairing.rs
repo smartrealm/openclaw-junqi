@@ -117,8 +117,8 @@ fn approve_pairing_request_in(
         return Err("No pairing requests found".into());
     }
 
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read pairing file: {}", e))?;
+    let raw =
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read pairing file: {}", e))?;
     let mut store: PairingStore =
         serde_json::from_str(&raw).map_err(|e| format!("Failed to parse pairing file: {}", e))?;
 
