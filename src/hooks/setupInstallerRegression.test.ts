@@ -9,6 +9,8 @@ const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.t
 const setupCommands = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
 const storageCommands = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
+const nodeRuntime = readFileSync(new URL('../../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
+const runtimePolicy = readFileSync(new URL('../../src-tauri/src/commands/runtime_policy.rs', import.meta.url), 'utf8');
 const nezhaUnixPlatform = readFileSync(new URL('../../src-tauri/src/nezha/platform/unix.rs', import.meta.url), 'utf8');
 
 test('bug 03 dependency versions remain visible after installation', () => {
@@ -20,18 +22,21 @@ test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /patchStep\("openclaw", "done", installedStatus\.version/);
 });
 
-test('bug 04 Windows setup uses system defaults unless the user selected a portable runtime', () => {
-  assert.match(setupCommands, /install_windows_system_node/);
-  assert.match(setupCommands, /install_windows_system_git/);
-  assert.match(setupCommands, /install_or_upgrade_winget_package/);
+test('bug 04 Windows setup reuses system tools and installs missing tools from domestic archives', () => {
+  assert.doesNotMatch(setupCommands, /install_windows_system_node/);
+  assert.doesNotMatch(setupCommands, /install_windows_system_git/);
+  assert.doesNotMatch(setupCommands, /install_or_upgrade_winget_package/);
   assert.match(setupCommands, /paths::configured_node_runtime_dir\(\)/);
   assert.match(setupCommands, /paths::configured_git_runtime_dir\(\)/);
-  assert.match(setupCommands, /install_windows_portable_node/);
+  assert.match(setupCommands, /install_managed_node_runtime/);
   assert.match(setupCommands, /install_windows_portable_git/);
-  assert.match(setupCommands, /CHINA_NODE_INDEX/);
+  assert.match(setupCommands, /default_managed_node_runtime_dir/);
+  assert.match(setupCommands, /default_managed_git_runtime_dir/);
+  assert.doesNotMatch(setupCommands, /NODE_DISTRIBUTION_(BASES|SOURCES)/);
+  assert.match(nodeRuntime, /NODE_DISTRIBUTION_SOURCES/);
   assert.match(setupCommands, /resolve_node_sha256/);
-  assert.match(setupCommands, /resolve_latest_managed_git_artifact/);
-  assert.match(setupCommands, /verified_fallback_managed_git_artifact/);
+  assert.match(setupCommands, /verified_managed_git_artifact/);
+  assert.doesNotMatch(setupCommands, /resolve_latest_managed_git_artifact/);
   assert.match(setupCommands, /activate_staged_runtime/);
   assert.match(setupCommands, /refresh_path_from_registry\(\)/);
   assert.match(systemCommands, /configured_node_path/);
@@ -53,12 +58,19 @@ test('bug 04 Windows setup uses system defaults unless the user selected a porta
 test('dependency runtime locations are explicit onboarding choices instead of children of OpenClaw storage', () => {
   assert.match(storageGate, /customNodeRuntime/);
   assert.match(storageGate, /customGitRuntime/);
-  assert.match(storageGate, /nodeRuntimeDir: customNodeRuntime \? nodeRuntimeDir\.trim\(\) \|\| null : null/);
-  assert.match(storageGate, /gitRuntimeDir: customGitRuntime \? gitRuntimeDir\.trim\(\) \|\| null : null/);
+  assert.match(storageGate, /nodeRuntimeDir: status\.customNodeRuntimeSupported && customNodeRuntime \? nodeRuntimeDir\.trim\(\) \|\| null : null/);
+  assert.match(storageGate, /gitRuntimeDir: status\.customGitRuntimeSupported && customGitRuntime \? gitRuntimeDir\.trim\(\) \|\| null : null/);
   assert.match(storageCommands, /node_runtime_dir: Option<String>/);
   assert.match(storageCommands, /git_runtime_dir: Option<String>/);
   assert.match(storageCommands, /custom Node\.js runtime directory/);
   assert.match(storageCommands, /custom Git runtime directory/);
+  assert.match(storageGate, /status\.customNodeRuntimeSupported/);
+  assert.match(storageGate, /status\.customGitRuntimeSupported/);
+  assert.match(storageCommands, /custom_node_runtime_supported: capabilities\.node/);
+  assert.match(storageCommands, /custom_git_runtime_supported: capabilities\.git/);
+  assert.match(runtimePolicy, /node: ManagedNodePlatform::for_target\(os, architecture\)\.is_ok\(\)/);
+  assert.match(runtimePolicy, /git: os == "windows" && supported_architecture/);
+  assert.match(storageCommands, /Custom managed Git is only supported on Windows/);
 });
 
 test('npm setup step is translated in every supported locale', () => {

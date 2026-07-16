@@ -92,21 +92,33 @@ jobs:
       fail-fast: false              # keep all platforms building even if one fails
       matrix:
         include:
-          # macOS — universal (both arm64 and x86_64 in one .app/.dmg).
+          # macOS — one package per architecture. Splitting the targets keeps
+          # each download small while the updater selects the running arch.
           # Pin the image to avoid macos-latest migration drift.
-          - name: macOS universal
-            artifact_name: macos-universal
+          - name: macOS ARM64
+            artifact_name: macos-arm64
             platform: macos-15
-            target: 'universal-apple-darwin'
-            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            target: 'aarch64-apple-darwin'
+            rust_targets: 'aarch64-apple-darwin'
             macos_signing_identity: '-'
             # The updater consumes the signed .app.tar.gz artifact; DMG is
             # retained for manual installation.
             bundle_args: '--bundles app,dmg'
             installer_paths: |
-              src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-              src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
-              src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          - name: macOS x64
+            artifact_name: macos-x86_64
+            platform: macos-15
+            target: 'x86_64-apple-darwin'
+            rust_targets: 'x86_64-apple-darwin'
+            macos_signing_identity: '-'
+            bundle_args: '--bundles app,dmg'
+            installer_paths: |
+              src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+              src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
+              src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           # Windows — native MSVC runners for both supported architectures.
           - name: Windows x64
             artifact_name: windows-x86_64
@@ -276,7 +288,7 @@ jobs:
         run: |
           $installers = Get-ChildItem "$env:RUNNER_TEMP/signpath-signed-installers" -Recurse -File |
             Where-Object { $_.Extension -in '.exe', '.msi' }
-          if ($installers.Count -ne 2) { throw "Expected two signed Windows installers, found $($installers.Count)." }
+          if ($installers.Count -lt 2) { throw "Expected at least two signed Windows installers, found $($installers.Count)." }
           foreach ($installer in $installers) {
             pnpm tauri signer sign $installer.FullName
             if ($LASTEXITCODE -ne 0) { throw "Tauri updater signing failed for $($installer.FullName)." }
@@ -444,7 +456,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Build matrix | Targets | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------------|---------|--------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Desktop installers | macOS universal, Windows x64, Windows ARM64 | ${{ needs.build.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Desktop installers | macOS ARM64/x64, Windows x64/ARM64 | ${{ needs.build.result }} |" >> "$GITHUB_STEP_SUMMARY"
 
           if [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::One or more platform builds failed"

@@ -12,7 +12,12 @@ test('generates a complete updater manifest from final signed artifacts', async 
     'JunQi Desktop_2.0.0_x64_zh-CN.msi',
     'JunQi Desktop_2.0.0_arm64-setup.exe',
     'JunQi Desktop_2.0.0_arm64_zh-CN.msi',
-    'JunQi Desktop_2.0.0_universal.app.tar.gz',
+    'JunQi Desktop_2.0.0_aarch64.app.tar.gz',
+    'JunQi Desktop_2.0.0_x64.app.tar.gz',
+    'JunQi Desktop_2.0.0_x64-setup-offline.exe',
+    'JunQi Desktop_2.0.0_x64_zh-CN-offline.msi',
+    'JunQi Desktop_2.0.0_arm64-setup-offline.exe',
+    'JunQi Desktop_2.0.0_arm64_zh-CN-offline.msi',
   ];
   try {
     for (const [index, filename] of fixtures.entries()) {
@@ -32,7 +37,13 @@ test('generates a complete updater manifest from final signed artifacts', async 
 
     assert.equal(manifest.platforms['windows-x86_64'].signature, 'signature-0');
     assert.equal(manifest.platforms['windows-aarch64-msi'].signature, 'signature-3');
-    assert.equal(manifest.platforms['darwin-universal'].signature, 'signature-4');
+    assert.equal(manifest.platforms['darwin-aarch64'].signature, 'signature-4');
+    assert.equal(manifest.platforms['darwin-x86_64'].signature, 'signature-5');
+    assert.notEqual(
+      manifest.platforms['darwin-aarch64'].url,
+      manifest.platforms['darwin-x86_64'].url,
+    );
+    assert.doesNotMatch(manifest.platforms['windows-x86_64'].url, /offline/i);
     assert.match(manifest.platforms['windows-x86_64'].url, /JunQi%20Desktop_2\.0\.0_x64-setup\.exe$/);
     assert.deepEqual(JSON.parse(await readFile(output, 'utf8')), manifest);
   } finally {

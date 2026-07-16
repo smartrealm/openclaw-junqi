@@ -52,10 +52,11 @@ export async function generateUpdaterManifest(options) {
   };
 
   const windowsX64Nsis = await signedEntry(find(/_x64-setup\.exe$/i, 'Windows x64 NSIS installer'));
-  const windowsX64Msi = await signedEntry(find(/_x64(?:_[^/]*)?\.msi$/i, 'Windows x64 MSI installer'));
+  const windowsX64Msi = await signedEntry(find(/_x64_zh-CN\.msi$/i, 'Windows x64 MSI installer'));
   const windowsArmNsis = await signedEntry(find(/_arm64-setup\.exe$/i, 'Windows ARM64 NSIS installer'));
-  const windowsArmMsi = await signedEntry(find(/_arm64(?:_[^/]*)?\.msi$/i, 'Windows ARM64 MSI installer'));
-  const macUniversal = await signedEntry(find(/_universal\.app\.tar\.gz$/i, 'macOS universal updater'));
+  const windowsArmMsi = await signedEntry(find(/_arm64_zh-CN\.msi$/i, 'Windows ARM64 MSI installer'));
+  const macArm = await signedEntry(find(/_aarch64\.app\.tar\.gz$/i, 'macOS ARM64 updater'));
+  const macX64 = await signedEntry(find(/_x64\.app\.tar\.gz$/i, 'macOS x64 updater'));
 
   const manifest = {
     version: options.version,
@@ -68,12 +69,10 @@ export async function generateUpdaterManifest(options) {
       'windows-aarch64': windowsArmNsis,
       'windows-aarch64-nsis': windowsArmNsis,
       'windows-aarch64-msi': windowsArmMsi,
-      'darwin-aarch64': macUniversal,
-      'darwin-x86_64': macUniversal,
-      'darwin-universal': macUniversal,
-      'darwin-aarch64-app': macUniversal,
-      'darwin-x86_64-app': macUniversal,
-      'darwin-universal-app': macUniversal,
+      'darwin-aarch64': macArm,
+      'darwin-x86_64': macX64,
+      'darwin-aarch64-app': macArm,
+      'darwin-x86_64-app': macX64,
     },
   };
   await writeFile(options.output, `${JSON.stringify(manifest, null, 2)}\n`);

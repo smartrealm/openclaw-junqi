@@ -1,5 +1,29 @@
 # JunQi Desktop — 最近修改汇总
 
+## 1.2.2（2026-07-16）
+
+本次版本面向国内网络环境，统一 Windows/macOS 的 OpenClaw 运行时来源、安装策略和状态语义，并缩减线上安装包体积。
+
+**运行时安装与迁移**
+
+- 将 Node.js、Git 的下载地址和平台制品信息聚合到统一配置，版本不再散落写死在平台安装逻辑中。
+- Windows 使用应用托管的 Node.js/Git，可从已核验的国内源下载和更新；迁移时重新绑定应用管理路径，避免误用旧系统路径。
+- macOS 按 Intel/Apple Silicon 下载应用托管的 Node.js；Git 保持使用系统工具，界面不会提供无效的自定义 Git 操作。
+- 运行时来源统一为 `system`、`managed`、`custom`，平台能力由集中策略模型输出；后端拒绝更新可用的系统工具，前端同步隐藏无效按钮。
+- 国内源不可用时返回明确错误与下载日志，不再默认请求 GitHub、nodejs.org 或 winget。
+
+**安装包与发布**
+
+- Windows WebView2 改为嵌入微软引导程序，由引导程序按系统架构安装运行时，不再把完整离线运行时塞入安装包。
+- macOS 改为 ARM64、x64 分架构打包，Windows 保持 x64、ARM64 独立制品，减少用户单次下载体积。
+- Rust 发布配置启用 LTO、符号裁剪和体积优化，并增加发布包体积回归检查。
+- 更新清单生成器支持分架构 macOS 制品，避免不同架构互相覆盖。
+
+**质量检查**
+
+- Rust：335 项通过，2 项忽略。
+- 前端与脚本：817 项通过；TypeScript、Rust 格式、生产构建及差异检查通过。
+
 ## 0. Nezha 拆零件移植（2026-06-22）
 
 详见 `docs/NEZHA-PORT-PLAN.md`。本轮主要改动：
@@ -168,5 +192,4 @@ Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.88s
 - macOS dock 每个 app 图标格子大小一致,由系统「dock 大小」滑块控制,**app 无法让自己的 dock 图标比别的 app 大**。
 - dock 图标显示异常仅出现在 `tauri dev` 调试构建;release `.app`(`/Applications/JunQi Desktop.app`)图标正常。
 - 想要打磨过的 dock 图标,需 `npm run tauri build` 出 release 包。
-
 
