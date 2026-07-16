@@ -370,6 +370,9 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const isInstallComplete = setupStep === "install-complete";
   const currentInstallStep = currentStepOf(flow.steps);
   const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
+  // BUG-CPI-07：自愈梯子（更新→重装）已确认这些插件不可自动修复，
+  // 主操作降级为"临时禁用并启动"。
+  const hasBrokenPlugins = setupStep === "error" && flow.brokenPlugins.length > 0;
   const currentInstallTitle = installStepTitle(currentInstallStep, t) ?? t("setup.settingUp");
   const runningStepLabel = t("setup.installPanel.runningStep", {
     step: currentInstallTitle,
@@ -395,6 +398,15 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
           : isInstallComplete
             ? { label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }
+          : hasBrokenPlugins
+            ? {
+                label: flow.repairing
+                  ? t("setup.pluginDisablingBtn", "正在禁用插件…")
+                  : t("setup.disablePluginsAndStart", "临时禁用插件并启动"),
+                onClick: () => { void flow.disablePluginsAndRetry(); },
+                loading: flow.repairing,
+                icon: "none",
+              }
           : canRepairGateway
             ? {
                 label: flow.repairing
@@ -409,6 +421,33 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             : { label: runningStepLabel, disabled: true, loading: true, icon: "none" }
       }
     >
+      {hasBrokenPlugins && (
+        <div className="mb-3 space-y-2">
+          <StatusPanel
+            icon={<Package size={22} />}
+            tone="danger"
+            eyebrow={t("setup.pluginRecovery.eyebrow", "插件问题")}
+            title={t("setup.pluginRecovery.title", "插件阻止了 Gateway 启动")}
+            message={t(
+              "setup.pluginRecovery.desc",
+              "以下插件无法自动修复（已尝试更新与重装）。临时禁用后即可继续启动，不影响其他功能；插件发布修复版本后可在设置中重新启用。",
+            )}
+          />
+          <ul className="space-y-1 rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2 text-sm">
+            {flow.brokenPlugins.map((plugin) => (
+              <li key={plugin.id} className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium text-aegis-text">{plugin.id}</span>
+                {plugin.version && (
+                  <span className="text-xs text-aegis-text-dim">v{plugin.version}</span>
+                )}
+                {plugin.detail && (
+                  <span className="text-xs text-aegis-text-dim" dir="ltr">{plugin.detail}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
     </SetupShell>
   );

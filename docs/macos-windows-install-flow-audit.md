@@ -14,6 +14,7 @@
 | C | BUG-CPI-04 | `openclaw_update.rs` | 更新前必须确认目标 Node 契约，更新后复核并恢复 Gateway。 |
 | D | BUG-CPI-05 | `node_runtime.rs`、`setup.rs` | 将 Node 校验信息与下载镜像分离，避免同源校验。 |
 | E | BUG-CPI-06 | `setup.rs`、`tauri-adapter.ts` | 从实际配置/存储状态解析展示与打开路径。 |
+| F | BUG-CPI-07 | `plugin_recovery.rs`、`useSetupFlow.ts`、`SetupPage.tsx` | 损坏插件的结构化定位、自愈梯子与"临时禁用并启动"降级。 |
 
 ### BUG-CPI-01 · 严重 - TCP 端口被误判为 Gateway
 
@@ -74,3 +75,15 @@
 **影响**：选择其他存储位置后，界面可能显示或打开错误目录。
 
 **修复**：所有展示、工作区和日志打开操作都通过 Rust 的当前 bootstrap/config 解析。
+
+### BUG-CPI-07 · 中等 - 损坏插件使 Gateway 启动陷入不可恢复的死循环
+
+**位置**：`src-tauri/src/commands/plugin_recovery.rs`（新增）、`src/hooks/useSetupFlow.ts`、`src/pages/SetupPage.tsx`
+
+**问题**：OpenClaw 的 post-core payload 烟测在任一启用插件损坏（如声明的 main entry 缺失）时拒绝启动 Gateway，但 CLI 的 `plugins list/inspect/doctor` 均不暴露该错误（2026-07-16 真机实测）。现有"修复并重试"链路的 `openclaw update repair` 与 `plugins update` 都无法修复此类损坏（版本比对相同即跳过），用户没有出口。
+
+**影响**：一个可选插件的发布事故（实测上游 npm 包 `@larksuite/openclaw-lark@2026.7.9` 未打包其声明的 `dist/index.js`）即可让整个桌面端无法启动，惩罚不成比例。
+
+**修复**：修复分支先做结构化插件巡检——`plugins list --json` 列表内逐个复刻文件级烟测（`package.json` 声明的 main entry 必须存在），错误文本仅提供交叉验证前的 ID 线索；随后按自愈梯子处理（定向更新 → 按 inspect install spec 强制重装，每级以复检收尾）；不可自愈时错误页降级为"临时禁用插件并启动"，禁用后明示可在设置中重新启用的恢复路径。全程零硬编码插件名、零人类文案匹配。
+
+**补充（class 2，2026-07-16 演练发现）**：当插件注册的 extension entry 本身缺失时，OpenClaw 判定整个 config invalid，`plugins list/update/install/disable` 与 `update repair` 全部锁死——现有修复链在此状态下无解。对策：检测端在 `plugins list` 失败时兜底 `config validate --json`，从结构化 `issues[].path`（`plugins.entries.<id>`）定位插件；自愈端新增 rung 0 `doctor --fix`（invalid config 态下唯一可用的白名单修复命令，实测可重新下载载荷并恢复 config），仅在该状态触发。

@@ -65,3 +65,19 @@
 - [x] 自定义 state/workspace 后，界面打开正确目录。
 - [x] 进度日志显示实际配置文件路径。
 - [x] 无任何 Node/Git 默认路径写入 OpenClaw state。
+
+## BUG-CPI-07 · 损坏插件的定位、自愈与降级
+
+**Current**：单个损坏插件使 Gateway 拒绝启动，用户陷入"修复并重试→仍失败"死循环。2026-07-16 真机演练确认存在两类损坏：
+- **Class 1**（`package.json` main 缺失、加载入口存在）：CLI 结构化命令全部报 loaded，仅 Gateway 烟测拦截；
+- **Class 2**（注册的 extension entry 缺失）：config 整体判定 invalid，`plugins list/update/install/disable` 与 `update repair` **全部锁死**，现有修复链无解。
+
+**Target**：修复分支先做结构化插件巡检（`plugins list --json` + 逐插件复刻文件级烟测；list 被锁死时兜底 `config validate --json` 的结构化 `issues[].path`），错误文本中引号内的插件 ID 仅作线索并与结构化列表交叉验证；随后执行自愈梯子（rung 0 `doctor --fix`（仅 invalid config 态）→ 定向 `plugins update` → 按 inspect install spec 强制 `plugins install --force`，每级以复检收尾）；不可自愈时 UI 提供"临时禁用并启动"（`plugins disable`），并明示恢复路径。
+
+**Acceptance**：
+- [x] 生产代码零硬编码插件名、零人类文案匹配（错误文本仅提供交叉验证前的线索；class 2 的 ID 来自 validator 的结构化 path 字段）。
+- [x] 每级自愈以可判定的复检收尾，梯子不可能死循环。
+- [x] 上游发布缺文件的插件（实测 `@larksuite/openclaw-lark@2026.7.9`）被判定为不可自愈，一次点击禁用后 Gateway 正常启动（CLI 路径已真机验证）。
+- [x] 本地损坏的插件可被自愈修复（2026-07-16 以 `dingtalk-connector` 真机演练：class 2 损坏 → `doctor --fix` 重新下载载荷至新 generation、config 恢复 valid、通道配置无损；npm 强制重装重新下载载荷的机制经 lark 实测确认）。
+- [x] Class 2 检测兜底与 rung 0 的 CLI 行为逐条真机验证（list 锁死、validate 可用且结构化、update/install/disable 锁死、doctor --fix 治愈）。
+- [x] Docker 运行时巡检返回空，由镜像刷新修复路径覆盖。

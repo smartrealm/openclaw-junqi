@@ -43,6 +43,19 @@ import {
   gatewayMigrationRetryDelayMs,
   runOpenClawRepair,
 } from "@/services/gateway/openclawRepair";
+import {
+  disableOpenclawPlugin,
+  healOpenclawPlugin,
+  isAwaitingGatewayVerification,
+  listBrokenGatewayPlugins,
+  mergeBrokenPlugins,
+  planPluginRecovery,
+  pluginsNeedingHeal,
+  unhealedPlugins,
+  UNVERIFIABLE_PLUGIN_REASON,
+  type BrokenGatewayPlugin,
+  type PluginHealOutcome,
+} from "@/services/gateway/pluginRecovery";
 import { defaultGatewayWsUrl } from "@/config/runtimeDefaults";
 import {
   OpenClawWizardClient,
@@ -132,9 +145,11 @@ export interface SetupFlow {
   wizardError: string | null;
   needsOnboarding: boolean;
   repairing: boolean;
+  brokenPlugins: BrokenGatewayPlugin[];
   startGateway: () => Promise<void>;
   retryGateway: () => Promise<void>;
   repairAndRetry: () => Promise<void>;
+  disablePluginsAndRetry: () => Promise<void>;
   submitWizardStep: (stepId: string, value?: unknown) => Promise<void>;
   retryWizard: () => Promise<void>;
   runNativeSetup: () => Promise<void>;
@@ -212,6 +227,11 @@ export function useSetupFlow(
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
+  const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
+  // gateway-smoke-check 类发现无法离线验证修复效果：自愈梯子跑完后先用一次
+  // 真实 Gateway 启动做验证；此处记录已验证过的插件，二次失败直达禁用降级，
+  // 避免"虚假修复→重启→再失败"的死循环。Gateway 成功就绪时清空。
+  const pluginHealAttemptedRef = useRef<Set<string>>(new Set());
   const [nodeRequirement, setNodeRequirement] = useState<string | null>(null);
   const reinstallRequestedRef = useRef(false);
   const relocationRequestedRef = useRef(false);
@@ -626,6 +646,8 @@ export function useSetupFlow(
       await waitForGatewayReady(runId, isDockerRuntime ? 30_000 : 10_000, status?.port);
       if (!isRunActive(runId)) return;
       setGatewayRunning(true);
+      // Gateway 已真实就绪：此前的插件启动验证记录随之失效。
+      pluginHealAttemptedRef.current.clear();
       setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
       if (stepsRef.current.some((s) => s.id === "gateway")) {
         patchStep("gateway", "done");
@@ -937,6 +959,7 @@ export function useSetupFlow(
     const runId = beginRun();
     setRepairing(true);
     setSetupError(null);
+    setBrokenPlugins([]);
     const analyzingMessage = t("setup.analyzingGatewayFailure", "正在分析 Gateway 启动失败并选择恢复方式…");
     patchStep("gateway", "running", analyzingMessage);
     report(analyzingMessage);
@@ -961,6 +984,98 @@ export function useSetupFlow(
           if (!isRunActive(runId)) return;
         }
         await startGatewayAction();
+        return;
+      }
+      // BUG-CPI-07: Gateway 拒绝启动常由单个损坏插件引起（payload 烟测失败）。
+      // 先做结构化插件巡检并尝试自愈梯子（定向更新 → 强制重装，每级复检）；
+      // 不可自愈时给用户"临时禁用并启动"的降级出口，避免陷入修复→失败死循环。
+      // Docker 运行时的插件载荷在容器内，由镜像刷新修复路径覆盖，巡检返回空。
+      const broken = await listBrokenGatewayPlugins(failure ?? undefined)
+        .catch(() => [] as BrokenGatewayPlugin[]);
+      if (!isRunActive(runId)) return;
+      if (broken.length > 0) {
+        const showDisableFallback = (plugins: BrokenGatewayPlugin[]) => {
+          setBrokenPlugins(plugins);
+          const blockedMessage = t("setup.pluginNotHealable", {
+            plugins: plugins.map((plugin) => plugin.id).join(", "),
+            defaultValue: "插件 {{plugins}} 无法自动修复，可能是其安装包缺少必需文件。可临时禁用后继续启动。",
+          });
+          patchStep("gateway", "error", blockedMessage);
+          appendSetupLog({ source: "setup", step: "gateway", message: blockedMessage, level: "error" });
+          setSetupError(blockedMessage);
+          report(blockedMessage);
+          replaceSetupStep("error");
+        };
+        const candidates = pluginsNeedingHeal(broken, pluginHealAttemptedRef.current);
+        if (candidates.length === 0) {
+          showDisableFallback(broken);
+          return;
+        }
+        const healingMessage = t("setup.pluginHealing", {
+          plugins: candidates.map((plugin) => plugin.id).join(", "),
+          defaultValue: "检测到损坏的插件（{{plugins}}），正在尝试自动修复…",
+        });
+        patchStep("gateway", "running", healingMessage);
+        report(healingMessage);
+        appendSetupLog({ source: "setup", step: "gateway", message: healingMessage, level: "info" });
+        const outcomes: PluginHealOutcome[] = [];
+        for (const plugin of candidates) {
+          const outcome = await healOpenclawPlugin(plugin.id, plugin.reason).catch((error): PluginHealOutcome => ({
+            id: plugin.id,
+            healed: false,
+            attempted: [],
+            error: error instanceof Error ? error.message : String(error),
+          }));
+          if (!isRunActive(runId)) return;
+          appendSetupLog({
+            source: "setup",
+            step: "gateway",
+            message: outcome.healed
+              ? t("setup.pluginHealed", { plugin: outcome.id, defaultValue: "插件 {{plugin}} 已修复" })
+              : isAwaitingGatewayVerification(plugin, outcome)
+                ? t("setup.pluginHealAwaitingStartCheck", {
+                    plugin: outcome.id,
+                    defaultValue: "插件 {{plugin}} 已完成修复尝试，等待 Gateway 启动验证",
+                  })
+                : t("setup.pluginHealFailed", {
+                    plugin: outcome.id,
+                    error: outcome.error ?? "",
+                    defaultValue: "插件 {{plugin}} 无法自动修复 {{error}}",
+                  }),
+            level: outcome.healed || isAwaitingGatewayVerification(plugin, outcome) ? "info" : "warn",
+          });
+          outcomes.push(outcome);
+        }
+        const alreadyStartVerified = broken.filter(
+          (plugin) => plugin.reason === UNVERIFIABLE_PLUGIN_REASON
+            && pluginHealAttemptedRef.current.has(plugin.id),
+        );
+        const remaining = mergeBrokenPlugins(
+          alreadyStartVerified,
+          unhealedPlugins(candidates, outcomes),
+        );
+        // healed 的语义是"已验证修复"。gateway-smoke-check 类发现只有 Gateway
+        // 自己的烟测能观测，自愈梯子永远不会为其报告 healed；此处用一次真实
+        // 启动做验证（结果由下一轮 repairAndRetry 的 attempted 记录判定）。
+        const recoveryPlan = planPluginRecovery(remaining, pluginHealAttemptedRef.current);
+        if (recoveryPlan.action === "start-gateway") {
+          if (recoveryPlan.startVerification.length > 0) {
+            recoveryPlan.startVerification.forEach((plugin) => pluginHealAttemptedRef.current.add(plugin.id));
+            appendSetupLog({
+              source: "setup",
+              step: "gateway",
+              message: t("setup.pluginUnverifiedStartCheck", {
+                plugins: recoveryPlan.startVerification.map((plugin) => plugin.id).join(", "),
+                defaultValue: "插件 {{plugins}} 的修复效果无法离线验证，正在启动 Gateway 进行验证…",
+              }),
+              level: "info",
+            });
+          }
+          await startGatewayAction();
+          return;
+        }
+        // 已验证不可自愈（上游安装包缺文件等）：交给用户决定是否临时禁用。
+        showDisableFallback(remaining);
         return;
       }
       if (installMode === "docker") {
@@ -1018,6 +1133,51 @@ export function useSetupFlow(
     }
   }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode]);
 
+  // BUG-CPI-07 最后一级降级：临时禁用不可自愈的插件后继续启动。插件保持
+  // 已安装状态，待其修复版本发布后可在设置中重新启用并重走自愈梯子。
+  const disablePluginsAndRetry = useCallback(async () => {
+    if (repairing) return;
+    const plugins = brokenPlugins;
+    if (plugins.length === 0) return;
+    const runId = beginRun();
+    setRepairing(true);
+    setSetupError(null);
+    try {
+      for (const plugin of plugins) {
+        const disablingMessage = t("setup.pluginDisabling", {
+          plugin: plugin.id,
+          defaultValue: "正在临时禁用插件 {{plugin}}…",
+        });
+        patchStep("gateway", "running", disablingMessage);
+        report(disablingMessage);
+        await disableOpenclawPlugin(plugin.id);
+        if (!isRunActive(runId)) return;
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message: t("setup.pluginDisabled", {
+            plugin: plugin.id,
+            defaultValue: "插件 {{plugin}} 已临时禁用；其修复版本发布后可在设置中重新启用",
+          }),
+          level: "warn",
+        });
+      }
+      setBrokenPlugins([]);
+      pluginHealAttemptedRef.current.clear();
+      await startGatewayAction();
+    } catch (error) {
+      if (!isRunActive(runId)) return;
+      const message = error instanceof Error ? error.message : String(error);
+      patchStep("gateway", "error", message);
+      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+      setSetupError(message);
+      report(message);
+      replaceSetupStep("error");
+    } finally {
+      setRepairing(false);
+    }
+  }, [repairing, brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
+
   const goBack = useCallback(() => {
     void wizardClientRef.current?.cancel().catch(() => {});
     setWizardStep(null);
@@ -1026,6 +1186,8 @@ export function useSetupFlow(
     setSetupError(null);
     setNeedsGit(false);
     setNodeRequirement(null);
+    setBrokenPlugins([]);
+    pluginHealAttemptedRef.current.clear();
     let destination = goBackSetup("welcome");
     while (isStaleSetupBackDestination(destination, gatewayRunning)) {
       destination = goBackSetup("welcome");
@@ -1102,9 +1264,11 @@ export function useSetupFlow(
     wizardError,
     needsOnboarding,
     repairing,
+    brokenPlugins,
     startGateway: startGatewayAction,
     retryGateway: startGatewayAction,
     repairAndRetry,
+    disablePluginsAndRetry,
     submitWizardStep,
     retryWizard: startOfficialOnboarding,
     runNativeSetup,
