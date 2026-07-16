@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Bot, CheckCircle2, ChevronUp, FileText, HeartPulse, Loader2, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
@@ -49,6 +49,21 @@ export function GatewaySelfRescuePanel({
   const [showAiRescue, setShowAiRescue] = useState(false);
   const [recommendation, setRecommendation] = useState<GatewayRecoveryRecommendation | null>(null);
   const globalRepairing = useOpenClawRepairing();
+  const mountedRef = useRef(false);
+  const repairRunRef = useRef(0);
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      repairRunRef.current += 1;
+      if (resetTimerRef.current != null) {
+        window.clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -80,10 +95,19 @@ export function GatewaySelfRescuePanel({
 
   const runDoctorFix = async () => {
     if (actionDisabled) return;
+    const repairRun = ++repairRunRef.current;
+    if (resetTimerRef.current != null) {
+      window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+    const isCurrentRepairRun = () => (
+      mountedRef.current && repairRunRef.current === repairRun
+    );
     setDoctorFixState('running');
     setDoctorFixError(null);
     try {
       const repaired = await runOpenClawRepair();
+      if (!isCurrentRepairRun()) return;
       setDoctorFixState(repaired ? 'success' : 'failed');
       if (repaired) {
         onPrimaryAction();
@@ -91,12 +115,18 @@ export function GatewaySelfRescuePanel({
         setDoctorFixError(t('gatewaySelfRescue.doctorFixNoResult', '官方修复未返回成功状态。请查看执行记录后重试。'));
       }
     } catch (repairError) {
+      if (!isCurrentRepairRun()) return;
       setDoctorFixState('failed');
       setDoctorFixError(repairError instanceof Error
         ? repairError.message
         : String(repairError));
     } finally {
-      window.setTimeout(() => setDoctorFixState('idle'), 4_000);
+      if (isCurrentRepairRun()) {
+        resetTimerRef.current = window.setTimeout(() => {
+          if (isCurrentRepairRun()) setDoctorFixState('idle');
+          resetTimerRef.current = null;
+        }, 4_000);
+      }
     }
   };
 

@@ -11,6 +11,7 @@ const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system
 const storageCommands = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
 const nodeRuntime = readFileSync(new URL('../../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
 const runtimePolicy = readFileSync(new URL('../../src-tauri/src/commands/runtime_policy.rs', import.meta.url), 'utf8');
+const paths = readFileSync(new URL('../../src-tauri/src/paths.rs', import.meta.url), 'utf8');
 const nezhaUnixPlatform = readFileSync(new URL('../../src-tauri/src/nezha/platform/unix.rs', import.meta.url), 'utf8');
 
 test('bug 03 dependency versions remain visible after installation', () => {
@@ -22,27 +23,33 @@ test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /patchStep\("openclaw", "done", installedStatus\.version/);
 });
 
-test('bug 04 Windows setup reuses system tools and installs missing tools from domestic archives', () => {
-  assert.doesNotMatch(setupCommands, /install_windows_system_node/);
-  assert.doesNotMatch(setupCommands, /install_windows_system_git/);
-  assert.doesNotMatch(setupCommands, /install_or_upgrade_winget_package/);
+test('bug 04 Windows setup installs system defaults from domestic vendor installers before package-manager fallback', () => {
+  assert.match(setupCommands, /install_windows_system_node/);
+  assert.match(setupCommands, /install_windows_system_node_from_mirrors/);
+  assert.match(setupCommands, /install_windows_system_node_with_winget/);
+  assert.match(setupCommands, /install_windows_system_git/);
+  assert.match(setupCommands, /install_windows_system_git_from_mirrors/);
+  assert.match(setupCommands, /install_or_upgrade_winget_package/);
+  assert.match(setupCommands, /WINGET_NODE_LTS_PACKAGE/);
+  assert.match(setupCommands, /WINGET_GIT_PACKAGE/);
   assert.match(setupCommands, /paths::configured_node_runtime_dir\(\)/);
   assert.match(setupCommands, /paths::configured_git_runtime_dir\(\)/);
-  assert.match(setupCommands, /install_managed_node_runtime/);
+  assert.match(setupCommands, /install_portable_node_runtime/);
   assert.match(setupCommands, /install_windows_portable_git/);
-  assert.match(setupCommands, /default_managed_node_runtime_dir/);
-  assert.match(setupCommands, /default_managed_git_runtime_dir/);
+  assert.doesNotMatch(setupCommands, /default_managed_(node|git)_runtime_dir/);
   assert.doesNotMatch(setupCommands, /NODE_DISTRIBUTION_(BASES|SOURCES)/);
   assert.match(nodeRuntime, /NODE_DISTRIBUTION_SOURCES/);
+  assert.match(nodeRuntime, /node_installer_sources/);
   assert.match(setupCommands, /resolve_node_sha256/);
   assert.match(setupCommands, /verified_managed_git_artifact/);
+  assert.match(setupCommands, /verified_system_git_installer_artifact/);
+  assert.match(setupCommands, /run_windows_installer/);
   assert.doesNotMatch(setupCommands, /resolve_latest_managed_git_artifact/);
   assert.match(setupCommands, /activate_staged_runtime/);
   assert.match(setupCommands, /refresh_path_from_registry\(\)/);
   assert.match(systemCommands, /configured_node_path/);
-  assert.match(systemCommands, /legacy_local_node_path/);
   assert.match(systemCommands, /configured_git_path/);
-  assert.match(systemCommands, /legacy_local_git_path/);
+  assert.doesNotMatch(systemCommands, /legacy_local_(node|npm|git)_path/);
   assert.doesNotMatch(systemCommands, /macos_git_candidates/);
   assert.doesNotMatch(systemCommands, /\.npm-global"\)\.join\("bin"\)\.join\("git"\)/);
   assert.doesNotMatch(nezhaUnixPlatform, /\.npm-global/);
@@ -53,6 +60,18 @@ test('bug 04 Windows setup reuses system tools and installs missing tools from d
   assert.match(systemCommands, /pub async fn check_npm/);
   assert.match(systemCommands, /get_node_version[\s\S]*?configure_background_command/);
   assert.match(systemCommands, /get_git_version[\s\S]*?configure_background_command/);
+
+  const nodeDefaultInstall = setupCommands.slice(
+    setupCommands.indexOf('async fn install_windows_system_node('),
+    setupCommands.indexOf('async fn install_windows_system_node_from_mirrors('),
+  );
+  assert.ok(nodeDefaultInstall.indexOf('install_windows_system_node_from_mirrors') < nodeDefaultInstall.indexOf('install_windows_system_node_with_winget'));
+
+  const gitDefaultInstall = setupCommands.slice(
+    setupCommands.indexOf('async fn install_windows_system_git('),
+    setupCommands.indexOf('async fn install_windows_system_git_from_mirrors('),
+  );
+  assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('install_or_upgrade_winget_package'));
 });
 
 test('dependency runtime locations are explicit onboarding choices instead of children of OpenClaw storage', () => {
@@ -70,7 +89,27 @@ test('dependency runtime locations are explicit onboarding choices instead of ch
   assert.match(storageCommands, /custom_git_runtime_supported: capabilities\.git/);
   assert.match(runtimePolicy, /node: ManagedNodePlatform::for_target\(os, architecture\)\.is_ok\(\)/);
   assert.match(runtimePolicy, /git: os == "windows" && supported_architecture/);
-  assert.match(storageCommands, /Custom managed Git is only supported on Windows/);
+  assert.match(storageCommands, /Custom portable Git is only supported on Windows/);
+});
+
+test('default setup never constructs private Node.js or Git directories under OpenClaw state', () => {
+  assert.doesNotMatch(paths, /runtime_dir\(\)\.join\("node"\)/);
+  assert.doesNotMatch(paths, /runtime_dir\(\)\.join\("git"\)/);
+  assert.doesNotMatch(systemCommands, /legacy_local_(node|npm|git)_path/);
+  assert.doesNotMatch(setupCommands, /default_managed_(node|git)_runtime_dir/);
+  assert.doesNotMatch(storageGate, /默认托管目录/);
+});
+
+test('system-installer fallback progress is translated in every supported locale', () => {
+  for (const locale of ['zh', 'en', 'ar']) {
+    const messages = JSON.parse(
+      readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'),
+    ) as Record<string, unknown>;
+    for (const key of ['setup.node.systemPackageFallback', 'setup.git.systemPackageFallback']) {
+      assert.equal(typeof messages[key], 'string', `${locale} is missing ${key}`);
+      assert.notEqual((messages[key] as string).trim(), '', `${locale} has an empty ${key}`);
+    }
+  }
 });
 
 test('npm setup step is translated in every supported locale', () => {

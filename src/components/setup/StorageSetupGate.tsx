@@ -514,7 +514,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
                   <label className="flex cursor-pointer items-center justify-between gap-4">
                     <span>
                       <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNodeRuntime', '自定义 Node.js 运行时目录')}</span>
-                      <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNodeRuntimeHint', '关闭时优先复用系统 Node.js，缺失或不兼容时使用默认托管目录；开启后在所选目录维护运行时')}</span>
+                      <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNodeRuntimeHint', '关闭时使用系统 Node.js；只有开启后才在所选目录维护便携运行时')}</span>
                     </span>
                     <input
                       type="checkbox"

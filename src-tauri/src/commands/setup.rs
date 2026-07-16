@@ -1,5 +1,9 @@
 #[cfg(windows)]
-use crate::commands::git_runtime::verified_managed_git_artifact;
+use crate::commands::git_runtime::{
+    verified_managed_git_artifact, verified_system_git_installer_artifact,
+};
+#[cfg(windows)]
+use crate::commands::node_runtime::node_installer_sources;
 use crate::commands::node_runtime::{
     node_archive_sources, node_checksum_sources, node_index_sources, select_preferred_release,
     ManagedNodePlatform, NodeArchiveFormat, NodeDistributionRelease, NodeRequirementSource,
@@ -21,6 +25,12 @@ use std::sync::{
 static OPENCLAW_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static NODE_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static GIT_INSTALL_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+#[cfg(windows)]
+const WINGET_NODE_LTS_PACKAGE: &str = "OpenJS.NodeJS.LTS";
+#[cfg(windows)]
+const WINGET_NODE_CURRENT_PACKAGE: &str = "OpenJS.NodeJS";
+#[cfg(windows)]
+const WINGET_GIT_PACKAGE: &str = "Git.Git";
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
 const RUNTIME_NETWORK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 struct TemporaryDirectory(PathBuf);
@@ -748,6 +758,15 @@ async fn resolve_managed_node_version(
     requirement: &NodeRuntimeRequirement,
     platform: ManagedNodePlatform,
 ) -> Result<String, String> {
+    let artifact = platform.distribution_artifact();
+    resolve_managed_node_version_for_artifact(requirement, &artifact).await
+}
+
+#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+async fn resolve_managed_node_version_for_artifact(
+    requirement: &NodeRuntimeRequirement,
+    artifact: &str,
+) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .connect_timeout(RUNTIME_NETWORK_TIMEOUT)
         .timeout(RUNTIME_NETWORK_TIMEOUT)
@@ -762,14 +781,12 @@ async fn resolve_managed_node_version(
         }
     }
     let releases = releases.ok_or_else(|| "Node.js 国内镜像索引均不可用".to_string())?;
-    select_preferred_release(requirement, &releases, &platform.distribution_artifact()).ok_or_else(
-        || {
-            format!(
-                "No published Node.js release for this platform satisfies OpenClaw requirement {}",
-                requirement.expression()
-            )
-        },
-    )
+    select_preferred_release(requirement, &releases, artifact).ok_or_else(|| {
+        format!(
+            "No published Node.js release for artifact {artifact} satisfies OpenClaw requirement {}",
+            requirement.expression()
+        )
+    })
 }
 
 fn parse_shasums(text: &str, filename: &str) -> Option<String> {
@@ -790,6 +807,11 @@ async fn resolve_node_sha256(
     platform: ManagedNodePlatform,
 ) -> Result<String, String> {
     let filename = platform.archive_filename(version);
+    resolve_node_sha256_for_filename(version, &filename).await
+}
+
+#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+async fn resolve_node_sha256_for_filename(version: &str, filename: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .connect_timeout(RUNTIME_NETWORK_TIMEOUT)
         .timeout(RUNTIME_NETWORK_TIMEOUT)
@@ -806,7 +828,7 @@ async fn resolve_node_sha256(
         let Ok(text) = response.text().await else {
             continue;
         };
-        if let Some(digest) = parse_shasums(&text, &filename) {
+        if let Some(digest) = parse_shasums(&text, filename) {
             return Ok(digest);
         }
     }
@@ -831,16 +853,21 @@ pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
 
 pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result<String, String> {
     let requirement = crate::commands::system::installed_openclaw_node_requirement()?;
-    let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
-    if current.available
-        && current.source == Some(crate::commands::system::RuntimeToolSource::System)
+    #[cfg(windows)]
     {
-        return Err(
+        return install_node_for_requirement(app, requirement, true).await;
+    }
+
+    #[cfg(not(windows))]
+    {
+        if paths::configured_node_runtime_dir().is_some() {
+            return install_node_for_requirement(app, requirement, true).await;
+        }
+        Err(
             "The active Node.js installation is managed by the operating system; update it with the system package manager"
                 .into(),
-        );
+        )
     }
-    install_node_for_requirement(app, requirement, true).await
 }
 
 async fn install_node_for_requirement(
@@ -854,26 +881,34 @@ async fn install_node_for_requirement(
         .lock()
         .await;
 
-    #[cfg(any(windows, target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        return match paths::configured_node_runtime_dir() {
+            Some(target) => install_portable_node_runtime(app, requirement, force, target).await,
+            None => install_windows_system_node(app, requirement, force).await,
+        };
+    }
+
+    #[cfg(target_os = "macos")]
     {
         if let Some(target) = paths::configured_node_runtime_dir() {
-            return install_managed_node_runtime(app, requirement, force, target).await;
+            return install_portable_node_runtime(app, requirement, force, target).await;
         }
-        let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
-        if current.available && !force {
-            return Ok(format!(
-                "Node.js {} already installed at {}",
-                current.version.unwrap_or_default(),
-                current.path.unwrap_or_default()
-            ));
+        if !force {
+            let detected =
+                crate::commands::system::check_node_for_requirement(&requirement).await?;
+            if detected.available {
+                return Ok(format!(
+                    "Node.js {} already installed at {}",
+                    detected.version.unwrap_or_default(),
+                    detected.path.unwrap_or_default()
+                ));
+            }
         }
-        return install_managed_node_runtime(
-            app,
-            requirement,
-            force,
-            paths::default_managed_node_runtime_dir(),
-        )
-        .await;
+        return Err(format!(
+            "Node.js {} is required. Install or update Node.js in its standard system location, then retry.",
+            requirement.expression()
+        ));
     }
 
     #[cfg(all(not(windows), not(target_os = "macos")))]
@@ -896,7 +931,7 @@ async fn install_node_for_requirement(
 }
 
 #[cfg(any(windows, target_os = "macos"))]
-async fn install_managed_node_runtime(
+async fn install_portable_node_runtime(
     app: tauri::AppHandle,
     requirement: NodeRuntimeRequirement,
     force: bool,
@@ -980,6 +1015,253 @@ async fn install_managed_node_runtime(
     ))
 }
 
+#[cfg(windows)]
+async fn install_windows_system_node(
+    app: tauri::AppHandle,
+    requirement: NodeRuntimeRequirement,
+    force: bool,
+) -> Result<String, String> {
+    let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
+    if current.available && !force {
+        return Ok(format!(
+            "Node.js {} already installed at {}",
+            current.version.unwrap_or_default(),
+            current.path.unwrap_or_default()
+        ));
+    }
+
+    let mirror_error = match install_windows_system_node_from_mirrors(&app, &requirement).await {
+        Ok(installed) => return Ok(installed),
+        Err(error) => error,
+    };
+    emit_keyed(
+        &app,
+        "node",
+        "The mainland mirror installer could not finish; trying Windows Package Manager...",
+        "setup.node.systemPackageFallback",
+        0.60,
+    );
+    install_windows_system_node_with_winget(&app, &requirement)
+        .await
+        .map_err(|error| {
+            format!(
+                "Node.js installer from mainland mirrors failed: {mirror_error}\nWindows Package Manager fallback failed: {error}"
+            )
+        })
+}
+
+#[cfg(windows)]
+async fn install_windows_system_node_from_mirrors(
+    app: &tauri::AppHandle,
+    requirement: &NodeRuntimeRequirement,
+) -> Result<String, String> {
+    let platform = ManagedNodePlatform::current()?;
+    let artifact = platform
+        .installer_distribution_artifact()
+        .ok_or("The current platform does not publish a Node.js MSI installer")?;
+    let version = resolve_managed_node_version_for_artifact(requirement, &artifact).await?;
+    let filename = platform
+        .installer_filename(&version)
+        .ok_or("The current platform does not publish a Node.js MSI installer")?;
+    let sha256 = resolve_node_sha256_for_filename(&version, &filename).await?;
+    let sources = node_installer_sources(platform, &version);
+    if sources.is_empty() {
+        return Err("No domestic Node.js MSI source is available for this platform".into());
+    }
+
+    emit_keyed(
+        app,
+        "node",
+        "Installing Node.js to the official Windows default location...",
+        "setup.node.systemInstall",
+        0.10,
+    );
+    let temp_dir = std::env::temp_dir().join(format!(
+        "junqi-node-system-installer-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|error| format!("Failed to prepare Node.js installer directory: {error}"))?;
+    let _temp_cleanup = TemporaryDirectory(temp_dir.clone());
+    let installer = temp_dir.join(&filename);
+    download_with_fallback(app, "node", &sources, &installer, &sha256, 0.12, 0.62).await?;
+
+    let msiexec = platform_path("msiexec.exe", "msiexec")
+        .ok_or("Windows Installer (msiexec) is unavailable")?;
+    let args = [
+        std::ffi::OsString::from("/i"),
+        installer.into_os_string(),
+        std::ffi::OsString::from("/qn"),
+        std::ffi::OsString::from("/norestart"),
+    ];
+    run_windows_installer(&msiexec, &args, "Node.js").await?;
+    refresh_path_from_registry();
+
+    let installed = crate::commands::system::check_node_for_requirement(requirement).await?;
+    if !installed.available {
+        return Err(format!(
+            "The Node.js MSI completed but the system runtime does not satisfy {} (detected: {})",
+            requirement.expression(),
+            installed.version.unwrap_or_else(|| "not found".into())
+        ));
+    }
+    emit_keyed(
+        app,
+        "node",
+        "A compatible system Node.js runtime is ready",
+        "setup.node.systemReady",
+        1.0,
+    );
+    Ok(format!(
+        "Node.js {} installed at {}",
+        installed.version.unwrap_or_default(),
+        installed.path.unwrap_or_default()
+    ))
+}
+
+#[cfg(windows)]
+async fn install_windows_system_node_with_winget(
+    app: &tauri::AppHandle,
+    requirement: &NodeRuntimeRequirement,
+) -> Result<String, String> {
+    install_or_upgrade_winget_package(WINGET_NODE_LTS_PACKAGE).await?;
+    refresh_path_from_registry();
+    let mut installed = crate::commands::system::check_node_for_requirement(&requirement).await?;
+    if !installed.available {
+        emit_keyed(
+            &app,
+            "node",
+            "The LTS channel does not satisfy OpenClaw; trying the current Node.js channel...",
+            "setup.node.systemCurrentInstall",
+            0.55,
+        );
+        install_or_upgrade_winget_package(WINGET_NODE_CURRENT_PACKAGE).await?;
+        refresh_path_from_registry();
+        installed = crate::commands::system::check_node_for_requirement(&requirement).await?;
+    }
+    if !installed.available {
+        return Err(format!(
+            "The system Node.js installation does not satisfy OpenClaw requirement {} (detected: {})",
+            requirement.expression(),
+            installed.version.unwrap_or_else(|| "not found".into())
+        ));
+    }
+    emit_keyed(
+        &app,
+        "node",
+        "A compatible system Node.js runtime is ready",
+        "setup.node.systemReady",
+        1.0,
+    );
+    Ok(format!(
+        "Node.js {} installed at {}",
+        installed.version.unwrap_or_default(),
+        installed.path.unwrap_or_default()
+    ))
+}
+
+#[cfg(windows)]
+fn platform_path(primary: &str, fallback: &str) -> Option<PathBuf> {
+    let primary = platform::detect_path(primary);
+    let path = if primary.is_empty() {
+        platform::detect_path(fallback)
+    } else {
+        primary
+    };
+    (!path.is_empty()).then(|| PathBuf::from(path))
+}
+
+#[cfg(windows)]
+async fn run_windows_installer(
+    executable: &Path,
+    args: &[std::ffi::OsString],
+    label: &str,
+) -> Result<(), String> {
+    let mut command = tokio::process::Command::new(executable);
+    command.args(args);
+    platform::configure_background_command(&mut command);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(20 * 60), command.output())
+        .await
+        .map_err(|_| format!("{label} installer timed out"))?
+        .map_err(|error| format!("Failed to start {label} installer: {error}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let diagnostic = crate::commands::diagnostic_output::sanitize_diagnostic_text(
+        &format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        ),
+        1_500,
+    );
+    Err(if diagnostic.is_empty() {
+        format!("{label} installer exited with {}", output.status)
+    } else {
+        format!(
+            "{label} installer exited with {}: {diagnostic}",
+            output.status
+        )
+    })
+}
+
+#[cfg(windows)]
+async fn install_or_upgrade_winget_package(package_id: &str) -> Result<(), String> {
+    let winget = platform::detect_path("winget");
+    if winget.is_empty() {
+        return Err(
+            "Windows Package Manager (winget) is unavailable. Install the dependency with its standard system installer or select an explicit portable runtime directory in JunQi."
+                .into(),
+        );
+    }
+    if run_winget_package_command(&winget, "upgrade", package_id)
+        .await
+        .is_ok_and(|output| output.status.success())
+    {
+        return Ok(());
+    }
+    let install = run_winget_package_command(&winget, "install", package_id).await?;
+    if install.status.success() {
+        return Ok(());
+    }
+    let diagnostic = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&install.stdout).trim(),
+        String::from_utf8_lossy(&install.stderr).trim()
+    )
+    .trim()
+    .to_string();
+    Err(if diagnostic.is_empty() {
+        format!("winget could not install {package_id}")
+    } else {
+        format!("winget could not install {package_id}: {diagnostic}")
+    })
+}
+
+#[cfg(windows)]
+async fn run_winget_package_command(
+    winget: &str,
+    verb: &str,
+    package_id: &str,
+) -> Result<std::process::Output, String> {
+    let mut command = tokio::process::Command::new(winget);
+    command.args([
+        verb,
+        "-e",
+        "--id",
+        package_id,
+        "--silent",
+        "--disable-interactivity",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+    ]);
+    platform::configure_background_command(&mut command);
+    tokio::time::timeout(std::time::Duration::from_secs(20 * 60), command.output())
+        .await
+        .map_err(|_| format!("winget {verb} timed out for {package_id}"))?
+        .map_err(|error| format!("Failed to run winget {verb} for {package_id}: {error}"))
+}
+
 /// Ensure child processes use a Node.js release accepted by OpenClaw.
 /// The requirement is read from OpenClaw metadata, so version evolution does
 /// not require a JunQi release with another hard-coded range.
@@ -994,7 +1276,7 @@ pub(crate) async fn ensure_compatible_node_runtime(
             app,
             context_step,
             &format!(
-                "Node.js is outside OpenClaw's supported range ({} from {}); preparing a compatible managed runtime...",
+                "Node.js is outside OpenClaw's supported range ({} from {}); preparing a compatible runtime...",
                 requirement.expression(),
                 requirement.source().label()
             ),
@@ -1038,23 +1320,21 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
     install_git_impl(app, false).await
 }
 
-pub(crate) async fn update_managed_git_runtime(app: tauri::AppHandle) -> Result<String, String> {
-    if !crate::commands::runtime_policy::ManagedRuntimeCapabilities::current().git {
-        return Err(
-            "Git is managed by the operating system on macOS/Linux; use the platform package manager"
-                .into(),
-        );
-    }
-    let current = crate::commands::system::check_git().await?;
-    if current.available
-        && current.source == Some(crate::commands::system::RuntimeToolSource::System)
+pub(crate) async fn update_managed_git_runtime(
+    #[cfg_attr(not(windows), allow(unused_variables))] app: tauri::AppHandle,
+) -> Result<String, String> {
+    #[cfg(windows)]
     {
-        return Err(
-            "The active Git installation is managed by Windows; update it with the system package manager"
-                .into(),
-        );
+        return install_git_impl(app, true).await;
     }
-    install_git_impl(app, true).await
+
+    #[cfg(not(windows))]
+    {
+        Err(
+            "The active Git installation is managed by the operating system; update it with the system package manager"
+                .into(),
+        )
+    }
 }
 
 async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, String> {
@@ -1094,8 +1374,7 @@ async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, 
 
     #[cfg(windows)]
     {
-        return install_windows_portable_git(app, force, paths::default_managed_git_runtime_dir())
-            .await;
+        return install_windows_system_git(app).await;
     }
 
     #[cfg(target_os = "macos")]
@@ -1121,6 +1400,104 @@ async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, 
         );
         Err("Git is required. Install Git with the operating-system package manager, then retry JunQi.".into())
     }
+}
+
+#[cfg(windows)]
+async fn install_windows_system_git(app: tauri::AppHandle) -> Result<String, String> {
+    let mirror_error = match install_windows_system_git_from_mirrors(&app).await {
+        Ok(installed) => return Ok(installed),
+        Err(error) => error,
+    };
+    emit_keyed(
+        &app,
+        "git",
+        "The mainland mirror installer could not finish; trying Windows Package Manager...",
+        "setup.git.systemPackageFallback",
+        0.60,
+    );
+    install_or_upgrade_winget_package(WINGET_GIT_PACKAGE)
+        .await
+        .map_err(|error| {
+            format!(
+                "Git installer from mainland mirrors failed: {mirror_error}\nWindows Package Manager fallback failed: {error}"
+            )
+        })?;
+    refresh_path_from_registry();
+    let installed = crate::commands::system::check_git().await?;
+    if !installed.available {
+        return Err(
+            "Git installation completed but git.exe was not detected on the system PATH".into(),
+        );
+    }
+    emit_keyed(
+        &app,
+        "git",
+        "System Git is ready",
+        "setup.git.systemReady",
+        1.0,
+    );
+    Ok(format!(
+        "Git {} installed at {}",
+        installed.version.unwrap_or_default(),
+        installed.path.unwrap_or_default()
+    ))
+}
+
+#[cfg(windows)]
+async fn install_windows_system_git_from_mirrors(app: &tauri::AppHandle) -> Result<String, String> {
+    let artifact = verified_system_git_installer_artifact(std::env::consts::ARCH)?;
+    emit_keyed(
+        app,
+        "git",
+        "Installing Git to the official Windows default location...",
+        "setup.git.systemInstall",
+        0.10,
+    );
+    let temp_dir = std::env::temp_dir().join(format!(
+        "junqi-git-system-installer-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|error| format!("Failed to prepare Git installer directory: {error}"))?;
+    let _temp_cleanup = TemporaryDirectory(temp_dir.clone());
+    let installer = temp_dir.join(&artifact.filename);
+    download_with_fallback(
+        app,
+        "git",
+        &artifact.sources(),
+        &installer,
+        &artifact.sha256,
+        0.12,
+        0.62,
+    )
+    .await?;
+
+    let args = [
+        std::ffi::OsString::from("/VERYSILENT"),
+        std::ffi::OsString::from("/NORESTART"),
+        std::ffi::OsString::from("/SUPPRESSMSGBOXES"),
+        std::ffi::OsString::from("/SP-"),
+    ];
+    run_windows_installer(&installer, &args, "Git").await?;
+    refresh_path_from_registry();
+    let installed = crate::commands::system::check_git().await?;
+    if !installed.available {
+        return Err(
+            "The Git installer completed but git.exe was not detected on the system PATH".into(),
+        );
+    }
+    emit_keyed(
+        app,
+        "git",
+        "System Git is ready",
+        "setup.git.systemReady",
+        1.0,
+    );
+    Ok(format!(
+        "Git {} installed at {}",
+        installed.version.unwrap_or_default(),
+        installed.path.unwrap_or_default()
+    ))
 }
 
 #[cfg(windows)]

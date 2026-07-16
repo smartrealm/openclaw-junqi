@@ -540,10 +540,7 @@ fn detect_node() -> Option<String> {
         return Some(detected);
     }
 
-    let legacy = crate::paths::legacy_local_node_path();
-    legacy
-        .is_file()
-        .then(|| legacy.to_string_lossy().into_owned())
+    None
 }
 
 /// Loose semver-ish compare: returns true if `have < min`.

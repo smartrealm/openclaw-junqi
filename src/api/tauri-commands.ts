@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type RuntimeToolSource = 'system' | 'managed' | 'custom';
+export type RuntimeToolSource = 'system' | 'custom';
 export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }
 export interface NpmStatus { available: boolean; version: string | null; path: string | null; source: string | null; }
 export interface GitStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }

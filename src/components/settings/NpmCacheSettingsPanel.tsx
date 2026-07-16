@@ -101,7 +101,7 @@ export function NpmCacheSettingsPanel() {
         </h3>
       </div>
       <p className="mb-4 text-[11px] leading-relaxed text-aegis-text-dim/70">
-        {t('storage.npmCacheSettingsHint', '用于后续 npm 下载和安装；与系统或托管 Node.js 是否已安装无关。')}
+        {t('storage.npmCacheSettingsHint', '用于后续 npm 下载和安装；与 Node.js 的安装位置无关。')}
       </p>
 
       <div className="flex items-center gap-2">

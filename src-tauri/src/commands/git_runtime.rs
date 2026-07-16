@@ -17,6 +17,19 @@ pub(crate) struct ManagedGitArtifact {
 #[serde(rename_all = "camelCase")]
 struct RuntimeManifest {
     git_for_windows: HashMap<String, ManagedGitArtifact>,
+    #[serde(default)]
+    git_for_windows_installer: HashMap<String, GitForWindowsInstallerArtifact>,
+}
+
+/// The vendor installer used for the system-default Git location. It is
+/// distinct from MinGit, which stays available for an explicitly selected
+/// portable runtime directory.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub(crate) struct GitForWindowsInstallerArtifact {
+    pub(crate) version: String,
+    pub(crate) tag: String,
+    pub(crate) filename: String,
+    pub(crate) sha256: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +66,20 @@ impl ManagedGitArtifact {
     }
 }
 
+impl GitForWindowsInstallerArtifact {
+    pub(crate) fn sources(&self) -> Vec<(String, &'static str)> {
+        GIT_DISTRIBUTION_SOURCES
+            .iter()
+            .map(|source| {
+                (
+                    format!("{}/{}/{}", source.base_url, self.tag, self.filename),
+                    source.log_label,
+                )
+            })
+            .collect()
+    }
+}
+
 pub(crate) fn managed_git_download_order() -> Vec<String> {
     GIT_DISTRIBUTION_SOURCES
         .iter()
@@ -73,6 +100,25 @@ pub(crate) fn verified_managed_git_artifact(
         .cloned()
         .ok_or_else(|| format!("Unsupported Windows architecture for MinGit: {architecture}"))?;
     validate_artifact(architecture, &artifact)?;
+    Ok(artifact)
+}
+
+pub(crate) fn verified_system_git_installer_artifact(
+    architecture: &str,
+) -> Result<GitForWindowsInstallerArtifact, String> {
+    let manifest: RuntimeManifest =
+        serde_json::from_str(include_str!("../../resources/runtime-artifacts.json"))
+            .map_err(|error| format!("Invalid Git installer artifact manifest: {error}"))?;
+    let artifact = manifest
+        .git_for_windows_installer
+        .get(architecture)
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "Unsupported Windows architecture for the Git for Windows installer: {architecture}"
+            )
+        })?;
+    validate_installer_artifact(architecture, &artifact)?;
     Ok(artifact)
 }
 
@@ -101,6 +147,34 @@ fn validate_artifact(architecture: &str, artifact: &ManagedGitArtifact) -> Resul
     Ok(())
 }
 
+fn validate_installer_artifact(
+    architecture: &str,
+    artifact: &GitForWindowsInstallerArtifact,
+) -> Result<(), String> {
+    let suffix = match architecture {
+        "x86_64" => "-64-bit.exe",
+        "aarch64" => "-arm64.exe",
+        other => {
+            return Err(format!(
+                "Unsupported Windows architecture for the Git for Windows installer: {other}"
+            ))
+        }
+    };
+    if artifact.version.trim().is_empty()
+        || artifact.tag != format!("v{}", artifact.version)
+        || !artifact.filename.starts_with("Git-")
+        || !artifact.filename.ends_with(suffix)
+        || artifact.filename.contains(['/', '\\'])
+        || artifact.sha256.len() != 64
+        || !artifact.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "Git for Windows installer artifact manifest is invalid for {architecture}"
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +196,10 @@ mod tests {
         for (architecture, artifact) in manifest.git_for_windows {
             validate_artifact(&architecture, &artifact).unwrap();
         }
+        assert_eq!(manifest.git_for_windows_installer.len(), 2);
+        for (architecture, artifact) in manifest.git_for_windows_installer {
+            validate_installer_artifact(&architecture, &artifact).unwrap();
+        }
     }
 
     #[test]
@@ -134,5 +212,15 @@ mod tests {
         assert!(sources[0].0.starts_with("https://registry.npmmirror.com/"));
         assert!(sources[1].0.starts_with("https://mirrors.huaweicloud.com/"));
         assert!(sources.iter().all(|(url, _)| !url.contains("github.com")));
+    }
+
+    #[test]
+    fn system_installer_uses_the_same_domestic_source_catalog() {
+        let artifact = verified_system_git_installer_artifact("x86_64").unwrap();
+        let sources = artifact.sources();
+        assert!(artifact.filename.ends_with("-64-bit.exe"));
+        assert_eq!(sources.len(), GIT_DISTRIBUTION_SOURCES.len());
+        assert!(sources[0].0.starts_with("https://registry.npmmirror.com/"));
+        assert!(sources[1].0.starts_with("https://mirrors.huaweicloud.com/"));
     }
 }

@@ -53,8 +53,8 @@ const CASES: Record<string, Case> = {
   },
   ".extract": {
     key: "setup.node.extract",
-    message: "Extracting to /Users/wei/.junqi/node…",
-    expected: { path: "/Users/wei/.junqi/node" },
+    message: "Extracting to /custom/runtime/node…",
+    expected: { path: "/custom/runtime/node" },
   },
   ".waitingWizard": {
     key: "setup.git.waitingWizard",
@@ -68,34 +68,34 @@ const CASES: Record<string, Case> = {
   },
   ".useLocalNode": {
     key: "setup.openclaw.useLocalNode",
-    message: "Using detected Node.js: /Users/wei/.openclaw/node/bin/node",
-    expected: { path: "/Users/wei/.openclaw/node/bin/node" },
+    message: "Using detected Node.js: /custom/runtime/node/bin/node",
+    expected: { path: "/custom/runtime/node/bin/node" },
   },
   ".useLocalNpm": {
     key: "setup.openclaw.useLocalNpm",
-    message: "Using local npm: /Users/wei/.openclaw/node/lib/node_modules/npm/bin/npm-cli.js",
+    message: "Using local npm: /custom/runtime/node/lib/node_modules/npm/bin/npm-cli.js",
     expected: {
-      path: "/Users/wei/.openclaw/node/lib/node_modules/npm/bin/npm-cli.js",
+      path: "/custom/runtime/node/lib/node_modules/npm/bin/npm-cli.js",
     },
   },
   ".useNodeNpm": {
     key: "setup.openclaw.useNodeNpm",
-    message: "Using npm bundled with selected Node.js: /Users/wei/.npm-global/lib/node_modules/npm/bin/npm-cli.js",
+    message: "Using npm bundled with selected Node.js: /custom/npm/lib/node_modules/npm/bin/npm-cli.js",
     expected: {
-      path: "/Users/wei/.npm-global/lib/node_modules/npm/bin/npm-cli.js",
+      path: "/custom/npm/lib/node_modules/npm/bin/npm-cli.js",
     },
   },
   ".userNpmPrefix": {
     key: "setup.openclaw.userNpmPrefix",
     message:
-      "Detected npm prefix /Users/wei/.npm-global (matches your `npm i -g`); installing openclaw there",
-    expected: { path: "/Users/wei/.npm-global" },
+      "Detected npm prefix /custom/npm (matches your `npm i -g`); installing openclaw there",
+    expected: { path: "/custom/npm" },
   },
   ".userNpmPrefixMissingPath": {
     key: "setup.openclaw.userNpmPrefixMissingPath",
     message:
-      "Detected npm prefix /Users/wei/.npm-global (matches your `npm i -g`); installing openclaw there",
-    expected: { path: "/Users/wei/.npm-global" },
+      "Detected npm prefix /custom/npm (matches your `npm i -g`); installing openclaw there",
+    expected: { path: "/custom/npm" },
   },
   ".customNpmPrefix": {
     key: "setup.openclaw.customNpmPrefix",

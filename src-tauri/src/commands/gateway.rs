@@ -1024,10 +1024,18 @@ pub async fn restart_gateway(
         if let Err(error) =
             crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
         {
-            emit_restart_progress(
-                &app,
-                format!("Gateway port release is still pending: {}", error),
+            let reason = format!(
+                "Gateway process was terminated, but port {} did not become available: {}",
+                port, error
             );
+            emit_restart_progress(&app, &reason);
+            state.transition(
+                Some(GatewayLifecycle::Error),
+                Some(GatewayRuntimeMode::None),
+                None,
+                "restart_gateway: owned child terminated but port remained occupied",
+            );
+            return Err(reason);
         }
     }
 
@@ -1270,7 +1278,20 @@ pub(crate) async fn start_gateway_locked(
     if let Some(mut old) = old_child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old).await;
         // Handles TCP TIME_WAIT on Windows and delayed process teardown.
-        let _ = crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await;
+        if let Err(error) =
+            crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
+        {
+            state.transition(
+                Some(GatewayLifecycle::Error),
+                Some(GatewayRuntimeMode::None),
+                None,
+                "start_gateway: owned child terminated but port remained occupied",
+            );
+            return Err(format!(
+                "Gateway process was terminated, but port {} did not become available: {}",
+                port, error
+            ));
+        }
     }
 
     // Native mode always binds to loopback for security — never expose to LAN
@@ -1464,16 +1485,28 @@ pub(crate) async fn start_gateway_locked(
 pub async fn stop_gateway(state: State<'_, GatewayProcess>) -> Result<String, String> {
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate.lock_owned().await;
+    let port = *state.port.lock().map_err(|e| e.to_string())?;
     let child = {
         let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
         child_lock.take()
     };
 
     if let Some(mut child) = child {
-        child
-            .kill()
+        crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
+        crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000)
             .await
-            .map_err(|e| format!("Failed to kill gateway: {}", e))?;
+            .map_err(|error| {
+                state.transition(
+                    Some(GatewayLifecycle::Error),
+                    Some(GatewayRuntimeMode::None),
+                    None,
+                    "stop_gateway: owned child terminated but port remained occupied",
+                );
+                format!(
+                    "Gateway process was terminated, but port {} did not become available: {}",
+                    port, error
+                )
+            })?;
         state.transition(
             Some(GatewayLifecycle::Stopped),
             Some(GatewayRuntimeMode::None),

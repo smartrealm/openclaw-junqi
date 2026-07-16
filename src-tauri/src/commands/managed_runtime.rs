@@ -1,11 +1,9 @@
 use crate::commands::{git_runtime, node_runtime, setup, system};
-use crate::paths;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedRuntimeStatus {
-    runtime_dir: String,
     node: system::NodeStatus,
     node_requirement: String,
     node_requirement_source: String,
@@ -16,12 +14,15 @@ pub struct ManagedRuntimeStatus {
     git_download_order: Vec<String>,
 }
 
-fn managed_update_supported(
-    platform_supported: bool,
-    available: bool,
+fn runtime_update_supported(
+    portable_update_supported: bool,
+    system_update_supported: bool,
     source: Option<system::RuntimeToolSource>,
 ) -> bool {
-    platform_supported && (!available || source != Some(system::RuntimeToolSource::System))
+    match source {
+        Some(system::RuntimeToolSource::Custom) => portable_update_supported,
+        Some(system::RuntimeToolSource::System) | None => system_update_supported,
+    }
 }
 
 #[tauri::command]
@@ -34,24 +35,28 @@ pub async fn get_managed_runtime_status() -> Result<ManagedRuntimeStatus, String
     let node = node?;
     let git = git?;
     let capabilities = crate::commands::runtime_policy::ManagedRuntimeCapabilities::current();
-    let node_auto_update_supported =
-        managed_update_supported(capabilities.node, node.available, node.source);
+    let node_auto_update_supported = runtime_update_supported(
+        capabilities.node,
+        capabilities.system_node_update,
+        node.source,
+    );
     let git_auto_update_supported =
-        managed_update_supported(capabilities.git, git.available, git.source);
+        runtime_update_supported(capabilities.git, capabilities.system_git_update, git.source);
+    let node_uses_custom_runtime = node.source == Some(system::RuntimeToolSource::Custom);
+    let git_uses_custom_runtime = git.source == Some(system::RuntimeToolSource::Custom);
     Ok(ManagedRuntimeStatus {
-        runtime_dir: paths::runtime_dir().to_string_lossy().into_owned(),
         node,
         node_requirement: requirement.expression().to_string(),
         node_requirement_source: requirement.source().id().to_string(),
         node_auto_update_supported,
         git,
         git_auto_update_supported,
-        node_download_order: if capabilities.node {
+        node_download_order: if node_uses_custom_runtime && capabilities.node {
             node_runtime::node_download_order()
         } else {
             Vec::new()
         },
-        git_download_order: if capabilities.git {
+        git_download_order: if git_uses_custom_runtime && capabilities.git {
             git_runtime::managed_git_download_order()
         } else {
             Vec::new()
@@ -74,23 +79,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bug_rp_01_system_tools_do_not_offer_an_ineffective_managed_update() {
-        assert!(!managed_update_supported(
+    fn system_and_custom_runtime_updates_follow_the_platform_policy() {
+        assert!(runtime_update_supported(
             true,
             true,
             Some(system::RuntimeToolSource::System)
         ));
-        assert!(managed_update_supported(
-            true,
-            true,
-            Some(system::RuntimeToolSource::Managed)
-        ));
-        assert!(managed_update_supported(
+        assert!(runtime_update_supported(
             true,
             true,
             Some(system::RuntimeToolSource::Custom)
         ));
-        assert!(managed_update_supported(true, false, None));
-        assert!(!managed_update_supported(false, false, None));
+        assert!(!runtime_update_supported(
+            false,
+            false,
+            Some(system::RuntimeToolSource::System)
+        ));
+        assert!(!runtime_update_supported(
+            false,
+            false,
+            Some(system::RuntimeToolSource::Custom)
+        ));
+        assert!(runtime_update_supported(false, true, None));
     }
 }

@@ -157,6 +157,32 @@ fn assistant_text(payload: &serde_json::Value) -> String {
         .collect()
 }
 
+fn provider_error_message(payload: &serde_json::Value) -> String {
+    let message = payload
+        .get("error")
+        .and_then(|value| value.get("message"))
+        .and_then(|value| value.as_str())
+        .or_else(|| payload.get("message").and_then(|value| value.as_str()))
+        .map(str::to_owned)
+        .unwrap_or_else(|| assistant_text(payload));
+    let sanitized = crate::commands::diagnostic_output::sanitize_diagnostic_text(&message, 1_000);
+    if sanitized.trim().is_empty() {
+        "Provider returned an empty error response".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn rescue_transport_error(context: &str, error: impl std::fmt::Display) -> String {
+    let message = format!("{context}: {error}");
+    let sanitized = crate::commands::diagnostic_output::sanitize_diagnostic_text(&message, 1_000);
+    if sanitized.trim().is_empty() {
+        "Rescue request failed without a usable diagnostic".to_string()
+    } else {
+        sanitized
+    }
+}
+
 #[tauri::command]
 pub async fn gateway_rescue_chat(req: RescueChatRequest) -> Result<RescueChatResponse, String> {
     let api = req.api.trim();
@@ -169,7 +195,7 @@ pub async fn gateway_rescue_chat(req: RescueChatRequest) -> Result<RescueChatRes
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(35))
         .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+        .map_err(|error| rescue_transport_error("Failed to create HTTP client", error))?;
 
     let mut builder = client.post(url).header("content-type", "application/json");
     let body = if api == "anthropic-messages" {
@@ -186,23 +212,17 @@ pub async fn gateway_rescue_chat(req: RescueChatRequest) -> Result<RescueChatRes
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Rescue request failed: {}", e))?;
+        .map_err(|error| rescue_transport_error("Rescue request failed", error))?;
     let status = response.status();
     let text = response
         .text()
         .await
-        .map_err(|e| format!("Failed to read rescue response: {}", e))?;
+        .map_err(|error| rescue_transport_error("Failed to read rescue response", error))?;
     let payload: serde_json::Value =
         serde_json::from_str(&text).unwrap_or_else(|_| json!({ "text": text }));
 
     if !status.is_success() {
-        let message = payload
-            .get("error")
-            .and_then(|v| v.get("message"))
-            .and_then(|v| v.as_str())
-            .or_else(|| payload.get("message").and_then(|v| v.as_str()))
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| assistant_text(&payload));
+        let message = provider_error_message(&payload);
         return Err(format!("{} {}", status.as_u16(), message));
     }
 
@@ -243,5 +263,28 @@ mod tests {
         assert!(!prompt.contains("hidden-token"));
         assert!(!prompt.contains("sk-visible-token-123456789"));
         assert!(prompt.contains("[sensitive diagnostic redacted]"));
+    }
+
+    #[test]
+    fn provider_failure_message_is_bounded_and_redacted_before_ipc() {
+        let message = provider_error_message(&json!({
+            "error": {
+                "message": "Authorization: Bearer hidden-token\\nrequest api_key=super-secret"
+            }
+        }));
+        assert!(!message.contains("hidden-token"));
+        assert!(!message.contains("super-secret"));
+        assert!(message.contains("[sensitive diagnostic redacted]"));
+    }
+
+    #[test]
+    fn transport_failure_message_is_bounded_and_redacted_before_ipc() {
+        let message = rescue_transport_error(
+            "Rescue request failed",
+            "proxy rejected Authorization: Bearer hidden-token; api_key=super-secret",
+        );
+        assert!(!message.contains("hidden-token"));
+        assert!(!message.contains("super-secret"));
+        assert!(message.contains("[sensitive diagnostic redacted]"));
     }
 }

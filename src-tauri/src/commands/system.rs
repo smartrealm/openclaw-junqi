@@ -34,7 +34,6 @@ pub struct NodeStatus {
 #[serde(rename_all = "lowercase")]
 pub enum RuntimeToolSource {
     System,
-    Managed,
     Custom,
 }
 
@@ -188,27 +187,6 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
         }
     }
 
-    // Older JunQi releases installed a private Node/npm pair. Keep it as a
-    // compatibility fallback, but never let it shadow a system installation.
-    let local_node = paths::legacy_local_node_path();
-    let local_npm = paths::legacy_local_npm_cli_path();
-    if local_node.is_file() && local_npm.is_file() {
-        let mut command = tokio::process::Command::new(&local_node);
-        command.arg(&local_npm).arg("--version");
-        platform::configure_background_command(&mut command);
-        if let Ok(output) = command.output().await {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if output.status.success() && !version.is_empty() {
-                return Ok(NpmStatus {
-                    available: true,
-                    version: Some(version),
-                    path: Some(local_npm.to_string_lossy().into_owned()),
-                    source: Some("local".into()),
-                });
-            }
-        }
-    }
-
     Ok(NpmStatus {
         available: false,
         version: None,
@@ -226,6 +204,7 @@ pub(crate) fn apply_configured_npm_cache(command: &mut tokio::process::Command) 
     }
 }
 
+#[cfg(windows)]
 fn portable_node_is_compatible(node: &Path) -> bool {
     node.is_file()
         && std::process::Command::new(node)
@@ -239,10 +218,6 @@ fn portable_node_is_compatible(node: &Path) -> bool {
                     .unwrap_or_else(|_| NodeRuntimeRequirement::fallback())
                     .supports(&version)
             })
-}
-
-fn legacy_managed_node_is_compatible() -> bool {
-    portable_node_is_compatible(&paths::legacy_local_node_path())
 }
 
 /// Build an OpenClaw command without relying on command-shim behavior when an
@@ -261,16 +236,11 @@ pub(crate) fn openclaw_command_with_node(
         {
             configured
         } else {
-            let legacy = paths::legacy_local_node_path();
-            if legacy_managed_node_is_compatible() {
-                legacy
+            let detected = platform::detect_path("node");
+            if detected.is_empty() {
+                PathBuf::from(platform::bin_name("node"))
             } else {
-                let detected = platform::detect_path("node");
-                if detected.is_empty() {
-                    PathBuf::from(platform::bin_name("node"))
-                } else {
-                    PathBuf::from(detected)
-                }
+                PathBuf::from(detected)
             }
         };
         let mut command = tokio::process::Command::new(node);
@@ -362,8 +332,8 @@ pub(crate) async fn check_node_for_requirement(
         });
     }
 
-    // System Node.js is authoritative for default setup. The legacy private
-    // runtime below is only a compatibility fallback for older installations.
+    // System Node.js is authoritative unless the user explicitly selected a
+    // portable runtime above.
     let system_node = platform::detect_path("node");
     let system_node = if system_node.is_empty() {
         platform::bin_name("node")
@@ -381,29 +351,6 @@ pub(crate) async fn check_node_for_requirement(
             path: Some(system_node.clone()),
             source: Some(RuntimeToolSource::System),
         });
-    }
-
-    let local = paths::legacy_local_node_path();
-    if local.exists() {
-        let path_str = local.to_string_lossy().to_string();
-        let version = get_node_version(&path_str).await;
-        let meets_min = version.as_ref().is_some_and(|v| requirement.supports(v));
-        if meets_min {
-            return Ok(NodeStatus {
-                available: true,
-                version,
-                path: Some(path_str),
-                source: Some(RuntimeToolSource::Managed),
-            });
-        }
-        if system_version.is_none() {
-            return Ok(NodeStatus {
-                available: false,
-                version,
-                path: Some(path_str),
-                source: Some(RuntimeToolSource::Managed),
-            });
-        }
     }
 
     if system_version.is_some() {
@@ -438,19 +385,8 @@ pub(crate) fn openclaw_search_path() -> String {
             .and_then(|path| path.parent().map(Path::to_path_buf))
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_default(),
-        legacy_managed_node_is_compatible()
-            .then(paths::legacy_local_node_path)
-            .and_then(|path| path.parent().map(Path::to_path_buf))
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_default(),
         paths::configured_git_path()
             .filter(|path| path.is_file())
-            .and_then(|path| path.parent().map(Path::to_path_buf))
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_default(),
-        paths::legacy_local_git_path()
-            .is_file()
-            .then(paths::legacy_local_git_path)
             .and_then(|path| path.parent().map(Path::to_path_buf))
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_default(),
@@ -997,17 +933,6 @@ pub async fn check_git() -> Result<GitStatus, String> {
         });
     }
 
-    let legacy = paths::legacy_local_git_path();
-    if legacy.is_file() {
-        let path = legacy.to_string_lossy().into_owned();
-        let version = get_git_version(&path).await;
-        return Ok(GitStatus {
-            available: version.is_some(),
-            version,
-            path: Some(path),
-            source: Some(RuntimeToolSource::Managed),
-        });
-    }
     Ok(GitStatus {
         available: false,
         version: None,
@@ -1130,10 +1055,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(RuntimeToolSource::System).unwrap(),
             "system"
-        );
-        assert_eq!(
-            serde_json::to_value(RuntimeToolSource::Managed).unwrap(),
-            "managed"
         );
         assert_eq!(
             serde_json::to_value(RuntimeToolSource::Custom).unwrap(),
