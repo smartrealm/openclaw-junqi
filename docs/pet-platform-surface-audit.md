@@ -16,20 +16,22 @@
 
 ## 未通过发布门槛的问题
 
-### BUG-PS-01 · 严重 - Windows 7 仍走透明 WebView
+### BUG-PS-01 · 严重 - Windows 7 不能作为当前发行通道的支持目标
 
 **位置**：`src-tauri/src/commands/pet.rs:50`
 
 **证据**：`open_pet_window` 对所有 Windows 版本无条件创建
 `WebviewWindowBuilder(...).transparent(true)`。Windows 7 的 WebView 透明合成不可靠，
-这正是黑色矩形边框的根因。
+这正是黑色矩形边框的根因。更根本的是，JunQi 以 Tauri/WebView2 为应用宿主；Microsoft
+将 WebView2 的生命周期绑定 Edge，而 Edge 109 是 Windows 7 的最后版本，支持已于 2023 年
+2 月结束。
 
-**影响**：Windows 7 用户仍会遇到黑框；不能将当前实现标记为 Win7 已修复。
+**影响**：Windows 7 用户仍会遇到黑框；即使只替换萌宠为原生窗口，也不能使主应用的
+WebView2 运行时恢复为受支持、安全的配置。
 
-**目标**：建立 `PetSurface` 平台后端。Windows 7 选择 Win32
-`WS_EX_LAYERED | WS_EX_TOOLWINDOW` 原生窗口与 `UpdateLayeredWindow`，Windows 10+
-和 macOS 保持 WebView 后端。所有显示、拖动、菜单、可见性和状态事件必须通过同一
-表面接口，不允许在业务调用点分支。
+**目标**：当前发布通道明确要求 Windows 10+。若业务必须继续支持 Win7，需单独批准一条
+旧版、安全例外发行线：冻结兼容 WebView2、为整套宿主而非仅萌宠维护兼容矩阵，并承担
+已终止安全支持的风险；不得将其混入当前稳定版。
 
 ### BUG-PS-02 · 中等 - macOS 捕获格式尚未显式归一化
 

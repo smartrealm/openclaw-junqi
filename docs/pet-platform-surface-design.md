@@ -29,19 +29,20 @@ and at a bounded idle interval, never per animation frame.
 | --- | --- | --- | --- |
 | macOS | Existing transparent WebView | CoreGraphics in-memory capture / Screen Recording permission | Fixed high-contrast palette when denied |
 | Windows 10+ | Existing transparent WebView | Desktop DC region sampling | Fixed high-contrast palette when unavailable |
-| Windows 7 | Win32 per-pixel layered window | Desktop DC region sampling | Native high-contrast caption; never a transparent WebView |
+| Windows 7 | Unsupported host OS | N/A | Require Windows 10+; a native pet window cannot make the WebView2 host supported |
 | Linux | Existing WebView | No capture in first release | Fixed high-contrast palette |
 
-## Windows 7 Renderer
+## Windows 7 Support Boundary
 
-The Win7 backend owns a `WS_EX_LAYERED | WS_EX_TOOLWINDOW` window and updates
-it through `UpdateLayeredWindow` with premultiplied-alpha BGRA frames. It must
-not create the Tauri pet WebView. The backend receives the same `PetState`,
-position, visibility, drag and context-menu commands as the WebView backend.
+JunQi uses Tauri/WebView2 as its application host. Microsoft ended supported
+WebView2/Edge servicing for Windows 7 with Edge 109 in February 2023. A native
+layered pet window would not make the rest of the WebView2 application secure
+or supported, so Windows 7 is not a supported JunQi target.
 
-The renderer caches decoded sprite frames and caption glyph bitmaps. It redraws
-only on state, frame, position, caption, or backdrop-style changes. Hit testing
-uses the alpha mask so clicks through transparent pixels reach the desktop.
+Supporting a legacy Win7 build would require a separately maintained,
+security-exception release policy with a frozen WebView2 runtime and a full
+application compatibility test matrix. It must not be introduced as an
+implicit fallback for the current release channel.
 
 ## Privacy And Permission
 
@@ -52,8 +53,8 @@ denied or unavailable source is a normal state, not an error.
 
 ## Acceptance
 
-- Win7 never creates a transparent WebView pet window.
-- Win7 companion uses per-pixel alpha with no black rectangle.
+- Windows 7 is identified as outside the supported runtime policy before a
+  user is promised a compatible desktop experience.
 - macOS and Windows 10+ captions switch palette from derived contrast data.
 - Denied macOS permission remains usable with a fixed accessible palette.
 - No raw desktop image is emitted, persisted, logged, or exposed over IPC.

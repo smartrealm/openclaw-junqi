@@ -1,17 +1,16 @@
 # 萌宠平台表面规格
 
-## BUG-PS-01 · Windows 7 原生分层表面
+## BUG-PS-01 · Windows 7 发行边界
 
-**Current**：所有平台创建透明 Tauri WebView。
+**Current**：所有平台创建透明 Tauri WebView；当前 Windows 安装器依赖 WebView2。
 
-**Target**：通过 `PetSurface` 工厂选择平台后端。Windows 7 仅创建原生 layered window；
-它使用预乘 alpha 的 BGRA 帧、alpha hit-test、统一的拖拽/菜单/可见性命令和状态订阅。
+**Target**：当前稳定发行通道支持 Windows 10+。不得以一个原生萌宠窗口掩盖 Win7 上
+整个 WebView2 宿主已结束支持的事实。
 
 **Acceptance**：
-- [ ] Win7 不创建透明 WebView 萌宠窗口。
-- [ ] 萌宠透明区域不出现黑色矩形，点击透明像素可穿透桌面。
-- [ ] 移动、右键菜单、显示/隐藏、主窗口聚焦与当前 WebView 后端行为一致。
-- [ ] Windows 7 真机或受支持 VM 截图验证通过。
+- [ ] Windows 支持范围在产品文档、安装前检测和错误提示中一致为 Windows 10+。
+- [ ] Win7 不会被宣称为当前发行通道的兼容目标。
+- [ ] 若批准旧版发行线，另立规格覆盖冻结 WebView2、全应用兼容测试和安全风险告知。
 
 ## BUG-PS-02 · macOS 像素格式归一化
 
