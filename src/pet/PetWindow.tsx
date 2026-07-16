@@ -75,6 +75,7 @@ export default function PetWindow() {
   const customAsset = usePetStore((s) => s.customAsset);
   const setCustomAsset = usePetStore((s) => s.setCustomAsset);
   const customPet = usePetStore((s) => s.customPet);
+  const backdropContrastEnabled = usePetStore((s) => s.backdropContrastEnabled);
   const setCustomPet = usePetStore((s) => s.setCustomPet);
   const positionRef = useRef(position);
   positionRef.current = position;
@@ -159,6 +160,10 @@ export default function PetWindow() {
   }, [theme]);
 
   useEffect(() => {
+    if (!backdropContrastEnabled) {
+      setBackdrop(null);
+      return;
+    }
     let alive = true;
     let debounceTimer: number | null = null;
     const readBackdrop = () => invoke<PetBackdropReading>('get_pet_backdrop_reading')
@@ -187,11 +192,12 @@ export default function PetWindow() {
       window.removeEventListener(BACKDROP_REFRESH_EVENT, scheduleRefresh);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, []);
+  }, [backdropContrastEnabled]);
 
   useEffect(() => {
+    if (!backdropContrastEnabled) return;
     window.dispatchEvent(new Event(BACKDROP_REFRESH_EVENT));
-  }, [dragging, hovered, state.emotion, state.message, state.taskLabel]);
+  }, [backdropContrastEnabled, dragging, hovered, state.emotion, state.message, state.taskLabel]);
 
   useEffect(() => {
     document.documentElement.style.background = 'transparent';

@@ -2729,6 +2729,8 @@
       "hide": "Hide",
       "sound": "Sound effects",
       "soundHint": "Play soft cues while dragging files",
+      "backdropContrast": "Automatic text contrast",
+      "backdropContrastHint": "Adjust caption contrast from nearby desktop colors without saving desktop images",
       "animatedTitle": "3D animated pet",
       "animatedHint": "Create a 3D pet with actions and look directions in the current chat with @hatch-pet",
       "animatedUsing": "Using: {{name}}",

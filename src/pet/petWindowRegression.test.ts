@@ -29,6 +29,11 @@ test('backdrop contrast refreshes from events and never uses a rapid capture loo
   assert.doesNotMatch(petWindow, /setInterval\(scheduleRefresh, 1_800\)/);
 });
 
+test('backdrop sampling is fully disabled when the persisted preference is off', () => {
+  assert.match(petWindow, /if \(!backdropContrastEnabled\) \{\s*setBackdrop\(null\);\s*return;/);
+  assert.match(petWindow, /if \(!backdropContrastEnabled\) return;\s*window\.dispatchEvent/);
+});
+
 test('drag feedback scales the character instead of the transparent window root', () => {
   assert.doesNotMatch(petWindow, /transform: dragging \? 'scale\(1\.08\)'/);
   assert.match(petWindow, /dragging=\{dragging\}/);

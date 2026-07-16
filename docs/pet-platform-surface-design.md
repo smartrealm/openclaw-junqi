@@ -27,7 +27,7 @@ and at a bounded idle interval, never per animation frame.
 
 | Platform | Pet surface | Backdrop source | Fallback |
 | --- | --- | --- | --- |
-| macOS | Existing transparent WebView | System screen-capture command / Screen Recording permission | Fixed high-contrast palette when denied |
+| macOS | Existing transparent WebView | CoreGraphics in-memory capture / Screen Recording permission | Fixed high-contrast palette when denied |
 | Windows 10+ | Existing transparent WebView | Desktop DC region sampling | Fixed high-contrast palette when unavailable |
 | Windows 7 | Win32 per-pixel layered window | Desktop DC region sampling | Native high-contrast caption; never a transparent WebView |
 | Linux | Existing WebView | No capture in first release | Fixed high-contrast palette |
