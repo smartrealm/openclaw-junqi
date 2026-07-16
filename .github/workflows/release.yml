@@ -104,10 +104,6 @@ jobs:
             # The updater consumes the signed .app.tar.gz artifact; DMG is
             # retained for manual installation.
             bundle_args: '--bundles app,dmg'
-            installer_paths: |
-              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
-              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           - name: macOS x64
             artifact_name: macos-x86_64
             platform: macos-15
@@ -115,10 +111,6 @@ jobs:
             rust_targets: 'x86_64-apple-darwin'
             macos_signing_identity: '-'
             bundle_args: '--bundles app,dmg'
-            installer_paths: |
-              src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-              src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
-              src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           # Windows — native MSVC runners for both supported architectures.
           - name: Windows x64
             artifact_name: windows-x86_64
@@ -127,11 +119,6 @@ jobs:
             rust_targets: 'x86_64-pc-windows-msvc'
             macos_signing_identity: ''
             bundle_args: '--bundles nsis,msi'
-            installer_paths: |
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi.sig
           - name: Windows ARM64
             artifact_name: windows-arm64
             platform: windows-11-arm
@@ -139,11 +126,6 @@ jobs:
             rust_targets: 'aarch64-pc-windows-msvc'
             macos_signing_identity: ''
             bundle_args: '--bundles nsis,msi'
-            installer_paths: |
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi
-              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/msi/*.msi.sig
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
@@ -342,34 +324,89 @@ jobs:
           echo "Built artifacts:"
           find "src-tauri/target" -path "*/release/bundle/*" \( -name "*.dmg" -o -name "*.app" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) 2>/dev/null | sort
 
-      - name: Upload macOS release artifacts
+      - name: Upload macOS DMG installer
         if: success() && runner.os == 'macOS'
         uses: actions/upload-artifact@v7
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}
-          path: ${{ matrix.installer_paths }}
+          name: junqi-desktop-${{ matrix.artifact_name }}-dmg
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
           retention-days: 14
           if-no-files-found: error
 
-      - name: Upload signed Windows release artifacts
+      - name: Upload macOS updater
+        if: success() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: junqi-desktop-${{ matrix.artifact_name }}-updater
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload signed Windows NSIS installer
         if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}
+          name: junqi-desktop-${{ matrix.artifact_name }}-nsis
           path: |
-            ${{ runner.temp }}/signpath-signed-installers/**/*.exe
-            ${{ runner.temp }}/signpath-signed-installers/**/*.exe.sig
-            ${{ runner.temp }}/signpath-signed-installers/**/*.msi
-            ${{ runner.temp }}/signpath-signed-installers/**/*.msi.sig
+            ${{ runner.temp }}/signpath-signed-installers/**/*-setup.exe
+            ${{ runner.temp }}/signpath-signed-installers/**/*-setup.exe.sig
           retention-days: 14
           if-no-files-found: error
 
-      - name: Upload unsigned Windows CI artifacts
+      - name: Upload signed Windows English MSI installer
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: junqi-desktop-${{ matrix.artifact_name }}-msi-en-us
+          path: |
+            ${{ runner.temp }}/signpath-signed-installers/**/*_en-US.msi
+            ${{ runner.temp }}/signpath-signed-installers/**/*_en-US.msi.sig
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload signed Windows Chinese MSI installer
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: junqi-desktop-${{ matrix.artifact_name }}-msi-zh-cn
+          path: |
+            ${{ runner.temp }}/signpath-signed-installers/**/*_zh-CN.msi
+            ${{ runner.temp }}/signpath-signed-installers/**/*_zh-CN.msi.sig
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload unsigned Windows NSIS installer
         if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE != 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: junqi-desktop-${{ matrix.artifact_name }}
-          path: ${{ matrix.installer_paths }}
+          name: junqi-desktop-${{ matrix.artifact_name }}-nsis
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe.sig
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload unsigned Windows English MSI installer
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: junqi-desktop-${{ matrix.artifact_name }}-msi-en-us
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*_en-US.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*_en-US.msi.sig
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload unsigned Windows Chinese MSI installer
+        if: success() && runner.os == 'Windows' && env.IS_TAG_RELEASE != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: junqi-desktop-${{ matrix.artifact_name }}-msi-zh-cn
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*_zh-CN.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*_zh-CN.msi.sig
           retention-days: 14
           if-no-files-found: error
 

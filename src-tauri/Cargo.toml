@@ -30,7 +30,7 @@ dirs = "6"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 url = "2"
 sha2 = "0.10"
-zip = "2"
+zip = { version = "2", default-features = false, features = ["deflate-flate2", "flate2"] }
 rand = "0.8"
 flate2 = "1"
 tar = "0.4"
@@ -66,6 +66,6 @@ keyring = { version = "3.6.3", default-features = false, features = ["sync-secre
 [profile.release]
 codegen-units = 1
 lto = true
-opt-level = "s"
+opt-level = "z"
 panic = "abort"
 strip = "symbols"

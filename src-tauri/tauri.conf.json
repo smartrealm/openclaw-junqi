@@ -49,7 +49,7 @@
     },
     "windows": {
       "webviewInstallMode": {
-        "type": "embedBootstrapper",
+        "type": "downloadBootstrapper",
         "silent": true
       },
       "allowDowngrades": true,
