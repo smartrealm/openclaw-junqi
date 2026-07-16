@@ -446,7 +446,31 @@ jobs:
         with:
           pattern: junqi-desktop-*
           path: release-assets
-          merge-multiple: true
+
+      - name: Normalize macOS updater artifact names
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+
+          normalize_updater() {
+            local artifact_name="$1"
+            local architecture="$2"
+            local source_dir="release-assets/$artifact_name"
+            local source="$source_dir/JunQi Desktop.app.tar.gz"
+            local target="release-assets/JunQi Desktop_${version}_${architecture}.app.tar.gz"
+
+            if [[ ! -f "$source" || ! -f "$source.sig" ]]; then
+              echo "::error::Missing macOS updater or signature in $source_dir"
+              exit 1
+            fi
+
+            mv "$source" "$target"
+            mv "$source.sig" "$target.sig"
+          }
+
+          normalize_updater 'junqi-desktop-macos-arm64-updater' 'aarch64'
+          normalize_updater 'junqi-desktop-macos-x86_64-updater' 'x64'
 
       - name: Generate updater manifest from final release artifacts
         shell: bash
