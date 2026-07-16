@@ -1,13 +1,15 @@
 # Mainland China Network Policy
 
 JunQi desktop releases must avoid runtime downloads from GitHub, npmjs.org,
-nodejs.org, the Microsoft Store, or winget package sources. WebView2 uses the
-small Microsoft bootstrapper and its mainland CDN path instead of an offline bundle.
+nodejs.org, the Microsoft Store, or winget package sources. When WebView2 is
+missing, the installer downloads Microsoft's small bootstrapper and then uses
+its mainland CDN path instead of shipping an offline bundle.
 
 ## Windows install contract
 
-- The installer reuses the system WebView2 runtime and embeds only Microsoft's
-  roughly 1.6–1.8 MB bootstrapper, not the roughly 127 MB offline runtime.
+- The installer reuses the system WebView2 runtime. When it is missing, the
+  installer downloads Microsoft's roughly 1.6–1.8 MB bootstrapper instead of
+  embedding it or the roughly 127 MB offline runtime.
 - Machines without WebView2 download it on demand from Microsoft's
   `msedge.sf.dl.delivery.mp.microsoft.com` distribution chain, which resolves
   through mainland CDN nodes; no third-party download site is used.

@@ -14,9 +14,10 @@
 
 **安装包与发布**
 
-- Windows WebView2 改为嵌入微软引导程序，由引导程序按系统架构安装运行时，不再把完整离线运行时塞入安装包。
+- Windows WebView2 改为安装时下载微软引导程序，由引导程序按系统架构安装运行时；安装包不再内置引导程序或完整离线运行时。
 - macOS 改为 ARM64、x64 分架构打包，Windows 保持 x64、ARM64 独立制品，减少用户单次下载体积。
-- Rust 发布配置启用 LTO、符号裁剪和体积优化，并增加发布包体积回归检查。
+- Rust 发布配置启用 LTO、符号裁剪和极致体积优化，ZIP 解压仅编译 Node.js/MinGit 制品实际使用的 Deflate 支持。
+- Windows 的 NSIS/中英文 MSI、macOS 的 DMG/updater 分开上传，用户无需下载同架构的全部格式。
 - 更新清单生成器支持分架构 macOS 制品，避免不同架构互相覆盖。
 
 **质量检查**
@@ -192,4 +193,3 @@ Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.88s
 - macOS dock 每个 app 图标格子大小一致,由系统「dock 大小」滑块控制,**app 无法让自己的 dock 图标比别的 app 大**。
 - dock 图标显示异常仅出现在 `tauri dev` 调试构建;release `.app`(`/Applications/JunQi Desktop.app`)图标正常。
 - 想要打磨过的 dock 图标,需 `npm run tauri build` 出 release 包。
-

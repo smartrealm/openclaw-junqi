@@ -28,7 +28,7 @@ test('generic winget package installation command is not exposed', () => {
 });
 
 test('Windows package uses the small WebView2 bootstrapper and respects the selected path policy', () => {
-  assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'embedBootstrapper');
+  assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'downloadBootstrapper');
   assert.deepEqual(tauri.plugins.updater.endpoints, []);
   // Existing system tools are reused. Missing or incompatible tools are
   // installed into a JunQi-managed or explicitly selected portable directory.

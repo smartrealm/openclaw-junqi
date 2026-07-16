@@ -11,9 +11,10 @@ test('production Rust profile is optimized for package size', () => {
   assert.match(cargo, /\[profile\.release\]/);
   assert.match(cargo, /codegen-units\s*=\s*1/);
   assert.match(cargo, /lto\s*=\s*true/);
-  assert.match(cargo, /opt-level\s*=\s*"s"/);
+  assert.match(cargo, /opt-level\s*=\s*"z"/);
   assert.match(cargo, /panic\s*=\s*"abort"/);
   assert.match(cargo, /strip\s*=\s*"symbols"/);
+  assert.match(cargo, /zip\s*=\s*\{[^}]*default-features\s*=\s*false[^}]*features\s*=\s*\["deflate-flate2",\s*"flate2"\]/s);
 });
 
 test('macOS release packages are split by architecture', () => {
@@ -22,9 +23,18 @@ test('macOS release packages are split by architecture', () => {
   assert.doesNotMatch(release, /target: 'universal-apple-darwin'/);
 });
 
-test('Windows packages embed only the small WebView2 bootstrapper', () => {
-  assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'embedBootstrapper');
+test('Windows packages download the WebView2 bootstrapper instead of embedding it', () => {
+  assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'downloadBootstrapper');
   assert.equal(tauri.bundle.windows.webviewInstallMode.silent, true);
   assert.doesNotMatch(release, /package_variant: offline/);
   assert.doesNotMatch(release, /Mark offline Windows installers/);
+});
+
+test('release downloads are split by installer purpose', () => {
+  assert.match(release, /artifact_name \}\}-dmg/);
+  assert.match(release, /artifact_name \}\}-updater/);
+  assert.match(release, /artifact_name \}\}-nsis/);
+  assert.match(release, /artifact_name \}\}-msi-en-us/);
+  assert.match(release, /artifact_name \}\}-msi-zh-cn/);
+  assert.doesNotMatch(release, /path:\s*\$\{\{ matrix\.installer_paths \}\}/);
 });
