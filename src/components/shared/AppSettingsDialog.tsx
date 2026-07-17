@@ -485,7 +485,7 @@ function NotifyPanel() {
 
 function PetPanel() {
   const { t, i18n } = useTranslation();
-  const { enabled:petEnabled,setEnabled:setPetEnabled,skin:petSkin,setSkin:setPetSkin,customAsset:petCustomAsset,setCustomAsset:setPetCustomAsset,customPet,setCustomPet,pomodoro:petPomodoro,setPomodoro:setPetPomodoro,petVisible,backdropContrastEnabled,setBackdropContrastEnabled } = usePetStore();
+  const { enabled:petEnabled,setEnabled:setPetEnabled,skin:petSkin,setSkin:setPetSkin,customAsset:petCustomAsset,setCustomAsset:setPetCustomAsset,customPet,setCustomPet,pomodoro:petPomodoro,setPomodoro:setPetPomodoro,petVisible,backdropContrastEnabled,setBackdropContrastEnabled,captionScale:petCaptionScale,setCaptionScale:setPetCaptionScale } = usePetStore();
   const [uploadErr,setUploadErr]=useState<string|null>(null);
   const [now,setNow]=useState(Date.now());
   useEffect(()=>{if(!petPomodoro.running||petPomodoro.paused)return;const id=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(id);},[petPomodoro.running,petPomodoro.paused]);
@@ -496,6 +496,7 @@ function PetPanel() {
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{t('pet.settings.enabled')}</div></div><Toggle enabled={petEnabled} onChange={setPetEnabled}/></div>
         <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{t('pet.settings.backdropContrast')}</div><div className="text-[11px] text-aegis-text-dim">{t('pet.settings.backdropContrastHint')}</div></div><Toggle enabled={backdropContrastEnabled} onChange={setBackdropContrastEnabled}/></div>
+        <div><div className="flex items-center justify-between gap-3"><div><div className="text-[13px] text-aegis-text">{t('pet.settings.captionScale','提示文字大小')}</div><div className="text-[11px] text-aegis-text-dim">{t('pet.settings.captionScaleHint','调整萌宠状态与提示文字的显示大小')}</div></div><span className="font-mono text-xs text-aegis-primary">{Math.round(petCaptionScale*100)}%</span></div><input className="mt-2 w-full accent-[rgb(var(--aegis-primary))]" type="range" min="0.85" max="1.35" step="0.05" value={petCaptionScale} onChange={(event)=>setPetCaptionScale(Number(event.target.value))} aria-label={t('pet.settings.captionScale','提示文字大小')}/></div>
         <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{petVisible?t('pet.settings.hidePet'):t('pet.settings.showPet')}</div></div>
           <button disabled={!petEnabled} onClick={()=>invoke(petVisible?'close_pet_window':'open_pet_window').catch(()=>undefined)}
             className={clsx('text-[12px] px-3 py-1.5 rounded-xl border transition-colors',petEnabled?'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10':'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed')}>{petVisible?t('pet.settings.hide'):t('pet.settings.show')}</button></div>

@@ -7,6 +7,7 @@ import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
 import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
 import { resolvePetBackdropTextStyle, type PetBackdropReading } from './backdropContrast';
+import { usePetStore } from '@/stores/petStore';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
 const STATUS_LABEL: Record<PetEmotion, string> = {
@@ -161,6 +162,7 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
   const { themeName, isDark } = useResolvedPetTheme();
   const emotionColor = useEmotionColor(themeName);
   const dragMeta = useDragKindMeta(themeName);
+  const captionScale = usePetStore((store) => store.captionScale);
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
   const backdropStyle = resolvePetBackdropTextStyle(backdrop ?? null);
@@ -176,8 +178,8 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
   const readableText = (color: string) => backdropStyle
     ? {
         ...solidPetTextStyle(color, backdropStyle.shadow),
-        WebkitTextStroke: `1px ${backdropStyle.stroke}`,
-        WebkitTextStrokeWidth: 1,
+        WebkitTextStroke: `${backdropStyle.strokeWidth}px ${backdropStyle.stroke}`,
+        WebkitTextStrokeWidth: backdropStyle.strokeWidth,
         WebkitTextStrokeColor: backdropStyle.stroke,
       }
     : solidPetTextStyle(color, petTextShadowForTheme(themeName));
@@ -209,11 +211,11 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
 
   // Base bubble style: pure text. Keep it visually light around the pet.
   const bubbleStyle: CSSProperties = {
-    maxWidth: 240,
+    maxWidth: Math.round(240 * captionScale),
     textAlign: 'center',
     ...petBubbleTextContainerStyle(textPalette.primary, themeName),
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
-    fontSize: 13,
+    fontSize: 13 * captionScale,
     fontWeight: 760,
     lineHeight: 1.5,
     overflowWrap: 'anywhere',

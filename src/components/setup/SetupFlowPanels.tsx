@@ -723,11 +723,21 @@ function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: 
                 <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-aegis-surface">
                   {typeof s.progress === "number" ? (
                     <div
-                      className="h-full rounded-full bg-aegis-primary transition-[width] duration-300"
-                      style={{ width: `${Math.max(2, Math.min(100, s.progress))}%` }}
+                      className="h-full rounded-full animate-pulse transition-[width] duration-300"
+                      style={{
+                        width: `${Math.max(2, Math.min(100, s.progress))}%`,
+                        background: 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
+                        boxShadow: '0 0 12px rgb(var(--aegis-primary) / 0.72)',
+                      }}
                     />
                   ) : (
-                    <div className="h-full w-1/3 animate-pulse rounded-full bg-aegis-primary" />
+                    <div
+                      className="h-full w-1/3 animate-pulse rounded-full"
+                      style={{
+                        background: 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
+                        boxShadow: '0 0 12px rgb(var(--aegis-primary) / 0.72)',
+                      }}
+                    />
                   )}
                 </div>
                 {typeof s.progress === "number" && (
@@ -877,7 +887,18 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
           <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-aegis-surface">
-            <div className="h-full rounded-full bg-aegis-primary transition-all duration-500" style={{ width: `${percent}%` }} />
+            <div
+              className={clsx("h-full rounded-full transition-all duration-500", !isReady && !isError && "animate-pulse")}
+              style={{
+                width: `${percent}%`,
+                background: isError
+                  ? 'rgb(248 113 113)'
+                  : isReady
+                    ? 'rgb(var(--aegis-success))'
+                    : 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
+                boxShadow: isError || isReady ? 'none' : '0 0 14px rgb(var(--aegis-primary) / 0.72)',
+              }}
+            />
           </div>
           <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤完成")}</div>
         </div>
