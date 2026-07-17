@@ -22,10 +22,16 @@ test('WIN-I18N-01 system dependency progress has every supported translation', (
 
 test('WIN-I18N-02 Windows installers build Chinese and English variants', () => {
   const config = JSON.parse(read('../src-tauri/tauri.conf.json')) as {
-    bundle: { windows: { nsis: { languages: string[]; displayLanguageSelector: boolean }; wix: { language: string[] } } };
+    bundle: {
+      windows: {
+        nsis: { languages: string[]; displayLanguageSelector: boolean; installerHooks?: string };
+        wix: { language: string[] };
+      };
+    };
   };
   assert.deepEqual(config.bundle.windows.nsis.languages, ['English', 'SimpChinese']);
   assert.equal(config.bundle.windows.nsis.displayLanguageSelector, true);
+  assert.equal(config.bundle.windows.nsis.installerHooks, undefined);
   assert.deepEqual(config.bundle.windows.wix.language, ['en-US', 'zh-CN']);
 });
 

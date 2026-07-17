@@ -290,15 +290,21 @@ mod runtime_observation_tests {
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        );
+        let body = body.to_owned();
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = [0_u8; 512];
-            let _ = stream.read(&mut request).await;
+            let size = stream.read(&mut request).await.unwrap();
+            let request = String::from_utf8_lossy(&request[..size]);
+            let (status, response_body) = if request.starts_with("GET /healthz ") {
+                ("200 OK", body.as_str())
+            } else {
+                ("404 Not Found", "")
+            };
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+                response_body.len(),
+            );
             stream.write_all(response.as_bytes()).await.unwrap();
         });
         port
@@ -769,9 +775,12 @@ pub async fn get_gateway_token() -> Result<String, String> {
 /// the port; treating it as success lets an unrelated local service bypass the
 /// installer and later fail during the WebSocket handshake.
 ///
-/// `/health` is OpenClaw's documented, payload-free monitoring endpoint. It
-/// avoids the noisy incomplete WebSocket handshakes produced by protocol probes
-/// while still verifying the service identity and readiness.
+/// `/healthz` is OpenClaw's documented liveness endpoint. It avoids the noisy
+/// incomplete WebSocket handshakes produced by protocol probes while still
+/// verifying the service identity. `/readyz` stays red while optional startup
+/// work settles, so it is not appropriate for process ownership.
+const OPENCLAW_GATEWAY_LIVENESS_PATH: &str = "healthz";
+
 fn gateway_health_payload_is_healthy(payload: &serde_json::Value) -> bool {
     payload.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
         && payload.get("status").and_then(serde_json::Value::as_str) == Some("live")
@@ -779,9 +788,10 @@ fn gateway_health_payload_is_healthy(payload: &serde_json::Value) -> bool {
 
 pub async fn is_gateway_healthy(port: u16) -> bool {
     let endpoint = format!(
-        "http://{}:{}/health",
+        "http://{}:{}/{}",
         crate::commands::config::default_gateway_host(),
-        port
+        port,
+        OPENCLAW_GATEWAY_LIVENESS_PATH,
     );
     let client = match reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_millis(400))

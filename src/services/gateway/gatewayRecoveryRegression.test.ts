@@ -83,7 +83,7 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   const setup = source('src/hooks/useSetupFlow.ts');
   assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60/);
   assert.match(gateway, /child\.try_wait\(\)[\s\S]*is_gateway_healthy\(port\)\.await/);
-  assert.match(gateway, /http:\/\/\{\}:\{\}\/health/);
+  assert.match(gateway, /OPENCLAW_GATEWAY_LIVENESS_PATH: &str = "healthz"/);
   assert.doesNotMatch(gateway, /TcpStream::connect/);
   assert.match(gateway, /terminate_owned_gateway\(&mut child\)\.await/);
   assert.match(gateway, /Recent Gateway output/);
