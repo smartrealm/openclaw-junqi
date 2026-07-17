@@ -37,15 +37,21 @@ pub enum RuntimeToolSource {
     Custom,
 }
 
-/// A native OpenClaw executable bound to the exact Node.js runtime that was
-/// checked against the installed package's `engines.node` contract. Keeping
-/// this pair together prevents a later PATH lookup from silently selecting an
-/// incompatible Node.js executable on Windows or Unix.
+/// The resolved process program for an OpenClaw invocation.
+///
+/// npm installs command shims, not Node entry scripts. Resolve and validate
+/// the package entry before constructing any command so no caller can pass a
+/// `.cmd` shim to Node by mistake.
+#[derive(Debug, Clone)]
+enum NativeOpenclawLaunch {
+    NodeScript { node: PathBuf, entry: PathBuf },
+    Executable { program: PathBuf },
+}
+
+/// A native OpenClaw process contract resolved once from the selected runtime.
 #[derive(Debug, Clone)]
 pub(crate) struct NativeOpenclawRuntime {
-    binary: PathBuf,
-    node: PathBuf,
-    entrypoint: Option<PathBuf>,
+    launch: NativeOpenclawLaunch,
 }
 
 /// The complete process contract for one native OpenClaw invocation.
@@ -127,12 +133,13 @@ fn stable_openclaw_working_dir() -> Option<PathBuf> {
 
 impl NativeOpenclawRuntime {
     pub(crate) fn command(&self, context: &OpenclawCommandContext) -> tokio::process::Command {
-        let mut command = if let Some(entrypoint) = &self.entrypoint {
-            let mut command = tokio::process::Command::new(&self.node);
-            command.arg(node_entrypoint_path(entrypoint));
-            command
-        } else {
-            tokio::process::Command::new(&self.binary)
+        let mut command = match &self.launch {
+            NativeOpenclawLaunch::NodeScript { node, entry } => {
+                let mut command = tokio::process::Command::new(node);
+                command.arg(entry);
+                command
+            }
+            NativeOpenclawLaunch::Executable { program } => tokio::process::Command::new(program),
         };
         context.apply(&mut command);
         command
@@ -154,11 +161,8 @@ pub(crate) fn native_openclaw_runtime(
         .ok_or_else(|| {
             "The compatible Node.js runtime did not report an executable path".to_string()
         })?;
-    let entrypoint = npm_openclaw_entry_for_execution(&binary)?;
     Ok(NativeOpenclawRuntime {
-        binary,
-        node,
-        entrypoint,
+        launch: resolve_native_openclaw_launch(binary, node)?,
     })
 }
 
@@ -307,32 +311,36 @@ fn npm_openclaw_entry(binary: &Path) -> Option<PathBuf> {
     entry.is_file().then_some(entry)
 }
 
-fn npm_openclaw_entry_for_execution(binary: &Path) -> Result<Option<PathBuf>, String> {
-    if let Some(entry) = npm_openclaw_entry(binary) {
-        return Ok(Some(entry));
-    }
-    let is_npm_command_shim = binary
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("ps1")
+fn resolve_native_openclaw_launch(
+    binary: PathBuf,
+    node: PathBuf,
+) -> Result<NativeOpenclawLaunch, String> {
+    if let Some(entry) = npm_openclaw_entry(&binary) {
+        return Ok(NativeOpenclawLaunch::NodeScript {
+            node,
+            entry: path_for_node_argument(&entry),
         });
-    if is_npm_command_shim {
+    }
+    if is_npm_command_shim(&binary) {
         return Err(format!(
             "OpenClaw npm shim cannot be resolved to its JavaScript entry point: {}. Reinstall or re-detect OpenClaw after changing npm's global prefix.",
             binary.display()
         ));
     }
-    Ok(None)
+    Ok(NativeOpenclawLaunch::Executable { program: binary })
 }
 
-fn node_entrypoint_path(path: &Path) -> PathBuf {
-    node_entrypoint_path_for_platform(path, cfg!(windows))
+fn is_npm_command_shim(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("ps1")
+        })
 }
 
-fn node_entrypoint_path_for_platform(path: &Path, windows: bool) -> PathBuf {
-    if windows {
-        PathBuf::from(path_text_for_display(&path.to_string_lossy(), true))
+fn path_for_node_argument(path: &Path) -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from(strip_windows_verbatim_prefix(&path.to_string_lossy()))
     } else {
         path.to_path_buf()
     }
@@ -767,6 +775,10 @@ fn path_text_for_display(raw: &str, windows: bool) -> String {
     if !windows {
         return raw.to_string();
     }
+    strip_windows_verbatim_prefix(raw)
+}
+
+fn strip_windows_verbatim_prefix(raw: &str) -> String {
     if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
         return format!(r"\\{}", rest);
     }
@@ -1146,15 +1158,12 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 #[cfg(test)]
 mod tests {
     use super::{
-        native_openclaw_runtime, node_entrypoint_path_for_platform,
-        node_requirement_for_openclaw_binary, npm_cli_for_node, npm_openclaw_entry,
-        npm_openclaw_entry_for_execution, npm_prefix_for_openclaw_binary, openclaw_package_dir,
+        native_openclaw_runtime, node_requirement_for_openclaw_binary, npm_cli_for_node,
+        npm_openclaw_entry, npm_prefix_for_openclaw_binary, openclaw_package_dir,
         openclaw_package_version_for_binary, parse_openclaw_version, path_text_for_display,
-        read_openclaw_package_metadata, required_node_requirement_for_openclaw_binary, NodeStatus,
-        OpenclawCommandContext, RuntimeToolSource,
+        read_openclaw_package_metadata, required_node_requirement_for_openclaw_binary,
+        strip_windows_verbatim_prefix, NodeStatus, OpenclawCommandContext, RuntimeToolSource,
     };
-    use std::path::{Path, PathBuf};
-
     #[test]
     fn bug_rp_04_runtime_tool_sources_have_distinct_wire_values() {
         assert_eq!(
@@ -1192,14 +1201,6 @@ mod tests {
 
         let shim = custom_prefix.join("openclaw.cmd");
         assert_eq!(npm_openclaw_entry(&shim), Some(entry.clone()));
-        assert_eq!(
-            npm_openclaw_entry_for_execution(&shim),
-            Ok(Some(entry.clone()))
-        );
-        assert_eq!(
-            npm_openclaw_entry_for_execution(&custom_prefix.join("openclaw.exe")),
-            Ok(None)
-        );
 
         let node = root.join("node.exe");
         let runtime = native_openclaw_runtime(
@@ -1224,7 +1225,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_npm_shim_without_a_verified_entry_fails_closed() {
+    fn npm_command_shim_without_a_verified_entry_fails_closed() {
         let root = std::env::temp_dir().join(format!(
             "junqi-openclaw-broken-shim-{}-{}",
             std::process::id(),
@@ -1237,22 +1238,28 @@ mod tests {
         std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
         std::fs::write(&shim, "@echo off").unwrap();
 
-        let error = npm_openclaw_entry_for_execution(&shim).unwrap_err();
+        let error = native_openclaw_runtime(
+            shim,
+            &NodeStatus {
+                available: true,
+                version: Some("v24.18.0".into()),
+                path: Some(root.join("node.exe").to_string_lossy().to_string()),
+                source: Some(RuntimeToolSource::System),
+            },
+        )
+        .unwrap_err();
         assert!(error.contains("JavaScript entry point"));
         assert!(error.contains("re-detect OpenClaw"));
         let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
-    fn windows_node_entrypoint_drops_the_verbatim_path_prefix() {
+    fn windows_verbatim_path_prefix_is_removed_for_node_arguments() {
         assert_eq!(
-            node_entrypoint_path_for_platform(
-                Path::new(
-                    r"\\?\C:\Users\Wang\AppData\Roaming\npm\node_modules\openclaw\openclaw.mjs"
-                ),
-                true,
+            strip_windows_verbatim_prefix(
+                r"\\?\C:\Users\Wang\AppData\Roaming\npm\node_modules\openclaw\openclaw.mjs"
             ),
-            PathBuf::from(r"C:\Users\Wang\AppData\Roaming\npm\node_modules\openclaw\openclaw.mjs")
+            r"C:\Users\Wang\AppData\Roaming\npm\node_modules\openclaw\openclaw.mjs"
         );
     }
 
