@@ -817,17 +817,13 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return;
       patchStep(
         "gateway",
-        gatewayPrepareWarning ? "pending" : "running",
+        "running",
         gatewayPrepareWarning ?? t("setup.preparingGateway"),
       );
-      if (gatewayPrepareWarning) {
-        reportPhase("awaitingGatewayStart", gatewayPrepareWarning);
-        replaceSetupStep("install-complete");
-        return;
-      }
       // The official visual wizard is served by a healthy local Gateway. For a
-      // fresh install, start this bootstrap runtime immediately instead of
-      // presenting a misleading "configuration complete" checkpoint.
+      // fresh install, start this bootstrap runtime immediately. Preparation is
+      // diagnostic only: startGatewayAction owns the authoritative validation
+      // and recovery path, so a probe warning must not strand onboarding.
       await startGatewayAction();
     } catch (err: any) {
       if (!isRunActive(runId)) return;

@@ -166,10 +166,20 @@ test('Gateway preparation automatically continues into first-run visual configur
   assert.match(setupFlowPanels, /titleFallback: "OpenClaw Gateway"/);
   assert.match(setupFlowPanels, /descriptionFallback: "验证 Gateway 配置并准备启动控制通道"/);
   assert.match(setupFlow, /await prepareGateway\(\)/);
-  assert.match(setupFlow, /gatewayPrepareWarning \? "pending" : "running"/);
+  assert.match(setupFlow, /gatewayPrepareWarning \?\? t\("setup\.preparingGateway"\)/);
   assert.match(setupFlow, /await startGatewayAction\(\)/);
+  assert.doesNotMatch(setupFlow, /if \(gatewayPrepareWarning\)[\s\S]{0,240}replaceSetupStep\("install-complete"\)/);
   assert.match(setupFlow, /level: "warn"/);
-  assert.match(setupFlow, /reportPhase\("awaitingGatewayStart"/);
+});
+
+test('existing installations without a model bootstrap Gateway before the visual wizard', () => {
+  const storageCompletion = setupFlow.slice(
+    setupFlow.indexOf('const completeStorageSetup = useCallback'),
+    setupFlow.indexOf('const repairAndRetry = useCallback'),
+  );
+
+  assert.match(storageCompletion, /nextStep === "gateway-stopped" && needsOnboardingRef\.current/);
+  assert.match(storageCompletion, /void startGatewayAction\(\)/);
 });
 
 test('installation footer reports the current step instead of a live log message', () => {
