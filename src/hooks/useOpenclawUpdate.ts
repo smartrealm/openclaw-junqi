@@ -45,6 +45,7 @@ export function useOpenclawUpdate() {
           detail.key,
           detail.message,
           (translationKey, options) => t(translationKey, options),
+          detail.params,
         ),
       });
     });

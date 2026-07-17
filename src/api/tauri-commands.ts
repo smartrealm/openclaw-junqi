@@ -100,7 +100,7 @@ export const checkOpenclaw = () => invoke<OpenclawStatus>("check_openclaw");
 export const checkOpenclawUpdate = () => invoke<OpenclawUpdateStatus>("check_openclaw_update");
 export const updateOpenclaw = () => invoke<OpenclawUpdateResult>("update_openclaw");
 export const runMaintenanceScan = () => invoke<MaintenanceReport>("run_maintenance_scan");
-export const installNode = () => invoke<string>("install_node");
+export const installNode = (force = false) => invoke<string>("install_node", { force });
 export const installGit = () => invoke<string>("install_git");
 export const installOpenclaw = () => invoke<string>("install_openclaw");
 export const reinstallOpenclaw = () => invoke<string>("reinstall_openclaw");

@@ -206,11 +206,13 @@ export function translateSetupProgressMessage(
   key: string | null | undefined,
   message: string,
   translate: ProgressTranslator,
+  explicitParams: Partial<Record<string, string>> = {},
 ): string {
   if (!key) return message;
   const translated = String(translate(key, {
     defaultValue: message,
     ...setupProgressI18nParams(key, message),
+    ...explicitParams,
   }));
   return translated !== key && !translated.includes("{{") ? translated : message;
 }

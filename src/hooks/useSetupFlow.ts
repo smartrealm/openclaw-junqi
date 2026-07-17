@@ -104,6 +104,7 @@ const INSTALL_TARGET_KEYS = {
 function pickInstallTargetFromProgress(
   key: string,
   message: string,
+  explicitParams: Partial<Record<string, string>> = {},
 ): InstallTarget | null {
   if (
     key !== INSTALL_TARGET_KEYS.user &&
@@ -115,7 +116,7 @@ function pickInstallTargetFromProgress(
   }
   // Reuse the same rule table that drives i18next substitution so
   // the UI path stays in lockstep with the message formatting.
-  const params = setupProgressI18nParams(key, message);
+  const params = { ...setupProgressI18nParams(key, message), ...explicitParams };
   if (!params.path) return null;
   if (key === INSTALL_TARGET_KEYS.userMissingPath) {
     return { tier: "userMissingPath", path: params.path };
@@ -427,7 +428,7 @@ export function useSetupFlow(
       (event) => {
         const normalized = normalizeSetupProgressPayload(event.payload);
         if (!normalized) return;
-        const { step, message, progress: localProgress, error, key } = normalized;
+        const { step, message, progress: localProgress, error, key, params } = normalized;
         if (!step) {
           report(message);
           return;
@@ -437,12 +438,13 @@ export function useSetupFlow(
           key,
           message,
           (translationKey, options) => t(translationKey, options),
+          params,
         );
         // Capture the resolved install target so the UI can surface
         // a dedicated "Install location" card. Reuses the same rule
         // table that drives i18next substitution, so the displayed
         // path is byte-identical to what's in the progress message.
-        const resolvedTarget = pickInstallTargetFromProgress(String(key ?? ""), message);
+        const resolvedTarget = pickInstallTargetFromProgress(String(key ?? ""), message, params);
         if (resolvedTarget) setInstallTarget(resolvedTarget);
         const nextProgress = typeof localProgress === "number"
           ? progressForSetupEvent(step, localProgress, installMode) ?? undefined
@@ -693,7 +695,8 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return;
       if (!gitStatus.available) {
         const isWindows = navigator.userAgent.toLowerCase().includes("windows");
-        if (!isWindows) {
+        const isMac = window.aegis?.platform === "darwin";
+        if (!isWindows && !isMac) {
           patchStep("git", "error", t("setup.gitRequiredDesc"));
           setNeedsGit(true);
           replaceSetupStep("git-missing");
@@ -704,7 +707,13 @@ export function useSetupFlow(
         replaceSetupStep("install-git");
         await installGit();
         const installedGit = await checkGit();
-        if (!installedGit.available) throw new Error(t("setup.gitRequiredDesc"));
+        if (!installedGit.available) {
+          patchStep("git", "error", t("setup.gitRequiredDesc"));
+          setNeedsGit(true);
+          replaceSetupStep("git-missing");
+          reportPhase("git", t("setup.gitRequiredDesc"), 100);
+          return;
+        }
         patchStep("git", "done", installedGit.version ?? undefined);
       } else {
         patchStep("git", "done", gitStatus.version ?? undefined);
@@ -718,15 +727,6 @@ export function useSetupFlow(
       setNodeRequirement(setupNode.requirement);
       if (!isRunActive(runId)) return;
       if (!nodeStatus.available) {
-        const useMacSystemRecovery = window.aegis?.platform === "darwin" && nodeStatus.source !== "custom";
-        if (useMacSystemRecovery) {
-          const message = t("setup.nodeRequiredDesc", { requirement: setupNode.requirement });
-          patchStep("node", "error", message);
-          setSetupError(null);
-          replaceSetupStep("node-missing");
-          reportPhase("node", message, 100);
-          return;
-        }
         patchStep("node", "running", t("setup.installingNode"));
         replaceSetupStep("install-node");
         reportPhase("node", t("setup.installingNode"), 20);
@@ -748,7 +748,7 @@ export function useSetupFlow(
       let npmStatus = await checkNpm();
       if (!npmStatus.available) {
         patchStep("npm", "running", t("setup.installingNpm", "正在通过系统 Node.js 安装 npm…"));
-        await installNode();
+        await installNode(true);
         npmStatus = await checkNpm();
       }
       if (!npmStatus.available) throw new Error(t("setup.npmInstallFailed", "npm 安装后校验失败"));
@@ -760,7 +760,12 @@ export function useSetupFlow(
       const oclawStatus = await checkOpenclaw();
       setOpenclawStatus(oclawStatus);
       if (!isRunActive(runId)) return;
-      const forceReinstall = reinstallRequestedRef.current;
+      const repairInvalidInstall = oclawStatus.binary_found && (
+        !oclawStatus.version_ok
+        || !oclawStatus.package_valid
+        || !oclawStatus.gateway_command_ok
+      );
+      const forceReinstall = reinstallRequestedRef.current || repairInvalidInstall;
       const forceRelocation = relocationRequestedRef.current || oclawStatus.relocation_required;
       if (!oclawStatus.installed || forceReinstall || forceRelocation) {
         if (!oclawStatus.installed) updateOnboardingRequirement(true);
