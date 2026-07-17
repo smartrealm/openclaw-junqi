@@ -417,7 +417,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: build
-    # Main builds remain Actions artifacts. A v* tag is the explicit signal
+    # Daxia branch builds remain Actions artifacts. A v* tag is the explicit signal
     # that a tested build should be public and permanent.
     if: needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v'))
     runs-on: ubuntu-latest
@@ -502,16 +502,17 @@ jobs:
           tag="$RELEASE_TAG"
           title="JunQi Desktop ${tag#v}"
           if [ "$SIGNPATH_CONFIGURED" = "true" ]; then
-            notes="Windows installers are Authenticode-signed through SignPath Foundation."
+            notes="Windows 安装器已通过 SignPath Foundation 完成 Authenticode 可信代码签名。"
           else
-            notes="Windows installers are not Authenticode-signed yet. Windows may show a SmartScreen warning until SignPath Foundation signing is configured."
+            notes="Windows 安装器暂未配置 Authenticode 可信代码签名，Windows 可能显示 SmartScreen 提示。附件中的 .sig 用于应用更新完整性验证，不等同于 Windows 系统信任证书。"
           fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$tag" --notes "$notes" --repo "$GITHUB_REPOSITORY"
+            gh release edit "$tag" --target daxia --notes "$notes" --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$tag" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
+              --target daxia \
               --title "$title" \
               --notes "$notes"
           fi
