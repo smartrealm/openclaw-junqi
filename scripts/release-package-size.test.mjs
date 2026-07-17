@@ -20,6 +20,7 @@ test('production Rust profile is optimized for package size', () => {
 test('macOS release packages are split by architecture', () => {
   assert.match(release, /target: 'aarch64-apple-darwin'/);
   assert.match(release, /target: 'x86_64-apple-darwin'/);
+  assert.match(release, /name: macOS x64\s+artifact_name: macos-x86_64\s+platform: macos-15-intel\s+target: 'x86_64-apple-darwin'/);
   assert.doesNotMatch(release, /target: 'universal-apple-darwin'/);
 });
 

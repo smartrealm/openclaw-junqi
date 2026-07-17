@@ -106,7 +106,7 @@ jobs:
             bundle_args: '--bundles app,dmg'
           - name: macOS x64
             artifact_name: macos-x86_64
-            platform: macos-15
+            platform: macos-15-intel
             target: 'x86_64-apple-darwin'
             rust_targets: 'x86_64-apple-darwin'
             macos_signing_identity: '-'
