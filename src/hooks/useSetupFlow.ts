@@ -943,6 +943,21 @@ export function useSetupFlow(
     const runtimeReconfigurationRequired = result?.runtimeReconfigurationRequired === true;
     relocationRequestedRef.current = result?.openclawRelocationRequired === true;
     if (createdFresh) updateOnboardingRequirement(true);
+
+    // An existing Native OpenClaw install still relies on host Git, Node.js,
+    // and npm. Route it through the same preflight/install closure as a fresh
+    // Native setup instead of skipping directly to Gateway startup.
+    if (
+      installMode === "native"
+      && openclawStatus?.installed
+      && !runtimeReconfigurationRequired
+      && !relocationRequestedRef.current
+    ) {
+      navigateSetup("checking", "push");
+      void runNativeSetup();
+      return;
+    }
+
     const nextStep = runtimeReconfigurationRequired
       ? "choosing-mode"
       : createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
@@ -964,7 +979,17 @@ export function useSetupFlow(
       // the same bootstrap-to-wizard path as fresh installs.
       void startGatewayAction();
     }
-  }, [postStorageStep, report, navigateSetup, t, updateOnboardingRequirement, startGatewayAction]);
+  }, [
+    installMode,
+    openclawStatus?.installed,
+    postStorageStep,
+    report,
+    navigateSetup,
+    t,
+    updateOnboardingRequirement,
+    runNativeSetup,
+    startGatewayAction,
+  ]);
 
   const repairAndRetry = useCallback(async () => {
     if (repairing) return;
