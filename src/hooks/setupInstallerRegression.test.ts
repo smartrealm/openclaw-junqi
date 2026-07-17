@@ -162,6 +162,17 @@ test('installation steps and activity log use aligned fixed-height viewports', (
   assert.match(setupFlowPanels, /viewport\.scrollTo\(\{/);
 });
 
+test('installation progress has distinct running, success, and failure visuals', () => {
+  assert.equal(
+    (setupFlowPanels.match(/linear-gradient\(90deg, rgb\(var\(--aegis-primary\)\), rgb\(var\(--aegis-success\)\)/g) ?? []).length,
+    3,
+  );
+  assert.match(setupFlowPanels, /!isReady && !isError && "animate-pulse"/);
+  assert.match(setupFlowPanels, /isError\s*\? ["']rgb\(248 113 113\)["']/);
+  assert.match(setupFlowPanels, /isReady\s*\? ["']rgb\(var\(--aegis-success\)\)["']/);
+  assert.match(setupFlowPanels, /isError \|\| isReady \? ["']none["'] : ["']0 0 14px/);
+});
+
 test('Gateway preparation automatically continues into first-run visual configuration', () => {
   assert.match(setupFlowPanels, /titleFallback: "OpenClaw Gateway"/);
   assert.match(setupFlowPanels, /descriptionFallback: "验证 Gateway 配置并准备启动控制通道"/);
