@@ -12,6 +12,7 @@ import { formatTokens } from '@/utils/format';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
+import { isAgentMainSession } from '@/utils/sessionLifecycle';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import type { AgentInfo, SessionInfo } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
@@ -75,13 +76,8 @@ function getAgentId(session: SessionInfo): string | undefined {
   return parts[0] === 'agent' && parts[1] ? parts[1] : undefined;
 }
 
-function isMainSession(sessionKey: string): boolean {
-  const parts = String(sessionKey || '').split(':');
-  return parts[0] === 'agent' && Boolean(parts[1]) && parts.slice(2).join(':') === 'main';
-}
-
 function getSessionKind(session: SessionInfo): 'main' | 'subagent' | 'agent' | 'session' {
-  if (isMainSession(session.key)) return 'main';
+  if (isAgentMainSession(session.key)) return 'main';
   if (String(session.key || '').includes(':subagent:')) return 'subagent';
   if (String(session.key || '').startsWith('agent:')) return 'agent';
   return 'session';
@@ -120,7 +116,7 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
     genericSessionLabel: t('dashboard.session', 'Session'),
   });
   const isAgentKey  = session.key.startsWith('agent:');
-  const canDelete = !isMainSession(session.key);
+  const canDelete = !isAgentMainSession(session.key);
   const inputId = `session-rename-${session.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const errorId = `${inputId}-error`;
 

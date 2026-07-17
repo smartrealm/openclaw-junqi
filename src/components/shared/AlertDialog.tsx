@@ -1,8 +1,8 @@
 // Unified alert/confirm dialog — consistent with ScreenshotPicker.
 // Replaces native alert()/confirm() across the app.
 
-import { useEffect, useId, useRef } from 'react';
-import { X, ShieldAlert, AlertTriangle, Info, CheckCircle, HelpCircle } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { X, ShieldAlert, AlertTriangle, Info, CheckCircle, HelpCircle, LoaderCircle } from 'lucide-react';
 import clsx from 'clsx';
 import i18n from '@/i18n';
 import { showAlert, showConfirm, useAlertStore, type AlertVariant } from './alertStore';
@@ -17,7 +17,7 @@ interface AlertDialogProps {
   /** Confirm mode: shows Cancel + Confirm buttons */
   confirmLabel?: string;
   cancelLabel?: string;
-  onConfirm?: () => void;
+  onConfirm?: () => void | Promise<void>;
   /** Dismiss-only label */
   dismissLabel?: string;
 }
@@ -44,6 +44,11 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const dismissRef = useRef<HTMLButtonElement>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!open) setConfirming(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -52,7 +57,7 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
       (cancelRef.current || dismissRef.current || dialogRef.current)?.focus();
     }, 0);
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || confirming) return;
       event.preventDefault();
       onClose();
     };
@@ -62,13 +67,25 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
       document.removeEventListener('keydown', handleKeyDown);
       previousFocus?.focus();
     };
-  }, [open, onClose]);
+  }, [confirming, open, onClose]);
 
   if (!open) return null;
   const colors = VARIANT_COLORS[variant];
   const Icon = VARIANT_ICONS[variant];
 
-  const handleBackdrop = (e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); };
+  const handleBackdrop = (e: React.MouseEvent) => {
+    if (!confirming && e.target === e.currentTarget) onClose();
+  };
+  const handleConfirm = async () => {
+    if (!onConfirm || confirming) return;
+    setConfirming(true);
+    try {
+      await onConfirm();
+      onClose();
+    } catch {
+      setConfirming(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[2147481000] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={handleBackdrop}>
@@ -78,6 +95,7 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={message ? descriptionId : undefined}
+        aria-busy={confirming || undefined}
         tabIndex={-1}
         className="w-[min(380px,calc(100vw-32px))] rounded-lg bg-aegis-menu-bg border border-aegis-menu-border shadow-2xl overflow-hidden animate-fade-in outline-none"
         style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05) inset' }}
@@ -91,7 +109,7 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
             </div>
             <h3 id={titleId} className="text-[14px] font-semibold text-aegis-text">{title}</h3>
           </div>
-          <button onClick={onClose} aria-label={i18n.t('common.close') as string} className="w-7 h-7 rounded flex items-center justify-center hover:bg-[rgb(var(--aegis-overlay)/0.08)] focus-visible:ring-2 focus-visible:ring-aegis-primary/50 transition-colors">
+          <button disabled={confirming} onClick={onClose} aria-label={i18n.t('common.close') as string} className="w-7 h-7 rounded flex items-center justify-center hover:bg-[rgb(var(--aegis-overlay)/0.08)] focus-visible:ring-2 focus-visible:ring-aegis-primary/50 transition-colors disabled:cursor-wait disabled:opacity-40">
             <X size={15} className="text-aegis-text-muted" />
           </button>
         </div>
@@ -109,13 +127,15 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
           <div className="flex items-center gap-2 justify-end">
             {confirmLabel && onConfirm && (
               <>
-                <button ref={cancelRef} onClick={onClose} className="px-3.5 py-1.5 rounded text-[12px] font-medium text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:ring-2 focus-visible:ring-aegis-primary/50 transition-colors">
+                <button ref={cancelRef} disabled={confirming} onClick={onClose} className="px-3.5 py-1.5 rounded text-[12px] font-medium text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:ring-2 focus-visible:ring-aegis-primary/50 transition-colors disabled:cursor-wait disabled:opacity-50">
                   {cancelLabel || (i18n.t('common.cancel') as string)}
                 </button>
                 <button
-                  onClick={() => { onConfirm(); onClose(); }}
-                  className={clsx('px-3.5 py-1.5 rounded text-[12px] font-semibold border focus-visible:ring-2 focus-visible:ring-aegis-primary/50 transition-colors', colors.btn, colors.btnHover)}
+                  disabled={confirming}
+                  onClick={() => { void handleConfirm(); }}
+                  className={clsx('inline-flex min-w-[72px] items-center justify-center gap-1.5 px-3.5 py-1.5 rounded text-[12px] font-semibold border focus-visible:ring-2 focus-visible:ring-aegis-primary/50 transition-colors disabled:cursor-wait disabled:opacity-70', colors.btn, colors.btnHover)}
                 >
+                  {confirming && <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />}
                   {confirmLabel}
                 </button>
               </>

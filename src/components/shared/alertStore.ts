@@ -10,7 +10,7 @@ interface AlertState {
   variant: AlertVariant;
   confirmLabel?: string;
   cancelLabel?: string;
-  onConfirm?: () => void;
+  onConfirm?: () => void | Promise<void>;
 }
 
 export const useAlertStore = create<AlertState & {
@@ -31,7 +31,7 @@ export function showAlert(title: string, message: string, variant: AlertVariant 
   useAlertStore.getState().alert({ title, message, variant });
 }
 
-export function showConfirm(title: string, message: string, onConfirm: () => void) {
+export function showConfirm(title: string, message: string, onConfirm: () => void | Promise<void>) {
   useAlertStore.getState().confirm({
     title,
     message,

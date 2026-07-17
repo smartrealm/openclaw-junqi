@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { debugLog } from '@/utils/debugLog';
+import {
+  createLatestRequestGate,
+  markSessionDeleted,
+  withoutDeletedSessions,
+} from '@/utils/sessionLifecycle';
 
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
@@ -222,9 +227,10 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
     // (runningUpdatedAt) that the polling API does not return. Without this,
     // every 10s poll wipes the freshness stamp → isFreshRunning returns false →
     // pet shows idle while an agent is actively working.
+    const visibleSessions = withoutDeletedSessions(sessions);
     const existing = get().sessions;
     const existingByKey = new Map(existing.map((s) => [s.key, s]));
-    const merged = sessions.map((s) => {
+    const merged = visibleSessions.map((s) => {
       const prev = existingByKey.get(s.key);
       if (!prev) return s;
       // Poll says running=false → drop freshness stamp (task ended).
@@ -320,15 +326,18 @@ const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
 // Reference to gateway connection (set by startPolling)
 // Uses request() directly to avoid circular imports with gateway facade
 let gw: { request: (method: string, params: any) => Promise<any> } | null = null;
+const sessionsRequestGate = createLatestRequestGate();
 
 // ── Fetch functions ──────────────────────────────────────
 
 async function fetchSessions() {
   if (!gw) return;
+  const requestId = sessionsRequestGate.begin();
   const store = useGatewayDataStore.getState();
   store.setLoading('sessions', true);
   try {
     const res = await gw.request('sessions.list', {});
+    if (!sessionsRequestGate.isCurrent(requestId)) return;
     const rawList: SessionInfo[] = Array.isArray(res?.sessions) ? res.sessions : [];
 
     // Merge: preserve event-enriched runningUpdatedAt that the server does not return.
@@ -364,6 +373,7 @@ async function fetchSessions() {
       store.setLoading('sessions', false);
     }
   } catch (e: any) {
+    if (!sessionsRequestGate.isCurrent(requestId)) return;
     store.setError('sessions', e?.message || String(e));
     store.setLoading('sessions', false);
   }
@@ -668,15 +678,21 @@ function syncRunningSubAgents() {
 // ═══════════════════════════════════════════════════════════
 
 let sessionsChangedRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSessionsChangedDetail: { reason?: string; sessionKey?: string } | null = null;
 
-function scheduleSessionsChangedRefresh(): void {
+function scheduleSessionsChangedRefresh(detail: { reason?: string; sessionKey?: string }): void {
+  if (!pendingSessionsChangedDetail || detail.reason === 'delete') {
+    pendingSessionsChangedDetail = detail;
+  }
   if (sessionsChangedRefreshTimer) return;
   sessionsChangedRefreshTimer = setTimeout(() => {
     sessionsChangedRefreshTimer = null;
+    const eventDetail = pendingSessionsChangedDetail ?? { reason: 'gateway-event' };
+    pendingSessionsChangedDetail = null;
     void fetchSessions();
     try {
       window.dispatchEvent(new CustomEvent('aegis:sessions-changed', {
-        detail: { reason: 'gateway-event' },
+        detail: eventDetail,
       }));
     } catch {
       // Non-browser tests do not expose window events.
@@ -697,8 +713,20 @@ export function handleGatewayEvent(event: string, payload: any) {
     // manufacturing a local shadow label.
     case 'sessions.changed': {
       const reason = typeof payload?.reason === 'string' ? payload.reason : '';
-      if (['patch', 'plugin-patch', 'delete', 'deleted', 'create', 'new'].includes(reason)) {
-        scheduleSessionsChangedRefresh();
+      const sessionKey = typeof payload?.sessionKey === 'string'
+        ? payload.sessionKey.trim()
+        : typeof payload?.key === 'string'
+          ? payload.key.trim()
+          : '';
+      if (reason === 'delete' || reason === 'deleted') {
+        if (sessionKey) {
+          markSessionDeleted(sessionKey);
+          sessionsRequestGate.invalidate();
+          store.setSessions(store.sessions.filter((session) => session.key !== sessionKey));
+        }
+      }
+      if (['patch', 'plugin-patch', 'delete', 'deleted', 'create', 'new', 'reset'].includes(reason)) {
+        scheduleSessionsChangedRefresh({ reason, sessionKey: sessionKey || undefined });
       }
       break;
     }

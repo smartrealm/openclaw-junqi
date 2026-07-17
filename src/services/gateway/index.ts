@@ -6,6 +6,7 @@
 
 import { GatewayConnection, type GatewayCallbacks, type ChatMessage, type MediaInfo } from './Connection';
 import { ChatHandler } from './ChatHandler';
+import { debugWarn } from '@/utils/debugLog';
 
 // Re-export types for consumers
 export type { ChatMessage, MediaInfo, GatewayCallbacks };
@@ -13,6 +14,38 @@ export type { ChatMessage, MediaInfo, GatewayCallbacks };
 // ── Create instances ──
 const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
+const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
+
+async function cleanupSessionArtifacts(sessionKey: string): Promise<void> {
+  const operations: Array<{ label: string; task: Promise<unknown> | undefined }> = [
+    { label: 'uploads', task: window.aegis?.uploads?.cleanupSession?.({ sessionKey }) },
+    { label: 'outputs', task: window.aegis?.managedFiles?.cleanupSessionRefs?.({ sessionKey, kind: 'outputs' }) },
+    { label: 'voice', task: window.aegis?.voice?.cleanupSession?.({ sessionKey }) },
+  ];
+
+  await Promise.all(operations.map(async ({ label, task }) => {
+    if (!task) return;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        task,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error(`${label} cleanup timed out`)),
+            SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      if ((result as { success?: boolean } | null)?.success === false) {
+        throw new Error(`${label} cleanup was rejected`);
+      }
+    } catch (error) {
+      debugWarn('app', `[gateway] Session ${label} cleanup failed for ${sessionKey}:`, error);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }));
+}
 
 // Wire event handler: Connection dispatches events to ChatHandler
 connection.onEvent = (msg: any) => chatHandler.handleEvent(msg);
@@ -87,26 +120,14 @@ export const gateway = {
   // Session Lifecycle
   async deleteSession(sessionKey: string, deleteTranscript = true) {
     const result = await connection.request('sessions.delete', { key: sessionKey, deleteTranscript });
-    if (result?.success === false) return result;
-    try {
-      await Promise.allSettled([
-        window.aegis?.uploads?.cleanupSession?.({ sessionKey }),
-        window.aegis?.managedFiles?.cleanupSessionRefs?.({ sessionKey, kind: 'outputs' }),
-        window.aegis?.voice?.cleanupSession?.({ sessionKey }),
-      ]);
-    } catch {}
+    if (result?.success === false || result?.ok === false) return result;
+    await cleanupSessionArtifacts(sessionKey);
     return result;
   },
   async resetSession(sessionKey: string) {
     const result = await connection.request('sessions.reset', { key: sessionKey });
-    if (result?.success === false) return result;
-    try {
-      await Promise.allSettled([
-        window.aegis?.uploads?.cleanupSession?.({ sessionKey }),
-        window.aegis?.managedFiles?.cleanupSessionRefs?.({ sessionKey, kind: 'outputs' }),
-        window.aegis?.voice?.cleanupSession?.({ sessionKey }),
-      ]);
-    } catch {}
+    if (result?.success === false || result?.ok === false) return result;
+    await cleanupSessionArtifacts(sessionKey);
     return result;
   },
 

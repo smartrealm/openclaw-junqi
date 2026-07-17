@@ -21,6 +21,7 @@ import {
 } from './sidebarUtils';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
+import { createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecycle';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
@@ -87,7 +88,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
   const agentLabel = compactMeta(agentName || t('agents.mainAgent', 'Main Agent'), 20);
   const isRunning = isSessionActive(session);
   const timeLabel = formatSidebarTime(sessionActivityTime(session));
-  const canDelete = !/^agent:[^:]+:main$/.test(sessionKey);
+  const canDelete = !isAgentMainSession(sessionKey);
 
   const goSession = () => {
     cleanupEmptyActiveSession(sessionKey);
@@ -361,7 +362,7 @@ function WorkbenchPanel() {
               navigate('/chat');
               return;
             }
-            const newKey = `agent:main:s-${Date.now().toString(36).slice(-5)}`;
+            const newKey = createAgentSessionKey('main');
             useChatStore.getState().addLocalSession({
               key: newKey,
               label: '新会话',
