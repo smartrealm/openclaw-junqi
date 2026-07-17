@@ -119,6 +119,17 @@ test('BUG-ONB-11 Back navigation returns to history instead of a hard-coded scre
   assert.match(setupPage, /onBack=\{flow\.goBack\}/);
 });
 
+test('BUG-ONB-12 Back clears runtime attempt state before returning to an earlier stage', () => {
+  const goBack = setupFlow.slice(
+    setupFlow.indexOf('const goBack = useCallback'),
+    setupFlow.indexOf('const retryGit = useCallback'),
+  );
+
+  assert.match(goBack, /destination === "storage"[\s\S]*commitSteps\(\[\]\)/);
+  assert.match(goBack, /destination === "detecting"/);
+  assert.match(goBack, /destination === "choosing-mode"/);
+});
+
 test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () => {
   const stopped = setupPage.slice(
     setupPage.indexOf('function GatewayStoppedScreen'),
