@@ -59,16 +59,14 @@ async fn stop_offline_gateway_service(
     runtime: &crate::commands::system::NativeOpenclawRuntime,
     search_path: &str,
 ) -> Result<bool, String> {
-    let mut status_command = runtime.command();
+    let context = crate::commands::system::OpenclawCommandContext::maintenance()
+        .with_search_path(search_path);
+    let mut status_command = runtime.command(&context);
     status_command
         .args(["gateway", "status", "--json"])
-        .env("PATH", search_path)
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
-    crate::platform::configure_background_command(&mut status_command);
 
     let output =
         match tokio::time::timeout(std::time::Duration::from_secs(15), status_command.output())
@@ -85,16 +83,12 @@ async fn stop_offline_gateway_service(
         "gateway-log",
         "An offline OpenClaw system service is loaded; stopping it before starting the desktop-managed Gateway...",
     );
-    let mut stop_command = runtime.command();
+    let mut stop_command = runtime.command(&context);
     stop_command
         .args(["gateway", "stop"])
-        .env("PATH", search_path)
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
-    crate::platform::configure_background_command(&mut stop_command);
 
     let stopped = tokio::time::timeout(std::time::Duration::from_secs(30), stop_command.output())
         .await
@@ -1116,19 +1110,16 @@ pub async fn restart_gateway(
     // Restart the installed Gateway service (launchd/systemd/schtasks). This is
     // the real local OpenClaw restart path; unlike start_gateway(), it does not
     // simply return success when an external listener is already serving.
-    let mut cmd = runtime.command();
+    let context = crate::commands::system::OpenclawCommandContext::for_paths(
+        paths::desktop_dir(),
+        config_path.clone(),
+    )
+    .with_search_path(gw_path);
+    let mut cmd = runtime.command(&context);
     cmd.args(["gateway", "--port", &port.to_string(), "restart"])
-        .env("PATH", &gw_path)
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env("OPENCLAW_CONFIG_PATH", &config_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
-
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
 
     let mut child = match cmd.spawn() {
         Ok(child) => child,
@@ -1410,7 +1401,12 @@ pub(crate) async fn start_gateway_locked(
     // ConfigMetadata already parsed env.vars above — no additional disk IO here.
     let extra_env_vars = meta.env_vars;
 
-    let mut cmd = runtime.command();
+    let context = crate::commands::system::OpenclawCommandContext::managed_gateway(
+        base_dir.clone(),
+        config_path.clone(),
+    )
+    .with_search_path(gw_path);
+    let mut cmd = runtime.command(&context);
     cmd.args([
         "gateway",
         "run",
@@ -1418,23 +1414,13 @@ pub(crate) async fn start_gateway_locked(
         &bind,
         "--port",
         &port.to_string(),
-    ])
-    .current_dir(&base_dir)
-    .env("PATH", &gw_path)
-    .env("OPENCLAW_STATE_DIR", &base_dir)
-    .env("OPENCLAW_CONFIG_PATH", &config_path);
+    ]);
     for (k, v) in &extra_env_vars {
         cmd.env(k, v);
     }
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
-
-    // Hide the console window on Windows
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
 
     let startup_started_at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

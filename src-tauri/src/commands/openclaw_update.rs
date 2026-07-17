@@ -4,7 +4,6 @@ use crate::commands::{
     setup, setup_progress, system,
 };
 use crate::paths;
-use crate::platform;
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode};
 use crate::state::GatewayProcess;
 use serde::{Deserialize, Serialize};
@@ -277,13 +276,10 @@ fn build_openclaw_command(
     args: &[&str],
     npm_registry: Option<NpmRegistry>,
 ) -> tokio::process::Command {
-    let mut command = runtime.command();
+    let context = system::OpenclawCommandContext::maintenance();
+    let mut command = runtime.command(&context);
     command
         .args(args)
-        .env("PATH", system::openclaw_search_path())
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
-        .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -301,7 +297,6 @@ fn build_openclaw_command(
             .env("npm_config_foreground_scripts", "true")
             .env("npm_config_progress", "true");
     }
-    platform::configure_background_command(&mut command);
     command
 }
 

@@ -54,23 +54,18 @@ fn native_command(
     args: &[&str],
     config_path: Option<&Path>,
 ) -> tokio::process::Command {
-    let active_config_path = paths::config_path();
-    let mut command = runtime.command();
+    let state_dir = paths::desktop_dir();
+    let config_path = config_path
+        .map(Path::to_path_buf)
+        .unwrap_or_else(paths::config_path);
+    let context = system::OpenclawCommandContext::for_paths(state_dir, config_path);
+    let mut command = runtime.command(&context);
     command
         .args(args)
-        .env("PATH", system::openclaw_search_path())
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env(
-            "OPENCLAW_CONFIG_PATH",
-            config_path.unwrap_or(active_config_path.as_path()),
-        )
-        .env("OPENCLAW_NO_RESPAWN", "1")
-        .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    platform::configure_background_command(&mut command);
     command
 }
 
