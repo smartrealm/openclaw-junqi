@@ -162,11 +162,12 @@ test('installation steps and activity log use aligned fixed-height viewports', (
   assert.match(setupFlowPanels, /viewport\.scrollTo\(\{/);
 });
 
-test('Gateway is an explicit visible setup step that prepares the bundled OpenClaw service', () => {
+test('Gateway preparation automatically continues into first-run visual configuration', () => {
   assert.match(setupFlowPanels, /titleFallback: "OpenClaw Gateway"/);
   assert.match(setupFlowPanels, /descriptionFallback: "验证 Gateway 配置并准备启动控制通道"/);
   assert.match(setupFlow, /await prepareGateway\(\)/);
-  assert.match(setupFlow, /gatewayPrepareWarning \?\? t\("setup\.installCompleteGatewayPending"/);
+  assert.match(setupFlow, /gatewayPrepareWarning \? "pending" : "running"/);
+  assert.match(setupFlow, /await startGatewayAction\(\)/);
   assert.match(setupFlow, /level: "warn"/);
   assert.match(setupFlow, /reportPhase\("awaitingGatewayStart"/);
 });

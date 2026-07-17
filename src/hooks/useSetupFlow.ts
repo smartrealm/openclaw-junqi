@@ -817,11 +817,18 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return;
       patchStep(
         "gateway",
-        "pending",
-        gatewayPrepareWarning ?? t("setup.installCompleteGatewayPending", "Gateway 配置已准备，点击启动 Gateway 继续。"),
+        gatewayPrepareWarning ? "pending" : "running",
+        gatewayPrepareWarning ?? t("setup.preparingGateway"),
       );
-      reportPhase("awaitingGatewayStart", t("setup.installComplete", "必需组件已安装完成"));
-      replaceSetupStep("install-complete");
+      if (gatewayPrepareWarning) {
+        reportPhase("awaitingGatewayStart", gatewayPrepareWarning);
+        replaceSetupStep("install-complete");
+        return;
+      }
+      // The official visual wizard is served by a healthy local Gateway. For a
+      // fresh install, start this bootstrap runtime immediately instead of
+      // presenting a misleading "configuration complete" checkpoint.
+      await startGatewayAction();
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       const msg = err?.message || String(err);
@@ -831,7 +838,7 @@ export function useSetupFlow(
       replaceSetupStep("error");
     }
   }, [beginRun, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement]);
+      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement, startGatewayAction]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
@@ -951,7 +958,12 @@ export function useSetupFlow(
       report(t("setup.chooseMode"), 30);
     }
     navigateSetup(nextStep, "push");
-  }, [postStorageStep, report, navigateSetup, t, updateOnboardingRequirement]);
+    if (nextStep === "gateway-stopped" && needsOnboardingRef.current) {
+      // Existing installations without a usable model configuration follow
+      // the same bootstrap-to-wizard path as fresh installs.
+      void startGatewayAction();
+    }
+  }, [postStorageStep, report, navigateSetup, t, updateOnboardingRequirement, startGatewayAction]);
 
   const repairAndRetry = useCallback(async () => {
     if (repairing) return;
