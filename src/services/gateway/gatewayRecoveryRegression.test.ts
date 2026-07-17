@@ -91,11 +91,16 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   assert.match(setup, /waitForGatewayReady\(runId, isDockerRuntime \? 30_000 : 10_000, status\?\.port\)/);
 });
 
-test('BUG-WIN-CWD-01 managed Gateway does not inherit a Windows drive-root cwd', () => {
-  const gateway = source('src-tauri/src/commands/gateway.rs');
-  const start = gateway.slice(gateway.indexOf('pub(crate) async fn start_gateway_locked'));
-  assert.match(start, /std::fs::create_dir_all\(&base_dir\)/);
-  assert.match(start, /\.current_dir\(&base_dir\)[\s\S]*\.env\("OPENCLAW_STATE_DIR", &base_dir\)/);
+// BUG-WIN-CWD-01: state_dir (data directory) and Gateway cwd must be decoupled.
+// `stable_openclaw_working_dir()` returns the non-root user home dir,
+// while OPENCLAW_STATE_DIR / OPENCLAW_CONFIG_PATH stay on the chosen data drive.
+// Fix: cwd = stable_home, not state_dir and not None (unpredictable parent cwd).
+test('BUG-WIN-CWD-01 managed Gateway uses stable non-root cwd', () => {
+  const system = source('src-tauri/src/commands/system.rs');
+  const managed = system.slice(system.indexOf('fn managed_gateway'), system.indexOf('fn with_search_path'));
+  // cwd is stable_openclaw_working_dir(), not state_dir and not None.
+  assert.match(managed, /stable_openclaw_working_dir\(\)/);
+  assert.doesNotMatch(managed, /working_dir = state_dir[.\s]*Some/);
 });
 
 test('offline system services are stopped before the desktop-managed Gateway starts', () => {

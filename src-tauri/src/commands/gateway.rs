@@ -1377,9 +1377,9 @@ pub(crate) async fn start_gateway_locked(
     if !default_workspace.exists() {
         let _ = std::fs::create_dir_all(&default_workspace);
     }
-    // Tauri may be launched with a drive root (for example `C:\\`) as its
-    // working directory on Windows. OpenClaw's startup path inspection rejects
-    // that form, so always give the managed child a real state-directory cwd.
+    // The managed command context uses a stable user-home cwd. State and config
+    // locations are passed independently through OPENCLAW_STATE_DIR and
+    // OPENCLAW_CONFIG_PATH, so ensure the selected data directory exists here.
     std::fs::create_dir_all(&base_dir)
         .map_err(|error| format!("Failed to create OpenClaw state directory: {error}"))?;
 
