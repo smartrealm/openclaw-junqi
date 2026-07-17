@@ -153,6 +153,17 @@ test('BUG-ONB-13 Docker marks Gateway running only after readiness succeeds', ()
   assert.match(docker, /catch \(err: any\)[\s\S]*?setGatewayRunning\(false\)/);
 });
 
+test('BUG-ONB-14 existing Native OpenClaw runs the full dependency closure after storage', () => {
+  const completeStorage = setupFlow.slice(
+    setupFlow.indexOf('const completeStorageSetup = useCallback'),
+    setupFlow.indexOf('const repairAndRetry = useCallback'),
+  );
+
+  assert.match(completeStorage, /installMode === "native"/);
+  assert.match(completeStorage, /openclawStatus\?\.installed/);
+  assert.match(completeStorage, /navigateSetup\("checking", "push"\);\s*void runNativeSetup\(\);\s*return;/);
+});
+
 test('BUG-ONB-09 native setup verifies optional terminal integration after OpenClaw', () => {
   const openclawStep = setupFlow.indexOf('patchStep("openclaw", "done"');
   const terminalStep = setupFlow.indexOf('await configureTerminalIntegration(runId)', openclawStep);
