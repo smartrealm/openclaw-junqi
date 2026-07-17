@@ -14,10 +14,8 @@ test('pet backdrop contrast chooses light text on a dark wallpaper', () => {
   assert.equal(resolvePetBackdropTextStyle(reading(0.12))?.foreground, '#f8fafc');
 });
 
-test('pet backdrop contrast strengthens the opposite-color outline on busy wallpaper', () => {
+test('pet backdrop contrast strengthens the backing on busy wallpaper without an outline', () => {
   const style = resolvePetBackdropTextStyle(reading(0.8, 0.24));
-  assert.equal(style?.stroke, 'rgba(255,255,255,0.98)');
-  assert.equal(style?.strokeWidth, 2);
   assert.equal(style?.bubble, 'rgba(255,255,255,0.66)');
 });
 

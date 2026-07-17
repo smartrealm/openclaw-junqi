@@ -176,11 +176,8 @@ export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetSt
       }
     : baseTextPalette;
   const readableText = (color: string) => backdropStyle
-    ? {
+      ? {
         ...solidPetTextStyle(color, backdropStyle.shadow),
-        WebkitTextStroke: `${backdropStyle.strokeWidth}px ${backdropStyle.stroke}`,
-        WebkitTextStrokeWidth: backdropStyle.strokeWidth,
-        WebkitTextStrokeColor: backdropStyle.stroke,
       }
     : solidPetTextStyle(color, petTextShadowForTheme(themeName));
 
