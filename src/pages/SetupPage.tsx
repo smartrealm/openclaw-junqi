@@ -11,6 +11,7 @@ import {
   Globe2,
   Monitor,
   Moon,
+  Minus,
   Package,
   Palette,
   RefreshCw,
@@ -588,8 +589,8 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
 function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const doneCount = flow.steps.filter((s) => s.status === "done").length;
-  const total = flow.steps.length || doneCount || 1;
+  const settledCount = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
+  const total = flow.steps.length || settledCount || 1;
 
   return (
     <SetupShell
@@ -609,6 +610,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
               const meta = STEP_META[s.id];
               const label = meta ? t(meta.titleKey, meta.titleFallback) : s.label;
               const done = s.status === "done";
+              const skipped = s.status === "skipped";
               return (
                 <span
                   key={s.id}
@@ -616,10 +618,12 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium",
                     done
                       ? "border-aegis-success/30 bg-aegis-success/10 text-aegis-success"
+                      : skipped
+                        ? "border-aegis-border bg-aegis-surface text-aegis-text-muted"
                       : "border-aegis-border text-aegis-text-dim",
                   )}
                 >
-                  {done ? <Check size={13} strokeWidth={3} /> : <Circle size={12} />}
+                  {done ? <Check size={13} strokeWidth={3} /> : skipped ? <Minus size={13} /> : <Circle size={12} />}
                   {label}
                 </span>
               );
@@ -627,7 +631,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           </div>
         )}
         <div className="text-xs text-aegis-text-dim">
-          {doneCount}/{total} {t("setup.installPanel.stepsDone", "个步骤完成")}
+          {settledCount}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}
         </div>
         {flow.openclawStatus?.installed && (
           <div className="w-full text-left">
@@ -644,11 +648,15 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
 function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
+  const isMac = window.aegis?.platform === "darwin";
+  const description = isMac
+    ? t("setup.gitMacRequiredDesc", "Apple 命令行工具安装器已打开。完成系统安装后重新检测 Git。")
+    : t("setup.gitRequiredDesc");
   return (
     <SetupShell
       active={3}
       title={t("setup.gitRequired")}
-      subtitle={t("setup.gitRequiredDesc")}
+      subtitle={description}
       logs={logs}
       previousAction={{ onClick: () => flow.goBack() }}
       nextAction={{ label: t("setup.gitRetry"), onClick: () => flow.retryGit(), icon: "none" }}
@@ -658,7 +666,7 @@ function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
         tone="danger"
         eyebrow={t("setup.steps.install.title")}
         title={t("setup.gitRequired")}
-        message={t("setup.gitRequiredDesc")}
+        message={description}
       />
     </SetupShell>
   );
@@ -689,7 +697,7 @@ function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }
           {t("setup.nodeRequiredInstallHint")}
         </p>
         <a
-          href="https://nodejs.org/en/download/"
+          href="https://npmmirror.com/mirrors/node/"
           target="_blank"
           rel="noreferrer"
           className="inline-flex text-sm font-medium text-aegis-primary hover:underline"

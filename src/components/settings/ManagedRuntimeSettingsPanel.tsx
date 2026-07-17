@@ -29,6 +29,7 @@ interface SetupProgress {
   step: string;
   message: string;
   key?: string | null;
+  params?: Record<string, string>;
   progress?: number;
   error?: string;
 }
@@ -120,6 +121,7 @@ export function ManagedRuntimeSettingsPanel() {
       payload.key,
       payload.message,
       (translationKey, options) => t(translationKey, options),
+      payload.params,
     ));
     setProgress(typeof payload.progress === 'number' ? payload.progress : null);
     if (payload.error) setError(payload.error);

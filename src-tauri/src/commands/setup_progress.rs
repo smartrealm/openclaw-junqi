@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::BTreeMap;
 use tauri::Emitter;
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -14,18 +15,71 @@ pub struct SetupProgress {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<BTreeMap<String, String>>,
     pub progress: Option<f64>,
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<SetupProgressStatus>,
 }
 
+#[derive(Default)]
+struct SetupProgressMetadata<'a> {
+    key: Option<&'a str>,
+    params: Option<BTreeMap<String, String>>,
+    progress: Option<f64>,
+    error: Option<&'a str>,
+    status: Option<SetupProgressStatus>,
+}
+
 pub fn emit(app: &tauri::AppHandle, step: &str, message: &str, progress: f64) {
-    emit_event(app, step, message, None, Some(progress), None, None);
+    emit_event(
+        app,
+        step,
+        message,
+        SetupProgressMetadata {
+            progress: Some(progress),
+            ..Default::default()
+        },
+    );
 }
 
 pub fn emit_keyed(app: &tauri::AppHandle, step: &str, message: &str, key: &str, progress: f64) {
-    emit_event(app, step, message, Some(key), Some(progress), None, None);
+    emit_event(
+        app,
+        step,
+        message,
+        SetupProgressMetadata {
+            key: Some(key),
+            progress: Some(progress),
+            ..Default::default()
+        },
+    );
+}
+
+pub fn emit_keyed_with_params(
+    app: &tauri::AppHandle,
+    step: &str,
+    message: &str,
+    key: &str,
+    params: &[(&str, &str)],
+    progress: f64,
+) {
+    let params = params
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    emit_event(
+        app,
+        step,
+        message,
+        SetupProgressMetadata {
+            key: Some(key),
+            params: Some(params),
+            progress: Some(progress),
+            ..Default::default()
+        },
+    );
 }
 
 pub fn emit_completed(app: &tauri::AppHandle, step: &str, message: &str) {
@@ -33,10 +87,11 @@ pub fn emit_completed(app: &tauri::AppHandle, step: &str, message: &str) {
         app,
         step,
         message,
-        None,
-        Some(1.0),
-        None,
-        Some(SetupProgressStatus::Completed),
+        SetupProgressMetadata {
+            progress: Some(1.0),
+            status: Some(SetupProgressStatus::Completed),
+            ..Default::default()
+        },
     );
 }
 
@@ -45,10 +100,12 @@ pub fn emit_completed_keyed(app: &tauri::AppHandle, step: &str, message: &str, k
         app,
         step,
         message,
-        Some(key),
-        Some(1.0),
-        None,
-        Some(SetupProgressStatus::Completed),
+        SetupProgressMetadata {
+            key: Some(key),
+            progress: Some(1.0),
+            status: Some(SetupProgressStatus::Completed),
+            ..Default::default()
+        },
     );
 }
 
@@ -57,10 +114,12 @@ pub fn emit_error(app: &tauri::AppHandle, step: &str, message: &str, progress: O
         app,
         step,
         message,
-        None,
-        progress,
-        Some(message),
-        Some(SetupProgressStatus::Failed),
+        SetupProgressMetadata {
+            progress,
+            error: Some(message),
+            status: Some(SetupProgressStatus::Failed),
+            ..Default::default()
+        },
     );
 }
 
@@ -68,20 +127,18 @@ fn emit_event(
     app: &tauri::AppHandle,
     step: &str,
     message: &str,
-    key: Option<&str>,
-    progress: Option<f64>,
-    error: Option<&str>,
-    status: Option<SetupProgressStatus>,
+    metadata: SetupProgressMetadata<'_>,
 ) {
     let _ = app.emit(
         "setup-progress",
         SetupProgress {
             step: step.into(),
             message: message.into(),
-            key: key.map(str::to_owned),
-            progress: progress.map(|value| value.clamp(0.0, 1.0)),
-            error: error.map(str::to_owned),
-            status,
+            key: metadata.key.map(str::to_owned),
+            params: metadata.params,
+            progress: metadata.progress.map(|value| value.clamp(0.0, 1.0)),
+            error: metadata.error.map(str::to_owned),
+            status: metadata.status,
         },
     );
 }

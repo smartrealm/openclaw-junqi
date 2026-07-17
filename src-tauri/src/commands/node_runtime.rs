@@ -128,8 +128,6 @@ const NODE_DISTRIBUTION_SOURCES: &[NodeDistributionSource] = &[
         display_name: "华为云",
     },
 ];
-const NODE_OFFICIAL_RELEASE_BASE: &str = "https://nodejs.org/dist";
-
 pub(crate) fn node_index_sources() -> Vec<String> {
     NODE_DISTRIBUTION_SOURCES
         .iter()
@@ -137,13 +135,19 @@ pub(crate) fn node_index_sources() -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn node_checksum_sources(version: &str) -> Vec<String> {
-    // Archives may come from domestic mirrors for reachability, but the
-    // verification manifest must not share their trust boundary. Node.js
-    // publishes this immutable release manifest at its official origin.
-    vec![format!(
-        "{NODE_OFFICIAL_RELEASE_BASE}/v{version}/SHASUMS256.txt"
-    )]
+pub(crate) fn node_checksum_sources(version: &str) -> Vec<(String, &'static str)> {
+    // The checksum resolver requires a matching digest from at least two
+    // independent mirrors. This keeps installation available on mainland
+    // networks without trusting the same endpoint that serves the archive.
+    NODE_DISTRIBUTION_SOURCES
+        .iter()
+        .map(|source| {
+            (
+                format!("{}/v{version}/SHASUMS256.txt", source.base_url),
+                source.log_label,
+            )
+        })
+        .collect()
 }
 
 pub(crate) fn node_archive_sources(
@@ -151,6 +155,25 @@ pub(crate) fn node_archive_sources(
     version: &str,
 ) -> Vec<(String, &'static str)> {
     let filename = platform.archive_filename(version);
+    NODE_DISTRIBUTION_SOURCES
+        .iter()
+        .map(|source| {
+            (
+                format!("{}/v{version}/{filename}", source.base_url),
+                source.log_label,
+            )
+        })
+        .collect()
+}
+
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn node_macos_installer_filename(version: &str) -> String {
+    format!("node-v{version}.pkg")
+}
+
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn node_macos_installer_sources(version: &str) -> Vec<(String, &'static str)> {
+    let filename = node_macos_installer_filename(version);
     NODE_DISTRIBUTION_SOURCES
         .iter()
         .map(|source| {
@@ -403,12 +426,15 @@ mod tests {
             assert!(archive.starts_with(base));
         }
         assert!(indexes.iter().all(|url| !url.contains("nodejs.org")));
-        assert_eq!(
-            checksums,
-            vec!["https://nodejs.org/dist/v24.18.1/SHASUMS256.txt".to_string()]
-        );
+        assert_eq!(checksums.len(), NODE_DISTRIBUTION_SOURCES.len());
+        assert!(checksums.iter().all(|(url, _)| {
+            url.ends_with("/v24.18.1/SHASUMS256.txt") && !url.contains("nodejs.org")
+        }));
         assert!(installers
             .iter()
             .all(|(url, _)| url.ends_with("node-v24.18.1-win-x64.msi")));
+        assert!(node_macos_installer_sources("24.18.1")
+            .iter()
+            .all(|(url, _)| url.ends_with("node-v24.18.1.pkg")));
     }
 }

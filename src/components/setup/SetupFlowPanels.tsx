@@ -8,6 +8,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Minus,
   Package,
   RefreshCw,
   TerminalSquare,
@@ -630,6 +631,7 @@ function stepStatusText(status: StepState["status"], t: ReturnType<typeof useTra
 
 function stepStatusIcon(status: StepState["status"]) {
   if (status === "done") return <CheckCircle2 size={16} strokeWidth={2.4} />;
+  if (status === "skipped") return <Minus size={15} strokeWidth={2.4} />;
   if (status === "running") return <RefreshCw size={15} className="animate-spin" />;
   if (status === "error") return <X size={15} strokeWidth={2.5} />;
   return <Circle size={14} />;
@@ -694,7 +696,8 @@ function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: 
             s.status === "done" && "border-aegis-success bg-aegis-success/15 text-aegis-success",
             s.status === "running" && "border-aegis-primary bg-aegis-primary/15 text-aegis-primary",
             s.status === "error" && "border-red-500 bg-red-500/15 text-red-400",
-            (s.status === "pending" || s.status === "skipped") && "border-aegis-border text-aegis-text-dim",
+            s.status === "skipped" && "border-aegis-border bg-aegis-surface text-aegis-text-muted",
+            s.status === "pending" && "border-aegis-border text-aegis-text-dim",
           )}>
             {stepStatusIcon(s.status)}
           </div>
@@ -715,7 +718,8 @@ function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: 
                 s.status === "done" && "bg-aegis-success/10 text-aegis-success",
                 s.status === "running" && "bg-aegis-primary/10 text-aegis-primary",
                 s.status === "error" && "bg-red-500/10 text-red-300",
-                (s.status === "pending" || s.status === "skipped") && "bg-aegis-surface text-aegis-text-dim",
+                s.status === "skipped" && "bg-aegis-surface text-aegis-text-muted",
+                s.status === "pending" && "bg-aegis-surface text-aegis-text-dim",
               )}>
                 {awaitingGatewayStart && s.id === "gateway" && s.status === "pending"
                   ? t("setup.installPanel.waitingToStart", "等待启动")
@@ -844,7 +848,7 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
   const { t } = useTranslation();
   const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
   const current = currentStepOf(flow.steps);
-  const completed = flow.steps.filter((s) => s.status === "done").length;
+  const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
   const percent = Math.max(0, Math.min(100, Math.round(flow.progress)));
   const isReady = setupStep === "ready";
@@ -905,7 +909,7 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
               }}
             />
           </div>
-          <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤完成")}</div>
+          <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</div>
         </div>
       </div>
 

@@ -174,10 +174,13 @@ test('BUG-ONB-10 setup leaves system tools and npm cache at their native default
   assert.match(storageGate, /关闭时使用 npm 在当前系统和用户下的默认缓存位置/);
 });
 
-test('BUG-CPI-03 macOS missing Node enters a recoverable system-runtime step', () => {
+test('BUG-CPI-03 macOS missing Node runs the domestic system-installer recovery path', () => {
   assert.match(setupFlow, /const setupNode = await checkSetupNode\(\)/);
-  assert.match(setupFlow, /window\.aegis\?\.platform === "darwin" && nodeStatus\.source !== "custom"/);
-  assert.match(setupFlow, /replaceSetupStep\("node-missing"\)/);
+  assert.doesNotMatch(setupFlow, /useMacSystemRecovery/);
+  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?await installNode\(\)/);
+  assert.match(setupCommand, /install_macos_system_node/);
+  assert.match(setupCommand, /Command::new\("\/usr\/bin\/open"\)/);
+  assert.doesNotMatch(setupPage, /nodejs\.org/);
   assert.match(setupFlow, /const retryNode = useCallback/);
   assert.match(setupPage, /function NodeMissingScreen/);
   assert.match(setupPage, /flow\.retryNode\(\)/);

@@ -203,6 +203,16 @@ describe("setupProgressParams", () => {
     );
   });
 
+  test("explicit backend params take precedence over legacy message parsing", () => {
+    const translated = translateSetupProgressMessage(
+      "setup.openclaw.prepareDir",
+      "producer wording may evolve",
+      (_key, options) => `准备安装目录 ${options.path}`,
+      { path: "/Users/wei/OpenClaw" },
+    );
+    assert.equal(translated, "准备安装目录 /Users/wei/OpenClaw");
+  });
+
   test("returns {} for an unknown key", () => {
     assert.deepEqual(
       setupProgressI18nParams("setup.unknown.key", "anything"),

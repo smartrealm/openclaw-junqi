@@ -9,9 +9,11 @@ use crate::commands::node_runtime::{
     ManagedNodePlatform, NodeArchiveFormat, NodeDistributionRelease, NodeRequirementSource,
     NodeRuntimeRequirement,
 };
+#[cfg(target_os = "macos")]
+use crate::commands::node_runtime::{node_macos_installer_filename, node_macos_installer_sources};
 use crate::commands::npm_registry;
 use crate::commands::process_control::terminate_process_tree;
-use crate::commands::setup_progress::{emit, emit_keyed};
+use crate::commands::setup_progress::{emit, emit_keyed, emit_keyed_with_params};
 use crate::paths;
 use crate::platform;
 use crate::state::GatewayProcess;
@@ -196,7 +198,7 @@ async fn download_with_fallback(
             ),
             prog_start,
         );
-        let response = match client.get(url).send().await {
+        let mut response = match client.get(url).send().await {
             Ok(response) => match response.error_for_status() {
                 Ok(response) => response,
                 Err(error) => {
@@ -210,35 +212,103 @@ async fn download_with_fallback(
             }
         };
         let total = response.content_length().unwrap_or(0);
-        let bytes = match response.bytes().await {
-            Ok(bytes) if !bytes.is_empty() => bytes,
-            Ok(_) => {
-                last_error = format!("{label}: empty response");
-                continue;
-            }
+        let mut file = match tokio::fs::File::create(dest).await {
+            Ok(file) => file,
             Err(error) => {
-                last_error = format!("{label}: {error}");
-                continue;
+                return Err(format!("Failed to create {}: {error}", dest.display()));
             }
         };
-        let actual = format!("{:x}", Sha256::digest(&bytes));
-        if !actual.eq_ignore_ascii_case(expected_sha256) {
-            last_error = format!("{label}: SHA-256 mismatch");
+        let mut hasher = Sha256::new();
+        let mut downloaded = 0_u64;
+        let mut last_reported_percent = 0_u64;
+        let mut stream_error = None;
+        loop {
+            let chunk = match response.chunk().await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(error) => {
+                    stream_error = Some(error.to_string());
+                    break;
+                }
+            };
+            if chunk.is_empty() {
+                continue;
+            }
+            use tokio::io::AsyncWriteExt;
+            if let Err(error) = file.write_all(&chunk).await {
+                return Err(format!("Failed to write {}: {error}", dest.display()));
+            }
+            hasher.update(&chunk);
+            downloaded += chunk.len() as u64;
+
+            let percent = downloaded
+                .saturating_mul(100)
+                .checked_div(total)
+                .unwrap_or(downloaded / (5 * 1024 * 1024));
+            if percent > last_reported_percent {
+                last_reported_percent = percent;
+                let fraction = if total > 0 {
+                    (downloaded as f64 / total as f64).clamp(0.0, 1.0)
+                } else {
+                    0.5
+                };
+                let progress = prog_start + (prog_end - prog_start) * fraction;
+                let detail = if total > 0 {
+                    format!(
+                        "【下载 {}/{}】{}：{:.1}/{:.1} MB（{}%）",
+                        index + 1,
+                        sources.len(),
+                        label,
+                        downloaded as f64 / 1024.0 / 1024.0,
+                        total as f64 / 1024.0 / 1024.0,
+                        (fraction * 100.0).round() as u64,
+                    )
+                } else {
+                    format!(
+                        "【下载 {}/{}】{}：已下载 {:.1} MB",
+                        index + 1,
+                        sources.len(),
+                        label,
+                        downloaded as f64 / 1024.0 / 1024.0,
+                    )
+                };
+                emit(app, step, &detail, progress);
+            }
+        }
+        if let Some(error) = stream_error {
+            last_error = format!("{label}: {error}");
+            drop(file);
+            let _ = tokio::fs::remove_file(dest).await;
             continue;
         }
-        std::fs::write(dest, &bytes)
-            .map_err(|error| format!("Failed to write {}: {error}", dest.display()))?;
+        if downloaded == 0 {
+            last_error = format!("{label}: empty response");
+            drop(file);
+            let _ = tokio::fs::remove_file(dest).await;
+            continue;
+        }
+        use tokio::io::AsyncWriteExt;
+        if let Err(error) = file.flush().await {
+            return Err(format!("Failed to flush {}: {error}", dest.display()));
+        }
+        drop(file);
+        let actual = format!("{:x}", hasher.finalize());
+        if !actual.eq_ignore_ascii_case(expected_sha256) {
+            last_error = format!("{label}: SHA-256 mismatch");
+            let _ = tokio::fs::remove_file(dest).await;
+            continue;
+        }
         emit(
             app,
             step,
             &format!(
                 "Download verified via {} ({:.1} MB)",
                 label,
-                total.max(bytes.len() as u64) as f64 / 1024.0 / 1024.0
+                total.max(downloaded) as f64 / 1024.0 / 1024.0
             ),
             prog_end,
         );
-        return Ok(bytes.len() as u64);
+        return Ok(downloaded);
     }
     Err(format!("所有下载源均失败。最后错误：{last_error}"))
 }
@@ -501,22 +571,16 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             install_nonce,
             reg_idx + 1
         ));
-        let _staging_cleanup = cfg!(windows).then(|| TemporaryDirectory(staging_prefix.clone()));
-        let install_prefix = if cfg!(windows) {
-            staging_prefix.as_path()
-        } else {
-            global_prefix
-        };
+        let _staging_cleanup = TemporaryDirectory(staging_prefix.clone());
+        let install_prefix = staging_prefix.as_path();
         let npm_prefix_str = install_prefix.to_string_lossy().to_string();
-        if cfg!(windows) {
-            std::fs::create_dir_all(&staging_prefix).map_err(|error| {
-                format!(
-                    "Cannot prepare the isolated OpenClaw installer at {}: {}",
-                    staging_prefix.display(),
-                    error
-                )
-            })?;
-        }
+        std::fs::create_dir_all(&staging_prefix).map_err(|error| {
+            format!(
+                "Cannot prepare the isolated OpenClaw installer at {}: {}",
+                staging_prefix.display(),
+                error
+            )
+        })?;
         let reg_label = registry.label();
         emit(
             app,
@@ -713,6 +777,9 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             if cfg!(windows) {
                 validate_staged_openclaw_install(&staging_prefix)?;
                 promote_staged_openclaw_install(&staging_prefix, global_prefix).await?;
+            } else {
+                validate_staged_unix_openclaw_install(&staging_prefix)?;
+                promote_staged_unix_openclaw_install(&staging_prefix, global_prefix)?;
             }
             emit(
                 app,
@@ -828,22 +895,35 @@ async fn resolve_node_sha256_for_filename(version: &str, filename: &str) -> Resu
         .user_agent("JunQi Desktop Node.js checksum resolver")
         .build()
         .map_err(|error| format!("Failed to initialize checksum resolver: {error}"))?;
-    for source in node_checksum_sources(version) {
-        let Ok(response) = client.get(source).send().await else {
-            continue;
-        };
-        let Ok(response) = response.error_for_status() else {
-            continue;
-        };
-        let Ok(text) = response.text().await else {
-            continue;
-        };
-        if let Some(digest) = parse_shasums(&text, filename) {
-            return Ok(digest);
+    let mut requests = tokio::task::JoinSet::new();
+    for (source, label) in node_checksum_sources(version) {
+        let client = client.clone();
+        let filename = filename.to_owned();
+        requests.spawn(async move {
+            let response = client
+                .get(source)
+                .send()
+                .await
+                .ok()?
+                .error_for_status()
+                .ok()?;
+            let text = response.text().await.ok()?;
+            parse_shasums(&text, &filename).map(|digest| (digest, label))
+        });
+    }
+    let mut matches = std::collections::HashMap::<String, Vec<&'static str>>::new();
+    while let Some(result) = requests.join_next().await {
+        if let Ok(Some((digest, label))) = result {
+            let providers = matches.entry(digest.clone()).or_default();
+            providers.push(label);
+            if providers.len() >= 2 {
+                requests.abort_all();
+                return Ok(digest);
+            }
         }
     }
     Err(format!(
-        "Unable to obtain a publisher SHA-256 for Node.js {filename}"
+        "Unable to confirm the Node.js checksum for {filename} through two independent mainland mirrors"
     ))
 }
 
@@ -875,7 +955,16 @@ pub(crate) async fn target_openclaw_node_requirement() -> Result<NodeRuntimeRequ
 /// installation and prevents a fresh installation from using a broad fallback.
 async fn setup_node_requirement() -> Result<NodeRuntimeRequirement, String> {
     if let Some(binary) = crate::commands::system::resolve_openclaw_binary_async().await {
-        return crate::commands::system::required_node_requirement_for_openclaw_binary(&binary);
+        match crate::commands::system::required_node_requirement_for_openclaw_binary(&binary) {
+            Ok(requirement) => return Ok(requirement),
+            Err(local_error) => {
+                return target_openclaw_node_requirement().await.map_err(|target_error| {
+                    format!(
+                        "The installed OpenClaw runtime contract is damaged ({local_error}); the repair target could not be resolved: {target_error}"
+                    )
+                });
+            }
+        }
     }
     target_openclaw_node_requirement().await
 }
@@ -900,20 +989,21 @@ pub async fn check_setup_node() -> Result<SetupNodeStatus, String> {
 }
 
 #[tauri::command]
-pub async fn install_node(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn install_node(app: tauri::AppHandle, force: Option<bool>) -> Result<String, String> {
     let requirement = setup_node_requirement().await?;
-    install_node_for_requirement(app, requirement, false).await
+    install_node_for_requirement(app, requirement, force.unwrap_or(false)).await
 }
 
 pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result<String, String> {
     let requirement = crate::commands::system::installed_openclaw_node_requirement()?;
     #[cfg(windows)]
-    {
-        return install_node_for_requirement(app, requirement, true).await;
-    }
+    let result = install_node_for_requirement(app, requirement, true).await;
 
-    #[cfg(not(windows))]
-    {
+    #[cfg(target_os = "macos")]
+    let result = install_node_for_requirement(app, requirement, true).await;
+
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    let result = {
         if paths::configured_node_runtime_dir().is_some() {
             return install_node_for_requirement(app, requirement, true).await;
         }
@@ -921,7 +1011,8 @@ pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result
             "The active Node.js installation is managed by the operating system; update it with the system package manager"
                 .into(),
         )
-    }
+    };
+    result
 }
 
 async fn install_node_for_requirement(
@@ -936,18 +1027,23 @@ async fn install_node_for_requirement(
         .await;
 
     #[cfg(windows)]
-    {
-        return match paths::configured_node_runtime_dir() {
+    let result = {
+        match paths::configured_node_runtime_dir() {
             Some(target) => install_portable_node_runtime(app, requirement, force, target).await,
             None => install_windows_system_node(app, requirement, force).await,
-        };
-    }
+        }
+    };
 
     #[cfg(target_os = "macos")]
-    {
+    let result = {
         if let Some(target) = paths::configured_node_runtime_dir() {
             return install_portable_node_runtime(app, requirement, force, target).await;
         }
+        install_macos_system_node(app, requirement, force).await
+    };
+
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    let result = {
         if !force {
             let detected =
                 crate::commands::system::check_node_for_requirement(&requirement).await?;
@@ -963,25 +1059,8 @@ async fn install_node_for_requirement(
             "Node.js {} is required. Install or update Node.js in its standard system location, then retry.",
             requirement.expression()
         ))
-    }
-
-    #[cfg(all(not(windows), not(target_os = "macos")))]
-    if !force {
-        let detected = crate::commands::system::check_node_for_requirement(&requirement).await?;
-        if detected.available {
-            return Ok(format!(
-                "Node.js {} already installed at {}",
-                detected.version.unwrap_or_default(),
-                detected.path.unwrap_or_default()
-            ));
-        }
-    }
-
-    #[cfg(all(not(windows), not(target_os = "macos")))]
-    return Err(format!(
-        "Node.js {} is required. Install or update Node.js in its standard system location, then retry.",
-        requirement.expression()
-    ));
+    };
+    result
 }
 
 #[cfg(any(windows, target_os = "macos"))]
@@ -1076,7 +1155,10 @@ async fn install_windows_system_node(
     force: bool,
 ) -> Result<String, String> {
     let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
-    if current.available && !force {
+    let npm_available = crate::commands::system::check_npm()
+        .await
+        .is_ok_and(|status| status.available);
+    if current.available && npm_available && !force {
         return Ok(format!(
             "Node.js {} already installed at {}",
             current.version.unwrap_or_default(),
@@ -1102,6 +1184,113 @@ async fn install_windows_system_node(
                 "Node.js installer from mainland mirrors failed: {mirror_error}\nWindows Package Manager fallback failed: {error}"
             )
         })
+}
+
+#[cfg(target_os = "macos")]
+async fn install_macos_system_node(
+    app: tauri::AppHandle,
+    requirement: NodeRuntimeRequirement,
+    force: bool,
+) -> Result<String, String> {
+    let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
+    let npm_available = crate::commands::system::check_npm()
+        .await
+        .is_ok_and(|status| status.available);
+    if current.available && npm_available && !force {
+        return Ok(format!(
+            "Node.js {} already installed at {}",
+            current.version.unwrap_or_default(),
+            current.path.unwrap_or_default()
+        ));
+    }
+
+    let platform = ManagedNodePlatform::current()?;
+    let version = resolve_managed_node_version(&requirement, platform).await?;
+    let filename = node_macos_installer_filename(&version);
+    let sha256 = resolve_node_sha256_for_filename(&version, &filename).await?;
+    let sources = node_macos_installer_sources(&version);
+    emit_keyed(
+        &app,
+        "node",
+        &format!("Preparing the official Node.js v{version} macOS installer..."),
+        "setup.node.systemInstall",
+        0.08,
+    );
+
+    let temp_dir = std::env::temp_dir().join(format!(
+        "junqi-node-macos-installer-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|error| format!("Failed to prepare Node.js installer directory: {error}"))?;
+    let _temp_cleanup = TemporaryDirectory(temp_dir.clone());
+    let installer = temp_dir.join(filename);
+    download_with_fallback(&app, "node", &sources, &installer, &sha256, 0.10, 0.68).await?;
+
+    emit_keyed(
+        &app,
+        "node",
+        "Opening the macOS Node.js installer. Complete the system dialog to continue...",
+        "setup.node.macosInstaller",
+        0.70,
+    );
+    let mut command = tokio::process::Command::new("/usr/bin/open");
+    command.arg("-W").arg(&installer).kill_on_drop(true);
+    platform::configure_background_command(&mut command);
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Failed to open the macOS Node.js installer: {error}"))?;
+
+    let started = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(20 * 60);
+    loop {
+        let installed = crate::commands::system::check_node_for_requirement(&requirement).await?;
+        let npm_ready = crate::commands::system::check_npm()
+            .await
+            .is_ok_and(|status| status.available);
+        if installed.available && npm_ready {
+            let _ = child.kill().await;
+            emit_keyed(
+                &app,
+                "node",
+                "The macOS system Node.js runtime and npm are ready",
+                "setup.node.systemReady",
+                1.0,
+            );
+            return Ok(format!(
+                "Node.js {} installed at {}",
+                installed.version.unwrap_or_default(),
+                installed.path.unwrap_or_default()
+            ));
+        }
+
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("Failed to monitor the macOS installer: {error}"))?
+        {
+            return Err(format!(
+                "The macOS Node.js installer closed with {status}, but Node.js/npm did not pass validation"
+            ));
+        }
+        if started.elapsed() >= timeout {
+            let _ = child.kill().await;
+            return Err("The macOS Node.js installer did not complete within 20 minutes".into());
+        }
+
+        let elapsed = format!(
+            "{:02}:{:02}",
+            started.elapsed().as_secs() / 60,
+            started.elapsed().as_secs() % 60
+        );
+        emit_keyed(
+            &app,
+            "node",
+            &format!("Waiting for the macOS installer (elapsed {elapsed})"),
+            "setup.node.macPolling",
+            0.74 + (started.elapsed().as_secs_f64() / timeout.as_secs_f64()).min(1.0) * 0.20,
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
 }
 
 #[cfg(windows)]
@@ -1226,37 +1415,117 @@ fn platform_path(primary: &str, fallback: &str) -> Option<PathBuf> {
 }
 
 #[cfg(windows)]
+fn windows_installer_command_line(args: &[std::ffi::OsString]) -> Result<Vec<u16>, String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let mut command_line = Vec::new();
+    for (index, arg) in args.iter().enumerate() {
+        if index > 0 {
+            command_line.push(b' ' as u16);
+        }
+        let value = arg.as_os_str().encode_wide().collect::<Vec<_>>();
+        if value.contains(&0) {
+            return Err("Windows installer argument contains a NUL character".into());
+        }
+        command_line.push(b'\"' as u16);
+        let mut backslashes = 0_usize;
+        for unit in value {
+            if unit == b'\\' as u16 {
+                backslashes += 1;
+                continue;
+            }
+            if unit == b'\"' as u16 {
+                command_line.extend(std::iter::repeat_n(b'\\' as u16, backslashes * 2 + 1));
+                command_line.push(unit);
+            } else {
+                command_line.extend(std::iter::repeat_n(b'\\' as u16, backslashes));
+                command_line.push(unit);
+            }
+            backslashes = 0;
+        }
+        command_line.extend(std::iter::repeat_n(b'\\' as u16, backslashes * 2));
+        command_line.push(b'\"' as u16);
+    }
+    command_line.push(0);
+    Ok(command_line)
+}
+
+#[cfg(windows)]
 async fn run_windows_installer(
     executable: &Path,
     args: &[std::ffi::OsString],
     label: &str,
 ) -> Result<(), String> {
-    let mut command = tokio::process::Command::new(executable);
-    command.args(args);
-    platform::configure_background_command(&mut command);
-    let output = tokio::time::timeout(std::time::Duration::from_secs(20 * 60), command.output())
-        .await
-        .map_err(|_| format!("{label} installer timed out"))?
-        .map_err(|error| format!("Failed to start {label} installer: {error}"))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let diagnostic = crate::commands::diagnostic_output::sanitize_diagnostic_text(
-        &format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        ),
-        1_500,
-    );
-    Err(if diagnostic.is_empty() {
-        format!("{label} installer exited with {}", output.status)
-    } else {
-        format!(
-            "{label} installer exited with {}: {diagnostic}",
-            output.status
-        )
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0, WAIT_TIMEOUT};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+    use windows_sys::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let executable = executable.to_path_buf();
+    let args = args.to_vec();
+    let label = label.to_owned();
+    let join_label = label.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut executable_wide = executable.as_os_str().encode_wide().collect::<Vec<_>>();
+        if executable_wide.contains(&0) {
+            return Err(format!("Invalid {label} installer path"));
+        }
+        executable_wide.push(0);
+        let parameters = windows_installer_command_line(&args)?;
+        let verb = "runas\0".encode_utf16().collect::<Vec<_>>();
+        let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        info.fMask = SEE_MASK_NOCLOSEPROCESS;
+        info.lpVerb = verb.as_ptr();
+        info.lpFile = executable_wide.as_ptr();
+        info.lpParameters = parameters.as_ptr();
+        info.nShow = SW_SHOWNORMAL;
+
+        if unsafe { ShellExecuteExW(&mut info) } == 0 {
+            let error = std::io::Error::last_os_error();
+            return Err(if error.raw_os_error() == Some(1223) {
+                format!("{label} installation was cancelled at the Windows administrator prompt")
+            } else {
+                format!("Failed to start elevated {label} installer: {error}")
+            });
+        }
+        if info.hProcess.is_null() {
+            return Err(format!(
+                "The elevated {label} installer did not return a process handle"
+            ));
+        }
+
+        let wait = unsafe { WaitForSingleObject(info.hProcess, 20 * 60 * 1000) };
+        if wait == WAIT_TIMEOUT {
+            unsafe { CloseHandle(info.hProcess) };
+            return Err(format!("{label} installer timed out after 20 minutes"));
+        }
+        if wait != WAIT_OBJECT_0 {
+            unsafe { CloseHandle(info.hProcess) };
+            return Err(format!(
+                "Failed while waiting for the elevated {label} installer"
+            ));
+        }
+
+        let mut exit_code = 0_u32;
+        let read_exit_code = unsafe { GetExitCodeProcess(info.hProcess, &mut exit_code) };
+        unsafe { CloseHandle(info.hProcess) };
+        if read_exit_code == 0 {
+            return Err(format!(
+                "Could not read the elevated {label} installer exit code"
+            ));
+        }
+        if exit_code == 0 || exit_code == 3010 {
+            Ok(())
+        } else {
+            Err(format!("{label} installer exited with code {exit_code}"))
+        }
     })
+    .await
+    .map_err(|error| format!("{join_label} installer task failed: {error}"))?
 }
 
 #[cfg(windows)]
@@ -1436,11 +1705,39 @@ async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, 
         emit_keyed(
             &app,
             step,
-            "Git is not available. Please install Apple Command Line Tools manually, then retry.",
-            "setup.git.manualRequired",
+            "Opening the Apple Command Line Tools installer...",
+            "setup.git.macosInstaller",
+            0.25,
+        );
+        let mut command = tokio::process::Command::new("/usr/bin/xcode-select");
+        command.arg("--install");
+        platform::configure_background_command(&mut command);
+        let output = command.output().await.map_err(|error| {
+            format!("Failed to open Apple Command Line Tools installer: {error}")
+        })?;
+        let diagnostic = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if !output.status.success()
+            && diagnostic
+                .to_ascii_lowercase()
+                .contains("already installed")
+        {
+            return Err(
+                "Apple Command Line Tools reports that it is installed, but Git is still unavailable"
+                    .into(),
+            );
+        }
+        emit_keyed(
+            &app,
+            step,
+            "Apple Command Line Tools installer opened; complete it, then retry detection.",
+            "setup.git.macPolling",
             1.0,
         );
-        Err("Git is required. Install Apple Command Line Tools manually, then retry JunQi.".into())
+        Ok("Apple Command Line Tools installer opened".into())
     }
 
     #[cfg(all(not(windows), not(target_os = "macos")))]
@@ -1985,6 +2282,150 @@ async fn promote_staged_openclaw_install(
     ))
 }
 
+fn unix_openclaw_package_dir(prefix: &Path) -> PathBuf {
+    prefix.join("lib").join("node_modules").join("openclaw")
+}
+
+fn unix_openclaw_launcher(prefix: &Path) -> PathBuf {
+    prefix.join("bin").join("openclaw")
+}
+
+fn validate_staged_unix_openclaw_install(prefix: &Path) -> Result<(), String> {
+    let package_json = unix_openclaw_package_dir(prefix).join("package.json");
+    let launcher = unix_openclaw_launcher(prefix);
+    if package_json.is_file() && launcher.is_file() {
+        return Ok(());
+    }
+    Err(format!(
+        "npm finished but the isolated OpenClaw install is incomplete at {}",
+        prefix.display()
+    ))
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct UnixOpenClawPromotionState {
+    had_existing_package: bool,
+    had_existing_launcher: bool,
+}
+
+fn recover_interrupted_unix_openclaw_promotion(target_prefix: &Path) -> Result<(), String> {
+    let marker = target_prefix.join(OPENCLAW_PROMOTION_MARKER);
+    if !marker.is_file() {
+        return Ok(());
+    }
+    let state: UnixOpenClawPromotionState = serde_json::from_str(
+        &std::fs::read_to_string(&marker)
+            .map_err(|error| format!("Cannot read OpenClaw promotion marker: {error}"))?,
+    )
+    .map_err(|error| format!("Cannot parse OpenClaw promotion marker: {error}"))?;
+    let target_package = unix_openclaw_package_dir(target_prefix);
+    let target_launcher = unix_openclaw_launcher(target_prefix);
+    let backup_root = target_prefix.join(OPENCLAW_PROMOTION_BACKUP);
+    let backup_package = backup_root.join("package");
+    let backup_launcher = backup_root.join("openclaw");
+
+    if backup_package.exists() {
+        if target_package.exists() {
+            std::fs::remove_dir_all(&target_package)
+                .map_err(|error| format!("Cannot remove partial OpenClaw package: {error}"))?;
+        }
+        std::fs::rename(&backup_package, &target_package)
+            .map_err(|error| format!("Cannot restore previous OpenClaw package: {error}"))?;
+    } else if !state.had_existing_package && target_package.exists() {
+        std::fs::remove_dir_all(&target_package)
+            .map_err(|error| format!("Cannot remove interrupted OpenClaw package: {error}"))?;
+    }
+
+    if backup_launcher.exists() {
+        if target_launcher.exists() {
+            std::fs::remove_file(&target_launcher)
+                .map_err(|error| format!("Cannot remove partial OpenClaw launcher: {error}"))?;
+        }
+        std::fs::rename(&backup_launcher, &target_launcher)
+            .map_err(|error| format!("Cannot restore previous OpenClaw launcher: {error}"))?;
+    } else if !state.had_existing_launcher && target_launcher.exists() {
+        std::fs::remove_file(&target_launcher)
+            .map_err(|error| format!("Cannot remove interrupted OpenClaw launcher: {error}"))?;
+    }
+
+    let _ = std::fs::remove_dir_all(&backup_root);
+    std::fs::remove_file(&marker)
+        .map_err(|error| format!("Cannot clear OpenClaw promotion marker: {error}"))
+}
+
+fn promote_staged_unix_openclaw_install(
+    staging_prefix: &Path,
+    target_prefix: &Path,
+) -> Result<(), String> {
+    validate_staged_unix_openclaw_install(staging_prefix)?;
+    std::fs::create_dir_all(target_prefix)
+        .map_err(|error| format!("Cannot prepare OpenClaw target: {error}"))?;
+    recover_interrupted_unix_openclaw_promotion(target_prefix)?;
+
+    let staged_package = unix_openclaw_package_dir(staging_prefix);
+    let staged_launcher = unix_openclaw_launcher(staging_prefix);
+    let target_package = unix_openclaw_package_dir(target_prefix);
+    let target_launcher = unix_openclaw_launcher(target_prefix);
+    let backup_root = target_prefix.join(OPENCLAW_PROMOTION_BACKUP);
+    let backup_package = backup_root.join("package");
+    let backup_launcher = backup_root.join("openclaw");
+    let marker = target_prefix.join(OPENCLAW_PROMOTION_MARKER);
+    let state = UnixOpenClawPromotionState {
+        had_existing_package: target_package.exists(),
+        had_existing_launcher: target_launcher.exists(),
+    };
+
+    if let Some(parent) = target_package.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Cannot prepare OpenClaw package directory: {error}"))?;
+    }
+    if let Some(parent) = target_launcher.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Cannot prepare OpenClaw launcher directory: {error}"))?;
+    }
+    let _ = std::fs::remove_dir_all(&backup_root);
+    std::fs::create_dir_all(&backup_root)
+        .map_err(|error| format!("Cannot prepare OpenClaw backup: {error}"))?;
+    paths::atomic_write_text(
+        &marker,
+        &serde_json::to_string(&state)
+            .map_err(|error| format!("Cannot serialize OpenClaw promotion state: {error}"))?,
+    )?;
+
+    let activation = (|| -> Result<(), String> {
+        if state.had_existing_package {
+            std::fs::rename(&target_package, &backup_package).map_err(|error| {
+                format!("Cannot move the current OpenClaw installation: {error}")
+            })?;
+        }
+        if state.had_existing_launcher {
+            std::fs::rename(&target_launcher, &backup_launcher)
+                .map_err(|error| format!("Cannot back up the OpenClaw launcher: {error}"))?;
+        }
+        std::fs::rename(&staged_package, &target_package)
+            .map_err(|error| format!("Cannot activate the staged OpenClaw package: {error}"))?;
+        std::fs::rename(&staged_launcher, &target_launcher)
+            .map_err(|error| format!("Cannot activate the staged OpenClaw launcher: {error}"))?;
+        validate_staged_unix_openclaw_install(target_prefix)
+    })();
+
+    if let Err(error) = activation {
+        return match recover_interrupted_unix_openclaw_promotion(target_prefix) {
+            Ok(()) => Err(format!(
+                "OpenClaw activation failed and was rolled back: {error}"
+            )),
+            Err(rollback_error) => Err(format!(
+                "OpenClaw activation failed: {error}; rollback also failed: {rollback_error}"
+            )),
+        };
+    }
+
+    std::fs::remove_file(&marker)
+        .map_err(|error| format!("Cannot finalize OpenClaw promotion: {error}"))?;
+    let _ = std::fs::remove_dir_all(&backup_root);
+    Ok(())
+}
+
 /// Remove only a broken npm package payload before reinstalling it. User data
 /// lives under `~/.openclaw`, outside every npm prefix selected above.
 fn remove_broken_openclaw_install(prefix: &std::path::Path) -> Result<(), String> {
@@ -2281,11 +2722,13 @@ async fn install_openclaw_impl(
         }
         OpenclawInstallMode::Normal => pick_install_target(&app, step).await?,
     };
-    emit_keyed(
+    let openclaw_prefix_text = openclaw_prefix.to_string_lossy().into_owned();
+    emit_keyed_with_params(
         &app,
         step,
-        &format!("Preparing install target {}...", openclaw_prefix.display()),
+        &format!("Preparing install directory {openclaw_prefix_text}..."),
         "setup.openclaw.prepareDir",
+        &[("path", openclaw_prefix_text.as_str())],
         0.08,
     );
     std::fs::create_dir_all(&openclaw_prefix).ok();
@@ -2584,6 +3027,19 @@ mod tests {
         std::fs::write(prefix.join("openclaw.cmd"), format!("@echo {version}\r\n")).unwrap();
     }
 
+    fn write_unix_openclaw(prefix: &Path, version: &str) {
+        let package = unix_openclaw_package_dir(prefix);
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            format!(r#"{{"name":"openclaw","version":"{version}"}}"#),
+        )
+        .unwrap();
+        let launcher = unix_openclaw_launcher(prefix);
+        std::fs::create_dir_all(launcher.parent().unwrap()).unwrap();
+        std::fs::write(launcher, format!("#!/bin/sh\necho {version}\n")).unwrap();
+    }
+
     #[test]
     fn npm_prefix_normalization_rejects_ambiguous_values() {
         assert_eq!(normalize_npm_prefix(Path::new("")), None);
@@ -2663,6 +3119,60 @@ mod tests {
         assert!(package.contains("2.0.0"));
         assert!(!target.join(OPENCLAW_PROMOTION_MARKER).exists());
         assert!(!target.join(OPENCLAW_PROMOTION_BACKUP).exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unix_openclaw_promotion_replaces_package_atomically() {
+        let root = test_dir("openclaw-unix-promote");
+        let staging = root.join("staging");
+        let target = root.join("target");
+        write_unix_openclaw(&staging, "2.0.0");
+        write_unix_openclaw(&target, "1.0.0");
+
+        promote_staged_unix_openclaw_install(&staging, &target).unwrap();
+
+        let package =
+            std::fs::read_to_string(unix_openclaw_package_dir(&target).join("package.json"))
+                .unwrap();
+        assert!(package.contains("2.0.0"));
+        assert!(std::fs::read_to_string(unix_openclaw_launcher(&target))
+            .unwrap()
+            .contains("2.0.0"));
+        assert!(!target.join(OPENCLAW_PROMOTION_MARKER).exists());
+        assert!(!target.join(OPENCLAW_PROMOTION_BACKUP).exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn interrupted_unix_openclaw_promotion_restores_previous_runtime() {
+        let root = test_dir("openclaw-unix-rollback");
+        let target = root.join("target");
+        let backup = target.join(OPENCLAW_PROMOTION_BACKUP);
+        write_unix_openclaw(&target, "2.0.0");
+        write_unix_openclaw(&backup, "1.0.0");
+        std::fs::rename(unix_openclaw_package_dir(&backup), backup.join("package")).unwrap();
+        std::fs::rename(unix_openclaw_launcher(&backup), backup.join("openclaw")).unwrap();
+        paths::atomic_write_text(
+            &target.join(OPENCLAW_PROMOTION_MARKER),
+            &serde_json::to_string(&UnixOpenClawPromotionState {
+                had_existing_package: true,
+                had_existing_launcher: true,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        recover_interrupted_unix_openclaw_promotion(&target).unwrap();
+
+        let package =
+            std::fs::read_to_string(unix_openclaw_package_dir(&target).join("package.json"))
+                .unwrap();
+        assert!(package.contains("1.0.0"));
+        assert!(std::fs::read_to_string(unix_openclaw_launcher(&target))
+            .unwrap()
+            .contains("1.0.0"));
+        assert!(!target.join(OPENCLAW_PROMOTION_MARKER).exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

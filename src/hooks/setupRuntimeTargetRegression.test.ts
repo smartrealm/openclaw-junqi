@@ -69,7 +69,7 @@ test('BUG-RT-02 selected Docker recovery never invokes native repair', () => {
 
 test('BUG-RT-03 reinstall requests an actual forced package installation', () => {
   assert.match(setupPage, /onClick=\{flow\.requestReinstall\}/);
-  assert.match(setupFlow, /const forceReinstall = reinstallRequestedRef\.current;/);
+  assert.match(setupFlow, /const forceReinstall = reinstallRequestedRef\.current \|\| repairInvalidInstall;/);
   assert.match(setupFlow, /await reinstallOpenclaw\(\)/);
   assert.match(commands, /invoke<string>\("reinstall_openclaw"\)/);
 });

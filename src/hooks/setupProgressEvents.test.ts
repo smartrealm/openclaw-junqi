@@ -10,6 +10,7 @@ test("structured setup events retain step, error, and normalized local progress"
       progress: 0.5,
       error: null,
       key: null,
+      params: { path: "/tmp/openclaw" },
       status: null,
     }),
     {
@@ -18,6 +19,7 @@ test("structured setup events retain step, error, and normalized local progress"
       progress: 50,
       error: null,
       key: null,
+      params: { path: "/tmp/openclaw" },
       status: null,
     },
   );
@@ -30,8 +32,19 @@ test("plain legacy events remain readable without inventing metadata", () => {
     progress: null,
     error: null,
     key: null,
+    params: {},
     status: null,
   });
+});
+
+test("structured setup events ignore non-string translation parameters", () => {
+  const event = normalizeSetupProgressPayload({
+    step: "openclaw",
+    message: "Preparing install directory /tmp/openclaw...",
+    key: "setup.openclaw.prepareDir",
+    params: { path: "/tmp/openclaw", unsafe: { nested: true }, count: 2 },
+  });
+  assert.deepEqual(event?.params, { path: "/tmp/openclaw" });
 });
 
 test("setup log classification recognizes npm errors, fallbacks, and success", () => {
