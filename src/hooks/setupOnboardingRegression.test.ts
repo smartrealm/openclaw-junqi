@@ -164,6 +164,20 @@ test('BUG-ONB-14 existing Native OpenClaw runs the full dependency closure after
   assert.match(completeStorage, /navigateSetup\("checking", "push"\);\s*void runNativeSetup\(\);\s*return;/);
 });
 
+test('BUG-ONB-15 runtime navigation uses its own label instead of repeating environment detection', () => {
+  const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
+  const en = JSON.parse(readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
+
+  assert.deepEqual(zh.setup.steps.runtime, {
+    title: '运行时',
+    description: '安装并启动服务',
+  });
+  assert.deepEqual(en.setup.steps.runtime, {
+    title: 'Runtime',
+    description: 'Install and start services',
+  });
+});
+
 test('BUG-ONB-09 native setup verifies optional terminal integration after OpenClaw', () => {
   const openclawStep = setupFlow.indexOf('patchStep("openclaw", "done"');
   const terminalStep = setupFlow.indexOf('await configureTerminalIntegration(runId)', openclawStep);

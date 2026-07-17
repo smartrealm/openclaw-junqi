@@ -2464,8 +2464,8 @@
         "description": "语言 / 主题"
       },
       "runtime": {
-        "title": "环境检测",
-        "description": "OpenClaw / Docker"
+        "title": "运行时",
+        "description": "安装并启动服务"
       },
       "install": {
         "title": "安装与启动",
