@@ -15,6 +15,8 @@ import { themeHex, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
+import { resetSessionEverywhere } from '@/utils/sessionReset';
+import { createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecycle';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
@@ -146,7 +148,7 @@ function parseSessionKey(key: string): { agentId: string; isMainSession: boolean
   const parts = key.split(':');
   const agentId = parts[1] ?? 'main';
   const rest = parts.slice(2).join(':');
-  const isMainSession = rest === 'main';
+  const isMainSession = isAgentMainSession(key);
   const isDesktopSession = rest.startsWith('desktop-');
   return { agentId, isMainSession, isDesktopSession };
 }
@@ -809,7 +811,6 @@ export function ChatTabs() {
     messagesPerSession,
     openTab,
     closeTab,
-    removeSession,
     reorderTabs,
     setActiveSession,
     connected,
@@ -938,14 +939,20 @@ export function ChatTabs() {
   }, [openTab]);
 
   const handleCreateDesktopSession = useCallback((agentId: string, persona?: SkillPersona | null) => {
-    const desktopKey = `agent:${agentId}:desktop-${Date.now()}`;
+    const desktopKey = createAgentSessionKey(agentId);
     const sourceMainKey = `agent:${agentId}:main`;
     const sourceMainSession = sessions.find((session) => session.key === sourceMainKey);
     const inheritedModel =
       sourceMainSession?.model
       ?? (sourceMainKey === activeSessionKey ? (manualModelOverride ?? currentModel) : null);
 
-    openTab(desktopKey);
+    useChatStore.getState().addLocalSession({
+      key: desktopKey,
+      label: '新会话',
+      agentId,
+      createdAt: Date.now(),
+      model: inheritedModel ?? undefined,
+    });
     setShowNewPicker(false);
     setPendingPersona(null);
 
@@ -1072,7 +1079,6 @@ export function ChatTabs() {
     requestDeleteSession(key);
   }, [ctxMenu, requestDeleteSession]);
 
-  const { clearSessionMessages, clearSessionTokens } = useChatStore();
   const handleResetSession = useCallback(async () => {
     if (!ctxMenu) return;
     const key = ctxMenu.key;
@@ -1081,14 +1087,10 @@ export function ChatTabs() {
       t('chat.resetSession', '重置会话'),
       t('chat.resetSessionConfirm', '确定清除此会话的对话历史？会话本身会保留。'),
       async () => {
-        try { await gateway.resetSession(key); } catch {}
-        clearSessionMessages(key);
-        clearSessionTokens(key);
+        await resetSessionEverywhere(key);
       }
     );
-    // Trigger App-level session refresh so the polled data also resets
-    window.dispatchEvent(new CustomEvent('aegis:session-reset'));
-  }, [ctxMenu, t, clearSessionMessages, clearSessionTokens]);
+  }, [ctxMenu, t]);
 
   const startRename = useCallback((key: string, currentLabel: string) => {
     setEditingKey(key);

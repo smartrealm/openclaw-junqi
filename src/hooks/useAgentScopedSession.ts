@@ -9,24 +9,26 @@
  * real session record.
  */
 import { useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useChatStore, type Session } from '@/stores/chatStore';
+import { createAgentSessionKey } from '@/utils/sessionLifecycle';
 
 /** Build a fresh session key scoped to a specific agent id. */
 export function makeAgentSessionKey(agentId: string): string {
-  const slot = `s-${Date.now().toString(36).slice(-5)}`;
-  return `agent:${agentId}:${slot}`;
+  return createAgentSessionKey(agentId);
 }
 
 export function useAgentScopedSession(): void {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const agentId = params.get('agent');
   const wantNew = params.get('new') === '1';
-  const appliedRef = useRef(false);
+  const handledLocationKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (appliedRef.current) return;
     if (!agentId || !wantNew) return;
+    if (handledLocationKeyRef.current === location.key) return;
+    handledLocationKeyRef.current = location.key;
 
     const newKey = makeAgentSessionKey(agentId);
     const placeholder: Session = {
@@ -38,15 +40,12 @@ export function useAgentScopedSession(): void {
 
     useChatStore.getState().addLocalSession(placeholder);
 
-    appliedRef.current = true;
-
-    // Strip the querystring so refreshing the page doesn't recreate the
-    // session. Use replaceState to avoid re-triggering useSearchParams.
-    const url = new URL(window.location.href);
-    url.searchParams.delete('new');
-    url.searchParams.delete('agent');
-    window.history.replaceState({}, '', url.toString());
-  // Re-runs only when the querystring changes; we re-trigger this from
-  // the sidebar's "+ New Session" button by adding ?new=1 each click.
-  }, [agentId, wantNew]);
+    // Keep React Router's location state in sync with the visible URL. A later
+    // navigation to the same ?agent=...&new=1 URL receives a fresh location
+    // key and creates another session instead of being blocked forever.
+    const nextParams = new URLSearchParams(params);
+    nextParams.delete('new');
+    nextParams.delete('agent');
+    setParams(nextParams, { replace: true });
+  }, [agentId, location.key, params, setParams, wantNew]);
 }

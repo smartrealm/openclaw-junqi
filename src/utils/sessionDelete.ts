@@ -5,6 +5,13 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { clearSessionModelPref } from '@/utils/sessionModelPrefs';
 import { debugWarn } from '@/utils/debugLog';
+import {
+  gatewayMutationFailure,
+  isAgentMainSession,
+  isSessionDeleted,
+  markSessionDeleted,
+  normalizeSessionKey,
+} from '@/utils/sessionLifecycle';
 
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 
@@ -23,8 +30,10 @@ const defaultSessionDeleteDeps: SessionDeleteDeps = {
 };
 
 let sessionDeleteDeps: SessionDeleteDeps = defaultSessionDeleteDeps;
+const deletionInFlight = new Map<string, Promise<boolean>>();
 
 export function __setSessionDeleteDepsForTest(overrides?: Partial<SessionDeleteDeps>): void {
+  deletionInFlight.clear();
   sessionDeleteDeps = overrides
     ? { ...defaultSessionDeleteDeps, ...overrides }
     : defaultSessionDeleteDeps;
@@ -59,18 +68,26 @@ function clearDeletedSessionLocalPrefs(sessionKey: string): void {
   removeLocalStorageMapEntry(SESSION_TOPIC_PREFS_KEY, sessionKey);
 }
 
-export async function deleteSessionEverywhere(sessionKey: string): Promise<boolean> {
-  if (!sessionKey || /^agent:[^:]+:main$/.test(sessionKey)) return false;
+export function applyConfirmedSessionDeletion(rawSessionKey: string): boolean {
+  const sessionKey = normalizeSessionKey(rawSessionKey);
+  if (!sessionKey || isAgentMainSession(sessionKey)) return false;
+
+  markSessionDeleted(sessionKey);
+  clearDeletedSessionLocalPrefs(sessionKey);
+  useChatStore.getState().removeSession(sessionKey);
+  const gatewayStore = useGatewayDataStore.getState();
+  gatewayStore.setSessions(gatewayStore.sessions.filter((session) => session.key !== sessionKey));
+  return true;
+}
+
+async function performSessionDeletion(sessionKey: string): Promise<boolean> {
+  if (isSessionDeleted(sessionKey)) return applyConfirmedSessionDeletion(sessionKey);
 
   try {
     const result = await sessionDeleteDeps.deleteRemote(sessionKey);
-    if (result?.success === false) {
-      throw new Error(result?.error || result?.message || 'Gateway rejected session deletion');
-    }
-    clearDeletedSessionLocalPrefs(sessionKey);
-    useChatStore.getState().removeSession(sessionKey);
-    const gatewayStore = useGatewayDataStore.getState();
-    gatewayStore.setSessions(gatewayStore.sessions.filter((session) => session.key !== sessionKey));
+    const failure = gatewayMutationFailure(result, 'Gateway rejected session deletion');
+    if (failure) throw new Error(failure);
+    applyConfirmedSessionDeletion(sessionKey);
   } catch (error) {
     sessionDeleteDeps.warn('[sessionDelete] gateway.deleteSession failed:', error);
     sessionDeleteDeps.notifyFailure(errorMessage(error));
@@ -78,4 +95,18 @@ export async function deleteSessionEverywhere(sessionKey: string): Promise<boole
   }
 
   return true;
+}
+
+export function deleteSessionEverywhere(rawSessionKey: string): Promise<boolean> {
+  const sessionKey = normalizeSessionKey(rawSessionKey);
+  if (!sessionKey || isAgentMainSession(sessionKey)) return Promise.resolve(false);
+
+  const existing = deletionInFlight.get(sessionKey);
+  if (existing) return existing;
+
+  const task = performSessionDeletion(sessionKey).finally(() => {
+    if (deletionInFlight.get(sessionKey) === task) deletionInFlight.delete(sessionKey);
+  });
+  deletionInFlight.set(sessionKey, task);
+  return task;
 }

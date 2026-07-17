@@ -30,6 +30,8 @@ import {
 import { changeLanguage } from '@/i18n';
 import { getSessionModelPref, setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
+import { applyConfirmedSessionDeletion } from '@/utils/sessionDelete';
+import { createLatestRequestGate } from '@/utils/sessionLifecycle';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
@@ -170,17 +172,23 @@ export default function App() {
     };
   }, []);
 
+  const sessionListRequestGateRef = useRef(createLatestRequestGate());
+
   // ── Load Sessions from Gateway (also updates per-session model/thinking/token data) ──
   // This is the single polling call for all session metadata. The store's setSessions
   // synchronously applies the active session's data to the TitleBar state — no separate
   // loadTokenUsage needed.
   const loadSessions = useCallback(async () => {
+    const requestGate = sessionListRequestGateRef.current;
+    const requestId = requestGate.begin();
     try {
       // Compatibility only: prior Desktop builds wrote labels to a local JSON
       // file. Copy confirmed entries to OpenClaw before this read, then let
       // Gateway labels remain the sole source of truth.
       await migrateLegacySessionLabelsOnce();
+      if (!requestGate.isCurrent(requestId)) return;
       const result = await gateway.getSessions();
+      if (!requestGate.isCurrent(requestId)) return;
       const rawSessions = Array.isArray(result?.sessions) ? result.sessions : [];
       // Gateway-level defaults (configured model, context window)
       const defaults = result?.defaults
@@ -851,7 +859,15 @@ export default function App() {
     };
     window.addEventListener('aegis:session-reset', handleSessionReset);
 
-    const handleSessionsChanged = () => {
+    const handleSessionsChanged = (event: Event) => {
+      sessionListRequestGateRef.current.invalidate();
+      const detail = (event as CustomEvent<{ reason?: string; sessionKey?: string }>).detail;
+      if (
+        (detail?.reason === 'delete' || detail?.reason === 'deleted')
+        && typeof detail.sessionKey === 'string'
+      ) {
+        applyConfirmedSessionDeletion(detail.sessionKey);
+      }
       setTimeout(() => void loadSessions(), 250);
     };
     window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
