@@ -2470,8 +2470,8 @@
         "description": "Language / Theme"
       },
       "runtime": {
-        "title": "Environment",
-        "description": "OpenClaw / Docker"
+        "title": "Runtime",
+        "description": "Install and start services"
       },
       "install": {
         "title": "Install & Start",
