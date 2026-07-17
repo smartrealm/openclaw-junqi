@@ -90,11 +90,15 @@ impl OpenclawCommandContext {
         }
     }
 
-    /// A managed Gateway deliberately runs in its state directory so relative
-    /// paths in its runtime remain stable.
+    /// BUG-WIN-CWD-01: state_dir (data directory) and Gateway's working directory
+    /// must be decoupled.  `realpathSync('C:')` fires when cwd lands on a
+    /// drive root.  Using `stable_openclaw_working_dir()` guarantees a non-root user
+    /// home regardless of where JunQi's own process was launched from, while
+    /// OPENCLAW_STATE_DIR / OPENCLAW_CONFIG_PATH still point at the user's chosen
+    /// data directory (F: or any other drive).  This separates data location
+    /// from runtime cwd without relying on the unpredictable parent cwd.
     pub(crate) fn managed_gateway(state_dir: PathBuf, config_path: PathBuf) -> Self {
-        let working_dir = state_dir.is_dir().then_some(state_dir.clone());
-        Self::with_working_dir(state_dir, config_path, working_dir)
+        Self::with_working_dir(state_dir, config_path, stable_openclaw_working_dir())
     }
 
     pub(crate) fn with_search_path(mut self, search_path: impl Into<String>) -> Self {
