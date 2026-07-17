@@ -23,9 +23,14 @@ import { GatewayLifecyclePanel } from "@/components/settings/GatewayLifecyclePan
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
 
-type SetupStepId = "identity" | "runtime" | "install" | "ready";
-
-const SETUP_STEPS: SetupStepId[] = ["identity", "runtime", "install", "ready"];
+const SETUP_STEPS = [
+  { id: "identity", title: "偏好", description: "语言与外观" },
+  { id: "environment", title: "环境检测", description: "OpenClaw / Docker" },
+  { id: "storage", title: "数据位置", description: "配置与工作区" },
+  { id: "runtime", title: "运行时", description: "安装并启动服务" },
+  { id: "configuration", title: "配置", description: "模型与提供商" },
+  { id: "ready", title: "完成", description: "进入工作台" },
+] as const;
 
 export const STEP_META: Record<string, { titleKey: string; titleFallback: string; descriptionKey: string; descriptionFallback: string }> = {
   git: {
@@ -95,7 +100,7 @@ function Stepper({ active }: { active: number }) {
   return (
     <div className="px-6 pt-6" dir="ltr">
       <div className="mx-auto flex w-fit max-w-full items-start justify-center gap-2 overflow-x-auto rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
-        {SETUP_STEPS.map((id, i) => {
+        {SETUP_STEPS.map(({ id, title, description }, i) => {
           const done = i < active;
           const current = i === active;
           return (
@@ -121,13 +126,13 @@ function Stepper({ active }: { active: number }) {
                     )}
                     dir="auto"
                   >
-                    {t(`setup.steps.${id}.title`)}
+                    {t(`setup.steps.${id}.title`, title)}
                   </div>
                   <div
                     className={clsx("mt-0.5 hidden text-[11px] font-medium sm:block", current ? "text-aegis-text-secondary" : "text-aegis-text-dim")}
                     dir="auto"
                   >
-                    {t(`setup.steps.${id}.description`)}
+                    {t(`setup.steps.${id}.description`, description)}
                   </div>
                 </div>
               </div>

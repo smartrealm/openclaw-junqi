@@ -212,7 +212,7 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
   const navigateSetup = useSetupNavigation();
   return (
     <SetupShell
-      active={1}
+      active={3}
       title={t("setup.openclawDetectedTitle")}
       subtitle={t("setup.gatewayNotRunning")}
       logs={logs}
@@ -278,7 +278,7 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
 
   return (
     <SetupShell
-      active={1}
+      active={3}
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.chooseMode")}
       logs={logs}
@@ -366,7 +366,7 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
 function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const { setupStep } = useAppStore();
-  const active = setupStep === "ready" ? 3 : 2;
+  const active = setupStep === "ready" ? 5 : 3;
   const isInstallComplete = setupStep === "install-complete";
   const currentInstallStep = currentStepOf(flow.steps);
   const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
@@ -479,7 +479,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   if (!step) {
     return (
       <SetupShell
-        active={2}
+        active={4}
         title={t("setup.wizard.title", "配置 OpenClaw")}
         subtitle={t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
         logs={logs}
@@ -520,7 +520,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
   return (
     <SetupShell
-      active={2}
+      active={4}
       title={step.title || t("setup.wizard.title", "配置 OpenClaw")}
       subtitle={wizardSubtitle}
       logs={logs}
@@ -593,7 +593,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
   return (
     <SetupShell
-      active={3}
+      active={5}
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}
@@ -646,7 +646,7 @@ function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
   const { t } = useTranslation();
   return (
     <SetupShell
-      active={2}
+      active={3}
       title={t("setup.gitRequired")}
       subtitle={t("setup.gitRequiredDesc")}
       logs={logs}
@@ -670,7 +670,7 @@ function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }
   const message = t("setup.nodeRequiredDesc", { requirement });
   return (
     <SetupShell
-      active={2}
+      active={3}
       title={t("setup.nodeRequired")}
       subtitle={message}
       logs={logs}

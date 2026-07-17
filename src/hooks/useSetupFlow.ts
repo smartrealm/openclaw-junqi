@@ -1192,7 +1192,15 @@ export function useSetupFlow(
     while (isStaleSetupBackDestination(destination, gatewayRunning)) {
       destination = goBackSetup("welcome");
     }
-    if (destination === "welcome" || destination === "choosing-mode") {
+    // The setup summary belongs to the active runtime attempt. Returning to an
+    // earlier decision point must not leave a completed/failed later attempt
+    // visible as if it still described the current stage.
+    if (
+      destination === "welcome"
+      || destination === "detecting"
+      || destination === "storage"
+      || destination === "choosing-mode"
+    ) {
       commitSteps([]);
     }
     presentSetupStep(destination);

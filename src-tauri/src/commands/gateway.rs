@@ -1386,6 +1386,11 @@ pub(crate) async fn start_gateway_locked(
     if !default_workspace.exists() {
         let _ = std::fs::create_dir_all(&default_workspace);
     }
+    // Tauri may be launched with a drive root (for example `C:\\`) as its
+    // working directory on Windows. OpenClaw's startup path inspection rejects
+    // that form, so always give the managed child a real state-directory cwd.
+    std::fs::create_dir_all(&base_dir)
+        .map_err(|error| format!("Failed to create OpenClaw state directory: {error}"))?;
 
     let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
 
@@ -1414,6 +1419,7 @@ pub(crate) async fn start_gateway_locked(
         "--port",
         &port.to_string(),
     ])
+    .current_dir(&base_dir)
     .env("PATH", &gw_path)
     .env("OPENCLAW_STATE_DIR", &base_dir)
     .env("OPENCLAW_CONFIG_PATH", &config_path);

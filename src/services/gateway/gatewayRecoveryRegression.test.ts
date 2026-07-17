@@ -91,6 +91,13 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   assert.match(setup, /waitForGatewayReady\(runId, isDockerRuntime \? 30_000 : 10_000, status\?\.port\)/);
 });
 
+test('BUG-WIN-CWD-01 managed Gateway does not inherit a Windows drive-root cwd', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const start = gateway.slice(gateway.indexOf('pub(crate) async fn start_gateway_locked'));
+  assert.match(start, /std::fs::create_dir_all\(&base_dir\)/);
+  assert.match(start, /\.current_dir\(&base_dir\)[\s\S]*\.env\("OPENCLAW_STATE_DIR", &base_dir\)/);
+});
+
 test('offline system services are stopped before the desktop-managed Gateway starts', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   assert.match(gateway, /args\(\["gateway", "status", "--json"\]\)/);
