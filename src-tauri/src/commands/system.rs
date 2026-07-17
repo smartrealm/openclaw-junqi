@@ -47,9 +47,84 @@ pub(crate) struct NativeOpenclawRuntime {
     node: PathBuf,
 }
 
+/// The complete process contract for one native OpenClaw invocation.
+///
+/// Commands must not independently reconstruct this environment: doing so
+/// makes a desktop launch directory, a PATH change, or a storage migration
+/// affect only some OpenClaw operations. The context owns those invariants and
+/// lets callers override only their explicit Gateway working directory.
+#[derive(Debug, Clone)]
+pub(crate) struct OpenclawCommandContext {
+    state_dir: PathBuf,
+    config_path: PathBuf,
+    working_dir: Option<PathBuf>,
+    search_path: String,
+}
+
+impl OpenclawCommandContext {
+    /// Standard context for maintenance commands such as update, repair,
+    /// doctor, and config validation. A GUI process can start at a drive root
+    /// on Windows, so never inherit its working directory.
+    pub(crate) fn maintenance() -> Self {
+        let state_dir = paths::desktop_dir();
+        let config_path = paths::config_path();
+        Self::for_paths(state_dir, config_path)
+    }
+
+    /// Context for a specific state/config pair, including storage migration
+    /// service operations. It retains the same stable maintenance directory.
+    pub(crate) fn for_paths(state_dir: PathBuf, config_path: PathBuf) -> Self {
+        Self::with_working_dir(state_dir, config_path, stable_openclaw_working_dir())
+    }
+
+    fn with_working_dir(
+        state_dir: PathBuf,
+        config_path: PathBuf,
+        working_dir: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            state_dir,
+            config_path,
+            working_dir,
+            search_path: openclaw_search_path(),
+        }
+    }
+
+    /// A managed Gateway deliberately runs in its state directory so relative
+    /// paths in its runtime remain stable.
+    pub(crate) fn managed_gateway(state_dir: PathBuf, config_path: PathBuf) -> Self {
+        let working_dir = state_dir.is_dir().then_some(state_dir.clone());
+        Self::with_working_dir(state_dir, config_path, working_dir)
+    }
+
+    pub(crate) fn with_search_path(mut self, search_path: impl Into<String>) -> Self {
+        self.search_path = search_path.into();
+        self
+    }
+
+    fn apply(&self, command: &mut tokio::process::Command) {
+        command
+            .env("PATH", &self.search_path)
+            .env("OPENCLAW_STATE_DIR", &self.state_dir)
+            .env("OPENCLAW_CONFIG_PATH", &self.config_path)
+            .env("OPENCLAW_NO_RESPAWN", "1")
+            .env("NO_COLOR", "1");
+        if let Some(working_dir) = self.working_dir.as_ref().filter(|path| path.is_dir()) {
+            command.current_dir(working_dir);
+        }
+        platform::configure_background_command(command);
+    }
+}
+
+fn stable_openclaw_working_dir() -> Option<PathBuf> {
+    platform::home_dir().filter(|path| path.is_dir())
+}
+
 impl NativeOpenclawRuntime {
-    pub(crate) fn command(&self) -> tokio::process::Command {
-        openclaw_command_with_node(&self.binary, Some(&self.node))
+    pub(crate) fn command(&self, context: &OpenclawCommandContext) -> tokio::process::Command {
+        let mut command = openclaw_command_with_node(&self.binary, Some(&self.node));
+        context.apply(&mut command);
+        command
     }
 }
 

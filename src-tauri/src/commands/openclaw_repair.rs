@@ -158,20 +158,15 @@ async fn run_native_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> R
             .await
             .map_err(|error| format!("OpenClaw repair runtime preparation failed: {error}"))?;
     let runtime = crate::commands::system::native_openclaw_runtime(binary, &node)?;
-    let mut command = runtime.command();
+    let context = crate::commands::system::OpenclawCommandContext::maintenance();
+    let mut command = runtime.command(&context);
     command
         .args(REPAIR_ARGS)
-        .env("PATH", crate::commands::system::openclaw_search_path())
-        .env("OPENCLAW_STATE_DIR", crate::paths::desktop_dir())
-        .env("OPENCLAW_CONFIG_PATH", crate::paths::config_path())
-        .env("OPENCLAW_NO_RESPAWN", "1")
-        .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     crate::commands::system::apply_configured_npm_cache(&mut command);
-    crate::platform::configure_background_command(&mut command);
 
     let mut child = command
         .spawn()

@@ -783,12 +783,13 @@ async fn run_gateway_service_command(
 ) -> Result<(), String> {
     let runtime =
         crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf()).await?;
-    let mut command = runtime.command();
+    let context = crate::commands::system::OpenclawCommandContext::for_paths(
+        state_dir.to_path_buf(),
+        config_path.to_path_buf(),
+    );
+    let mut command = runtime.command(&context);
     let output = command
         .args(args)
-        .env("PATH", crate::commands::system::openclaw_search_path())
-        .env("OPENCLAW_STATE_DIR", state_dir)
-        .env("OPENCLAW_CONFIG_PATH", config_path)
         .output()
         .await
         .map_err(|e| format!("Failed to run OpenClaw service command: {}", e))?;
