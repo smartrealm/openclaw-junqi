@@ -35,6 +35,77 @@ const WINGET_NODE_CURRENT_PACKAGE: &str = "OpenJS.NodeJS";
 const WINGET_GIT_PACKAGE: &str = "Git.Git";
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
 const RUNTIME_NETWORK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+#[cfg(windows)]
+struct WindowsInstallProgress<'a> {
+    app: &'a tauri::AppHandle,
+    step: &'a str,
+    tool: &'a str,
+    started_at: std::time::Instant,
+    progress_start: f64,
+    progress_end: f64,
+}
+
+#[cfg(windows)]
+impl<'a> WindowsInstallProgress<'a> {
+    fn new(
+        app: &'a tauri::AppHandle,
+        step: &'a str,
+        tool: &'a str,
+        progress_start: f64,
+        progress_end: f64,
+    ) -> Self {
+        Self {
+            app,
+            step,
+            tool,
+            started_at: std::time::Instant::now(),
+            progress_start,
+            progress_end,
+        }
+    }
+
+    fn progress(&self) -> f64 {
+        let elapsed = self.started_at.elapsed().as_secs_f64();
+        let expected_install_seconds = 20.0 * 60.0;
+        self.progress_start
+            + (self.progress_end - self.progress_start)
+                * (elapsed / expected_install_seconds).clamp(0.0, 1.0)
+    }
+
+    fn elapsed(&self) -> String {
+        let seconds = self.started_at.elapsed().as_secs();
+        format!("{:02}:{:02}", seconds / 60, seconds % 60)
+    }
+
+    fn report_installer_wait(&self) {
+        let elapsed = self.elapsed();
+        emit_keyed_with_params(
+            self.app,
+            self.step,
+            &format!("{} installer is running (elapsed {elapsed})", self.tool),
+            "setup.windows.installerWaiting",
+            &[("tool", self.tool), ("elapsed", &elapsed)],
+            self.progress(),
+        );
+    }
+
+    fn report_package_manager_wait(&self) {
+        let elapsed = self.elapsed();
+        emit_keyed_with_params(
+            self.app,
+            self.step,
+            &format!(
+                "Windows Package Manager is processing {} (elapsed {elapsed})",
+                self.tool
+            ),
+            "setup.windows.packageManagerWaiting",
+            &[("tool", self.tool), ("elapsed", &elapsed)],
+            self.progress(),
+        );
+    }
+}
+
 struct TemporaryDirectory(PathBuf);
 
 impl Drop for TemporaryDirectory {
@@ -1337,7 +1408,12 @@ async fn install_windows_system_node_from_mirrors(
         std::ffi::OsString::from("/qn"),
         std::ffi::OsString::from("/norestart"),
     ];
-    run_windows_installer(&msiexec, &args, "Node.js").await?;
+    run_windows_installer(
+        &msiexec,
+        &args,
+        WindowsInstallProgress::new(app, "node", "Node.js", 0.64, 0.92),
+    )
+    .await?;
     refresh_path_from_registry();
 
     let installed = crate::commands::system::check_node_for_requirement(requirement).await?;
@@ -1367,7 +1443,7 @@ async fn install_windows_system_node_with_winget(
     app: &tauri::AppHandle,
     requirement: &NodeRuntimeRequirement,
 ) -> Result<String, String> {
-    install_or_upgrade_winget_package(WINGET_NODE_LTS_PACKAGE).await?;
+    install_or_upgrade_winget_package(app, "node", "Node.js", WINGET_NODE_LTS_PACKAGE).await?;
     refresh_path_from_registry();
     let mut installed = crate::commands::system::check_node_for_requirement(&requirement).await?;
     if !installed.available {
@@ -1378,7 +1454,8 @@ async fn install_windows_system_node_with_winget(
             "setup.node.systemCurrentInstall",
             0.55,
         );
-        install_or_upgrade_winget_package(WINGET_NODE_CURRENT_PACKAGE).await?;
+        install_or_upgrade_winget_package(app, "node", "Node.js", WINGET_NODE_CURRENT_PACKAGE)
+            .await?;
         refresh_path_from_registry();
         installed = crate::commands::system::check_node_for_requirement(&requirement).await?;
     }
@@ -1454,7 +1531,7 @@ fn windows_installer_command_line(args: &[std::ffi::OsString]) -> Result<Vec<u16
 async fn run_windows_installer(
     executable: &Path,
     args: &[std::ffi::OsString],
-    label: &str,
+    progress: WindowsInstallProgress<'_>,
 ) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0, WAIT_TIMEOUT};
@@ -1466,9 +1543,9 @@ async fn run_windows_installer(
 
     let executable = executable.to_path_buf();
     let args = args.to_vec();
-    let label = label.to_owned();
+    let label = progress.tool.to_owned();
     let join_label = label.clone();
-    tokio::task::spawn_blocking(move || {
+    let mut installer = tokio::task::spawn_blocking(move || {
         let mut executable_wide = executable.as_os_str().encode_wide().collect::<Vec<_>>();
         if executable_wide.contains(&0) {
             return Err(format!("Invalid {label} installer path"));
@@ -1523,13 +1600,29 @@ async fn run_windows_installer(
         } else {
             Err(format!("{label} installer exited with code {exit_code}"))
         }
-    })
-    .await
-    .map_err(|error| format!("{join_label} installer task failed: {error}"))?
+    });
+
+    progress.report_installer_wait();
+    loop {
+        tokio::select! {
+            result = &mut installer => {
+                return result
+                    .map_err(|error| format!("{join_label} installer task failed: {error}"))?;
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
+                progress.report_installer_wait();
+            }
+        }
+    }
 }
 
 #[cfg(windows)]
-async fn install_or_upgrade_winget_package(package_id: &str) -> Result<(), String> {
+async fn install_or_upgrade_winget_package(
+    app: &tauri::AppHandle,
+    step: &str,
+    tool: &str,
+    package_id: &str,
+) -> Result<(), String> {
     let winget = platform::detect_path("winget");
     if winget.is_empty() {
         return Err(
@@ -1537,13 +1630,14 @@ async fn install_or_upgrade_winget_package(package_id: &str) -> Result<(), Strin
                 .into(),
         );
     }
-    if run_winget_package_command(&winget, "upgrade", package_id)
+    let progress = WindowsInstallProgress::new(app, step, tool, 0.62, 0.92);
+    if run_winget_package_command(&winget, "upgrade", package_id, &progress)
         .await
         .is_ok_and(|output| output.status.success())
     {
         return Ok(());
     }
-    let install = run_winget_package_command(&winget, "install", package_id).await?;
+    let install = run_winget_package_command(&winget, "install", package_id, &progress).await?;
     if install.status.success() {
         return Ok(());
     }
@@ -1566,6 +1660,7 @@ async fn run_winget_package_command(
     winget: &str,
     verb: &str,
     package_id: &str,
+    progress: &WindowsInstallProgress<'_>,
 ) -> Result<std::process::Output, String> {
     let mut command = tokio::process::Command::new(winget);
     command.args([
@@ -1579,10 +1674,24 @@ async fn run_winget_package_command(
         "--accept-package-agreements",
     ]);
     platform::configure_background_command(&mut command);
-    tokio::time::timeout(std::time::Duration::from_secs(20 * 60), command.output())
-        .await
-        .map_err(|_| format!("winget {verb} timed out for {package_id}"))?
-        .map_err(|error| format!("Failed to run winget {verb} for {package_id}: {error}"))
+    let output = command.output();
+    tokio::pin!(output);
+    progress.report_package_manager_wait();
+    let timeout = tokio::time::sleep(std::time::Duration::from_secs(20 * 60));
+    tokio::pin!(timeout);
+    loop {
+        tokio::select! {
+            result = &mut output => {
+                return result.map_err(|error| format!("Failed to run winget {verb} for {package_id}: {error}"));
+            }
+            _ = &mut timeout => {
+                return Err(format!("winget {verb} timed out for {package_id}"));
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
+                progress.report_package_manager_wait();
+            }
+        }
+    }
 }
 
 /// Ensure child processes use a Node.js release accepted by OpenClaw.
@@ -1766,7 +1875,7 @@ async fn install_windows_system_git(app: tauri::AppHandle) -> Result<String, Str
         "setup.git.systemPackageFallback",
         0.60,
     );
-    install_or_upgrade_winget_package(WINGET_GIT_PACKAGE)
+    install_or_upgrade_winget_package(&app, "git", "Git", WINGET_GIT_PACKAGE)
         .await
         .map_err(|error| {
             format!(
@@ -1829,7 +1938,12 @@ async fn install_windows_system_git_from_mirrors(app: &tauri::AppHandle) -> Resu
         std::ffi::OsString::from("/SUPPRESSMSGBOXES"),
         std::ffi::OsString::from("/SP-"),
     ];
-    run_windows_installer(&installer, &args, "Git").await?;
+    run_windows_installer(
+        &installer,
+        &args,
+        WindowsInstallProgress::new(app, "git", "Git", 0.64, 0.92),
+    )
+    .await?;
     refresh_path_from_registry();
     let installed = crate::commands::system::check_git().await?;
     if !installed.available {

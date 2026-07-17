@@ -3075,6 +3075,8 @@
   "setup.node.systemPackageFallback": "国内镜像安装器未完成，正在尝试 Windows 包管理器…",
   "setup.node.systemCurrentInstall": "LTS 通道不满足 OpenClaw 要求，正在尝试当前 Node.js 通道…",
   "setup.node.systemReady": "兼容的系统 Node.js 运行时已就绪",
+  "setup.windows.installerWaiting": "{{tool}} 安装器正在运行（已等待 {{elapsed}}）…",
+  "setup.windows.packageManagerWaiting": "Windows 包管理器正在处理 {{tool}}（已等待 {{elapsed}}）…",
   "setup.node.runtimeReady": "兼容的 Node.js 运行时已就绪",
   "setup.node.prepareDownload": "准备下载 Node.js v{{version}}，优先使用国内镜像源…",
   "setup.node.extract": "正在解压至 {{path}}…",

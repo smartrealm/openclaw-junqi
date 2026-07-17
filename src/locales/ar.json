@@ -2169,6 +2169,8 @@
   "setup.node.systemPackageFallback": "لم يكتمل مثبت المرآة المحلية؛ جارٍ تجربة Windows Package Manager…",
   "setup.node.systemCurrentInstall": "قناة LTS لا تفي بمتطلبات OpenClaw؛ جارٍ تجربة قناة Node.js الحالية…",
   "setup.node.systemReady": "بيئة Node.js النظامية المتوافقة جاهزة",
+  "setup.windows.installerWaiting": "مثبّت {{tool}} قيد التشغيل (الوقت المنقضي {{elapsed}})…",
+  "setup.windows.packageManagerWaiting": "Windows Package Manager يعالج {{tool}} (الوقت المنقضي {{elapsed}})…",
   "setup.node.runtimeReady": "بيئة Node.js المتوافقة جاهزة",
   "setup.node.prepareDownload": "جارٍ تحضير تنزيل Node.js v{{version}}، يُفضل مرآة CN…",
   "setup.node.extract": "جارٍ الاستخراج إلى {{path}}…",

@@ -106,11 +106,26 @@ test('system-installer fallback progress is translated in every supported locale
     const messages = JSON.parse(
       readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'),
     ) as Record<string, unknown>;
-    for (const key of ['setup.node.systemPackageFallback', 'setup.git.systemPackageFallback']) {
+    for (const key of [
+      'setup.node.systemPackageFallback',
+      'setup.git.systemPackageFallback',
+      'setup.windows.installerWaiting',
+      'setup.windows.packageManagerWaiting',
+    ]) {
       assert.equal(typeof messages[key], 'string', `${locale} is missing ${key}`);
       assert.notEqual((messages[key] as string).trim(), '', `${locale} has an empty ${key}`);
     }
   }
+});
+
+test('BUG-INSTALL-10 Windows installer and package-manager waits keep setup progress alive', () => {
+  assert.match(setupCommands, /struct WindowsInstallProgress/);
+  assert.match(setupCommands, /report_installer_wait/);
+  assert.match(setupCommands, /report_package_manager_wait/);
+  assert.match(setupCommands, /async fn run_windows_installer[\s\S]*tokio::select![\s\S]*report_installer_wait/);
+  assert.match(setupCommands, /async fn run_winget_package_command[\s\S]*tokio::select![\s\S]*report_package_manager_wait/);
+  assert.match(setupCommands, /WindowsInstallProgress::new\(app, "node", "Node\.js", 0\.64, 0\.92\)/);
+  assert.match(setupCommands, /WindowsInstallProgress::new\(app, "git", "Git", 0\.64, 0\.92\)/);
 });
 
 test('npm setup step is translated in every supported locale', () => {
