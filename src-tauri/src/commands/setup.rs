@@ -1527,10 +1527,11 @@ async fn install_windows_system_node(
     force: bool,
 ) -> Result<String, String> {
     let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
-    let npm_available = crate::commands::system::check_npm()
-        .await
-        .is_ok_and(|status| status.available);
-    if current.available && npm_available && !force {
+    // Node.js and npm are distinct runtime contracts. A transient npm PATH
+    // probe must not reinstall an already compatible system Node.js runtime;
+    // the OpenClaw installation step resolves npm with the refreshed runtime
+    // path and reports an npm-specific error if it remains unavailable.
+    if current.available && !force {
         return Ok(format!(
             "Node.js {} already installed at {}",
             current.version.unwrap_or_default(),
@@ -1565,10 +1566,7 @@ async fn install_macos_system_node(
     force: bool,
 ) -> Result<String, String> {
     let current = crate::commands::system::check_node_for_requirement(&requirement).await?;
-    let npm_available = crate::commands::system::check_npm()
-        .await
-        .is_ok_and(|status| status.available);
-    if current.available && npm_available && !force {
+    if current.available && !force {
         return Ok(format!(
             "Node.js {} already installed at {}",
             current.version.unwrap_or_default(),
