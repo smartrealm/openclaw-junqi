@@ -155,6 +155,50 @@ pub fn detect_path(binary: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Return every executable candidate visible to the current process.
+///
+/// Windows commonly has several Node.js installations on PATH (for example,
+/// a version-manager shim followed by the system installer). Callers that
+/// need a specific runtime contract must evaluate every candidate instead of
+/// treating the first path entry as the machine's only installation.
+pub fn detect_paths(binary: &str) -> Vec<String> {
+    if binary.contains('\\') || binary.contains('/') {
+        return PathBuf::from(binary)
+            .is_file()
+            .then(|| binary.to_string())
+            .into_iter()
+            .collect();
+    }
+
+    #[cfg(windows)]
+    {
+        let mut candidates = Vec::new();
+        for path_value in [
+            std::env::var("PATH").unwrap_or_default(),
+            login_shell_path().to_string(),
+        ] {
+            for candidate in find_all_on_windows_path(binary, &path_value) {
+                if !candidates
+                    .iter()
+                    .any(|known: &String| known.eq_ignore_ascii_case(&candidate))
+                {
+                    candidates.push(candidate);
+                }
+            }
+        }
+        return candidates;
+    }
+
+    #[cfg(not(windows))]
+    {
+        let detected = detect_path(binary);
+        (!detected.is_empty())
+            .then_some(detected)
+            .into_iter()
+            .collect()
+    }
+}
+
 /// 在传给 `portable-pty` 前先解析命令路径。
 ///
 /// Windows 上 npm 安装的 CLI 通常是 `claude.cmd`、`codex.cmd`、
@@ -220,6 +264,12 @@ fn resolve_login_shell_env() -> Vec<(String, String)> {
 }
 
 fn find_on_windows_path(binary: &str, path_value: &str) -> Option<String> {
+    find_all_on_windows_path(binary, path_value)
+        .into_iter()
+        .next()
+}
+
+fn find_all_on_windows_path(binary: &str, path_value: &str) -> Vec<String> {
     let has_extension = Path::new(binary).extension().is_some();
     let path_exts = if has_extension {
         vec![String::new()]
@@ -232,6 +282,7 @@ fn find_on_windows_path(binary: &str, path_value: &str) -> Option<String> {
             .collect::<Vec<_>>()
     };
 
+    let mut matches = Vec::new();
     for dir in path_value
         .split(';')
         .filter(|segment| !segment.trim().is_empty())
@@ -239,19 +290,19 @@ fn find_on_windows_path(binary: &str, path_value: &str) -> Option<String> {
         if has_extension {
             let candidate = Path::new(dir).join(binary);
             if candidate.is_file() {
-                return Some(candidate.to_string_lossy().into_owned());
+                matches.push(candidate.to_string_lossy().into_owned());
             }
             continue;
         }
         for ext in &path_exts {
             let candidate = Path::new(dir).join(format!("{binary}{ext}"));
             if candidate.is_file() {
-                return Some(candidate.to_string_lossy().into_owned());
+                matches.push(candidate.to_string_lossy().into_owned());
+                break;
             }
         }
     }
-
-    None
+    matches
 }
 
 /// 用系统文件管理器打开路径。

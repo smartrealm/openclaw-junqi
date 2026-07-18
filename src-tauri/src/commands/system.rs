@@ -491,32 +491,39 @@ pub(crate) async fn check_node_for_requirement(
         });
     }
 
-    // System Node.js is authoritative unless the user explicitly selected a
-    // portable runtime above.
-    let system_node = platform::detect_path("node");
-    let system_node = if system_node.is_empty() {
-        platform::bin_name("node")
+    // System Node.js may have multiple installations on PATH. Evaluate every
+    // candidate so an obsolete version-manager shim cannot hide a compatible
+    // system Node.js that appears later in PATH.
+    let candidates = platform::detect_paths("node");
+    let candidates = if candidates.is_empty() {
+        vec![platform::bin_name("node")]
     } else {
-        system_node
+        candidates
     };
-    let system_version = get_node_version(&system_node).await;
-    if system_version
-        .as_ref()
-        .is_some_and(|version| requirement.supports(version))
-    {
-        return Ok(NodeStatus {
-            available: true,
-            version: system_version,
-            path: Some(system_node.clone()),
-            source: Some(RuntimeToolSource::System),
-        });
+    let mut detected_incompatible = None;
+    for system_node in candidates {
+        let system_version = get_node_version(&system_node).await;
+        if system_version
+            .as_ref()
+            .is_some_and(|version| requirement.supports(version))
+        {
+            return Ok(NodeStatus {
+                available: true,
+                version: system_version,
+                path: Some(system_node),
+                source: Some(RuntimeToolSource::System),
+            });
+        }
+        if system_version.is_some() && detected_incompatible.is_none() {
+            detected_incompatible = Some((system_node, system_version));
+        }
     }
 
-    if system_version.is_some() {
+    if let Some((path, version)) = detected_incompatible {
         return Ok(NodeStatus {
             available: false,
-            version: system_version,
-            path: Some(system_node),
+            version,
+            path: Some(path),
             source: Some(RuntimeToolSource::System),
         });
     }
