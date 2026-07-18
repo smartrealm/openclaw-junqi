@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[serde(rename_all = "camelCase")]
 pub struct StorageSetupStatus {
     configured: bool,
+    configuration_error: Option<String>,
     state_dir: String,
     config_path: String,
     workspace_dir: String,
@@ -119,7 +120,7 @@ fn collect_stats(path: &Path) -> Result<DirectoryStats, String> {
     }
     let metadata = std::fs::symlink_metadata(path)
         .map_err(|e| format!("Failed to inspect {}: {}", path.display(), e))?;
-    if metadata.file_type().is_symlink() || metadata.is_file() {
+    if crate::commands::fs_neu::is_filesystem_link(&metadata) || metadata.is_file() {
         return Ok(DirectoryStats {
             files: 1,
             bytes: metadata.len(),
@@ -161,7 +162,7 @@ fn copy_symlink(source: &Path, target: &Path) -> Result<(), String> {
 fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
     let metadata = std::fs::symlink_metadata(source)
         .map_err(|e| format!("Failed to inspect {}: {}", source.display(), e))?;
-    if metadata.file_type().is_symlink() {
+    if crate::commands::fs_neu::is_filesystem_link(&metadata) {
         return copy_symlink(source, target);
     }
     if metadata.is_file() {
@@ -208,6 +209,25 @@ fn directory_is_empty(path: &Path) -> Result<bool, String> {
         .is_none())
 }
 
+fn path_has_reparse_ancestor(path: &Path) -> bool {
+    let mut cursor = path;
+    loop {
+        if std::fs::symlink_metadata(cursor)
+            .ok()
+            .is_some_and(|metadata| crate::commands::fs_neu::is_filesystem_link(&metadata))
+        {
+            return true;
+        }
+        let Some(parent) = cursor.parent() else {
+            return false;
+        };
+        if parent == cursor {
+            return false;
+        }
+        cursor = parent;
+    }
+}
+
 fn required_absolute_path(label: &str, raw: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(raw.trim());
     if raw.trim().is_empty() {
@@ -216,7 +236,7 @@ fn required_absolute_path(label: &str, raw: &str) -> Result<PathBuf, String> {
     if !path.is_absolute() {
         return Err(format!("{} must be an absolute path", label));
     }
-    if path.parent().is_none() {
+    if path.parent().is_none_or(|parent| parent == path) {
         return Err(format!("{} cannot be a filesystem root", label));
     }
     if path
@@ -276,6 +296,29 @@ fn validate_location_changes(
     layout: &StorageBootstrap,
     existing: Option<&StorageBootstrap>,
 ) -> Result<(), String> {
+    let docker_config =
+        paths::config_path_for_runtime(&layout.state_dir, OpenClawRuntimeMode::Docker);
+    if paths::paths_refer_to_same_location(&layout.config_path, &docker_config) {
+        return Err(
+            "Native and Docker OpenClaw configurations must use separate files".to_string(),
+        );
+    }
+    let dependency_locations = [
+        ("npm global prefix", layout.npm_prefix.as_deref()),
+        ("custom Node.js runtime", layout.node_runtime_dir.as_deref()),
+        ("custom Git runtime", layout.git_runtime_dir.as_deref()),
+    ];
+    for (label, location) in dependency_locations {
+        let Some(location) = location else { continue };
+        if !paths::paths_overlap(location, &layout.state_dir) {
+            continue;
+        }
+        return Err(format!(
+            "{} must be outside the OpenClaw state directory so storage migration cannot move or partially copy an executable runtime",
+            label
+        ));
+    }
+
     let locations = layout_locations(layout);
     let existing_locations = existing.map(layout_locations).unwrap_or_default();
     for (index, (left_label, left)) in locations.iter().enumerate() {
@@ -344,9 +387,75 @@ fn selected_layout(
         npm_prefix,
         selection.terminal_integration,
     );
-    layout.node_runtime_dir = node_runtime;
-    layout.git_runtime_dir = git_runtime;
+    layout.node_runtime_dir = node_runtime.map(paths::normalize_node_runtime_root);
+    layout.git_runtime_dir = git_runtime.map(paths::normalize_git_runtime_root);
     Ok(layout)
+}
+
+fn apply_process_runtime_overrides(
+    layout: &mut StorageBootstrap,
+    target: &Path,
+) -> Result<(), String> {
+    let overrides = paths::runtime_location_overrides()?;
+    if let Some(state) = overrides.state_dir {
+        if !paths::paths_refer_to_same_location(&state, target) {
+            return Err(format!(
+                "OPENCLAW_STATE_DIR ({}) conflicts with the selected storage target ({})",
+                state.display(),
+                target.display()
+            ));
+        }
+        layout.state_dir = state.clone();
+        if overrides.config_path.is_none() {
+            layout.config_path =
+                paths::config_path_for_runtime(&state, OpenClawRuntimeMode::Native);
+        }
+        layout.workspace_dir = state.join("workspace");
+        layout.runtime_dir = state.clone();
+    }
+    if let Some(config) = overrides.config_path {
+        layout.config_path = config;
+    }
+    for (label, value, slot) in [
+        (
+            "Node.js runtime",
+            overrides.node_runtime_dir,
+            &mut layout.node_runtime_dir,
+        ),
+        (
+            "Git runtime",
+            overrides.git_runtime_dir,
+            &mut layout.git_runtime_dir,
+        ),
+        ("npm prefix", overrides.npm_prefix, &mut layout.npm_prefix),
+    ] {
+        if let Some(value) = value {
+            if slot
+                .as_ref()
+                .is_some_and(|current| !paths::paths_refer_to_same_location(current, &value))
+            {
+                return Err(format!(
+                    "{label} environment override ({}) conflicts with the selected storage layout",
+                    value.display()
+                ));
+            }
+            *slot = Some(value);
+        }
+    }
+    if let Some(value) = overrides.npm_cache_dir {
+        if layout
+            .npm_cache_dir
+            .as_ref()
+            .is_some_and(|current| !paths::paths_refer_to_same_location(current, &value))
+        {
+            return Err(format!(
+                "npm cache environment override ({}) conflicts with the selected storage layout",
+                value.display()
+            ));
+        }
+        layout.npm_cache_dir = Some(value);
+    }
+    Ok(())
 }
 
 fn layout_with_npm_cache(
@@ -368,6 +477,39 @@ fn verify_directory_writable(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("npm cache directory is not writable: {}", error))?;
     std::fs::remove_file(&probe)
         .map_err(|error| format!("Failed to remove npm cache write probe: {}", error))
+}
+
+async fn verify_state_directory_capability(
+    state_dir: &Path,
+    runtime_mode: OpenClawRuntimeMode,
+) -> Result<(), String> {
+    if matches!(runtime_mode, OpenClawRuntimeMode::Docker) {
+        return crate::commands::openclaw_state_dir::verify_state_directory_basics(state_dir);
+    }
+    match crate::commands::system::check_node().await {
+        Ok(node) if node.available => match node.path {
+            Some(path) => {
+                crate::commands::openclaw_state_dir::verify_node_state_directory(
+                    Path::new(&path),
+                    state_dir,
+                )
+                .await
+            }
+            None => crate::commands::openclaw_state_dir::verify_state_directory_basics(state_dir),
+        },
+        _ => crate::commands::openclaw_state_dir::verify_state_directory_basics(state_dir),
+    }
+}
+
+async fn verify_layout_storage_capability(layout: &StorageBootstrap) -> Result<(), String> {
+    verify_state_directory_capability(&layout.state_dir, layout.runtime_mode).await?;
+    let Some(config_parent) = layout.config_path.parent() else {
+        return Err("OpenClaw config path has no parent directory".into());
+    };
+    if !paths::paths_refer_to_same_location(config_parent, &layout.state_dir) {
+        verify_state_directory_capability(config_parent, layout.runtime_mode).await?;
+    }
+    Ok(())
 }
 
 fn ensure_layout_directories(layout: &StorageBootstrap) -> Result<(), String> {
@@ -421,23 +563,90 @@ fn ensure_layout_directories(layout: &StorageBootstrap) -> Result<(), String> {
 }
 
 fn map_workspace_to_target(workspace: &Path, source: &Path, target: &Path) -> Option<PathBuf> {
-    if let Ok(relative) = workspace.strip_prefix(source) {
-        return Some(target.join(relative));
+    fn relative_components(path: &Path, base: &Path) -> Option<PathBuf> {
+        let path_components = path.components().collect::<Vec<_>>();
+        let base_components = base.components().collect::<Vec<_>>();
+        if path_components.len() < base_components.len() {
+            return None;
+        }
+        let matches = path_components
+            .iter()
+            .zip(base_components.iter())
+            .all(|(path, base)| {
+                #[cfg(windows)]
+                {
+                    path.as_os_str()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(&base.as_os_str().to_string_lossy())
+                }
+                #[cfg(not(windows))]
+                {
+                    path == base
+                }
+            });
+        if !matches {
+            return None;
+        }
+        let mut relative = PathBuf::new();
+        for component in path_components.into_iter().skip(base_components.len()) {
+            relative.push(component.as_os_str());
+        }
+        Some(relative)
     }
-    let canonical_source = std::fs::canonicalize(source).ok()?;
-    let relative = workspace.strip_prefix(canonical_source).ok()?;
-    Some(target.join(relative))
+
+    relative_components(workspace, source)
+        .or_else(|| {
+            std::fs::canonicalize(source)
+                .ok()
+                .and_then(|canonical| relative_components(workspace, &canonical))
+        })
+        .map(|relative| target.join(relative))
 }
 
-fn configured_workspace(
+fn config_path_for_storage_change(
+    current_config: &Path,
     source: &Path,
     target: &Path,
-    runtime_mode: OpenClawRuntimeMode,
+    migrate_existing: bool,
 ) -> PathBuf {
+    if paths::paths_refer_to_same_location(source, target) {
+        return current_config.to_path_buf();
+    }
+    if migrate_existing {
+        return map_workspace_to_target(current_config, source, target)
+            .unwrap_or_else(|| current_config.to_path_buf());
+    }
+    // An explicit process-level override remains authoritative and cannot be
+    // replaced by bootstrap.json. Preserve it instead of creating a second
+    // config that the selected OpenClaw runtime would never read.
+    if paths::explicit_config_path_override()
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        current_config.to_path_buf()
+    } else {
+        paths::config_path_for_runtime(target, OpenClawRuntimeMode::Native)
+    }
+}
+
+fn runtime_config_path_for_layout(layout: &StorageBootstrap) -> PathBuf {
+    match layout.runtime_mode {
+        OpenClawRuntimeMode::Native => layout.config_path.clone(),
+        OpenClawRuntimeMode::Docker => {
+            paths::config_path_for_runtime(&layout.state_dir, OpenClawRuntimeMode::Docker)
+        }
+    }
+}
+
+fn configured_workspace(source: &Path, target: &Path, config_path: &Path) -> PathBuf {
     let source_default = source.join("workspace");
-    let config_path = paths::config_path_for_runtime(source, runtime_mode);
-    let configured = paths::read_workspace_from_config(&config_path);
+    let configured = paths::read_workspace_from_config_relative_to(config_path);
     match configured {
+        // An external config remains authoritative during storage migration.
+        // Do not rewrite its workspace implicitly; doing so would require a
+        // separate transactional update outside the state-directory copy.
+        Some(workspace) if !paths::paths_overlap(config_path, source) => workspace,
         Some(workspace) => map_workspace_to_target(&workspace, source, target).unwrap_or(workspace),
         None => target.join(
             source_default
@@ -445,6 +654,17 @@ fn configured_workspace(
                 .unwrap_or_else(|_| Path::new("workspace")),
         ),
     }
+}
+
+fn patch_workspace_for_runtime(
+    config_path: &Path,
+    workspace_dir: &Path,
+    runtime_mode: OpenClawRuntimeMode,
+) -> Result<(), String> {
+    if matches!(runtime_mode, OpenClawRuntimeMode::Docker) {
+        return crate::commands::docker::normalize_docker_config_runtime_paths(config_path);
+    }
+    patch_configured_workspace(config_path, workspace_dir)
 }
 
 fn patch_configured_workspace(config_path: &Path, workspace_dir: &Path) -> Result<(), String> {
@@ -534,13 +754,22 @@ impl TextFileSnapshot {
 
 struct StorageReconfiguration {
     old_bootstrap: Option<StorageBootstrap>,
-    config_snapshot: TextFileSnapshot,
+    config_snapshots: Vec<RuntimeConfigSnapshot>,
     created_directories: Vec<PathBuf>,
+}
+
+struct RuntimeConfigSnapshot {
+    file: TextFileSnapshot,
+    mode: OpenClawRuntimeMode,
 }
 
 trait ReconfigurationOperations {
     fn ensure_layout(layout: &StorageBootstrap) -> Result<(), String>;
-    fn patch_workspace(config_path: &Path, workspace_dir: &Path) -> Result<(), String>;
+    fn patch_workspace(
+        config_path: &Path,
+        workspace_dir: &Path,
+        runtime_mode: OpenClawRuntimeMode,
+    ) -> Result<(), String>;
     fn save_bootstrap(layout: &StorageBootstrap) -> Result<(), String>;
     fn restore_bootstrap(old_bootstrap: Option<&StorageBootstrap>) -> Result<(), String>;
     fn sync_terminal() -> Result<(), String>;
@@ -553,8 +782,12 @@ impl ReconfigurationOperations for SystemReconfigurationOperations {
         ensure_layout_directories(layout)
     }
 
-    fn patch_workspace(config_path: &Path, workspace_dir: &Path) -> Result<(), String> {
-        patch_configured_workspace(config_path, workspace_dir)
+    fn patch_workspace(
+        config_path: &Path,
+        workspace_dir: &Path,
+        runtime_mode: OpenClawRuntimeMode,
+    ) -> Result<(), String> {
+        patch_workspace_for_runtime(config_path, workspace_dir, runtime_mode)
     }
 
     fn save_bootstrap(layout: &StorageBootstrap) -> Result<(), String> {
@@ -588,9 +821,24 @@ impl StorageReconfiguration {
                 .then_with(|| left.cmp(right))
         });
         created_directories.dedup();
+        let mut config_contracts = vec![(config_path.to_path_buf(), layout.runtime_mode)];
+        if matches!(layout.runtime_mode, OpenClawRuntimeMode::Docker)
+            && !paths::paths_refer_to_same_location(config_path, &layout.config_path)
+        {
+            // Docker's active file contains container paths, while the Native
+            // file must retain the selected host workspace for a future mode
+            // switch. Update and roll back both as one transaction.
+            config_contracts.push((layout.config_path.clone(), OpenClawRuntimeMode::Native));
+        }
+        let config_snapshots = config_contracts
+            .into_iter()
+            .map(|(path, mode)| {
+                TextFileSnapshot::capture(&path).map(|file| RuntimeConfigSnapshot { file, mode })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         Ok(Self {
             old_bootstrap,
-            config_snapshot: TextFileSnapshot::capture(config_path)?,
+            config_snapshots,
             created_directories,
         })
     }
@@ -617,7 +865,17 @@ impl StorageReconfiguration {
         sync_terminal: bool,
     ) -> Result<(), String> {
         O::ensure_layout(layout)?;
-        O::patch_workspace(&self.config_snapshot.path, &layout.workspace_dir)?;
+        for snapshot in &self.config_snapshots {
+            if matches!(snapshot.mode, OpenClawRuntimeMode::Native)
+                && !paths::paths_overlap(&snapshot.file.path, &layout.state_dir)
+            {
+                // An explicitly external Native config owns its workspace
+                // outside the storage transaction. Do not rewrite that file
+                // merely because the state-directory layout changed.
+                continue;
+            }
+            O::patch_workspace(&snapshot.file.path, &layout.workspace_dir, snapshot.mode)?;
+        }
         O::save_bootstrap(layout)?;
         if sync_terminal {
             O::sync_terminal()?;
@@ -630,8 +888,10 @@ impl StorageReconfiguration {
         if let Err(error) = O::restore_bootstrap(self.old_bootstrap.as_ref()) {
             errors.push(format!("restore bootstrap: {}", error));
         }
-        if let Err(error) = self.config_snapshot.restore() {
-            errors.push(format!("restore OpenClaw config: {}", error));
+        for snapshot in self.config_snapshots.iter().rev() {
+            if let Err(error) = snapshot.file.restore() {
+                errors.push(format!("restore OpenClaw config: {}", error));
+            }
         }
         if let Err(error) = O::sync_terminal() {
             errors.push(format!("restore terminal integration: {}", error));
@@ -715,12 +975,46 @@ struct PreparedStorage {
     copied: DirectoryStats,
 }
 
+fn verify_and_patch_migrated_config(
+    copy_source: &Path,
+    target: &Path,
+    stage: &Path,
+    config_path: &Path,
+    workspace_dir: &Path,
+    mode: OpenClawRuntimeMode,
+) -> Result<(), String> {
+    let relative_to_target = config_path.strip_prefix(target).ok();
+    let source_config = relative_to_target
+        .map(|relative| copy_source.join(relative))
+        .unwrap_or_else(|| config_path.to_path_buf());
+    let copied_config = relative_to_target
+        .map(|relative| stage.join(relative))
+        .unwrap_or_else(|| config_path.to_path_buf());
+    if source_config.exists()
+        && (!copied_config.exists() || hash_file(&source_config)? != hash_file(&copied_config)?)
+    {
+        return Err(format!(
+            "Migration verification failed for {} OpenClaw config",
+            match mode {
+                OpenClawRuntimeMode::Native => "Native",
+                OpenClawRuntimeMode::Docker => "Docker",
+            }
+        ));
+    }
+    if copied_config.starts_with(stage) {
+        patch_workspace_for_runtime(&copied_config, workspace_dir, mode)?;
+    }
+    Ok(())
+}
+
 fn prepare_storage_target(
     source: &Path,
     target: &Path,
     migrate_existing: bool,
     layout: StorageBootstrap,
 ) -> Result<PreparedStorage, String> {
+    // Bootstrap owns the Native config path. Docker's config is derived from
+    // the selected state root below and is never persisted over that field.
     let copied = if migrate_existing {
         let stage_path = target.with_file_name(format!(
             ".{}-junqi-migrating-{}",
@@ -755,14 +1049,22 @@ fn prepare_storage_target(
                 source_stats, stage_stats
             ));
         }
-        let source_config = paths::config_path_for_runtime(&copy_source, layout.runtime_mode);
-        let copied_config = paths::config_path_for_runtime(&stage.path, layout.runtime_mode);
-        if source_config.exists()
-            && (!copied_config.exists() || hash_file(&source_config)? != hash_file(&copied_config)?)
-        {
-            return Err("Migration verification failed for openclaw.json".to_string());
-        }
-        patch_configured_workspace(&copied_config, &layout.workspace_dir)?;
+        verify_and_patch_migrated_config(
+            &copy_source,
+            target,
+            &stage.path,
+            &layout.config_path,
+            &layout.workspace_dir,
+            OpenClawRuntimeMode::Native,
+        )?;
+        verify_and_patch_migrated_config(
+            &copy_source,
+            target,
+            &stage.path,
+            &paths::config_path_for_runtime(&layout.state_dir, OpenClawRuntimeMode::Docker),
+            &layout.workspace_dir,
+            OpenClawRuntimeMode::Docker,
+        )?;
         stage.activate(target)?;
         source_stats
     } else {
@@ -778,7 +1080,7 @@ async fn stop_all_locked(
     state: &State<'_, GatewayProcess>,
     binary: Option<&Path>,
     state_dir: &Path,
-    config_path: &Path,
+    service_config_path: &Path,
     selected_service: bool,
 ) -> Result<(), String> {
     let child = state.child.lock().ok().and_then(|mut child| child.take());
@@ -798,7 +1100,7 @@ async fn stop_all_locked(
         if !crate::commands::gateway_service::stop_selected_gateway_service(
             &runtime,
             state_dir,
-            config_path,
+            service_config_path,
             None,
         )
         .await?
@@ -823,17 +1125,42 @@ struct PreviousGateway {
     reachable: bool,
     runtime: GatewayRuntimeState,
     port: u16,
-    selected_service: bool,
+    selected_service: SelectedGatewayService,
 }
 
 impl PreviousGateway {
     fn restore_mode(self) -> GatewayRuntimeMode {
-        if self.selected_service {
+        if self.selected_service.running {
             GatewayRuntimeMode::SystemService
         } else {
-            self.runtime.mode
+            // An installed-but-stopped official service does not own the
+            // endpoint that was observed before migration. Restore the
+            // runtime that was actually serving it (managed child, Docker,
+            // or an external endpoint) instead of promoting the stopped
+            // service merely because its registration still exists.
+            match self.runtime.mode {
+                GatewayRuntimeMode::SystemService => GatewayRuntimeMode::ManagedChild,
+                mode => mode,
+            }
         }
     }
+
+    fn was_running(self) -> bool {
+        self.selected_service.running
+            || self.reachable
+            || matches!(
+                self.runtime.lifecycle,
+                GatewayLifecycle::Running
+                    | GatewayLifecycle::Starting
+                    | GatewayLifecycle::Reconnecting
+            )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct SelectedGatewayService {
+    installed: bool,
+    running: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -876,27 +1203,38 @@ async fn wait_for_gateway(port: u16, config_path: &Path, attempts: usize) -> Res
 async fn selected_gateway_service(
     binary: Option<&Path>,
     state_dir: &Path,
-    config_path: &Path,
+    native_config_path: &Path,
     runtime_mode: OpenClawRuntimeMode,
-) -> Result<bool, String> {
-    if matches!(runtime_mode, OpenClawRuntimeMode::Docker) {
-        return Ok(false);
-    }
+) -> Result<SelectedGatewayService, String> {
     let Some(binary) = binary else {
-        return Ok(false);
+        if matches!(runtime_mode, OpenClawRuntimeMode::Docker) {
+            // A Docker-only installation intentionally has no host OpenClaw
+            // package. Native service ownership is deferred until a Native
+            // runtime is selected; Docker startup will still fail closed if
+            // an unknown process owns the configured port.
+            return Ok(SelectedGatewayService::default());
+        }
+        return Err(
+            "OpenClaw is not available to verify the selected official Gateway service; storage changes were not started"
+                .to_string(),
+        );
     };
     let runtime =
         crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf()).await?;
-    Ok(matches!(
-        crate::commands::gateway_service::inspect_gateway_service(
-            &runtime,
-            state_dir,
-            config_path,
-            None,
-        )
-        .await?,
-        crate::commands::gateway_service::GatewayServiceOwnership::SelectedState
-    ))
+    let identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+        state_dir,
+        native_config_path,
+        &runtime,
+    );
+    let inspection =
+        crate::commands::gateway_service::inspect_gateway_service_state(&runtime, &identity, None)
+            .await?;
+    let selected =
+        crate::commands::gateway_service::belongs_to_selected_state(inspection.ownership);
+    Ok(SelectedGatewayService {
+        installed: selected && inspection.installed,
+        running: selected && inspection.running,
+    })
 }
 
 async fn start_runtime_locked(
@@ -907,8 +1245,19 @@ async fn start_runtime_locked(
     binary: Option<&Path>,
     state_dir: &Path,
     config_path: &Path,
+    service_config_path: &Path,
 ) -> Result<(), String> {
-    if crate::commands::gateway::gateway_matches_config(port, config_path).await {
+    let strategy = if matches!(mode, GatewayRuntimeMode::SystemService) {
+        RuntimeRestoreStrategy::SystemService
+    } else {
+        RuntimeRestoreStrategy::for_mode(mode)
+    };
+    let health_config_path = if matches!(strategy, RuntimeRestoreStrategy::SystemService) {
+        service_config_path
+    } else {
+        config_path
+    };
+    if crate::commands::gateway::gateway_matches_config(port, health_config_path).await {
         state.transition(
             Some(GatewayLifecycle::Running),
             Some(mode),
@@ -918,11 +1267,6 @@ async fn start_runtime_locked(
         return Ok(());
     }
 
-    let strategy = if matches!(mode, GatewayRuntimeMode::SystemService) {
-        RuntimeRestoreStrategy::SystemService
-    } else {
-        RuntimeRestoreStrategy::for_mode(mode)
-    };
     match strategy {
         RuntimeRestoreStrategy::Docker => {
             crate::commands::docker::start_docker_gateway_locked(app.clone(), Some(port), None)
@@ -952,7 +1296,7 @@ async fn start_runtime_locked(
             crate::commands::gateway_service::install_and_start_selected_gateway_service(
                 &runtime,
                 state_dir,
-                config_path,
+                service_config_path,
                 port,
             )
             .await?;
@@ -965,7 +1309,7 @@ async fn start_runtime_locked(
         }
     }
 
-    wait_for_gateway(port, config_path, 30).await?;
+    wait_for_gateway(port, health_config_path, 30).await?;
     let final_mode = strategy.restored_mode();
     state.transition(
         Some(GatewayLifecycle::Running),
@@ -1040,6 +1384,7 @@ struct StorageRollbackContext<'a, 'state> {
     old_bootstrap: Option<&'a StorageBootstrap>,
     old_state_dir: &'a Path,
     old_config_path: &'a Path,
+    old_native_config_path: &'a Path,
     binary: Option<&'a Path>,
     target: &'a Path,
 }
@@ -1066,7 +1411,74 @@ impl StorageRollbackContext<'_, '_> {
     }
 
     async fn restore_gateway(&self, errors: &mut Vec<String>) {
-        if !self.previous.reachable {
+        // Reachability is only one observation. An installed Scheduled Task
+        // can be running between probes, or can be intentionally stopped;
+        // restore based on the captured deployment state rather than losing a
+        // service merely because its endpoint was briefly unavailable.
+        if self.previous.selected_service.installed {
+            let service_restore = async {
+                let binary = self.binary.ok_or_else(|| {
+                    "OpenClaw binary is unavailable; cannot restore the selected Gateway service"
+                        .to_string()
+                })?;
+                let runtime = crate::commands::system::compatible_native_openclaw_runtime(
+                    binary.to_path_buf(),
+                )
+                .await?;
+                let search_path = crate::commands::system::openclaw_search_path();
+                crate::commands::gateway_service::install_selected_gateway_service_with_path(
+                    &runtime,
+                    self.old_state_dir,
+                    self.old_native_config_path,
+                    self.previous.port,
+                    Some(&search_path),
+                )
+                .await?;
+                if self.previous.selected_service.running {
+                    crate::commands::gateway_service::start_selected_gateway_service_with_path(
+                        &runtime,
+                        self.old_state_dir,
+                        self.old_native_config_path,
+                        Some(&search_path),
+                    )
+                    .await?;
+                    wait_for_gateway(self.previous.port, self.old_config_path, 30).await?;
+                } else {
+                    // `gateway install` may start the Windows task while
+                    // registering it. Preserve an intentionally stopped
+                    // service instead of leaving a new listener behind.
+                    crate::commands::gateway_service::stop_selected_gateway_service(
+                        &runtime,
+                        self.old_state_dir,
+                        self.old_native_config_path,
+                        Some(&search_path),
+                    )
+                    .await?;
+                }
+                Ok::<(), String>(())
+            }
+            .await;
+            let service_restore_succeeded = match service_restore {
+                Ok(()) => true,
+                Err(error) => {
+                    errors.push(format!("restore previous Gateway service: {}", error));
+                    self.state.transition(
+                        Some(GatewayLifecycle::Error),
+                        Some(GatewayRuntimeMode::None),
+                        None,
+                        "storage transaction rollback could not restore the official service",
+                    );
+                    false
+                }
+            };
+            if !self.previous.was_running() {
+                return;
+            }
+            if self.previous.selected_service.running && service_restore_succeeded {
+                return;
+            }
+        }
+        if !self.previous.was_running() {
             return;
         }
         let result = start_runtime_locked(
@@ -1077,6 +1489,7 @@ impl StorageRollbackContext<'_, '_> {
             self.binary,
             self.old_state_dir,
             self.old_config_path,
+            self.old_native_config_path,
         )
         .await;
         if let Err(error) = result {
@@ -1108,8 +1521,33 @@ fn append_rollback_errors(failure: String, errors: Vec<String>) -> String {
 #[tauri::command]
 pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
     let bootstrap = paths::load_storage_bootstrap();
+    let (effective, configuration_error) = match paths::effective_runtime_locations() {
+        Ok(effective) => (effective, None),
+        Err(error) => {
+            let fallback = bootstrap.clone().unwrap_or_else(|| {
+                StorageBootstrap::for_state_dir(paths::legacy_default_state_dir(), None)
+            });
+            (
+                paths::EffectiveRuntimeLocations {
+                    state_dir: fallback.state_dir.clone(),
+                    config_path: fallback.config_path.clone(),
+                    node_runtime_dir: fallback.node_runtime_dir.clone(),
+                    git_runtime_dir: fallback.git_runtime_dir.clone(),
+                    npm_prefix: fallback.npm_prefix.clone(),
+                    npm_cache_dir: fallback.npm_cache_dir.clone(),
+                    openclaw_git_dir: None,
+                },
+                Some(error),
+            )
+        }
+    };
+    let process_overrides = paths::runtime_location_overrides().ok();
+    let state_overridden = process_overrides
+        .as_ref()
+        .and_then(|overrides| overrides.state_dir.as_ref())
+        .is_some();
     let legacy = paths::legacy_default_state_dir();
-    let configured = bootstrap.is_some() || std::env::var_os("OPENCLAW_STATE_DIR").is_some();
+    let configured = configuration_error.is_none() && (bootstrap.is_some() || state_overridden);
     let stats = if configured {
         DirectoryStats::default()
     } else {
@@ -1118,29 +1556,56 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
             .await
             .map_err(|e| format!("Failed to inspect existing storage: {}", e))?
     };
-    let layout = bootstrap
-        .clone()
-        .unwrap_or_else(|| StorageBootstrap::for_state_dir(legacy.clone(), None));
+    let layout = bootstrap.clone().unwrap_or_else(|| {
+        let state_dir = effective.state_dir.clone();
+        let config_path = effective.config_path.clone();
+        let workspace = configured_workspace(&state_dir, &state_dir, &config_path);
+        let mut layout = StorageBootstrap::for_state_dir(state_dir, Some(workspace));
+        layout.config_path = config_path;
+        layout
+    });
+    let workspace_dir = if state_overridden {
+        configured_workspace(
+            &effective.state_dir,
+            &effective.state_dir,
+            &effective.config_path,
+        )
+    } else {
+        layout.workspace_dir.clone()
+    };
+    let runtime_dir = if state_overridden {
+        effective.state_dir.clone()
+    } else {
+        layout.runtime_dir.clone()
+    };
     let capabilities = crate::commands::runtime_policy::ManagedRuntimeCapabilities::current();
     Ok(StorageSetupStatus {
         configured,
-        state_dir: layout.state_dir.to_string_lossy().to_string(),
-        config_path: paths::active_config_path().to_string_lossy().to_string(),
-        workspace_dir: layout.workspace_dir.to_string_lossy().to_string(),
-        runtime_dir: layout.runtime_dir.to_string_lossy().to_string(),
-        npm_cache_dir: layout
+        configuration_error,
+        state_dir: effective.state_dir.to_string_lossy().to_string(),
+        config_path: match layout.runtime_mode {
+            OpenClawRuntimeMode::Native => effective.config_path.to_string_lossy().to_string(),
+            OpenClawRuntimeMode::Docker => {
+                paths::config_path_for_runtime(&effective.state_dir, OpenClawRuntimeMode::Docker)
+                    .to_string_lossy()
+                    .to_string()
+            }
+        },
+        workspace_dir: workspace_dir.to_string_lossy().to_string(),
+        runtime_dir: runtime_dir.to_string_lossy().to_string(),
+        npm_cache_dir: effective
             .npm_cache_dir
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
-        npm_prefix: layout
+        npm_prefix: effective
             .npm_prefix
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
-        node_runtime_dir: layout
+        node_runtime_dir: effective
             .node_runtime_dir
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
-        git_runtime_dir: layout
+        git_runtime_dir: effective
             .git_runtime_dir
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
@@ -1160,6 +1625,7 @@ pub async fn update_npm_cache_directory(
     state: State<'_, GatewayProcess>,
     npm_cache_dir: String,
 ) -> Result<String, String> {
+    paths::validate_runtime_overrides()?;
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate
         .try_lock_owned()
@@ -1208,6 +1674,7 @@ pub async fn configure_storage(
     migrate_existing: bool,
     locations: InstallLocationSelection,
 ) -> Result<StorageConfigureResult, String> {
+    paths::validate_explicit_runtime_overrides()?;
     let target = required_absolute_path("OpenClaw state directory", &target_dir)?;
 
     let operation_gate = state.operation_gate.clone();
@@ -1215,7 +1682,21 @@ pub async fn configure_storage(
     let old_bootstrap = paths::load_storage_bootstrap();
     let source = paths::desktop_dir();
     let old_config = paths::active_config_path();
+    // Bootstrap keeps the Native config path even while Docker is selected so
+    // switching back to Native never reuses the container's host mount file.
+    let old_native_config = paths::config_path();
     let mut layout = selected_layout(target.clone(), locations)?;
+    apply_process_runtime_overrides(&mut layout, &target)?;
+    if paths::runtime_location_overrides()?
+        .openclaw_git_dir
+        .is_some()
+        && layout.npm_prefix.is_some()
+    {
+        return Err(
+            "A Git-checkout OpenClaw runtime cannot be combined with an npm global prefix selection"
+                .into(),
+        );
+    }
     // Reconfiguring or migrating storage must not silently switch a working
     // Docker installation back to Native. A fresh setup can still choose a
     // different mode immediately after this transaction completes.
@@ -1223,15 +1704,20 @@ pub async fn configure_storage(
         layout.runtime_mode = existing.runtime_mode;
     }
     let existing_layout = old_bootstrap.clone().unwrap_or_else(|| {
-        StorageBootstrap::for_state_dir(
+        let mut layout = StorageBootstrap::for_state_dir(
             source.clone(),
-            Some(configured_workspace(
-                &source,
-                &source,
-                OpenClawRuntimeMode::Native,
-            )),
-        )
+            Some(configured_workspace(&source, &source, &old_native_config)),
+        );
+        layout.config_path = old_native_config.clone();
+        layout
     });
+    if paths::explicit_config_path_override()?.is_none() {
+        layout.config_path =
+            config_path_for_storage_change(&old_native_config, &source, &target, migrate_existing);
+    }
+    layout.gateway_service_rebind_required = existing_layout.gateway_service_rebind_required;
+    layout.gateway_service_was_running = existing_layout.gateway_service_was_running;
+    layout.runtime_switch_rollback_mode = existing_layout.runtime_switch_rollback_mode;
     let native_runtime_reconfiguration =
         apply_runtime_location_transition(&existing_layout, &mut layout);
     let binary = crate::commands::system::resolve_openclaw_binary_async().await;
@@ -1243,25 +1729,41 @@ pub async fn configure_storage(
 
     if paths::paths_refer_to_same_location(&target, &source) {
         validate_location_changes(&layout, Some(&existing_layout))?;
+        // Recovery can target the already-selected directory. Re-run the same
+        // capability contract used for migrations before changing bootstrap,
+        // service, or runtime locations; writability alone does not prove that
+        // Node's chmod/rename operations are supported on Windows mounts.
+        verify_layout_storage_capability(&layout).await?;
         let previous = PreviousGateway {
             reachable: crate::commands::gateway::gateway_matches_config(port, &old_config).await,
             runtime: state.runtime_snapshot()?,
             port,
-            selected_service: selected_gateway_service(
-                binary.as_deref(),
-                &source,
-                &old_config,
-                existing_layout.runtime_mode,
-            )
-            .await?,
+            selected_service: if old_bootstrap.is_some() {
+                selected_gateway_service(
+                    binary.as_deref(),
+                    &source,
+                    &old_native_config,
+                    existing_layout.runtime_mode,
+                )
+                .await?
+            } else {
+                SelectedGatewayService::default()
+            },
         };
+        if previous.selected_service.installed
+            && (native_runtime_reconfiguration
+                || !paths::paths_refer_to_same_location(&layout.config_path, &old_native_config))
+        {
+            layout.gateway_service_rebind_required = true;
+            layout.gateway_service_was_running = previous.selected_service.running;
+        }
         if native_runtime_reconfiguration {
             stop_all_locked(
                 &state,
                 binary.as_deref(),
                 &source,
-                &old_config,
-                previous.selected_service,
+                &old_native_config,
+                previous.selected_service.running,
             )
             .await?;
             if let Err(error) =
@@ -1271,7 +1773,7 @@ pub async fn configure_storage(
                     "Gateway did not stop cleanly; runtime locations were not changed: {}",
                     error
                 );
-                let restore = if previous.reachable {
+                let restore = if previous.was_running() {
                     start_runtime_locked(
                         &app,
                         &state,
@@ -1280,6 +1782,7 @@ pub async fn configure_storage(
                         binary.as_deref(),
                         &source,
                         &old_config,
+                        &old_native_config,
                     )
                     .await
                     .err()
@@ -1301,7 +1804,7 @@ pub async fn configure_storage(
         if let Err(error) = StorageReconfiguration::begin(old_bootstrap, &old_config, &layout)?
             .apply(&layout, !native_runtime_reconfiguration)
         {
-            if native_runtime_reconfiguration && previous.reachable {
+            if native_runtime_reconfiguration && previous.was_running() {
                 let mut errors = Vec::new();
                 if let Err(restore_error) = start_runtime_locked(
                     &app,
@@ -1311,6 +1814,7 @@ pub async fn configure_storage(
                     binary.as_deref(),
                     &source,
                     &old_config,
+                    &old_native_config,
                 )
                 .await
                 {
@@ -1322,7 +1826,9 @@ pub async fn configure_storage(
         }
         return Ok(StorageConfigureResult {
             state_dir: layout.state_dir.to_string_lossy().to_string(),
-            config_path: paths::active_config_path().to_string_lossy().to_string(),
+            config_path: runtime_config_path_for_layout(&layout)
+                .to_string_lossy()
+                .to_string(),
             workspace_dir: layout.workspace_dir.to_string_lossy().to_string(),
             runtime_dir: layout.runtime_dir.to_string_lossy().to_string(),
             npm_cache_dir: layout
@@ -1351,7 +1857,7 @@ pub async fn configure_storage(
         });
     }
 
-    if migrate_existing && target.starts_with(&source) {
+    if migrate_existing && paths::paths_overlap(&target, &source) {
         return Err("Target directory cannot be inside the current state directory".to_string());
     }
     if migrate_existing && !source.exists() {
@@ -1362,7 +1868,8 @@ pub async fn configure_storage(
     }
     if migrate_existing {
         let expected_workspace =
-            configured_workspace(&source, &target, existing_layout.runtime_mode);
+            map_workspace_to_target(&existing_layout.workspace_dir, &source, &target)
+                .unwrap_or_else(|| existing_layout.workspace_dir.clone());
         let expected_runtime =
             map_workspace_to_target(&existing_layout.runtime_dir, &source, &target)
                 .unwrap_or(existing_layout.runtime_dir);
@@ -1397,21 +1904,14 @@ pub async fn configure_storage(
     {
         return Err("Storage target cannot be a symbolic link".to_string());
     }
+    if path_has_reparse_ancestor(&target) {
+        return Err(
+            "Storage target cannot be inside a symbolic link or Windows junction".to_string(),
+        );
+    }
     // Reject incompatible filesystems before stopping an existing Gateway,
     // copying data, or committing bootstrap.json to the new location.
-    match crate::commands::system::check_node().await {
-        Ok(node) if node.available => match node.path {
-            Some(path) => {
-                crate::commands::openclaw_state_dir::verify_node_state_directory(
-                    Path::new(&path),
-                    &target,
-                )
-                .await?
-            }
-            None => crate::commands::openclaw_state_dir::verify_state_directory_basics(&target)?,
-        },
-        _ => crate::commands::openclaw_state_dir::verify_state_directory_basics(&target)?,
-    }
+    verify_layout_storage_capability(&layout).await?;
     if !directory_is_empty(&target)? {
         return Err("Target directory must be empty".to_string());
     }
@@ -1420,14 +1920,22 @@ pub async fn configure_storage(
         reachable: crate::commands::gateway::gateway_matches_config(port, &old_config).await,
         runtime: state.runtime_snapshot()?,
         port,
-        selected_service: selected_gateway_service(
-            binary.as_deref(),
-            &source,
-            &old_config,
-            existing_layout.runtime_mode,
-        )
-        .await?,
+        selected_service: if old_bootstrap.is_some() {
+            selected_gateway_service(
+                binary.as_deref(),
+                &source,
+                &old_native_config,
+                existing_layout.runtime_mode,
+            )
+            .await?
+        } else {
+            SelectedGatewayService::default()
+        },
     };
+    if previous.selected_service.installed {
+        layout.gateway_service_rebind_required = true;
+        layout.gateway_service_was_running = previous.selected_service.running;
+    }
     let rollback = StorageRollbackContext {
         app: &app,
         state: &state,
@@ -1435,6 +1943,7 @@ pub async fn configure_storage(
         old_bootstrap: old_bootstrap.as_ref(),
         old_state_dir: &source,
         old_config_path: &old_config,
+        old_native_config_path: &old_native_config,
         binary: binary.as_deref(),
         target: &target,
     };
@@ -1448,8 +1957,8 @@ pub async fn configure_storage(
         &state,
         binary.as_deref(),
         &source,
-        &old_config,
-        previous.selected_service,
+        &old_native_config,
+        previous.selected_service.running,
     )
     .await
     {
@@ -1457,7 +1966,7 @@ pub async fn configure_storage(
     }
     if let Err(error) = crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
     {
-        if previous.reachable {
+        if previous.was_running() {
             if crate::commands::gateway::gateway_matches_config(port, &old_config).await {
                 state.transition(
                     Some(GatewayLifecycle::Running),
@@ -1478,6 +1987,7 @@ pub async fn configure_storage(
                 binary.as_deref(),
                 &source,
                 &old_config,
+                &old_native_config,
             )
             .await
             .err();
@@ -1548,6 +2058,7 @@ pub async fn configure_storage(
             return Err(failure);
         }
     };
+    let prepared_config_path = runtime_config_path_for_layout(&prepared.layout);
 
     if migrate_existing {
         emit_progress(
@@ -1577,7 +2088,45 @@ pub async fn configure_storage(
         }
     }
 
-    if migrate_existing && previous.reachable && !native_runtime_reconfiguration {
+    if prepared.layout.gateway_service_rebind_required
+        && !native_runtime_reconfiguration
+        && matches!(prepared.layout.runtime_mode, OpenClawRuntimeMode::Native)
+    {
+        let rebind_binary = binary.clone();
+        let rebind_result = async {
+            let binary = rebind_binary.ok_or_else(|| {
+                "OpenClaw binary is unavailable; cannot rebind the selected Gateway service"
+                    .to_string()
+            })?;
+            let runtime =
+                crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf())
+                    .await?;
+            let search_path = crate::commands::system::openclaw_search_path();
+            crate::commands::gateway_service::reconcile_pending_gateway_service(
+                &runtime,
+                &prepared.layout.state_dir,
+                &prepared.layout.config_path,
+                port,
+                Some(&search_path),
+            )
+            .await
+        }
+        .await;
+        if let Err(error) = rebind_result {
+            let failure = rollback
+                .run(
+                    RollbackPolicy::AFTER_SWITCH,
+                    format!(
+                        "Gateway service rebind failed after storage migration: {}",
+                        error
+                    ),
+                )
+                .await;
+            return Err(failure);
+        }
+    }
+
+    if migrate_existing && previous.was_running() && !native_runtime_reconfiguration {
         emit_progress(
             &app,
             "storage.progress.startingGateway",
@@ -1591,6 +2140,7 @@ pub async fn configure_storage(
             port,
             binary.as_deref(),
             &prepared.layout.state_dir,
+            &prepared_config_path,
             &prepared.layout.config_path,
         )
         .await
@@ -1600,7 +2150,7 @@ pub async fn configure_storage(
                 binary.as_deref(),
                 &prepared.layout.state_dir,
                 &prepared.layout.config_path,
-                previous.selected_service,
+                previous.selected_service.running,
             )
             .await
             .ok();
@@ -1622,12 +2172,7 @@ pub async fn configure_storage(
     );
     Ok(StorageConfigureResult {
         state_dir: prepared.layout.state_dir.to_string_lossy().to_string(),
-        config_path: paths::config_path_for_runtime(
-            &prepared.layout.state_dir,
-            prepared.layout.runtime_mode,
-        )
-        .to_string_lossy()
-        .to_string(),
+        config_path: prepared_config_path.to_string_lossy().to_string(),
         workspace_dir: prepared.layout.workspace_dir.to_string_lossy().to_string(),
         runtime_dir: prepared.layout.runtime_dir.to_string_lossy().to_string(),
         npm_cache_dir: prepared
@@ -1717,6 +2262,38 @@ mod tests {
         }
     }
 
+    #[test]
+    fn stopped_official_service_does_not_replace_the_running_managed_runtime() {
+        let previous = PreviousGateway {
+            reachable: true,
+            runtime: GatewayRuntimeState {
+                lifecycle: GatewayLifecycle::Running,
+                mode: GatewayRuntimeMode::ManagedChild,
+                restarting: false,
+            },
+            port: 18_789,
+            selected_service: SelectedGatewayService {
+                installed: true,
+                running: false,
+            },
+        };
+
+        assert!(previous.was_running());
+        assert_eq!(previous.restore_mode(), GatewayRuntimeMode::ManagedChild);
+
+        let running_service = PreviousGateway {
+            selected_service: SelectedGatewayService {
+                installed: true,
+                running: true,
+            },
+            ..previous
+        };
+        assert_eq!(
+            running_service.restore_mode(),
+            GatewayRuntimeMode::SystemService
+        );
+    }
+
     #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn custom_dependency_runtime_locations_are_explicit_and_cannot_overlap_storage() {
@@ -1799,6 +2376,46 @@ mod tests {
     }
 
     #[test]
+    fn new_dependency_locations_cannot_be_nested_in_openclaw_state() {
+        let root = storage_test_root("state-nested-dependency");
+        let state = root.join("state");
+        let mut layout = StorageBootstrap::with_locations(
+            state.clone(),
+            root.join("workspace"),
+            root.join("runtime"),
+            None,
+            Some(state.join("npm")),
+            false,
+        );
+        assert!(validate_location_changes(&layout, None)
+            .unwrap_err()
+            .contains("outside the OpenClaw state directory"));
+
+        layout.npm_prefix = Some(root.join("npm"));
+        layout.node_runtime_dir = Some(state.join("node"));
+        assert!(validate_location_changes(&layout, None)
+            .unwrap_err()
+            .contains("outside the OpenClaw state directory"));
+    }
+
+    #[test]
+    fn legacy_dependency_overlap_fails_closed_instead_of_silent_drift() {
+        let root = storage_test_root("legacy-state-nested-dependency");
+        let state = root.join("state");
+        let layout = StorageBootstrap::with_locations(
+            state.clone(),
+            root.join("workspace"),
+            root.join("runtime"),
+            None,
+            Some(state.join("npm")),
+            false,
+        );
+        assert!(validate_location_changes(&layout, Some(&layout))
+            .unwrap_err()
+            .contains("outside the OpenClaw state directory"));
+    }
+
+    #[test]
     fn migration_keeps_pending_openclaw_relocation_until_install_succeeds() {
         let root = storage_test_root("pending-openclaw-relocation");
         let mut current = StorageBootstrap::for_state_dir(root.join("old-state"), None);
@@ -1840,8 +2457,12 @@ mod tests {
             ensure_layout_directories(layout)
         }
 
-        fn patch_workspace(config_path: &Path, workspace_dir: &Path) -> Result<(), String> {
-            patch_configured_workspace(config_path, workspace_dir)
+        fn patch_workspace(
+            config_path: &Path,
+            workspace_dir: &Path,
+            runtime_mode: OpenClawRuntimeMode,
+        ) -> Result<(), String> {
+            patch_workspace_for_runtime(config_path, workspace_dir, runtime_mode)
         }
 
         fn save_bootstrap(_layout: &StorageBootstrap) -> Result<(), String> {
@@ -2111,9 +2732,18 @@ mod tests {
             &std::fs::read_to_string(target.join("docker").join("openclaw.json")).unwrap(),
         )
         .unwrap();
+        let migrated_native_config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(target.join("openclaw.json")).unwrap())
+                .unwrap();
 
         assert_eq!(
             migrated_config["agents"]["defaults"]["workspace"],
+            serde_json::Value::String(
+                crate::commands::docker::OPENCLAW_CONTAINER_WORKSPACE_DIR.to_string(),
+            )
+        );
+        assert_eq!(
+            migrated_native_config["agents"]["defaults"]["workspace"],
             serde_json::Value::String(migrated_workspace.to_string_lossy().to_string())
         );
         std::fs::remove_dir_all(root).unwrap();
@@ -2152,6 +2782,27 @@ mod tests {
             migrated_config["agents"]["defaults"]["workspace"],
             serde_json::Value::String(external_workspace.to_string_lossy().to_string())
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn external_config_keeps_its_workspace_during_state_migration() {
+        let root = storage_test_root("external-config-workspace");
+        let source = root.join("source");
+        let target = root.join("target");
+        let config = root.join("config").join("openclaw.json");
+        let workspace = source.join("workspace");
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::fs::write(
+            &config,
+            serde_json::json!({
+                "agents": { "defaults": { "workspace": workspace } }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(configured_workspace(&source, &target, &config), workspace);
         std::fs::remove_dir_all(root).unwrap();
     }
 

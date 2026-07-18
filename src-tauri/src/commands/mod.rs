@@ -66,6 +66,7 @@ pub mod terminal_shell_integration;
 pub mod terminal_window;
 pub mod terminal_workspace;
 pub mod terminal_workspace_watch;
+pub(crate) mod uninstall;
 pub mod usage;
 pub mod voice;
 pub mod voice_wake;

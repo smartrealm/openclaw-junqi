@@ -75,6 +75,21 @@ pub fn login_shell_path() -> &'static str {
     })
 }
 
+/// Search path for commands executed after an in-process Windows installer.
+/// Windows installers update the live process PATH through
+/// `refresh_path_from_registry`; a startup-only OnceLock would keep using the
+/// pre-install value for npm/Git/Node probes.
+pub fn current_search_path() -> String {
+    if cfg!(windows) {
+        if let Ok(path) = std::env::var("PATH") {
+            if !path.trim().is_empty() {
+                return path;
+            }
+        }
+    }
+    login_shell_path().to_string()
+}
+
 pub fn default_shell_command() -> ShellCommand {
     if cfg!(windows) {
         if !detect_path("pwsh").is_empty() {
@@ -146,6 +161,19 @@ pub fn detect_path(binary: &str) -> String {
 /// `openclaw.cmd` 这类 shim。并非所有 PTY 后端都会像交互式 shell 一样
 /// 完整执行 PATHEXT 搜索，所以这里尽量传入明确路径。
 pub fn resolve_spawn_program(binary: &str) -> String {
+    // Selected portable runtimes are explicit user choices. Resolve them
+    // before PATH so every consumer uses the same executable after setup or
+    // storage migration.
+    if binary.eq_ignore_ascii_case("git") {
+        if let Some(path) = crate::paths::configured_git_path().filter(|path| path.is_file()) {
+            return path.to_string_lossy().into_owned();
+        }
+    }
+    if binary.eq_ignore_ascii_case("node") {
+        if let Some(path) = crate::paths::configured_node_path().filter(|path| path.is_file()) {
+            return path.to_string_lossy().into_owned();
+        }
+    }
     let detected = detect_path(binary);
     if !detected.is_empty() {
         return detected;

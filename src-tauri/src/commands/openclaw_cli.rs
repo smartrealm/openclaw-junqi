@@ -37,6 +37,7 @@ impl OpenClawCliTarget {
 /// such as maintenance can then run config validation and doctor consistently
 /// against the same selected runtime.
 pub(crate) async fn resolve_active_openclaw_target() -> Result<OpenClawCliTarget, String> {
+    paths::validate_runtime_mode(paths::active_runtime_mode())?;
     match paths::active_runtime_mode() {
         OpenClawRuntimeMode::Native => system::resolve_compatible_native_openclaw_runtime()
             .await

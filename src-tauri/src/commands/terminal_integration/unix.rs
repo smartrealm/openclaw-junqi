@@ -1,4 +1,7 @@
-use super::{EnvironmentBinding, TerminalIntegrationBackend, TerminalLauncherTarget};
+use super::{
+    selected_runtime_environment, EnvironmentBinding, TerminalIntegrationBackend,
+    TerminalLauncherTarget,
+};
 use crate::{paths, platform};
 use std::path::{Path, PathBuf};
 
@@ -63,16 +66,32 @@ fn missing_binary_command() -> String {
 fn native_launcher_contents(binary: Option<&Path>) -> String {
     let state = shell_quote(&paths::desktop_dir());
     let config = shell_quote(&paths::config_path());
-    let node_path = paths::configured_node_path()
-        .and_then(|node| node.parent().map(Path::to_path_buf))
-        .map(|path| format!("export PATH={}:\"$PATH\"\n", shell_quote(&path)))
+    let runtime = selected_runtime_environment();
+    let path = runtime
+        .path_entries
+        .iter()
+        .map(|path| shell_quote(path))
+        .collect::<Vec<_>>()
+        .join(":");
+    let node_path = (!path.is_empty())
+        .then(|| format!("export PATH={path}:\"$PATH\"\n"))
+        .unwrap_or_default();
+    let npm_prefix = runtime
+        .npm_prefix
+        .as_deref()
+        .map(|path| format!("export npm_config_prefix={}\n", shell_quote(path)))
+        .unwrap_or_default();
+    let npm_cache = runtime
+        .npm_cache
+        .as_deref()
+        .map(|path| format!("export npm_config_cache={}\n", shell_quote(path)))
         .unwrap_or_default();
     let command = binary.map_or_else(missing_binary_command, |path| {
         format!("exec {} \"$@\"", shell_quote(path))
     });
     format!(
-        "#!/bin/sh\nexport OPENCLAW_STATE_DIR={}\nexport OPENCLAW_CONFIG_PATH={}\n{}{}\n",
-        state, config, node_path, command
+        "#!/bin/sh\nexport OPENCLAW_STATE_DIR={}\nexport OPENCLAW_CONFIG_PATH={}\n{}{}{}{}\n",
+        state, config, node_path, npm_prefix, npm_cache, command
     )
 }
 

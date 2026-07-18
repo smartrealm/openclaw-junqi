@@ -6,6 +6,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+const RUNTIME_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 #[derive(Debug, Serialize)]
 pub struct PlatformInfo {
     pub os: String,
@@ -52,6 +54,16 @@ enum NativeOpenclawLaunch {
 #[derive(Debug, Clone)]
 pub(crate) struct NativeOpenclawRuntime {
     launch: NativeOpenclawLaunch,
+    package_dir: Option<PathBuf>,
+    npm_prefix: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeOpenclawRuntimeIdentity {
+    pub node: Option<PathBuf>,
+    pub package_dir: Option<PathBuf>,
+    pub executable: Option<PathBuf>,
+    pub npm_prefix: Option<PathBuf>,
 }
 
 /// The complete process contract for one native OpenClaw invocation.
@@ -66,34 +78,61 @@ pub(crate) struct OpenclawCommandContext {
     config_path: PathBuf,
     working_dir: Option<PathBuf>,
     search_path: String,
+    npm_prefix: Option<PathBuf>,
+    npm_cache_dir: Option<PathBuf>,
 }
 
 impl OpenclawCommandContext {
     /// Standard context for maintenance commands such as update, repair,
     /// doctor, and config validation. A GUI process can start at a drive root
     /// on Windows, so never inherit its working directory.
-    pub(crate) fn maintenance() -> Self {
-        let state_dir = paths::desktop_dir();
-        let config_path = paths::config_path();
-        Self::for_paths(state_dir, config_path)
+    pub(crate) fn maintenance() -> Result<Self, String> {
+        let locations = paths::effective_runtime_locations()?;
+        Ok(Self::for_runtime_locations(locations))
     }
 
     /// Context for a specific state/config pair, including storage migration
     /// service operations. It retains the same stable maintenance directory.
     pub(crate) fn for_paths(state_dir: PathBuf, config_path: PathBuf) -> Self {
-        Self::with_working_dir(state_dir, config_path, stable_openclaw_working_dir())
+        Self::with_working_dir(
+            state_dir,
+            config_path,
+            stable_openclaw_working_dir(),
+            paths::configured_npm_prefix(),
+            paths::configured_npm_cache_dir(),
+        )
+    }
+
+    /// Build a command context from one resolved runtime-location snapshot.
+    ///
+    /// Maintenance operations may run while storage setup persists a new
+    /// bootstrap. Keeping the npm values in the same snapshot as state and
+    /// config prevents one process from combining the old package location
+    /// with the new state location.
+    fn for_runtime_locations(locations: paths::EffectiveRuntimeLocations) -> Self {
+        Self::with_working_dir(
+            locations.state_dir,
+            locations.config_path,
+            stable_openclaw_working_dir(),
+            locations.npm_prefix,
+            locations.npm_cache_dir,
+        )
     }
 
     fn with_working_dir(
         state_dir: PathBuf,
         config_path: PathBuf,
         working_dir: Option<PathBuf>,
+        npm_prefix: Option<PathBuf>,
+        npm_cache_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             state_dir,
             config_path,
             working_dir,
             search_path: openclaw_search_path(),
+            npm_prefix,
+            npm_cache_dir,
         }
     }
 
@@ -105,7 +144,13 @@ impl OpenclawCommandContext {
     /// data directory (F: or any other drive).  This separates data location
     /// from runtime cwd without relying on the unpredictable parent cwd.
     pub(crate) fn managed_gateway(state_dir: PathBuf, config_path: PathBuf) -> Self {
-        Self::with_working_dir(state_dir, config_path, stable_openclaw_working_dir())
+        Self::with_working_dir(
+            state_dir,
+            config_path,
+            stable_openclaw_working_dir(),
+            paths::configured_npm_prefix(),
+            paths::configured_npm_cache_dir(),
+        )
     }
 
     pub(crate) fn with_search_path(mut self, search_path: impl Into<String>) -> Self {
@@ -114,21 +159,30 @@ impl OpenclawCommandContext {
     }
 
     fn apply(&self, command: &mut tokio::process::Command) {
+        if let Some(working_dir) = self.working_dir.as_ref().filter(|path| path.is_dir()) {
+            command.current_dir(working_dir);
+        }
         command
             .env("PATH", &self.search_path)
             .env("OPENCLAW_STATE_DIR", &self.state_dir)
             .env("OPENCLAW_CONFIG_PATH", &self.config_path)
             .env("OPENCLAW_NO_RESPAWN", "1")
             .env("NO_COLOR", "1");
-        if let Some(working_dir) = self.working_dir.as_ref().filter(|path| path.is_dir()) {
-            command.current_dir(working_dir);
+        // Keep package-manager child operations on the same user-selected
+        // npm installation as the OpenClaw entry point. These are process
+        // scoped and never rewrite the user's npmrc.
+        if let Some(prefix) = &self.npm_prefix {
+            command.env("npm_config_prefix", prefix);
+        }
+        if let Some(cache) = &self.npm_cache_dir {
+            command.env("npm_config_cache", cache);
         }
         platform::configure_background_command(command);
     }
 }
 
 fn stable_openclaw_working_dir() -> Option<PathBuf> {
-    platform::home_dir().filter(|path| path.is_dir())
+    paths::stable_openclaw_working_dir()
 }
 
 impl NativeOpenclawRuntime {
@@ -142,7 +196,23 @@ impl NativeOpenclawRuntime {
             NativeOpenclawLaunch::Executable { program } => tokio::process::Command::new(program),
         };
         context.apply(&mut command);
+        if let Some(prefix) = &self.npm_prefix {
+            command.env("npm_config_prefix", prefix);
+        }
         command
+    }
+
+    pub(crate) fn identity(&self) -> NativeOpenclawRuntimeIdentity {
+        let (node, executable) = match &self.launch {
+            NativeOpenclawLaunch::NodeScript { node, .. } => (Some(node.clone()), None),
+            NativeOpenclawLaunch::Executable { program } => (None, Some(program.clone())),
+        };
+        NativeOpenclawRuntimeIdentity {
+            node,
+            package_dir: self.package_dir.clone(),
+            executable,
+            npm_prefix: self.npm_prefix.clone(),
+        }
     }
 }
 
@@ -161,8 +231,12 @@ pub(crate) fn native_openclaw_runtime(
         .ok_or_else(|| {
             "The compatible Node.js runtime did not report an executable path".to_string()
         })?;
+    let package_dir = openclaw_package_dir(&binary);
+    let npm_prefix = npm_prefix_for_openclaw_binary(&binary, cfg!(windows));
     Ok(NativeOpenclawRuntime {
         launch: resolve_native_openclaw_launch(binary, node)?,
+        package_dir,
+        npm_prefix,
     })
 }
 
@@ -216,13 +290,18 @@ pub struct OpenclawStatus {
 #[derive(Debug, Deserialize, Serialize)]
 struct OpenclawBinarySelection {
     path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    npm_prefix: Option<String>,
 }
 
 async fn get_node_version(node_path: &str) -> Option<String> {
     let mut command = tokio::process::Command::new(node_path);
-    command.arg("--version");
+    command.arg("--version").kill_on_drop(true);
     platform::configure_background_command(&mut command);
-    let output = command.output().await.ok()?;
+    let output = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output())
+        .await
+        .ok()?
+        .ok()?;
 
     if output.status.success() {
         Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -233,15 +312,18 @@ async fn get_node_version(node_path: &str) -> Option<String> {
 
 #[tauri::command]
 pub async fn check_npm() -> Result<NpmStatus, String> {
+    paths::validate_runtime_overrides()?;
     // A user-selected portable Node.js is an explicit runtime choice. Keep its
     // bundled npm paired with it instead of mixing it with a system npm.
     if let Some(node) = paths::configured_node_path() {
         let npm = paths::configured_npm_cli_path();
         if let Some(npm) = npm.as_ref().filter(|npm| node.is_file() && npm.is_file()) {
             let mut command = tokio::process::Command::new(&node);
-            command.arg(npm).arg("--version");
+            command.arg(npm).arg("--version").kill_on_drop(true);
             platform::configure_background_command(&mut command);
-            if let Ok(output) = command.output().await {
+            if let Ok(Ok(output)) =
+                tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output()).await
+            {
                 let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if output.status.success() && !version.is_empty() {
                     return Ok(NpmStatus {
@@ -268,9 +350,9 @@ pub async fn check_npm() -> Result<NpmStatus, String> {
         system_npm
     };
     let mut command = tokio::process::Command::new(&system_npm);
-    command.arg("--version");
+    command.arg("--version").kill_on_drop(true);
     platform::configure_background_command(&mut command);
-    if let Ok(output) = command.output().await {
+    if let Ok(Ok(output)) = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output()).await {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if output.status.success() && !version.is_empty() {
             return Ok(NpmStatus {
@@ -391,6 +473,7 @@ pub async fn check_node() -> Result<NodeStatus, String> {
 pub(crate) async fn check_node_for_requirement(
     requirement: &NodeRuntimeRequirement,
 ) -> Result<NodeStatus, String> {
+    paths::validate_runtime_overrides()?;
     // An explicit portable runtime is the user's choice and must not drift to
     // whichever Node.js happens to be first on PATH. A missing or incompatible
     // selected runtime is reported as such so recovery can repair that exact
@@ -498,6 +581,44 @@ pub(crate) fn openclaw_search_path() -> String {
     path_parts.join(if cfg!(windows) { ";" } else { ":" })
 }
 
+pub(crate) fn validate_openclaw_binary_override() -> Result<(), String> {
+    let Some(raw) = std::env::var_os("OPENCLAW_BIN").filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let path = PathBuf::from(raw);
+    if !path.is_absolute() || path.parent().is_none_or(|parent| parent == path) {
+        return Err("OPENCLAW_BIN must be an absolute non-root path".into());
+    }
+    if !is_valid_openclaw_candidate(&path) {
+        return Err(format!(
+            "OPENCLAW_BIN does not point to a complete OpenClaw installation: {}",
+            path.display()
+        ));
+    }
+    if let Some(checkout) = paths::runtime_location_overrides()?.openclaw_git_dir {
+        let package = openclaw_package_dir(&path)
+            .ok_or("OPENCLAW_BIN is not inside the selected OpenClaw Git checkout")?;
+        if !paths::paths_refer_to_same_location(&package, &checkout) {
+            return Err(format!(
+                "OPENCLAW_BIN ({}) conflicts with OPENCLAW_GIT_DIR ({})",
+                path.display(),
+                checkout.display()
+            ));
+        }
+    } else if let Some(prefix) = paths::configured_npm_prefix() {
+        let installed_prefix = npm_prefix_for_openclaw_binary(&path, cfg!(windows))
+            .ok_or("OPENCLAW_BIN is not inside the selected npm prefix")?;
+        if !paths::paths_refer_to_same_location(&installed_prefix, &prefix) {
+            return Err(format!(
+                "OPENCLAW_BIN ({}) conflicts with the selected npm prefix ({})",
+                path.display(),
+                prefix.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn openclaw_binary_names() -> &'static [&'static str] {
     if cfg!(windows) {
         &["openclaw.cmd", "openclaw.exe", "openclaw"]
@@ -515,15 +636,26 @@ fn is_legacy_brand_wrapper(path: &Path) -> bool {
 }
 
 fn is_valid_openclaw_candidate(path: &Path) -> bool {
-    path.exists()
-        && !is_legacy_brand_wrapper(path)
-        && (read_openclaw_pkg_version(path).is_some() || read_openclaw_cli_version(path).is_some())
+    path.exists() && !is_legacy_brand_wrapper(path) && has_openclaw_package_contract(path)
 }
 
 fn read_selected_openclaw_binary() -> Option<PathBuf> {
     let raw = std::fs::read_to_string(paths::openclaw_binary_selection_path()).ok()?;
     let selection: OpenclawBinarySelection = serde_json::from_str(&raw).ok()?;
     let path = PathBuf::from(selection.path);
+    let saved_prefix = selection
+        .npm_prefix
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| npm_prefix_for_openclaw_binary(&path, cfg!(windows)));
+    if let Some(saved_prefix) = saved_prefix {
+        let current_prefix = paths::configured_npm_prefix().or_else(paths::user_npm_prefix);
+        if let Some(current_prefix) = current_prefix {
+            if !paths::paths_refer_to_same_location(&saved_prefix, &current_prefix) {
+                return None;
+            }
+        }
+    }
     is_valid_openclaw_candidate(&path).then_some(path)
 }
 
@@ -570,6 +702,8 @@ pub(crate) fn persist_selected_openclaw_binary(path: &Path) -> Result<(), String
     }
     let payload = serde_json::to_string_pretty(&OpenclawBinarySelection {
         path: canonical.to_string_lossy().to_string(),
+        npm_prefix: npm_prefix_for_openclaw_binary(&canonical, cfg!(windows))
+            .map(|prefix| prefix.to_string_lossy().into_owned()),
     })
     .map_err(|e| format!("Failed to serialize OpenClaw binary selection: {}", e))?;
     std::fs::write(&selection_path, payload)
@@ -594,17 +728,29 @@ pub(crate) fn ensure_openclaw_relocation_complete() -> Result<(), String> {
 }
 
 async fn npm_reported_global_prefix() -> Option<PathBuf> {
-    let npm = platform::detect_path(&platform::bin_name("npm"));
-    if npm.trim().is_empty() {
-        return None;
-    }
-    let mut command = tokio::process::Command::new(npm);
+    let configured_node = paths::configured_node_path();
+    let configured_npm = paths::configured_npm_cli_path();
+    let mut command = if let (Some(node), Some(npm_cli)) = (configured_node, configured_npm) {
+        if !node.is_file() || !npm_cli.is_file() {
+            return None;
+        }
+        let mut command = tokio::process::Command::new(node);
+        command.arg(npm_cli);
+        command
+    } else {
+        let npm = platform::detect_path(&platform::bin_name("npm"));
+        if npm.trim().is_empty() {
+            return None;
+        }
+        tokio::process::Command::new(npm)
+    };
     command
         .args(["config", "get", "prefix"])
-        .env("PATH", platform::login_shell_path())
+        .env("PATH", platform::current_search_path())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
     platform::configure_background_command(&mut command);
     let output = tokio::time::timeout(std::time::Duration::from_secs(10), command.output())
         .await
@@ -617,16 +763,84 @@ async fn npm_reported_global_prefix() -> Option<PathBuf> {
     prefix.is_absolute().then_some(prefix)
 }
 
+async fn saved_binary_matches_effective_npm_prefix(binary: &Path) -> bool {
+    let Some(saved_prefix) = npm_prefix_for_openclaw_binary(binary, cfg!(windows)) else {
+        return true;
+    };
+    // A process override or a persisted JunQi selection is authoritative. Do
+    // not let a stale ~/.npmrc or PATH entry veto a package the user explicitly
+    // selected in the installation guide.
+    if let Some(authoritative) = paths::runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.npm_prefix)
+        .or_else(|| paths::load_storage_bootstrap().and_then(|layout| layout.npm_prefix))
+    {
+        return paths::paths_refer_to_same_location(&saved_prefix, &authoritative);
+    }
+    if let Some(explicit) = paths::explicit_npm_prefix_override() {
+        return paths::paths_refer_to_same_location(&saved_prefix, &explicit);
+    }
+    if let Some(user_prefix) = paths::user_npm_prefix() {
+        return paths::paths_refer_to_same_location(&saved_prefix, &user_prefix);
+    }
+    npm_reported_global_prefix()
+        .await
+        .map(|effective| paths::paths_refer_to_same_location(&saved_prefix, &effective))
+        .unwrap_or(true)
+}
+
 /// Resolve OpenClaw asynchronously using npm's own effective configuration as
 /// a final discovery source. This covers pre-existing installations whose
 /// prefix comes from a global npm config, environment, or Node manager rather
 /// than a visible `.npmrc` entry.
 pub(crate) async fn resolve_openclaw_binary_async() -> Option<PathBuf> {
+    if paths::validate_runtime_overrides().is_err() {
+        return None;
+    }
     if paths::openclaw_relocation_required() {
         return None;
     }
-    if let Some(binary) = resolve_openclaw_binary() {
-        return Some(binary);
+    if let Some(checkout) = paths::runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.openclaw_git_dir)
+    {
+        let entry = checkout.join("openclaw.mjs");
+        return is_valid_openclaw_candidate(&entry).then_some(entry);
+    }
+    if let Some(prefix) = paths::configured_npm_prefix() {
+        let bin_dir = paths::npm_bin_dir_for_prefix(&prefix);
+        let authoritative_prefix = paths::runtime_location_overrides()
+            .ok()
+            .and_then(|overrides| overrides.npm_prefix)
+            .or_else(|| paths::load_storage_bootstrap().and_then(|layout| layout.npm_prefix));
+        for name in openclaw_binary_names() {
+            let candidate = bin_dir.join(name);
+            if is_valid_openclaw_candidate(&candidate) {
+                if let Some(authoritative) = authoritative_prefix.as_deref() {
+                    return paths::paths_refer_to_same_location(&prefix, authoritative)
+                        .then_some(candidate);
+                }
+                if let Some(user_prefix) = paths::user_npm_prefix() {
+                    return paths::paths_refer_to_same_location(&prefix, &user_prefix)
+                        .then_some(candidate);
+                }
+                return npm_reported_global_prefix()
+                    .await
+                    .map(|effective| {
+                        paths::paths_refer_to_same_location(&prefix, &effective)
+                            .then_some(candidate.clone())
+                    })
+                    .unwrap_or(Some(candidate));
+            }
+        }
+        // A persisted or explicit prefix is authoritative. Do not fall back
+        // to an older PATH installation while this location is incomplete.
+        return None;
+    }
+    if let Some(binary) = read_selected_openclaw_binary() {
+        if saved_binary_matches_effective_npm_prefix(&binary).await {
+            return Some(binary);
+        }
     }
     let prefix = npm_reported_global_prefix().await?;
     let bin_dir = paths::npm_bin_dir_for_prefix(&prefix);
@@ -640,6 +854,9 @@ pub(crate) async fn resolve_openclaw_binary_async() -> Option<PathBuf> {
 }
 
 pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)> {
+    if paths::validate_runtime_overrides().is_err() {
+        return None;
+    }
     // Do not fall through to a saved binary, PATH, or npm's old effective
     // prefix while a migration has explicitly requested a new installation.
     // The setup installer validates the target directly and clears this state
@@ -650,9 +867,34 @@ pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)>
 
     if let Ok(explicit) = std::env::var("OPENCLAW_BIN") {
         let explicit = PathBuf::from(explicit);
-        if is_valid_openclaw_candidate(&explicit) {
-            return Some((explicit, "OPENCLAW_BIN".into()));
+        if !is_valid_openclaw_candidate(&explicit) {
+            return None;
         }
+        if paths::runtime_location_overrides()
+            .ok()
+            .and_then(|overrides| overrides.openclaw_git_dir)
+            .is_none()
+        {
+            if let Some(prefix) = paths::configured_npm_prefix() {
+                let Some(installed_prefix) =
+                    npm_prefix_for_openclaw_binary(&explicit, cfg!(windows))
+                else {
+                    return None;
+                };
+                if !paths::paths_refer_to_same_location(&installed_prefix, &prefix) {
+                    return None;
+                }
+            }
+        }
+        return Some((explicit, "OPENCLAW_BIN".into()));
+    }
+
+    if let Some(checkout) = paths::runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.openclaw_git_dir)
+    {
+        let entry = checkout.join("openclaw.mjs");
+        return is_valid_openclaw_candidate(&entry).then_some((entry, "OPENCLAW_GIT_DIR".into()));
     }
 
     if let Some(selected) = read_selected_openclaw_binary() {
@@ -670,6 +912,10 @@ pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)>
                 return Some((candidate, "configured-npm-prefix".into()));
             }
         }
+        // An explicit npm prefix is authoritative. Do not silently reuse an
+        // older package from the user's PATH while the selected prefix is
+        // awaiting installation or relocation.
+        return None;
     }
 
     if let Some(bin_dir) = paths::user_npm_bin_dir() {
@@ -704,6 +950,34 @@ pub(crate) fn resolve_openclaw_binary_with_source() -> Option<(PathBuf, String)>
 }
 
 pub(crate) async fn detect_openclaw() -> OpenclawStatus {
+    if let Err(error) = paths::validate_runtime_overrides() {
+        return OpenclawStatus {
+            installed: false,
+            version: None,
+            path: None,
+            source: None,
+            binary_found: false,
+            version_ok: false,
+            package_valid: false,
+            gateway_command_ok: false,
+            relocation_required: paths::openclaw_relocation_required(),
+            error: Some(error),
+        };
+    }
+    if let Err(error) = validate_openclaw_binary_override() {
+        return OpenclawStatus {
+            installed: false,
+            version: None,
+            path: None,
+            source: None,
+            binary_found: false,
+            version_ok: false,
+            package_valid: false,
+            gateway_command_ok: false,
+            relocation_required: paths::openclaw_relocation_required(),
+            error: Some(error),
+        };
+    }
     let search_path = openclaw_search_path();
     let (path, source) = match resolve_openclaw_binary_with_source() {
         Some(resolved) => resolved,
@@ -742,17 +1016,37 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
 pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) -> OpenclawStatus {
     let path_string = path_for_display(path);
     let package_version = read_openclaw_pkg_version(path);
-    let cli_version = read_openclaw_cli_version(path);
-    let package_valid = package_version.is_some();
-    let version = package_version.or(cli_version);
+    let package_valid = has_openclaw_package_contract(path);
+    // The package metadata is the authoritative version source. Running a
+    // Windows `.cmd` shim through a generic process probe is unreliable and
+    // was the original source of the `node ... openclaw.cmd` EISDIR failure.
+    // The actual launcher contract is validated structurally, then runtime
+    // commands resolve the package's `openclaw.mjs` entry through Node.
+    let version = package_version;
     let version_ok = version.is_some();
-    let gateway_command_ok = version_ok && !is_legacy_brand_wrapper(path);
-    let installed = version_ok && gateway_command_ok;
-    let errors = if installed {
-        Vec::new()
+    let entry_smoke_ok = if package_valid {
+        validate_openclaw_entry_with_selected_node(path).await
     } else {
-        vec!["OpenClaw binary did not expose a valid package or CLI version".to_string()]
+        false
     };
+    let gateway_command_ok = package_valid && entry_smoke_ok && !is_legacy_brand_wrapper(path);
+    let installed = version_ok && package_valid && gateway_command_ok;
+    let mut errors = Vec::new();
+    if version.is_none() {
+        errors.push("OpenClaw package version is missing or invalid".to_string());
+    }
+    if !package_valid {
+        errors.push(
+            "OpenClaw package contract is incomplete (package.json, engines.node, and openclaw.mjs are required)"
+                .to_string(),
+        );
+    }
+    if package_valid && !entry_smoke_ok {
+        errors.push("OpenClaw JavaScript entry failed the selected Node.js syntax check".into());
+    }
+    if is_legacy_brand_wrapper(path) {
+        errors.push("OpenClaw path resolves to a legacy wrapper".to_string());
+    }
     OpenclawStatus {
         installed,
         version,
@@ -769,6 +1063,83 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
             Some(errors.join("; "))
         },
     }
+}
+
+pub(crate) async fn validate_openclaw_entry_with_node(binary: &Path, node_path: &Path) -> bool {
+    let Some(entry) = npm_openclaw_entry(binary) else {
+        return !is_npm_command_shim(binary);
+    };
+    let mut command = tokio::process::Command::new(node_path);
+    command
+        .arg("--check")
+        .arg(path_for_node_argument(&entry))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    platform::configure_background_command(&mut command);
+    let syntax_ok = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output())
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .is_some_and(|output| output.status.success());
+    if !syntax_ok {
+        return false;
+    }
+
+    // `node --check` does not resolve imports. A bounded `--version` run
+    // verifies the packaged dependency graph without starting a Gateway or
+    // inheriting the desktop process's drive-root cwd.
+    let smoke_root = std::env::temp_dir().join(format!(
+        "junqi-openclaw-smoke-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    if std::fs::create_dir_all(&smoke_root).is_err() {
+        return false;
+    }
+    let config = smoke_root.join("openclaw.json");
+    let mut smoke = tokio::process::Command::new(node_path);
+    smoke
+        .arg(path_for_node_argument(&entry))
+        .arg("--version")
+        .env("OPENCLAW_STATE_DIR", &smoke_root)
+        .env("OPENCLAW_CONFIG_PATH", &config)
+        .env("OPENCLAW_NO_RESPAWN", "1")
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(cwd) = paths::stable_openclaw_working_dir().filter(|path| path.is_dir()) {
+        smoke.current_dir(cwd);
+    }
+    platform::configure_background_command(&mut smoke);
+    let result = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, smoke.output())
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .is_some_and(|output| {
+            output.status.success()
+                && parse_openclaw_version(&String::from_utf8_lossy(&output.stdout)).is_some()
+        });
+    let _ = std::fs::remove_dir_all(smoke_root);
+    result
+}
+
+async fn validate_openclaw_entry_with_selected_node(binary: &Path) -> bool {
+    let requirement = match required_node_requirement_for_openclaw_binary(binary) {
+        Ok(requirement) => requirement,
+        Err(_) => return false,
+    };
+    let node = match check_node_for_requirement(&requirement).await {
+        Ok(node) if node.available => node,
+        _ => return false,
+    };
+    let Some(node_path) = node.path.map(PathBuf::from) else {
+        return false;
+    };
+    validate_openclaw_entry_with_node(binary, &node_path).await
 }
 
 fn path_text_for_display(raw: &str, windows: bool) -> String {
@@ -839,28 +1210,31 @@ fn parse_openclaw_version(output: &str) -> Option<String> {
         .map(|part| part.trim_start_matches('v').to_string())
 }
 
-fn read_openclaw_cli_version(bin: &Path) -> Option<String> {
-    let mut command = std::process::Command::new(bin);
-    command
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stderr(Stdio::piped())
-        .stdout(Stdio::piped());
-    platform::suppress_console_window(&mut command);
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    parse_openclaw_version(&text)
-}
-
 fn is_openclaw_package_dir(dir: &Path) -> bool {
     read_openclaw_package_metadata_file(&dir.join("package.json")).is_some()
+}
+
+/// Validate the files needed to execute the official npm installation. Merely
+/// finding a version in package.json is insufficient: a partial extraction can
+/// leave that file and a shim behind while the JavaScript entry or Node
+/// contract is missing.
+pub(crate) fn has_openclaw_package_contract(binary: &Path) -> bool {
+    if !binary.is_file() {
+        return false;
+    }
+    let Some(package_dir) = openclaw_package_dir(binary) else {
+        return false;
+    };
+    let Some(metadata) = read_openclaw_package_metadata_file(&package_dir.join("package.json"))
+    else {
+        return false;
+    };
+    let Some(requirement) = metadata.node_requirement else {
+        return false;
+    };
+    package_dir.join("openclaw.mjs").is_file()
+        && NodeRuntimeRequirement::parse(requirement, NodeRequirementSource::InstalledPackage)
+            .is_ok()
 }
 
 /// Resolve the physical `openclaw` package root from a selected executable.
@@ -880,9 +1254,17 @@ pub(crate) fn openclaw_package_dir(binary: &Path) -> Option<PathBuf> {
             if is_openclaw_package_dir(current) {
                 return Some(current.to_path_buf());
             }
-            let nested = current.join("node_modules").join("openclaw");
-            if is_openclaw_package_dir(&nested) {
-                return Some(nested);
+            // npm's Windows shim is `<prefix>/openclaw.cmd`, while the
+            // documented Unix prefix is `<prefix>/bin/openclaw` with the
+            // package under `<prefix>/lib/node_modules/openclaw`.
+            for relative in [
+                Path::new("node_modules").join("openclaw"),
+                Path::new("lib").join("node_modules").join("openclaw"),
+            ] {
+                let nested = current.join(relative);
+                if is_openclaw_package_dir(&nested) {
+                    return Some(nested);
+                }
             }
             dir = current.parent();
         }
@@ -975,9 +1357,12 @@ pub(crate) fn installed_openclaw_node_requirement() -> Result<NodeRuntimeRequire
 
 async fn get_git_version(git_path: &str) -> Option<String> {
     let mut command = tokio::process::Command::new(git_path);
-    command.arg("--version");
+    command.arg("--version").kill_on_drop(true);
     platform::configure_background_command(&mut command);
-    let output = command.output().await.ok()?;
+    let output = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output())
+        .await
+        .ok()?
+        .ok()?;
 
     if output.status.success() {
         Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -1012,6 +1397,7 @@ pub async fn open_folder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn check_git() -> Result<GitStatus, String> {
+    paths::validate_runtime_overrides()?;
     // On Windows, refresh PATH from registry so we detect newly-installed Git
     #[cfg(windows)]
     crate::commands::setup::refresh_path_from_registry();
@@ -1070,13 +1456,14 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
     // so NVM/asdf shims don't block the Tokio executor thread.
     let pp = project_path.clone();
 
-    let node_fut = async {
-        tokio::process::Command::new("node")
-            .arg("--version")
-            .current_dir(&pp)
-            .output()
+    let node_program = platform::resolve_spawn_program("node");
+    let node_fut = async move {
+        let mut command = tokio::process::Command::new(node_program);
+        command.arg("--version").current_dir(&pp).kill_on_drop(true);
+        tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output())
             .await
             .ok()
+            .and_then(Result::ok)
             .and_then(|o| {
                 if o.status.success() {
                     let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -1257,9 +1644,9 @@ mod tests {
     fn windows_verbatim_path_prefix_is_removed_for_node_arguments() {
         assert_eq!(
             strip_windows_verbatim_prefix(
-                r"\\?\C:\Users\Wang\AppData\Roaming\npm\node_modules\openclaw\openclaw.mjs"
+                r"\\?\C:\Users\ExampleUser\AppData\Roaming\npm\node_modules\openclaw\openclaw.mjs"
             ),
-            r"C:\Users\Wang\AppData\Roaming\npm\node_modules\openclaw\openclaw.mjs"
+            r"C:\Users\ExampleUser\AppData\Roaming\npm\node_modules\openclaw\openclaw.mjs"
         );
     }
 
@@ -1384,8 +1771,11 @@ mod tests {
     #[test]
     fn windows_display_paths_hide_verbatim_prefixes() {
         assert_eq!(
-            path_text_for_display(r"\\?\C:\Users\Wang\AppData\Roaming\npm\openclaw.cmd", true),
-            r"C:\Users\Wang\AppData\Roaming\npm\openclaw.cmd"
+            path_text_for_display(
+                r"\\?\C:\Users\ExampleUser\AppData\Roaming\npm\openclaw.cmd",
+                true
+            ),
+            r"C:\Users\ExampleUser\AppData\Roaming\npm\openclaw.cmd"
         );
         assert_eq!(
             path_text_for_display(r"\\?\UNC\server\share\openclaw.cmd", true),

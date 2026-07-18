@@ -31,6 +31,40 @@ struct EnvironmentBinding {
     profile_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Default)]
+pub(super) struct TerminalRuntimeEnvironment {
+    pub path_entries: Vec<PathBuf>,
+    pub npm_prefix: Option<PathBuf>,
+    pub npm_cache: Option<PathBuf>,
+}
+
+pub(super) fn selected_runtime_environment() -> TerminalRuntimeEnvironment {
+    let mut environment = TerminalRuntimeEnvironment {
+        npm_prefix: paths::configured_npm_prefix(),
+        npm_cache: paths::configured_npm_cache_dir(),
+        ..TerminalRuntimeEnvironment::default()
+    };
+    let candidates = [
+        paths::configured_node_path().and_then(|path| path.parent().map(Path::to_path_buf)),
+        paths::configured_git_path().and_then(|path| path.parent().map(Path::to_path_buf)),
+        environment
+            .npm_prefix
+            .as_deref()
+            .map(paths::npm_bin_dir_for_prefix),
+        paths::user_npm_bin_dir(),
+    ];
+    for candidate in candidates.into_iter().flatten() {
+        if !environment
+            .path_entries
+            .iter()
+            .any(|existing| path_entries_equal(existing, &candidate))
+        {
+            environment.path_entries.push(candidate);
+        }
+    }
+    environment
+}
+
 /// The launcher is generated from the selected runtime rather than from the
 /// accidental presence of a host-side OpenClaw binary. This keeps Docker
 /// terminal integration useful on a clean Docker-only installation.
@@ -63,6 +97,9 @@ impl<B: TerminalIntegrationBackend> TerminalIntegrationService<B> {
         requested: bool,
         native_binary_override: Option<&Path>,
     ) -> Result<TerminalIntegrationStatus, String> {
+        if requested {
+            paths::validate_runtime_overrides()?;
+        }
         let binding = if requested {
             let runtime = paths::active_runtime_mode();
             let detected_binary = matches!(runtime, paths::OpenClawRuntimeMode::Native)
@@ -194,6 +231,13 @@ pub(crate) fn sync_terminal_integration_for_relocation(
         paths::terminal_integration_requested(),
         Some(binary),
     )
+}
+
+/// Disable only the integration artifacts JunQi owns. The normal public sync
+/// path checks for a completed OpenClaw relocation; an uninstall must still
+/// remove its launcher and PATH entry when a migration was interrupted.
+pub(crate) fn disable_terminal_integration_for_uninstall() -> Result<(), String> {
+    TerminalIntegrationService::<ActiveBackend>::sync(false, None).map(|_| ())
 }
 
 #[tauri::command]

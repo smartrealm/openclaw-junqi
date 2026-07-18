@@ -321,7 +321,7 @@ pub async fn read_dir_entries(path: String, project_path: String) -> Result<Vec<
         if !result.is_empty() {
             let ignored_set: std::collections::HashSet<String> = {
                 use std::io::Write;
-                let mut cmd = std::process::Command::new("git");
+                let mut cmd = std::process::Command::new(crate::platform::resolve_spawn_program("git"));
                 crate::subprocess::configure_background_command(&mut cmd);
                 cmd.args(["check-ignore", "--stdin"])
                     .current_dir(&project_path)
@@ -538,7 +538,7 @@ pub async fn delete_path(path: String, project_path: String) -> Result<(), Strin
 #[tauri::command]
 pub async fn list_project_files(project_path: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut cmd = std::process::Command::new("git");
+                let mut cmd = std::process::Command::new(crate::platform::resolve_spawn_program("git"));
         crate::subprocess::configure_background_command(&mut cmd);
         let output = cmd
             .args([
@@ -606,7 +606,7 @@ pub async fn search_project_files(
             .collect();
         let limit = limit.unwrap_or(80).clamp(1, MAX_FILE_SEARCH_RESULTS);
 
-        let mut cmd = Command::new("git");
+        let mut cmd = Command::new(crate::platform::resolve_spawn_program("git"));
         crate::subprocess::configure_background_command(&mut cmd);
         let output = cmd
             .args(["-c", "core.quotePath=false", "ls-files", "-z"])

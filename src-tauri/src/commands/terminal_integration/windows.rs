@@ -1,5 +1,6 @@
 use super::{
-    updated_windows_path, EnvironmentBinding, TerminalIntegrationBackend, TerminalLauncherTarget,
+    selected_runtime_environment, updated_windows_path, EnvironmentBinding,
+    TerminalIntegrationBackend, TerminalLauncherTarget,
 };
 use crate::paths;
 use std::path::Path;
@@ -43,21 +44,68 @@ impl TerminalIntegrationBackend for WindowsBackend {
 }
 
 fn native_launcher_contents(binary: Option<&Path>) -> String {
-    let command = binary.map_or_else(missing_binary_command, |path| {
-        format!("call \"{}\" %*", batch_escape(path))
-    });
-    let node_bin =
-        paths::configured_node_path().and_then(|node| node.parent().map(Path::to_path_buf));
-    let node_path = node_bin
-        .map(|path| format!("set \"PATH={};%PATH%\"\r\n", batch_escape(&path)))
+    let command = binary.map_or_else(missing_binary_command, native_binary_command);
+    let runtime = selected_runtime_environment();
+    let path = runtime
+        .path_entries
+        .iter()
+        .map(|path| batch_escape(path))
+        .collect::<Vec<_>>()
+        .join(";");
+    let path_line = (!path.is_empty())
+        .then(|| format!("set \"PATH={path};%PATH%\"\r\n"))
+        .unwrap_or_default();
+    let prefix_line = runtime
+        .npm_prefix
+        .as_deref()
+        .map(|path| format!("set \"npm_config_prefix={}\"\r\n", batch_escape(path)))
+        .unwrap_or_default();
+    let cache_line = runtime
+        .npm_cache
+        .as_deref()
+        .map(|path| format!("set \"npm_config_cache={}\"\r\n", batch_escape(path)))
         .unwrap_or_default();
     format!(
-            "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"OPENCLAW_STATE_DIR={}\"\r\nset \"OPENCLAW_CONFIG_PATH={}\"\r\n{}{}\r\n",
+            "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"OPENCLAW_STATE_DIR={}\"\r\nset \"OPENCLAW_CONFIG_PATH={}\"\r\n{}{}{}{}\r\n",
             batch_escape(&paths::desktop_dir()),
             batch_escape(&paths::config_path()),
-            node_path,
+            path_line,
+            prefix_line,
+            cache_line,
             command
         )
+}
+
+fn native_binary_command(binary: &Path) -> String {
+    if let Some(entry) = crate::commands::system::openclaw_package_dir(binary)
+        .map(|package| package.join("openclaw.mjs"))
+        .filter(|entry| entry.is_file())
+    {
+        let node = paths::configured_node_path()
+            .filter(|path| path.is_file())
+            .or_else(|| {
+                let detected = crate::platform::detect_path("node");
+                (!detected.is_empty()).then(|| detected.into())
+            });
+        if let Some(node) = node {
+            return format!(
+                "\"{}\" \"{}\" %*",
+                batch_escape(&node),
+                batch_escape(&entry)
+            );
+        }
+    }
+    if binary
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("ps1"))
+    {
+        return format!(
+            "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"{}\" %*",
+            batch_escape(binary)
+        );
+    }
+    format!("call \"{}\" %*", batch_escape(binary))
 }
 
 fn docker_launcher_contents() -> String {
@@ -72,7 +120,7 @@ fn missing_binary_command() -> String {
 }
 
 fn batch_escape(value: &Path) -> String {
-    value.to_string_lossy().replace('%', "%%")
+    crate::commands::system::display_path_text(&value.to_string_lossy()).replace('%', "%%")
 }
 
 fn update_user_path(enabled: bool) -> Result<(), String> {

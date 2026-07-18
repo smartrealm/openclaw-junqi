@@ -196,11 +196,9 @@ jobs:
           )
           $missing = $required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
           if ($missing.Count -gt 0) {
-            Write-Warning "SignPath Foundation is not configured. Windows installers will be released unsigned. Missing: $($missing -join ', ')"
-            "enabled=false" >> $env:GITHUB_OUTPUT
-          } else {
-            "enabled=true" >> $env:GITHUB_OUTPUT
+            throw "SignPath Foundation is required for tag releases. Missing: $($missing -join ', ')"
           }
+          "enabled=true" >> $env:GITHUB_OUTPUT
 
       - name: Upload unsigned Windows application for SignPath
         if: runner.os == 'Windows' && env.IS_TAG_RELEASE == 'true' && steps.signpath-config.outputs.enabled == 'true'

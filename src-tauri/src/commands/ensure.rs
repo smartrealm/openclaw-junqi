@@ -1,8 +1,9 @@
-//! Gateway 启动兜底编排器。
+//! Gateway 启动编排器。
 //!
-//! 统一入口：先探测本机 Gateway，再启动托管原生进程，最后尝试 Docker 兜底。
-//! 这里只防止并发重复执行，不做失败后的长时间冷却；用户刚修复配置或
-//! 启动 Docker 后，应能立刻再次自救。
+//! 统一入口：先探测当前选定的运行时，再启动其托管进程。
+//! Native/Docker 是持久化的用户选择，失败时保持在同一契约内，不静默
+//! 切换到另一套 state/config。这里只防止并发重复执行，不做失败后的
+//! 长时间冷却；用户修复配置后可以立刻再次自救。
 //!
 //! 前端在冷启动、手动重连、自救入口里都应调用这里，而不是各自拼接
 //! 多套恢复流程。
@@ -17,7 +18,7 @@ use serde::Serialize;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
-/// 兜底编排最终落在哪种运行方式上。
+/// 编排最终落在哪种运行方式上。
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum GatewayMode {
@@ -178,10 +179,9 @@ async fn ensure_selected_docker_gateway(
 /// 冷启动/手动自救共用的 Gateway 恢复入口。
 ///
 /// 规则：
-/// 1. 配置端口已可连接，直接返回 Native/healthy。
-/// 2. 启动桌面托管的原生 Gateway，并等待端口就绪。
-/// 3. 原生启动失败后，Docker 可用时尝试容器兜底。
-/// 4. 所有路径失败时返回明确错误，但不设置冷却。
+/// 1. 配置端口已可连接，直接复用当前选定运行时。
+/// 2. 启动当前选定的托管 Gateway，并等待端口就绪。
+/// 3. 失败时返回明确错误；切换运行时必须经过显式设置流程。
 #[tauri::command]
 pub async fn ensure_gateway_running(
     app: AppHandle,
@@ -192,14 +192,14 @@ pub async fn ensure_gateway_running(
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate.lock_owned().await;
 
+    let selected_mode = paths::active_runtime_mode();
+    paths::validate_runtime_mode(selected_mode)?;
     let port = read_gateway_port();
     *state.port.lock().map_err(|e| e.to_string())? = port;
 
-    if matches!(paths::active_runtime_mode(), OpenClawRuntimeMode::Docker) {
+    if matches!(selected_mode, OpenClawRuntimeMode::Docker) {
         return ensure_selected_docker_gateway(app, &state, port).await;
     }
-
-    crate::commands::docker::release_managed_docker_gateway_for_native(port).await?;
 
     // 1. 本机配置端口已经可用，直接复用。
     if selected_native_gateway_ready(port).await {
@@ -292,111 +292,25 @@ pub async fn ensure_gateway_running(
         &native_error,
     );
 
-    // 4. 原生启动失败后再尝试 Docker 兜底。
-    push_log(
-        &state.logs,
-        LogSource::Lifecycle,
-        LogLevel::Warn,
-        format!(
-            "ensure_gateway_running: {}; attempting Docker fallback",
-            native_error
-        ),
+    let err = format!(
+        "{}; the selected Native runtime was not changed. Choose Docker explicitly if you want to use the container runtime.",
+        native_error
     );
-    match check_docker().await {
-        Ok(ds) if ds.daemon_running => {
-            // 容器存在时先尝试复用；不存在则启动新容器。
-            let present = docker_gateway_status(Some(port))
-                .await
-                .map(|s| s.running)
-                .unwrap_or(false);
-            let mut docker_token = read_docker_gateway_token();
-            if !present {
-                // A managed child that stayed alive without becoming healthy
-                // must not coexist with the Docker fallback.
-                crate::commands::docker::release_managed_native_gateway_for_docker(&state, port)
-                    .await?;
-                match start_docker_gateway_locked(app.clone(), Some(port), None).await {
-                    Ok(status) => {
-                        docker_token = status.token.or_else(read_docker_gateway_token);
-                        state.transition(
-                            Some(GatewayLifecycle::Running),
-                            Some(GatewayRuntimeMode::Docker),
-                            None,
-                            "ensure_gateway_running: Docker fallback started",
-                        );
-                    }
-                    Err(e) => {
-                        let err = format!("{}; docker fallback failed: {}", native_error, e);
-                        push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
-                        return Ok(EnsureResult {
-                            mode: GatewayMode::Unavailable,
-                            healthy: false,
-                            port,
-                            token: None,
-                            attempted_fallback: true,
-                            error: Some(err),
-                        });
-                    }
-                }
-            }
-            // 等待容器内 Gateway 端口就绪。
-            for _ in 0..30 {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                if probe_docker_gateway_port(port).await {
-                    let token = docker_token.or_else(read_docker_gateway_token);
-                    push_log(
-                        &state.logs,
-                        LogSource::Lifecycle,
-                        LogLevel::Info,
-                        "ensure_gateway_running: docker fallback succeeded",
-                    );
-                    return Ok(EnsureResult {
-                        mode: GatewayMode::Docker,
-                        healthy: true,
-                        port,
-                        token,
-                        attempted_fallback: true,
-                        error: None,
-                    });
-                }
-            }
-            let err = "Docker container up but gateway port never became reachable within 30s"
-                .to_string();
-            push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
-            Ok(EnsureResult {
-                mode: GatewayMode::Unavailable,
-                healthy: false,
-                port,
-                token: None,
-                attempted_fallback: true,
-                error: Some(err),
-            })
-        }
-        Ok(_) => {
-            let err = format!("{}; Docker is unavailable", native_error);
-            push_log(&state.logs, LogSource::Lifecycle, LogLevel::Warn, &err);
-            Ok(EnsureResult {
-                mode: GatewayMode::Unavailable,
-                healthy: false,
-                port,
-                token: None,
-                attempted_fallback: false,
-                error: Some(err),
-            })
-        }
-        Err(e) => {
-            let err = format!("{}; Docker check failed: {}", native_error, e);
-            push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
-            Ok(EnsureResult {
-                mode: GatewayMode::Unavailable,
-                healthy: false,
-                port,
-                token: None,
-                attempted_fallback: false,
-                error: Some(err),
-            })
-        }
-    }
+    push_log(&state.logs, LogSource::Lifecycle, LogLevel::Error, &err);
+    state.transition(
+        Some(GatewayLifecycle::Error),
+        Some(GatewayRuntimeMode::None),
+        None,
+        "ensure_gateway_running: selected Native runtime failed",
+    );
+    Ok(EnsureResult {
+        mode: GatewayMode::Unavailable,
+        healthy: false,
+        port,
+        token: None,
+        attempted_fallback: false,
+        error: Some(err),
+    })
 }
 
 // Pull `app` into the manager trait surface so `app.state::<GatewayProcess>()`

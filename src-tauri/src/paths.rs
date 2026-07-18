@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 7;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 10;
 
 /// The OpenClaw runtime selected by the user during setup.
 ///
@@ -44,6 +44,42 @@ pub struct StorageBootstrap {
     pub openclaw_relocation_required: bool,
     pub terminal_integration: bool,
     pub runtime_mode: OpenClawRuntimeMode,
+    pub runtime_switch_rollback_mode: Option<OpenClawRuntimeMode>,
+    pub gateway_service_rebind_required: bool,
+    pub gateway_service_was_running: bool,
+}
+
+/// The effective host-side locations used by a managed OpenClaw process.
+///
+/// Environment variables are process-level configuration and therefore take
+/// precedence over the persisted bootstrap.  Resolving them as one value
+/// prevents a state directory from coming from one installation while Node,
+/// Git, or npm silently comes from another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectiveRuntimeLocations {
+    pub state_dir: PathBuf,
+    pub config_path: PathBuf,
+    pub node_runtime_dir: Option<PathBuf>,
+    pub git_runtime_dir: Option<PathBuf>,
+    pub npm_prefix: Option<PathBuf>,
+    pub npm_cache_dir: Option<PathBuf>,
+    pub openclaw_git_dir: Option<PathBuf>,
+}
+
+/// Process-scoped path overrides understood by JunQi and npm.
+///
+/// Keeping these values together prevents setup, migration, and process
+/// launch from assigning different meanings to the same environment.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct RuntimeLocationOverrides {
+    pub openclaw_home: Option<PathBuf>,
+    pub state_dir: Option<PathBuf>,
+    pub config_path: Option<PathBuf>,
+    pub node_runtime_dir: Option<PathBuf>,
+    pub git_runtime_dir: Option<PathBuf>,
+    pub npm_prefix: Option<PathBuf>,
+    pub npm_cache_dir: Option<PathBuf>,
+    pub openclaw_git_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +104,12 @@ struct PersistedStorageBootstrap {
     terminal_integration: bool,
     #[serde(default)]
     runtime_mode: OpenClawRuntimeMode,
+    #[serde(default)]
+    runtime_switch_rollback_mode: Option<OpenClawRuntimeMode>,
+    #[serde(default)]
+    gateway_service_rebind_required: bool,
+    #[serde(default)]
+    gateway_service_was_running: bool,
 }
 
 impl StorageBootstrap {
@@ -87,6 +129,9 @@ impl StorageBootstrap {
             openclaw_relocation_required: false,
             terminal_integration: false,
             runtime_mode: OpenClawRuntimeMode::Native,
+            runtime_switch_rollback_mode: None,
+            gateway_service_rebind_required: false,
+            gateway_service_was_running: false,
         }
     }
 
@@ -111,6 +156,9 @@ impl StorageBootstrap {
             openclaw_relocation_required: false,
             terminal_integration,
             runtime_mode: OpenClawRuntimeMode::Native,
+            runtime_switch_rollback_mode: None,
+            gateway_service_rebind_required: false,
+            gateway_service_was_running: false,
         }
     }
 
@@ -118,6 +166,7 @@ impl StorageBootstrap {
         if value.version == 0 || value.version > STORAGE_BOOTSTRAP_VERSION {
             return None;
         }
+        let persisted_version = value.version;
         let PersistedStorageBootstrap {
             state_dir,
             config_path,
@@ -130,31 +179,34 @@ impl StorageBootstrap {
             openclaw_relocation_required,
             terminal_integration,
             runtime_mode,
+            runtime_switch_rollback_mode,
+            gateway_service_rebind_required,
+            gateway_service_was_running,
             ..
         } = value;
         let runtime_dir = runtime_dir.unwrap_or_else(|| state_dir.clone());
-        let mut protected_locations = vec![
-            state_dir.as_path(),
-            workspace_dir.as_path(),
-            runtime_dir.as_path(),
-        ];
-        if let Some(npm_cache_dir) = npm_cache_dir.as_deref() {
-            protected_locations.push(npm_cache_dir);
-        }
-        if let Some(npm_prefix) = npm_prefix.as_deref() {
-            protected_locations.push(npm_prefix);
-        }
-        // Portable runtimes are opt-in and must be independent from OpenClaw
-        // data. Discard stale private-runtime selections from development or
-        // earlier builds instead of ever treating them as a system default.
-        let node_runtime_dir =
-            persisted_portable_runtime_dir(node_runtime_dir, &protected_locations);
-        let mut git_protected_locations = protected_locations;
-        if let Some(node_runtime) = node_runtime_dir.as_deref() {
-            git_protected_locations.push(node_runtime);
-        }
-        let git_runtime_dir =
-            persisted_portable_runtime_dir(git_runtime_dir, &git_protected_locations);
+        let node_runtime_dir = node_runtime_dir.map(normalize_node_runtime_root);
+        let git_runtime_dir = git_runtime_dir.map(normalize_git_runtime_root);
+        // Preserve explicit portable-runtime selections even when an older
+        // bootstrap placed one inside the data tree. Storage validation will
+        // surface the overlap and require a deliberate correction; silently
+        // dropping it here would make the next launch mix system and portable
+        // runtimes without telling the user.
+        // Version 8 briefly persisted Docker's derived container config in the
+        // bootstrap `config_path` field. That made a later Docker -> Native
+        // switch launch the container-only file on the host. Bootstrap owns
+        // the Native config location now; migrate only the exact old derived
+        // path and preserve every explicit external config path.
+        let config_path = if persisted_version < STORAGE_BOOTSTRAP_VERSION
+            && matches!(runtime_mode, OpenClawRuntimeMode::Docker)
+            && paths_refer_to_same_location(
+                &config_path,
+                &config_path_for_runtime(&state_dir, OpenClawRuntimeMode::Docker),
+            ) {
+            state_dir.join("openclaw.json")
+        } else {
+            config_path
+        };
         let normalized = Self {
             version: STORAGE_BOOTSTRAP_VERSION,
             state_dir,
@@ -168,6 +220,9 @@ impl StorageBootstrap {
             openclaw_relocation_required,
             terminal_integration,
             runtime_mode,
+            runtime_switch_rollback_mode,
+            gateway_service_rebind_required,
+            gateway_service_was_running,
         };
         normalized.paths_are_absolute().then_some(normalized)
     }
@@ -186,43 +241,396 @@ impl StorageBootstrap {
             openclaw_relocation_required: self.openclaw_relocation_required,
             terminal_integration: self.terminal_integration,
             runtime_mode: self.runtime_mode,
+            runtime_switch_rollback_mode: self.runtime_switch_rollback_mode,
+            gateway_service_rebind_required: self.gateway_service_rebind_required,
+            gateway_service_was_running: self.gateway_service_was_running,
         }
     }
 
     fn paths_are_absolute(&self) -> bool {
-        self.state_dir.is_absolute()
-            && self.config_path.is_absolute()
-            && self.workspace_dir.is_absolute()
-            && self.runtime_dir.is_absolute()
+        absolute_non_root(&self.state_dir)
+            && absolute_non_root(&self.config_path)
+            && absolute_non_root(&self.workspace_dir)
+            && absolute_non_root(&self.runtime_dir)
             && self
                 .npm_cache_dir
                 .as_ref()
-                .is_none_or(|path| path.is_absolute())
+                .is_none_or(|path| absolute_non_root(path))
             && self
                 .npm_prefix
                 .as_ref()
-                .is_none_or(|path| path.is_absolute())
+                .is_none_or(|path| absolute_non_root(path))
             && self
                 .node_runtime_dir
                 .as_ref()
-                .is_none_or(|path| path.is_absolute())
+                .is_none_or(|path| absolute_non_root(path))
             && self
                 .git_runtime_dir
                 .as_ref()
-                .is_none_or(|path| path.is_absolute())
+                .is_none_or(|path| absolute_non_root(path))
     }
 }
 
-fn persisted_portable_runtime_dir(
-    candidate: Option<PathBuf>,
-    protected_locations: &[&Path],
-) -> Option<PathBuf> {
-    candidate.filter(|path| {
-        path.is_absolute()
-            && protected_locations
-                .iter()
-                .all(|protected| !paths_overlap(path, protected))
+fn absolute_non_root(path: &Path) -> bool {
+    path.is_absolute() && path.parent().is_some_and(|parent| parent != path)
+}
+
+fn path_has_parent_traversal(path: &Path) -> bool {
+    path.components()
+        .any(|component| matches!(component, Component::ParentDir))
+}
+
+fn explicit_absolute_env_path(key: &str, label: &str) -> Result<Option<PathBuf>, String> {
+    let Some(value) = std::env::var_os(key).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(value);
+    if !absolute_non_root(&path) {
+        return Err(format!(
+            "{label} override {key} must be an absolute non-root path"
+        ));
+    }
+    if path_has_parent_traversal(&path) {
+        return Err(format!(
+            "{label} override {key} cannot contain parent-directory traversal"
+        ));
+    }
+    Ok(Some(path))
+}
+
+fn equivalent_env_paths(
+    label: &str,
+    candidates: impl IntoIterator<Item = (&'static str, Option<PathBuf>)>,
+) -> Result<Option<PathBuf>, String> {
+    let mut selected: Option<(&str, PathBuf)> = None;
+    for (key, value) in candidates {
+        let Some(value) = value else { continue };
+        if let Some((selected_key, selected_path)) = &selected {
+            if !paths_refer_to_same_location(selected_path, &value) {
+                return Err(format!(
+                    "{label} overrides {selected_key} ({}) and {key} ({}) conflict",
+                    selected_path.display(),
+                    value.display()
+                ));
+            }
+        } else {
+            selected = Some((key, value));
+        }
+    }
+    Ok(selected.map(|(_, path)| path))
+}
+
+pub(crate) fn runtime_location_overrides() -> Result<RuntimeLocationOverrides, String> {
+    if let Some(profile) = std::env::var_os("OPENCLAW_PROFILE").filter(|value| !value.is_empty()) {
+        let profile = profile.to_string_lossy();
+        if !profile.eq_ignore_ascii_case("default") {
+            return Err(format!(
+                "OPENCLAW_PROFILE={profile} is not supported by JunQi's managed Gateway; use explicit OPENCLAW_STATE_DIR and OPENCLAW_CONFIG_PATH for this instance"
+            ));
+        }
+    }
+    let openclaw_home = explicit_absolute_env_path("OPENCLAW_HOME", "OpenClaw home")?;
+    let explicit_state = explicit_absolute_env_path("OPENCLAW_STATE_DIR", "OpenClaw state")?;
+    let junqi_npm_prefix = explicit_absolute_env_path("JUNQI_NPM_PREFIX", "npm prefix")?;
+    let npm_prefix_lower = explicit_absolute_env_path("npm_config_prefix", "npm prefix")?;
+    let npm_prefix_upper = explicit_absolute_env_path("NPM_CONFIG_PREFIX", "npm prefix")?;
+    let npm_prefix = equivalent_env_paths(
+        "npm prefix",
+        [
+            ("JUNQI_NPM_PREFIX", junqi_npm_prefix),
+            ("npm_config_prefix", npm_prefix_lower),
+            ("NPM_CONFIG_PREFIX", npm_prefix_upper),
+        ],
+    )?;
+    let npm_cache_dir = equivalent_env_paths(
+        "npm cache",
+        [
+            (
+                "npm_config_cache",
+                explicit_absolute_env_path("npm_config_cache", "npm cache")?,
+            ),
+            (
+                "NPM_CONFIG_CACHE",
+                explicit_absolute_env_path("NPM_CONFIG_CACHE", "npm cache")?,
+            ),
+        ],
+    )?;
+    Ok(RuntimeLocationOverrides {
+        openclaw_home: openclaw_home.clone(),
+        state_dir: explicit_state.or_else(|| openclaw_home.map(|home| home.join(".openclaw"))),
+        config_path: explicit_absolute_env_path("OPENCLAW_CONFIG_PATH", "OpenClaw config")?,
+        node_runtime_dir: explicit_absolute_env_path("JUNQI_NODE_RUNTIME_DIR", "Node.js runtime")?
+            .map(normalize_node_runtime_root),
+        git_runtime_dir: explicit_absolute_env_path("JUNQI_GIT_RUNTIME_DIR", "Git runtime")?
+            .map(normalize_git_runtime_root),
+        npm_prefix,
+        npm_cache_dir,
+        openclaw_git_dir: explicit_absolute_env_path("OPENCLAW_GIT_DIR", "OpenClaw Git checkout")?,
     })
+}
+
+pub fn explicit_npm_prefix_override() -> Option<PathBuf> {
+    runtime_location_overrides().ok()?.npm_prefix
+}
+
+fn load_storage_bootstrap_checked() -> Result<Option<StorageBootstrap>, String> {
+    let path = storage_bootstrap_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|error| {
+        format!(
+            "Failed to read storage bootstrap {}: {error}",
+            path.display()
+        )
+    })?;
+    let persisted: PersistedStorageBootstrap = serde_json::from_str(&raw).map_err(|error| {
+        format!(
+            "Storage bootstrap {} is invalid JSON: {error}",
+            path.display()
+        )
+    })?;
+    let layout = StorageBootstrap::from_persisted(persisted).ok_or_else(|| {
+        format!(
+            "Storage bootstrap {} contains unsupported or non-absolute paths",
+            path.display()
+        )
+    })?;
+    validate_persisted_runtime_locations(&layout)?;
+    Ok(Some(layout))
+}
+
+fn validate_persisted_runtime_locations(layout: &StorageBootstrap) -> Result<(), String> {
+    let fields = [
+        ("state directory", layout.state_dir.as_path()),
+        ("config path", layout.config_path.as_path()),
+        ("workspace directory", layout.workspace_dir.as_path()),
+        ("OpenClaw runtime directory", layout.runtime_dir.as_path()),
+    ];
+    for (label, path) in fields {
+        if !absolute_non_root(path) || path_has_parent_traversal(path) {
+            return Err(format!(
+                "Persisted {label} must be an absolute non-root path without traversal"
+            ));
+        }
+    }
+    let optional = [
+        ("npm cache directory", layout.npm_cache_dir.as_deref()),
+        ("npm global prefix", layout.npm_prefix.as_deref()),
+        ("custom Node.js runtime", layout.node_runtime_dir.as_deref()),
+        ("custom Git runtime", layout.git_runtime_dir.as_deref()),
+    ];
+    for (label, path) in optional {
+        if let Some(path) = path {
+            if !absolute_non_root(path) || path_has_parent_traversal(path) {
+                return Err(format!(
+                    "Persisted {label} must be an absolute non-root path without traversal"
+                ));
+            }
+        }
+    }
+    for (label, path) in [
+        ("npm global prefix", layout.npm_prefix.as_deref()),
+        ("custom Node.js runtime", layout.node_runtime_dir.as_deref()),
+        ("custom Git runtime", layout.git_runtime_dir.as_deref()),
+    ] {
+        if path.is_some_and(|path| paths_overlap(path, &layout.state_dir)) {
+            return Err(format!(
+                "Persisted {label} overlaps the OpenClaw state directory"
+            ));
+        }
+    }
+    for (index, (left_label, left)) in optional.iter().enumerate() {
+        let Some(left) = left else { continue };
+        for (right_label, right) in optional.iter().skip(index + 1) {
+            let Some(right) = right else { continue };
+            if paths_overlap(left, right) {
+                return Err(format!(
+                    "Persisted {left_label} and {right_label} directories overlap"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolve and validate every process-level runtime override before a command
+/// is allowed to inspect or mutate OpenClaw. Invalid explicit values fail fast;
+/// they never fall back to a different machine-wide installation.
+pub fn effective_runtime_locations() -> Result<EffectiveRuntimeLocations, String> {
+    let overrides = runtime_location_overrides()?;
+    let state_override = overrides.state_dir;
+    let config_override = overrides.config_path;
+    let bootstrap = load_storage_bootstrap_checked()?;
+    let state_is_overridden = state_override.is_some();
+    let state_dir = state_override
+        .or_else(|| bootstrap.as_ref().map(|layout| layout.state_dir.clone()))
+        .unwrap_or_else(legacy_default_state_dir);
+    let config_path = config_override
+        .or_else(|| {
+            (!state_is_overridden)
+                .then(|| bootstrap.as_ref().map(|layout| layout.config_path.clone()))
+                .flatten()
+        })
+        .unwrap_or_else(|| state_dir.join("openclaw.json"));
+
+    if !absolute_non_root(&state_dir) || path_has_parent_traversal(&state_dir) {
+        return Err(
+            "OpenClaw state directory must be an absolute non-root path without traversal".into(),
+        );
+    }
+    if !absolute_non_root(&config_path) || path_has_parent_traversal(&config_path) {
+        return Err(
+            "OpenClaw config path must be an absolute non-root path without traversal".into(),
+        );
+    }
+
+    let node_runtime_dir = overrides.node_runtime_dir.or_else(|| {
+        bootstrap
+            .as_ref()
+            .and_then(|layout| layout.node_runtime_dir.clone())
+    });
+    let git_runtime_dir = overrides.git_runtime_dir.or_else(|| {
+        bootstrap
+            .as_ref()
+            .and_then(|layout| layout.git_runtime_dir.clone())
+    });
+    let npm_prefix = overrides.npm_prefix.or_else(|| {
+        bootstrap
+            .as_ref()
+            .and_then(|layout| layout.npm_prefix.clone())
+    });
+    let npm_cache_dir = overrides.npm_cache_dir.or_else(|| {
+        bootstrap
+            .as_ref()
+            .and_then(|layout| layout.npm_cache_dir.clone())
+    });
+    let openclaw_git_dir = overrides.openclaw_git_dir;
+    if openclaw_git_dir.is_some() && npm_prefix.is_some() {
+        return Err(
+            "OPENCLAW_GIT_DIR and an npm global prefix select different OpenClaw installation sources; configure only one"
+                .into(),
+        );
+    }
+    if openclaw_git_dir.is_some()
+        && bootstrap
+            .as_ref()
+            .is_some_and(|layout| layout.openclaw_relocation_required)
+    {
+        return Err(
+            "An npm relocation is pending while OPENCLAW_GIT_DIR selects a Git checkout; finish or cancel the storage relocation first"
+                .into(),
+        );
+    }
+
+    let dependencies = [
+        ("Node.js runtime", node_runtime_dir.as_deref()),
+        ("Git runtime", git_runtime_dir.as_deref()),
+        ("npm prefix", npm_prefix.as_deref()),
+        ("OpenClaw Git checkout", openclaw_git_dir.as_deref()),
+    ];
+    for (label, path) in dependencies {
+        if let Some(path) = path {
+            if paths_overlap(path, &state_dir) {
+                return Err(format!(
+                    "{label} must be outside the OpenClaw state directory"
+                ));
+            }
+        }
+    }
+    for (index, (left_label, left)) in dependencies.iter().enumerate() {
+        let Some(left) = left else { continue };
+        for (right_label, right) in dependencies.iter().skip(index + 1) {
+            let Some(right) = right else { continue };
+            if paths_overlap(left, right) {
+                return Err(format!(
+                    "{left_label} and {right_label} directories must be separate"
+                ));
+            }
+        }
+    }
+
+    Ok(EffectiveRuntimeLocations {
+        state_dir,
+        config_path,
+        node_runtime_dir,
+        git_runtime_dir,
+        npm_prefix,
+        npm_cache_dir,
+        openclaw_git_dir,
+    })
+}
+
+pub fn validate_runtime_overrides() -> Result<(), String> {
+    effective_runtime_locations().map(|_| ())
+}
+
+/// Validate only process-level overrides. Storage setup uses this narrower
+/// contract so a damaged legacy bootstrap can still be repaired through the
+/// storage gate instead of being needed to load successfully first.
+pub fn validate_explicit_runtime_overrides() -> Result<(), String> {
+    let overrides = runtime_location_overrides()?;
+    if overrides.openclaw_git_dir.is_some() && overrides.npm_prefix.is_some() {
+        return Err("OPENCLAW_GIT_DIR and an npm global prefix cannot both select OpenClaw".into());
+    }
+    let state = overrides.state_dir.unwrap_or_else(|| {
+        load_storage_bootstrap()
+            .map(|layout| layout.state_dir)
+            .unwrap_or_else(legacy_default_state_dir)
+    });
+    let dependencies = [
+        ("Node.js runtime", overrides.node_runtime_dir.as_deref()),
+        ("Git runtime", overrides.git_runtime_dir.as_deref()),
+        ("npm prefix", overrides.npm_prefix.as_deref()),
+        (
+            "OpenClaw Git checkout",
+            overrides.openclaw_git_dir.as_deref(),
+        ),
+    ];
+    for (label, path) in dependencies {
+        if path.is_some_and(|path| paths_overlap(path, &state)) {
+            return Err(format!(
+                "{label} must be outside the OpenClaw state directory"
+            ));
+        }
+    }
+    for (index, (left_label, left)) in dependencies.iter().enumerate() {
+        let Some(left) = left else { continue };
+        for (right_label, right) in dependencies.iter().skip(index + 1) {
+            let Some(right) = right else { continue };
+            if paths_overlap(left, right) {
+                return Err(format!(
+                    "{left_label} and {right_label} directories must be separate"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Return an explicitly supplied config path without applying the bootstrap
+/// fallback. Docker uses this to reject a host config override it cannot mount
+/// under the selected container contract.
+pub fn explicit_config_path_override() -> Result<Option<PathBuf>, String> {
+    Ok(runtime_location_overrides()?.config_path)
+}
+
+pub fn validate_runtime_mode(mode: OpenClawRuntimeMode) -> Result<(), String> {
+    let locations = effective_runtime_locations()?;
+    if matches!(mode, OpenClawRuntimeMode::Docker) {
+        if let Some(config) = explicit_config_path_override()? {
+            let expected =
+                config_path_for_runtime(&locations.state_dir, OpenClawRuntimeMode::Docker);
+            if !paths_refer_to_same_location(&config, &expected) {
+                return Err(format!(
+                    "Docker runtime requires OPENCLAW_CONFIG_PATH to be {}, but {} was selected",
+                    expected.display(),
+                    config.display()
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ── 应用状态根目录 ────────────────────────────────────────────
@@ -258,6 +666,7 @@ pub fn save_storage_bootstrap(bootstrap: &StorageBootstrap) -> Result<(), String
     if !bootstrap.paths_are_absolute() {
         return Err("Storage paths must be absolute".to_string());
     }
+    validate_persisted_runtime_locations(bootstrap)?;
     let path = storage_bootstrap_path();
     write_storage_bootstrap(&path, bootstrap)
 }
@@ -327,10 +736,29 @@ fn path_identity_key(path: &Path) -> String {
         .to_string_lossy()
         .to_string();
     if cfg!(windows) {
-        value.replace('/', "\\").to_lowercase()
+        normalize_windows_identity_text(&value)
     } else {
         value
     }
+}
+
+fn normalize_windows_identity_text(value: &str) -> String {
+    let mut normalized = value.replace('/', "\\");
+    let folded = normalized.to_ascii_lowercase();
+    if folded.starts_with("\\\\?\\unc\\") {
+        normalized = format!("\\\\{}", &normalized[8..]);
+    } else if folded.starts_with("\\\\?\\") || folded.starts_with("\\??\\") {
+        normalized = normalized[4..].to_string();
+    }
+    while normalized.ends_with('\\') && !is_windows_drive_root(&normalized) {
+        normalized.pop();
+    }
+    normalized.to_lowercase()
+}
+
+fn is_windows_drive_root(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'\\'
 }
 
 pub(crate) fn paths_refer_to_same_location(left: &Path, right: &Path) -> bool {
@@ -399,9 +827,9 @@ pub fn remove_storage_bootstrap() -> Result<(), String> {
 /// Return the selected OpenClaw state root. Explicit environment overrides
 /// win, followed by JunQi's stable bootstrap, then the legacy default.
 pub fn desktop_dir() -> PathBuf {
-    std::env::var_os("OPENCLAW_STATE_DIR")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
+    runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.state_dir)
         .or_else(|| load_storage_bootstrap().map(|b| b.state_dir))
         .unwrap_or_else(legacy_default_state_dir)
 }
@@ -410,10 +838,21 @@ pub fn desktop_dir() -> PathBuf {
 
 /// 返回标准 OpenClaw 配置路径：`~/.openclaw/openclaw.json`。
 pub fn config_path() -> PathBuf {
-    std::env::var_os("OPENCLAW_CONFIG_PATH")
-        .filter(|v| !v.is_empty())
+    if let Some(path) = std::env::var_os("OPENCLAW_CONFIG_PATH")
+        .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .or_else(|| load_storage_bootstrap().map(|b| b.config_path))
+    {
+        return path;
+    }
+    if runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.state_dir)
+        .is_some()
+    {
+        return desktop_dir().join("openclaw.json");
+    }
+    load_storage_bootstrap()
+        .map(|bootstrap| bootstrap.config_path)
         .unwrap_or_else(|| desktop_dir().join("openclaw.json"))
 }
 
@@ -449,13 +888,88 @@ pub fn active_config_path() -> PathBuf {
     }
 }
 
+/// The cwd contract shared by every JunQi-managed OpenClaw process and by
+/// storage's interpretation of relative workspace paths. It is intentionally
+/// independent from the selected state/config directory so a drive root can
+/// never become Node's current-directory token on Windows.
+pub(crate) fn stable_openclaw_working_dir() -> Option<PathBuf> {
+    let candidates = [
+        dirs::home_dir(),
+        dirs::data_local_dir(),
+        Some(std::env::temp_dir().join("junqi-openclaw")),
+    ];
+    for path in candidates.into_iter().flatten() {
+        if path.parent().is_none_or(|parent| parent == path) {
+            continue;
+        }
+        if path.is_dir() {
+            return Some(path);
+        }
+        if path.starts_with(std::env::temp_dir()) && std::fs::create_dir_all(&path).is_ok() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// Persist an explicit runtime choice. Runtime selection is only valid after
 /// storage setup, which guarantees that the choice has a stable home.
-pub fn set_active_runtime_mode(mode: OpenClawRuntimeMode) -> Result<(), String> {
+pub fn begin_active_runtime_mode_switch(mode: OpenClawRuntimeMode) -> Result<(), String> {
     let mut layout = load_storage_bootstrap()
         .ok_or("Storage setup must be completed before selecting an OpenClaw runtime")?;
+    if let Some(previous) = layout.runtime_switch_rollback_mode {
+        if layout.runtime_mode == mode {
+            return Ok(());
+        }
+        return Err(format!(
+            "A runtime switch from {previous:?} to {:?} is already pending",
+            layout.runtime_mode
+        ));
+    }
+    if layout.runtime_mode == mode {
+        return Ok(());
+    }
+    layout.runtime_switch_rollback_mode = Some(layout.runtime_mode);
     layout.runtime_mode = mode;
     save_storage_bootstrap(&layout)
+}
+
+pub fn commit_active_runtime_mode_switch(expected: OpenClawRuntimeMode) -> Result<(), String> {
+    let mut layout = load_storage_bootstrap()
+        .ok_or("Storage setup must be completed before committing an OpenClaw runtime")?;
+    if layout.runtime_mode != expected {
+        return Err("The active runtime changed before setup could commit it".into());
+    }
+    layout.runtime_switch_rollback_mode = None;
+    save_storage_bootstrap(&layout)
+}
+
+pub fn rollback_active_runtime_mode_switch(expected: OpenClawRuntimeMode) -> Result<(), String> {
+    let mut layout = load_storage_bootstrap()
+        .ok_or("Storage setup must be completed before rolling back an OpenClaw runtime")?;
+    if layout.runtime_mode != expected {
+        return Err("The active runtime changed before setup could roll it back".into());
+    }
+    if let Some(previous) = layout.runtime_switch_rollback_mode.take() {
+        layout.runtime_mode = previous;
+        save_storage_bootstrap(&layout)?;
+    }
+    Ok(())
+}
+
+/// Recover a mode selection interrupted by process exit. Runtime resources are
+/// reconciled lazily by the selected mode's normal startup path, which only
+/// stops JunQi-owned containers/processes.
+pub fn recover_interrupted_runtime_mode_switch() -> Result<bool, String> {
+    let Some(mut layout) = load_storage_bootstrap() else {
+        return Ok(false);
+    };
+    let Some(previous) = layout.runtime_switch_rollback_mode.take() else {
+        return Ok(false);
+    };
+    layout.runtime_mode = previous;
+    save_storage_bootstrap(&layout)?;
+    Ok(true)
 }
 
 // ── Node.js ────────────────────────────────────────────────────
@@ -463,11 +977,36 @@ pub fn set_active_runtime_mode(mode: OpenClawRuntimeMode) -> Result<(), String> 
 /// Returns a user-selected portable Node.js root. Without an explicit
 /// selection, JunQi uses the operating-system installation.
 pub fn configured_node_runtime_dir() -> Option<PathBuf> {
-    std::env::var_os("JUNQI_NODE_RUNTIME_DIR")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
+    runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.node_runtime_dir)
         .or_else(|| load_storage_bootstrap().and_then(|layout| layout.node_runtime_dir))
+}
+
+pub(crate) fn normalize_node_runtime_root(path: PathBuf) -> PathBuf {
+    if !path.is_file() {
+        return path;
+    }
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if name.eq_ignore_ascii_case("node.exe") || name.eq_ignore_ascii_case("node") {
+        let parent = path.parent();
+        if !cfg!(windows)
+            && parent
+                .and_then(Path::file_name)
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("bin"))
+        {
+            return parent
+                .and_then(Path::parent)
+                .map(Path::to_path_buf)
+                .unwrap_or(path);
+        }
+        return parent.map(Path::to_path_buf).unwrap_or(path);
+    }
+    path
 }
 
 fn node_binary_in(root: &Path) -> PathBuf {
@@ -501,18 +1040,38 @@ pub fn configured_npm_cli_path() -> Option<PathBuf> {
 /// Otherwise npm owns its platform-native cache path and can react to changes
 /// in the user's own Node.js/npm configuration.
 pub fn configured_npm_cache_dir() -> Option<PathBuf> {
-    load_storage_bootstrap().and_then(|layout| layout.npm_cache_dir)
+    runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.npm_cache_dir)
+        .or_else(|| load_storage_bootstrap().and_then(|layout| layout.npm_cache_dir))
 }
 
 pub fn configured_npm_prefix() -> Option<PathBuf> {
-    std::env::var_os("JUNQI_NPM_PREFIX")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+    runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.npm_prefix)
         .or_else(|| load_storage_bootstrap().and_then(|layout| layout.npm_prefix))
 }
 
 pub fn openclaw_relocation_required() -> bool {
     load_storage_bootstrap().is_some_and(|layout| layout.openclaw_relocation_required)
+}
+
+pub fn pending_gateway_service_rebind() -> Option<bool> {
+    load_storage_bootstrap().and_then(|layout| {
+        layout
+            .gateway_service_rebind_required
+            .then_some(layout.gateway_service_was_running)
+    })
+}
+
+pub fn complete_gateway_service_rebind() -> Result<(), String> {
+    let Some(mut layout) = load_storage_bootstrap() else {
+        return Ok(());
+    };
+    layout.gateway_service_rebind_required = false;
+    layout.gateway_service_was_running = false;
+    save_storage_bootstrap(&layout)
 }
 
 pub fn complete_openclaw_relocation(expected_npm_prefix: Option<&Path>) -> Result<(), String> {
@@ -565,10 +1124,10 @@ pub fn user_npm_prefix() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let npmrc = home.join(".npmrc");
     let content = std::fs::read_to_string(&npmrc).ok()?;
-    user_npm_prefix_from_npmrc(&content)
+    user_npm_prefix_from_npmrc(&content, &home)
 }
 
-fn user_npm_prefix_from_npmrc(content: &str) -> Option<PathBuf> {
+fn user_npm_prefix_from_npmrc(content: &str, home: &Path) -> Option<PathBuf> {
     for raw in content.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -584,9 +1143,62 @@ fn user_npm_prefix_from_npmrc(content: &str) -> Option<PathBuf> {
         if value.is_empty() {
             continue;
         }
-        return Some(PathBuf::from(value));
+        let value = value
+            .replace("${HOME}", &home.to_string_lossy())
+            .replace("$HOME", &home.to_string_lossy())
+            .replace("%USERPROFILE%", &home.to_string_lossy())
+            .replace("%HOME%", &home.to_string_lossy());
+        let path = if value == "~" {
+            home.to_path_buf()
+        } else if value.starts_with("~/") || value.starts_with("~\\") {
+            home.join(value[2..].trim_start_matches(['/', '\\']))
+        } else {
+            PathBuf::from(value)
+        };
+        return path.is_absolute().then_some(path);
     }
     None
+}
+
+/// Whether npm's user configuration explicitly owns the registry choice.
+/// JunQi may use its public mirror fallback only when this is false; proxy,
+/// CA, and authentication variables remain inherited by the npm child.
+pub(crate) fn user_npm_registry_is_configured() -> bool {
+    if std::env::var_os("npm_config_registry").is_some_and(|value| !value.is_empty())
+        || std::env::var_os("NPM_CONFIG_REGISTRY").is_some_and(|value| !value.is_empty())
+    {
+        return true;
+    }
+    if [
+        "npm_config_userconfig",
+        "NPM_CONFIG_USERCONFIG",
+        "npm_config_globalconfig",
+        "NPM_CONFIG_GLOBALCONFIG",
+    ]
+    .into_iter()
+    .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
+    {
+        // A custom config file owns the merged registry decision. Do not
+        // override it with a public mirror even when JunQi cannot safely parse
+        // every npm interpolation/auth syntax in that file.
+        return true;
+    }
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    let Ok(content) = std::fs::read_to_string(home.join(".npmrc")) else {
+        return false;
+    };
+    content.lines().any(|raw| {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            return false;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        key.trim().eq_ignore_ascii_case("registry") && !value.trim().is_empty()
+    })
 }
 
 /// 返回用户执行 `npm i -g` 时可执行 shim 会写入的目录：
@@ -609,11 +1221,29 @@ pub fn openclaw_binary_selection_path() -> PathBuf {
 /// Returns a user-selected portable Git root. This selection is supported on
 /// Windows; macOS and Linux discover Git from the operating system and PATH.
 pub fn configured_git_runtime_dir() -> Option<PathBuf> {
-    std::env::var_os("JUNQI_GIT_RUNTIME_DIR")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
+    runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.git_runtime_dir)
         .or_else(|| load_storage_bootstrap().and_then(|layout| layout.git_runtime_dir))
+}
+
+pub(crate) fn normalize_git_runtime_root(path: PathBuf) -> PathBuf {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if path.is_file() && (name.eq_ignore_ascii_case("git.exe") || name.eq_ignore_ascii_case("git"))
+    {
+        return path
+            .parent()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .unwrap_or(path);
+    }
+    if name.eq_ignore_ascii_case("cmd") && path.join("git.exe").is_file() {
+        return path.parent().map(Path::to_path_buf).unwrap_or(path);
+    }
+    path
 }
 
 fn git_binary_in(root: &Path) -> PathBuf {
@@ -632,6 +1262,16 @@ pub fn configured_git_path() -> Option<PathBuf> {
 
 /// 默认工作区目录；用户未配置工作区时使用。
 pub fn default_workspace_dir() -> PathBuf {
+    if runtime_location_overrides()
+        .ok()
+        .and_then(|overrides| overrides.state_dir)
+        .is_some()
+    {
+        if let Ok(locations) = effective_runtime_locations() {
+            return read_workspace_from_config(&locations.config_path)
+                .unwrap_or_else(|| locations.state_dir.join("workspace"));
+        }
+    }
     load_storage_bootstrap()
         .map(|b| b.workspace_dir)
         .unwrap_or_else(|| desktop_dir().join("workspace"))
@@ -673,11 +1313,11 @@ fn resolve_openclaw_user_path_from(raw: &str, home: &Path, cwd: &Path) -> Result
 }
 
 /// Match OpenClaw's `resolveUserPath`: trim, expand `~`, then resolve relative
-/// paths from the process working directory without requiring the path to exist.
+/// paths from JunQi's stable managed cwd without requiring the path to exist.
 pub fn resolve_openclaw_user_path(raw: &str) -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Unable to resolve the user home directory")?;
-    let cwd = std::env::current_dir()
-        .map_err(|error| format!("Unable to resolve the current directory: {}", error))?;
+    let cwd = stable_openclaw_working_dir()
+        .ok_or("Unable to resolve a stable OpenClaw working directory")?;
     resolve_openclaw_user_path_from(raw, &home, &cwd)
 }
 
@@ -692,6 +1332,23 @@ pub fn read_workspace_from_config(config_path: &std::path::Path) -> Option<PathB
         .get("workspace")?
         .as_str()?;
     resolve_openclaw_user_path(workspace).ok()
+}
+
+/// Read a workspace path against the same stable cwd used by every managed
+/// OpenClaw command. A GUI launch from `C:\` or another drive therefore cannot
+/// make migration and runtime execution resolve the same relative value to
+/// different directories.
+pub fn read_workspace_from_config_relative_to(config_path: &std::path::Path) -> Option<PathBuf> {
+    let raw = std::fs::read_to_string(config_path).ok()?;
+    let config: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let workspace = config
+        .get("agents")?
+        .get("defaults")?
+        .get("workspace")?
+        .as_str()?;
+    let home = dirs::home_dir()?;
+    let cwd = stable_openclaw_working_dir()?;
+    resolve_openclaw_user_path_from(workspace, &home, &cwd).ok()
 }
 
 // ── 设备 ───────────────────────────────────────────────────────
@@ -725,7 +1382,7 @@ mod storage_bootstrap_tests {
         let content =
             "registry=https://registry.npmmirror.com\nstrict-ssl=false\nprefix = /custom/npm\n";
         assert_eq!(
-            user_npm_prefix_from_npmrc(content),
+            user_npm_prefix_from_npmrc(content, Path::new("/home/test")),
             Some(PathBuf::from("/custom/npm"))
         );
     }
@@ -766,7 +1423,7 @@ mod storage_bootstrap_tests {
     }
 
     #[test]
-    fn persisted_runtime_children_of_openclaw_data_are_not_restored() {
+    fn persisted_runtime_children_of_openclaw_data_are_preserved_for_explicit_repair() {
         let state = std::env::temp_dir().join("junqi-stale-private-runtime");
         let raw = serde_json::json!({
             "version": 6,
@@ -780,12 +1437,12 @@ mod storage_bootstrap_tests {
         let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
         let layout = StorageBootstrap::from_persisted(persisted).unwrap();
 
-        assert_eq!(layout.node_runtime_dir, None);
-        assert_eq!(layout.git_runtime_dir, None);
+        assert_eq!(layout.node_runtime_dir, Some(state.join("node")));
+        assert_eq!(layout.git_runtime_dir, Some(state.join("git")));
     }
 
     #[test]
-    fn persisted_runtime_paths_overlapping_npm_locations_are_not_restored() {
+    fn persisted_runtime_paths_overlapping_npm_locations_are_preserved_for_explicit_repair() {
         let root = std::env::temp_dir().join("junqi-stale-runtime-npm-overlap");
         let state = root.join("state");
         let cache = root.join("cache");
@@ -804,8 +1461,8 @@ mod storage_bootstrap_tests {
         let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
         let layout = StorageBootstrap::from_persisted(persisted).unwrap();
 
-        assert_eq!(layout.node_runtime_dir, None);
-        assert_eq!(layout.git_runtime_dir, None);
+        assert_eq!(layout.node_runtime_dir, Some(cache));
+        assert_eq!(layout.git_runtime_dir, Some(prefix));
     }
 
     #[test]
@@ -928,6 +1585,35 @@ mod storage_bootstrap_tests {
 
         let restored = StorageBootstrap::from_persisted(layout.to_persisted()).unwrap();
         assert_eq!(restored.runtime_mode, OpenClawRuntimeMode::Docker);
+        assert_eq!(
+            restored.config_path,
+            restored.state_dir.join("openclaw.json")
+        );
+        assert_eq!(
+            config_path_for_runtime(&restored.state_dir, OpenClawRuntimeMode::Docker),
+            restored.state_dir.join("docker").join("openclaw.json")
+        );
+    }
+
+    #[test]
+    fn bug_rt02_legacy_docker_config_path_migrates_to_native_bootstrap_path() {
+        let state = std::env::temp_dir().join("junqi-legacy-docker-config");
+        let raw = serde_json::json!({
+            "version": 8,
+            "state_dir": state,
+            "config_path": state.join("docker").join("openclaw.json"),
+            "workspace_dir": state.join("workspace"),
+            "runtime_dir": state.join("runtime"),
+            "runtime_mode": "docker"
+        });
+        let persisted: PersistedStorageBootstrap = serde_json::from_value(raw).unwrap();
+        let layout = StorageBootstrap::from_persisted(persisted).unwrap();
+
+        assert_eq!(layout.config_path, layout.state_dir.join("openclaw.json"));
+        assert_eq!(
+            config_path_for_runtime(&layout.state_dir, OpenClawRuntimeMode::Docker),
+            layout.state_dir.join("docker").join("openclaw.json")
+        );
     }
 
     #[test]
@@ -964,5 +1650,25 @@ mod storage_bootstrap_tests {
             resolve_openclaw_user_path_from("./workspace/../agent-data", home, cwd).unwrap(),
             cwd.join("agent-data")
         );
+    }
+
+    #[test]
+    fn relative_workspace_uses_the_managed_openclaw_cwd_contract() {
+        let root =
+            std::env::temp_dir().join(format!("junqi-relative-workspace-{}", uuid::Uuid::new_v4()));
+        let config = root.join("state").join("openclaw.json");
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"agents":{"defaults":{"workspace":"workspace"}}}"#,
+        )
+        .unwrap();
+        let cwd = stable_openclaw_working_dir().unwrap();
+
+        assert_eq!(
+            read_workspace_from_config_relative_to(&config),
+            Some(cwd.join("workspace"))
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

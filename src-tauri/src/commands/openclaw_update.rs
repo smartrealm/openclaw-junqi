@@ -275,8 +275,8 @@ fn build_openclaw_command(
     runtime: &system::NativeOpenclawRuntime,
     args: &[&str],
     npm_registry: Option<NpmRegistry>,
-) -> tokio::process::Command {
-    let context = system::OpenclawCommandContext::maintenance();
+) -> Result<tokio::process::Command, String> {
+    let context = system::OpenclawCommandContext::maintenance()?;
     let mut command = runtime.command(&context);
     command
         .args(args)
@@ -285,7 +285,7 @@ fn build_openclaw_command(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     system::apply_configured_npm_cache(&mut command);
-    if let Some(registry) = npm_registry {
+    if let Some(registry) = npm_registry.filter(|_| !paths::user_npm_registry_is_configured()) {
         // Child-process-only config: this must not mutate ~/.npmrc or global npm settings.
         command
             .env("npm_config_registry", registry.url)
@@ -297,7 +297,7 @@ fn build_openclaw_command(
             .env("npm_config_foreground_scripts", "true")
             .env("npm_config_progress", "true");
     }
-    command
+    Ok(command)
 }
 
 async fn run_openclaw_command(
@@ -307,7 +307,7 @@ async fn run_openclaw_command(
     npm_registry: Option<NpmRegistry>,
 ) -> Result<Output, String> {
     let command_name = args.join(" ");
-    let mut command = build_openclaw_command(runtime, args, npm_registry);
+    let mut command = build_openclaw_command(runtime, args, npm_registry)?;
     tokio::time::timeout(command_timeout, command.output())
         .await
         .map_err(|_| {
@@ -374,7 +374,7 @@ async fn run_openclaw_command_streaming(
     npm_registry: Option<NpmRegistry>,
 ) -> Result<Output, String> {
     let command_name = args.join(" ");
-    let mut command = build_openclaw_command(runtime, args, npm_registry);
+    let mut command = build_openclaw_command(runtime, args, npm_registry)?;
     let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to run OpenClaw {command_name}: {error}"))?;

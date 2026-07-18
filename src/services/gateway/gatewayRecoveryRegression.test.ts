@@ -7,12 +7,16 @@ function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
-test('BUG-01 ensure flow attempts managed native gateway before Docker fallback', () => {
+test('BUG-01 ensure flow keeps Native and Docker recovery contracts separate', () => {
   const rust = source('src-tauri/src/commands/ensure.rs');
   const nativeStart = rust.indexOf('crate::commands::gateway::start_gateway_locked(');
-  const dockerFallback = rust.lastIndexOf('match check_docker().await');
+  const nativeRecovery = rust.slice(
+    rust.indexOf('if matches!(selected_mode, OpenClawRuntimeMode::Docker)'),
+    rust.indexOf('// Pull `app` into the manager trait surface'),
+  );
   assert.ok(nativeStart >= 0, 'ensure flow must invoke the already-locked native start implementation');
-  assert.ok(dockerFallback > nativeStart, 'Docker fallback must run after native startup');
+  assert.doesNotMatch(nativeRecovery, /attempting Docker fallback|match check_docker\(\)\.await/);
+  assert.match(nativeRecovery, /the selected Native runtime was not changed/);
 });
 
 test('BUG-GL01 all lifecycle writers share the operation gate', () => {
@@ -101,7 +105,8 @@ test('BUG-WIN-STATE-01 validates selected storage with Node before Gateway boots
 
   assert.match(probe, /fs\.chmodSync\(probeDir, 0o700\)/);
   assert.match(probe, /verify_node_state_directory/);
-  assert.match(storage, /verify_state_directory_basics\(&target\)/);
+  assert.match(storage, /async fn verify_layout_storage_capability/);
+  assert.match(storage, /verify_layout_storage_capability\(&layout\)\.await/);
   assert.match(storage, /commands::system::check_node\(\)\.await/);
   assert.match(storage, /gateway_matches_config\(port, config_path\)/);
   assert.match(gateway, /gateway_accepts_configured_token/);
@@ -174,7 +179,7 @@ test('BUG-GW-04 storage migration preserves only a verified official service bin
   const storage = source('src-tauri/src/commands/storage.rs');
   const service = source('src-tauri/src/commands/gateway_service.rs');
 
-  assert.match(storage, /selected_service: selected_gateway_service/);
+  assert.match(storage, /selected_service:\s*if old_bootstrap\.is_some\(\)/);
   assert.match(storage, /fn restore_mode\(self\).*GatewayRuntimeMode::SystemService/s);
   assert.match(storage, /stop_all_locked\([\s\S]*previous\.selected_service/);
   assert.match(service, /install_and_start_selected_gateway_service/);

@@ -117,6 +117,12 @@ export const detectGatewayConfig = () => invoke<GatewayConfigInfo>("detect_gatew
 export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
   invoke<void>("set_active_gateway_runtime", { mode })
 );
+export const commitActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
+  invoke<void>("commit_active_gateway_runtime", { mode })
+);
+export const rollbackActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
+  invoke<void>("rollback_active_gateway_runtime", { mode })
+);
 
 /** Result of ensure_gateway_running — see src-tauri/src/commands/ensure.rs */
 export type GatewayMode = 'native' | 'docker' | 'unavailable';

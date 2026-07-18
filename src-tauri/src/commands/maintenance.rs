@@ -351,6 +351,20 @@ fn apply_doctor_payload(report: &mut MaintenanceReport, payload: Value) -> Resul
 pub async fn run_maintenance_scan() -> Result<MaintenanceReport, String> {
     let _operation_guard = acquire_operation_guard().await;
     let checked_at_ms = chrono::Utc::now().timestamp_millis();
+    if let Err(error) = paths::validate_runtime_mode(paths::active_runtime_mode()) {
+        return Ok(MaintenanceReport {
+            healthy: false,
+            checked_at_ms,
+            config_valid: None,
+            config_path: Some(paths::active_config_path().display().to_string()),
+            doctor_ok: None,
+            checks_run: None,
+            checks_skipped: None,
+            findings: Vec::new(),
+            scan_errors: vec![error],
+            summary: MaintenanceSummary::default(),
+        });
+    }
     let target = match crate::commands::openclaw_cli::resolve_active_openclaw_target().await {
         Ok(target) => target,
         Err(error) => {

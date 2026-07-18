@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { useTheme } from '@/theme/useTheme';
@@ -110,6 +111,7 @@ export default function App() {
   const [gatewayRetrying, setGatewayRetrying] = useState(false);
   const connected = useChatStore((s) => s.connected);
   const setupComplete = useAppStore((s) => s.setupComplete);
+  const setupHealthCheckedRef = useRef(false);
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
@@ -130,6 +132,26 @@ export default function App() {
   const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
   const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
   const [bootRecoveryLogs, setBootRecoveryLogs] = useState<string[]>([]);
+
+  // The local marker is only a cache. Validate the selected Gateway identity
+  // before bypassing SetupPage; a moved/removed npm prefix or a stale service
+  // must re-enter the recovery flow instead of booting the workbench blind.
+  useEffect(() => {
+    if (setupComplete !== true || !hasTauriEventBridge() || setupHealthCheckedRef.current) return;
+    setupHealthCheckedRef.current = true;
+    void invoke<boolean>('probe_selected_gateway', {})
+      .then((ready) => {
+        if (ready) return;
+        const store = useAppStore.getState();
+        store.setSetupComplete(null);
+        store.navigateSetup('detecting', 'replace');
+      })
+      .catch(() => {
+        const store = useAppStore.getState();
+        store.setSetupComplete(null);
+        store.navigateSetup('detecting', 'replace');
+      });
+  }, [setupComplete]);
 
   useEffect(() => {
     const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));

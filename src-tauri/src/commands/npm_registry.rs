@@ -127,10 +127,15 @@ pub async fn select_npm_registry() -> NpmRegistrySelection {
         Err(_) => return NpmRegistrySelection::china_default(),
     };
 
-    if let Some(mirror) = probe_registry(&client, CHINA_NPM_REGISTRY).await {
-        return select_from_probes(None, Some(mirror));
-    }
-    select_from_probes(probe_registry(&client, OFFICIAL_NPM_REGISTRY).await, None)
+    // Probe both registries before selecting a release. Metadata reachability
+    // is not the same as tarball availability; retaining the official probe
+    // gives npm_install_with_fallback a real second candidate when the mirror
+    // serves stale or incomplete package data.
+    let (official, mirror) = tokio::join!(
+        probe_registry(&client, OFFICIAL_NPM_REGISTRY),
+        probe_registry(&client, CHINA_NPM_REGISTRY),
+    );
+    select_from_probes(official, mirror)
 }
 
 async fn probe_registry(client: &reqwest::Client, registry: NpmRegistry) -> Option<RegistryProbe> {
@@ -272,16 +277,21 @@ pub async fn resolve_openclaw_node_requirement(
         return fetch_openclaw_node_requirement(OFFICIAL_NPM_REGISTRY, version).await;
     }
     match fetch_openclaw_node_requirement(preferred, version).await {
-        Ok(requirement) => Ok(requirement),
-        Err(mirror_error) => {
-            fetch_openclaw_node_requirement(OFFICIAL_NPM_REGISTRY, version)
-                .await
-                .map_err(|official_error| {
-                    format!(
-                        "Mirror and official OpenClaw metadata failed: {mirror_error}; {official_error}"
-                    )
-                })
-        }
+        Ok(Some(requirement)) => Ok(Some(requirement)),
+        Ok(None) => fetch_openclaw_node_requirement(OFFICIAL_NPM_REGISTRY, version)
+            .await
+            .map_err(|error| {
+                format!(
+                    "Mirror OpenClaw metadata omitted engines.node; official metadata failed: {error}"
+                )
+            }),
+        Err(mirror_error) => fetch_openclaw_node_requirement(OFFICIAL_NPM_REGISTRY, version)
+            .await
+            .map_err(|official_error| {
+                format!(
+                    "Mirror and official OpenClaw metadata failed: {mirror_error}; {official_error}"
+                )
+            }),
     }
 }
 
@@ -304,7 +314,11 @@ fn select_from_probes(
         },
         (None, Some(mirror)) => NpmRegistrySelection {
             primary: mirror.registry,
-            fallback: None,
+            // The mirror probe can win even when the official metadata probe
+            // timed out. Keep the official URL as an unvalidated tarball
+            // fallback; npm will verify the pinned package version and the
+            // installer will still validate the complete payload afterward.
+            fallback: Some(OFFICIAL_NPM_REGISTRY),
             package_version: Some(mirror.version),
             node_requirement: mirror.node_requirement,
         },
@@ -365,7 +379,7 @@ mod tests {
         let selection = select_from_probes(None, Some(probe(CHINA_NPM_REGISTRY, 90, "2026.7.1")));
 
         assert_eq!(selection.primary.kind, NpmRegistryKind::ChinaMirror);
-        assert_eq!(selection.fallback, None);
+        assert_eq!(selection.fallback, Some(OFFICIAL_NPM_REGISTRY));
         assert_eq!(selection.package_version.as_deref(), Some("2026.7.1"));
     }
 

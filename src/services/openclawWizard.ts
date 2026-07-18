@@ -58,6 +58,12 @@ export class OpenClawWizardClient {
   constructor(private readonly callGateway: GatewayCaller) {}
 
   async start(workspace?: string): Promise<OpenClawWizardResult> {
+    // A refresh/back navigation can leave the official server-side session
+    // alive. Reconcile it before starting a new session so OpenClaw's
+    // single-session guard cannot strand onboarding on "already running".
+    if (this.sessionId) {
+      await this.cancel();
+    }
     const result = assertWizardResult(await this.callGateway('wizard.start', {
       mode: 'local',
       ...(workspace?.trim() ? { workspace: workspace.trim() } : {}),
@@ -87,8 +93,15 @@ export class OpenClawWizardClient {
   async cancel(): Promise<void> {
     if (!this.sessionId) return;
     const sessionId = this.sessionId;
-    this.sessionId = null;
-    await this.callGateway('wizard.cancel', { sessionId });
+    try {
+      await this.callGateway('wizard.cancel', { sessionId });
+      this.sessionId = null;
+    } catch (error) {
+      // A server-side expiry means the session is already gone. For transport
+      // failures retain the id so a later start/back action can retry cleanup.
+      if (isOpenClawWizardSessionLost(error)) this.sessionId = null;
+      throw error;
+    }
   }
 }
 

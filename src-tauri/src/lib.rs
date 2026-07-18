@@ -11,6 +11,16 @@ use tauri::{Emitter, Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if commands::uninstall::requested() {
+        if let Err(error) = commands::uninstall::run() {
+            eprintln!("[uninstall] {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if let Err(error) = paths::recover_interrupted_runtime_mode_switch() {
+        eprintln!("[runtime-switch] {error}");
+    }
     // GUI-launched processes on macOS can miss the user's login PATH. Resolve
     // it before Tauri starts worker threads so child tools inherit it reliably.
     commands::app_settings::prime_login_shell_path();
@@ -39,6 +49,8 @@ pub fn run() {
             commands::gateway::stop_gateway,
             commands::gateway::gateway_status,
             commands::gateway::probe_gateway_port,
+            commands::gateway::probe_selected_gateway,
+            commands::gateway::handoff_gateway_to_official_service,
             commands::gateway_logs::get_gateway_logs,
             commands::gateway_logs::clear_gateway_logs,
             commands::gateway_rescue::gateway_rescue_chat,
@@ -117,6 +129,8 @@ pub fn run() {
             commands::config::read_provider_api_key,
             commands::config::detect_gateway_config,
             commands::config::set_active_gateway_runtime,
+            commands::config::commit_active_gateway_runtime,
+            commands::config::rollback_active_gateway_runtime,
             commands::openclaw_provider::get_openclaw_provider_catalog,
             commands::openclaw_provider::get_openclaw_config_schema,
             commands::openclaw_provider::get_openclaw_auth_profiles,

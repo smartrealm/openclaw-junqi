@@ -95,14 +95,21 @@ pub(crate) async fn verify_node_state_directory(
 ) -> Result<(), String> {
     verify_state_directory_basics(state_dir)?;
 
-    let output = tokio::process::Command::new(node_executable)
+    let mut probe = tokio::process::Command::new(node_executable);
+    probe
         .args(["-e", NODE_STATE_DIRECTORY_PROBE])
         .arg(state_dir)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .output()
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(30), probe.output())
         .await
+        .map_err(|_| {
+            incompatible_directory_error(
+                state_dir,
+                "selected Node.js runtime did not finish the filesystem probe within 30 seconds",
+            )
+        })?
         .map_err(|error| {
             incompatible_directory_error(
                 state_dir,

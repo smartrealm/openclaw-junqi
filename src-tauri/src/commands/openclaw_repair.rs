@@ -62,6 +62,7 @@ async fn stream_repair_output<R>(
 /// refresh the selected image and recreate JunQi's owned container, while
 /// retaining the selected Docker configuration and workspace.
 async fn run_selected_docker_repair(app: AppHandle, state: &GatewayProcess) -> Result<(), String> {
+    crate::paths::validate_runtime_mode(crate::paths::OpenClawRuntimeMode::Docker)?;
     let gateway_gate = state.operation_gate.clone();
     let _gateway_guard = gateway_gate
         .try_lock_owned()
@@ -158,7 +159,7 @@ async fn run_native_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> R
             .await
             .map_err(|error| format!("OpenClaw repair runtime preparation failed: {error}"))?;
     let runtime = crate::commands::system::native_openclaw_runtime(binary, &node)?;
-    let context = crate::commands::system::OpenclawCommandContext::maintenance();
+    let context = crate::commands::system::OpenclawCommandContext::maintenance()?;
     let mut command = runtime.command(&context);
     command
         .args(REPAIR_ARGS)
@@ -237,6 +238,7 @@ async fn run_native_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> R
 }
 
 pub async fn run_openclaw_repair(app: AppHandle, state: &GatewayProcess) -> Result<(), String> {
+    crate::paths::validate_runtime_mode(crate::paths::active_runtime_mode())?;
     let result = if matches!(
         crate::paths::active_runtime_mode(),
         crate::paths::OpenClawRuntimeMode::Docker

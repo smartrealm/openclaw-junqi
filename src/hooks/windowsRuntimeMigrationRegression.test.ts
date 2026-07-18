@@ -60,9 +60,12 @@ test('BUG-WRM-03 pending relocation survives restart and clears only after succe
     relocationCommit.indexOf('complete_openclaw_relocation')
       > relocationCommit.indexOf('persist_selected_openclaw_binary'),
   );
-  assert.match(
-    relocationCommit,
-    /verify_relocated_openclaw_prefix\(binary, installed_prefix\)/,
+  assert.match(relocationCommit, /fn freeze_target\(&mut self, target: &Path\)/);
+  assert.match(relocationCommit, /self\.effective_target = Some\(target\.to_path_buf\(\)\)/);
+  assert.match(relocationCommit, /verify_relocated_openclaw_prefix\(binary, target\)/);
+  assert.ok(
+    relocationCommit.indexOf('self.effective_target = Some(target.to_path_buf())')
+      < relocationCommit.indexOf('verify_relocated_openclaw_prefix(binary, target)'),
   );
   const system = readFileSync(
     new URL('../../src-tauri/src/commands/system.rs', import.meta.url),

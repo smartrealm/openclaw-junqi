@@ -4,6 +4,96 @@ Reviewed against the bundled OpenClaw `2026.7.1` documentation and CLI source on
 
 ## Critical Findings
 
+### BUG-WIN-05 - Service identity is incomplete and restart bypasses ownership
+
+**Locations:** `src-tauri/src/commands/gateway_service.rs`, `src-tauri/src/commands/gateway.rs`
+
+The selected service is currently identified only by `OPENCLAW_STATE_DIR`, while
+the configured path and profile/task identity are ignored. The desktop restart
+path bypasses this check entirely and invokes the platform-global
+`openclaw gateway restart` command. On Windows, that command operates on the
+registered Scheduled Task name and may stop or restart a task belonging to a
+different config in the same state root.
+
+**Target:** represent service identity as one value object containing normalized
+state directory, normalized config path, and the selected profile/task identity.
+Every service mutation must pass through one ownership policy and fail closed.
+
+### BUG-WIN-06 - Migration conflates installed and running service state
+
+**Location:** `src-tauri/src/commands/storage.rs`
+
+Storage migration records whether the endpoint was reachable and whether an
+owned service was present, but it only rewrites the destination service when the
+endpoint was reachable. An installed but stopped Scheduled Task remains bound to
+the old state directory, config path, Node/OpenClaw entry, or npm prefix.
+
+**Target:** preserve `service installed` independently from `was running`.
+Rewrite an owned service whenever state, config, Node runtime, or npm prefix
+changes; restore its running state separately.
+
+### BUG-WIN-07 - Forced storage recovery derives paths from the wrong source
+
+**Locations:** `src/components/setup/StorageSetupGate.tsx`, `src-tauri/src/commands/storage.rs`
+
+Forced recovery initializes the current configured state but remaps child paths
+relative to the legacy default. A custom Windows state directory therefore
+retains stale workspace/runtime paths when moved. Selecting the same incompatible
+directory also bypasses the authoritative Node filesystem capability probe.
+
+**Target:** derive every migration path from the configured source state and run
+the same capability contract for same-location recovery before accepting it.
+
+### BUG-WIN-08 - Host and container workspace paths share one field
+
+**Locations:** `src-tauri/src/commands/docker.rs`, `src-tauri/src/commands/storage.rs`
+
+Docker configuration stores a container path such as
+`/home/node/.openclaw/workspace`, but host-side code reads it as a Windows path
+for directory creation and bind mounts. Migration performs the inverse error by
+writing a host path into container configuration.
+
+**Target:** introduce an explicit runtime path mapping with separate host and
+container workspace values. Bootstrap owns host paths; Docker config owns only
+container paths.
+
+### BUG-WIN-09 - Windows dependency installation is not a bounded transaction
+
+**Locations:** `src-tauri/src/commands/setup.rs`, `src-tauri/src/commands/npm_registry.rs`, `src-tauri/src/commands/system.rs`
+
+Installer and winget timeouts can leave child processes running while fallback
+installation begins. Registry selection can omit the official npm fallback, and
+OpenClaw validation can promote a package without its JavaScript entry point.
+Several version/prefix probes have no timeout.
+
+**Target:** supervise every child process with termination on timeout, use a
+dependency-level deadline across fallback attempts, retain validated registry
+fallbacks, and validate the complete executable contract before promotion/reuse.
+
+### BUG-WIN-10 - Wizard and runtime transitions have multiple owners
+
+**Locations:** `src/services/openclawWizard.ts`, `src/hooks/useSetupFlow.ts`, `src-tauri/src/commands/docker.rs`
+
+The RPC QuickStart wizard installs a Scheduled Task while JunQi's bootstrap
+Gateway still owns the port. Runtime switching also relies on stale frontend
+closures and does not consistently release an owned service before Docker.
+
+**Target:** one deployment coordinator owns foreground-to-service and
+Native-to-Docker transitions. The transition is complete only after the target
+runtime accepts the selected token and every former owned runtime is stopped.
+
+### BUG-WIN-11 - Uninstall and release gates leave Windows state behind
+
+**Locations:** `src-tauri/tauri.conf.json`, `.github/workflows/release.yml`,
+`src-tauri/src/commands/terminal_integration/windows.rs`
+
+The default uninstaller can terminate the desktop process without cleaning its
+managed Node child or user PATH entry. Release jobs also publish unsigned Windows
+installers when Authenticode configuration is absent.
+
+**Target:** uninstall cleanup is idempotent and ownership-aware, and tag releases
+fail when required Authenticode material or verification is unavailable.
+
 ### BUG-GW-01 - Forced state relocation can create an empty state directory
 
 **Location:** `src/components/setup/StorageSetupGate.tsx`
@@ -40,10 +130,12 @@ The former storage stop path also issued `gateway stop` without proving that the
 
 ## Execution Order
 
-1. BUG-GW-01: preserve migration intent for forced relocation.
-2. BUG-GW-02: centralize selected-state Gateway readiness and use it at all ownership boundaries.
-3. BUG-GW-03: use the same selected-state verification after service restart and service restoration.
-4. BUG-GW-04: preserve verified official-service ownership through migration and reject unverified service mutations.
+1. BUG-WIN-05 and BUG-WIN-06: establish service identity and migration state contracts.
+2. BUG-WIN-07 and BUG-WIN-08: separate configured source, host paths, and runtime paths.
+3. BUG-WIN-09: bound dependency installation and verify the complete package contract.
+4. BUG-WIN-10: make runtime and wizard handoff single-owner transitions.
+5. BUG-WIN-11: close uninstall and release gates.
+6. Revalidate BUG-GW-01 through BUG-GW-04 against the new shared contracts.
 
 ## Official Contracts Used
 

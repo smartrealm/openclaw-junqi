@@ -17,6 +17,7 @@ use crate::commands::setup_progress::{emit, emit_keyed, emit_keyed_with_params};
 use crate::paths;
 use crate::platform;
 use crate::state::GatewayProcess;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -35,6 +36,18 @@ const WINGET_NODE_CURRENT_PACKAGE: &str = "OpenJS.NodeJS";
 const WINGET_GIT_PACKAGE: &str = "Git.Git";
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
 const RUNTIME_NETWORK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+/// One dependency installation is a transaction. Individual mirrors and
+/// package-manager operations may retry, but they must share one upper bound
+/// so a slow Windows network or installer cannot hold the setup lock forever.
+const DEPENDENCY_INSTALL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+const DOWNLOAD_SOURCE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+async fn next_download_chunk(
+    response: &mut reqwest::Response,
+) -> Result<Option<Vec<u8>>, reqwest::Error> {
+    let chunk = response.chunk().await;
+    chunk.map(|chunk| chunk.map(|bytes| bytes.to_vec()))
+}
 
 #[cfg(windows)]
 struct WindowsInstallProgress<'a> {
@@ -114,6 +127,149 @@ impl Drop for TemporaryDirectory {
     }
 }
 
+const MANAGED_RUNTIME_MARKER: &str = ".junqi-managed-runtime.json";
+const MANAGED_RUNTIME_SCHEMA: u32 = 1;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ManagedRuntimeMarker {
+    schema: u32,
+    owner: String,
+    tool: String,
+}
+
+fn runtime_path_is_reparse_point(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+fn runtime_path_has_reparse_ancestor(path: &Path) -> bool {
+    let mut cursor = path;
+    loop {
+        if runtime_path_is_reparse_point(cursor) {
+            return true;
+        }
+        let Some(parent) = cursor.parent() else {
+            return false;
+        };
+        if parent == cursor {
+            return false;
+        }
+        cursor = parent;
+    }
+}
+
+fn runtime_marker_path(root: &Path) -> PathBuf {
+    root.join(MANAGED_RUNTIME_MARKER)
+}
+
+fn runtime_marker_matches(root: &Path, tool: &str) -> bool {
+    let Ok(raw) = std::fs::read_to_string(runtime_marker_path(root)) else {
+        return false;
+    };
+    serde_json::from_str::<ManagedRuntimeMarker>(&raw).is_ok_and(|marker| {
+        marker.schema == MANAGED_RUNTIME_SCHEMA
+            && marker.owner == "junqi-desktop"
+            && marker.tool == tool
+    })
+}
+
+fn write_runtime_marker(root: &Path, tool: &str) -> Result<(), String> {
+    let marker = ManagedRuntimeMarker {
+        schema: MANAGED_RUNTIME_SCHEMA,
+        owner: "junqi-desktop".into(),
+        tool: tool.into(),
+    };
+    let raw = serde_json::to_string_pretty(&marker)
+        .map_err(|error| format!("Failed to serialize {tool} runtime marker: {error}"))?;
+    crate::paths::atomic_write_text(&runtime_marker_path(root), &raw)
+}
+
+fn runtime_target_is_empty(path: &Path) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(true);
+    }
+    if runtime_path_is_reparse_point(path) || !path.is_dir() {
+        return Ok(false);
+    }
+    Ok(std::fs::read_dir(path)
+        .map_err(|error| {
+            format!(
+                "Failed to inspect runtime directory {}: {error}",
+                path.display()
+            )
+        })?
+        .next()
+        .is_none())
+}
+
+fn validate_runtime_target_for_activation(target: &Path, tool: &str) -> Result<(), String> {
+    if !target.exists() {
+        return Ok(());
+    }
+    if runtime_path_has_reparse_ancestor(target) {
+        return Err(format!(
+            "Selected {tool} runtime directory {} is a symbolic link or Windows junction; choose a real empty directory managed by JunQi",
+            target.display()
+        ));
+    }
+    if runtime_target_is_empty(target)? || runtime_marker_matches(target, tool) {
+        return Ok(());
+    }
+    Err(format!(
+        "Selected {tool} runtime directory {} contains files not owned by JunQi. It will not be replaced; choose an empty directory or clear the custom runtime selection",
+        target.display()
+    ))
+}
+
+struct ManagedRuntimeActivation {
+    target: PathBuf,
+    backup: Option<PathBuf>,
+    committed: bool,
+}
+
+impl ManagedRuntimeActivation {
+    fn commit(mut self) -> Result<(), String> {
+        self.committed = true;
+        if let Some(backup) = self.backup.take() {
+            if backup.exists() {
+                std::fs::remove_dir_all(&backup).map_err(|error| {
+                    format!(
+                        "Managed runtime activated, but its previous backup could not be removed: {}",
+                        error
+                    )
+                })?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for ManagedRuntimeActivation {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        let _ = std::fs::remove_dir_all(&self.target);
+        if let Some(backup) = self.backup.as_ref().filter(|path| path.exists()) {
+            let _ = std::fs::rename(backup, &self.target);
+        }
+    }
+}
+
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
 fn runtime_binary(root: &Path, tool: &str) -> PathBuf {
     match (tool, cfg!(windows)) {
@@ -123,6 +279,25 @@ fn runtime_binary(root: &Path, tool: &str) -> PathBuf {
         ("git", false) => root.join("bin").join("git"),
         _ => root.join(tool),
     }
+}
+
+async fn read_runtime_version(path: &Path) -> Option<String> {
+    let mut command = tokio::process::Command::new(path);
+    command
+        .arg("--version")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    platform::configure_background_command(&mut command);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), command.output())
+        .await
+        .ok()?
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|version| !version.is_empty())
 }
 
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
@@ -136,12 +311,23 @@ fn staged_npm_cli(root: &Path) -> PathBuf {
 }
 
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
-fn activate_staged_runtime(staging: &Path, target: &Path, name: &str) -> Result<(), String> {
+fn activate_staged_runtime(
+    staging: &Path,
+    target: &Path,
+    name: &str,
+) -> Result<ManagedRuntimeActivation, String> {
+    if !runtime_marker_matches(staging, name) {
+        return Err(format!(
+            "Refusing to activate an unmarked {name} runtime staging directory"
+        ));
+    }
+    validate_runtime_target_for_activation(target, name)?;
     let parent = target
         .parent()
         .ok_or_else(|| format!("Managed {name} target has no parent directory"))?;
     let backup = parent.join(format!(".{name}-backup-{}", uuid::Uuid::new_v4()));
-    if target.exists() {
+    let had_target = target.exists();
+    if had_target {
         std::fs::rename(target, &backup)
             .map_err(|error| format!("Failed to stage existing managed {name}: {error}"))?;
     }
@@ -155,8 +341,11 @@ fn activate_staged_runtime(staging: &Path, target: &Path, name: &str) -> Result<
         }
         return Err(format!("Failed to activate managed {name}: {error}"));
     }
-    let _ = std::fs::remove_dir_all(backup);
-    Ok(())
+    Ok(ManagedRuntimeActivation {
+        target: target.to_path_buf(),
+        backup: had_target.then_some(backup),
+        committed: false,
+    })
 }
 
 // ─── Platform helpers ──────────────────────────────────────────────────────────
@@ -250,14 +439,21 @@ async fn download_with_fallback(
     prog_start: f64,
     prog_end: f64,
 ) -> Result<u64, String> {
+    let deadline = std::time::Instant::now() + DEPENDENCY_INSTALL_DEADLINE;
     let client = reqwest::Client::builder()
         .connect_timeout(RUNTIME_NETWORK_TIMEOUT)
-        .timeout(std::time::Duration::from_secs(600))
+        .timeout(DOWNLOAD_SOURCE_TIMEOUT)
         .user_agent("JunQi Desktop runtime downloader")
         .build()
         .map_err(|error| format!("Failed to initialize downloader: {error}"))?;
     let mut last_error = "no download source responded".to_string();
     for (index, (url, label)) in sources.iter().enumerate() {
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            return Err(format!(
+                "下载 {} 超过 30 分钟总时限。最后错误：{}",
+                step, last_error
+            ));
+        };
         emit(
             app,
             step,
@@ -269,17 +465,25 @@ async fn download_with_fallback(
             ),
             prog_start,
         );
-        let mut response = match client.get(url).send().await {
-            Ok(response) => match response.error_for_status() {
-                Ok(response) => response,
+        let mut response = match tokio::time::timeout(remaining, client.get(url).send()).await {
+            Ok(result) => match result {
+                Ok(response) => match response.error_for_status() {
+                    Ok(response) => response,
+                    Err(error) => {
+                        last_error = format!("{label}: {error}");
+                        continue;
+                    }
+                },
                 Err(error) => {
                     last_error = format!("{label}: {error}");
                     continue;
                 }
             },
-            Err(error) => {
-                last_error = format!("{label}: {error}");
-                continue;
+            Err(_) => {
+                return Err(format!(
+                    "下载 {} 超过 30 分钟总时限。最后错误：{}",
+                    step, last_error
+                ));
             }
         };
         let total = response.content_length().unwrap_or(0);
@@ -294,14 +498,31 @@ async fn download_with_fallback(
         let mut last_reported_percent = 0_u64;
         let mut stream_error = None;
         loop {
-            let chunk = match response.chunk().await {
-                Ok(Some(chunk)) => chunk,
-                Ok(None) => break,
-                Err(error) => {
-                    stream_error = Some(error.to_string());
-                    break;
-                }
+            let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+                drop(file);
+                let _ = tokio::fs::remove_file(dest).await;
+                return Err(format!(
+                    "下载 {} 超过 30 分钟总时限。最后错误：{}",
+                    step, last_error
+                ));
             };
+            let chunk =
+                match tokio::time::timeout(remaining, next_download_chunk(&mut response)).await {
+                    Ok(Ok(Some(chunk))) => chunk,
+                    Ok(Ok(None)) => break,
+                    Ok(Err(error)) => {
+                        stream_error = Some(error.to_string());
+                        break;
+                    }
+                    Err(_) => {
+                        drop(file);
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(format!(
+                            "下载 {} 超过 30 分钟总时限。最后错误：{}",
+                            step, last_error
+                        ));
+                    }
+                };
             if chunk.is_empty() {
                 continue;
             }
@@ -547,13 +768,6 @@ enum NpmWaitResult {
     Inactive,
 }
 
-async fn wait_for_npm_activity(
-    child: &mut tokio::process::Child,
-    activity: &mut tokio::sync::watch::Receiver<u64>,
-) -> NpmWaitResult {
-    wait_for_process_activity(child, activity, NPM_INACTIVITY_TIMEOUT).await
-}
-
 async fn wait_for_process_activity(
     child: &mut tokio::process::Child,
     activity: &mut tokio::sync::watch::Receiver<u64>,
@@ -590,6 +804,7 @@ struct NpmInstallRequest<'a> {
     step: &'a str,
     node_cmd: &'a str,
     npm_cli: Option<&'a str>,
+    npm_program: Option<&'a str>,
     global_prefix: &'a std::path::Path,
     target: &'a npm_registry::OpenclawReleaseTarget,
     force: bool,
@@ -602,6 +817,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         step,
         node_cmd,
         npm_cli,
+        npm_program,
         global_prefix,
         target,
         force,
@@ -609,6 +825,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
     } = request;
     let prog_start = progress.start;
     let prog_end = progress.end;
+    let deadline = std::time::Instant::now() + DEPENDENCY_INSTALL_DEADLINE;
     let path_env = crate::commands::system::openclaw_search_path();
     let install_nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -616,14 +833,26 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         .unwrap_or(0);
     std::fs::create_dir_all(global_prefix).ok();
     let package_spec = target.package_spec();
-    let registries = target.registries().to_vec();
+    let preserve_user_registry = paths::user_npm_registry_is_configured();
+    let registries = if preserve_user_registry {
+        target.registries().first().copied().into_iter().collect()
+    } else {
+        target.registries().to_vec()
+    };
     let mut last_err = String::new();
     let total_regs = registries.len();
-    let registry_order = registries
-        .iter()
-        .map(|registry| registry.label())
-        .collect::<Vec<_>>()
-        .join(" -> ");
+    if npm_cli.is_none() && npm_program.is_none() {
+        return Err("The selected system npm executable is unavailable".into());
+    }
+    let registry_order = if preserve_user_registry {
+        "user-configured npm registry".to_string()
+    } else {
+        registries
+            .iter()
+            .map(|registry| registry.label())
+            .collect::<Vec<_>>()
+            .join(" -> ")
+    };
     emit(
         app,
         step,
@@ -636,6 +865,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
     );
 
     for (reg_idx, registry) in registries.into_iter().enumerate() {
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            return Err(format!(
+                "npm 安装 {} 超过 30 分钟总时限；未再启动备用源",
+                package_spec
+            ));
+        };
         let staging_prefix = global_prefix.join(format!(
             ".junqi-openclaw-stage-{}-{}-{}",
             std::process::id(),
@@ -652,7 +887,11 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 error
             )
         })?;
-        let reg_label = registry.label();
+        let reg_label = if preserve_user_registry {
+            "user-configured npm registry"
+        } else {
+            registry.label()
+        };
         emit(
             app,
             step,
@@ -671,7 +910,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             c.arg(cli);
             c
         } else {
-            tokio::process::Command::new(platform::bin_name("npm"))
+            tokio::process::Command::new(npm_program.expect("npm program validated above"))
         };
 
         cmd.args([
@@ -696,12 +935,15 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         cmd.arg(&package_spec)
             .env("PATH", &path_env)
             .env("npm_config_prefix", &npm_prefix_str)
-            // This is deliberately process-scoped. Do not alter user or global npmrc.
-            .env("npm_config_registry", registry.url)
-            .env("NPM_CONFIG_REGISTRY", registry.url)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        if !preserve_user_registry {
+            // Public mirror selection is process-scoped and is used only when
+            // npm does not already have an explicit registry contract.
+            cmd.env("npm_config_registry", registry.url)
+                .env("NPM_CONFIG_REGISTRY", registry.url);
+        }
         crate::commands::system::apply_configured_npm_cache(&mut cmd);
         platform::configure_background_command(&mut cmd);
 
@@ -787,7 +1029,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 }
             }
         });
-        let wait_result = wait_for_npm_activity(&mut child, &mut activity_rx).await;
+        let wait_result = wait_for_process_activity(
+            &mut child,
+            &mut activity_rx,
+            remaining.min(NPM_INACTIVITY_TIMEOUT),
+        )
+        .await;
         let _ = heartbeat_tx.send(true);
         let _ = heartbeat_task.await;
         let status = match wait_result {
@@ -808,8 +1055,18 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 continue;
             }
             NpmWaitResult::Inactive => {
-                last_err = "npm install produced no child-process output for 10 minutes".into();
+                let deadline_expired = deadline
+                    .checked_duration_since(std::time::Instant::now())
+                    .is_none();
+                last_err = if deadline_expired {
+                    "npm install exceeded the 30-minute dependency deadline".into()
+                } else {
+                    "npm install produced no child-process output for 10 minutes".into()
+                };
                 terminate_process_tree(&mut child, child_pid).await;
+                if deadline_expired {
+                    return Err(last_err);
+                }
                 if reg_idx + 1 < total_regs {
                     emit(
                             app,
@@ -847,9 +1104,29 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             }
             if cfg!(windows) {
                 validate_staged_openclaw_install(&staging_prefix)?;
+                validate_staged_openclaw_package(
+                    &staging_prefix,
+                    target.version(),
+                    &NodeRuntimeRequirement::parse(
+                        target.node_requirement(),
+                        NodeRequirementSource::RegistryPackage,
+                    )?,
+                    Path::new(node_cmd),
+                )
+                .await?;
                 promote_staged_openclaw_install(&staging_prefix, global_prefix).await?;
             } else {
                 validate_staged_unix_openclaw_install(&staging_prefix)?;
+                validate_staged_openclaw_package(
+                    &staging_prefix,
+                    target.version(),
+                    &NodeRuntimeRequirement::parse(
+                        target.node_requirement(),
+                        NodeRequirementSource::RegistryPackage,
+                    )?,
+                    Path::new(node_cmd),
+                )
+                .await?;
                 promote_staged_unix_openclaw_install(&staging_prefix, global_prefix)?;
             }
             emit(
@@ -859,6 +1136,16 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 prog_end,
             );
             return Ok(());
+        }
+
+        if deadline
+            .checked_duration_since(std::time::Instant::now())
+            .is_none()
+        {
+            return Err(format!(
+                "npm 安装 {} 超过 30 分钟总时限；最后错误：{}",
+                package_spec, last_err
+            ));
         }
 
         last_err = format!("npm 退出码 {}", status.code().unwrap_or(-1));
@@ -1051,6 +1338,7 @@ pub struct SetupNodeStatus {
 /// installed package when one exists, otherwise the exact target release.
 #[tauri::command]
 pub async fn check_setup_node() -> Result<SetupNodeStatus, String> {
+    paths::validate_runtime_overrides()?;
     let target = setup_node_requirement().await?;
     let node = crate::commands::system::check_node_for_requirement(&target).await?;
     Ok(SetupNodeStatus {
@@ -1061,11 +1349,13 @@ pub async fn check_setup_node() -> Result<SetupNodeStatus, String> {
 
 #[tauri::command]
 pub async fn install_node(app: tauri::AppHandle, force: Option<bool>) -> Result<String, String> {
+    paths::validate_runtime_overrides()?;
     let requirement = setup_node_requirement().await?;
     install_node_for_requirement(app, requirement, force.unwrap_or(false)).await
 }
 
 pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result<String, String> {
+    paths::validate_runtime_overrides()?;
     let requirement = crate::commands::system::installed_openclaw_node_requirement()?;
     #[cfg(windows)]
     let result = install_node_for_requirement(app, requirement, true).await;
@@ -1087,6 +1377,19 @@ pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result
 }
 
 async fn install_node_for_requirement(
+    app: tauri::AppHandle,
+    requirement: NodeRuntimeRequirement,
+    force: bool,
+) -> Result<String, String> {
+    tokio::time::timeout(
+        DEPENDENCY_INSTALL_DEADLINE,
+        install_node_for_requirement_inner(app, requirement, force),
+    )
+    .await
+    .map_err(|_| "Node.js 安装超过 30 分钟总时限，已停止本次安装".to_string())?
+}
+
+async fn install_node_for_requirement_inner(
     #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(unused_variables))]
     app: tauri::AppHandle,
     requirement: NodeRuntimeRequirement,
@@ -1144,12 +1447,8 @@ async fn install_portable_node_runtime(
     let target_node = runtime_binary(&target, "node");
     let target_npm = staged_npm_cli(&target);
     if !force && target_npm.is_file() {
-        let mut command = tokio::process::Command::new(&target_node);
-        command.arg("--version");
-        platform::configure_background_command(&mut command);
-        if let Ok(output) = command.output().await {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if output.status.success() && requirement.supports(&version) {
+        if let Some(version) = read_runtime_version(&target_node).await {
+            if requirement.supports(&version) {
                 return Ok(format!(
                     "Node.js {version} already installed at {}",
                     target_node.display()
@@ -1157,6 +1456,7 @@ async fn install_portable_node_runtime(
             }
         }
     }
+    validate_runtime_target_for_activation(&target, "Node.js")?;
 
     let platform = ManagedNodePlatform::current()?;
     let version = resolve_managed_node_version(&requirement, platform).await?;
@@ -1189,15 +1489,8 @@ async fn install_portable_node_runtime(
     if !staged_npm_cli(&staging).is_file() {
         return Err("Downloaded Node.js runtime does not contain bundled npm".into());
     }
-    let mut command = tokio::process::Command::new(&staged_node);
-    command.arg("--version");
-    platform::configure_background_command(&mut command);
-    let detected = command
-        .output()
+    let detected = read_runtime_version(&staged_node)
         .await
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
         .filter(|version| requirement.supports(version))
         .ok_or_else(|| {
             format!(
@@ -1205,7 +1498,15 @@ async fn install_portable_node_runtime(
                 requirement.expression()
             )
         })?;
-    activate_staged_runtime(&staging, &target, "node")?;
+    write_runtime_marker(&staging, "node")?;
+    let activation = activate_staged_runtime(&staging, &target, "node")?;
+    if read_runtime_version(&target_node)
+        .await
+        .is_none_or(|version| !requirement.supports(&version))
+    {
+        return Err("Activated Node.js runtime failed its post-install version check".into());
+    }
+    activation.commit()?;
     emit_keyed(
         &app,
         "node",
@@ -1535,7 +1836,9 @@ async fn run_windows_installer(
 ) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0, WAIT_TIMEOUT};
-    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, TerminateProcess, WaitForSingleObject,
+    };
     use windows_sys::Win32::UI::Shell::{
         ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
     };
@@ -1577,6 +1880,14 @@ async fn run_windows_installer(
 
         let wait = unsafe { WaitForSingleObject(info.hProcess, 20 * 60 * 1000) };
         if wait == WAIT_TIMEOUT {
+            // The elevated installer is outside Tokio's process wrapper. A
+            // handle close alone leaves it running while the caller starts a
+            // fallback installer, causing MSI/winget races. Terminate the
+            // timed-out process before releasing the handle.
+            unsafe {
+                let _ = TerminateProcess(info.hProcess, 1);
+                let _ = WaitForSingleObject(info.hProcess, 5_000);
+            }
             unsafe { CloseHandle(info.hProcess) };
             return Err(format!("{label} installer timed out after 20 minutes"));
         }
@@ -1673,6 +1984,7 @@ async fn run_winget_package_command(
         "--accept-source-agreements",
         "--accept-package-agreements",
     ]);
+    command.kill_on_drop(true);
     platform::configure_background_command(&mut command);
     let output = command.output();
     tokio::pin!(output);
@@ -1755,6 +2067,7 @@ pub async fn install_git(app: tauri::AppHandle) -> Result<String, String> {
 pub(crate) async fn update_managed_git_runtime(
     #[cfg_attr(not(windows), allow(unused_variables))] app: tauri::AppHandle,
 ) -> Result<String, String> {
+    paths::validate_runtime_overrides()?;
     #[cfg(windows)]
     {
         return install_git_impl(app, true).await;
@@ -1770,6 +2083,16 @@ pub(crate) async fn update_managed_git_runtime(
 }
 
 async fn install_git_impl(app: tauri::AppHandle, force: bool) -> Result<String, String> {
+    paths::validate_runtime_overrides()?;
+    tokio::time::timeout(
+        DEPENDENCY_INSTALL_DEADLINE,
+        install_git_impl_inner(app, force),
+    )
+    .await
+    .map_err(|_| "Git 安装超过 30 分钟总时限，已停止本次安装".to_string())?
+}
+
+async fn install_git_impl_inner(app: tauri::AppHandle, force: bool) -> Result<String, String> {
     let _guard = GIT_INSTALL_LOCK
         .get_or_init(|| tokio::sync::Mutex::new(()))
         .lock()
@@ -1973,21 +2296,14 @@ async fn install_windows_portable_git(
 ) -> Result<String, String> {
     let target_git = runtime_binary(&target, "git");
     if target_git.is_file() && !force {
-        let mut command = tokio::process::Command::new(&target_git);
-        command.arg("--version");
-        platform::configure_background_command(&mut command);
-        if let Ok(output) = command.output().await {
-            if output.status.success() {
-                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !version.is_empty() {
-                    return Ok(format!(
-                        "Git {version} already installed at {}",
-                        target_git.display()
-                    ));
-                }
-            }
+        if let Some(version) = read_runtime_version(&target_git).await {
+            return Ok(format!(
+                "Git {version} already installed at {}",
+                target_git.display()
+            ));
         }
     }
+    validate_runtime_target_for_activation(&target, "Git")?;
 
     let artifact = verified_managed_git_artifact(std::env::consts::ARCH)?;
     emit(
@@ -2025,18 +2341,15 @@ async fn install_windows_portable_git(
     let _staging_cleanup = TemporaryDirectory(staging.clone());
     extract_zip(&app, "git", &archive, &staging, false, 0.62)?;
     let staged_git = runtime_binary(&staging, "git");
-    let mut command = tokio::process::Command::new(&staged_git);
-    command.arg("--version");
-    platform::configure_background_command(&mut command);
-    let version = command
-        .output()
+    let version = read_runtime_version(&staged_git)
         .await
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .filter(|version| !version.is_empty())
         .ok_or("Portable Git extraction finished, but git.exe could not be verified")?;
-    activate_staged_runtime(&staging, &target, "git")?;
+    write_runtime_marker(&staging, "git")?;
+    let activation = activate_staged_runtime(&staging, &target, "git")?;
+    if read_runtime_version(&target_git).await.is_none() {
+        return Err("Activated Git runtime failed its post-install version check".into());
+    }
+    activation.commit()?;
     emit_keyed(
         &app,
         "git",
@@ -2061,22 +2374,43 @@ async fn install_windows_portable_git(
 /// npm's effective prefix is not writable, the installation guide asks for an
 /// explicit choice instead of creating a second global OpenClaw installation.
 async fn login_npm_prefix() -> Option<PathBuf> {
+    let configured_node = paths::configured_node_path();
+    let configured_npm_cli = paths::configured_npm_cli_path();
+    if configured_node.is_some()
+        && configured_npm_cli
+            .as_ref()
+            .is_none_or(|path| !path.is_file())
+    {
+        // An explicitly selected portable Node must not silently fall back to
+        // the machine npm. Report no prefix so the setup UI can ask for a
+        // complete Node/npm runtime or an explicit npm prefix.
+        return None;
+    }
     let npm = platform::detect_path(&platform::bin_name("npm"));
-    if npm.is_empty() {
+    if configured_node.is_none() && npm.is_empty() {
         return paths::user_npm_prefix().and_then(|path| normalize_npm_prefix(&path));
     }
-    let mut cmd = tokio::process::Command::new(npm);
+    let mut cmd = if let (Some(node), Some(npm_cli)) = (configured_node, configured_npm_cli) {
+        let mut command = tokio::process::Command::new(node);
+        command.arg(npm_cli);
+        command
+    } else {
+        tokio::process::Command::new(npm)
+    };
     cmd.args(["config", "get", "prefix"])
-        .env("PATH", platform::login_shell_path())
+        .env("PATH", platform::current_search_path())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
     platform::configure_background_command(&mut cmd);
-    match cmd.output().await {
-        Ok(out) if out.status.success() => {
+    match tokio::time::timeout(std::time::Duration::from_secs(10), cmd.output()).await {
+        Ok(Ok(out)) if out.status.success() => {
             normalize_npm_prefix(Path::new(String::from_utf8_lossy(&out.stdout).trim()))
                 .or_else(|| paths::user_npm_prefix().and_then(|path| normalize_npm_prefix(&path)))
         }
-        _ => paths::user_npm_prefix().and_then(|path| normalize_npm_prefix(&path)),
+        Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {
+            paths::user_npm_prefix().and_then(|path| normalize_npm_prefix(&path))
+        }
     }
 }
 
@@ -2107,7 +2441,8 @@ fn prefix_bin_dir(prefix: &std::path::Path) -> PathBuf {
 fn prefix_bin_is_on_login_path(prefix: &std::path::Path) -> bool {
     let expected = prefix_bin_dir(prefix);
     let expected = std::fs::canonicalize(&expected).unwrap_or(expected);
-    std::env::split_paths(platform::login_shell_path()).any(|entry| {
+    let search_path = platform::current_search_path();
+    std::env::split_paths(&search_path).any(|entry| {
         let entry = std::fs::canonicalize(&entry).unwrap_or(entry);
         if cfg!(windows) {
             entry
@@ -2212,13 +2547,49 @@ fn validate_staged_openclaw_install(prefix: &std::path::Path) -> Result<(), Stri
     let package_dir = windows_openclaw_package_dir(prefix);
     let package_json = package_dir.join("package.json");
     let launcher = prefix.join("openclaw.cmd");
-    if package_json.is_file() && launcher.is_file() {
+    let entry = package_dir.join("openclaw.mjs");
+    let package_contract = crate::commands::system::has_openclaw_package_contract(&launcher);
+    if package_json.is_file() && entry.is_file() && launcher.is_file() && package_contract {
         return Ok(());
     }
     Err(format!(
-        "npm finished but the isolated OpenClaw install is incomplete at {}",
+        "npm finished but the isolated OpenClaw install is incomplete at {} (package.json, engines.node, openclaw.mjs, and openclaw.cmd are required)",
         prefix.display()
     ))
+}
+
+async fn validate_staged_openclaw_package(
+    prefix: &Path,
+    expected_version: &str,
+    expected_requirement: &NodeRuntimeRequirement,
+    node_path: &Path,
+) -> Result<(), String> {
+    let launcher = if cfg!(windows) {
+        prefix.join("openclaw.cmd")
+    } else {
+        unix_openclaw_launcher(prefix)
+    };
+    let version = crate::commands::system::openclaw_package_version_for_binary(&launcher)?;
+    if version != expected_version {
+        return Err(format!(
+            "Staged OpenClaw version mismatch: expected {expected_version}, found {version}"
+        ));
+    }
+    let requirement =
+        crate::commands::system::required_node_requirement_for_openclaw_binary(&launcher)?;
+    if requirement.expression() != expected_requirement.expression() {
+        return Err(format!(
+            "Staged OpenClaw {version} changed its Node.js requirement: expected {}, found {}",
+            expected_requirement.expression(),
+            requirement.expression()
+        ));
+    }
+    if !crate::commands::system::validate_openclaw_entry_with_node(&launcher, node_path).await {
+        return Err(format!(
+            "Staged OpenClaw {version} failed the selected Node.js executable smoke check"
+        ));
+    }
+    Ok(())
 }
 
 const OPENCLAW_PROMOTION_MARKER: &str = ".junqi-openclaw-promotion.json";
@@ -2407,11 +2778,13 @@ fn unix_openclaw_launcher(prefix: &Path) -> PathBuf {
 fn validate_staged_unix_openclaw_install(prefix: &Path) -> Result<(), String> {
     let package_json = unix_openclaw_package_dir(prefix).join("package.json");
     let launcher = unix_openclaw_launcher(prefix);
-    if package_json.is_file() && launcher.is_file() {
+    let entry = unix_openclaw_package_dir(prefix).join("openclaw.mjs");
+    let package_contract = crate::commands::system::has_openclaw_package_contract(&launcher);
+    if package_json.is_file() && entry.is_file() && launcher.is_file() && package_contract {
         return Ok(());
     }
     Err(format!(
-        "npm finished but the isolated OpenClaw install is incomplete at {}",
+        "npm finished but the isolated OpenClaw install is incomplete at {} (package.json, engines.node, openclaw.mjs, and launcher are required)",
         prefix.display()
     ))
 }
@@ -2629,7 +3002,17 @@ pub async fn relocate_openclaw(
 }
 
 fn existing_npm_prefix_for_reinstall(binary: &Path, windows: bool) -> Option<PathBuf> {
-    crate::commands::system::npm_prefix_for_openclaw_binary(binary, windows)
+    let prefix = crate::commands::system::npm_prefix_for_openclaw_binary(binary, windows)?;
+    // A project-local `node_modules/.bin/openclaw` has the same package shape
+    // as a global install. Require npm's documented global shim at the prefix
+    // root/bin before allowing an in-place `npm install -g`, otherwise a Git
+    // checkout or application workspace could be overwritten.
+    let global_launcher = if windows {
+        prefix.join("openclaw.cmd")
+    } else {
+        prefix.join("bin").join("openclaw")
+    };
+    crate::commands::system::has_openclaw_package_contract(&global_launcher).then_some(prefix)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2679,6 +3062,7 @@ fn verify_relocated_openclaw_prefix(binary: &Path, expected_prefix: &Path) -> Re
 #[derive(Debug, Clone)]
 struct OpenclawRelocationRequest {
     expected_npm_prefix: Option<PathBuf>,
+    effective_target: Option<PathBuf>,
 }
 
 impl OpenclawRelocationRequest {
@@ -2690,11 +3074,37 @@ impl OpenclawRelocationRequest {
         }
         Ok(Self {
             expected_npm_prefix: layout.npm_prefix,
+            effective_target: None,
         })
     }
 
+    fn freeze_target(&mut self, target: &Path) -> Result<(), String> {
+        if let Some(expected) = self.expected_npm_prefix.as_deref() {
+            if !paths::paths_refer_to_same_location(expected, target) {
+                return Err(format!(
+                    "The persisted npm relocation target ({}) conflicts with the effective npm prefix ({}). Clear the JUNQI_NPM_PREFIX override or update the storage selection before retrying.",
+                    expected.display(),
+                    target.display(),
+                ));
+            }
+        }
+        self.effective_target = Some(target.to_path_buf());
+        Ok(())
+    }
+
     fn commit(&self, binary: &Path, installed_prefix: &Path) -> Result<(), String> {
-        verify_relocated_openclaw_prefix(binary, installed_prefix)?;
+        let target = self
+            .effective_target
+            .as_deref()
+            .ok_or("OpenClaw relocation target was not frozen before installation")?;
+        if !paths::paths_refer_to_same_location(installed_prefix, target) {
+            return Err(format!(
+                "OpenClaw installation target changed during relocation: expected {}, used {}",
+                target.display(),
+                installed_prefix.display(),
+            ));
+        }
+        verify_relocated_openclaw_prefix(binary, target)?;
         crate::commands::terminal_integration::sync_terminal_integration_for_relocation(binary)?;
         crate::commands::system::persist_selected_openclaw_binary(binary)?;
         paths::complete_openclaw_relocation(self.expected_npm_prefix.as_deref())
@@ -2706,13 +3116,28 @@ async fn install_openclaw_impl(
     state: tauri::State<'_, GatewayProcess>,
     mode: OpenclawInstallMode,
 ) -> Result<String, String> {
+    tokio::time::timeout(
+        DEPENDENCY_INSTALL_DEADLINE,
+        install_openclaw_impl_inner(app, state, mode),
+    )
+    .await
+    .map_err(|_| "OpenClaw 安装超过 30 分钟总时限，已停止本次安装".to_string())?
+}
+
+async fn install_openclaw_impl_inner(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GatewayProcess>,
+    mode: OpenclawInstallMode,
+) -> Result<String, String> {
+    paths::validate_runtime_overrides()?;
+    crate::commands::system::validate_openclaw_binary_override()?;
     let step = "openclaw";
     let operation_gate = state.operation_gate.clone();
     let _operation_guard = operation_gate.lock_owned().await;
     let install_lock = OPENCLAW_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
     let _install_guard = install_lock.lock().await;
     let mode = mode.for_current_storage();
-    let relocation = matches!(mode, OpenclawInstallMode::Relocate)
+    let mut relocation = matches!(mode, OpenclawInstallMode::Relocate)
         .then(OpenclawRelocationRequest::capture)
         .transpose()?;
 
@@ -2725,6 +3150,26 @@ async fn install_openclaw_impl(
     );
     let existing = crate::commands::system::detect_openclaw().await;
     if existing.installed && matches!(mode, OpenclawInstallMode::Normal) {
+        let existing_binary = existing
+            .path
+            .as_deref()
+            .map(PathBuf::from)
+            .ok_or_else(|| {
+                "OpenClaw was detected without a stable executable path; reinstall it from the setup guide"
+                    .to_string()
+            })?;
+        // Reusing an installed package is still a runtime transition. A newly
+        // selected portable Node.js must satisfy the package's own
+        // engines.node contract, and its npm shim/entry must remain resolvable.
+        // This keeps the existing-install fast path from bypassing custom
+        // Node.js selection during storage migration or recovery.
+        let existing_requirement =
+            crate::commands::system::required_node_requirement_for_openclaw_binary(
+                &existing_binary,
+            )?;
+        let selected_node =
+            ensure_compatible_node_runtime(&app, step, &existing_requirement).await?;
+        crate::commands::system::native_openclaw_runtime(existing_binary, &selected_node)?;
         let detail = match (&existing.version, &existing.path) {
             (Some(version), Some(path)) => {
                 format!("Using existing OpenClaw {} at {}", version, path)
@@ -2796,6 +3241,12 @@ async fn install_openclaw_impl(
     // it is available. This keeps installation and later Gateway execution on
     // one verified Node.js release instead of mixing PATH shims.
     let npm_cli = crate::commands::system::npm_cli_for_node(Path::new(&node_cmd));
+    if paths::configured_node_runtime_dir().is_some() && npm_cli.is_none() {
+        return Err(
+            "The selected portable Node.js runtime does not contain its bundled npm CLI. Choose a complete Node.js distribution or clear the custom Node.js selection before installing OpenClaw."
+                .into(),
+        );
+    }
     let npm_cli = if let Some(npm_cli) = npm_cli {
         emit_keyed(
             &app,
@@ -2818,6 +3269,21 @@ async fn install_openclaw_impl(
         );
         None
     };
+    let npm_program = if npm_cli.is_none() {
+        let npm = crate::commands::system::check_npm().await?;
+        if !npm.available {
+            return Err(
+                "A usable npm executable was not detected for the selected Node.js runtime".into(),
+            );
+        }
+        Some(
+            npm.path
+                .filter(|path| !path.trim().is_empty())
+                .ok_or("npm did not report its executable path")?,
+        )
+    } else {
+        None
+    };
 
     // ② Resolve the install prefix dynamically. An explicit setup choice
     // wins; otherwise use the login terminal's actual npm prefix. No
@@ -2832,7 +3298,12 @@ async fn install_openclaw_impl(
                     .to_string()
             })?,
         OpenclawInstallMode::Relocate => {
-            pick_install_target(&app, step).await?
+            let target = pick_install_target(&app, step).await?;
+            relocation
+                .as_mut()
+                .ok_or("OpenClaw relocation request is unavailable")?
+                .freeze_target(&target)?;
+            target
         }
         OpenclawInstallMode::Normal => pick_install_target(&app, step).await?,
     };
@@ -2863,6 +3334,7 @@ async fn install_openclaw_impl(
         step,
         node_cmd: &node_cmd,
         npm_cli: npm_cli.as_deref(),
+        npm_program: npm_program.as_deref(),
         global_prefix: &openclaw_prefix,
         target: &target.release,
         force: mode.forces_npm_install(),
@@ -2970,6 +3442,7 @@ async fn install_openclaw_impl(
 /// 进度平滑推进。
 #[tauri::command]
 pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
+    paths::validate_runtime_mode(paths::OpenClawRuntimeMode::Native)?;
     if matches!(
         paths::active_runtime_mode(),
         paths::OpenClawRuntimeMode::Docker
@@ -3000,10 +3473,8 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         0.12,
     );
 
-    let node_ok = crate::commands::system::check_node()
-        .await
-        .map(|status| status.available)
-        .unwrap_or(false);
+    let node_status = crate::commands::system::check_node().await.ok();
+    let node_ok = node_status.as_ref().is_some_and(|status| status.available);
     let openclaw_status = crate::commands::system::detect_openclaw().await;
     let oclaw_ok = openclaw_status.installed;
     let summary = format!(
@@ -3056,6 +3527,33 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         "setup.gateway.portResolved",
         0.42,
     );
+    if paths::pending_gateway_service_rebind().is_some() {
+        let binary = openclaw_status
+            .path
+            .as_deref()
+            .map(PathBuf::from)
+            .ok_or("A pending Gateway service rebind has no OpenClaw binary")?;
+        let node = node_status
+            .filter(|status| status.available)
+            .ok_or("A pending Gateway service rebind has no compatible Node.js runtime")?;
+        let runtime = crate::commands::system::native_openclaw_runtime(binary, &node)?;
+        let search_path = crate::commands::system::openclaw_search_path();
+        emit_keyed(
+            &app,
+            step,
+            "Rebinding the installed Gateway service to the selected Node.js/npm/config locations...",
+            "setup.gateway.rebindService",
+            0.46,
+        );
+        crate::commands::gateway_service::reconcile_pending_gateway_service(
+            &runtime,
+            &paths::desktop_dir(),
+            &config_path,
+            port,
+            Some(&search_path),
+        )
+        .await?;
+    }
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     // ⓘ Stage 3: probe existing Gateway process
@@ -3135,9 +3633,10 @@ mod tests {
         std::fs::create_dir_all(&package).unwrap();
         std::fs::write(
             package.join("package.json"),
-            format!(r#"{{"name":"openclaw","version":"{version}"}}"#),
+            format!(r#"{{"name":"openclaw","version":"{version}","engines":{{"node":">=18"}}}}"#),
         )
         .unwrap();
+        std::fs::write(package.join("openclaw.mjs"), "").unwrap();
         std::fs::write(prefix.join("openclaw.cmd"), format!("@echo {version}\r\n")).unwrap();
     }
 
@@ -3146,9 +3645,10 @@ mod tests {
         std::fs::create_dir_all(&package).unwrap();
         std::fs::write(
             package.join("package.json"),
-            format!(r#"{{"name":"openclaw","version":"{version}"}}"#),
+            format!(r#"{{"name":"openclaw","version":"{version}","engines":{{"node":">=18"}}}}"#),
         )
         .unwrap();
+        std::fs::write(package.join("openclaw.mjs"), "").unwrap();
         let launcher = unix_openclaw_launcher(prefix);
         std::fs::create_dir_all(launcher.parent().unwrap()).unwrap();
         std::fs::write(launcher, format!("#!/bin/sh\necho {version}\n")).unwrap();

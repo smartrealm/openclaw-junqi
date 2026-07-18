@@ -10,6 +10,7 @@ import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 interface StorageSetupStatus {
   configured: boolean;
+  configurationError?: string | null;
   stateDir: string;
   configPath: string;
   workspaceDir: string;
@@ -79,6 +80,13 @@ function remapChildPath(path: string, source: string, target: string): string {
   const separator = path.includes('\\') ? '\\' : '/';
   if (!candidate.startsWith(`${root}${separator}`)) return path;
   return `${target.replace(/[\\/]+$/, '')}${pathNormalized.slice(sourceNormalized.length)}`;
+}
+
+function migrationSource(status: StorageSetupStatus, forceConfigure: boolean): string {
+  // Forced recovery is a relocation of the currently selected layout, not a
+  // migration from the legacy default. Using legacyDir here silently detached
+  // the workspace/runtime fields when the user's active state lived elsewhere.
+  return forceConfigure ? status.stateDir : status.legacyDir;
 }
 
 interface LocationRowProps {
@@ -156,6 +164,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
               return;
             }
             setStatus(result);
+            if (result.configurationError) setError(result.configurationError);
             setTargetDir(forceConfigure ? result.stateDir : result.legacyDir);
             setWorkspaceDir(result.workspaceDir);
             setRuntimeDir(result.runtimeDir);
@@ -214,13 +223,14 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     if (typeof selected !== 'string') return;
     const target = childStoragePath(selected);
     const shouldMigrate = Boolean(forceConfigure || status?.legacyExists);
+    const source = status ? migrationSource(status, forceConfigure) : '';
     setTargetDir(target);
     setMigrateExisting(shouldMigrate);
     if (status && shouldMigrate) {
-      setWorkspaceDir(remapChildPath(status.workspaceDir, status.legacyDir, target));
-      setRuntimeDir(remapChildPath(status.runtimeDir, status.legacyDir, target));
+      setWorkspaceDir(remapChildPath(status.workspaceDir, source, target));
+      setRuntimeDir(remapChildPath(status.runtimeDir, source, target));
       if (customNpmCache && status.npmCacheDir) {
-        setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, target));
+        setNpmCacheDir(remapChildPath(status.npmCacheDir, source, target));
       }
     } else {
       setWorkspaceDir(joinPath(target, 'workspace'));
@@ -403,10 +413,11 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
                 checked={migrateExisting}
                 onChange={() => {
                   setMigrateExisting(true);
-                  setWorkspaceDir(remapChildPath(status.workspaceDir, status.legacyDir, targetDir));
-                  setRuntimeDir(remapChildPath(status.runtimeDir, status.legacyDir, targetDir));
+                  const source = migrationSource(status, forceConfigure);
+                  setWorkspaceDir(remapChildPath(status.workspaceDir, source, targetDir));
+                  setRuntimeDir(remapChildPath(status.runtimeDir, source, targetDir));
                   if (customNpmCache && status.npmCacheDir) {
-                    setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, targetDir));
+                    setNpmCacheDir(remapChildPath(status.npmCacheDir, source, targetDir));
                   } else {
                     setNpmCacheDir('');
                   }
