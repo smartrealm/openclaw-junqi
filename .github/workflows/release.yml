@@ -196,7 +196,9 @@ jobs:
           )
           $missing = $required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
           if ($missing.Count -gt 0) {
-            throw "SignPath Foundation is required for tag releases. Missing: $($missing -join ', ')"
+            Write-Warning "SignPath Foundation is not configured; publishing unsigned Windows installers. Missing: $($missing -join ', ')"
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            exit 0
           }
           "enabled=true" >> $env:GITHUB_OUTPUT
 

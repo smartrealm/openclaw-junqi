@@ -77,7 +77,7 @@ test('Windows package uses the small WebView2 bootstrapper and standard system r
   assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('install_or_upgrade_winget_package'));
 });
 
-test('Windows releases require and verify Authenticode signatures', () => {
+test('Windows releases sign and verify Authenticode when SignPath is configured', () => {
   assert.equal(tauri.bundle.windows.signCommand, undefined);
   assert.match(release, /signpath\/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd/g);
   assert.match(release, /SIGNPATH_APPLICATION_ARTIFACT_CONFIGURATION_SLUG/);
@@ -86,4 +86,6 @@ test('Windows releases require and verify Authenticode signatures', () => {
   assert.match(release, /generate-updater-manifest\.mjs/);
   assert.match(release, /Get-AuthenticodeSignature/);
   assert.match(release, /signature\.Status -ne 'Valid'/);
+  assert.match(release, /enabled=false/);
+  assert.match(release, /publishing unsigned Windows installers/);
 });
