@@ -775,7 +775,8 @@ mod tests {
             let worker = thread::spawn(move || {
                 let (mut stream, _) = listener.accept().unwrap();
                 let mut request = [0_u8; 1024];
-                stream.read(&mut request).unwrap();
+                let received = stream.read(&mut request).unwrap();
+                assert!(received > 0, "registry probe did not send an HTTP request");
                 let headers = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()

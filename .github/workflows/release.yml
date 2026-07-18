@@ -46,6 +46,7 @@ jobs:
     name: Verify version consistency
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
     steps:
       - name: Checkout repository
@@ -74,33 +75,110 @@ jobs:
             exit 1
           fi
 
-          release_ref="${{ github.event.inputs.ref || github.ref_name }}"
-          if [[ "$release_ref" == v* ]]; then
-            tag_version="${release_ref#v}"
-            if [ "$tag_version" != "$package_version" ]; then
-              echo "::error::Tag $release_ref does not match desktop version $package_version"
-              exit 1
-            fi
+      - name: Resolve tag release context
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v')
+        id: release-context
+        shell: bash
+        env:
+          RELEASE_REF: ${{ github.event.inputs.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
 
-            tag_commit="$(git rev-parse --verify "refs/tags/${release_ref}^{commit}" 2>/dev/null)" || {
-              echo "::error::Release reference $release_ref must resolve to an existing Git tag"
-              exit 1
-            }
-            checked_out_commit="$(git rev-parse HEAD)"
-            if [ "$checked_out_commit" != "$tag_commit" ]; then
-              echo "::error::Checked out commit $checked_out_commit does not match tag $release_ref ($tag_commit)"
-              exit 1
-            fi
-
-            # A version tag is a release candidate only after the exact tagged
-            # commit is already part of the canonical main history.
-            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
-            main_commit="$(git rev-parse origin/main)"
-            if ! git merge-base --is-ancestor "$tag_commit" "$main_commit"; then
-              echo "::error::Tag $release_ref ($tag_commit) is not contained in origin/main ($main_commit)"
-              exit 1
-            fi
+          release_ref="$RELEASE_REF"
+          package_version="$(jq -r '.version' package.json)"
+          tag_version="${release_ref#v}"
+          if [ "$tag_version" != "$package_version" ]; then
+            echo "::error::Tag $release_ref does not match desktop version $package_version"
+            exit 1
           fi
+
+          tag_commit="$(git rev-parse --verify "refs/tags/${release_ref}^{commit}" 2>/dev/null)" || {
+            echo "::error::Release reference $release_ref must resolve to an existing Git tag"
+            exit 1
+          }
+          checked_out_commit="$(git rev-parse HEAD)"
+          if [ "$checked_out_commit" != "$tag_commit" ]; then
+            echo "::error::Checked out commit $checked_out_commit does not match tag $release_ref ($tag_commit)"
+            exit 1
+          fi
+
+          # A version tag is a release candidate only after the exact tagged
+          # commit is already part of the canonical main history.
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          main_commit="$(git rev-parse origin/main)"
+          if ! git merge-base --is-ancestor "$tag_commit" "$main_commit"; then
+            echo "::error::Tag $release_ref ($tag_commit) is not contained in origin/main ($main_commit)"
+            exit 1
+          fi
+
+          echo "tag=$release_ref" >> "$GITHUB_OUTPUT"
+          echo "tag_commit=$tag_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Require successful CI run for tagged commit
+        # Branch and non-tag dispatch builds are intentionally ad hoc. Only a
+        # public version tag must prove the exact commit passed the CI workflow.
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.event.inputs.ref, 'v')
+        timeout-minutes: 32
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_COMMIT: ${{ steps.release-context.outputs.tag_commit }}
+          CI_WORKFLOW_FILE: ci.yml
+          CI_POLL_SECONDS: '15'
+          CI_WAIT_TIMEOUT_SECONDS: '1800'
+        run: |
+          set -euo pipefail
+
+          : "${TAG_COMMIT:?The tag release context did not provide a commit.}"
+          readonly deadline="$(( $(date +%s) + CI_WAIT_TIMEOUT_SECONDS ))"
+          readonly api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/${CI_WORKFLOW_FILE}/runs?event=push&head_sha=${TAG_COMMIT}&per_page=100"
+
+          while true; do
+            if ! response="$(gh api --paginate --slurp "$api_path")"; then
+              echo "::error::Unable to query CI workflow runs for tagged commit $TAG_COMMIT"
+              exit 1
+            fi
+
+            if ! matching_runs="$(jq -ce --arg sha "$TAG_COMMIT" '
+              (if type == "array" then . else [.] end)
+              | [ .[] | .workflow_runs[]? | select(.head_sha == $sha and .event == "push") ]
+              | unique_by(.id)
+            ' <<<"$response")"; then
+              echo "::error::GitHub returned an unexpected CI workflow response for tagged commit $TAG_COMMIT"
+              exit 1
+            fi
+
+            if successful_url="$(jq -r '
+              [ .[] | select(.status == "completed" and .conclusion == "success") ]
+              | sort_by(.updated_at // .created_at // "")
+              | last
+              | .html_url // empty
+            ' <<<"$matching_runs")" && [ -n "$successful_url" ]; then
+              echo "Verified successful CI run for $TAG_COMMIT: $successful_url"
+              break
+            fi
+
+            run_count="$(jq 'length' <<<"$matching_runs")"
+            active_count="$(jq '[ .[] | select(.status != "completed") ] | length' <<<"$matching_runs")"
+            if [ "$run_count" -gt 0 ] && [ "$active_count" -eq 0 ]; then
+              latest_failure="$(jq -r '
+                ([ .[] | select(.status == "completed") ] | sort_by(.updated_at // .created_at // "") | last) as $run
+                | if $run == null then "no completed run details" else "run #\($run.run_number) concluded \($run.conclusion // "unknown"): \($run.html_url)" end
+              ' <<<"$matching_runs")"
+              echo "::error::CI did not succeed for tagged commit $TAG_COMMIT ($latest_failure)"
+              exit 1
+            fi
+
+            now="$(date +%s)"
+            if [ "$now" -ge "$deadline" ]; then
+              echo "::error::Timed out after ${CI_WAIT_TIMEOUT_SECONDS}s waiting for a successful CI run for tagged commit $TAG_COMMIT"
+              exit 1
+            fi
+
+            remaining="$(( deadline - now ))"
+            echo "Waiting for CI on $TAG_COMMIT: $run_count matching run(s), $active_count active; retrying in ${CI_POLL_SECONDS}s (${remaining}s remaining)."
+            sleep "$CI_POLL_SECONDS"
+          done
 
   build:
     name: Build ${{ matrix.name }}

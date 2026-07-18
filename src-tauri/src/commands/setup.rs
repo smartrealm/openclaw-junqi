@@ -2541,16 +2541,20 @@ async fn install_windows_system_node_from_mirrors(
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
     let platform = ManagedNodePlatform::current()?;
-    let artifact = platform
-        .installer_distribution_artifact()
-        .ok_or("The current platform does not publish a Node.js MSI installer")?;
+    let artifact = platform.installer_distribution_artifact().ok_or_else(|| {
+        WindowsInstallerFailure::retryable(
+            "The current platform does not publish a Node.js MSI installer",
+        )
+    })?;
     let version = resolve_managed_node_version_for_artifact(requirement, &artifact).await?;
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
-    let filename = platform
-        .installer_filename(&version)
-        .ok_or("The current platform does not publish a Node.js MSI installer")?;
+    let filename = platform.installer_filename(&version).ok_or_else(|| {
+        WindowsInstallerFailure::retryable(
+            "The current platform does not publish a Node.js MSI installer",
+        )
+    })?;
     let sha256 = resolve_node_sha256_for_filename(&version, &filename).await?;
     operation
         .ensure_active()
@@ -2592,8 +2596,9 @@ async fn install_windows_system_node_from_mirrors(
     .await
     .map_err(dependency_install_windows_failure)?;
 
-    let msiexec = platform_path("msiexec.exe", "msiexec")
-        .ok_or("Windows Installer (msiexec) is unavailable")?;
+    let msiexec = platform_path("msiexec.exe", "msiexec").ok_or_else(|| {
+        WindowsInstallerFailure::retryable("Windows Installer (msiexec) is unavailable")
+    })?;
     let args = [
         std::ffi::OsString::from("/i"),
         installer.into_os_string(),
@@ -2952,12 +2957,12 @@ async fn launch_elevated_windows_process(
 
     let executable = executable.to_path_buf();
     let args = args.to_vec();
-    let label = label.to_owned();
+    let task_label = label.to_owned();
     tokio::task::spawn_blocking(move || {
         let mut executable_wide = executable.as_os_str().encode_wide().collect::<Vec<_>>();
         if executable_wide.contains(&0) {
             return Err(WindowsInstallerFailure::retryable(format!(
-                "Invalid {label} installer path"
+                "Invalid {task_label} installer path"
             )));
         }
         executable_wide.push(0);
@@ -2976,17 +2981,17 @@ async fn launch_elevated_windows_process(
             let error = std::io::Error::last_os_error();
             return Err(if error.raw_os_error() == Some(1223) {
                 WindowsInstallerFailure::cancelled(format!(
-                    "{label} installation was cancelled at the Windows administrator prompt"
+                    "{task_label} installation was cancelled at the Windows administrator prompt"
                 ))
             } else {
                 WindowsInstallerFailure::retryable(format!(
-                    "Failed to start elevated {label} installer: {error}"
+                    "Failed to start elevated {task_label} installer: {error}"
                 ))
             });
         }
         if info.hProcess.is_null() {
             return Err(WindowsInstallerFailure::retryable(format!(
-                "The elevated {label} installer did not return a process handle"
+                "The elevated {task_label} installer did not return a process handle"
             )));
         }
 
