@@ -147,6 +147,7 @@ export interface SetupFlow {
   needsOnboarding: boolean;
   repairing: boolean;
   brokenPlugins: BrokenGatewayPlugin[];
+  forceStorageSelection: boolean;
   startGateway: () => Promise<void>;
   retryGateway: () => Promise<void>;
   repairAndRetry: () => Promise<void>;
@@ -229,6 +230,7 @@ export function useSetupFlow(
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
+  const [forceStorageSelection, setForceStorageSelection] = useState(false);
   // gateway-smoke-check 类发现无法离线验证修复效果：自愈梯子跑完后先用一次
   // 真实 Gateway 启动做验证；此处记录已验证过的插件，二次失败直达禁用降级，
   // 避免"虚假修复→重启→再失败"的死循环。Gateway 成功就绪时清空。
@@ -939,6 +941,7 @@ export function useSetupFlow(
     runtimeReconfigurationRequired?: boolean;
     openclawRelocationRequired?: boolean;
   }) => {
+    setForceStorageSelection(false);
     const createdFresh = result?.createdFresh === true;
     const runtimeReconfigurationRequired = result?.runtimeReconfigurationRequired === true;
     relocationRequestedRef.current = result?.openclawRelocationRequired === true;
@@ -989,6 +992,7 @@ export function useSetupFlow(
     updateOnboardingRequirement,
     runNativeSetup,
     startGatewayAction,
+    setForceStorageSelection,
   ]);
 
   const repairAndRetry = useCallback(async () => {
@@ -1006,6 +1010,19 @@ export function useSetupFlow(
       const recommendation = failure
         ? await diagnoseGatewayRecovery(failure).catch(() => "repair" as const)
         : "repair";
+      if (recommendation === "select_storage") {
+        const message = t(
+          "setup.stateDirectoryIncompatible",
+          "当前 OpenClaw 数据目录不支持所需权限操作。请选择本机支持权限操作的数据目录后重试。",
+        );
+        setForceStorageSelection(true);
+        setGatewayRunning(false);
+        setPostStorageStep("choosing-mode");
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+        report(message);
+        replaceSetupStep("storage");
+        return;
+      }
       if (recommendation === "retry") {
         const retryDelay = gatewayMigrationRetryDelayMs(failure || "");
         if (retryDelay > 0) {
@@ -1169,7 +1186,7 @@ export function useSetupFlow(
     } finally {
       setRepairing(false);
     }
-  }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode]);
+  }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode, setGatewayRunning, setPostStorageStep]);
 
   // BUG-CPI-07 最后一级降级：临时禁用不可自愈的插件后继续启动。插件保持
   // 已安装状态，待其修复版本发布后可在设置中重新启用并重走自愈梯子。
@@ -1311,6 +1328,7 @@ export function useSetupFlow(
     needsOnboarding,
     repairing,
     brokenPlugins,
+    forceStorageSelection,
     startGateway: startGatewayAction,
     retryGateway: startGatewayAction,
     repairAndRetry,

@@ -18,6 +18,7 @@ pub mod fs_watcher;
 pub mod gateway;
 pub mod gateway_logs;
 pub mod gateway_rescue;
+pub(crate) mod gateway_service;
 pub mod gateway_supervisor;
 pub mod git_neu;
 #[cfg(any(windows, test))]
@@ -34,6 +35,7 @@ pub mod openclaw_channel;
 pub(crate) mod openclaw_cli;
 pub mod openclaw_provider;
 pub mod openclaw_repair;
+pub(crate) mod openclaw_state_dir;
 pub mod openclaw_update;
 pub mod pairing;
 pub mod pet;

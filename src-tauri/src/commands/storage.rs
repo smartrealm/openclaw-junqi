@@ -1,4 +1,3 @@
-use crate::commands::gateway::is_gateway_healthy;
 use crate::paths::{self, OpenClawRuntimeMode, StorageBootstrap};
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode, GatewayRuntimeState};
 use crate::state::GatewayProcess;
@@ -775,50 +774,40 @@ fn prepare_storage_target(
     Ok(PreparedStorage { layout, copied })
 }
 
-async fn run_gateway_service_command(
-    binary: &Path,
-    state_dir: &Path,
-    config_path: &Path,
-    args: &[&str],
-) -> Result<(), String> {
-    let runtime =
-        crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf()).await?;
-    let context = crate::commands::system::OpenclawCommandContext::for_paths(
-        state_dir.to_path_buf(),
-        config_path.to_path_buf(),
-    );
-    let mut command = runtime.command(&context);
-    let output = command
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run OpenClaw service command: {}", e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(if stderr.is_empty() {
-            format!("OpenClaw service command exited with {}", output.status)
-        } else {
-            stderr
-        })
-    }
-}
-
 async fn stop_all_locked(
     state: &State<'_, GatewayProcess>,
     binary: Option<&Path>,
     state_dir: &Path,
     config_path: &Path,
-) {
+    selected_service: bool,
+) -> Result<(), String> {
     let child = state.child.lock().ok().and_then(|mut child| child.take());
     if let Some(mut child) = child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
     }
-    let _ = crate::commands::docker::stop_docker_gateway_locked().await;
-    if let Some(binary) = binary {
-        let _ =
-            run_gateway_service_command(binary, state_dir, config_path, &["gateway", "stop"]).await;
+    if matches!(paths::active_runtime_mode(), OpenClawRuntimeMode::Docker) {
+        crate::commands::docker::stop_docker_gateway_locked().await?;
+    }
+    if selected_service {
+        let binary = binary.ok_or_else(|| {
+            "OpenClaw binary is unavailable; cannot stop the selected Gateway service".to_string()
+        })?;
+        let runtime =
+            crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf())
+                .await?;
+        if !crate::commands::gateway_service::stop_selected_gateway_service(
+            &runtime,
+            state_dir,
+            config_path,
+            None,
+        )
+        .await?
+        {
+            return Err(
+                "The selected Gateway service changed before it could be stopped; storage was not modified"
+                    .to_string(),
+            );
+        }
     }
     state.transition(
         Some(GatewayLifecycle::Stopped),
@@ -826,6 +815,7 @@ async fn stop_all_locked(
         None,
         "storage migration: all managed runtimes stopped",
     );
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -833,6 +823,17 @@ struct PreviousGateway {
     reachable: bool,
     runtime: GatewayRuntimeState,
     port: u16,
+    selected_service: bool,
+}
+
+impl PreviousGateway {
+    fn restore_mode(self) -> GatewayRuntimeMode {
+        if self.selected_service {
+            GatewayRuntimeMode::SystemService
+        } else {
+            self.runtime.mode
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -862,14 +863,40 @@ impl RuntimeRestoreStrategy {
     }
 }
 
-async fn wait_for_gateway(port: u16, attempts: usize) -> Result<(), String> {
+async fn wait_for_gateway(port: u16, config_path: &Path, attempts: usize) -> Result<(), String> {
     for _ in 0..attempts {
-        if is_gateway_healthy(port).await {
+        if crate::commands::gateway::gateway_matches_config(port, config_path).await {
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
     Err(format!("Gateway did not become reachable on port {}", port))
+}
+
+async fn selected_gateway_service(
+    binary: Option<&Path>,
+    state_dir: &Path,
+    config_path: &Path,
+    runtime_mode: OpenClawRuntimeMode,
+) -> Result<bool, String> {
+    if matches!(runtime_mode, OpenClawRuntimeMode::Docker) {
+        return Ok(false);
+    }
+    let Some(binary) = binary else {
+        return Ok(false);
+    };
+    let runtime =
+        crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf()).await?;
+    Ok(matches!(
+        crate::commands::gateway_service::inspect_gateway_service(
+            &runtime,
+            state_dir,
+            config_path,
+            None,
+        )
+        .await?,
+        crate::commands::gateway_service::GatewayServiceOwnership::SelectedState
+    ))
 }
 
 async fn start_runtime_locked(
@@ -881,7 +908,7 @@ async fn start_runtime_locked(
     state_dir: &Path,
     config_path: &Path,
 ) -> Result<(), String> {
-    if is_gateway_healthy(port).await {
+    if crate::commands::gateway::gateway_matches_config(port, config_path).await {
         state.transition(
             Some(GatewayLifecycle::Running),
             Some(mode),
@@ -891,7 +918,11 @@ async fn start_runtime_locked(
         return Ok(());
     }
 
-    let strategy = RuntimeRestoreStrategy::for_mode(mode);
+    let strategy = if matches!(mode, GatewayRuntimeMode::SystemService) {
+        RuntimeRestoreStrategy::SystemService
+    } else {
+        RuntimeRestoreStrategy::for_mode(mode)
+    };
     match strategy {
         RuntimeRestoreStrategy::Docker => {
             crate::commands::docker::start_docker_gateway_locked(app.clone(), Some(port), None)
@@ -915,16 +946,16 @@ async fn start_runtime_locked(
             let binary = binary.ok_or_else(|| {
                 "OpenClaw binary is unavailable; cannot restore the Gateway service".to_string()
             })?;
-            let port_string = port.to_string();
-            run_gateway_service_command(
-                binary,
+            let runtime =
+                crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf())
+                    .await?;
+            crate::commands::gateway_service::install_and_start_selected_gateway_service(
+                &runtime,
                 state_dir,
                 config_path,
-                &["gateway", "install", "--force", "--port", &port_string],
+                port,
             )
             .await?;
-            run_gateway_service_command(binary, state_dir, config_path, &["gateway", "start"])
-                .await?;
             state.transition(
                 Some(GatewayLifecycle::Starting),
                 Some(GatewayRuntimeMode::SystemService),
@@ -934,7 +965,7 @@ async fn start_runtime_locked(
         }
     }
 
-    wait_for_gateway(port, 30).await?;
+    wait_for_gateway(port, config_path, 30).await?;
     let final_mode = strategy.restored_mode();
     state.transition(
         Some(GatewayLifecycle::Running),
@@ -1041,7 +1072,7 @@ impl StorageRollbackContext<'_, '_> {
         let result = start_runtime_locked(
             self.app,
             self.state,
-            self.previous.runtime.mode,
+            self.previous.restore_mode(),
             self.previous.port,
             self.binary,
             self.old_state_dir,
@@ -1213,12 +1244,26 @@ pub async fn configure_storage(
     if paths::paths_refer_to_same_location(&target, &source) {
         validate_location_changes(&layout, Some(&existing_layout))?;
         let previous = PreviousGateway {
-            reachable: is_gateway_healthy(port).await,
+            reachable: crate::commands::gateway::gateway_matches_config(port, &old_config).await,
             runtime: state.runtime_snapshot()?,
             port,
+            selected_service: selected_gateway_service(
+                binary.as_deref(),
+                &source,
+                &old_config,
+                existing_layout.runtime_mode,
+            )
+            .await?,
         };
         if native_runtime_reconfiguration {
-            stop_all_locked(&state, binary.as_deref(), &source, &old_config).await;
+            stop_all_locked(
+                &state,
+                binary.as_deref(),
+                &source,
+                &old_config,
+                previous.selected_service,
+            )
+            .await?;
             if let Err(error) =
                 crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
             {
@@ -1230,7 +1275,7 @@ pub async fn configure_storage(
                     start_runtime_locked(
                         &app,
                         &state,
-                        previous.runtime.mode,
+                        previous.restore_mode(),
                         previous.port,
                         binary.as_deref(),
                         &source,
@@ -1261,7 +1306,7 @@ pub async fn configure_storage(
                 if let Err(restore_error) = start_runtime_locked(
                     &app,
                     &state,
-                    previous.runtime.mode,
+                    previous.restore_mode(),
                     previous.port,
                     binary.as_deref(),
                     &source,
@@ -1352,14 +1397,36 @@ pub async fn configure_storage(
     {
         return Err("Storage target cannot be a symbolic link".to_string());
     }
+    // Reject incompatible filesystems before stopping an existing Gateway,
+    // copying data, or committing bootstrap.json to the new location.
+    match crate::commands::system::check_node().await {
+        Ok(node) if node.available => match node.path {
+            Some(path) => {
+                crate::commands::openclaw_state_dir::verify_node_state_directory(
+                    Path::new(&path),
+                    &target,
+                )
+                .await?
+            }
+            None => crate::commands::openclaw_state_dir::verify_state_directory_basics(&target)?,
+        },
+        _ => crate::commands::openclaw_state_dir::verify_state_directory_basics(&target)?,
+    }
     if !directory_is_empty(&target)? {
         return Err("Target directory must be empty".to_string());
     }
 
     let previous = PreviousGateway {
-        reachable: is_gateway_healthy(port).await,
+        reachable: crate::commands::gateway::gateway_matches_config(port, &old_config).await,
         runtime: state.runtime_snapshot()?,
         port,
+        selected_service: selected_gateway_service(
+            binary.as_deref(),
+            &source,
+            &old_config,
+            existing_layout.runtime_mode,
+        )
+        .await?,
     };
     let rollback = StorageRollbackContext {
         app: &app,
@@ -1377,14 +1444,24 @@ pub async fn configure_storage(
         "Stopping the previous Gateway...",
         0.08,
     );
-    stop_all_locked(&state, binary.as_deref(), &source, &old_config).await;
+    if let Err(error) = stop_all_locked(
+        &state,
+        binary.as_deref(),
+        &source,
+        &old_config,
+        previous.selected_service,
+    )
+    .await
+    {
+        return Err(error);
+    }
     if let Err(error) = crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
     {
         if previous.reachable {
-            if is_gateway_healthy(port).await {
+            if crate::commands::gateway::gateway_matches_config(port, &old_config).await {
                 state.transition(
                     Some(GatewayLifecycle::Running),
-                    Some(previous.runtime.mode),
+                    Some(previous.restore_mode()),
                     None,
                     "storage migration: previous endpoint never stopped",
                 );
@@ -1396,7 +1473,7 @@ pub async fn configure_storage(
             let restore_error = start_runtime_locked(
                 &app,
                 &state,
-                previous.runtime.mode,
+                previous.restore_mode(),
                 port,
                 binary.as_deref(),
                 &source,
@@ -1510,7 +1587,7 @@ pub async fn configure_storage(
         if let Err(error) = start_runtime_locked(
             &app,
             &state,
-            previous.runtime.mode,
+            previous.restore_mode(),
             port,
             binary.as_deref(),
             &prepared.layout.state_dir,
@@ -1523,8 +1600,10 @@ pub async fn configure_storage(
                 binary.as_deref(),
                 &prepared.layout.state_dir,
                 &prepared.layout.config_path,
+                previous.selected_service,
             )
-            .await;
+            .await
+            .ok();
             let failure = rollback
                 .run(
                     RollbackPolicy::AFTER_SWITCH,

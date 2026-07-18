@@ -2605,6 +2605,7 @@
     "repairingGateway": "正在修复 OpenClaw 和插件状态…",
     "repairStarting": "开始运行 OpenClaw 官方修复流程…",
     "repairComplete": "修复完成，正在重新启动 Gateway…",
+    "stateDirectoryIncompatible": "当前 OpenClaw 数据目录不支持所需权限操作。请选择本机支持权限操作的数据目录后重试。",
     "ready": "就绪！",
     "pullingImage": "正在拉取 OpenClaw 镜像...",
     "startingContainer": "正在启动容器...",

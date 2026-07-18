@@ -82,13 +82,71 @@ test('managed Gateway start owns readiness and preserves process diagnostics', (
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const setup = source('src/hooks/useSetupFlow.ts');
   assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60/);
-  assert.match(gateway, /child\.try_wait\(\)[\s\S]*is_gateway_healthy\(port\)\.await/);
+  assert.match(gateway, /child\.try_wait\(\)[\s\S]*gateway_matches_config\(port, &config_path\)\.await/);
   assert.match(gateway, /OPENCLAW_GATEWAY_LIVENESS_PATH: &str = "healthz"/);
   assert.doesNotMatch(gateway, /TcpStream::connect/);
   assert.match(gateway, /terminate_owned_gateway\(&mut child\)\.await/);
   assert.match(gateway, /Recent Gateway output/);
   assert.match(gateway, /managed child health check passed/);
   assert.match(setup, /waitForGatewayReady\(runId, isDockerRuntime \? 30_000 : 10_000, status\?\.port\)/);
+});
+
+test('BUG-WIN-STATE-01 validates selected storage with Node before Gateway bootstrap and authenticates external endpoints', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const storage = source('src-tauri/src/commands/storage.rs');
+  const probe = source('src-tauri/src/commands/openclaw_state_dir.rs');
+  const diagnostics = source('src-tauri/src/state/gateway_diagnostics.rs');
+  const setup = source('src/hooks/useSetupFlow.ts');
+  const gate = source('src/components/setup/StorageSetupGate.tsx');
+
+  assert.match(probe, /fs\.chmodSync\(probeDir, 0o700\)/);
+  assert.match(probe, /verify_node_state_directory/);
+  assert.match(storage, /verify_state_directory_basics\(&target\)/);
+  assert.match(storage, /commands::system::check_node\(\)\.await/);
+  assert.match(storage, /gateway_matches_config\(port, config_path\)/);
+  assert.match(gateway, /gateway_accepts_configured_token/);
+  assert.match(gateway, /bearer_auth\(token\)/);
+  assert.match(diagnostics, /SelectStorage/);
+  assert.match(setup, /recommendation === "select_storage"/);
+  assert.match(gate, /result\.configured && !forceConfigure/);
+
+  const start = gateway.slice(gateway.indexOf('pub(crate) async fn start_gateway_locked'));
+  assert.ok(start.indexOf('verify_node_state_directory') < start.indexOf('ensure_config_with_token'));
+  assert.ok(start.indexOf('ensure_config_with_token') < start.indexOf('cmd.spawn()'));
+});
+
+test('BUG-GW-01 forced storage recovery migrates the configured state, not only the legacy default', () => {
+  const gate = source('src/components/setup/StorageSetupGate.tsx');
+
+  assert.match(gate, /const shouldMigrateSelectedState = !usingLegacy[\s\S]*forceConfigure \|\| status\.legacyExists/);
+  assert.match(gate, /migrateExisting: shouldMigrateSelectedState/);
+});
+
+test('BUG-GW-02 lifecycle ownership decisions authenticate the selected state directory', () => {
+  const ensure = source('src-tauri/src/commands/ensure.rs');
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const setup = source('src-tauri/src/commands/setup.rs');
+  const storage = source('src-tauri/src/commands/storage.rs');
+
+  assert.match(ensure, /selected_native_gateway_ready[\s\S]*gateway_matches_config/);
+  assert.match(ensure, /if selected_native_gateway_ready\(port\)\.await/);
+  assert.match(setup, /gateway_matches_config\(port, &config_path\)\.await/);
+  assert.match(storage, /wait_for_gateway\([\s\S]*gateway_matches_config/);
+  assert.match(storage, /reachable: crate::commands::gateway::gateway_matches_config\(port, &old_config\)\.await/);
+  assert.match(gateway, /wait_for_selected_gateway[\s\S]*gateway_matches_config/);
+  assert.match(gateway, /if gateway_matches_config\(port, &config_path\)\.await/);
+});
+
+test('BUG-GW-03 managed service restart uses the official command and verifies selected state readiness', () => {
+  const gateway = source('src-tauri/src/commands/gateway.rs');
+  const restart = gateway.slice(
+    gateway.indexOf('pub async fn restart_gateway'),
+    gateway.indexOf('pub async fn restart_local_gateway'),
+  );
+
+  assert.match(restart, /cmd\.args\(\["gateway", "restart"\]\)/);
+  assert.doesNotMatch(restart, /\["gateway", "--port", &port\.to_string\(\), "restart"\]/);
+  assert.match(restart, /wait_for_selected_gateway\(port, &config_path, 45\)\.await/);
 });
 
 // BUG-WIN-CWD-01: state_dir (data directory) and Gateway cwd must be decoupled.
@@ -105,10 +163,22 @@ test('BUG-WIN-CWD-01 managed Gateway uses stable non-root cwd', () => {
 
 test('offline system services are stopped before the desktop-managed Gateway starts', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  assert.match(gateway, /args\(\["gateway", "status", "--json"\]\)/);
-  assert.match(gateway, /parse_gateway_service_state\(&output\.stdout\) != Some\(\(true, false\)\)/);
-  assert.match(gateway, /args\(\["gateway", "stop"\]\)/);
+  const service = source('src-tauri/src/commands/gateway_service.rs');
+  assert.match(service, /OPENCLAW_STATE_DIR/);
+  assert.match(service, /paths_refer_to_same_location/);
+  assert.match(service, /stop_selected_gateway_service/);
   assert.match(gateway, /stop_offline_gateway_service\(&app, &runtime, &gw_path\)\.await\?/);
+});
+
+test('BUG-GW-04 storage migration preserves only a verified official service binding', () => {
+  const storage = source('src-tauri/src/commands/storage.rs');
+  const service = source('src-tauri/src/commands/gateway_service.rs');
+
+  assert.match(storage, /selected_service: selected_gateway_service/);
+  assert.match(storage, /fn restore_mode\(self\).*GatewayRuntimeMode::SystemService/s);
+  assert.match(storage, /stop_all_locked\([\s\S]*previous\.selected_service/);
+  assert.match(service, /install_and_start_selected_gateway_service/);
+  assert.doesNotMatch(storage, /run_gateway_service_command/);
 });
 
 test('setup self-rescue commands are registered and use official plugin convergence repair', () => {

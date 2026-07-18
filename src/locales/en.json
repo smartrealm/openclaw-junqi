@@ -2611,6 +2611,7 @@
     "repairingGateway": "Repairing OpenClaw and plugin state…",
     "repairStarting": "Starting the official OpenClaw repair flow…",
     "repairComplete": "Repair completed. Restarting Gateway…",
+    "stateDirectoryIncompatible": "The current OpenClaw data directory does not support required permission operations. Choose a local directory with standard permission support, then retry.",
     "ready": "Ready!",
     "pullingImage": "Pulling OpenClaw image...",
     "startingContainer": "Starting container...",

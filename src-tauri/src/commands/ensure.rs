@@ -41,8 +41,17 @@ pub struct EnsureResult {
     pub error: Option<String>,
 }
 
-/// 确认指定端口上的 OpenClaw Gateway 已通过健康校验。
-async fn probe_gateway_port(port: u16) -> bool {
+/// Confirms that the native endpoint is both live and belongs to JunQi's
+/// currently selected state/config pair. `/healthz` alone is not ownership:
+/// another OpenClaw state directory may use the same port with another token.
+async fn selected_native_gateway_ready(port: u16) -> bool {
+    crate::commands::gateway::gateway_matches_config(port, &paths::config_path()).await
+}
+
+/// Confirms that a Docker Gateway is live. Docker owns a separate config path
+/// and is selected before this fallback runs, so native state matching cannot
+/// be applied to its container endpoint.
+async fn probe_docker_gateway_port(port: u16) -> bool {
     crate::commands::gateway::is_gateway_healthy(port).await
 }
 
@@ -89,7 +98,7 @@ async fn ensure_selected_docker_gateway(
         .await
         .map(|status| status.running)
         .unwrap_or(false);
-    if docker_running && probe_gateway_port(port).await {
+    if docker_running && probe_docker_gateway_port(port).await {
         let token = read_docker_gateway_token();
         state.transition(
             Some(GatewayLifecycle::Running),
@@ -193,7 +202,7 @@ pub async fn ensure_gateway_running(
     crate::commands::docker::release_managed_docker_gateway_for_native(port).await?;
 
     // 1. 本机配置端口已经可用，直接复用。
-    if probe_gateway_port(port).await {
+    if selected_native_gateway_ready(port).await {
         let token = read_gateway_token(&paths::config_path());
         state.transition(
             Some(GatewayLifecycle::Running),
@@ -248,7 +257,7 @@ pub async fn ensure_gateway_running(
     {
         Ok(status) => {
             for _ in 0..45 {
-                if probe_gateway_port(port).await {
+                if selected_native_gateway_ready(port).await {
                     let token = status
                         .token
                         .or_else(|| read_gateway_token(&paths::config_path()));
@@ -333,7 +342,7 @@ pub async fn ensure_gateway_running(
             // 等待容器内 Gateway 端口就绪。
             for _ in 0..30 {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                if probe_gateway_port(port).await {
+                if probe_docker_gateway_port(port).await {
                     let token = docker_token.or_else(read_docker_gateway_token);
                     push_log(
                         &state.logs,

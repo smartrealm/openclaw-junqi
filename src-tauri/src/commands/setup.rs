@@ -3071,7 +3071,7 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         0.52,
     );
 
-    let reachable = crate::commands::gateway::is_gateway_healthy(port).await;
+    let reachable = crate::commands::gateway::gateway_matches_config(port, &config_path).await;
     if reachable {
         emit_keyed(
             &app,

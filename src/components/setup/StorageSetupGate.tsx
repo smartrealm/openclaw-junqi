@@ -48,6 +48,7 @@ interface StorageSetupStepProps {
   }) => void;
   onBack: () => void;
   logs: SetupLog[];
+  forceConfigure?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -111,7 +112,7 @@ function LocationRow({ icon, label, value, onChoose, disabled }: LocationRowProp
   );
 }
 
-export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProps) {
+export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false }: StorageSetupStepProps) {
   const { t } = useTranslation();
   const checkedRef = useRef(false);
   const mountedRef = useRef(false);
@@ -147,7 +148,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
         void invoke<StorageSetupStatus>('get_storage_setup_status')
           .then((result) => {
             if (!mountedRef.current) return;
-            if (result.configured) {
+            if (result.configured && !forceConfigure) {
               onReadyRef.current({
                 createdFresh: false,
                 openclawRelocationRequired: result.openclawRelocationRequired,
@@ -155,7 +156,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
               return;
             }
             setStatus(result);
-            setTargetDir(result.legacyDir);
+            setTargetDir(forceConfigure ? result.stateDir : result.legacyDir);
             setWorkspaceDir(result.workspaceDir);
             setRuntimeDir(result.runtimeDir);
             setNpmCacheDir(result.npmCacheDir ?? '');
@@ -167,7 +168,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
             setGitRuntimeDir(result.gitRuntimeDir ?? '');
             setCustomGitRuntime(result.customGitRuntimeSupported && Boolean(result.gitRuntimeDir));
             setTerminalIntegration(result.terminalIntegration);
-            setMigrateExisting(result.legacyExists);
+            setMigrateExisting(forceConfigure || result.legacyExists);
           })
           .catch((cause) => {
             if (mountedRef.current) setError(String(cause));
@@ -212,7 +213,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
     if (!mountedRef.current) return;
     if (typeof selected !== 'string') return;
     const target = childStoragePath(selected);
-    const shouldMigrate = Boolean(status?.legacyExists);
+    const shouldMigrate = Boolean(forceConfigure || status?.legacyExists);
     setTargetDir(target);
     setMigrateExisting(shouldMigrate);
     if (status && shouldMigrate) {
@@ -229,7 +230,7 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
       setNpmCacheDir('');
     }
     setError(null);
-  }, [customNpmCache, status, t]);
+  }, [customNpmCache, forceConfigure, status, t]);
 
   const chooseExactDirectory = useCallback(async (title: string, apply: (path: string) => void) => {
     const selected = await open({ directory: true, multiple: false, title });
@@ -249,9 +250,12 @@ export function StorageSetupStep({ onReady, onBack, logs }: StorageSetupStepProp
       progress: 0.02,
     });
     try {
+      const shouldMigrateSelectedState = !usingLegacy
+        && migrateExisting
+        && (forceConfigure || status.legacyExists);
       const result = await invoke<StorageConfigureResult>('configure_storage', {
         targetDir,
-        migrateExisting: !usingLegacy && status.legacyExists && migrateExisting,
+        migrateExisting: shouldMigrateSelectedState,
         locations: {
           workspaceDir,
           runtimeDir,

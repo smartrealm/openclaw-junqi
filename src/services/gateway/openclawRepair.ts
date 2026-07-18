@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useSyncExternalStore } from 'react';
 
-export type GatewayRecoveryRecommendation = 'retry' | 'repair' | 'inspect_config';
+export type GatewayRecoveryRecommendation = 'retry' | 'repair' | 'inspect_config' | 'select_storage';
 
 export function diagnoseGatewayRecovery(error: string): Promise<GatewayRecoveryRecommendation> {
   return invoke<GatewayRecoveryRecommendation>('diagnose_gateway_recovery', { error });

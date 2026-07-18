@@ -2135,6 +2135,7 @@
   "setup.installCompleteSubtitle": "اكتمل التثبيت والإعداد. الخطوة التالية تشغّل Gateway فقط؛ ستدخل مساحة العمل يدوياً بعد ذلك.",
   "setup.installCompleteGatewayPending": "إعداد Gateway جاهز. شغّل Gateway للمتابعة.",
   "setup.gatewayPrepareWillRetry": "لم يكتمل فحص إعداد Gateway: {{error}}. ستتم إعادة المحاولة تلقائياً عند التشغيل.",
+  "setup.stateDirectoryIncompatible": "دليل بيانات OpenClaw الحالي لا يدعم عمليات الأذونات المطلوبة. اختر دليلاً محلياً يدعم عمليات الأذونات ثم أعد المحاولة.",
   "setup.installPanel.gatewayPendingHint": "اكتملت المكونات المطلوبة. شغّل Gateway للانتقال إلى الخطوة التالية.",
   "setup.readySubtitle": "Gateway قيد التشغيل. اضغط دخول مساحة العمل لإنهاء الإعداد؛ لن ينتقل JunQi تلقائياً.",
   "setup.enterWorkspace": "دخول مساحة العمل",
