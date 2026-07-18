@@ -1379,11 +1379,15 @@ mod storage_bootstrap_tests {
 
     #[test]
     fn npmrc_prefix_parser_continues_past_unrelated_settings() {
-        let content =
-            "registry=https://registry.npmmirror.com\nstrict-ssl=false\nprefix = /custom/npm\n";
+        let home = std::env::temp_dir().join("junqi-npmrc-prefix-home");
+        let expected = home.join("custom-npm-prefix");
+        let content = format!(
+            "registry=https://registry.npmmirror.com\nstrict-ssl=false\nprefix = {}\n",
+            expected.display()
+        );
         assert_eq!(
-            user_npm_prefix_from_npmrc(content, Path::new("/home/test")),
-            Some(PathBuf::from("/custom/npm"))
+            user_npm_prefix_from_npmrc(&content, &home),
+            Some(expected)
         );
     }
 
