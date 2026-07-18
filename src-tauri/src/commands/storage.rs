@@ -888,9 +888,18 @@ fn native_workspace_write_required(
         .and_then(|agents| agents.get("defaults"))
         .and_then(|defaults| defaults.get("workspace"))
         .and_then(serde_json::Value::as_str);
-    Ok(!current_workspace.is_some_and(|workspace| {
-        paths::paths_refer_to_same_location(Path::new(workspace), &layout.workspace_dir)
-    }))
+    Ok(!current_workspace
+        .is_some_and(|workspace| configured_workspace_matches(workspace, &layout.workspace_dir)))
+}
+
+/// Compare a configured workspace with an absolute layout path using the same
+/// path semantics as every JunQi-managed OpenClaw command. OpenClaw accepts
+/// `~` and relative workspace values, so comparing `Path::new(value)` directly
+/// would bind them to JunQi's incidental process cwd instead of the stable
+/// OpenClaw cwd.
+fn configured_workspace_matches(configured: &str, expected: &Path) -> bool {
+    paths::resolve_openclaw_user_path(configured)
+        .is_ok_and(|resolved| paths::paths_refer_to_same_location(&resolved, expected))
 }
 
 struct TextFileSnapshot {
@@ -2123,8 +2132,7 @@ fn restore_workspace_if_still_owned(
     let Some(current_workspace) = current_workspace else {
         return Ok(false);
     };
-    if !paths::paths_refer_to_same_location(Path::new(current_workspace), &candidate.workspace_dir)
-    {
+    if !configured_workspace_matches(current_workspace, &candidate.workspace_dir) {
         return Ok(false);
     }
     patch_workspace_for_runtime(
@@ -3585,11 +3593,44 @@ mod tests {
             None,
             false,
         );
+        let encoded_workspace =
+            serde_json::to_string(&workspace.to_string_lossy().into_owned()).unwrap();
         let original = format!(
-            "{{\n  // Keep JSON5 comments when runtime locations change.\n  agents: {{ defaults: {{ workspace: '{}' }} }}\n}}\n",
-            workspace.display()
+            "{{\n  // Keep JSON5 comments when runtime locations change.\n  agents: {{ defaults: {{ workspace: {encoded_workspace} }} }}\n}}\n"
         );
         std::fs::write(&layout.config_path, &original).unwrap();
+
+        let transaction =
+            StorageReconfiguration::begin(None, &layout.config_path, &layout).unwrap();
+        assert!(!transaction.writes_native_workspace());
+        transaction
+            .apply_with::<RejectUnexpectedWorkspaceWrite>(&layout, false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&layout.config_path).unwrap(),
+            original
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn node_only_reconfiguration_preserves_a_relative_native_workspace() {
+        let root = storage_test_root("node-only-relative-native-config");
+        std::fs::create_dir_all(&root).unwrap();
+        let working_dir = paths::stable_openclaw_working_dir().unwrap();
+        let workspace = working_dir.join("junqi-relative-workspace");
+        let layout = StorageBootstrap::with_locations(
+            root.clone(),
+            workspace,
+            root.join("runtime"),
+            None,
+            None,
+            false,
+        );
+        let original = "{ agents: { defaults: { workspace: 'junqi-relative-workspace' } } }\n";
+        std::fs::write(&layout.config_path, original).unwrap();
 
         let transaction =
             StorageReconfiguration::begin(None, &layout.config_path, &layout).unwrap();
@@ -3705,6 +3746,34 @@ mod tests {
         assert_eq!(
             preserved["agents"]["defaults"]["workspace"],
             serde_json::Value::String(root.join("external").to_string_lossy().to_string())
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pending_runtime_recovery_recognizes_a_relative_candidate_workspace() {
+        let root = storage_test_root("pending-runtime-relative-workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let previous =
+            StorageBootstrap::for_state_dir(root.clone(), Some(root.join("workspace-old")));
+        let mut candidate = previous.clone();
+        candidate.workspace_dir = paths::stable_openclaw_working_dir()
+            .unwrap()
+            .join("junqi-relative-workspace");
+        std::fs::write(
+            &candidate.config_path,
+            "{ agents: { defaults: { workspace: 'junqi-relative-workspace' } } }\n",
+        )
+        .unwrap();
+
+        assert!(restore_workspace_if_still_owned(&candidate, &previous, true).unwrap());
+        let restored = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&candidate.config_path).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restored["agents"]["defaults"]["workspace"],
+            serde_json::Value::String(previous.workspace_dir.to_string_lossy().to_string())
         );
         let _ = std::fs::remove_dir_all(root);
     }
