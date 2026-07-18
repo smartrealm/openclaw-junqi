@@ -75,12 +75,12 @@ impl ManagedNodePlatform {
 
     #[cfg(any(windows, test))]
     pub(crate) fn installer_filename(self, version: &str) -> Option<String> {
-        (self.archive_format == NodeArchiveFormat::Zip).then(|| {
-            format!(
-                "node-v{version}-{}-{}.msi",
-                self.archive_os, self.architecture
-            )
-        })
+        // Unlike portable archives (`win-x64.zip`), official Node.js MSI
+        // artifacts omit the operating-system segment (`x64.msi`). Keeping
+        // this distinct from `archive_filename` is required for every mirror
+        // and nodejs.org URL to resolve.
+        (self.archive_format == NodeArchiveFormat::Zip)
+            .then(|| format!("node-v{version}-{}.msi", self.architecture))
     }
 
     pub(crate) fn extracted_root(self, version: &str) -> Option<String> {
@@ -94,60 +94,153 @@ struct NodeDistributionSource {
     base_url: &'static str,
     log_label: &'static str,
     display_name: &'static str,
+    checksum_authority: NodeChecksumAuthority,
 }
 
-const NODE_DISTRIBUTION_SOURCES: &[NodeDistributionSource] = &[
-    NodeDistributionSource {
-        base_url: "https://npmmirror.com/mirrors/node",
-        log_label: "npmmirror.com（国内）",
-        display_name: "npmmirror.com",
-    },
-    NodeDistributionSource {
-        base_url: "https://mirrors.aliyun.com/nodejs-release",
-        log_label: "阿里云镜像（国内）",
-        display_name: "阿里云",
-    },
-    NodeDistributionSource {
-        base_url: "https://mirrors.cloud.tencent.com/nodejs-release",
-        log_label: "腾讯云镜像（国内）",
-        display_name: "腾讯云",
-    },
-    NodeDistributionSource {
-        base_url: "https://mirrors.ustc.edu.cn/node",
-        log_label: "中科大镜像（国内）",
-        display_name: "中科大",
-    },
-    NodeDistributionSource {
-        base_url: "https://mirror.nju.edu.cn/nodejs-release",
-        log_label: "南京大学镜像（国内）",
-        display_name: "南京大学",
-    },
-    NodeDistributionSource {
-        base_url: "https://mirrors.huaweicloud.com/nodejs",
-        log_label: "华为云镜像（国内）",
-        display_name: "华为云",
-    },
-];
+impl NodeDistributionSource {
+    fn index_url(self) -> String {
+        format!("{}/index.json", self.base_url)
+    }
+
+    fn release_url(self, version: &str, filename: &str) -> String {
+        format!("{}/v{version}/{filename}", self.base_url)
+    }
+}
+
+/// Identifies the operator that publishes a checksum endpoint. The checksum
+/// resolver requires agreement from two distinct authorities, so aliases of
+/// the same endpoint cannot accidentally count as independent confirmation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NodeChecksumAuthority {
+    NpmMirror,
+    Aliyun,
+    Tencent,
+    Ustc,
+    Nju,
+    HuaweiCloud,
+    NodeJs,
+}
+
+/// A checksum endpoint and the trust role it plays in the release resolver.
+/// Mainland authorities are corroboration sources; Node.js itself is the
+/// authoritative single-source fallback for networks where mirrors are not
+/// reachable at all.
+#[derive(Debug, Clone)]
+pub(crate) struct NodeChecksumSource {
+    pub(crate) url: String,
+    pub(crate) label: &'static str,
+    pub(crate) is_official: bool,
+}
+
+/// The single source of truth for every Node.js release URL JunQi uses.
+///
+/// Mainland mirrors stay first for installation speed and accessibility. The
+/// official Node.js distribution endpoint is deliberately last: it is a
+/// network fallback, not a bypass for checksum verification.
+#[derive(Debug, Clone, Copy)]
+struct NodeDistributionCatalog {
+    sources: &'static [NodeDistributionSource],
+}
+
+impl NodeDistributionCatalog {
+    fn index_sources(self) -> Vec<String> {
+        self.sources
+            .iter()
+            .map(|source| source.index_url())
+            .collect()
+    }
+
+    fn checksum_sources(self, version: &str) -> Vec<NodeChecksumSource> {
+        let mut authorities = Vec::with_capacity(self.sources.len());
+        self.sources
+            .iter()
+            .filter(|source| {
+                if authorities.contains(&source.checksum_authority) {
+                    false
+                } else {
+                    authorities.push(source.checksum_authority);
+                    true
+                }
+            })
+            .map(|source| NodeChecksumSource {
+                url: source.release_url(version, "SHASUMS256.txt"),
+                label: source.log_label,
+                is_official: source.checksum_authority == NodeChecksumAuthority::NodeJs,
+            })
+            .collect()
+    }
+
+    fn release_sources(self, version: &str, filename: &str) -> Vec<(String, &'static str)> {
+        self.sources
+            .iter()
+            .map(|source| (source.release_url(version, filename), source.log_label))
+            .collect()
+    }
+
+    fn download_order(self) -> Vec<String> {
+        self.sources
+            .iter()
+            .map(|source| source.display_name.to_string())
+            .collect()
+    }
+}
+
+const NODE_DISTRIBUTION_CATALOG: NodeDistributionCatalog = NodeDistributionCatalog {
+    sources: &[
+        NodeDistributionSource {
+            base_url: "https://npmmirror.com/mirrors/node",
+            log_label: "npmmirror.com（国内）",
+            display_name: "npmmirror.com",
+            checksum_authority: NodeChecksumAuthority::NpmMirror,
+        },
+        NodeDistributionSource {
+            base_url: "https://mirrors.aliyun.com/nodejs-release",
+            log_label: "阿里云镜像（国内）",
+            display_name: "阿里云",
+            checksum_authority: NodeChecksumAuthority::Aliyun,
+        },
+        NodeDistributionSource {
+            base_url: "https://mirrors.cloud.tencent.com/nodejs-release",
+            log_label: "腾讯云镜像（国内）",
+            display_name: "腾讯云",
+            checksum_authority: NodeChecksumAuthority::Tencent,
+        },
+        NodeDistributionSource {
+            base_url: "https://mirrors.ustc.edu.cn/node",
+            log_label: "中科大镜像（国内）",
+            display_name: "中科大",
+            checksum_authority: NodeChecksumAuthority::Ustc,
+        },
+        NodeDistributionSource {
+            base_url: "https://mirror.nju.edu.cn/nodejs-release",
+            log_label: "南京大学镜像（国内）",
+            display_name: "南京大学",
+            checksum_authority: NodeChecksumAuthority::Nju,
+        },
+        NodeDistributionSource {
+            base_url: "https://mirrors.huaweicloud.com/nodejs",
+            log_label: "华为云镜像（国内）",
+            display_name: "华为云",
+            checksum_authority: NodeChecksumAuthority::HuaweiCloud,
+        },
+        NodeDistributionSource {
+            base_url: "https://nodejs.org/dist",
+            log_label: "nodejs.org（官方）",
+            display_name: "nodejs.org",
+            checksum_authority: NodeChecksumAuthority::NodeJs,
+        },
+    ],
+};
+
 pub(crate) fn node_index_sources() -> Vec<String> {
-    NODE_DISTRIBUTION_SOURCES
-        .iter()
-        .map(|source| format!("{}/index.json", source.base_url))
-        .collect()
+    NODE_DISTRIBUTION_CATALOG.index_sources()
 }
 
-pub(crate) fn node_checksum_sources(version: &str) -> Vec<(String, &'static str)> {
-    // The checksum resolver requires a matching digest from at least two
-    // independent mirrors. This keeps installation available on mainland
-    // networks without trusting the same endpoint that serves the archive.
-    NODE_DISTRIBUTION_SOURCES
-        .iter()
-        .map(|source| {
-            (
-                format!("{}/v{version}/SHASUMS256.txt", source.base_url),
-                source.log_label,
-            )
-        })
-        .collect()
+pub(crate) fn node_checksum_sources(version: &str) -> Vec<NodeChecksumSource> {
+    // The caller accepts a digest only after two independent catalog entries
+    // agree. The official fallback therefore remains verified even when it
+    // serves the downloaded artifact.
+    NODE_DISTRIBUTION_CATALOG.checksum_sources(version)
 }
 
 pub(crate) fn node_archive_sources(
@@ -155,15 +248,7 @@ pub(crate) fn node_archive_sources(
     version: &str,
 ) -> Vec<(String, &'static str)> {
     let filename = platform.archive_filename(version);
-    NODE_DISTRIBUTION_SOURCES
-        .iter()
-        .map(|source| {
-            (
-                format!("{}/v{version}/{filename}", source.base_url),
-                source.log_label,
-            )
-        })
-        .collect()
+    NODE_DISTRIBUTION_CATALOG.release_sources(version, &filename)
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -174,19 +259,11 @@ pub(crate) fn node_macos_installer_filename(version: &str) -> String {
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn node_macos_installer_sources(version: &str) -> Vec<(String, &'static str)> {
     let filename = node_macos_installer_filename(version);
-    NODE_DISTRIBUTION_SOURCES
-        .iter()
-        .map(|source| {
-            (
-                format!("{}/v{version}/{filename}", source.base_url),
-                source.log_label,
-            )
-        })
-        .collect()
+    NODE_DISTRIBUTION_CATALOG.release_sources(version, &filename)
 }
 
-/// Domestic mirrors host the official Windows MSI alongside the portable ZIP.
-/// The MSI is used only for the default system-runtime path, never for a
+/// The source catalog hosts the official Windows MSI alongside the portable
+/// ZIP. The MSI is used only for the default system-runtime path, never for a
 /// user-selected portable runtime directory.
 #[cfg(any(windows, test))]
 pub(crate) fn node_installer_sources(
@@ -196,22 +273,11 @@ pub(crate) fn node_installer_sources(
     let Some(filename) = platform.installer_filename(version) else {
         return Vec::new();
     };
-    NODE_DISTRIBUTION_SOURCES
-        .iter()
-        .map(|source| {
-            (
-                format!("{}/v{version}/{filename}", source.base_url),
-                source.log_label,
-            )
-        })
-        .collect()
+    NODE_DISTRIBUTION_CATALOG.release_sources(version, &filename)
 }
 
 pub(crate) fn node_download_order() -> Vec<String> {
-    NODE_DISTRIBUTION_SOURCES
-        .iter()
-        .map(|source| source.display_name.to_string())
-        .collect()
+    NODE_DISTRIBUTION_CATALOG.download_order()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -390,7 +456,7 @@ mod tests {
         );
         assert_eq!(
             windows.installer_filename("24.18.1").as_deref(),
-            Some("node-v24.18.1-win-x64.msi")
+            Some("node-v24.18.1-x64.msi")
         );
         assert_eq!(windows.extracted_root("24.18.1"), None);
 
@@ -409,15 +475,16 @@ mod tests {
     }
 
     #[test]
-    fn bug_rp_03_node_urls_and_ui_order_share_one_catalog() {
+    fn node_catalog_keeps_mainland_sources_first_and_the_official_fallback_last() {
         let platform = ManagedNodePlatform::for_target("windows", "x86_64").unwrap();
         let indexes = node_index_sources();
         let checksums = node_checksum_sources("24.18.1");
         let archives = node_archive_sources(platform, "24.18.1");
         let installers = node_installer_sources(platform, "24.18.1");
         let order = node_download_order();
+        let catalog = NODE_DISTRIBUTION_CATALOG.sources;
 
-        assert_eq!(indexes.len(), NODE_DISTRIBUTION_SOURCES.len());
+        assert_eq!(indexes.len(), catalog.len());
         assert_eq!(indexes.len(), archives.len());
         assert_eq!(indexes.len(), installers.len());
         assert_eq!(indexes.len(), order.len());
@@ -425,16 +492,46 @@ mod tests {
             let base = index.strip_suffix("/index.json").unwrap();
             assert!(archive.starts_with(base));
         }
-        assert!(indexes.iter().all(|url| !url.contains("nodejs.org")));
-        assert_eq!(checksums.len(), NODE_DISTRIBUTION_SOURCES.len());
-        assert!(checksums.iter().all(|(url, _)| {
-            url.ends_with("/v24.18.1/SHASUMS256.txt") && !url.contains("nodejs.org")
-        }));
+        assert!(indexes[..indexes.len() - 1]
+            .iter()
+            .all(|url| !url.contains("nodejs.org")));
+        assert_eq!(
+            indexes.last().map(String::as_str),
+            Some("https://nodejs.org/dist/index.json")
+        );
+        assert_eq!(order.last().map(String::as_str), Some("nodejs.org"));
+
+        // The checksum resolver receives every independent authority, including
+        // the official endpoint, but no alias can inflate the two-source quorum.
+        assert_eq!(checksums.len(), catalog.len());
+        for (index, source) in catalog.iter().enumerate() {
+            assert_eq!(checksums[index].label, source.log_label);
+            assert!(checksums[index].url.ends_with("/v24.18.1/SHASUMS256.txt"));
+            for other in catalog.iter().skip(index + 1) {
+                assert_ne!(source.checksum_authority, other.checksum_authority);
+            }
+        }
+        assert!(checksums
+            .last()
+            .unwrap()
+            .url
+            .starts_with("https://nodejs.org/dist/"));
+        assert!(checksums.last().unwrap().is_official);
         assert!(installers
             .iter()
-            .all(|(url, _)| url.ends_with("node-v24.18.1-win-x64.msi")));
+            .all(|(url, _)| url.ends_with("node-v24.18.1-x64.msi")));
+        assert!(installers
+            .last()
+            .unwrap()
+            .0
+            .starts_with("https://nodejs.org/dist/"));
         assert!(node_macos_installer_sources("24.18.1")
             .iter()
             .all(|(url, _)| url.ends_with("node-v24.18.1.pkg")));
+        assert!(node_macos_installer_sources("24.18.1")
+            .last()
+            .unwrap()
+            .0
+            .starts_with("https://nodejs.org/dist/"));
     }
 }

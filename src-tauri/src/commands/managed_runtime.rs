@@ -29,7 +29,7 @@ fn runtime_update_supported(
 
 #[tauri::command]
 pub async fn get_managed_runtime_status() -> Result<ManagedRuntimeStatus, String> {
-    let requirement = system::installed_openclaw_node_requirement()?;
+    let requirement = system::installed_openclaw_node_requirement().await?;
     let (node, git) = tokio::join!(
         system::check_node_for_requirement(&requirement),
         system::check_git(),

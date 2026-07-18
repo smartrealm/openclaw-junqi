@@ -164,18 +164,34 @@ test('BUG-ONB-14 existing Native OpenClaw runs the full dependency closure after
   assert.match(completeStorage, /navigateSetup\("checking", "push"\);\s*void runNativeSetup\(\);\s*return;/);
 });
 
-test('BUG-ONB-15 runtime navigation uses its own label instead of repeating environment detection', () => {
+test('BUG-ONB-15 setup navigation has one complete six-step translation contract per locale', () => {
   const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
   const en = JSON.parse(readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
+  const ar = JSON.parse(readFileSync(new URL('../locales/ar.json', import.meta.url), 'utf8'));
 
-  assert.deepEqual(zh.setup.steps.runtime, {
-    title: '运行时',
-    description: '安装并启动服务',
-  });
-  assert.deepEqual(en.setup.steps.runtime, {
-    title: 'Runtime',
-    description: 'Install and start services',
-  });
+  const zhExpected = {
+    identity: { title: '品牌与偏好', description: '语言 / 主题' },
+    environment: { title: '环境检测', description: 'OpenClaw / Docker' },
+    storage: { title: '数据位置', description: '配置与工作区' },
+    runtime: { title: '运行时', description: '安装并启动服务' },
+    configuration: { title: '配置', description: '模型与提供商' },
+    ready: { title: '完成', description: '进入工作台' },
+  };
+  const enExpected = {
+    identity: { title: 'Brand & Preferences', description: 'Language / Theme' },
+    environment: { title: 'Environment', description: 'OpenClaw / Docker' },
+    storage: { title: 'Data Location', description: 'Configuration and workspace' },
+    runtime: { title: 'Runtime', description: 'Install and start services' },
+    configuration: { title: 'Configuration', description: 'Models and providers' },
+    ready: { title: 'Ready', description: 'Enter workspace' },
+  };
+
+  assert.deepEqual(zh.setup.steps, zhExpected);
+  assert.deepEqual(en.setup.steps, enExpected);
+  for (const step of Object.keys(zhExpected)) {
+    assert.equal(typeof ar[`setup.steps.${step}.title`], 'string');
+    assert.equal(typeof ar[`setup.steps.${step}.description`], 'string');
+  }
 });
 
 test('BUG-ONB-09 native setup verifies optional terminal integration after OpenClaw', () => {
@@ -200,9 +216,9 @@ test('BUG-ONB-10 setup leaves system tools and npm cache at their native default
 });
 
 test('BUG-CPI-03 macOS missing Node runs the domestic system-installer recovery path', () => {
-  assert.match(setupFlow, /const setupNode = await checkSetupNode\(\)/);
+  assert.match(setupFlow, /let setupNode = await checkSetupNode\(\)/);
   assert.doesNotMatch(setupFlow, /useMacSystemRecovery/);
-  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?await installNode\(\)/);
+  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?await runDependencyInstall\(runId, "node", \(operationId\) => installNode\(false, operationId\)\)/);
   assert.match(setupCommand, /install_macos_system_node/);
   assert.match(setupCommand, /Command::new\("\/usr\/bin\/open"\)/);
   assert.doesNotMatch(setupPage, /nodejs\.org/);

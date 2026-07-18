@@ -1,8 +1,8 @@
 use super::{
-    selected_runtime_environment, updated_windows_path, EnvironmentBinding,
-    TerminalIntegrationBackend, TerminalLauncherTarget,
+    updated_windows_path, EnvironmentBinding, NativeTerminalLaunch, TerminalIntegrationBackend,
+    TerminalLauncherTarget,
 };
-use crate::paths;
+use crate::{commands::system::NativeOpenclawLaunchSpec, paths, platform};
 use std::path::Path;
 
 pub(super) struct WindowsBackend;
@@ -12,7 +12,7 @@ impl TerminalIntegrationBackend for WindowsBackend {
 
     fn apply_environment(enabled: bool) -> Result<EnvironmentBinding, String> {
         update_user_path(enabled)?;
-        crate::commands::setup::refresh_path_from_registry();
+        platform::refresh_process_path_from_registry();
         Ok(EnvironmentBinding::default())
     }
 
@@ -35,77 +35,92 @@ impl TerminalIntegrationBackend for WindowsBackend {
             })
     }
 
-    fn launcher_contents(target: TerminalLauncherTarget<'_>) -> String {
+    fn launcher_contents(target: &TerminalLauncherTarget) -> String {
         match target {
             TerminalLauncherTarget::Docker => docker_launcher_contents(),
-            TerminalLauncherTarget::Native(binary) => native_launcher_contents(binary),
+            TerminalLauncherTarget::Native(launch) => native_launcher_contents(launch.as_ref()),
         }
     }
 }
 
-fn native_launcher_contents(binary: Option<&Path>) -> String {
-    let command = binary.map_or_else(missing_binary_command, native_binary_command);
-    let runtime = selected_runtime_environment();
-    let path = runtime
-        .path_entries
-        .iter()
-        .map(|path| batch_escape(path))
-        .collect::<Vec<_>>()
-        .join(";");
-    let path_line = (!path.is_empty())
-        .then(|| format!("set \"PATH={path};%PATH%\"\r\n"))
-        .unwrap_or_default();
-    let prefix_line = runtime
-        .npm_prefix
-        .as_deref()
-        .map(|path| format!("set \"npm_config_prefix={}\"\r\n", batch_escape(path)))
-        .unwrap_or_default();
-    let cache_line = runtime
-        .npm_cache
-        .as_deref()
-        .map(|path| format!("set \"npm_config_cache={}\"\r\n", batch_escape(path)))
-        .unwrap_or_default();
+fn native_launcher_contents(launch: Option<&NativeTerminalLaunch>) -> String {
+    let (command, root_cwd_guard, path_line, prefix_line, cache_line) = match launch {
+        Some(launch) => {
+            let root_cwd_guard = launch
+                .working_dir
+                .as_deref()
+                .map(|path| format!("if \"%CD:~3%\"==\"\" cd /d \"{}\"\r\n", batch_escape(path)))
+                .unwrap_or_default();
+            let path = launch
+                .environment
+                .path_entries
+                .iter()
+                .map(|path| batch_escape(path))
+                .collect::<Vec<_>>()
+                .join(";");
+            let path_line = (!path.is_empty())
+                .then(|| format!("set \"PATH={path};%PATH%\"\r\n"))
+                .unwrap_or_default();
+            let prefix_line = launch
+                .environment
+                .npm_prefix
+                .as_deref()
+                .map(|path| format!("set \"npm_config_prefix={}\"\r\n", batch_escape(path)))
+                .unwrap_or_default();
+            let cache_line = launch
+                .environment
+                .npm_cache
+                .as_deref()
+                .map(|path| format!("set \"npm_config_cache={}\"\r\n", batch_escape(path)))
+                .unwrap_or_default();
+            (
+                native_launch_command(&launch.launch),
+                root_cwd_guard,
+                path_line,
+                prefix_line,
+                cache_line,
+            )
+        }
+        None => (
+            missing_binary_command(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ),
+    };
     format!(
-            "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"OPENCLAW_STATE_DIR={}\"\r\nset \"OPENCLAW_CONFIG_PATH={}\"\r\n{}{}{}{}\r\n",
+            "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"OPENCLAW_STATE_DIR={}\"\r\nset \"OPENCLAW_CONFIG_PATH={}\"\r\n{}{}{}{}{}\r\n",
             batch_escape(&paths::desktop_dir()),
             batch_escape(&paths::config_path()),
+            root_cwd_guard,
             path_line,
             prefix_line,
             cache_line,
             command
-        )
+    )
 }
 
-fn native_binary_command(binary: &Path) -> String {
-    if let Some(entry) = crate::commands::system::openclaw_package_dir(binary)
-        .map(|package| package.join("openclaw.mjs"))
-        .filter(|entry| entry.is_file())
-    {
-        let node = paths::configured_node_path()
-            .filter(|path| path.is_file())
-            .or_else(|| {
-                let detected = crate::platform::detect_path("node");
-                (!detected.is_empty()).then(|| detected.into())
-            });
-        if let Some(node) = node {
-            return format!(
-                "\"{}\" \"{}\" %*",
-                batch_escape(&node),
-                batch_escape(&entry)
-            );
+fn native_launch_command(launch: &NativeOpenclawLaunchSpec) -> String {
+    match launch {
+        NativeOpenclawLaunchSpec::NodeScript { node, entry } => {
+            format!("\"{}\" \"{}\" %*", batch_escape(node), batch_escape(entry))
+        }
+        NativeOpenclawLaunchSpec::Executable { program }
+            if program
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("ps1")) =>
+        {
+            format!(
+                "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"{}\" %*",
+                batch_escape(program)
+            )
+        }
+        NativeOpenclawLaunchSpec::Executable { program } => {
+            format!("call \"{}\" %*", batch_escape(program))
         }
     }
-    if binary
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("ps1"))
-    {
-        return format!(
-            "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"{}\" %*",
-            batch_escape(binary)
-        );
-    }
-    format!("call \"{}\" %*", batch_escape(binary))
 }
 
 fn docker_launcher_contents() -> String {
@@ -232,5 +247,34 @@ mod tests {
     fn rejects_semicolon_in_launcher_path() {
         assert!(validate_launcher_path(r"C:\JunQi;Other").is_err());
         assert!(validate_launcher_path(r"C:\JunQi\bin").is_ok());
+    }
+
+    #[test]
+    fn native_node_command_uses_the_resolved_entry_without_path_lookup() {
+        let command = native_launch_command(&NativeOpenclawLaunchSpec::NodeScript {
+            node: r"C:\Runtime\node.exe".into(),
+            entry: r"D:\npm\node_modules\openclaw\openclaw.mjs".into(),
+        });
+
+        assert_eq!(
+            command,
+            r#""C:\Runtime\node.exe" "D:\npm\node_modules\openclaw\openclaw.mjs" %*"#
+        );
+    }
+
+    #[test]
+    fn native_launcher_leaves_project_directories_alone_but_guards_drive_roots() {
+        let launch = NativeTerminalLaunch {
+            launch: NativeOpenclawLaunchSpec::NodeScript {
+                node: r"C:\Runtime\node.exe".into(),
+                entry: r"D:\npm\node_modules\openclaw\openclaw.mjs".into(),
+            },
+            environment: Default::default(),
+            working_dir: Some(r"C:\Users\Example".into()),
+        };
+
+        let content = native_launcher_contents(Some(&launch));
+
+        assert!(content.contains(r#"if "%CD:~3%"=="" cd /d "C:\Users\Example""#));
     }
 }

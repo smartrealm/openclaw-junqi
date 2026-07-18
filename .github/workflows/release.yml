@@ -52,6 +52,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.ref || github.sha }}
+          # Tag releases must prove their commit has reached main. A shallow
+          # checkout cannot establish that ancestry relationship reliably.
+          fetch-depth: 0
 
       - name: Check package.json, Cargo.toml, and tauri.conf.json
         shell: bash
@@ -76,6 +79,25 @@ jobs:
             tag_version="${release_ref#v}"
             if [ "$tag_version" != "$package_version" ]; then
               echo "::error::Tag $release_ref does not match desktop version $package_version"
+              exit 1
+            fi
+
+            tag_commit="$(git rev-parse --verify "refs/tags/${release_ref}^{commit}" 2>/dev/null)" || {
+              echo "::error::Release reference $release_ref must resolve to an existing Git tag"
+              exit 1
+            }
+            checked_out_commit="$(git rev-parse HEAD)"
+            if [ "$checked_out_commit" != "$tag_commit" ]; then
+              echo "::error::Checked out commit $checked_out_commit does not match tag $release_ref ($tag_commit)"
+              exit 1
+            fi
+
+            # A version tag is a release candidate only after the exact tagged
+            # commit is already part of the canonical main history.
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+            main_commit="$(git rev-parse origin/main)"
+            if ! git merge-base --is-ancestor "$tag_commit" "$main_commit"; then
+              echo "::error::Tag $release_ref ($tag_commit) is not contained in origin/main ($main_commit)"
               exit 1
             fi
           fi
@@ -508,11 +530,10 @@ jobs:
           fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$tag" --target daxia --notes "$notes" --repo "$GITHUB_REPOSITORY"
+            gh release edit "$tag" --notes "$notes" --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$tag" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
-              --target daxia \
               --title "$title" \
               --notes "$notes"
           fi

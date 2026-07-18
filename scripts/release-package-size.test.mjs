@@ -39,3 +39,15 @@ test('release downloads are split by installer purpose', () => {
   assert.match(release, /artifact_name \}\}-msi-zh-cn/);
   assert.doesNotMatch(release, /path:\s*\$\{\{ matrix\.installer_paths \}\}/);
 });
+
+test('tag releases require a commit already contained in main', () => {
+  assert.match(release, /fetch-depth:\s*0/);
+  assert.match(release, /refs\/tags\/\$\{release_ref\}\^\{commit\}/);
+  assert.match(release, /refs\/heads\/main:refs\/remotes\/origin\/main/);
+  assert.match(release, /git merge-base --is-ancestor "\$tag_commit" "\$main_commit"/);
+});
+
+test('GitHub releases remain anchored to their pushed tag', () => {
+  const publish = release.slice(release.indexOf('  publish:'), release.indexOf('  release:'));
+  assert.doesNotMatch(publish, /--target\b/);
+});

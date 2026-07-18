@@ -62,6 +62,8 @@ pub fn run() {
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,
+            commands::storage::commit_runtime_reconfiguration,
+            commands::storage::rollback_runtime_reconfiguration,
             commands::storage::update_npm_cache_directory,
             commands::terminal_integration::apply_terminal_integration,
             commands::terminal_integration::get_terminal_integration_status,
@@ -80,7 +82,7 @@ pub fn run() {
             commands::system::get_platform_info,
             commands::system::check_node,
             commands::setup::check_setup_node,
-            commands::system::check_npm,
+            commands::setup::repair_setup_node_runtime,
             commands::system::check_git,
             commands::system::check_openclaw,
             commands::openclaw_update::check_openclaw_update,
@@ -105,6 +107,7 @@ pub fn run() {
             commands::voice_wake::voice_wake_status,
             // Setup
             commands::setup::install_node,
+            commands::setup::cancel_dependency_install,
             commands::managed_runtime::update_managed_node,
             commands::setup::install_git,
             commands::managed_runtime::update_managed_git,
@@ -315,6 +318,21 @@ pub fn run() {
             commands::agent_workspace_storage::save_agent_workspace_tasks,
         ])
         .setup(|app| {
+            // A location reconfiguration can own a platform service (notably a
+            // Windows Scheduled Task), so recover it only after Tauri has
+            // constructed the managed Gateway state and service APIs. The
+            // memento remains durable when this fails and setup can surface a
+            // retryable recovery state instead of launching mixed paths.
+            let recovery_handle = app.handle().clone();
+            let recovery_state = app.state::<GatewayProcess>();
+            if let Err(error) = tauri::async_runtime::block_on(
+                commands::storage::recover_interrupted_runtime_reconfiguration(
+                    &recovery_handle,
+                    recovery_state,
+                ),
+            ) {
+                eprintln!("[runtime-reconfiguration] {error}");
+            }
             commands::fs_watcher::init(app);
             let _ = commands::hooks::ensure_installed();
             commands::agent_event_watcher::start(app.handle().clone());

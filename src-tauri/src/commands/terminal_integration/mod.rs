@@ -31,45 +31,117 @@ struct EnvironmentBinding {
     profile_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Default)]
+/// The terminal launcher is an app-owned artifact, but changing it together
+/// with a profile or Windows PATH entry is still a transaction. Retain its
+/// exact previous text so a failed environment update cannot leave a launcher
+/// that points at a new runtime while the old terminal integration remains.
+struct LauncherSnapshot {
+    path: PathBuf,
+    content: Option<String>,
+}
+
+impl LauncherSnapshot {
+    fn capture(path: PathBuf) -> Result<Self, String> {
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => Some(content),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                return Err(format!(
+                    "Failed to read existing terminal launcher {}: {}",
+                    path.display(),
+                    error
+                ));
+            }
+        };
+        Ok(Self { path, content })
+    }
+
+    fn restore(self) -> Result<(), String> {
+        match self.content {
+            Some(content) => paths::atomic_write_text(&self.path, &content),
+            None => match std::fs::remove_file(&self.path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(format!(
+                    "Failed to remove terminal launcher {} during rollback: {}",
+                    self.path.display(),
+                    error
+                )),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub(super) struct TerminalRuntimeEnvironment {
     pub path_entries: Vec<PathBuf>,
     pub npm_prefix: Option<PathBuf>,
     pub npm_cache: Option<PathBuf>,
 }
 
-pub(super) fn selected_runtime_environment() -> TerminalRuntimeEnvironment {
-    let mut environment = TerminalRuntimeEnvironment {
-        npm_prefix: paths::configured_npm_prefix(),
-        npm_cache: paths::configured_npm_cache_dir(),
-        ..TerminalRuntimeEnvironment::default()
-    };
-    let candidates = [
-        paths::configured_node_path().and_then(|path| path.parent().map(Path::to_path_buf)),
-        paths::configured_git_path().and_then(|path| path.parent().map(Path::to_path_buf)),
-        environment
-            .npm_prefix
-            .as_deref()
-            .map(paths::npm_bin_dir_for_prefix),
-        paths::user_npm_bin_dir(),
-    ];
-    for candidate in candidates.into_iter().flatten() {
-        if !environment
-            .path_entries
-            .iter()
-            .any(|existing| path_entries_equal(existing, &candidate))
+impl TerminalRuntimeEnvironment {
+    fn for_native_runtime(runtime: &crate::commands::system::NativeOpenclawRuntime) -> Self {
+        let npm_prefix = runtime
+            .npm_prefix()
+            .map(Path::to_path_buf)
+            .or_else(paths::configured_npm_prefix);
+        let mut environment = Self {
+            npm_prefix,
+            npm_cache: paths::configured_npm_cache_dir(),
+            ..Self::default()
+        };
+        let node_dir = match runtime.launcher_spec() {
+            crate::commands::system::NativeOpenclawLaunchSpec::NodeScript { node, .. } => {
+                node.parent().map(Path::to_path_buf)
+            }
+            crate::commands::system::NativeOpenclawLaunchSpec::Executable { .. } => None,
+        };
+        for candidate in [
+            node_dir,
+            paths::configured_git_path().and_then(|path| path.parent().map(Path::to_path_buf)),
+            environment
+                .npm_prefix
+                .as_deref()
+                .map(paths::npm_bin_dir_for_prefix),
+            paths::user_npm_bin_dir(),
+        ]
+        .into_iter()
+        .flatten()
         {
-            environment.path_entries.push(candidate);
+            if !environment
+                .path_entries
+                .iter()
+                .any(|existing| path_entries_equal(existing, &candidate))
+            {
+                environment.path_entries.push(candidate);
+            }
+        }
+        environment
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct NativeTerminalLaunch {
+    pub launch: crate::commands::system::NativeOpenclawLaunchSpec,
+    pub environment: TerminalRuntimeEnvironment,
+    pub working_dir: Option<PathBuf>,
+}
+
+impl NativeTerminalLaunch {
+    fn from_runtime(runtime: &crate::commands::system::NativeOpenclawRuntime) -> Self {
+        Self {
+            launch: runtime.launcher_spec(),
+            environment: TerminalRuntimeEnvironment::for_native_runtime(runtime),
+            working_dir: paths::stable_openclaw_working_dir(),
         }
     }
-    environment
 }
 
 /// The launcher is generated from the selected runtime rather than from the
 /// accidental presence of a host-side OpenClaw binary. This keeps Docker
 /// terminal integration useful on a clean Docker-only installation.
-pub(super) enum TerminalLauncherTarget<'a> {
-    Native(Option<&'a Path>),
+pub(super) enum TerminalLauncherTarget {
+    Native(Option<NativeTerminalLaunch>),
     Docker,
 }
 
@@ -79,7 +151,7 @@ trait TerminalIntegrationBackend {
     fn apply_environment(enabled: bool) -> Result<EnvironmentBinding, String>;
     fn detect_environment() -> EnvironmentBinding;
     fn is_environment_configured(binding: &EnvironmentBinding) -> bool;
-    fn launcher_contents(target: TerminalLauncherTarget<'_>) -> String;
+    fn launcher_contents(target: &TerminalLauncherTarget) -> String;
 
     fn prepare_launcher(_path: &Path) -> Result<(), String> {
         Ok(())
@@ -93,65 +165,56 @@ impl<B: TerminalIntegrationBackend> TerminalIntegrationService<B> {
         paths::terminal_launcher_dir().join(B::LAUNCHER_FILENAME)
     }
 
-    fn sync(
-        requested: bool,
-        native_binary_override: Option<&Path>,
-    ) -> Result<TerminalIntegrationStatus, String> {
-        if requested {
-            paths::validate_runtime_overrides()?;
-        }
-        let binding = if requested {
-            let runtime = paths::active_runtime_mode();
-            let detected_binary = matches!(runtime, paths::OpenClawRuntimeMode::Native)
-                .then(crate::commands::system::resolve_openclaw_binary)
-                .flatten();
-            let binary = native_binary_override.or(detected_binary.as_deref());
-            let target = match runtime {
-                paths::OpenClawRuntimeMode::Native => TerminalLauncherTarget::Native(binary),
-                paths::OpenClawRuntimeMode::Docker => TerminalLauncherTarget::Docker,
-            };
-            Self::write_launcher(target)?;
-            B::apply_environment(true)?
-        } else {
-            let binding = B::apply_environment(false)?;
-            Self::remove_launcher()?;
-            binding
-        };
-        Ok(Self::build_status(requested, binding))
+    fn enable(target: &TerminalLauncherTarget) -> Result<TerminalIntegrationStatus, String> {
+        paths::validate_runtime_overrides()?;
+        let snapshot = Self::write_launcher(target)?;
+        let binding =
+            B::apply_environment(true).map_err(|error| rollback_launcher(snapshot, error))?;
+        Ok(Self::build_status(true, binding, target_is_ready(target)))
     }
 
-    fn detect(requested: bool) -> TerminalIntegrationStatus {
-        Self::build_status(requested, B::detect_environment())
+    fn disable() -> Result<TerminalIntegrationStatus, String> {
+        let snapshot = Self::remove_launcher()?;
+        let binding =
+            B::apply_environment(false).map_err(|error| rollback_launcher(snapshot, error))?;
+        Ok(Self::build_status(false, binding, false))
     }
 
-    fn write_launcher(target: TerminalLauncherTarget<'_>) -> Result<(), String> {
+    fn detect(requested: bool, runtime_ready: bool) -> TerminalIntegrationStatus {
+        Self::build_status(requested, B::detect_environment(), runtime_ready)
+    }
+
+    fn write_launcher(target: &TerminalLauncherTarget) -> Result<LauncherSnapshot, String> {
         let directory = paths::terminal_launcher_dir();
         std::fs::create_dir_all(&directory)
             .map_err(|error| format!("Failed to create terminal launcher directory: {}", error))?;
         let path = Self::launcher_path();
+        let snapshot = LauncherSnapshot::capture(path.clone())?;
         paths::atomic_write_text(&path, &B::launcher_contents(target))?;
-        B::prepare_launcher(&path)
-    }
-
-    fn remove_launcher() -> Result<(), String> {
-        let path = Self::launcher_path();
-        if !path.exists() {
-            return Ok(());
+        if let Err(error) = B::prepare_launcher(&path) {
+            return Err(rollback_launcher(snapshot, error));
         }
-        std::fs::remove_file(&path)
-            .map_err(|error| format!("Failed to remove terminal launcher: {}", error))
+        Ok(snapshot)
     }
 
-    fn build_status(requested: bool, binding: EnvironmentBinding) -> TerminalIntegrationStatus {
+    fn remove_launcher() -> Result<LauncherSnapshot, String> {
+        let path = Self::launcher_path();
+        let snapshot = LauncherSnapshot::capture(path.clone())?;
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .map_err(|error| format!("Failed to remove terminal launcher: {}", error))?;
+        }
+        Ok(snapshot)
+    }
+
+    fn build_status(
+        requested: bool,
+        binding: EnvironmentBinding,
+        runtime_ready: bool,
+    ) -> TerminalIntegrationStatus {
         let launcher = Self::launcher_path();
         let enabled = requested && launcher.is_file() && B::is_environment_configured(&binding);
         let current_path_has_launcher = current_path_contains(&paths::terminal_launcher_dir());
-        let runtime_ready = match paths::active_runtime_mode() {
-            paths::OpenClawRuntimeMode::Native => {
-                crate::commands::system::resolve_openclaw_binary().is_some()
-            }
-            paths::OpenClawRuntimeMode::Docker => true,
-        };
         TerminalIntegrationStatus {
             requested,
             enabled,
@@ -165,6 +228,24 @@ impl<B: TerminalIntegrationBackend> TerminalIntegrationService<B> {
             message: status_message(requested, enabled, current_path_has_launcher),
         }
     }
+}
+
+fn rollback_launcher(snapshot: LauncherSnapshot, failure: impl Into<String>) -> String {
+    let failure = failure.into();
+    match snapshot.restore() {
+        Ok(()) => failure,
+        Err(error) => format!(
+            "{}; failed to restore terminal launcher: {}",
+            failure, error
+        ),
+    }
+}
+
+fn target_is_ready(target: &TerminalLauncherTarget) -> bool {
+    matches!(
+        target,
+        TerminalLauncherTarget::Docker | TerminalLauncherTarget::Native(Some(_))
+    )
 }
 
 fn status_message(requested: bool, enabled: bool, active_in_process: bool) -> String {
@@ -206,55 +287,98 @@ fn updated_windows_path(current: &str, launcher: &str, enabled: bool) -> String 
     entries.join(";")
 }
 
-pub(crate) fn sync_terminal_integration() -> Result<TerminalIntegrationStatus, String> {
-    if matches!(
-        paths::active_runtime_mode(),
-        paths::OpenClawRuntimeMode::Native
-    ) {
-        crate::commands::system::ensure_openclaw_relocation_complete()?;
+async fn terminal_launcher_target() -> Result<TerminalLauncherTarget, String> {
+    match paths::active_runtime_mode() {
+        paths::OpenClawRuntimeMode::Docker => Ok(TerminalLauncherTarget::Docker),
+        paths::OpenClawRuntimeMode::Native => {
+            crate::commands::system::ensure_openclaw_relocation_complete()?;
+            let Some(binary) = crate::commands::system::resolve_openclaw_binary_async().await
+            else {
+                return Ok(TerminalLauncherTarget::Native(None));
+            };
+            let runtime = crate::commands::system::compatible_native_openclaw_runtime(binary)
+                .await
+                .map_err(|error| format!("OpenClaw terminal runtime is unavailable: {error}"))?;
+            Ok(TerminalLauncherTarget::Native(Some(
+                NativeTerminalLaunch::from_runtime(&runtime),
+            )))
+        }
     }
-    TerminalIntegrationService::<ActiveBackend>::sync(paths::terminal_integration_requested(), None)
 }
 
-/// Sync against the binary already validated by a relocation. The normal
-/// resolver deliberately hides binaries until the relocation is committed.
-pub(crate) fn sync_terminal_integration_for_relocation(
-    binary: &Path,
+pub(crate) async fn sync_terminal_integration() -> Result<TerminalIntegrationStatus, String> {
+    if !paths::terminal_integration_requested() {
+        return TerminalIntegrationService::<ActiveBackend>::disable();
+    }
+    let target = terminal_launcher_target().await?;
+    TerminalIntegrationService::<ActiveBackend>::enable(&target)
+}
+
+/// Sync against a runtime already validated by setup or relocation. This avoids
+/// a second PATH-based discovery pass while a package transition is in flight.
+pub(crate) fn sync_terminal_integration_with_native_runtime(
+    runtime: &crate::commands::system::NativeOpenclawRuntime,
 ) -> Result<TerminalIntegrationStatus, String> {
     if !matches!(
         paths::active_runtime_mode(),
         paths::OpenClawRuntimeMode::Native
     ) {
-        return Err("OpenClaw relocation terminal sync requires the Native runtime".into());
+        return Err("OpenClaw native terminal sync requires the Native runtime".into());
     }
-    TerminalIntegrationService::<ActiveBackend>::sync(
-        paths::terminal_integration_requested(),
-        Some(binary),
-    )
+    if !paths::terminal_integration_requested() {
+        return TerminalIntegrationService::<ActiveBackend>::disable();
+    }
+    let target = TerminalLauncherTarget::Native(Some(NativeTerminalLaunch::from_runtime(runtime)));
+    TerminalIntegrationService::<ActiveBackend>::enable(&target)
 }
 
 /// Disable only the integration artifacts JunQi owns. The normal public sync
 /// path checks for a completed OpenClaw relocation; an uninstall must still
 /// remove its launcher and PATH entry when a migration was interrupted.
 pub(crate) fn disable_terminal_integration_for_uninstall() -> Result<(), String> {
-    TerminalIntegrationService::<ActiveBackend>::sync(false, None).map(|_| ())
+    TerminalIntegrationService::<ActiveBackend>::disable().map(|_| ())
 }
 
 #[tauri::command]
 pub async fn apply_terminal_integration() -> Result<TerminalIntegrationStatus, String> {
-    sync_terminal_integration()
+    sync_terminal_integration().await
 }
 
 #[tauri::command]
 pub async fn get_terminal_integration_status() -> Result<TerminalIntegrationStatus, String> {
+    let requested = paths::terminal_integration_requested();
+    let runtime_ready = if requested {
+        match paths::active_runtime_mode() {
+            paths::OpenClawRuntimeMode::Docker => true,
+            paths::OpenClawRuntimeMode::Native => {
+                crate::commands::system::ensure_openclaw_relocation_complete().is_ok()
+                    && crate::commands::system::resolve_compatible_native_openclaw_runtime()
+                        .await
+                        .is_ok()
+            }
+        }
+    } else {
+        false
+    };
     Ok(TerminalIntegrationService::<ActiveBackend>::detect(
-        paths::terminal_integration_requested(),
+        requested,
+        runtime_ready,
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_launcher_path(label: &str) -> PathBuf {
+        std::env::temp_dir()
+            .join(format!(
+                "junqi-terminal-launcher-{label}-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ))
+            .join("openclaw")
+    }
 
     #[test]
     fn windows_path_update_is_case_insensitive_and_idempotent() {
@@ -288,5 +412,32 @@ mod tests {
             "Terminal integration is active"
         );
         assert!(status_message(true, true, false).contains("open a new terminal"));
+    }
+
+    #[test]
+    fn launcher_snapshot_restores_the_previous_launcher_content() {
+        let path = test_launcher_path("restore");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "previous launcher").unwrap();
+        let snapshot = LauncherSnapshot::capture(path.clone()).unwrap();
+
+        paths::atomic_write_text(&path, "replacement launcher").unwrap();
+        snapshot.restore().unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "previous launcher");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn launcher_snapshot_removes_a_launcher_created_during_a_failed_transaction() {
+        let path = test_launcher_path("remove");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let snapshot = LauncherSnapshot::capture(path.clone()).unwrap();
+
+        paths::atomic_write_text(&path, "new launcher").unwrap();
+        snapshot.restore().unwrap();
+
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

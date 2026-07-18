@@ -55,7 +55,7 @@ test('BUG-IU-05 setup progress stays after storage and reaches 100', () => {
 
 test('BUG-CPI-04 package updates require a target Node contract before Gateway shutdown', () => {
   const preflight = updater.slice(
-    updater.indexOf('let (dry_run, metadata_registry)'),
+    updater.indexOf('let (dry_run_output, metadata_source)'),
     updater.indexOf('let restore_gateway = stop_managed_gateway'),
   );
   const completion = updater.slice(
@@ -68,5 +68,6 @@ test('BUG-CPI-04 package updates require a target Node contract before Gateway s
   assert.match(preflight, /emit_update_error\(&app, &error, Some\(0\.38\)\);[\s\S]*return Err\(error\)/);
   assert.match(preflight, /ensure_compatible_node_runtime[\s\S]*target\.node_requirement/);
   assert.match(completion, /validate_updated_runtime_contract/);
+  assert.match(completion, /sync_terminal_integration_with_native_runtime/);
   assert.match(completion, /Gateway recovery failed[\s\S]*mark_update_failure/);
 });

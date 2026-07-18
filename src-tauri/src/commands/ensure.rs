@@ -59,7 +59,7 @@ async fn probe_docker_gateway_port(port: u16) -> bool {
 /// 从当前本机配置读取 Gateway token。
 fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
     let raw = std::fs::read_to_string(config_path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let v = crate::commands::config::parse_openclaw_config(&raw).ok()?;
     v.get("gateway")?
         .get("auth")?
         .get("token")?
@@ -79,7 +79,7 @@ fn read_gateway_port() -> u16 {
         Ok(raw) => raw,
         Err(_) => return crate::commands::config::default_gateway_port(),
     };
-    let v: serde_json::Value = match serde_json::from_str(&raw) {
+    let v = match crate::commands::config::parse_openclaw_config(&raw) {
         Ok(v) => v,
         Err(_) => return crate::commands::config::default_gateway_port(),
     };

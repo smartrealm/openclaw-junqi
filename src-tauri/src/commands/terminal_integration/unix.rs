@@ -1,8 +1,9 @@
+#[cfg(test)]
+use super::TerminalRuntimeEnvironment;
 use super::{
-    selected_runtime_environment, EnvironmentBinding, TerminalIntegrationBackend,
-    TerminalLauncherTarget,
+    EnvironmentBinding, NativeTerminalLaunch, TerminalIntegrationBackend, TerminalLauncherTarget,
 };
-use crate::{paths, platform};
+use crate::{commands::system::NativeOpenclawLaunchSpec, paths, platform};
 use std::path::{Path, PathBuf};
 
 const BLOCK_START: &str = "# >>> JunQi Desktop OpenClaw integration >>>";
@@ -44,10 +45,10 @@ impl TerminalIntegrationBackend for UnixBackend {
             .is_some_and(|content| content.contains(BLOCK_START) && content.contains(BLOCK_END))
     }
 
-    fn launcher_contents(target: TerminalLauncherTarget<'_>) -> String {
+    fn launcher_contents(target: &TerminalLauncherTarget) -> String {
         match target {
             TerminalLauncherTarget::Docker => docker_launcher_contents(),
-            TerminalLauncherTarget::Native(binary) => native_launcher_contents(binary),
+            TerminalLauncherTarget::Native(launch) => native_launcher_contents(launch.as_ref()),
         }
     }
 
@@ -63,36 +64,71 @@ fn missing_binary_command() -> String {
         .into()
 }
 
-fn native_launcher_contents(binary: Option<&Path>) -> String {
+fn native_launcher_contents(launch: Option<&NativeTerminalLaunch>) -> String {
     let state = shell_quote(&paths::desktop_dir());
     let config = shell_quote(&paths::config_path());
-    let runtime = selected_runtime_environment();
-    let path = runtime
-        .path_entries
-        .iter()
-        .map(|path| shell_quote(path))
-        .collect::<Vec<_>>()
-        .join(":");
-    let node_path = (!path.is_empty())
-        .then(|| format!("export PATH={path}:\"$PATH\"\n"))
-        .unwrap_or_default();
-    let npm_prefix = runtime
-        .npm_prefix
-        .as_deref()
-        .map(|path| format!("export npm_config_prefix={}\n", shell_quote(path)))
-        .unwrap_or_default();
-    let npm_cache = runtime
-        .npm_cache
-        .as_deref()
-        .map(|path| format!("export npm_config_cache={}\n", shell_quote(path)))
-        .unwrap_or_default();
-    let command = binary.map_or_else(missing_binary_command, |path| {
-        format!("exec {} \"$@\"", shell_quote(path))
-    });
+    let (command, root_cwd_guard, node_path, npm_prefix, npm_cache) = match launch {
+        Some(launch) => {
+            let root_cwd_guard = launch
+                .working_dir
+                .as_deref()
+                .map(|path| format!("if [ \"$PWD\" = / ]; then cd {}; fi\n", shell_quote(path)))
+                .unwrap_or_default();
+            let path = launch
+                .environment
+                .path_entries
+                .iter()
+                .map(|path| shell_quote(path))
+                .collect::<Vec<_>>()
+                .join(":");
+            let node_path = if path.is_empty() {
+                String::new()
+            } else {
+                format!("export PATH={path}:\"$PATH\"\n")
+            };
+            let npm_prefix = launch
+                .environment
+                .npm_prefix
+                .as_deref()
+                .map(|path| format!("export npm_config_prefix={}\n", shell_quote(path)))
+                .unwrap_or_default();
+            let npm_cache = launch
+                .environment
+                .npm_cache
+                .as_deref()
+                .map(|path| format!("export npm_config_cache={}\n", shell_quote(path)))
+                .unwrap_or_default();
+            (
+                native_launch_command(&launch.launch),
+                root_cwd_guard,
+                node_path,
+                npm_prefix,
+                npm_cache,
+            )
+        }
+        None => (
+            missing_binary_command(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ),
+    };
     format!(
-        "#!/bin/sh\nexport OPENCLAW_STATE_DIR={}\nexport OPENCLAW_CONFIG_PATH={}\n{}{}{}{}\n",
-        state, config, node_path, npm_prefix, npm_cache, command
+        "#!/bin/sh\nexport OPENCLAW_STATE_DIR={}\nexport OPENCLAW_CONFIG_PATH={}\n{}{}{}{}{}\n",
+        state, config, root_cwd_guard, node_path, npm_prefix, npm_cache, command
     )
+}
+
+fn native_launch_command(launch: &NativeOpenclawLaunchSpec) -> String {
+    match launch {
+        NativeOpenclawLaunchSpec::NodeScript { node, entry } => {
+            format!("exec {} {} \"$@\"", shell_quote(node), shell_quote(entry))
+        }
+        NativeOpenclawLaunchSpec::Executable { program } => {
+            format!("exec {} \"$@\"", shell_quote(program))
+        }
+    }
 }
 
 fn docker_launcher_contents() -> String {
@@ -216,8 +252,16 @@ impl ProfileTransaction {
             .filter(|item| item.original != item.updated)
         {
             if let Err(error) = write_profile(update) {
-                rollback_profiles(&committed);
-                return Err(error);
+                let rollback_errors = rollback_profiles(&committed);
+                return if rollback_errors.is_empty() {
+                    Err(error)
+                } else {
+                    Err(format!(
+                        "{}; failed to restore modified shell profiles: {}",
+                        error,
+                        rollback_errors.join("; ")
+                    ))
+                };
             }
             committed.push(update);
         }
@@ -234,10 +278,14 @@ fn write_profile(update: &ProfileUpdate) -> Result<(), String> {
         .map_err(|error| format!("Failed to update {}: {}", update.path.display(), error))
 }
 
-fn rollback_profiles(committed: &[&ProfileUpdate]) {
+fn rollback_profiles(committed: &[&ProfileUpdate]) -> Vec<String> {
+    let mut errors = Vec::new();
     for update in committed.iter().rev() {
-        let _ = paths::atomic_write_text(&update.path, &update.original);
+        if let Err(error) = paths::atomic_write_text(&update.path, &update.original) {
+            errors.push(format!("{}: {}", update.path.display(), error));
+        }
     }
+    errors
 }
 
 #[cfg(test)]
@@ -294,15 +342,34 @@ mod tests {
 
     #[test]
     fn launcher_never_embeds_gateway_credentials() {
-        let content = UnixBackend::launcher_contents(TerminalLauncherTarget::Native(None));
+        let content = UnixBackend::launcher_contents(&TerminalLauncherTarget::Native(None));
         assert!(content.contains("OPENCLAW_STATE_DIR"));
         assert!(content.contains("OPENCLAW_CONFIG_PATH"));
         assert!(!content.contains("GATEWAY_TOKEN"));
     }
 
     #[test]
+    fn native_launcher_uses_the_resolved_node_entry_pair() {
+        let launch = NativeTerminalLaunch {
+            launch: NativeOpenclawLaunchSpec::NodeScript {
+                node: PathBuf::from("/opt/node-24/bin/node"),
+                entry: PathBuf::from("/opt/npm/node_modules/openclaw/openclaw.mjs"),
+            },
+            environment: TerminalRuntimeEnvironment::default(),
+            working_dir: Some(PathBuf::from("/home/example")),
+        };
+
+        let content = UnixBackend::launcher_contents(&TerminalLauncherTarget::Native(Some(launch)));
+        assert!(content.contains(
+            "exec '/opt/node-24/bin/node' '/opt/npm/node_modules/openclaw/openclaw.mjs' \"$@\""
+        ));
+        assert!(!content.contains("command -v node"));
+        assert!(content.contains("if [ \"$PWD\" = / ]; then cd '/home/example'; fi"));
+    }
+
+    #[test]
     fn docker_launcher_delegates_without_embedding_credentials() {
-        let content = UnixBackend::launcher_contents(TerminalLauncherTarget::Docker);
+        let content = UnixBackend::launcher_contents(&TerminalLauncherTarget::Docker);
         assert!(content.contains("docker exec"));
         assert!(content.contains("maxauto-openclaw"));
         assert!(!content.contains("GATEWAY_TOKEN"));

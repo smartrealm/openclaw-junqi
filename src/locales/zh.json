@@ -2366,6 +2366,10 @@
     "existingData": "检测到现有 OpenClaw 数据",
     "loadFailed": "无法读取存储配置",
     "loading": "正在读取存储信息…",
+    "runtimeRecoveryTitle": "正在恢复上一次运行时更改",
+    "runtimeRecoverySubtitle": "OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。",
+    "runtimeRecoveryRetry": "重试恢复",
+    "runtimeRecoveryRunning": "正在恢复…",
     "migrate": "迁移现有数据",
     "migrateAndContinue": "迁移并继续",
     "migrateHint": "保留配置、认证、会话和工作区，源目录不会自动删除。",
@@ -2463,13 +2467,21 @@
         "title": "品牌与偏好",
         "description": "语言 / 主题"
       },
+      "environment": {
+        "title": "环境检测",
+        "description": "OpenClaw / Docker"
+      },
+      "storage": {
+        "title": "数据位置",
+        "description": "配置与工作区"
+      },
       "runtime": {
         "title": "运行时",
         "description": "安装并启动服务"
       },
-      "install": {
-        "title": "安装与启动",
-        "description": "组件 / Gateway"
+      "configuration": {
+        "title": "配置",
+        "description": "模型与提供商"
       },
       "ready": {
         "title": "完成",
@@ -2571,9 +2583,9 @@
     "installingGit": "正在安装 Git...",
     "checkingNode": "正在检测 Node.js...",
     "installingNode": "正在安装 Node.js...",
+    "repairingNodeRuntime": "正在修复所选 Node.js 运行时...",
     "checkingNpm": "正在检测 npm...",
-    "installingNpm": "正在通过托管 Node.js 安装 npm...",
-    "npmInstallFailed": "npm 安装后校验失败",
+    "npmInstallFailed": "所选 Node.js 未提供可用 npm",
     "nodeInstallFailed": "Node.js 安装后校验失败",
     "openclawInstallFailed": "OpenClaw 安装后校验失败",
     "checkingOpenclaw": "正在检测 OpenClaw...",

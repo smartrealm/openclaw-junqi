@@ -12,14 +12,15 @@ const storageCommands = readFileSync(new URL('../../src-tauri/src/commands/stora
 const nodeRuntime = readFileSync(new URL('../../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
 const runtimePolicy = readFileSync(new URL('../../src-tauri/src/commands/runtime_policy.rs', import.meta.url), 'utf8');
 const paths = readFileSync(new URL('../../src-tauri/src/paths.rs', import.meta.url), 'utf8');
+const platform = readFileSync(new URL('../../src-tauri/src/platform.rs', import.meta.url), 'utf8');
 const nezhaUnixPlatform = readFileSync(new URL('../../src-tauri/src/nezha/platform/unix.rs', import.meta.url), 'utf8');
 
 test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /\{ id: "npm",\s+label: "npm"/);
-  assert.match(setupFlow, /const installedSetupNode = await checkSetupNode\(\)/);
-  assert.match(setupFlow, /const installedNode = installedSetupNode\.node/);
+  assert.match(setupFlow, /setupNode = await checkSetupNode\(\)/);
+  assert.match(setupFlow, /const installedNode = setupNode\.node/);
   assert.match(setupFlow, /patchStep\("node", "done", installedNode\.version/);
-  assert.match(setupFlow, /npmStatus = await checkNpm\(\)/);
+  assert.match(setupFlow, /let npmStatus = setupNode\.npm/);
   assert.match(setupFlow, /patchStep\("npm", "done", npmStatus\.version/);
   assert.match(setupFlow, /patchStep\("openclaw", "done", installedStatus\.version/);
 });
@@ -39,7 +40,7 @@ test('bug 04 Windows setup installs system defaults from domestic vendor install
   assert.match(setupCommands, /install_windows_portable_git/);
   assert.doesNotMatch(setupCommands, /default_managed_(node|git)_runtime_dir/);
   assert.doesNotMatch(setupCommands, /NODE_DISTRIBUTION_(BASES|SOURCES)/);
-  assert.match(nodeRuntime, /NODE_DISTRIBUTION_SOURCES/);
+  assert.match(nodeRuntime, /NODE_DISTRIBUTION_CATALOG/);
   assert.match(nodeRuntime, /node_installer_sources/);
   assert.match(setupCommands, /resolve_node_sha256/);
   assert.match(setupCommands, /verified_managed_git_artifact/);
@@ -47,9 +48,12 @@ test('bug 04 Windows setup installs system defaults from domestic vendor install
   assert.match(setupCommands, /run_windows_installer/);
   assert.doesNotMatch(setupCommands, /resolve_latest_managed_git_artifact/);
   assert.match(setupCommands, /activate_staged_runtime/);
-  assert.match(setupCommands, /refresh_path_from_registry\(\)/);
+  assert.match(setupCommands, /platform::refresh_process_path_from_registry\(\)/);
+  assert.match(platform, /fn refresh_windows_path_from_registry/);
+  assert.match(platform, /fn ensure_windows_path_for_discovery/);
   assert.match(systemCommands, /configured_node_path/);
   assert.match(systemCommands, /configured_git_path/);
+  assert.match(systemCommands, /platform::detect_paths\("git"\)/);
   assert.doesNotMatch(systemCommands, /legacy_local_(node|npm|git)_path/);
   assert.doesNotMatch(systemCommands, /macos_git_candidates/);
   assert.doesNotMatch(systemCommands, /\.npm-global"\)\.join\("bin"\)\.join\("git"\)/);
@@ -58,8 +62,9 @@ test('bug 04 Windows setup installs system defaults from domestic vendor install
   assert.match(nezhaUnixPlatform, /user_npm_bin_dir\(\)/);
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("node"\)/);
   assert.doesNotMatch(setupCommands, /runtime_dir\(\)\.join\("git"\)/);
-  assert.match(systemCommands, /pub async fn check_npm/);
-  assert.match(systemCommands, /get_node_version[\s\S]*?configure_background_command/);
+  assert.match(systemCommands, /struct NodeRuntimeContract/);
+  assert.doesNotMatch(systemCommands, /pub async fn check_npm/);
+  assert.match(systemCommands, /resolve_node_runtime[\s\S]*?configure_background_command/);
   assert.match(systemCommands, /get_git_version[\s\S]*?configure_background_command/);
 
   const nodeDefaultInstall = setupCommands.slice(
@@ -122,8 +127,9 @@ test('BUG-INSTALL-10 Windows installer and package-manager waits keep setup prog
   assert.match(setupCommands, /struct WindowsInstallProgress/);
   assert.match(setupCommands, /report_installer_wait/);
   assert.match(setupCommands, /report_package_manager_wait/);
-  assert.match(setupCommands, /async fn run_windows_installer[\s\S]*tokio::select![\s\S]*report_installer_wait/);
-  assert.match(setupCommands, /async fn run_winget_package_command[\s\S]*tokio::select![\s\S]*report_package_manager_wait/);
+  assert.match(setupCommands, /async fn wait_for_controlled_child[\s\S]*report_heartbeat/);
+  assert.match(setupCommands, /async fn run_windows_installer[\s\S]*wait_for_elevated_windows_process/);
+  assert.match(setupCommands, /async fn run_winget_package_command[\s\S]*wait_for_controlled_child[\s\S]*report_package_manager_wait/);
   assert.match(setupCommands, /WindowsInstallProgress::new\(app, "node", "Node\.js", 0\.64, 0\.92\)/);
   assert.match(setupCommands, /WindowsInstallProgress::new\(app, "git", "Git", 0\.64, 0\.92\)/);
 });
@@ -133,7 +139,6 @@ test('npm setup step is translated in every supported locale', () => {
     'setup.installSteps.npm.title',
     'setup.installSteps.npm.description',
     'setup.checkingNpm',
-    'setup.installingNpm',
     'setup.npmInstallFailed',
   ];
 

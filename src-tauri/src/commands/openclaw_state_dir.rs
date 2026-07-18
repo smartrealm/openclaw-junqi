@@ -68,6 +68,15 @@ pub(crate) fn verify_state_directory_basics(state_dir: &Path) -> Result<(), Stri
     let result = (|| -> Result<(), std::io::Error> {
         std::fs::create_dir(&probe_dir)?;
         let mut permissions = std::fs::metadata(&probe_dir)?.permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            // This disposable directory exercises the same chmod operation
+            // without broadening permissions on Unix hosts.
+            permissions.set_mode(0o700);
+        }
+        #[cfg(not(unix))]
         permissions.set_readonly(false);
         std::fs::set_permissions(&probe_dir, permissions)?;
         std::fs::write(&probe_file, b"junqi-state-directory-probe")?;

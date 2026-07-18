@@ -2372,6 +2372,10 @@
     "existingData": "Existing OpenClaw data detected",
     "loadFailed": "Could not read storage configuration",
     "loading": "Reading storage information…",
+    "runtimeRecoveryTitle": "Restoring the previous runtime change",
+    "runtimeRecoverySubtitle": "The prior OpenClaw runtime and Gateway service must be restored before data locations can be changed.",
+    "runtimeRecoveryRetry": "Retry recovery",
+    "runtimeRecoveryRunning": "Restoring…",
     "migrate": "Migrate existing data",
     "migrateAndContinue": "Migrate and continue",
     "migrateHint": "Keep configuration, credentials, sessions, and workspaces. The source directory will not be deleted automatically.",
@@ -2469,13 +2473,21 @@
         "title": "Brand & Preferences",
         "description": "Language / Theme"
       },
+      "environment": {
+        "title": "Environment",
+        "description": "OpenClaw / Docker"
+      },
+      "storage": {
+        "title": "Data Location",
+        "description": "Configuration and workspace"
+      },
       "runtime": {
         "title": "Runtime",
         "description": "Install and start services"
       },
-      "install": {
-        "title": "Install & Start",
-        "description": "Components / Gateway"
+      "configuration": {
+        "title": "Configuration",
+        "description": "Models and providers"
       },
       "ready": {
         "title": "Ready",
@@ -2577,9 +2589,9 @@
     "installingGit": "Installing Git...",
     "checkingNode": "Checking Node.js...",
     "installingNode": "Installing Node.js...",
+    "repairingNodeRuntime": "Repairing the selected Node.js runtime...",
     "checkingNpm": "Checking npm...",
-    "installingNpm": "Installing npm through managed Node.js...",
-    "npmInstallFailed": "npm validation failed after installation",
+    "npmInstallFailed": "The selected Node.js runtime does not provide a usable npm",
     "nodeInstallFailed": "Node.js validation failed after installation",
     "openclawInstallFailed": "OpenClaw validation failed after installation",
     "checkingOpenclaw": "Checking OpenClaw...",

@@ -5,12 +5,14 @@ import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, Lo
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
+import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
 import type { SetupLog } from '@/stores/app-store';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 interface StorageSetupStatus {
   configured: boolean;
   configurationError?: string | null;
+  runtimeReconfigurationRecoveryError?: string | null;
   stateDir: string;
   configPath: string;
   workspaceDir: string;
@@ -143,54 +145,59 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const [migrateExisting, setMigrateExisting] = useState(true);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  const [recoveringRuntime, setRecoveringRuntime] = useState(false);
   const [progress, setProgress] = useState<MigrationProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const loadStorageStatus = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (!(window as any).__TAURI_INTERNALS__) {
+        onReadyRef.current({ createdFresh: false });
+        return;
+      }
+      const result = await invoke<StorageSetupStatus>('get_storage_setup_status');
+      if (!mountedRef.current) return;
+      if (result.configured && !forceConfigure) {
+        onReadyRef.current({
+          createdFresh: false,
+          openclawRelocationRequired: result.openclawRelocationRequired,
+        });
+        return;
+      }
+      setStatus(result);
+      setError(result.runtimeReconfigurationRecoveryError ?? result.configurationError ?? null);
+      setTargetDir(forceConfigure ? result.stateDir : result.legacyDir);
+      setWorkspaceDir(result.workspaceDir);
+      setRuntimeDir(result.runtimeDir);
+      setNpmCacheDir(result.npmCacheDir ?? '');
+      setCustomNpmCache(Boolean(result.npmCacheDir));
+      setNpmPrefix(result.npmPrefix ?? '');
+      setCustomNpmPrefix(Boolean(result.npmPrefix));
+      setNodeRuntimeDir(result.nodeRuntimeDir ?? '');
+      setCustomNodeRuntime(result.customNodeRuntimeSupported && Boolean(result.nodeRuntimeDir));
+      setGitRuntimeDir(result.gitRuntimeDir ?? '');
+      setCustomGitRuntime(result.customGitRuntimeSupported && Boolean(result.gitRuntimeDir));
+      setTerminalIntegration(result.terminalIntegration);
+      setMigrateExisting(forceConfigure || result.legacyExists);
+    } catch (cause) {
+      if (mountedRef.current) setError(String(cause));
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [forceConfigure]);
 
   useEffect(() => {
     mountedRef.current = true;
     if (!checkedRef.current) {
       checkedRef.current = true;
-      if (!(window as any).__TAURI_INTERNALS__) {
-        onReadyRef.current({ createdFresh: false });
-      } else {
-        void invoke<StorageSetupStatus>('get_storage_setup_status')
-          .then((result) => {
-            if (!mountedRef.current) return;
-            if (result.configured && !forceConfigure) {
-              onReadyRef.current({
-                createdFresh: false,
-                openclawRelocationRequired: result.openclawRelocationRequired,
-              });
-              return;
-            }
-            setStatus(result);
-            if (result.configurationError) setError(result.configurationError);
-            setTargetDir(forceConfigure ? result.stateDir : result.legacyDir);
-            setWorkspaceDir(result.workspaceDir);
-            setRuntimeDir(result.runtimeDir);
-            setNpmCacheDir(result.npmCacheDir ?? '');
-            setCustomNpmCache(Boolean(result.npmCacheDir));
-            setNpmPrefix(result.npmPrefix ?? '');
-            setCustomNpmPrefix(Boolean(result.npmPrefix));
-            setNodeRuntimeDir(result.nodeRuntimeDir ?? '');
-            setCustomNodeRuntime(result.customNodeRuntimeSupported && Boolean(result.nodeRuntimeDir));
-            setGitRuntimeDir(result.gitRuntimeDir ?? '');
-            setCustomGitRuntime(result.customGitRuntimeSupported && Boolean(result.gitRuntimeDir));
-            setTerminalIntegration(result.terminalIntegration);
-            setMigrateExisting(forceConfigure || result.legacyExists);
-          })
-          .catch((cause) => {
-            if (mountedRef.current) setError(String(cause));
-          })
-          .finally(() => {
-            if (mountedRef.current) setLoading(false);
-          });
-      }
+      void loadStorageStatus();
     }
     return () => {
       mountedRef.current = false;
     };
-  }, []);
+  }, [loadStorageStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -289,6 +296,20 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     }
   }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
 
+  const recoverRuntimeReconfiguration = useCallback(async () => {
+    if (recoveringRuntime) return;
+    setRecoveringRuntime(true);
+    setError(null);
+    try {
+      await rollbackRuntimeReconfiguration();
+      await loadStorageStatus();
+    } catch (cause) {
+      if (mountedRef.current) setError(String(cause));
+    } finally {
+      if (mountedRef.current) setRecoveringRuntime(false);
+    }
+  }, [loadStorageStatus, recoveringRuntime]);
+
   if (loading) {
     return (
       <SetupShell
@@ -319,6 +340,34 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
         <section className="border-y border-aegis-border py-7">
           <h1 className="text-lg font-semibold">{t('storage.loadFailed', '无法读取存储配置')}</h1>
           <p className="mt-3 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">{error}</p>
+        </section>
+      </SetupShell>
+    );
+  }
+
+  if (status.runtimeReconfigurationRecoveryError) {
+    return (
+      <SetupShell
+        active={2}
+        title={t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}
+        subtitle={t('storage.runtimeRecoverySubtitle', 'OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。')}
+        logs={logs}
+        previousAction={{ onClick: onBack, disabled: recoveringRuntime }}
+        nextAction={{
+          label: recoveringRuntime
+            ? t('storage.runtimeRecoveryRunning', '正在恢复…')
+            : t('storage.runtimeRecoveryRetry', '重试恢复'),
+          onClick: () => void recoverRuntimeReconfiguration(),
+          disabled: recoveringRuntime,
+          loading: recoveringRuntime,
+          icon: 'none',
+        }}
+      >
+        <section className="border-y border-aegis-border py-7">
+          <h1 className="text-lg font-semibold">{t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}</h1>
+          <p className="mt-3 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">
+            {error ?? status.runtimeReconfigurationRecoveryError}
+          </p>
         </section>
       </SetupShell>
     );

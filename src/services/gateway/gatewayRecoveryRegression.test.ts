@@ -276,15 +276,16 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
 test('BUG-ST03 storage migration waits for a free gateway port before copying', () => {
   const storage = source('src-tauri/src/commands/storage.rs');
   const configure = storage.slice(storage.indexOf('pub async fn configure_storage'));
-  const stop = configure.indexOf('stop_all_locked(');
-  const waitForPort = configure.indexOf('wait_for_port_free(');
-  const prepare = configure.indexOf('prepare_storage_target(');
+  const migration = configure.slice(configure.indexOf('let rollback = StorageRollbackContext'));
+  const stop = migration.indexOf('stop_all_locked_with_compensation(');
+  const waitForPort = migration.indexOf('wait_for_port_free(');
+  const prepare = migration.indexOf('prepare_storage_target(');
 
-  assert.ok(stop >= 0, 'migration must stop every managed runtime');
+  assert.ok(stop >= 0, 'migration must stop every managed runtime transactionally');
   assert.ok(waitForPort > stop, 'migration must wait after requesting shutdown');
   assert.ok(prepare > waitForPort, 'migration must not copy until the gateway port is free');
   assert.match(storage, /struct StorageRollbackContext/);
-  assert.match(configure, /rollback\.run\(RollbackPolicy::AFTER_SWITCH/);
+  assert.match(migration, /rollback\.run\(RollbackPolicy::AFTER_SWITCH/);
   assert.doesNotMatch(storage, /rollback_storage_transaction\(/);
 });
 

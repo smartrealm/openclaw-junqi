@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 10;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 12;
 
 /// The OpenClaw runtime selected by the user during setup.
 ///
@@ -20,6 +20,284 @@ pub enum OpenClawRuntimeMode {
     #[default]
     Native,
     Docker,
+}
+
+/// A durable memento of the complete storage/runtime layout. Runtime mode
+/// switches only need the prior mode; changing Node, Git, or npm locations
+/// needs every related path to be restored as one unit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct StorageLayoutSnapshot {
+    state_dir: PathBuf,
+    config_path: PathBuf,
+    workspace_dir: PathBuf,
+    runtime_dir: PathBuf,
+    npm_cache_dir: Option<PathBuf>,
+    npm_prefix: Option<PathBuf>,
+    node_runtime_dir: Option<PathBuf>,
+    git_runtime_dir: Option<PathBuf>,
+    openclaw_relocation_required: bool,
+    terminal_integration: bool,
+    runtime_mode: OpenClawRuntimeMode,
+    runtime_switch_rollback_mode: Option<OpenClawRuntimeMode>,
+    gateway_service_rebind_required: bool,
+    gateway_service_was_running: bool,
+}
+
+impl StorageLayoutSnapshot {
+    fn capture(layout: &StorageBootstrap) -> Self {
+        Self {
+            state_dir: layout.state_dir.clone(),
+            config_path: layout.config_path.clone(),
+            workspace_dir: layout.workspace_dir.clone(),
+            runtime_dir: layout.runtime_dir.clone(),
+            npm_cache_dir: layout.npm_cache_dir.clone(),
+            npm_prefix: layout.npm_prefix.clone(),
+            node_runtime_dir: layout.node_runtime_dir.clone(),
+            git_runtime_dir: layout.git_runtime_dir.clone(),
+            openclaw_relocation_required: layout.openclaw_relocation_required,
+            terminal_integration: layout.terminal_integration,
+            runtime_mode: layout.runtime_mode,
+            runtime_switch_rollback_mode: layout.runtime_switch_rollback_mode,
+            gateway_service_rebind_required: layout.gateway_service_rebind_required,
+            gateway_service_was_running: layout.gateway_service_was_running,
+        }
+    }
+
+    fn restore(&self) -> StorageBootstrap {
+        StorageBootstrap {
+            version: STORAGE_BOOTSTRAP_VERSION,
+            state_dir: self.state_dir.clone(),
+            config_path: self.config_path.clone(),
+            workspace_dir: self.workspace_dir.clone(),
+            runtime_dir: self.runtime_dir.clone(),
+            npm_cache_dir: self.npm_cache_dir.clone(),
+            npm_prefix: self.npm_prefix.clone(),
+            node_runtime_dir: self.node_runtime_dir.clone(),
+            git_runtime_dir: self.git_runtime_dir.clone(),
+            openclaw_relocation_required: self.openclaw_relocation_required,
+            terminal_integration: self.terminal_integration,
+            runtime_mode: self.runtime_mode,
+            runtime_switch_rollback_mode: self.runtime_switch_rollback_mode,
+            gateway_service_rebind_required: self.gateway_service_rebind_required,
+            gateway_service_was_running: self.gateway_service_was_running,
+            pending_runtime_reconfiguration: None,
+        }
+    }
+
+    fn matches_runtime_identity(&self, layout: &StorageBootstrap) -> bool {
+        paths_refer_to_same_location(&self.state_dir, &layout.state_dir)
+            && paths_refer_to_same_location(&self.config_path, &layout.config_path)
+            && paths_refer_to_same_location(&self.workspace_dir, &layout.workspace_dir)
+            && paths_refer_to_same_location(&self.runtime_dir, &layout.runtime_dir)
+            && optional_paths_refer_to_same_location(
+                self.npm_cache_dir.as_deref(),
+                layout.npm_cache_dir.as_deref(),
+            )
+            && optional_paths_refer_to_same_location(
+                self.npm_prefix.as_deref(),
+                layout.npm_prefix.as_deref(),
+            )
+            && optional_paths_refer_to_same_location(
+                self.node_runtime_dir.as_deref(),
+                layout.node_runtime_dir.as_deref(),
+            )
+            && optional_paths_refer_to_same_location(
+                self.git_runtime_dir.as_deref(),
+                layout.git_runtime_dir.as_deref(),
+            )
+            && self.terminal_integration == layout.terminal_integration
+            && self.runtime_mode == layout.runtime_mode
+    }
+}
+
+/// The former Gateway ownership projected into a durable runtime transaction.
+/// It intentionally records behavior rather than process IDs: desktop child
+/// IDs cannot survive an application restart, while the selected runtime and
+/// service ownership can be restored deterministically.
+/// A verified native service launch plan retained only while a runtime
+/// reconfiguration is pending. It lets recovery stop an existing Windows
+/// Scheduled Task even when the candidate npm prefix or portable Node runtime
+/// is intentionally incomplete.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct NativeGatewayServiceLaunchContract {
+    #[serde(default)]
+    pub node: Option<PathBuf>,
+    #[serde(default)]
+    pub entry: Option<PathBuf>,
+    #[serde(default)]
+    pub executable: Option<PathBuf>,
+    #[serde(default)]
+    pub package_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub npm_prefix: Option<PathBuf>,
+}
+
+impl NativeGatewayServiceLaunchContract {
+    fn is_valid(&self) -> bool {
+        let node_script = self
+            .node
+            .as_ref()
+            .zip(self.entry.as_ref())
+            .is_some_and(|(node, entry)| node.is_absolute() && entry.is_absolute())
+            && self.executable.is_none();
+        let executable = self
+            .executable
+            .as_ref()
+            .is_some_and(|program| program.is_absolute())
+            && self.node.is_none()
+            && self.entry.is_none();
+        (node_script || executable)
+            && self
+                .package_dir
+                .as_ref()
+                .is_none_or(|path| path.is_absolute())
+            && self
+                .npm_prefix
+                .as_ref()
+                .is_none_or(|path| path.is_absolute())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PendingGatewayRecovery {
+    pub selected_runtime: OpenClawRuntimeMode,
+    pub port: u16,
+    pub selected_runtime_was_running: bool,
+    pub selected_service_installed: bool,
+    pub selected_service_was_running: bool,
+    #[serde(default)]
+    pub(crate) native_service_launch: Option<NativeGatewayServiceLaunchContract>,
+}
+
+impl PendingGatewayRecovery {
+    pub(crate) fn native_service_launch(&self) -> Option<&NativeGatewayServiceLaunchContract> {
+        self.native_service_launch.as_ref()
+    }
+
+    fn is_valid(&self) -> bool {
+        self.port != 0
+            && self
+                .native_service_launch
+                .as_ref()
+                .is_none_or(NativeGatewayServiceLaunchContract::is_valid)
+    }
+}
+
+/// Durable phase of a runtime-location rollback. Keeping the recovery phase in
+/// the same memento prevents a failed service restore from losing the work
+/// needed to resume it after the next desktop launch.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeReconfigurationRecoveryStage {
+    #[default]
+    CandidateActive,
+    PreviousLayoutRestored,
+}
+
+/// Persistent two-phase transaction for a same-location runtime relocation.
+/// The candidate layout remains active while setup installs/verifies its
+/// dependencies. It must be explicitly committed after Gateway health is
+/// proven; otherwise the old layout is recovered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PendingRuntimeReconfiguration {
+    previous: StorageLayoutSnapshot,
+    candidate: StorageLayoutSnapshot,
+    gateway: PendingGatewayRecovery,
+    /// The durable marker is written before the old Gateway is stopped. This
+    /// records whether the later storage transaction is allowed to mutate the
+    /// Native workspace field, so crash recovery never rewrites a config for
+    /// a Node/Git/npm-only change.
+    #[serde(default)]
+    native_workspace_written: bool,
+    #[serde(default)]
+    recovery_stage: RuntimeReconfigurationRecoveryStage,
+    #[serde(default)]
+    recovery_error: Option<String>,
+}
+
+impl PendingRuntimeReconfiguration {
+    pub(crate) fn previous_layout(&self) -> StorageBootstrap {
+        self.previous.restore()
+    }
+
+    pub(crate) fn gateway_recovery(&self) -> PendingGatewayRecovery {
+        self.gateway.clone()
+    }
+
+    pub(crate) fn native_workspace_was_written(&self) -> bool {
+        self.native_workspace_written
+    }
+
+    pub(crate) fn previous_layout_is_restored(&self) -> bool {
+        self.recovery_is_pending()
+    }
+
+    fn recovery_is_pending(&self) -> bool {
+        matches!(
+            self.recovery_stage,
+            RuntimeReconfigurationRecoveryStage::PreviousLayoutRestored
+        )
+    }
+
+    fn recovery_error(&self) -> Option<&str> {
+        self.recovery_error.as_deref()
+    }
+
+    fn matches_candidate(&self, layout: &StorageBootstrap) -> bool {
+        self.candidate.matches_runtime_identity(layout)
+    }
+
+    fn validate_candidate(&self, layout: &StorageBootstrap) -> Result<(), String> {
+        if !matches!(
+            self.recovery_stage,
+            RuntimeReconfigurationRecoveryStage::CandidateActive
+        ) {
+            return Err(
+                "The prior runtime layout is already restored; resume its Gateway recovery instead of stopping a new candidate"
+                    .to_string(),
+            );
+        }
+        if self.matches_candidate(layout) {
+            Ok(())
+        } else {
+            Err(
+                "The active runtime locations changed while setup was running; refusing to recover an unrelated reconfiguration"
+                    .to_string(),
+            )
+        }
+    }
+
+    fn validate_previous_layout(&self, layout: &StorageBootstrap) -> Result<(), String> {
+        if !self.recovery_is_pending() {
+            return Err(
+                "The runtime reconfiguration is still active; the candidate must be stopped before restoring the previous Gateway"
+                    .to_string(),
+            );
+        }
+        if self.previous.matches_runtime_identity(layout) {
+            Ok(())
+        } else {
+            Err(
+                "The restored runtime locations changed before Gateway recovery completed; refusing to alter an unrelated runtime"
+                    .to_string(),
+            )
+        }
+    }
+
+    fn mark_previous_layout_restored(&mut self) {
+        self.recovery_stage = RuntimeReconfigurationRecoveryStage::PreviousLayoutRestored;
+        self.recovery_error = None;
+    }
+
+    fn record_recovery_error(&mut self, error: String) {
+        self.recovery_error = Some(error);
+    }
+
+    fn is_valid(&self) -> bool {
+        self.previous.restore().paths_are_absolute()
+            && self.candidate.restore().paths_are_absolute()
+            && self.gateway.is_valid()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +325,10 @@ pub struct StorageBootstrap {
     pub runtime_switch_rollback_mode: Option<OpenClawRuntimeMode>,
     pub gateway_service_rebind_required: bool,
     pub gateway_service_was_running: bool,
+    /// A pending Node/Git/npm location change is a distinct durable
+    /// transaction from a Native/Docker mode switch. It contains the previous
+    /// layout and Gateway ownership until the candidate runtime is healthy.
+    pub(crate) pending_runtime_reconfiguration: Option<PendingRuntimeReconfiguration>,
 }
 
 /// The effective host-side locations used by a managed OpenClaw process.
@@ -110,6 +392,8 @@ struct PersistedStorageBootstrap {
     gateway_service_rebind_required: bool,
     #[serde(default)]
     gateway_service_was_running: bool,
+    #[serde(default)]
+    pending_runtime_reconfiguration: Option<PendingRuntimeReconfiguration>,
 }
 
 impl StorageBootstrap {
@@ -132,6 +416,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode: None,
             gateway_service_rebind_required: false,
             gateway_service_was_running: false,
+            pending_runtime_reconfiguration: None,
         }
     }
 
@@ -159,6 +444,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode: None,
             gateway_service_rebind_required: false,
             gateway_service_was_running: false,
+            pending_runtime_reconfiguration: None,
         }
     }
 
@@ -182,6 +468,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode,
             gateway_service_rebind_required,
             gateway_service_was_running,
+            pending_runtime_reconfiguration,
             ..
         } = value;
         let runtime_dir = runtime_dir.unwrap_or_else(|| state_dir.clone());
@@ -223,8 +510,14 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode,
             gateway_service_rebind_required,
             gateway_service_was_running,
+            pending_runtime_reconfiguration,
         };
-        normalized.paths_are_absolute().then_some(normalized)
+        (normalized.paths_are_absolute()
+            && normalized
+                .pending_runtime_reconfiguration
+                .as_ref()
+                .is_none_or(PendingRuntimeReconfiguration::is_valid))
+        .then_some(normalized)
     }
 
     fn to_persisted(&self) -> PersistedStorageBootstrap {
@@ -244,6 +537,7 @@ impl StorageBootstrap {
             runtime_switch_rollback_mode: self.runtime_switch_rollback_mode,
             gateway_service_rebind_required: self.gateway_service_rebind_required,
             gateway_service_was_running: self.gateway_service_was_running,
+            pending_runtime_reconfiguration: self.pending_runtime_reconfiguration.clone(),
         }
     }
 
@@ -367,10 +661,6 @@ pub(crate) fn runtime_location_overrides() -> Result<RuntimeLocationOverrides, S
         npm_cache_dir,
         openclaw_git_dir: explicit_absolute_env_path("OPENCLAW_GIT_DIR", "OpenClaw Git checkout")?,
     })
-}
-
-pub fn explicit_npm_prefix_override() -> Option<PathBuf> {
-    runtime_location_overrides().ok()?.npm_prefix
 }
 
 fn load_storage_bootstrap_checked() -> Result<Option<StorageBootstrap>, String> {
@@ -917,6 +1207,15 @@ pub(crate) fn stable_openclaw_working_dir() -> Option<PathBuf> {
 pub fn begin_active_runtime_mode_switch(mode: OpenClawRuntimeMode) -> Result<(), String> {
     let mut layout = load_storage_bootstrap()
         .ok_or("Storage setup must be completed before selecting an OpenClaw runtime")?;
+    if let Some(pending) = layout.pending_runtime_reconfiguration.as_ref() {
+        pending.validate_candidate(&layout)?;
+        if layout.runtime_mode != mode {
+            return Err(
+                "A Native runtime location change is still pending. Recover or complete it before selecting a different runtime"
+                    .to_string(),
+            );
+        }
+    }
     if let Some(previous) = layout.runtime_switch_rollback_mode {
         if layout.runtime_mode == mode {
             return Ok(());
@@ -972,6 +1271,170 @@ pub fn recover_interrupted_runtime_mode_switch() -> Result<bool, String> {
     Ok(true)
 }
 
+/// Stage a same-location Node/Git/npm relocation before any existing Gateway
+/// is stopped. The caller persists `candidate` as the active layout while the
+/// setup flow installs dependencies, then must explicitly commit or roll it
+/// back. Nested transactions are rejected because their recovery order would
+/// be ambiguous after a desktop restart.
+pub(crate) fn begin_runtime_reconfiguration(
+    previous: &StorageBootstrap,
+    candidate: &mut StorageBootstrap,
+    gateway: PendingGatewayRecovery,
+    native_workspace_written: bool,
+) -> Result<(), String> {
+    if previous.pending_runtime_reconfiguration.is_some()
+        || candidate.pending_runtime_reconfiguration.is_some()
+    {
+        return Err(
+            "A runtime location reconfiguration is already pending; finish or recover it before changing locations again"
+                .to_string(),
+        );
+    }
+    if gateway.port == 0 {
+        return Err("A runtime location reconfiguration requires a valid Gateway port".to_string());
+    }
+    candidate.pending_runtime_reconfiguration = Some(PendingRuntimeReconfiguration {
+        previous: StorageLayoutSnapshot::capture(previous),
+        candidate: StorageLayoutSnapshot::capture(candidate),
+        gateway,
+        native_workspace_written,
+        recovery_stage: RuntimeReconfigurationRecoveryStage::CandidateActive,
+        recovery_error: None,
+    });
+    Ok(())
+}
+
+/// Read the active candidate layout and verify that it is still the exact
+/// layout captured by the durable reconfiguration memento. Callers must run
+/// this before mutating configuration or stopping a candidate Gateway during
+/// rollback; otherwise a stale marker could act on paths selected later by
+/// the user.
+pub(crate) fn preflight_runtime_reconfiguration_rollback(
+) -> Result<Option<(StorageBootstrap, PendingRuntimeReconfiguration)>, String> {
+    let Some(layout) = load_storage_bootstrap_checked()? else {
+        return Ok(None);
+    };
+    let Some(pending) = layout.pending_runtime_reconfiguration.clone() else {
+        return Ok(None);
+    };
+    pending.validate_candidate(&layout)?;
+    Ok(Some((layout, pending)))
+}
+
+/// Return the durable reconfiguration in whichever recovery phase it reached.
+/// Candidate operations and previous-layout operations validate different
+/// identities, so this is intentionally separate from the destructive
+/// candidate preflight above.
+pub(crate) fn preflight_runtime_reconfiguration_recovery(
+) -> Result<Option<(StorageBootstrap, PendingRuntimeReconfiguration)>, String> {
+    let Some(layout) = load_storage_bootstrap_checked()? else {
+        return Ok(None);
+    };
+    let Some(pending) = layout.pending_runtime_reconfiguration.clone() else {
+        return Ok(None);
+    };
+    match pending.recovery_stage {
+        RuntimeReconfigurationRecoveryStage::CandidateActive => {
+            pending.validate_candidate(&layout)?
+        }
+        RuntimeReconfigurationRecoveryStage::PreviousLayoutRestored => {
+            pending.validate_previous_layout(&layout)?
+        }
+    }
+    Ok(Some((layout, pending)))
+}
+
+/// Persist the previous runtime layout but retain the memento until its
+/// Gateway service and terminal integration have also been restored.
+pub(crate) fn stage_runtime_reconfiguration_previous_layout(
+) -> Result<Option<PendingRuntimeReconfiguration>, String> {
+    let Some((_, mut pending)) = preflight_runtime_reconfiguration_rollback()? else {
+        return Ok(None);
+    };
+    pending.mark_previous_layout_restored();
+    let mut previous = pending.previous_layout();
+    previous.pending_runtime_reconfiguration = Some(pending.clone());
+    save_storage_bootstrap(&previous)?;
+    Ok(Some(pending))
+}
+
+/// Complete recovery only after the previous Gateway/service contract is back
+/// in place. A later startup can resume this exact phase if that work fails.
+pub(crate) fn complete_runtime_reconfiguration_recovery(
+) -> Result<Option<PendingRuntimeReconfiguration>, String> {
+    let Some(mut layout) = load_storage_bootstrap_checked()? else {
+        return Ok(None);
+    };
+    let Some(pending) = layout.pending_runtime_reconfiguration.take() else {
+        return Ok(None);
+    };
+    pending.validate_previous_layout(&layout)?;
+    save_storage_bootstrap(&layout)?;
+    Ok(Some(pending))
+}
+
+/// Keep a recovery marker visible and retryable when restoration fails after
+/// the old layout has already been made active.
+pub(crate) fn record_runtime_reconfiguration_recovery_error(error: String) -> Result<(), String> {
+    let Some(mut layout) = load_storage_bootstrap_checked()? else {
+        return Ok(());
+    };
+    let Some(mut pending) = layout.pending_runtime_reconfiguration.take() else {
+        return Ok(());
+    };
+    match pending.recovery_stage {
+        RuntimeReconfigurationRecoveryStage::CandidateActive => {
+            pending.validate_candidate(&layout)?
+        }
+        RuntimeReconfigurationRecoveryStage::PreviousLayoutRestored => {
+            pending.validate_previous_layout(&layout)?
+        }
+    }
+    pending.record_recovery_error(error);
+    layout.pending_runtime_reconfiguration = Some(pending);
+    save_storage_bootstrap(&layout)
+}
+
+/// A nonempty value means a durable runtime recovery is incomplete. It is
+/// surfaced to setup rather than silently treating either a candidate or a
+/// restored layout as healthy.
+pub(crate) fn runtime_reconfiguration_recovery_error() -> Result<Option<String>, String> {
+    let Some(layout) = load_storage_bootstrap_checked()? else {
+        return Ok(None);
+    };
+    Ok(layout
+        .pending_runtime_reconfiguration
+        .as_ref()
+        .map(|pending| {
+            pending.recovery_error().unwrap_or(
+                "OpenClaw runtime recovery is incomplete; restore the previous runtime before setup can continue",
+            )
+            .to_string()
+        }))
+}
+
+/// Commit the candidate layout only when it still identifies the exact
+/// runtime that was originally staged. Mutable completion markers (service
+/// rebind / package relocation) deliberately do not participate in this
+/// identity check because they are expected to change during setup. Runtime
+/// mode does participate: a Native dependency transaction must never commit
+/// through Docker's derived configuration contract.
+pub(crate) fn commit_runtime_reconfiguration(
+) -> Result<Option<PendingRuntimeReconfiguration>, String> {
+    let Some(mut layout) = load_storage_bootstrap_checked()? else {
+        return Ok(None);
+    };
+    let Some(pending) = layout.pending_runtime_reconfiguration.take() else {
+        return Ok(None);
+    };
+    pending.validate_candidate(&layout).map_err(|_| {
+        "The active runtime locations changed while setup was running; refusing to commit an unrelated reconfiguration"
+            .to_string()
+    })?;
+    save_storage_bootstrap(&layout)?;
+    Ok(Some(pending))
+}
+
 // ── Node.js ────────────────────────────────────────────────────
 
 /// Returns a user-selected portable Node.js root. Without an explicit
@@ -1009,7 +1472,10 @@ pub(crate) fn normalize_node_runtime_root(path: PathBuf) -> PathBuf {
     path
 }
 
-fn node_binary_in(root: &Path) -> PathBuf {
+/// Resolve the Node.js executable that belongs to an explicit runtime root.
+/// Storage validation and process launch both use this mapping so a candidate
+/// portable runtime is never probed through an unrelated PATH installation.
+pub(crate) fn node_binary_for_runtime_dir(root: &Path) -> PathBuf {
     if cfg!(windows) {
         root.join("node.exe")
     } else {
@@ -1017,23 +1483,9 @@ fn node_binary_in(root: &Path) -> PathBuf {
     }
 }
 
-fn npm_cli_in_node_root(root: &Path) -> PathBuf {
-    let npm_root = if cfg!(windows) {
-        root.join("node_modules")
-    } else {
-        root.join("lib").join("node_modules")
-    };
-    npm_root.join("npm").join("bin").join("npm-cli.js")
-}
-
 /// The explicit portable Node.js executable, if the user opted into one.
 pub fn configured_node_path() -> Option<PathBuf> {
-    configured_node_runtime_dir().map(|root| node_binary_in(&root))
-}
-
-/// The npm CLI that belongs to an explicitly selected portable Node.js.
-pub fn configured_npm_cli_path() -> Option<PathBuf> {
-    configured_node_runtime_dir().map(|root| npm_cli_in_node_root(&root))
+    configured_node_runtime_dir().map(|root| node_binary_for_runtime_dir(&root))
 }
 
 /// Return an npm cache override only when the user explicitly selected one.
@@ -1160,47 +1612,6 @@ fn user_npm_prefix_from_npmrc(content: &str, home: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Whether npm's user configuration explicitly owns the registry choice.
-/// JunQi may use its public mirror fallback only when this is false; proxy,
-/// CA, and authentication variables remain inherited by the npm child.
-pub(crate) fn user_npm_registry_is_configured() -> bool {
-    if std::env::var_os("npm_config_registry").is_some_and(|value| !value.is_empty())
-        || std::env::var_os("NPM_CONFIG_REGISTRY").is_some_and(|value| !value.is_empty())
-    {
-        return true;
-    }
-    if [
-        "npm_config_userconfig",
-        "NPM_CONFIG_USERCONFIG",
-        "npm_config_globalconfig",
-        "NPM_CONFIG_GLOBALCONFIG",
-    ]
-    .into_iter()
-    .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
-    {
-        // A custom config file owns the merged registry decision. Do not
-        // override it with a public mirror even when JunQi cannot safely parse
-        // every npm interpolation/auth syntax in that file.
-        return true;
-    }
-    let Some(home) = dirs::home_dir() else {
-        return false;
-    };
-    let Ok(content) = std::fs::read_to_string(home.join(".npmrc")) else {
-        return false;
-    };
-    content.lines().any(|raw| {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            return false;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            return false;
-        };
-        key.trim().eq_ignore_ascii_case("registry") && !value.trim().is_empty()
-    })
-}
-
 /// 返回用户执行 `npm i -g` 时可执行 shim 会写入的目录：
 /// Unix 是 `<prefix>/bin`，Windows 是 prefix 本身，因为
 /// `openclaw.cmd` shim 就在 prefix 目录里。
@@ -1213,6 +1624,25 @@ pub fn user_npm_bin_dir() -> Option<PathBuf> {
 /// 后续 Gateway 启动优先使用这个精确路径，避免在用户全局 npm、
 /// 内置 wrapper、JunQi 管理安装之间漂移。
 pub fn openclaw_binary_selection_path() -> PathBuf {
+    load_storage_bootstrap()
+        .map(|layout| layout.runtime_dir.join("openclaw-binary.json"))
+        .unwrap_or_else(legacy_openclaw_binary_selection_path)
+}
+
+/// Selection files written before `runtime_dir` became an active storage
+/// contract remain readable until the next successful installation persists
+/// the selection in its configured runtime directory.
+pub(crate) fn openclaw_binary_selection_read_paths() -> Vec<PathBuf> {
+    let selected = openclaw_binary_selection_path();
+    let legacy = legacy_openclaw_binary_selection_path();
+    if selected == legacy {
+        vec![selected]
+    } else {
+        vec![selected, legacy]
+    }
+}
+
+fn legacy_openclaw_binary_selection_path() -> PathBuf {
     desktop_dir().join("runtime").join("openclaw-binary.json")
 }
 
@@ -1325,7 +1755,7 @@ pub fn resolve_openclaw_user_path(raw: &str) -> Result<PathBuf, String> {
 /// 配置不存在、无效或未指定工作区时返回 None。
 pub fn read_workspace_from_config(config_path: &std::path::Path) -> Option<PathBuf> {
     let raw = std::fs::read_to_string(config_path).ok()?;
-    let config: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let config = crate::commands::config::parse_openclaw_config(&raw).ok()?;
     let workspace = config
         .get("agents")?
         .get("defaults")?
@@ -1340,7 +1770,7 @@ pub fn read_workspace_from_config(config_path: &std::path::Path) -> Option<PathB
 /// different directories.
 pub fn read_workspace_from_config_relative_to(config_path: &std::path::Path) -> Option<PathBuf> {
     let raw = std::fs::read_to_string(config_path).ok()?;
-    let config: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let config = crate::commands::config::parse_openclaw_config(&raw).ok()?;
     let workspace = config
         .get("agents")?
         .get("defaults")?
@@ -1375,6 +1805,204 @@ mod storage_bootstrap_tests {
         let layout = StorageBootstrap::for_state_dir(state.clone(), None);
         assert_eq!(layout.config_path, state.join("openclaw.json"));
         assert_eq!(layout.workspace_dir, state.join("workspace"));
+    }
+
+    #[test]
+    fn runtime_reconfiguration_memento_restores_the_complete_prior_layout() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-runtime-reconfiguration-memento-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let previous = StorageBootstrap::with_locations(
+            root.join("state"),
+            root.join("workspace-old"),
+            root.join("runtime-old"),
+            Some(root.join("cache-old")),
+            Some(root.join("prefix-old")),
+            true,
+        );
+        let mut candidate = previous.clone();
+        candidate.workspace_dir = root.join("workspace-new");
+        candidate.runtime_dir = root.join("runtime-new");
+        candidate.node_runtime_dir = Some(root.join("node-new"));
+        candidate.git_runtime_dir = Some(root.join("git-new"));
+        candidate.npm_prefix = Some(root.join("prefix-new"));
+        candidate.openclaw_relocation_required = true;
+
+        begin_runtime_reconfiguration(
+            &previous,
+            &mut candidate,
+            PendingGatewayRecovery {
+                selected_runtime: OpenClawRuntimeMode::Native,
+                port: 18_789,
+                selected_runtime_was_running: true,
+                selected_service_installed: true,
+                selected_service_was_running: false,
+                native_service_launch: None,
+            },
+            true,
+        )
+        .unwrap();
+        let pending = candidate.pending_runtime_reconfiguration.clone().unwrap();
+
+        let restored = pending.previous_layout();
+        assert_eq!(restored, previous);
+        candidate.openclaw_relocation_required = false;
+        candidate.gateway_service_rebind_required = false;
+        assert!(pending.matches_candidate(&candidate));
+        candidate.runtime_mode = OpenClawRuntimeMode::Docker;
+        assert!(!pending.matches_candidate(&candidate));
+        assert_eq!(pending.gateway_recovery().port, 18_789);
+        assert!(pending.native_workspace_was_written());
+    }
+
+    #[test]
+    fn runtime_reconfiguration_rejects_nested_mementos() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-runtime-reconfiguration-nested-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let previous = StorageBootstrap::for_state_dir(root.join("state"), None);
+        let mut candidate = previous.clone();
+        candidate.node_runtime_dir = Some(root.join("node"));
+        let recovery = PendingGatewayRecovery {
+            selected_runtime: OpenClawRuntimeMode::Native,
+            port: 18_789,
+            selected_runtime_was_running: false,
+            selected_service_installed: false,
+            selected_service_was_running: false,
+            native_service_launch: None,
+        };
+        begin_runtime_reconfiguration(&previous, &mut candidate, recovery.clone(), false).unwrap();
+
+        let mut nested = candidate.clone();
+        nested.git_runtime_dir = Some(root.join("git"));
+        assert!(begin_runtime_reconfiguration(&candidate, &mut nested, recovery, false).is_err());
+    }
+
+    #[test]
+    fn runtime_reconfiguration_recovery_keeps_the_memento_until_service_restore_completes() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-runtime-reconfiguration-recovery-stage-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let previous = StorageBootstrap::for_state_dir(root.join("state"), None);
+        let mut candidate = previous.clone();
+        candidate.node_runtime_dir = Some(root.join("node"));
+        begin_runtime_reconfiguration(
+            &previous,
+            &mut candidate,
+            PendingGatewayRecovery {
+                selected_runtime: OpenClawRuntimeMode::Native,
+                port: 18_789,
+                selected_runtime_was_running: true,
+                selected_service_installed: true,
+                selected_service_was_running: true,
+                native_service_launch: None,
+            },
+            false,
+        )
+        .unwrap();
+
+        let mut pending = candidate.pending_runtime_reconfiguration.clone().unwrap();
+        assert!(pending.validate_candidate(&candidate).is_ok());
+        assert!(!pending.previous_layout_is_restored());
+
+        pending.mark_previous_layout_restored();
+        pending.record_recovery_error("Scheduled Task restart failed".to_string());
+        let mut restored = pending.previous_layout();
+        restored.pending_runtime_reconfiguration = Some(pending.clone());
+
+        assert!(pending.previous_layout_is_restored());
+        assert_eq!(
+            pending.recovery_error(),
+            Some("Scheduled Task restart failed")
+        );
+        assert!(pending.validate_previous_layout(&restored).is_ok());
+        assert!(pending.validate_candidate(&restored).is_err());
+    }
+
+    #[test]
+    fn native_gateway_service_launch_contract_requires_one_complete_launch_form() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-native-gateway-launch-contract-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let node = root.join("node");
+        let entry = root.join("openclaw.mjs");
+        let executable = root.join("openclaw");
+        let node_script = NativeGatewayServiceLaunchContract {
+            node: Some(node.clone()),
+            entry: Some(entry.clone()),
+            executable: None,
+            package_dir: Some(root.join("package")),
+            npm_prefix: Some(root.join("prefix")),
+        };
+        assert!(node_script.is_valid());
+
+        let ambiguous = NativeGatewayServiceLaunchContract {
+            executable: Some(executable),
+            ..node_script
+        };
+        assert!(!ambiguous.is_valid());
+    }
+
+    #[test]
+    fn runtime_reconfiguration_identity_accepts_equivalent_path_representations() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-runtime-reconfiguration-identity-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let state = root.join("state");
+        let workspace = root.join("workspace");
+        let runtime = root.join("runtime");
+        let cache = root.join("cache");
+        let prefix = root.join("prefix");
+        let node = root.join("node");
+        let git = root.join("git");
+        for path in [&state, &workspace, &runtime, &cache, &prefix, &node, &git] {
+            std::fs::create_dir_all(path).unwrap();
+        }
+        std::fs::write(state.join("openclaw.json"), "{}").unwrap();
+
+        let previous = StorageBootstrap::with_locations(
+            state.clone(),
+            workspace.clone(),
+            runtime.clone(),
+            Some(cache.clone()),
+            Some(prefix.clone()),
+            true,
+        );
+        let mut candidate = previous.clone();
+        candidate.node_runtime_dir = Some(node.clone());
+        candidate.git_runtime_dir = Some(git.clone());
+        begin_runtime_reconfiguration(
+            &previous,
+            &mut candidate,
+            PendingGatewayRecovery {
+                selected_runtime: OpenClawRuntimeMode::Native,
+                port: 18_789,
+                selected_runtime_was_running: false,
+                selected_service_installed: false,
+                selected_service_was_running: false,
+                native_service_launch: None,
+            },
+            false,
+        )
+        .unwrap();
+        let pending = candidate.pending_runtime_reconfiguration.clone().unwrap();
+
+        candidate.state_dir = state.join(".");
+        candidate.config_path = state.join(".").join("openclaw.json");
+        candidate.workspace_dir = workspace.join(".");
+        candidate.runtime_dir = runtime.join(".");
+        candidate.npm_cache_dir = Some(cache.join("."));
+        candidate.npm_prefix = Some(prefix.join("."));
+        candidate.node_runtime_dir = Some(node.join("."));
+        candidate.git_runtime_dir = Some(git.join("."));
+
+        assert!(pending.matches_candidate(&candidate));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1661,7 +2289,16 @@ mod storage_bootstrap_tests {
         std::fs::create_dir_all(config.parent().unwrap()).unwrap();
         std::fs::write(
             &config,
-            r#"{"agents":{"defaults":{"workspace":"workspace"}}}"#,
+            r#"
+            // OpenClaw accepts JSON5, including comments and trailing commas.
+            {
+              agents: {
+                defaults: {
+                  workspace: "workspace",
+                },
+              },
+            }
+            "#,
         )
         .unwrap();
         let cwd = stable_openclaw_working_dir().unwrap();

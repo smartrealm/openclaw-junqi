@@ -63,6 +63,80 @@ enum GatewayRestartTarget {
     ManagedChild,
 }
 
+/// The official wizard can leave a selected service already running, install a
+/// selected service without starting it, or leave a service bound to an old
+/// runtime. These are distinct handoff states: treating all three as a fresh
+/// start can wait for a port that the already-correct service legitimately
+/// owns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OfficialGatewayHandoff {
+    RetainCurrentOwner,
+    StartSelected,
+    RebindStale { stop_running_service: bool },
+}
+
+fn official_gateway_handoff(
+    inspection: crate::commands::gateway_service::GatewayServiceInspection,
+) -> Option<OfficialGatewayHandoff> {
+    use crate::commands::gateway_service::GatewayServiceOwnership;
+
+    if !inspection.installed {
+        return None;
+    }
+    match inspection.ownership {
+        GatewayServiceOwnership::SelectedState if inspection.running => {
+            Some(OfficialGatewayHandoff::RetainCurrentOwner)
+        }
+        GatewayServiceOwnership::SelectedState => Some(OfficialGatewayHandoff::StartSelected),
+        GatewayServiceOwnership::StaleRuntime => Some(OfficialGatewayHandoff::RebindStale {
+            stop_running_service: inspection.running,
+        }),
+        GatewayServiceOwnership::Absent
+        | GatewayServiceOwnership::Foreign
+        | GatewayServiceOwnership::Unverifiable => None,
+    }
+}
+
+/// Immutable runtime contract for a single official Gateway handoff. Keeping
+/// all service operations on this snapshot prevents a concurrent path or
+/// storage selection from mixing an old service identity with a new config.
+struct OfficialGatewayHandoffContext<'a> {
+    state_dir: std::path::PathBuf,
+    config_path: &'a std::path::Path,
+    runtime: &'a crate::commands::system::NativeOpenclawRuntime,
+    search_path: &'a str,
+    port: u16,
+}
+
+impl<'a> OfficialGatewayHandoffContext<'a> {
+    fn service_identity(&self) -> crate::commands::gateway_service::GatewayServiceIdentity {
+        crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+            &self.state_dir,
+            self.config_path,
+            self.runtime,
+        )
+    }
+}
+
+/// A failed official-service handoff can only be rolled back when this
+/// operation displaced a foreground child owned by JunQi.  Never invent a
+/// managed owner for a setup that did not have one before the handoff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OfficialGatewayHandoffFailureRecovery {
+    RestoreManagedChild,
+    SurfaceFailure,
+}
+
+fn official_gateway_handoff_failure_recovery(
+    had_managed_child: bool,
+) -> OfficialGatewayHandoffFailureRecovery {
+    if had_managed_child {
+        OfficialGatewayHandoffFailureRecovery::RestoreManagedChild
+    } else {
+        OfficialGatewayHandoffFailureRecovery::SurfaceFailure
+    }
+}
+
 fn restart_target_for_service(
     ownership: Option<crate::commands::gateway_service::GatewayServiceOwnership>,
 ) -> GatewayRestartTarget {
@@ -213,6 +287,57 @@ mod runtime_observation_tests {
     }
 
     #[test]
+    fn wizard_handoff_preserves_an_already_running_selected_service() {
+        use crate::commands::gateway_service::{GatewayServiceInspection, GatewayServiceOwnership};
+
+        let selected_running = GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::SelectedState,
+            installed: true,
+            running: true,
+        };
+        assert_eq!(
+            official_gateway_handoff(selected_running),
+            Some(OfficialGatewayHandoff::RetainCurrentOwner)
+        );
+        assert_eq!(
+            official_gateway_handoff(GatewayServiceInspection {
+                running: false,
+                ..selected_running
+            }),
+            Some(OfficialGatewayHandoff::StartSelected)
+        );
+        assert_eq!(
+            official_gateway_handoff(GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::StaleRuntime,
+                running: true,
+                ..selected_running
+            }),
+            Some(OfficialGatewayHandoff::RebindStale {
+                stop_running_service: true,
+            })
+        );
+        assert_eq!(
+            official_gateway_handoff(GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::Foreign,
+                ..selected_running
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn wizard_handoff_failure_restores_only_a_displaced_managed_child() {
+        assert_eq!(
+            official_gateway_handoff_failure_recovery(true),
+            OfficialGatewayHandoffFailureRecovery::RestoreManagedChild
+        );
+        assert_eq!(
+            official_gateway_handoff_failure_recovery(false),
+            OfficialGatewayHandoffFailureRecovery::SurfaceFailure
+        );
+    }
+
+    #[test]
     fn managed_gateway_diagnostics_only_include_current_child_output() {
         use crate::state::gateway_process::{LogEntry, LogLevel, LogSource};
         use std::collections::VecDeque;
@@ -343,6 +468,28 @@ mod gateway_config_tests {
     }
 
     #[test]
+    fn gateway_readers_accept_the_openclaw_json5_config_format() {
+        let path = isolated_config_path("json5-config");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{
+                // OpenClaw accepts JSON5 comments and trailing commas.
+                gateway: {
+                    port: 19876,
+                    auth: { token: 'json5-token', },
+                },
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(ConfigMetadata::load(&path).port, 19876);
+        assert_eq!(read_gateway_token(&path).as_deref(), Some("json5-token"));
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn explicit_non_token_auth_mode_is_preserved_and_rejected() {
         let path = isolated_config_path("password-mode");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -375,8 +522,10 @@ mod gateway_config_tests {
             "loopback",
         )
         .unwrap();
-        let config: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let config: serde_json::Value = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&path).unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(token, "existing");
         assert!(config["gateway"]["auth"].get("mode").is_none());
@@ -417,8 +566,10 @@ mod gateway_config_tests {
             "loopback",
         )
         .unwrap();
-        let config: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let config: serde_json::Value = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&path).unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(token.len(), 64);
         assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
@@ -459,7 +610,7 @@ impl ConfigMetadata {
     fn load(path: &std::path::Path) -> Self {
         let parsed: Option<serde_json::Value> = std::fs::read_to_string(path)
             .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok());
+            .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok());
 
         let port = parsed
             .as_ref()
@@ -490,7 +641,7 @@ pub(crate) fn configured_gateway_port() -> u16 {
 /// Returns `None` if the file is missing, malformed, or has no token.
 fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
     let raw = std::fs::read_to_string(config_path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let v = crate::commands::config::parse_openclaw_config(&raw).ok()?;
     v.get("gateway")?
         .get("auth")?
         .get("token")?
@@ -548,8 +699,8 @@ pub(crate) fn ensure_config_with_token(
         // Read existing config and extract token
         let raw = std::fs::read_to_string(config_path)
             .map_err(|e| format!("Failed to read config: {}", e))?;
-        let config: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| format!("Failed to parse config: {}", e))?;
+        let config = crate::commands::config::parse_openclaw_config(&raw)
+            .map_err(|error| format!("Failed to parse config: {}", error))?;
 
         let auth_config = config
             .get("gateway")
@@ -747,8 +898,8 @@ pub async fn get_gateway_token() -> Result<String, String> {
 
     let raw = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read config: {}", e))?;
-    let config: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse config: {}", e))?;
+    let config = crate::commands::config::parse_openclaw_config(&raw)
+        .map_err(|error| format!("Failed to parse config: {}", error))?;
 
     config
         .get("gateway")
@@ -1348,6 +1499,188 @@ pub async fn restart_gateway(
     start_managed_gateway_fallback(app, state.clone(), port, reason).await
 }
 
+/// Roll back a partially completed official-service handoff.  The caller
+/// already owns `GatewayProcess::operation_gate`, so stopping the selected
+/// service and recreating the foreground child are one serialized lifecycle
+/// transaction rather than two independently racing operations.
+async fn recover_failed_official_gateway_handoff(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+    context: &OfficialGatewayHandoffContext<'_>,
+    had_managed_child: bool,
+    stale_service_stop_attempted: bool,
+    handoff_error: String,
+) -> Result<bool, String> {
+    if matches!(
+        official_gateway_handoff_failure_recovery(had_managed_child),
+        OfficialGatewayHandoffFailureRecovery::SurfaceFailure
+    ) {
+        if stale_service_stop_attempted {
+            return restore_stale_gateway_after_failed_handoff(app, state, context, handoff_error)
+                .await;
+        }
+        state.transition(
+            Some(GatewayLifecycle::Error),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "wizard handoff: official service failed without a managed child to restore",
+        );
+        return Err(handoff_error);
+    }
+
+    let recovery_notice = format!(
+        "Official Gateway handoff failed: {handoff_error}. Restoring the desktop-managed Gateway..."
+    );
+    emit_restart_progress(&app, &recovery_notice);
+    crate::state::gateway_process::push_log(
+        &state.logs,
+        crate::state::gateway_process::LogSource::Lifecycle,
+        crate::state::gateway_process::LogLevel::Warn,
+        recovery_notice,
+    );
+
+    // The service identity is checked again inside this helper.  This keeps
+    // rollback ownership-safe if the official CLI changed its service state
+    // between the initial inspection and the failed start/health check.
+    if let Err(error) = crate::commands::gateway_service::stop_selected_gateway_service(
+        context.runtime,
+        &context.state_dir,
+        context.config_path,
+        Some(context.search_path),
+    )
+    .await
+    {
+        let reason = format!(
+            "{handoff_error}; rollback could not stop the selected official Gateway service: {error}"
+        );
+        state.transition(
+            Some(GatewayLifecycle::Error),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "wizard handoff: official service cleanup failed during rollback",
+        );
+        return Err(reason);
+    }
+
+    if let Err(error) =
+        crate::commands::gateway_supervisor::wait_for_port_free(context.port, 30_000).await
+    {
+        let reason = format!(
+            "{handoff_error}; rollback stopped the selected official service but port {} remained occupied: {error}",
+            context.port
+        );
+        state.transition(
+            Some(GatewayLifecycle::Error),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "wizard handoff: rollback port cleanup failed",
+        );
+        return Err(reason);
+    }
+
+    match start_gateway_locked(app.clone(), state.clone(), Some(context.port)).await {
+        Ok(status) if status.running => {
+            let _ = app.emit(
+                "gateway-log",
+                "Desktop-managed Gateway restored after official service handoff failed.",
+            );
+            Ok(false)
+        }
+        Ok(status) => {
+            let reason = format!(
+                "{handoff_error}; rollback returned a non-running desktop Gateway status on port {}",
+                status.port
+            );
+            state.transition(
+                Some(GatewayLifecycle::Error),
+                Some(GatewayRuntimeMode::None),
+                None,
+                "wizard handoff: rollback returned a non-running Gateway",
+            );
+            Err(reason)
+        }
+        Err(error) => {
+            let reason = format!(
+                "{handoff_error}; rollback could not restore the desktop-managed Gateway: {error}"
+            );
+            state.transition(
+                Some(GatewayLifecycle::Error),
+                Some(GatewayRuntimeMode::None),
+                None,
+                "wizard handoff: managed Gateway rollback failed",
+            );
+            Err(reason)
+        }
+    }
+}
+
+/// A stale official service can be the sole pre-handoff owner. If its stop
+/// command may have taken effect but JunQi had no foreground child to restore,
+/// restart only after re-verifying that the shared platform service is still
+/// bound to the selected state/config contract.
+async fn restore_stale_gateway_after_failed_handoff(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+    context: &OfficialGatewayHandoffContext<'_>,
+    handoff_error: String,
+) -> Result<bool, String> {
+    let identity = context.service_identity();
+    let inspection = crate::commands::gateway_service::inspect_gateway_service_state(
+        context.runtime,
+        &identity,
+        Some(context.search_path),
+    )
+    .await
+    .map_err(|error| {
+        format!("{handoff_error}; rollback could not inspect the stale Gateway service: {error}")
+    })?;
+    if !crate::commands::gateway_service::belongs_to_selected_state(inspection.ownership)
+        || !inspection.installed
+    {
+        state.transition(
+            Some(GatewayLifecycle::Error),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "wizard handoff: stale service changed before rollback",
+        );
+        return Err(format!(
+            "{handoff_error}; the stale Gateway service changed before it could be safely restored"
+        ));
+    }
+    crate::commands::gateway_service::start_selected_gateway_service_with_path(
+        context.runtime,
+        &context.state_dir,
+        context.config_path,
+        Some(context.search_path),
+    )
+    .await
+    .map_err(|error| {
+        format!("{handoff_error}; rollback could not restart the stale Gateway service: {error}")
+    })?;
+    if !wait_for_selected_gateway(context.port, context.config_path, 45).await {
+        state.transition(
+            Some(GatewayLifecycle::Error),
+            Some(GatewayRuntimeMode::None),
+            None,
+            "wizard handoff: stale service did not become healthy after rollback",
+        );
+        return Err(format!(
+            "{handoff_error}; stale Gateway service did not become healthy after rollback"
+        ));
+    }
+    state.transition(
+        Some(GatewayLifecycle::Running),
+        Some(GatewayRuntimeMode::SystemService),
+        Some(false),
+        "wizard handoff: stale Gateway service restored after failure",
+    );
+    let _ = app.emit(
+        "gateway-log",
+        "Official Gateway service was restored after a failed handoff.",
+    );
+    Ok(false)
+}
+
 /// Complete the lifecycle handoff after the official OpenClaw wizard. The
 /// wizard may install/start its platform service by default; when that service
 /// declares JunQi's selected state/config, stop our foreground child first and
@@ -1375,15 +1708,18 @@ pub async fn handoff_gateway_to_official_service(
     let node = crate::commands::system::check_node_for_requirement(&requirement).await?;
     let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
     let search_path = augmented_path();
-    let identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
-        &paths::desktop_dir(),
-        &config_path,
-        &runtime,
-    );
+    let context = OfficialGatewayHandoffContext {
+        state_dir: paths::desktop_dir(),
+        config_path: &config_path,
+        runtime: &runtime,
+        search_path: &search_path,
+        port,
+    };
+    let identity = context.service_identity();
     let inspection = crate::commands::gateway_service::inspect_gateway_service_state(
-        &runtime,
+        context.runtime,
         &identity,
-        Some(&search_path),
+        Some(context.search_path),
     )
     .await;
     let inspection = match inspection {
@@ -1396,58 +1732,97 @@ pub async fn handoff_gateway_to_official_service(
             return Ok(false);
         }
     };
-    if !crate::commands::gateway_service::belongs_to_selected_state(inspection.ownership)
-        || !inspection.installed
-    {
+    let Some(handoff) = official_gateway_handoff(inspection) else {
         return Ok(false);
-    }
-
-    let stale_service_running = (inspection.ownership
-        == crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime)
-        .then_some(inspection.running);
-    if stale_service_running == Some(true)
-        && !crate::commands::gateway_service::stop_selected_gateway_service(
-            &runtime,
-            &paths::desktop_dir(),
-            &config_path,
-            Some(&search_path),
-        )
-        .await?
-    {
-        return Err("The stale selected Gateway service changed before handoff".into());
-    }
-
+    };
     let child = {
         let mut lock = state.child.lock().map_err(|error| error.to_string())?;
         lock.take()
     };
+    let had_managed_child = child.is_some();
     if let Some(mut child) = child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
-        crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
     }
-    if let Some(was_running) = stale_service_running {
-        crate::commands::gateway_service::rebind_selected_gateway_service(
-            &runtime,
-            &paths::desktop_dir(),
-            &config_path,
-            port,
-            was_running,
-            Some(&search_path),
+
+    // Everything after the foreground child is displaced is part of one
+    // recoverable transaction.  A failed port wait, service rebind, service
+    // start, or health check must not leave the wizard without a Gateway.
+    let mut stale_service_stop_attempted = false;
+    let handoff_result: Result<(), String> = async {
+        if matches!(
+            handoff,
+            OfficialGatewayHandoff::RebindStale {
+                stop_running_service: true
+            }
+        ) {
+            // Mark before awaiting: a CLI timeout/error can happen after the
+            // platform service has already observed the stop request.
+            stale_service_stop_attempted = true;
+            if !crate::commands::gateway_service::stop_selected_gateway_service(
+                context.runtime,
+                &context.state_dir,
+                context.config_path,
+                Some(context.search_path),
+            )
+            .await?
+            {
+                return Err("The stale selected Gateway service changed before handoff".into());
+            }
+        }
+        if had_managed_child && !matches!(handoff, OfficialGatewayHandoff::RetainCurrentOwner)
+        {
+            crate::commands::gateway_supervisor::wait_for_port_free(context.port, 30_000)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "The desktop-managed Gateway stopped, but port {} did not become available: {}",
+                        context.port, error
+                    )
+                })?;
+        }
+        if matches!(handoff, OfficialGatewayHandoff::RebindStale { .. }) {
+            // The handoff always needs an active official owner. Rebind in a
+            // stopped state, then perform exactly one explicit start below.
+            crate::commands::gateway_service::rebind_selected_gateway_service(
+                context.runtime,
+                &context.state_dir,
+                context.config_path,
+                context.port,
+                false,
+                Some(context.search_path),
+            )
+            .await
+            .map_err(|error| format!("Failed to rebuild the stale Gateway service: {error}"))?;
+        }
+        if !matches!(handoff, OfficialGatewayHandoff::RetainCurrentOwner) {
+            crate::commands::gateway_service::start_selected_gateway_service_with_path(
+                context.runtime,
+                &context.state_dir,
+                context.config_path,
+                Some(context.search_path),
+            )
+            .await
+            .map_err(|error| format!("Failed to start the official Gateway service: {error}"))?;
+        }
+        if !wait_for_selected_gateway(context.port, context.config_path, 45).await {
+            return Err(format!(
+                "Official Gateway service did not become ready on port {} after wizard handoff",
+                context.port
+            ));
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(error) = handoff_result {
+        return recover_failed_official_gateway_handoff(
+            app,
+            state,
+            &context,
+            had_managed_child,
+            stale_service_stop_attempted,
+            error,
         )
-        .await?;
-    }
-    crate::commands::gateway_service::start_selected_gateway_service_with_path(
-        &runtime,
-        &paths::desktop_dir(),
-        &config_path,
-        Some(&search_path),
-    )
-    .await?;
-    if !wait_for_selected_gateway(port, &config_path, 45).await {
-        return Err(format!(
-            "Official Gateway service did not become ready on port {} after wizard handoff",
-            port
-        ));
+        .await;
     }
     state.transition(
         Some(GatewayLifecycle::Running),

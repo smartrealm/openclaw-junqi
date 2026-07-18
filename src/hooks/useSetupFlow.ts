@@ -15,12 +15,14 @@ import {
   type SetupStep,
 } from "@/stores/setup-navigation";
 import {
-  checkSetupNode, checkNpm, checkGit, checkOpenclaw,
-  installNode, installGit, installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
+  checkSetupNode, checkGit, checkOpenclaw,
+  installNode, repairSetupNodeRuntime, installGit, cancelDependencyInstall,
+  installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
   applyTerminalIntegration,
   prepareGateway,
   checkDocker, pullOpenclawImage, detectGatewayConfig, setActiveGatewayRuntime,
   commitActiveGatewayRuntime, rollbackActiveGatewayRuntime,
+  commitRuntimeReconfiguration, rollbackRuntimeReconfiguration,
   type DockerStatus,
   type OpenclawStatus,
 } from "@/api/tauri-commands";
@@ -167,7 +169,7 @@ export interface SetupFlow {
   selectMode: (mode: InstallMode) => Promise<void>;
   detectDocker: () => Promise<void>;
   refreshRuntime: () => Promise<{ status: OpenclawStatus | null; gatewayRunning: boolean }>;
-  goBack: () => void;
+  goBack: () => Promise<void>;
   retryGit: () => void;
   retryNode: () => void;
   enterWorkspace: (origin?: Element | null) => void;
@@ -261,16 +263,44 @@ export function useSetupFlow(
     setSteps(next);
   }, [setSteps]);
   const activeRunRef = useRef(0);
-  const beginRun = useCallback(() => {
+  const dependencyInstallScopeRef = useRef(
+    `setup-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+  );
+  const activeDependencyOperationRef = useRef<string | null>(null);
+  const requestDependencyCancellation = useCallback((operationId: string) => {
+    void cancelDependencyInstall(operationId).catch((error) => {
+      debugWarn("app", "[setup] dependency installer cancellation request failed:", error);
+    });
+  }, []);
+  const cancelActiveRun = useCallback(() => {
+    const operationId = activeDependencyOperationRef.current;
+    activeDependencyOperationRef.current = null;
     activeRunRef.current += 1;
+    if (operationId) requestDependencyCancellation(operationId);
+  }, [requestDependencyCancellation]);
+  const beginRun = useCallback(() => {
+    cancelActiveRun();
     setInstallTarget(null);
     setNodeRequirement(null);
     return activeRunRef.current;
-  }, [setInstallTarget]);
-  const cancelActiveRun = useCallback(() => {
-    activeRunRef.current += 1;
-  }, []);
+  }, [cancelActiveRun, setInstallTarget]);
   const isRunActive = useCallback((runId: number) => activeRunRef.current === runId, []);
+  const runDependencyInstall = useCallback(async <T,>(
+    runId: number,
+    tool: "git" | "node",
+    install: (operationId: string) => Promise<T>,
+  ): Promise<T> => {
+    if (!isRunActive(runId)) throw new Error("setup cancelled");
+    const operationId = `${dependencyInstallScopeRef.current}:${runId}:${tool}`;
+    activeDependencyOperationRef.current = operationId;
+    try {
+      return await install(operationId);
+    } finally {
+      if (activeDependencyOperationRef.current === operationId) {
+        activeDependencyOperationRef.current = null;
+      }
+    }
+  }, [isRunActive]);
   const dockerDetectingRef = useRef(false);
 
   const report = useCallback((message: string, nextProgress?: number) => {
@@ -638,8 +668,11 @@ export function useSetupFlow(
   }, [setupStep, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
 
   // ── Actions ──
-  const startGatewayAction = useCallback(async (requestedMode?: InstallMode): Promise<boolean> => {
-    const runId = beginRun();
+  const startGatewayAction = useCallback(async (
+    requestedMode?: InstallMode,
+    existingRunId?: number,
+  ): Promise<boolean> => {
+    const runId = existingRunId ?? beginRun();
     setGatewayRunning(false);
     if (setupStep === "gateway-stopped" || setupStep === "install-complete") {
       navigateSetup("checking", "push");
@@ -697,8 +730,8 @@ export function useSetupFlow(
     }
   }, [beginRun, isRunActive, setupStep, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, startOfficialOnboarding, appendSetupLog, installMode]);
 
-  const runNativeSetup = useCallback(async (): Promise<boolean> => {
-    const runId = beginRun();
+  const runNativeSetup = useCallback(async (existingRunId?: number): Promise<boolean> => {
+    const runId = existingRunId ?? beginRun();
     clearSetupLogs();
     const s = [...INITIAL_NATIVE_STEPS];
     commitSteps(s);
@@ -722,8 +755,10 @@ export function useSetupFlow(
         }
         patchStep("git", "running", t("setup.installingGit", "正在静默安装 Git…"));
         replaceSetupStep("install-git");
-        await installGit();
+        await runDependencyInstall(runId, "git", installGit);
+        if (!isRunActive(runId)) return false;
         const installedGit = await checkGit();
+        if (!isRunActive(runId)) return false;
         if (!installedGit.available) {
           patchStep("git", "error", t("setup.gitRequiredDesc"));
           setNeedsGit(true);
@@ -739,36 +774,54 @@ export function useSetupFlow(
       // Node
       patchStep("node", "running", t("setup.checkingNode"));
       reportPhase("node", t("setup.checkingNode"));
-      const setupNode = await checkSetupNode();
-      const nodeStatus = setupNode.node;
+      let setupNode = await checkSetupNode();
+      let nodeStatus = setupNode.node;
       setNodeRequirement(setupNode.requirement);
       if (!isRunActive(runId)) return false;
       if (!nodeStatus.available) {
         patchStep("node", "running", t("setup.installingNode"));
         replaceSetupStep("install-node");
         reportPhase("node", t("setup.installingNode"), 20);
-        await installNode();
+        await runDependencyInstall(runId, "node", (operationId) => installNode(false, operationId));
         if (!isRunActive(runId)) return false;
-        const installedSetupNode = await checkSetupNode();
-        const installedNode = installedSetupNode.node;
-        setNodeRequirement(installedSetupNode.requirement);
+        setupNode = await checkSetupNode();
+        const installedNode = setupNode.node;
+        nodeStatus = installedNode;
+        setNodeRequirement(setupNode.requirement);
         if (!installedNode.available) throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
         patchStep("node", "done", installedNode.version ?? undefined);
       } else {
         patchStep("node", "done", nodeStatus.version ?? undefined);
       }
 
-      // npm is independently verified because a system Node installation can
-      // exist without npm. Installation keeps npm's own default cache unless
-      // the user explicitly selected an override in storage settings.
+      // npm is verified through the exact Node.js runtime selected above. A
+      // repair preserves that contract: portable runtimes must be JunQi-owned,
+      // while a requested system repair installs a verified system runtime
+      // rather than mixing in an unrelated PATH npm shim.
       patchStep("npm", "running", t("setup.checkingNpm", "正在检查 npm 版本…"));
-      let npmStatus = await checkNpm();
-      if (!npmStatus.available) {
-        patchStep("npm", "running", t("setup.installingNpm", "正在通过系统 Node.js 安装 npm…"));
-        await installNode(true);
-        npmStatus = await checkNpm();
+      let npmStatus = setupNode.npm;
+      if (nodeStatus.available && !npmStatus.available) {
+        patchStep("node", "running", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"));
+        patchStep("npm", "running", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"));
+        replaceSetupStep("install-node");
+        reportPhase("node", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"), 20);
+        await runDependencyInstall(runId, "node", repairSetupNodeRuntime);
+        if (!isRunActive(runId)) return false;
+        setupNode = await checkSetupNode();
+        nodeStatus = setupNode.node;
+        npmStatus = setupNode.npm;
+        setNodeRequirement(setupNode.requirement);
+        if (!nodeStatus.available) {
+          throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
+        }
+        patchStep("node", "done", nodeStatus.version ?? undefined);
       }
-      if (!npmStatus.available) throw new Error(t("setup.npmInstallFailed", "npm 安装后校验失败"));
+      if (!npmStatus.available) {
+        const npmError = npmStatus.reason
+          ?? t("setup.npmInstallFailed", "所选 Node.js 未提供可用 npm");
+        patchStep("npm", "error", npmError);
+        throw new Error(npmError);
+      }
       patchStep("npm", "done", npmStatus.version ?? undefined);
 
       // OpenClaw
@@ -796,6 +849,7 @@ export function useSetupFlow(
         } else {
           await installOpenclaw();
         }
+        if (!isRunActive(runId)) return false;
         const installedStatus = await checkOpenclaw();
         setOpenclawStatus(installedStatus);
         if (!isRunActive(runId)) return false;
@@ -846,7 +900,7 @@ export function useSetupFlow(
       // fresh install, start this bootstrap runtime immediately. Preparation is
       // diagnostic only: startGatewayAction owns the authoritative validation
       // and recovery path, so a probe warning must not strand onboarding.
-      return await startGatewayAction("native");
+      return await startGatewayAction("native", runId);
     } catch (err: any) {
       if (!isRunActive(runId)) return false;
       const msg = err?.message || String(err);
@@ -857,10 +911,10 @@ export function useSetupFlow(
       return false;
     }
   }, [beginRun, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
-      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement, startGatewayAction]);
+      waitForGatewayReady, setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement, startGatewayAction, runDependencyInstall]);
 
-  const runDockerSetup = useCallback(async (): Promise<boolean> => {
-    const runId = beginRun();
+  const runDockerSetup = useCallback(async (existingRunId?: number): Promise<boolean> => {
+    const runId = existingRunId ?? beginRun();
     clearSetupLogs();
     commitSteps([...INITIAL_DOCKER_STEPS]);
     try {
@@ -914,14 +968,35 @@ export function useSetupFlow(
       waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, clearSetupLogs, startOfficialOnboarding, appendSetupLog]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
+    const runId = beginRun();
     setSetupError(null);
     const previousMode = installMode;
     const switchedMode = mode !== previousMode;
     try {
+      // A pending location change is a Native runtime contract. Selecting
+      // Docker means that contract will not be exercised, so compensate it
+      // before Docker can become the active runtime.
+      if (mode === "docker") {
+        const restoredNativeLocations = await rollbackRuntimeReconfiguration();
+        if (!isRunActive(runId)) return;
+        if (restoredNativeLocations) {
+          appendSetupLog({
+            source: "setup",
+            step: "gateway",
+            message: "Discarded the pending Native runtime location change before selecting Docker",
+            level: "warn",
+          });
+        }
+      }
+      if (!isRunActive(runId)) return;
       await setActiveGatewayRuntime(mode);
+      if (!isRunActive(runId)) return;
       setInstallMode(mode);
-      updateOnboardingRequirement(await resolveActiveRuntimeOnboardingRequirement());
+      const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
+      if (!isRunActive(runId)) return;
+      updateOnboardingRequirement(onboardingRequired);
     } catch (error) {
+      if (!isRunActive(runId)) return;
       const message = error instanceof Error ? error.message : String(error);
       appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
       setSetupError(message);
@@ -929,46 +1004,60 @@ export function useSetupFlow(
       replaceSetupStep("error");
       return;
     }
+    if (!isRunActive(runId)) return;
     navigateSetup("checking", "push");
     let completed: boolean;
     if (mode === "native") {
       commitSteps([...INITIAL_NATIVE_STEPS]);
-      completed = await runNativeSetup();
+      completed = await runNativeSetup(runId);
     } else {
       reinstallRequestedRef.current = false;
       commitSteps([...INITIAL_DOCKER_STEPS]);
-      completed = await runDockerSetup();
+      completed = await runDockerSetup(runId);
     }
+    if (!isRunActive(runId)) return;
     if (completed) {
       try {
         await commitActiveGatewayRuntime(mode);
+        if (!isRunActive(runId)) return;
+        await commitRuntimeReconfiguration();
+        if (!isRunActive(runId)) return;
         return;
       } catch (commitError) {
+        if (!isRunActive(runId)) return;
         const message = commitError instanceof Error ? commitError.message : String(commitError);
         appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
         setSetupError(message);
         report(message);
       }
     }
+    if (!isRunActive(runId)) return;
 
     // Runtime selection is a transaction from the user's perspective. The
     // backend persists the target before setup can prepare its dependencies,
     // so a failed/cancelled attempt must restore the previous selection before
     // the next app launch interprets the bootstrap file.
     try {
-      if (switchedMode) {
+      const restoredRuntimeLocations = await rollbackRuntimeReconfiguration();
+      if (!isRunActive(runId)) return;
+      if (switchedMode && !restoredRuntimeLocations) {
         await rollbackActiveGatewayRuntime(mode);
+        if (!isRunActive(runId)) return;
       }
       setInstallMode(previousMode);
-      updateOnboardingRequirement(await resolveActiveRuntimeOnboardingRequirement());
-      if (switchedMode) {
+      const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
+      if (!isRunActive(runId)) return;
+      updateOnboardingRequirement(onboardingRequired);
+      if (switchedMode && !restoredRuntimeLocations) {
         try {
           if (previousMode === "native") {
             await gatewayManager.startForSetup();
           } else {
             await gatewayManager.startDockerForSetup();
           }
+          if (!isRunActive(runId)) return;
         } catch (restoreError) {
+          if (!isRunActive(runId)) return;
           appendSetupLog({
             source: "setup",
             step: "gateway",
@@ -977,6 +1066,7 @@ export function useSetupFlow(
           });
         }
       }
+      if (!isRunActive(runId)) return;
       appendSetupLog({
         source: "setup",
         step: "gateway",
@@ -985,13 +1075,14 @@ export function useSetupFlow(
       });
       report(t("setup.runtimeSwitchRolledBack", "运行时切换失败，已恢复之前的运行模式"));
     } catch (rollbackError) {
+      if (!isRunActive(runId)) return;
       const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
       appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
       setSetupError(message);
       report(message);
       replaceSetupStep("error");
     }
-  }, [installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement, setActiveGatewayRuntime, commitActiveGatewayRuntime, rollbackActiveGatewayRuntime, gatewayManager, t]);
+  }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement, setActiveGatewayRuntime, commitActiveGatewayRuntime, rollbackActiveGatewayRuntime, commitRuntimeReconfiguration, rollbackRuntimeReconfiguration, gatewayManager, t]);
 
   const requestReinstall = useCallback(() => {
     reinstallRequestedRef.current = true;
@@ -1306,11 +1397,21 @@ export function useSetupFlow(
     }
   }, [repairing, brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
 
-  const goBack = useCallback(() => {
+  const goBack = useCallback(async () => {
     void wizardClientRef.current?.cancel().catch(() => {});
     setWizardStep(null);
     setWizardError(null);
     cancelActiveRun();
+    try {
+      await rollbackRuntimeReconfiguration();
+    } catch (rollbackError) {
+      const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+      setSetupError(message);
+      report(message);
+      replaceSetupStep("error");
+      return;
+    }
     setSetupError(null);
     setNeedsGit(false);
     setNodeRequirement(null);
@@ -1332,7 +1433,7 @@ export function useSetupFlow(
       commitSteps([]);
     }
     presentSetupStep(destination);
-  }, [cancelActiveRun, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, commitSteps, presentSetupStep]);
+  }, [cancelActiveRun, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, commitSteps, presentSetupStep, rollbackRuntimeReconfiguration, appendSetupLog, report, replaceSetupStep]);
 
   const retryGit = useCallback(() => {
     setNeedsGit(false);

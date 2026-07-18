@@ -10,6 +10,7 @@ pub mod builtin_skills;
 pub mod config;
 pub mod console;
 pub mod diagnostic_output;
+pub(crate) mod directory_transaction;
 pub mod docker;
 pub mod dynamic_island;
 pub mod ensure;

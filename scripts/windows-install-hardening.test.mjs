@@ -5,15 +5,25 @@ import test from 'node:test';
 const setup = readFileSync(new URL('../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 const gitRuntime = readFileSync(new URL('../src-tauri/src/commands/git_runtime.rs', import.meta.url), 'utf8');
 const nodeRuntime = readFileSync(new URL('../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
+const platform = readFileSync(new URL('../src-tauri/src/platform.rs', import.meta.url), 'utf8');
 const lib = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 const tauri = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 
 test('Windows PATH refresh expands registry values and preserves process entries', () => {
-  assert.match(setup, /ExpandEnvironmentStringsW/);
-  assert.match(setup, /std::env::var_os\("PATH"\)/);
-  assert.match(setup, /eq_ignore_ascii_case/);
-  assert.doesNotMatch(setup, /parts\.join\(";"\)/);
+  assert.match(platform, /ExpandEnvironmentStringsW/);
+  assert.match(platform, /std::env::var_os\("PATH"\)/);
+  assert.match(platform, /eq_ignore_ascii_case/);
+  assert.doesNotMatch(platform, /parts\.join\(";"\)/);
+  const refresh = platform.slice(
+    platform.indexOf('fn refresh_windows_path_from_registry'),
+    platform.indexOf('pub fn default_shell_command'),
+  );
+  assert.ok(
+    refresh.indexOf('std::env::var_os("PATH")')
+      < refresh.indexOf('HKEY_LOCAL_MACHINE'),
+    'the inherited PATH must retain version-manager precedence before registry entries are appended',
+  );
 });
 
 test('OpenClaw promotion has persistent recovery state', () => {
@@ -30,10 +40,9 @@ test('generic winget package installation command is not exposed', () => {
 test('Windows package uses the small WebView2 bootstrapper and standard system runtime defaults', () => {
   assert.equal(tauri.bundle.windows.webviewInstallMode.type, 'downloadBootstrapper');
   assert.deepEqual(tauri.plugins.updater.endpoints, []);
-  // Existing system tools are reused. Missing tools download vendor artifacts
-  // from domestic mirrors while requiring matching Node release manifests
-  // from independent mainland mirrors. Archives remain
-  // available only for an explicit portable selection.
+  // Existing system tools are reused. Missing tools prefer domestic mirrors
+  // and retain official publisher endpoints as the last fallback. Archives
+  // remain available only for an explicit portable selection.
   assert.match(setup, /install_windows_system_node/);
   assert.match(setup, /install_windows_system_node_from_mirrors/);
   assert.match(setup, /install_windows_system_node_with_winget/);
@@ -48,15 +57,15 @@ test('Windows package uses the small WebView2 bootstrapper and standard system r
   assert.doesNotMatch(setup, /runtime_dir\(\)\.join\("node"\)/);
   assert.doesNotMatch(setup, /runtime_dir\(\)\.join\("git"\)/);
   assert.doesNotMatch(setup, /NODE_DISTRIBUTION_(BASES|SOURCES)/);
-  assert.match(nodeRuntime, /NODE_DISTRIBUTION_SOURCES/);
+  assert.match(nodeRuntime, /NODE_DISTRIBUTION_CATALOG/);
   assert.match(nodeRuntime, /node_installer_sources/);
   assert.match(setup, /resolve_node_sha256/);
   assert.match(nodeRuntime, /npmmirror\.com\/mirrors\/node/);
   assert.match(nodeRuntime, /mirrors\.aliyun\.com\/nodejs-release/);
   assert.match(nodeRuntime, /mirrors\.cloud\.tencent\.com\/nodejs-release/);
   assert.match(nodeRuntime, /mirrors\.huaweicloud\.com\/nodejs/);
-  assert.match(nodeRuntime, /node_checksum_sources[\s\S]*NODE_DISTRIBUTION_SOURCES/);
-  assert.doesNotMatch(nodeRuntime, /nodejs\.org\/dist/);
+  assert.match(nodeRuntime, /node_checksum_sources[\s\S]*NODE_DISTRIBUTION_CATALOG/);
+  assert.match(nodeRuntime, /nodejs\.org\/dist/);
   assert.match(setup, /providers\.len\(\) >= 2/);
   assert.doesNotMatch(setup, /resolve_latest_managed_git_artifact/);
   assert.match(gitRuntime, /registry\.npmmirror\.com\/.*git-for-windows/);

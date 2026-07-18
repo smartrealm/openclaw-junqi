@@ -94,7 +94,7 @@ pub(crate) fn normalize_docker_config_runtime_paths(config_path: &Path) -> Resul
             error
         )
     })?;
-    let mut config = serde_json::from_str::<serde_json::Value>(&raw).map_err(|error| {
+    let mut config = crate::commands::config::parse_openclaw_config(&raw).map_err(|error| {
         format!(
             "Failed to parse Docker config {}: {}",
             config_path.display(),
@@ -119,9 +119,7 @@ pub(crate) fn normalize_docker_config_runtime_paths(config_path: &Path) -> Resul
         return Ok(());
     }
     defaults.insert("workspace".into(), desired);
-    let serialized = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("Failed to serialize Docker config: {}", error))?;
-    paths::atomic_write_text(config_path, &serialized).map_err(|error| {
+    crate::commands::config::write_openclaw_config_value(config_path, &config).map_err(|error| {
         format!(
             "Failed to normalize Docker config {}: {}",
             config_path.display(),
@@ -635,7 +633,7 @@ pub(crate) fn docker_gateway_configured_port() -> u16 {
     let path = paths::docker_config_path();
     std::fs::read_to_string(path)
         .ok()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok())
         .and_then(|config| crate::commands::config::gateway_port_from_config(&config))
         .unwrap_or_else(crate::commands::config::default_gateway_port)
 }
@@ -1215,22 +1213,45 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             &config_path,
-            serde_json::json!({
-                "agents": { "defaults": { "workspace": "X:\\CustomData\\workspace" } },
-                "gateway": { "port": 18789 }
-            })
-            .to_string(),
+            r#"
+            // Existing OpenClaw config can use JSON5 syntax.
+            {
+              agents: { defaults: { workspace: "X:\\CustomData\\workspace", }, },
+              gateway: { port: 18789, },
+            }
+            "#,
         )
         .unwrap();
 
         normalize_docker_config_runtime_paths(&config_path).unwrap();
-        let normalized: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        let normalized = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&config_path).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             normalized["agents"]["defaults"]["workspace"],
             OPENCLAW_CONTAINER_WORKSPACE_DIR
         );
         assert_eq!(normalized["gateway"]["port"], 18789);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn normalized_json5_config_is_not_rewritten_when_workspace_is_already_correct() {
+        let root =
+            std::env::temp_dir().join(format!("junqi-docker-config-noop-{}", uuid::Uuid::new_v4()));
+        let config_path = root.join("openclaw.json");
+        std::fs::create_dir_all(&root).unwrap();
+        let raw = format!(
+            "{{\n  // preserve this JSON5 comment\n  agents: {{ defaults: {{ workspace: {:?}, }}, }},\n}}\n",
+            OPENCLAW_CONTAINER_WORKSPACE_DIR
+        );
+        std::fs::write(&config_path, &raw).unwrap();
+
+        normalize_docker_config_runtime_paths(&config_path).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&config_path).unwrap(), raw);
+        assert!(!root.join("config-backups").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 
