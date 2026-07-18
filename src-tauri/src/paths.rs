@@ -1385,10 +1385,7 @@ mod storage_bootstrap_tests {
             "registry=https://registry.npmmirror.com\nstrict-ssl=false\nprefix = {}\n",
             expected.display()
         );
-        assert_eq!(
-            user_npm_prefix_from_npmrc(&content, &home),
-            Some(expected)
-        );
+        assert_eq!(user_npm_prefix_from_npmrc(&content, &home), Some(expected));
     }
 
     #[test]
