@@ -37,6 +37,9 @@ interface StorageConfigureResult {
   openclawRelocationRequired: boolean;
 }
 
+type StorageCompletion = Pick<StorageConfigureResult, 'createdFresh'>
+  & Partial<Pick<StorageConfigureResult, 'runtimeReconfigurationRequired' | 'openclawRelocationRequired'>>;
+
 interface MigrationProgress {
   key?: string;
   message: string;
@@ -44,11 +47,7 @@ interface MigrationProgress {
 }
 
 interface StorageSetupStepProps {
-  onReady: (result?: {
-    createdFresh: boolean;
-    runtimeReconfigurationRequired?: boolean;
-    openclawRelocationRequired?: boolean;
-  }) => void;
+  onReady: (result?: StorageCompletion) => void;
   onBack: () => void;
   logs: SetupLog[];
   forceConfigure?: boolean;
@@ -128,6 +127,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const setStorageDraft = useAppStore((state) => state.setStorageDraft);
   const checkedRef = useRef(false);
   const mountedRef = useRef(false);
+  const initialCompletionHandledRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const [status, setStatus] = useState<StorageSetupStatus | null>(null);
@@ -150,28 +150,21 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const [recoveringRuntime, setRecoveringRuntime] = useState(false);
   const [progress, setProgress] = useState<MigrationProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [completion, setCompletion] = useState<StorageCompletion | null>(null);
 
   const loadStorageStatus = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       if (!(window as any).__TAURI_INTERNALS__) {
-        onReadyRef.current({ createdFresh: false });
         return;
       }
       const result = await invoke<StorageSetupStatus>('get_storage_setup_status');
       if (!mountedRef.current) return;
-      if (result.configured && !forceConfigure && !storageDraft) {
-        onReadyRef.current({
-          createdFresh: false,
-          openclawRelocationRequired: result.openclawRelocationRequired,
-        });
-        return;
-      }
       const draft = storageDraft;
       setStatus(result);
       setError(result.runtimeReconfigurationRecoveryError ?? result.configurationError ?? null);
-      setTargetDir(draft?.targetDir ?? (forceConfigure ? result.stateDir : result.legacyDir));
+      setTargetDir(draft?.targetDir ?? result.stateDir);
       setWorkspaceDir(draft?.workspaceDir ?? result.workspaceDir);
       setRuntimeDir(draft?.runtimeDir ?? result.runtimeDir);
       setNpmCacheDir(draft?.npmCacheDir ?? result.npmCacheDir ?? '');
@@ -183,7 +176,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       setGitRuntimeDir(draft?.gitRuntimeDir ?? result.gitRuntimeDir ?? '');
       setCustomGitRuntime(result.customGitRuntimeSupported && (draft?.customGitRuntime ?? Boolean(result.gitRuntimeDir)));
       setTerminalIntegration(draft?.terminalIntegration ?? result.terminalIntegration);
-      setMigrateExisting(draft?.migrateExisting ?? (forceConfigure || result.legacyExists));
+      setMigrateExisting(draft?.migrateExisting ?? (forceConfigure || (!result.configured && result.legacyExists)));
       setShowLocations(draft?.showLocations ?? false);
     } catch (cause) {
       if (mountedRef.current) setError(String(cause));
@@ -289,10 +282,14 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       });
       if (!mountedRef.current) return;
       setStorageDraft(null);
-      onReadyRef.current({
+      setCompletion({
         createdFresh: result.createdFresh,
         runtimeReconfigurationRequired: result.runtimeReconfigurationRequired,
         openclawRelocationRequired: result.openclawRelocationRequired,
+      });
+      setProgress({
+        message: t('storage.saved', '存储位置已保存，请点击下一步继续。'),
+        progress: 1,
       });
     } catch (cause) {
       if (mountedRef.current) setError(String(cause));
@@ -300,6 +297,23 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       if (mountedRef.current) setApplying(false);
     }
   }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+
+  useEffect(() => {
+    setCompletion(null);
+  }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, targetDir, terminalIntegration, workspaceDir]);
+
+  useEffect(() => {
+    if (initialCompletionHandledRef.current || !status?.configured || storageDraft) return;
+    initialCompletionHandledRef.current = true;
+    setCompletion({
+      createdFresh: false,
+      openclawRelocationRequired: status.openclawRelocationRequired,
+    });
+  }, [status, storageDraft]);
+
+  const advanceAfterStorage = useCallback(() => {
+    if (completion) onReadyRef.current(completion);
+  }, [completion]);
 
   const rememberDraft = useCallback(() => {
     const draft: StorageSetupDraft = {
@@ -403,11 +417,9 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     );
   }
 
-  const actionLabel = usingLegacy
-    ? t('storage.continue', '继续')
-    : migrateExisting && status.legacyExists
-      ? t('storage.migrateAndContinue', '迁移并继续')
-      : t('storage.createAndContinue', '创建并继续');
+  const actionLabel = completion
+    ? t('setup.nextStep', '下一步')
+    : t('storage.save', '保存位置');
   const dataLayoutLocked = !usingLegacy && status.legacyExists && migrateExisting;
   const layoutComplete = Boolean(
     targetDir.trim()
@@ -428,12 +440,17 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       previousAction={{ onClick: handleBack, disabled: applying }}
       nextAction={{
         label: applying ? progress?.message || t('storage.preparing', '正在准备新存储位置…') : actionLabel,
-        onClick: () => void applyStorage(),
+        onClick: completion ? advanceAfterStorage : () => void applyStorage(),
         disabled: applying || !layoutComplete,
         loading: applying,
         icon: 'none',
       }}
     >
+      {completion && (
+        <p className="border-l-2 border-aegis-success py-2 pl-3 text-sm text-aegis-success" role="status">
+          {t('storage.saved', '存储位置已保存，请点击下一步继续。')}
+        </p>
+      )}
       <section className="border-y border-aegis-border py-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <button

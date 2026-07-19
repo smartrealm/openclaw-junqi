@@ -2463,6 +2463,8 @@
   "storage.subtitle": "سيستخدم هذا الموقع الإعدادات والجلسات وبيانات الاعتماد ومساحات العمل وبيئات التشغيل التي يديرها JunQi.",
   "storage.chooseParent": "اختر المجلد الذي سيحتوي بيانات OpenClaw",
   "storage.continue": "متابعة",
+  "storage.save": "حفظ الموقع",
+  "storage.saved": "تم حفظ موقع التخزين. انقر فوق التالي للمتابعة.",
   "storage.createAndContinue": "إنشاء ومتابعة",
   "storage.customLocation": "اختيار موقع آخر",
   "storage.customLocationHint": "قرص أو مجلد آخر",

@@ -3271,6 +3271,8 @@
   "setup.openclawUpdate.title": "OpenClaw updates",
   "setup.openclawUpdate.subtitle": "Use the official OpenClaw updater to detect the install type, channel, and available version. Checking never blocks the next step.",
   "setup.openclawUpdate.currentVersion": "Current",
+  "storage.save": "Save location",
+  "storage.saved": "Storage location saved. Click Next to continue.",
   "setup.openclawUpdate.latestVersion": "Available",
   "setup.openclawUpdate.unknown": "Unknown",
   "setup.openclawUpdate.check": "Check for updates",
