@@ -601,17 +601,17 @@ export function DashboardPage() {
                 )}
               </div>
             </div>
-            <div className="min-h-[160px] flex-1">
+            <div className="relative min-h-[160px] flex-1">
               {hasChartCost ? (
                 <Suspense fallback={<div className="h-full" />}>
                   <CostChart data={chartData} />
                 </Suspense>
               ) : !connected ? (
-                <div className="flex h-full items-center justify-center text-[13px] text-aegis-text-dim">
+                <div className="absolute inset-0 flex items-center justify-center text-[13px] text-aegis-text-dim">
                   {t('dashboard.notConnected')}
                 </div>
               ) : costError ? (
-                <div className="flex h-full flex-col items-center justify-center gap-2 text-[13px] text-aegis-text-dim">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-[13px] text-aegis-text-dim">
                   <span>{t('dashboard.costError')}</span>
                   <button
                     onClick={handleRefresh}
@@ -621,11 +621,11 @@ export function DashboardPage() {
                   </button>
                 </div>
               ) : (costLoading && !costData) ? (
-                <div className="flex h-full items-center justify-center text-[13px] text-aegis-text-dim">
+                <div className="absolute inset-0 flex items-center justify-center text-[13px] text-aegis-text-dim">
                   {t('common.loading')}
                 </div>
               ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-1 text-[13px] text-aegis-text-dim">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-[13px] text-aegis-text-dim">
                   <BarChart3 size={18} className="text-aegis-text-muted" />
                   <span>{t('dashboard.costEmpty', 'No usage recorded yet')}</span>
                 </div>
