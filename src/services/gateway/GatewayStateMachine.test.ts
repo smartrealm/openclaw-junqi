@@ -9,7 +9,7 @@ function connect(machine: GatewayStateMachine): void {
   assert.equal(machine.current, GatewayState.CONNECTED);
 }
 
-test('BUG-GSC02 connected leaves CONNECTED when the process is offline', () => {
+test('BUG-GSC02 status observation does not start an offline process', () => {
   const machine = new GatewayStateMachine();
   connect(machine);
   const result = machine.transition({
@@ -18,8 +18,8 @@ test('BUG-GSC02 connected leaves CONNECTED when the process is offline', () => {
     error: null,
     retrying: false,
   });
-  assert.equal(result.state, GatewayState.STARTING);
-  assert.deepEqual(result.actions, ['START']);
+  assert.equal(result.state, GatewayState.DETECTING);
+  assert.deepEqual(result.actions, []);
 });
 
 test('BUG-GSC02 connected enters ERROR when the process reports an error', () => {

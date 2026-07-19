@@ -388,7 +388,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const { setupStep } = useAppStore();
   const active = setupStep === "ready" ? 5 : 3;
-  const isInstallComplete = setupStep === "install-complete";
+  const isGatewayReady = setupStep === "gateway-ready";
   const currentInstallStep = currentStepOf(flow.steps);
   const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
   // BUG-CPI-07：自愈梯子（更新→重装）已确认这些插件不可自动修复，
@@ -403,12 +403,12 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   return (
     <SetupShell
       active={active}
-      title={setupStep === "ready" ? t("setup.ready") : isInstallComplete ? t("setup.gatewayReadyTitle", "运行时已就绪") : t("setup.settingUp")}
-      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isInstallComplete ? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。") : t("setup.subtitle")}
+      title={setupStep === "ready" ? t("setup.ready") : isGatewayReady ? t("setup.gatewayConnected") : t("setup.settingUp")}
+      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isGatewayReady ? t("setup.gatewayReadySubtitle") : t("setup.subtitle")}
       logs={logs}
       wide
       showLogToggle={false}
-      previousAction={setupStep === "error" || isInstallComplete ? { onClick: () => flow.goBack(), disabled: flow.repairing } : undefined}
+      previousAction={setupStep === "error" || isGatewayReady ? { onClick: () => flow.goBack(), disabled: flow.repairing } : undefined}
       secondaryAction={canRepairGateway ? {
         label: t("setup.retryDirectly", "直接重试"),
         onClick: () => { void flow.retryGateway(); },
@@ -417,7 +417,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       nextAction={
         setupStep === "ready"
           ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
-          : isInstallComplete
+          : isGatewayReady
             ? { label: t("setup.nextStep", "下一步"), onClick: () => { void flow.continueAfterGatewayReady(); } }
           : hasBrokenPlugins
             ? {
@@ -970,7 +970,7 @@ export function SetupPage() {
     case "install-git":
     case "install-node":
     case "install-openclaw":
-    case "install-complete":
+    case "gateway-ready":
     case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
     case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
     case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;

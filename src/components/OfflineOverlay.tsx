@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, WifiOff, MonitorDot } from 'lucide-react';
+import { Check, Copy, Loader2, MonitorDot, WifiOff } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
@@ -20,6 +20,7 @@ export function OfflineOverlay() {
   const [restartInfo, setRestartInfo] = useState({ retrying: false, logs: [] as string[] });
   const [manualRecovery, setManualRecovery] = useState(false);
   const [openControlUiWhenReady, setOpenControlUiWhenReady] = useState(false);
+  const [logsCopied, setLogsCopied] = useState(false);
   const logsRef = useRef<HTMLPreElement>(null);
   const gatewayProgress = useSetupProgress('gateway');
   const progressFailed = gatewayProgress?.status === 'failed';
@@ -31,6 +32,8 @@ export function OfflineOverlay() {
       || restartInfo.retrying
       || gatewayProgress?.status === 'running'
       || (Boolean(gatewayProgress) && gatewayProgress?.status === undefined));
+  const isRecovering = connecting || recoveryBusy;
+  const recoveryLogText = restartInfo.logs.slice(-12).join('\n');
   const fallbackProgress = connecting ? 0.58 : restartInfo.retrying ? 0.30 : manualRecovery ? 0.10 : 0;
   const progressValue = Math.round(Math.max(0, Math.min(1, gatewayProgress?.progress ?? fallbackProgress)) * 100);
   const progressMessage = gatewayProgress?.message
@@ -39,10 +42,8 @@ export function OfflineOverlay() {
       : restartInfo.retrying
         ? t('gateway.progress.restart', '正在重启 OpenClaw Gateway…')
         : t('offline.checkingGateway', '正在检查 OpenClaw Gateway…'));
-  const showProgress = connecting
+  const showProgress = isRecovering
     || Boolean(gatewayProgress)
-    || restartInfo.retrying
-    || restartInfo.logs.length > 0
     || manualRecovery;
 
   useEffect(() => gatewayManager.onStateChange((snap) => {
@@ -65,6 +66,14 @@ export function OfflineOverlay() {
 
   const openLogsPage = () => {
     try { window.location.hash = '#/logs'; } catch {}
+  };
+
+  const copyRecoveryLogs = () => {
+    if (!recoveryLogText || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(recoveryLogText).then(() => {
+      setLogsCopied(true);
+      window.setTimeout(() => setLogsCopied(false), 1_200);
+    }).catch(() => {});
   };
 
   const requestRecovery = (
@@ -108,21 +117,25 @@ export function OfflineOverlay() {
         <div className="w-16 h-16 rounded-2xl mx-auto mb-5
           bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.08)]
           flex items-center justify-center">
-          {connecting || recoveryBusy
+          {isRecovering
             ? <Loader2 size={28} className="text-aegis-warning animate-spin" />
             : <WifiOff size={28} className="text-aegis-text-dim" />}
         </div>
         <h2 className="text-[16px] font-bold text-aegis-text mb-2">
-          {connecting ? t('offline.connectingTitle') : t('offline.title')}
+          {isRecovering
+            ? connecting ? t('offline.connectingTitle') : t('offline.recoveringTitle', '正在恢复 Gateway')
+            : t('offline.title')}
         </h2>
         <p className="text-[12.5px] text-aegis-text-muted leading-relaxed mb-2">
-          {connecting ? t('offline.connectingDescription') : t('offline.description')}
+          {isRecovering
+            ? connecting ? t('offline.connectingDescription') : t('offline.recoveringDescription', '正在启动或重启 OpenClaw Gateway，并自动重新连接。')
+            : t('offline.description')}
         </p>
 
-        {connecting ? (
+        {isRecovering ? (
           <div className="flex items-center justify-center gap-2 text-[11px] text-aegis-text-dim mb-4">
             <span className="w-1.5 h-1.5 rounded-full bg-aegis-warning/60 animate-pulse" />
-            {t('offline.connectingHint')}
+            {connecting ? t('offline.connectingHint') : progressMessage}
           </div>
         ) : lastError ? (
           <div className="mb-4 px-3 py-2 rounded-lg bg-aegis-error/10 border border-aegis-error/20 text-left">
@@ -157,10 +170,23 @@ export function OfflineOverlay() {
                   {t('offline.controlUiQueued', 'Gateway 就绪后将自动打开 Control UI。')}
                 </p>
               )}
-              {restartInfo.logs.length > 0 && (
-                <pre ref={logsRef} className="max-h-64 min-h-28 overflow-y-auto text-[10px] leading-relaxed font-mono text-aegis-text-dim whitespace-pre-wrap">
-                  {restartInfo.logs.slice(-40).join('\n')}
-                </pre>
+              {recoveryLogText && (
+                <div className="border-t border-aegis-border/50 pt-2">
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <span className="text-[10px] font-medium text-aegis-text-dim">{t('offline.recentLogs', '最近日志')}</span>
+                    <button
+                      type="button"
+                      onClick={copyRecoveryLogs}
+                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-aegis-text-dim transition-colors hover:bg-aegis-surface hover:text-aegis-text"
+                    >
+                      {logsCopied ? <Check size={11} className="text-aegis-success" /> : <Copy size={11} />}
+                      {logsCopied ? t('offline.logsCopied', '已复制') : t('offline.copyLogs', '复制日志')}
+                    </button>
+                  </div>
+                  <pre ref={logsRef} className="max-h-24 overflow-y-auto rounded-md bg-aegis-bg/45 px-2 py-1.5 text-[10px] leading-relaxed font-mono text-aegis-text-dim whitespace-pre-wrap">
+                    {recoveryLogText}
+                  </pre>
+                </div>
               )}
             </div>
           </div>
@@ -186,7 +212,7 @@ export function OfflineOverlay() {
           onPrimaryAction={() => requestRecovery('offline', false, 'restart')}
           onReconnect={() => requestRecovery('offline')}
           onOpenLogs={openLogsPage}
-          error={lastError || (progressFailed ? progressMessage : undefined)}
+          error={isRecovering ? undefined : lastError || (progressFailed ? progressMessage : undefined)}
           logs={restartInfo.logs.slice(-40).join('\n')}
         />
 

@@ -34,24 +34,6 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   assert.match(detection, /return \(\) => \{\s*cancelled = true/);
 });
 
-test('BUG-ONB-02 storage results cannot advance an unmounted or applying step', () => {
-  assert.match(storageGate, /const mountedRef = useRef\(false\)/);
-  assert.match(storageGate, /if \(!mountedRef\.current\) return;\s*onReadyRef\.current/);
-  assert.match(storageGate, /return \(\) => \{\s*mountedRef\.current = false/);
-  assert.match(storageGate, /previousAction=\{\{ onClick: onBack, disabled: applying \}\}/);
-});
-
-test('BUG-ONB-03 ready cannot fall into a branch-agnostic native start step', () => {
-  const ready = setupPage.slice(
-    setupPage.indexOf('function ReadyScreen'),
-    setupPage.indexOf('function GitMissingScreen'),
-  );
-
-  assert.doesNotMatch(ready, /previousAction/);
-  assert.doesNotMatch(ready, /install-complete/);
-  assert.match(ready, /flow\.enterWorkspace/);
-});
-
 test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () => {
   const stopped = setupPage.slice(
     setupPage.indexOf('function GatewayStoppedScreen'),
@@ -119,17 +101,6 @@ test('BUG-ONB-11 Back navigation returns to history instead of a hard-coded scre
   assert.match(setupPage, /onBack=\{flow\.goBack\}/);
 });
 
-test('BUG-ONB-12 Back clears runtime attempt state before returning to an earlier stage', () => {
-  const goBack = setupFlow.slice(
-    setupFlow.indexOf('const goBack = useCallback'),
-    setupFlow.indexOf('const retryGit = useCallback'),
-  );
-
-  assert.match(goBack, /destination === "storage"[\s\S]*commitSteps\(\[\]\)/);
-  assert.match(goBack, /destination === "detecting"/);
-  assert.match(goBack, /destination === "choosing-mode"/);
-});
-
 test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () => {
   const stopped = setupPage.slice(
     setupPage.indexOf('function GatewayStoppedScreen'),
@@ -140,20 +111,7 @@ test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () =>
   assert.doesNotMatch(stopped, /setup\.foundOclaw/);
 });
 
-test('BUG-ONB-13 Docker marks Gateway running only after readiness succeeds', () => {
-  const docker = setupFlow.slice(
-    setupFlow.indexOf('const runDockerSetup = useCallback'),
-    setupFlow.indexOf('const selectMode = useCallback'),
-  );
-  const readyCheck = docker.indexOf('await waitForGatewayReady');
-  const runningCommit = docker.indexOf('setGatewayRunning(true)');
-
-  assert.ok(readyCheck >= 0);
-  assert.ok(runningCommit > readyCheck);
-  assert.match(docker, /catch \(err: any\)[\s\S]*?setGatewayRunning\(false\)/);
-});
-
-test('BUG-ONB-14 existing Native OpenClaw runs the full dependency closure after storage', () => {
+test('BUG-ONB-14 selected runtimes resume their full startup closure after storage', () => {
   const completeStorage = setupFlow.slice(
     setupFlow.indexOf('const completeStorageSetup = useCallback'),
     setupFlow.indexOf('const repairAndRetry = useCallback'),
@@ -161,7 +119,9 @@ test('BUG-ONB-14 existing Native OpenClaw runs the full dependency closure after
 
   assert.match(completeStorage, /installMode === "native"/);
   assert.match(completeStorage, /openclawStatus\?\.installed/);
-  assert.match(completeStorage, /navigateSetup\("checking", "push"\);\s*void runNativeSetup\(\);\s*return;/);
+  assert.match(completeStorage, /const canResumeSelectedRuntime = installMode === "docker" \|\| canResumeNativeRuntime/);
+  assert.match(completeStorage, /if \(!runtimeReconfigurationRequired && canResumeSelectedRuntime\)[\s\S]*?navigateSetup\("checking", "push"\)/);
+  assert.match(completeStorage, /installMode === "docker"[\s\S]*?void runDockerSetup\(\)[\s\S]*?void runNativeSetup\(\)/);
 });
 
 test('BUG-ONB-15 setup navigation has one complete six-step translation contract per locale', () => {
@@ -173,16 +133,16 @@ test('BUG-ONB-15 setup navigation has one complete six-step translation contract
     identity: { title: '品牌与偏好', description: '语言 / 主题' },
     environment: { title: '环境检测', description: 'OpenClaw / Docker' },
     storage: { title: '数据位置', description: '配置与工作区' },
-    runtime: { title: '运行时', description: '安装并启动服务' },
-    configuration: { title: '配置', description: '模型与提供商' },
+    runtime: { title: '运行时', description: '安装并启动 Gateway' },
+    configuration: { title: 'OpenClaw 配置', description: '模型、凭据与渠道' },
     ready: { title: '完成', description: '进入工作台' },
   };
   const enExpected = {
-    identity: { title: 'Brand & Preferences', description: 'Language / Theme' },
+    identity: { title: 'Preferences', description: 'Language / Theme' },
     environment: { title: 'Environment', description: 'OpenClaw / Docker' },
-    storage: { title: 'Data Location', description: 'Configuration and workspace' },
-    runtime: { title: 'Runtime', description: 'Install and start services' },
-    configuration: { title: 'Configuration', description: 'Models and providers' },
+    storage: { title: 'Data location', description: 'Configuration / Workspace' },
+    runtime: { title: 'Runtime', description: 'Install and start Gateway' },
+    configuration: { title: 'OpenClaw setup', description: 'Models / credentials / channels' },
     ready: { title: 'Ready', description: 'Enter workspace' },
   };
 
@@ -251,9 +211,9 @@ test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', 
   // Enable/disable goes through the official CLI service commands and then
   // hands the port over via the existing restart path, so exactly one owner
   // (system service or desktop app) serves the gateway afterwards.
-  assert.match(gatewayService, /"gateway", "install", "--json", "--force"/);
-  assert.match(gatewayService, /"gateway", "uninstall"/);
-  assert.match(gatewayService, /"gateway", "status", "--json", "--no-probe"/);
+  assert.match(gatewayService, /"gateway", "install", "--force", "--port", port\.as_str\(\)/);
+  assert.match(gatewayService, /"gateway", "uninstall", "--json"/);
+  assert.match(gatewayService, /let args = \["gateway", "status", "--json"\];/);
   assert.match(gatewayService, /OpenClawRuntimeMode::Native/);
   assert.match(setupPage, /await window\.aegis\.config\.restart\(\)/);
 

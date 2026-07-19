@@ -255,6 +255,7 @@ export function DashboardPage() {
       };
     });
   }, [allDaily]);
+  const hasChartCost = chartData.some((entry) => entry.total > 0);
 
   const agentIdFromKey = useCallback((key?: string) => {
     const parts = String(key || '').split(':');
@@ -595,13 +596,13 @@ export function DashboardPage() {
               <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{t('dashboard.inputCostLabel')}</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{t('dashboard.outputCostLabel')}</span>
-                {chartData.some((d: any) => d.cache > 0) && (
+                {hasChartCost && chartData.some((d: any) => d.cache > 0) && (
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{t('dashboard.cacheCostLabel', 'Cache')}</span>
                 )}
               </div>
             </div>
             <div className="min-h-[160px] flex-1">
-              {chartData.length > 0 ? (
+              {hasChartCost ? (
                 <Suspense fallback={<div className="h-full" />}>
                   <CostChart data={chartData} />
                 </Suspense>

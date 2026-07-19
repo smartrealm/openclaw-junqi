@@ -113,7 +113,7 @@ test('BUG-WIN-STATE-01 validates selected storage with Node before Gateway boots
   assert.match(gateway, /bearer_auth\(token\)/);
   assert.match(diagnostics, /SelectStorage/);
   assert.match(setup, /recommendation === "select_storage"/);
-  assert.match(gate, /result\.configured && !forceConfigure/);
+  assert.match(gate, /forceConfigure \|\| \(!result\.configured && result\.legacyExists\)/);
 
   const start = gateway.slice(gateway.indexOf('pub(crate) async fn start_gateway_locked'));
   assert.ok(start.indexOf('verify_node_state_directory') < start.indexOf('ensure_config_with_token'));
@@ -427,8 +427,9 @@ test('BUG-GL10 status polling is serial and invalidates in-flight results on cle
 test('BUG-05 recovery log surfaces retain useful diagnostic context', () => {
   const offline = source('src/components/OfflineOverlay.tsx');
   const boot = source('src/components/BootTimelineOverlay.tsx');
-  assert.match(offline, /max-h-64/);
-  assert.match(offline, /slice\(-40\)/);
+  assert.match(offline, /max-h-24/);
+  assert.match(offline, /slice\(-12\)/);
+  assert.match(offline, /copyRecoveryLogs/);
   assert.match(boot, /max-h-64/);
   assert.match(boot, /slice\(-40\)/);
 });

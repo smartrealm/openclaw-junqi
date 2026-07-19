@@ -294,7 +294,7 @@
     "context": "上下文",
     "contextCard": "上下文",
     "contextUsage": "上下文使用情况",
-    "costEmpty": "暂无使用记录",
+    "costEmpty": "暂无费用数据",
     "costError": "加载费用数据失败",
     "costRetry": "重试",
     "costToday": "今日成本",
@@ -1170,11 +1170,16 @@
     "connectingTitle": "正在连接",
     "connectingDescription": "OpenClaw Gateway 正在启动并建立连接，完成后会自动进入应用。",
     "connectingHint": "首次启动或冷启动时可能需要更久，请稍候。",
+    "recoveringTitle": "正在恢复 Gateway",
+    "recoveringDescription": "正在启动或重启 OpenClaw Gateway，并自动重新连接。",
     "connectingProgress": "正在建立与 Gateway 的连接…",
     "checkingGateway": "正在检查 OpenClaw Gateway…",
     "recoveryProgress": "Gateway 恢复进度",
     "controlUiQueued": "Gateway 就绪后将自动打开 Control UI。",
     "controlUiUnavailable": "暂时无法打开 Control UI，请完成 Gateway 恢复后重试。",
+    "recentLogs": "最近日志",
+    "copyLogs": "复制日志",
+    "logsCopied": "已复制",
     "retrying": "正在尝试重新连接…",
     "retryGateway": "重新连接"
   },
@@ -2477,11 +2482,11 @@
       },
       "runtime": {
         "title": "运行时",
-        "description": "安装并启动服务"
+        "description": "安装并启动 Gateway"
       },
       "configuration": {
-        "title": "配置",
-        "description": "模型与提供商"
+        "title": "OpenClaw 配置",
+        "description": "模型、凭据与渠道"
       },
       "ready": {
         "title": "完成",
@@ -3105,6 +3110,8 @@
   "gateway.progress.ensureUnhealthy": "ensure_gateway_running 状态异常，正在执行重启…",
   "gateway.progress.ensureFailed": "ensure_gateway_running 调用失败，正在执行重启…",
   "setup.installComplete": "必需组件已安装完成",
+  "setup.gatewayConnected": "Gateway 已就绪",
+  "setup.gatewayReadySubtitle": "Gateway 已启动。点击下一步开始 OpenClaw 官方配置向导。",
   "setup.installCompleteSubtitle": "安装与配置已完成。下一步只会启动 Gateway，启动后仍需手动进入工作台。",
   "setup.installCompleteGatewayPending": "Gateway 配置已准备，点击启动 Gateway 继续。",
   "setup.gatewayPrepareWillRetry": "Gateway 准备检查未完成：{{error}}。点击启动时将自动重试。",

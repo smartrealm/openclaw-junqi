@@ -10,7 +10,7 @@ export type SetupStep =
   | "node-missing"
   | "install-node"
   | "install-openclaw"
-  | "install-complete"
+  | "gateway-ready"
   | "configure-openclaw"
   | "ready"
   | "error";
@@ -53,8 +53,8 @@ export function setupStepMessageKey(step: SetupStep): string {
     case "install-git":
     case "install-node":
     case "install-openclaw":
-    case "install-complete":
-      return "setup.installComplete";
+    case "gateway-ready":
+      return "setup.gatewayConnected";
     case "configure-openclaw":
       return "setup.wizard.title";
   }
@@ -78,8 +78,8 @@ export function setupStepProgress(step: SetupStep): number {
     case "install-openclaw":
     case "error":
       return 52;
-    case "install-complete":
-      return 68;
+    case "gateway-ready":
+      return 74;
     case "configure-openclaw":
       return 82;
     case "ready":
@@ -118,11 +118,11 @@ export function backSetupNavigation(
 }
 
 export function isStaleSetupBackDestination(
-  step: SetupStep,
-  gatewayRunning: boolean,
+  _step: SetupStep,
+  _gatewayRunning: boolean,
 ): boolean {
-  return gatewayRunning && (
-    step === "gateway-stopped"
-    || step === "choosing-mode"
-  );
+  // Setup history represents explicit user-visible decisions. A running
+  // Gateway must not erase a prior configuration, install, or confirmation
+  // stage from Back navigation.
+  return false;
 }

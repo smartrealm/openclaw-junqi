@@ -294,7 +294,7 @@
     "context": "Context",
     "contextCard": "Context",
     "contextUsage": "Context Usage",
-    "costEmpty": "No usage recorded yet",
+    "costEmpty": "No cost data yet",
     "costError": "Failed to load cost data",
     "costRetry": "Retry",
     "costToday": "cost today",
@@ -1172,11 +1172,16 @@
     "connectingTitle": "Connecting",
     "connectingDescription": "OpenClaw Gateway is starting and the app is establishing a connection automatically.",
     "connectingHint": "The first cold start can take longer. Please wait a moment.",
+    "recoveringTitle": "Recovering Gateway",
+    "recoveringDescription": "OpenClaw Gateway is starting or restarting, then the app will reconnect automatically.",
     "connectingProgress": "Establishing a connection to Gateway...",
     "checkingGateway": "Checking OpenClaw Gateway...",
     "recoveryProgress": "Gateway recovery progress",
     "controlUiQueued": "Control UI will open automatically when Gateway is ready.",
     "controlUiUnavailable": "Control UI cannot be opened yet. Finish Gateway recovery and try again.",
+    "recentLogs": "Recent logs",
+    "copyLogs": "Copy logs",
+    "logsCopied": "Copied",
     "retrying": "Attempting to reconnect...",
     "retryGateway": "Reconnect"
   },
@@ -2470,7 +2475,7 @@
     "copiedLogs": "Copied",
     "steps": {
       "identity": {
-        "title": "Brand & Preferences",
+        "title": "Preferences",
         "description": "Language / Theme"
       },
       "environment": {
@@ -2478,16 +2483,16 @@
         "description": "OpenClaw / Docker"
       },
       "storage": {
-        "title": "Data Location",
-        "description": "Configuration and workspace"
+        "title": "Data location",
+        "description": "Configuration / Workspace"
       },
       "runtime": {
         "title": "Runtime",
-        "description": "Install and start services"
+        "description": "Install and start Gateway"
       },
       "configuration": {
-        "title": "Configuration",
-        "description": "Models and providers"
+        "title": "OpenClaw setup",
+        "description": "Models / credentials / channels"
       },
       "ready": {
         "title": "Ready",
@@ -3081,6 +3086,8 @@
   "gateway.progress.ensureUnhealthy": "ensure_gateway_running status abnormal, restarting…",
   "gateway.progress.ensureFailed": "ensure_gateway_running call failed, restarting…",
   "setup.installComplete": "Required components installed",
+  "setup.gatewayConnected": "Gateway is ready",
+  "setup.gatewayReadySubtitle": "Gateway has started. Click Next to begin the official OpenClaw setup wizard.",
   "setup.installCompleteSubtitle": "Installation and configuration are complete. The next step only starts Gateway; you still enter the workspace manually afterward.",
   "setup.installCompleteGatewayPending": "Gateway configuration is ready. Start Gateway to continue.",
   "setup.gatewayPrepareWillRetry": "Gateway preparation did not complete: {{error}}. Starting Gateway will retry automatically.",

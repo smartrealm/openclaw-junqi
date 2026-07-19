@@ -81,26 +81,29 @@ export class GatewayStateMachine {
       return this.apply(this.state, event.type, GatewayState.STARTING, ['START_DOCKER']);
     }
 
-    // Dynamic handling for STATUS_RECEIVED (depends on payload fields + current state).
-    // Important: gateway_status is polled periodically. Once WS is CONNECTED,
-    // a fresh "running=true" status must NOT downgrade the state back to CONNECTING.
+    // Process liveness, HTTP readiness, and WebSocket connectivity are distinct.
+    // Status observation never starts a process: setup, boot recovery, and manual
+    // recovery own that intent explicitly. This prevents a slow Gateway boot from
+    // being interpreted as repeated permission to spawn another Gateway.
     if (event.type === 'STATUS_RECEIVED') {
+      const processAlive = event.processAlive ?? event.running ?? false;
+      const endpointReady = event.endpointReady ?? processAlive;
       if (event.retrying) {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.DETECTING, []);
       }
       if (event.error) {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.ERROR, ['SHOW_ERROR']);
       }
-      if (!event.running) {
-        if (this.state === GatewayState.STARTING) {
-          return { state: this.state, actions: ['NONE'] };
-        }
-        return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.STARTING, ['START']);
+      if (!processAlive) {
+        return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.DETECTING, []);
+      }
+      if (!endpointReady) {
+        return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.STARTING, []);
       }
       if (this.state === GatewayState.CONNECTED || this.state === GatewayState.CONNECTING) {
         return { state: this.state, actions: ['NONE'] };
       }
-      if (event.running) {
+      if (endpointReady) {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.CONNECTING, ['CONNECT']);
       }
     }

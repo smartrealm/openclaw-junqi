@@ -44,7 +44,7 @@ export class GatewayConnectionManager {
     this.dispatch({ type: 'INITIALIZE' });
 
     if (!window.aegis?.gateway) {
-      this.dispatch({ type: 'STATUS_RECEIVED', running: true, ready: true, error: null, retrying: false });
+      this.dispatch({ type: 'STATUS_RECEIVED', processAlive: true, endpointReady: true, error: null, retrying: false });
       return;
     }
 
@@ -53,8 +53,8 @@ export class GatewayConnectionManager {
       if (!this.isCurrent(generation)) return;
       this.dispatch({
         type: 'STATUS_RECEIVED',
-        running: Boolean(status.running),
-        ready: Boolean(status.ready),
+        processAlive: Boolean(status.processAlive ?? status.running),
+        endpointReady: Boolean(status.ready),
         error: status.error ?? null,
         retrying: Boolean(status.retrying),
         logs: status.logs,
@@ -92,7 +92,7 @@ export class GatewayConnectionManager {
    */
   probe(): void {
     if (!window.aegis?.gateway) {
-      this.dispatch({ type: 'STATUS_RECEIVED', running: true, ready: true, error: null, retrying: false });
+      this.dispatch({ type: 'STATUS_RECEIVED', processAlive: true, endpointReady: true, error: null, retrying: false });
       return;
     }
     const generation = this.lifecycleEpoch.capture();
@@ -100,8 +100,8 @@ export class GatewayConnectionManager {
       if (!this.isCurrent(generation)) return;
       this.dispatch({
         type: 'STATUS_RECEIVED',
-        running: Boolean(status.running),
-        ready: Boolean(status.ready),
+        processAlive: Boolean(status.processAlive ?? status.running),
+        endpointReady: Boolean(status.ready),
         error: status.error ?? null,
         retrying: Boolean(status.retrying),
         logs: status.logs,
@@ -110,8 +110,8 @@ export class GatewayConnectionManager {
       if (!this.isCurrent(generation)) return;
       this.dispatch({
         type: 'STATUS_RECEIVED',
-        running: false,
-        ready: false,
+        processAlive: false,
+        endpointReady: false,
         error: String(error),
         retrying: false,
       });
@@ -136,9 +136,10 @@ export class GatewayConnectionManager {
     if (!this.lifecycleEpoch.isActive()) {
       this.lifecycleEpoch.activate();
       this.dispatch({ type: 'INITIALIZE' });
-    } else {
-      this.invalidateLifecycle('A newer setup start superseded the previous lifecycle');
     }
+    // Keep the active status subscription generation intact. Setup starts are
+    // already single-flight above; invalidating here would make that listener
+    // discard the status emitted by the start it is meant to observe.
     const generation = this.lifecycleEpoch.capture();
     let resolve!: (result: any) => void;
     let reject!: (error: Error) => void;
@@ -170,8 +171,8 @@ export class GatewayConnectionManager {
     } else {
       this.dispatch({
         type: 'STATUS_RECEIVED',
-        running: false,
-        ready: false,
+          processAlive: false,
+          endpointReady: false,
         error: result?.error ?? 'Gateway recovery failed',
         retrying: false,
       });
@@ -182,7 +183,7 @@ export class GatewayConnectionManager {
   async restart(): Promise<any> {
     if (!window.aegis?.gateway?.retry) {
       const result = { success: false, error: 'Gateway restart is unavailable in this runtime.' };
-      this.dispatch({ type: 'STATUS_RECEIVED', running: false, ready: false, error: result.error, retrying: false });
+      this.dispatch({ type: 'STATUS_RECEIVED', processAlive: false, endpointReady: false, error: result.error, retrying: false });
       return result;
     }
     const generation = this.beginProcessRecovery();
@@ -196,8 +197,8 @@ export class GatewayConnectionManager {
     if (result?.success === false) {
       this.dispatch({
         type: 'STATUS_RECEIVED',
-        running: false,
-        ready: false,
+        processAlive: false,
+        endpointReady: false,
         error: result.error ?? 'Gateway restart failed',
         retrying: false,
       });
@@ -245,8 +246,8 @@ export class GatewayConnectionManager {
       if (event.logs) this.logs = event.logs;
       this.retrying = event.retrying;
       this.error = event.error;
-      if (typeof event.ready === 'boolean') {
-        this.selectedGatewayReady = event.ready;
+      if (typeof event.endpointReady === 'boolean') {
+        this.selectedGatewayReady = event.endpointReady;
       }
     } else if (event.type === 'SELECTED_GATEWAY_READY') {
       this.selectedGatewayReady = true;
