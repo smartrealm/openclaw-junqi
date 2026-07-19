@@ -161,6 +161,7 @@ export interface SetupFlow {
   forceStorageSelection: boolean;
   startGateway: () => Promise<boolean>;
   retryGateway: () => Promise<boolean>;
+  continueAfterGatewayReady: () => Promise<void>;
   repairAndRetry: () => Promise<void>;
   disablePluginsAndRetry: () => Promise<void>;
   submitWizardStep: (stepId: string, value?: unknown) => Promise<OpenClawWizardResult | null>;
@@ -788,13 +789,10 @@ export function useSetupFlow(
       }
       reportPhase("ready", t("setup.gatewayConnected", "Gateway 已连接"));
       if (!isRunActive(runId)) return false;
-      if (needsOnboardingRef.current) {
-        await startOfficialOnboarding();
-      } else {
-        await new Promise((r) => setTimeout(r, 600));
-        if (!isRunActive(runId)) return false;
-        replaceSetupStep("ready");
-      }
+      // Gateway readiness is a completed user-facing stage. Do not advance
+      // directly into configuration or completion: the user explicitly
+      // confirms the transition from the runtime stage on the next screen.
+      replaceSetupStep("install-complete");
       return true;
     } catch (e: any) {
       if (!isRunActive(runId)) return false;
@@ -810,7 +808,21 @@ export function useSetupFlow(
       replaceSetupStep("error");
       return false;
     }
-  }, [beginRun, isRunActive, setupStep, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, startOfficialOnboarding, appendSetupLog, installMode]);
+  }, [beginRun, isRunActive, setupStep, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
+
+  const continueAfterGatewayReady = useCallback(async () => {
+    if (!gatewayRunning) {
+      await startGatewayAction();
+      return;
+    }
+    if (needsOnboardingRef.current) {
+      navigateSetup("configure-openclaw", "push");
+      await startOfficialOnboarding();
+      return;
+    }
+    report(t("setup.ready"), 100);
+    navigateSetup("ready", "push");
+  }, [gatewayRunning, navigateSetup, report, startGatewayAction, startOfficialOnboarding, t]);
 
   // Gateway startup is an installation transition, not a user decision. Keep
   // storage, runtime selection, and the official OpenClaw wizard interactive,
@@ -1044,12 +1056,7 @@ export function useSetupFlow(
       patchStep("gateway", "done");
       setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
 
-      if (needsOnboardingRef.current) {
-        await startOfficialOnboarding();
-      } else {
-        report(t("setup.ready"), 100);
-        replaceSetupStep("ready");
-      }
+      replaceSetupStep("install-complete");
       return true;
     } catch (err: any) {
       if (!isRunActive(runId)) return false;
@@ -1062,7 +1069,7 @@ export function useSetupFlow(
       return false;
     }
   }, [beginRun, isRunActive, replaceSetupStep, t, report, commitSteps,
-      waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, clearSetupLogs, startOfficialOnboarding, appendSetupLog]);
+      waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, clearSetupLogs, appendSetupLog]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
     const runId = beginRun();
@@ -1603,6 +1610,7 @@ export function useSetupFlow(
     forceStorageSelection,
     startGateway: startGatewayAction,
     retryGateway: startGatewayAction,
+    continueAfterGatewayReady,
     repairAndRetry,
     disablePluginsAndRetry,
     submitWizardStep,

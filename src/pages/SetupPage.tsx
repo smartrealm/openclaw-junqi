@@ -403,8 +403,8 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   return (
     <SetupShell
       active={active}
-      title={setupStep === "ready" ? t("setup.ready") : isInstallComplete ? t("setup.installComplete", "必需组件已安装完成") : t("setup.settingUp")}
-      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isInstallComplete ? t("setup.installCompleteSubtitle", "运行时已安装。Gateway 准备检查需要处理后才能进入配置。") : t("setup.subtitle")}
+      title={setupStep === "ready" ? t("setup.ready") : isInstallComplete ? t("setup.gatewayReadyTitle", "运行时已就绪") : t("setup.settingUp")}
+      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isInstallComplete ? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。") : t("setup.subtitle")}
       logs={logs}
       wide
       showLogToggle={false}
@@ -418,7 +418,7 @@ function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         setupStep === "ready"
           ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
           : isInstallComplete
-            ? { label: t("setup.startingGateway"), disabled: true, loading: true, icon: "none" }
+            ? { label: t("setup.nextStep", "下一步"), onClick: () => { void flow.continueAfterGatewayReady(); } }
           : hasBrokenPlugins
             ? {
                 label: flow.repairing

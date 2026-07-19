@@ -2365,6 +2365,8 @@
   "setup.openclawUpdate.title": "تحديثات OpenClaw",
   "setup.openclawUpdate.subtitle": "استخدم أداة تحديث OpenClaw الرسمية لاكتشاف نوع التثبيت والقناة والإصدار المتاح. لن يمنع الفحص الانتقال للخطوة التالية.",
   "setup.openclawUpdate.currentVersion": "الإصدار الحالي",
+  "setup.gatewayReadyTitle": "بيئة التشغيل جاهزة",
+  "setup.gatewayReadySubtitle": "تم تشغيل بوابة OpenClaw. انقر فوق التالي للمتابعة.",
   "setup.openclawUpdate.latestVersion": "الإصدار المتاح",
   "setup.openclawUpdate.unknown": "غير معروف",
   "setup.openclawUpdate.check": "التحقق من التحديثات",

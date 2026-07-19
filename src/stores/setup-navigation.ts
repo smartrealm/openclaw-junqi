@@ -123,7 +123,6 @@ export function isStaleSetupBackDestination(
 ): boolean {
   return gatewayRunning && (
     step === "gateway-stopped"
-    || step === "install-complete"
     || step === "choosing-mode"
   );
 }
