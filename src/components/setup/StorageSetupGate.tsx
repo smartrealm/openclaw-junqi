@@ -417,9 +417,9 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     );
   }
 
-  const actionLabel = completion
-    ? t('setup.nextStep', '下一步')
-    : t('storage.save', '保存位置');
+  // Selecting a location is a setup transition: persistence happens as part
+  // of advancing to the next stage, rather than as a separate save action.
+  const actionLabel = t('setup.nextStep', '下一步');
   const dataLayoutLocked = !usingLegacy && status.legacyExists && migrateExisting;
   const layoutComplete = Boolean(
     targetDir.trim()
