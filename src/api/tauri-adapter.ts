@@ -312,7 +312,11 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       try {
         const s: any = await invoke("gateway_status");
         const ready = await probeSelectedGatewayReady(s);
-        return { running: ready, ready, error: null, logs: await readRecentGatewayLogs() };
+        // `gateway_status` reports a PID while a JunQi-managed child is still
+        // booting. Preserve that liveness fact independently from authenticated
+        // readiness: treating a live child as stopped makes the lifecycle FSM
+        // spawn it again on every status poll.
+        return { running: Boolean(s?.running || s?.pid), ready, error: null, logs: await readRecentGatewayLogs() };
       } catch (e: any) {
         return { running: false, ready: false, error: String(e), logs: await readRecentGatewayLogs() };
       }
@@ -389,7 +393,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
           lastLogs = logs;
           if (ready) restartActive = false;
           cb({
-            running: ready,
+            running: Boolean(s?.running || s?.pid),
             ready,
             retrying: restartActive && !ready,
             error: null,
