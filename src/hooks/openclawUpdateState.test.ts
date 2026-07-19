@@ -4,6 +4,7 @@ import type { OpenclawUpdateResult, OpenclawUpdateStatus } from '@/api/tauri-com
 import { initialOpenclawUpdateState, openclawUpdateReducer } from './openclawUpdateState';
 
 const status: OpenclawUpdateStatus = {
+  installedVersion: '2026.6.11',
   currentVersion: '2026.6.11',
   latestVersion: '2026.7.1',
   available: true,

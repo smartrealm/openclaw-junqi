@@ -22,6 +22,11 @@ test('OpenClaw update status uses semantic icon colors', () => {
   assert.match(source, /data-state=\{indicator\}/);
 });
 
+test('OpenClaw update panel preserves the installed npm package revision for display', () => {
+  assert.match(source, /status\?\.installedVersion\s*\|\|\s*update\.result\?\.afterVersion/);
+  assert.doesNotMatch(source, /NPM_RELEASE_REVISION|presentOpenClawReleaseVersion/);
+});
+
 test('OpenClaw updater keeps npm output as diagnostics without replacing localized progress', () => {
   assert.match(updaterSource, /npm_config_loglevel", "http"/);
   assert.match(updaterSource, /lower\.contains\("npm http fetch"\)/);

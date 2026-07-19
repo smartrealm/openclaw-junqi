@@ -167,6 +167,11 @@ fn update_operation() -> &'static Mutex<()> {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenclawUpdateStatus {
+    /// Exact version from the installed package metadata or CLI binary.
+    /// This is the version users see and the version npm actually installed.
+    pub installed_version: Option<String>,
+    /// Release-line version reported by OpenClaw's updater. It is retained for
+    /// the updater's own availability comparison and can omit npm revisions.
     pub current_version: Option<String>,
     pub latest_version: Option<String>,
     pub available: bool,
@@ -679,9 +684,10 @@ fn diagnostic_from_text(stderr: &str, stdout: &str) -> Option<String> {
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
-fn empty_update_status(current_version: Option<String>, error: String) -> OpenclawUpdateStatus {
+fn empty_update_status(installed_version: Option<String>, error: String) -> OpenclawUpdateStatus {
     OpenclawUpdateStatus {
-        current_version,
+        current_version: installed_version.clone(),
+        installed_version,
         latest_version: None,
         available: false,
         has_git_update: false,
@@ -699,7 +705,7 @@ fn empty_update_status(current_version: Option<String>, error: String) -> Opencl
 
 fn parse_update_status(
     output: &[u8],
-    current_version: Option<String>,
+    installed_version: Option<String>,
 ) -> Result<OpenclawUpdateStatus, String> {
     let value = parse_json_object(output, &["update", "channel", "availability"])?;
     let payload: StatusEnvelope = serde_json::from_value(value)
@@ -709,7 +715,8 @@ fn parse_update_status(
     let package_manager = payload.update.package_manager;
 
     Ok(OpenclawUpdateStatus {
-        current_version,
+        current_version: installed_version.clone(),
+        installed_version,
         latest_version: payload
             .availability
             .latest_version
@@ -751,7 +758,7 @@ fn update_status_from_npm_dry_run(
     detected_version: Option<String>,
     source: &NpmPackageSource,
 ) -> OpenclawUpdateStatus {
-    let current_version = payload.current_version.or(detected_version);
+    let current_version = payload.current_version.or_else(|| detected_version.clone());
     let latest_version = payload.target_version;
     let available = matches!(
         (current_version.as_deref(), latest_version.as_deref()),
@@ -772,6 +779,7 @@ fn update_status_from_npm_dry_run(
     };
 
     OpenclawUpdateStatus {
+        installed_version: detected_version,
         current_version,
         latest_version,
         available,
@@ -1284,6 +1292,7 @@ mod tests {
         .unwrap();
 
         assert!(status.available);
+        assert_eq!(status.installed_version.as_deref(), Some("2026.6.11"));
         assert_eq!(status.current_version.as_deref(), Some("2026.6.11"));
         assert_eq!(status.latest_version.as_deref(), Some("2026.7.1"));
         assert_eq!(status.install_kind.as_deref(), Some("package"));
@@ -1380,10 +1389,13 @@ mod tests {
             url: "https://registry.npmmirror.com",
         };
         let source = NpmPackageSource::public(mirror);
-        let status = update_status_from_npm_dry_run(dry_run, None, &source);
+        let status =
+            update_status_from_npm_dry_run(dry_run, Some("2026.6.11-2".to_string()), &source);
 
         assert!(status.available);
         assert!(status.has_registry_update);
+        assert_eq!(status.installed_version.as_deref(), Some("2026.6.11-2"));
+        assert_eq!(status.current_version.as_deref(), Some("2026.6.11"));
         assert_eq!(status.latest_version.as_deref(), Some("2026.7.1"));
         assert_eq!(status.npm_registry_kind, Some(NpmRegistryKind::ChinaMirror));
         assert_eq!(status.npm_registry.as_deref(), Some(mirror.url));

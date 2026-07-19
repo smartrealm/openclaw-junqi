@@ -48,6 +48,7 @@ export interface TerminalIntegrationStatus {
   message: string;
 }
 export interface OpenclawUpdateStatus {
+  installedVersion: string | null;
   currentVersion: string | null;
   latestVersion: string | null;
   available: boolean;
