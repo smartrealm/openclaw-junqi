@@ -859,7 +859,11 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
   }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
   const currentTitle = installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
-  const currentDescription = currentMeta ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback) : t("setup.subtitle");
+  const currentDescription = isAwaitingGatewayStart && current?.id === "gateway"
+    ? t("setup.gatewayNotRunning", "Gateway 未运行，点击下方按钮启动。")
+    : currentMeta
+      ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
+      : t("setup.subtitle");
 
   return (
     <div className="space-y-4">
