@@ -61,6 +61,7 @@ import {
 import { defaultGatewayWsUrl } from "@/config/runtimeDefaults";
 import {
   classifyOpenClawWizardFailure,
+  createBrowserOpenClawWizardSessionStore,
   OpenClawWizardClient,
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
@@ -153,6 +154,7 @@ export interface SetupFlow {
   wizardStep: OpenClawWizardStep | null;
   wizardSubmitting: boolean;
   wizardError: string | null;
+  wizardRecoveryRequired: boolean;
   needsOnboarding: boolean;
   repairing: boolean;
   brokenPlugins: BrokenGatewayPlugin[];
@@ -164,6 +166,7 @@ export interface SetupFlow {
   disablePluginsAndRetry: () => Promise<void>;
   submitWizardStep: (stepId: string, value?: unknown) => Promise<OpenClawWizardResult | null>;
   retryWizard: () => Promise<OpenClawWizardResult | null>;
+  reclaimWizard: () => Promise<OpenClawWizardResult | null>;
   runNativeSetup: () => Promise<boolean>;
   runDockerSetup: () => Promise<boolean>;
   retrySetup: () => Promise<boolean>;
@@ -237,6 +240,7 @@ export function useSetupFlow(
   const [wizardStep, setWizardStep] = useState<OpenClawWizardStep | null>(null);
   const [wizardSubmitting, setWizardSubmitting] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
+  const [wizardRecoveryRequired, setWizardRecoveryRequired] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
@@ -256,11 +260,11 @@ export function useSetupFlow(
   }, []);
   const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
   if (!wizardClientRef.current) {
-    wizardClientRef.current = new OpenClawWizardClient((method, params, options) => gateway.call(method, params, options));
+    wizardClientRef.current = new OpenClawWizardClient(
+      (method, params, options) => gateway.call(method, params, options),
+      createBrowserOpenClawWizardSessionStore(),
+    );
   }
-  useEffect(() => () => {
-    void wizardClientRef.current?.cancel().catch(() => {});
-  }, []);
   const progressRef = useRef(progress);
   progressRef.current = progress;
   const stepsRef = useRef(steps);
@@ -656,6 +660,7 @@ export function useSetupFlow(
 
   const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
+    setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
     try {
       await waitForGatewayConnection();
@@ -675,6 +680,7 @@ export function useSetupFlow(
       return await applyWizardResult(result);
     } catch (error) {
       const message = wizardFailureMessage(error);
+      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
       setWizardError(message);
       setSetupError(message);
       replaceSetupStep("configure-openclaw");
@@ -686,6 +692,7 @@ export function useSetupFlow(
 
   const resumeOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
+    setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
     try {
       await waitForGatewayConnection();
@@ -697,6 +704,7 @@ export function useSetupFlow(
         return await startOfficialOnboarding();
       }
       const message = wizardFailureMessage(error);
+      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
       setWizardError(message);
       setSetupError(message);
       replaceSetupStep("configure-openclaw");
@@ -709,6 +717,7 @@ export function useSetupFlow(
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
     if (wizardSubmitting) return null;
     setWizardError(null);
+    setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
     try {
       const result = await wizardClientRef.current!.next(stepId, value);
@@ -722,6 +731,7 @@ export function useSetupFlow(
         return await startOfficialOnboarding();
       }
       const message = wizardFailureMessage(error);
+      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
       setWizardError(message);
       setSetupError(message);
       return null;
@@ -736,6 +746,33 @@ export function useSetupFlow(
     }
     return await startOfficialOnboarding();
   }, [resumeOfficialOnboarding, startOfficialOnboarding]);
+
+  const reclaimOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
+    setWizardError(null);
+    setWizardRecoveryRequired(false);
+    setWizardSubmitting(true);
+    try {
+      // OpenClaw exposes no API for enumerating another client's wizard. A
+      // selected-runtime restart safely clears that in-memory lock without
+      // changing the selected data directory, workspace, or configuration.
+      wizardClientRef.current!.forgetSession();
+      const restarted = await gatewayManager.restart();
+      if (restarted?.success === false) {
+        throw new Error(restarted.error || "OpenClaw Gateway restart failed.");
+      }
+      await waitForGatewayConnection();
+      return await applyWizardResult(await wizardClientRef.current!.start());
+    } catch (error) {
+      const message = wizardFailureMessage(error);
+      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
+      setWizardError(message);
+      setSetupError(message);
+      replaceSetupStep("configure-openclaw");
+      return null;
+    } finally {
+      setWizardSubmitting(false);
+    }
+  }, [applyWizardResult, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const wizardAutoStartRef = useRef(false);
   useEffect(() => {
@@ -1450,11 +1487,8 @@ export function useSetupFlow(
 
   const goBack = useCallback(async () => {
     // Backing out of the official wizard means "pause and review", not
-    // "discard progress". Keep its server-side session in this app process so
-    // returning to the wizard resumes the same pending official step.
-    if (setupStep !== "configure-openclaw") {
-      void wizardClientRef.current?.cancel().catch(() => {});
-    }
+    // "discard progress". Its opaque id is persisted so returning after an
+    // app restart still resumes the same official Gateway session.
     setWizardStep(null);
     setWizardError(null);
     cancelActiveRun();
@@ -1551,6 +1585,7 @@ export function useSetupFlow(
     wizardStep,
     wizardSubmitting,
     wizardError,
+    wizardRecoveryRequired,
     needsOnboarding,
     repairing,
     brokenPlugins,
@@ -1562,6 +1597,7 @@ export function useSetupFlow(
     disablePluginsAndRetry,
     submitWizardStep,
     retryWizard: retryOfficialOnboarding,
+    reclaimWizard: reclaimOfficialOnboarding,
     runNativeSetup,
     runDockerSetup,
     retrySetup,

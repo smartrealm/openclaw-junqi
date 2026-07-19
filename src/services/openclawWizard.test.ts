@@ -85,6 +85,34 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
 });
 
+test('wizard client restores an unfinished official session after a renderer restart', async () => {
+  let storedSessionId: string | null = null;
+  const store = {
+    load: () => storedSessionId,
+    save: (sessionId: string) => { storedSessionId = sessionId; },
+    clear: () => { storedSessionId = null; },
+  };
+  const firstClient = new OpenClawWizardClient(async () => ({
+    sessionId: 'persisted-session',
+    done: false,
+    status: 'running',
+    step: { id: 'model', type: 'select' },
+  }), store);
+
+  await firstClient.start();
+  assert.equal(storedSessionId, 'persisted-session');
+
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const resumedClient = new OpenClawWizardClient(async (method, params) => {
+    calls.push({ method, params });
+    return { done: true, status: 'done' };
+  }, store);
+  await resumedClient.resume();
+
+  assert.deepEqual(calls, [{ method: 'wizard.next', params: { sessionId: 'persisted-session' } }]);
+  assert.equal(storedSessionId, null);
+});
+
 test('wizard client rejects malformed gateway responses', async () => {
   const client = new OpenClawWizardClient(async () => ({ status: 'running' }));
   await assert.rejects(() => client.start(), /missing `done`/);

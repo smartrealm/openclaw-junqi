@@ -540,8 +540,10 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         logs={logs}
         previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
         nextAction={{
-          label: flow.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
-          onClick: () => void flow.retryWizard(),
+          label: flow.wizardRecoveryRequired
+            ? t("setup.wizard.reclaim", "重新接管向导")
+            : flow.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
+          onClick: () => void (flow.wizardRecoveryRequired ? flow.reclaimWizard() : flow.retryWizard()),
           disabled: flow.wizardSubmitting && !flow.wizardError,
           loading: flow.wizardSubmitting,
           icon: "none",

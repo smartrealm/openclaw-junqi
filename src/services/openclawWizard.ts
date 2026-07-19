@@ -182,6 +182,45 @@ type GatewayCaller = (
   options?: OpenClawWizardRequestOptions,
 ) => Promise<unknown>;
 
+/**
+ * The official Gateway owns wizard state, while the desktop owns the view.
+ * Keep only the opaque session id locally so a renderer or application restart
+ * can resume the same official step. The id contains no credentials.
+ */
+export interface OpenClawWizardSessionStore {
+  load(): string | null;
+  save(sessionId: string): void;
+  clear(): void;
+}
+
+const WIZARD_SESSION_STORAGE_KEY = 'junqi.openclaw-wizard-session-id';
+
+export function createBrowserOpenClawWizardSessionStore(): OpenClawWizardSessionStore {
+  return {
+    load: () => {
+      try {
+        return globalThis.localStorage?.getItem(WIZARD_SESSION_STORAGE_KEY) || null;
+      } catch {
+        return null;
+      }
+    },
+    save: (sessionId) => {
+      try {
+        globalThis.localStorage?.setItem(WIZARD_SESSION_STORAGE_KEY, sessionId);
+      } catch {
+        // Storage must not prevent the official wizard from operating.
+      }
+    },
+    clear: () => {
+      try {
+        globalThis.localStorage?.removeItem(WIZARD_SESSION_STORAGE_KEY);
+      } catch {
+        // Storage must not prevent the official wizard from operating.
+      }
+    },
+  };
+}
+
 function assertWizardResult(value: unknown): OpenClawWizardResult {
   if (!value || typeof value !== 'object') {
     throw new Error('OpenClaw returned an invalid wizard response.');
@@ -202,7 +241,12 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
 export class OpenClawWizardClient {
   private sessionId: string | null = null;
 
-  constructor(private readonly callGateway: GatewayCaller) {}
+  constructor(
+    private readonly callGateway: GatewayCaller,
+    private readonly sessionStore?: OpenClawWizardSessionStore,
+  ) {
+    this.sessionId = sessionStore?.load() ?? null;
+  }
 
   get hasActiveSession(): boolean {
     return this.sessionId !== null;
@@ -219,7 +263,7 @@ export class OpenClawWizardClient {
       mode: 'local',
       ...(workspace?.trim() ? { workspace: workspace.trim() } : {}),
     }));
-    this.sessionId = result.done ? null : String(result.sessionId ?? '');
+    this.setSession(result.done ? null : String(result.sessionId ?? ''));
     if (!result.done && !this.sessionId) {
       throw new Error('OpenClaw wizard did not return a session id.');
     }
@@ -236,7 +280,7 @@ export class OpenClawWizardClient {
       },
     }, { timeoutMs: null }));
     if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
-      this.sessionId = null;
+      this.setSession(null);
     }
     return result;
   }
@@ -252,13 +296,13 @@ export class OpenClawWizardClient {
       sessionId: this.sessionId,
     }, { timeoutMs: null }));
     if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
-      this.sessionId = null;
+      this.setSession(null);
     }
     return result;
   }
 
   forgetSession(): void {
-    this.sessionId = null;
+    this.setSession(null);
   }
 
   async cancel(): Promise<void> {
@@ -266,13 +310,19 @@ export class OpenClawWizardClient {
     const sessionId = this.sessionId;
     try {
       await this.callGateway('wizard.cancel', { sessionId });
-      this.sessionId = null;
+      this.setSession(null);
     } catch (error) {
       // A server-side expiry means the session is already gone. For transport
       // failures retain the id so a later start/back action can retry cleanup.
-      if (isOpenClawWizardSessionLost(error)) this.sessionId = null;
+      if (isOpenClawWizardSessionLost(error)) this.setSession(null);
       throw error;
     }
+  }
+
+  private setSession(sessionId: string | null): void {
+    this.sessionId = sessionId;
+    if (sessionId) this.sessionStore?.save(sessionId);
+    else this.sessionStore?.clear();
   }
 }
 
