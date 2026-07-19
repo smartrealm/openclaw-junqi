@@ -282,14 +282,10 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       });
       if (!mountedRef.current) return;
       setStorageDraft(null);
-      setCompletion({
+      onReadyRef.current({
         createdFresh: result.createdFresh,
         runtimeReconfigurationRequired: result.runtimeReconfigurationRequired,
         openclawRelocationRequired: result.openclawRelocationRequired,
-      });
-      setProgress({
-        message: t('storage.saved', '存储位置已保存，请点击下一步继续。'),
-        progress: 1,
       });
     } catch (cause) {
       if (mountedRef.current) setError(String(cause));
