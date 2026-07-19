@@ -8,6 +8,20 @@ import { Alert } from './alert';
 import { Button } from './button';
 
 const OFFICIAL_UPDATE_GUIDE = 'https://docs.openclaw.ai/install/updating';
+const NPM_RELEASE_REVISION = /^(\d{4}\.\d{1,2}\.\d{1,2})-(\d+)$/;
+
+interface PresentedOpenClawVersion {
+  release: string;
+  packageRevision: string | null;
+}
+
+function presentOpenClawVersion(version: string | null): PresentedOpenClawVersion | null {
+  if (!version) return null;
+  const revision = NPM_RELEASE_REVISION.exec(version);
+  return revision
+    ? { release: revision[1], packageRevision: version }
+    : { release: version, packageRevision: null };
+}
 
 export interface OpenClawUpdatePanelProps {
   currentVersion?: string | null;
@@ -35,6 +49,8 @@ export function OpenClawUpdatePanel({
   const [confirming, setConfirming] = useState(false);
   const status = update.status;
   const displayedVersion = status?.currentVersion || update.result?.afterVersion || currentVersion || null;
+  const presentedVersion = presentOpenClawVersion(displayedVersion);
+  const presentedLatestVersion = presentOpenClawVersion(status?.latestVersion ?? null);
   const indicator = resolveOpenclawUpdateIndicator(update.phase, status);
   const available = indicator === 'available';
   const upToDate = indicator === 'current';
@@ -107,7 +123,7 @@ export function OpenClawUpdatePanel({
           onClick={() => setConfirming(true)}
         >
           {status?.latestVersion
-            ? t('setup.openclawUpdate.updateTo', { version: status.latestVersion })
+            ? t('setup.openclawUpdate.updateTo', { version: presentedLatestVersion?.release ?? status.latestVersion })
             : t('setup.openclawUpdate.updateNow')}
         </Button>
       );
@@ -182,16 +198,22 @@ export function OpenClawUpdatePanel({
         <span>
           {t('setup.openclawUpdate.currentVersion')}
           <strong className="ms-1.5 font-mono font-semibold text-aegis-text">
-            {displayedVersion ? `v${displayedVersion}` : t('setup.openclawUpdate.unknown')}
+            {presentedVersion ? `v${presentedVersion.release}` : t('setup.openclawUpdate.unknown')}
           </strong>
         </span>
+        {presentedVersion?.packageRevision && (
+          <span>{t('setup.openclawUpdate.packageRevision', { version: presentedVersion.packageRevision })}</span>
+        )}
         {available && status?.latestVersion && (
           <span>
             {t('setup.openclawUpdate.latestVersion')}
             <strong className="ms-1.5 font-mono font-semibold text-aegis-warning">
-              v{status.latestVersion}
+              v{presentedLatestVersion?.release ?? status.latestVersion}
             </strong>
           </span>
+        )}
+        {available && presentedLatestVersion?.packageRevision && (
+          <span>{t('setup.openclawUpdate.packageRevision', { version: presentedLatestVersion.packageRevision })}</span>
         )}
         {status?.hasGitUpdate && status.gitBehind != null && (
           <span>{t('setup.openclawUpdate.gitBehind', { count: status.gitBehind })}</span>

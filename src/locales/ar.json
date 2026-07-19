@@ -2365,6 +2365,7 @@
   "setup.openclawUpdate.title": "تحديثات OpenClaw",
   "setup.openclawUpdate.subtitle": "استخدم أداة تحديث OpenClaw الرسمية لاكتشاف نوع التثبيت والقناة والإصدار المتاح. لن يمنع الفحص الانتقال للخطوة التالية.",
   "setup.openclawUpdate.currentVersion": "الإصدار الحالي",
+  "setup.openclawUpdate.packageRevision": "مراجعة حزمة npm {{version}}",
   "setup.openclawUpdate.latestVersion": "الإصدار المتاح",
   "setup.openclawUpdate.unknown": "غير معروف",
   "setup.openclawUpdate.check": "التحقق من التحديثات",
