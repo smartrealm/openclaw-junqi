@@ -17,7 +17,10 @@ export type GatewayEvent =
   | { type: 'RECOVERY_REQUESTED' }
   | {
       type: 'STATUS_RECEIVED';
-      running: boolean;
+      /** Backward-compatible status projection for older adapters. */
+      running?: boolean;
+      processAlive?: boolean;
+      endpointReady?: boolean;
       error: string | null;
       retrying: boolean;
       logs?: { stdout: string; stderr: string };
@@ -33,7 +36,7 @@ export type GatewayEvent =
 
 /** External gateway process status (from Rust gateway_status command). */
 export interface GatewayProcessStatus {
-  running: boolean;
+  processAlive: boolean;
   ready: boolean;
   error: string | null;
   logs?: { stdout: string; stderr: string };

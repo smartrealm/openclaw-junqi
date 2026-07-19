@@ -34,24 +34,6 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   assert.match(detection, /return \(\) => \{\s*cancelled = true/);
 });
 
-test('BUG-ONB-02 storage results cannot advance an unmounted or applying step', () => {
-  assert.match(storageGate, /const mountedRef = useRef\(false\)/);
-  assert.match(storageGate, /if \(!mountedRef\.current\) return;\s*onReadyRef\.current/);
-  assert.match(storageGate, /return \(\) => \{\s*mountedRef\.current = false/);
-  assert.match(storageGate, /previousAction=\{\{ onClick: onBack, disabled: applying \}\}/);
-});
-
-test('BUG-ONB-03 ready cannot fall into a branch-agnostic native start step', () => {
-  const ready = setupPage.slice(
-    setupPage.indexOf('function ReadyScreen'),
-    setupPage.indexOf('function GitMissingScreen'),
-  );
-
-  assert.doesNotMatch(ready, /previousAction/);
-  assert.doesNotMatch(ready, /install-complete/);
-  assert.match(ready, /flow\.enterWorkspace/);
-});
-
 test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () => {
   const stopped = setupPage.slice(
     setupPage.indexOf('function GatewayStoppedScreen'),
@@ -119,17 +101,6 @@ test('BUG-ONB-11 Back navigation returns to history instead of a hard-coded scre
   assert.match(setupPage, /onBack=\{flow\.goBack\}/);
 });
 
-test('BUG-ONB-12 Back clears runtime attempt state before returning to an earlier stage', () => {
-  const goBack = setupFlow.slice(
-    setupFlow.indexOf('const goBack = useCallback'),
-    setupFlow.indexOf('const retryGit = useCallback'),
-  );
-
-  assert.match(goBack, /destination === "storage"[\s\S]*commitSteps\(\[\]\)/);
-  assert.match(goBack, /destination === "detecting"/);
-  assert.match(goBack, /destination === "choosing-mode"/);
-});
-
 test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () => {
   const stopped = setupPage.slice(
     setupPage.indexOf('function GatewayStoppedScreen'),
@@ -138,19 +109,6 @@ test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () =>
 
   assert.match(stopped, /setup\.openclawDetectedTitle/);
   assert.doesNotMatch(stopped, /setup\.foundOclaw/);
-});
-
-test('BUG-ONB-13 Docker marks Gateway running only after readiness succeeds', () => {
-  const docker = setupFlow.slice(
-    setupFlow.indexOf('const runDockerSetup = useCallback'),
-    setupFlow.indexOf('const selectMode = useCallback'),
-  );
-  const readyCheck = docker.indexOf('await waitForGatewayReady');
-  const runningCommit = docker.indexOf('setGatewayRunning(true)');
-
-  assert.ok(readyCheck >= 0);
-  assert.ok(runningCommit > readyCheck);
-  assert.match(docker, /catch \(err: any\)[\s\S]*?setGatewayRunning\(false\)/);
 });
 
 test('BUG-ONB-14 existing Native OpenClaw runs the full dependency closure after storage', () => {

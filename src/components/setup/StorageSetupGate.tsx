@@ -145,18 +145,12 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     if (!checkedRef.current) {
       checkedRef.current = true;
       if (!(window as any).__TAURI_INTERNALS__) {
-        onReadyRef.current({ createdFresh: false });
+        setLoading(false);
+        setError(t('storage.loadFailed', '无法读取存储配置'));
       } else {
         void invoke<StorageSetupStatus>('get_storage_setup_status')
           .then((result) => {
             if (!mountedRef.current) return;
-            if (result.configured && !forceConfigure && !storageDraft) {
-              onReadyRef.current({
-                createdFresh: false,
-                openclawRelocationRequired: result.openclawRelocationRequired,
-              });
-              return;
-            }
             const draft = storageDraft;
             setStatus(result);
             setTargetDir(draft?.targetDir ?? (forceConfigure ? result.stateDir : result.legacyDir));

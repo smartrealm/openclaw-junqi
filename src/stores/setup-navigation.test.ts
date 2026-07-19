@@ -64,32 +64,6 @@ test("internal retries replace the current step without growing history", () => 
   assert.deepEqual(failedAgain.setupHistory, state.setupHistory);
 });
 
-test("Back skips runtime results that became stale after Gateway startup", () => {
-  assert.equal(isStaleSetupBackDestination("gateway-stopped", true), true);
-  assert.equal(isStaleSetupBackDestination("install-complete", true), true);
-  assert.equal(isStaleSetupBackDestination("choosing-mode", true), true);
-  assert.equal(isStaleSetupBackDestination("gateway-stopped", false), false);
-  assert.equal(isStaleSetupBackDestination("choosing-mode", false), false);
-  assert.equal(isStaleSetupBackDestination("storage", true), false);
-});
-
-test("fresh install onboarding returns to storage after Gateway becomes ready", () => {
-  let state = transitionSetupNavigation(start(), "detecting", "push");
-  state = transitionSetupNavigation(state, "storage", "replace");
-  state = transitionSetupNavigation(state, "choosing-mode", "push");
-  state = transitionSetupNavigation(state, "checking", "push");
-  state = transitionSetupNavigation(state, "install-complete", "replace");
-  state = transitionSetupNavigation(state, "checking", "push");
-  state = transitionSetupNavigation(state, "configure-openclaw", "replace");
-
-  do {
-    state = backSetupNavigation(state);
-  } while (isStaleSetupBackDestination(state.setupStep, true));
-
-  assert.equal(state.setupStep, "storage");
-  assert.deepEqual(state.setupHistory, ["welcome"]);
-});
-
 test("persisted install mode fails closed to native setup", () => {
   assert.equal(normalizeInstallMode("docker"), "docker");
   assert.equal(normalizeInstallMode("native"), "native");

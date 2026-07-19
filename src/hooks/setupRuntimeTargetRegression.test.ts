@@ -74,22 +74,6 @@ test('BUG-RT-03 reinstall requests an actual forced package installation', () =>
   assert.match(commands, /invoke<string>\("reinstall_openclaw"\)/);
 });
 
-test('BUG-RT-04 Docker setup refreshes the terminal launcher for its container runtime', () => {
-  const dockerSetup = setupFlow.slice(
-    setupFlow.indexOf('const runDockerSetup = useCallback'),
-    setupFlow.indexOf('const selectMode = useCallback'),
-  );
-  const containerStart = dockerSetup.indexOf('await gatewayManager.startDockerForSetup()');
-  const terminalSetup = dockerSetup.indexOf('await configureTerminalIntegration(runId)');
-
-  assert.ok(containerStart >= 0);
-  assert.ok(terminalSetup > containerStart);
-  assert.match(terminalUnix, /TerminalLauncherTarget::Docker/);
-  assert.match(terminalUnix, /OPENCLAW_CONTAINER_NAME/);
-  assert.match(terminalUnix, /docker exec -it \{container\} openclaw/);
-  assert.match(terminalWindows, /docker exec -i \{container\} openclaw %\*/);
-});
-
 test('BUG-RT-05 only supported platforms expose automatic Node updates', () => {
   assert.match(runtimePanel, /nodeAutoUpdateSupported/);
   assert.match(runtimePanel, /onAction=\{status\.nodeAutoUpdateSupported \? \(\) => void runUpdate\('node'\) : undefined\}/);

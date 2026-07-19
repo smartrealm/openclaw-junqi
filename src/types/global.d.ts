@@ -70,6 +70,7 @@ interface AegisAPI {
   gateway?: {
     getStatus: () => Promise<{
       running: boolean;
+      processAlive?: boolean;
       ready?: boolean;
       error: string | null;
       logs: { stdout: string; stderr: string };
@@ -99,6 +100,7 @@ interface AegisAPI {
     clearLogs?: () => Promise<boolean>;
     onStatusChanged: (cb: (status: {
       running: boolean;
+      processAlive?: boolean;
       ready?: boolean;
       error: string | null;
       retrying?: boolean;

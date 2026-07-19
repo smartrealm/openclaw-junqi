@@ -301,9 +301,10 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       try {
         const s: any = await invoke("gateway_status");
         const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
-        return { running: ready, ready, error: null, logs: await readRecentGatewayLogs() };
+        const processAlive = Boolean(s.running || s.pid);
+        return { running: processAlive, processAlive, ready, error: null, logs: await readRecentGatewayLogs() };
       } catch (e: any) {
-        return { running: false, ready: false, error: String(e), logs: await readRecentGatewayLogs() };
+        return { running: false, processAlive: false, ready: false, error: String(e), logs: await readRecentGatewayLogs() };
       }
     },
     start: async () => {
@@ -377,8 +378,10 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
           if (!isCurrent()) return;
           lastLogs = logs;
           if (ready) restartActive = false;
+          const processAlive = Boolean(s.running || s.pid);
           cb({
-            running: ready,
+            running: processAlive,
+            processAlive,
             ready,
             retrying: restartActive && !ready,
             error: null,
@@ -388,6 +391,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
           if (!isCurrent()) return;
           cb({
             running: false,
+            processAlive: false,
             ready: false,
             error: String(e),
             logs: lastLogs,
@@ -438,12 +442,12 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
         // events. Tauri progress events can arrive after the command promise
         // settles; treating a late log line as a new restart leaves recovery
         // controls permanently disabled after a failed restart.
-        cb({ running: false, ready: false, retrying: restartActive, error: null, logs: lastLogs });
+        cb({ running: false, processAlive: false, ready: false, retrying: restartActive, error: null, logs: lastLogs });
       };
 
       const handleRestartStarted = () => {
         restartActive = true;
-        cb({ running: false, ready: false, retrying: true, error: null, logs: lastLogs });
+        cb({ running: false, processAlive: false, ready: false, retrying: true, error: null, logs: lastLogs });
       };
       const handleRestartFinished = () => {
         restartActive = false;
