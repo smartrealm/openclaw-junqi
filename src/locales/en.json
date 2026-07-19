@@ -3225,6 +3225,7 @@
   "channelsCenter.scanQr": "Scan QR code",
   "channelsCenter.qrUnavailable": "OpenClaw did not return a QR code. Check the Gateway and channel logs.",
   "channelsCenter.qrTimedOut": "The QR code expired. Refresh it and try again.",
+  "channelsCenter.qrRenderFailed": "The QR code could not be displayed. Refresh it and try again.",
   "channelsCenter.qrRequestFailed": "OpenClaw could not start QR login for this channel. Confirm that this OpenClaw version supports QR login for the selected channel.",
   "channelsCenter.qrWaiting": "Waiting for OpenClaw to prepare the QR code...",
   "channelsCenter.probe": "Probe",

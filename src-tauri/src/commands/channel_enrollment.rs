@@ -542,6 +542,20 @@ pub fn render_qr_code_data_url(content: String) -> Result<String, String> {
     })
 }
 
+/// Render a QR payload returned by a locally installed OpenClaw channel
+/// adapter. The payload is never fetched; it is only encoded as SVG locally.
+#[tauri::command]
+pub fn render_local_qr_data_url(content: String) -> Result<String, String> {
+    let content = content.trim();
+    let url = Url::parse(content).map_err(|_| "QR content must be a valid URL.".to_string())?;
+    if !matches!(url.scheme(), "https" | "sgnl") {
+        return Err("QR content must use HTTPS or the Signal link scheme.".into());
+    }
+    qr_svg_data_url(content).map_err(|_| {
+        "Could not render the channel QR code. Please refresh the login session.".into()
+    })
+}
+
 fn session_for_current_runtime<'a>(
     sessions: &'a mut HashMap<String, EnrollmentSession>,
     session_id: &str,
@@ -684,7 +698,7 @@ fn qr_svg_data_url(content: &str) -> Result<String, EnrollmentError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{qr_svg_data_url, render_qr_code_data_url};
+    use super::{qr_svg_data_url, render_local_qr_data_url, render_qr_code_data_url};
     use base64::{engine::general_purpose::STANDARD, Engine as _};
 
     #[test]
@@ -706,5 +720,13 @@ mod tests {
         );
         assert!(render_qr_code_data_url("not a URL".into()).is_err());
         assert!(render_qr_code_data_url("file:///tmp/secret".into()).is_err());
+    }
+
+    #[test]
+    fn local_channel_qr_renderer_accepts_only_safe_link_schemes() {
+        assert!(render_local_qr_data_url("https://example.com/link".into()).is_ok());
+        assert!(render_local_qr_data_url("sgnl://linkdevice?uuid=test".into()).is_ok());
+        assert!(render_local_qr_data_url("file:///tmp/secret".into()).is_err());
+        assert!(render_local_qr_data_url("javascript:alert(1)".into()).is_err());
     }
 }

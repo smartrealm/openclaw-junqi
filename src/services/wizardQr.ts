@@ -21,3 +21,16 @@ export async function renderWizardQrDataUrl(url: string): Promise<string | null>
     return null;
   }
 }
+
+/**
+ * Renders provider-owned QR content entirely in-process. No image URL is
+ * loaded by the webview, which keeps login payloads out of third-party CDNs.
+ */
+export async function renderLocalQrDataUrl(content: string): Promise<string | null> {
+  try {
+    const value = await invoke<unknown>('render_local_qr_data_url', { content });
+    return typeof value === 'string' && value.startsWith('data:image/svg+xml;base64,') ? value : null;
+  } catch {
+    return null;
+  }
+}

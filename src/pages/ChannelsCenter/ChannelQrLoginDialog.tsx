@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle2, Loader2, QrCode, RefreshCw, X } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { ChannelQrLoginSession, type ChannelQrState } from '@/services/channelQrLogin';
+import { renderLocalQrDataUrl } from '@/services/wizardQr';
 
 export function ChannelQrLoginDialog({
   channelId,
@@ -19,6 +20,8 @@ export function ChannelQrLoginDialog({
   const titleId = useId();
   const session = useMemo(() => new ChannelQrLoginSession(gateway, channelId, accountId), [accountId, channelId]);
   const [state, setState] = useState<ChannelQrState>(() => session.snapshot());
+  const [renderedQrDataUrl, setRenderedQrDataUrl] = useState<string | null>(null);
+  const [qrRenderFailed, setQrRenderFailed] = useState(false);
   const connectedNotified = useRef(false);
   const busy = state.phase === 'preparing' || state.phase === 'waiting';
 
@@ -30,6 +33,23 @@ export function ChannelQrLoginDialog({
       session.cancel();
     };
   }, [session]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!state.qrContent) {
+      setRenderedQrDataUrl(null);
+      setQrRenderFailed(false);
+      return () => { cancelled = true; };
+    }
+    setQrRenderFailed(false);
+    void renderLocalQrDataUrl(state.qrContent).then((dataUrl) => {
+      if (!cancelled) {
+        setRenderedQrDataUrl(dataUrl);
+        setQrRenderFailed(!dataUrl);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [state.qrContent]);
 
   useEffect(() => {
     if (state.phase === 'connected' && !connectedNotified.current) {
@@ -50,6 +70,8 @@ export function ChannelQrLoginDialog({
     ? t('channelsCenter.qrUnavailable', 'OpenClaw did not return a QR code. Check the Gateway and channel logs.')
     : state.error === 'qr_expired'
       ? t('channelsCenter.qrTimedOut', 'The QR code expired. Refresh it and try again.')
+      : qrRenderFailed
+        ? t('channelsCenter.qrRenderFailed', 'The QR code could not be displayed. Refresh it and try again.')
       : state.error === 'qr_request_failed'
         ? t('channelsCenter.qrRequestFailed', 'OpenClaw could not start QR login. Check that this OpenClaw version supports QR login for the selected channel.')
         : state.message || t('channelsCenter.qrWaiting', 'Waiting for OpenClaw to prepare the QR code...');
@@ -64,9 +86,9 @@ export function ChannelQrLoginDialog({
         <div className="flex min-h-[350px] flex-col items-center justify-center gap-4 p-5 text-center">
           {state.phase === 'connected' ? (
             <CheckCircle2 size={54} className="text-aegis-success" />
-          ) : state.qrDataUrl ? (
-            <div className="rounded-md bg-white p-3"><img src={state.qrDataUrl} alt={t('channelsCenter.scanQr', 'Scan QR code')} className="h-64 w-64" /></div>
-          ) : busy ? (
+          ) : state.qrDataUrl || renderedQrDataUrl ? (
+            <div className="rounded-md bg-white p-3"><img src={state.qrDataUrl ?? renderedQrDataUrl ?? ''} alt={t('channelsCenter.scanQr', 'Scan QR code')} className="h-64 w-64" /></div>
+          ) : busy && !qrRenderFailed ? (
             <Loader2 size={36} className="animate-spin text-aegis-primary" />
           ) : (
             <QrCode size={48} className="text-aegis-text-muted" />
