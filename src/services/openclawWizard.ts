@@ -74,6 +74,21 @@ const SETUP_MODE_FALLBACKS: Record<string, { label: string; hint?: string }> = {
   'import:codex': { label: 'Import from Codex' },
 };
 
+const WIZARD_TITLE_COPY: Record<string, string> = {
+  'Setup mode': 'setup.wizard.presentation.setupMode',
+  'How channels work': 'setup.wizard.presentation.channelsPrimer',
+  'Select channel (QuickStart)': 'setup.wizard.presentation.selectQuickstartChannel',
+  'Select a channel': 'setup.wizard.presentation.selectChannel',
+  'Feishu scan-to-create': 'setup.wizard.presentation.feishuScan',
+  'How do you want to connect Feishu?': 'setup.wizard.presentation.feishuMethod',
+  'Feishu setup': 'setup.wizard.presentation.feishuSetup',
+};
+
+const WIZARD_MESSAGE_COPY: Record<string, string> = {
+  'Inbound DM safety defaults to pairing: unknown senders get a pairing code first.': 'setup.wizard.presentation.channelsPrimerMessage',
+  'Scan the QR with Lark/Feishu on your phone. If the mobile app does not react, rerun setup and choose manual input.': 'setup.wizard.presentation.feishuScanMessage',
+};
+
 function isSetupModeStep(step: OpenClawWizardStep): boolean {
   if (step.type !== 'select') return false;
   const values = new Set((step.options ?? []).map((option) => option.value));
@@ -89,10 +104,17 @@ export function localizeOpenClawWizardStep(
   step: OpenClawWizardStep,
   translate: WizardPresentationTranslator,
 ): OpenClawWizardStep {
-  if (!isSetupModeStep(step)) return step;
+  const titleKey = step.title ? WIZARD_TITLE_COPY[step.title] : undefined;
+  const messageKey = step.message ? WIZARD_MESSAGE_COPY[step.message] : undefined;
+  const presented: OpenClawWizardStep = {
+    ...step,
+    ...(titleKey ? { title: translate(titleKey, step.title!) } : {}),
+    ...(messageKey ? { message: translate(messageKey, step.message!) } : {}),
+  };
+  if (!isSetupModeStep(step)) return presented;
 
   return {
-    ...step,
+    ...presented,
     title: translate('setup.wizard.setupMode.title', 'Setup mode'),
     options: step.options?.map((option) => {
       const value = typeof option.value === 'string' ? option.value : '';

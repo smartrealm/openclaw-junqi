@@ -210,7 +210,7 @@ test('BUG-WRM-11 recovery uses the prior verified service launch when the candid
 });
 
 test('runtime migration messages exist in every supported locale', () => {
-  for (const locale of ['zh', 'en', 'ar']) {
+  for (const locale of ['zh', 'zh-TW', 'en', 'ar']) {
     const messages = JSON.parse(
       readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'),
     ) as Record<string, unknown>;

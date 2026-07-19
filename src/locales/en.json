@@ -2702,7 +2702,20 @@
         "denied": "Authorization was declined on the mobile app. Generate a new QR code to try again.",
         "expired": "This QR code expired. Generate a new one and scan again.",
         "error": "The QR service is temporarily unavailable. Generate a new code and try again.",
-        "handoffFailed": "The QR code was verified, but OpenClaw setup could not continue. Generate a new code and try again."
+        "handoffFailed": "The QR code was verified, but OpenClaw setup could not continue. Generate a new code and try again.",
+        "handoffRecoverable": "The QR code was verified, but the OpenClaw setup session needs to be restored. Select Continue setup; you do not need to scan again.",
+        "resume": "Continue setup"
+      },
+      "presentation": {
+        "setupMode": "Setup mode",
+        "channelsPrimer": "How channels work",
+        "channelsPrimerMessage": "Inbound DMs use pairing by default: unknown senders receive a pairing code first. You can adjust access policies and multi-user session isolation in channel settings after setup.",
+        "selectQuickstartChannel": "Select channel (QuickStart)",
+        "selectChannel": "Select a channel",
+        "feishuScan": "Feishu scan-to-create",
+        "feishuMethod": "How do you want to connect Feishu?",
+        "feishuSetup": "Feishu setup",
+        "feishuScanMessage": "Scan the QR with the Feishu or Lark mobile app. If the mobile app does not react, return to this step and choose manual input."
       }
     }
   },

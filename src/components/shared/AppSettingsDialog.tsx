@@ -30,7 +30,7 @@ import { SkinPreview } from '@/pet/SkinPreview';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { changeLanguage } from '@/i18n';
 import type { AegisTheme } from '@/theme/types';
-import { APP_LANGUAGE_OPTIONS, type SupportedLanguage } from '@/i18n/languages';
+import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { APP_VERSION } from '@/version';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
@@ -246,13 +246,10 @@ function GeneralPanel() {
       window.dispatchEvent(new Event('nezha:app-settings-changed'));
     } finally { setSavingScrollback(false); }
   };
-  const handleLanguageChange = (lang: SupportedLanguage) => {
+  const handleLanguageChange = (lang: AppLanguage) => {
     setLanguage(lang);
     changeLanguage(lang);
   };
-  const languageOptions = language === 'ar'
-    ? [...APP_LANGUAGE_OPTIONS, { value: 'ar' as const, label: 'العربية' }]
-    : APP_LANGUAGE_OPTIONS;
   return (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.general', 'General')}</h2>
@@ -260,9 +257,9 @@ function GeneralPanel() {
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{t('settings.language')}</label>
-          <select value={language} onChange={(e) => handleLanguageChange(e.target.value as SupportedLanguage)}
+          <select value={language} onChange={(e) => handleLanguageChange(e.target.value as AppLanguage)}
             className="px-3 py-2 rounded-md text-[13px] w-[200px]" style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }}>
-            {languageOptions.map((option) => (
+            {APP_LANGUAGE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>

@@ -245,9 +245,9 @@ fn stable_openclaw_working_dir() -> Option<PathBuf> {
 /// OpenClaw resolves classic-wizard copy from its process environment, not
 /// from the WebSocket client's locale field. Keep the managed Gateway in step
 /// with JunQi's persisted language without changing the user's shell
-/// environment. OpenClaw currently ships Chinese and English wizard catalogs;
-/// Arabic therefore uses its documented English fallback while JunQi's own UI
-/// remains Arabic.
+/// environment. OpenClaw currently ships English, Simplified Chinese, and
+/// Traditional Chinese wizard catalogs. Arabic therefore uses its documented
+/// English fallback while JunQi's own UI remains Arabic.
 pub(crate) fn managed_openclaw_locale() -> &'static str {
     openclaw_locale_for_application_language(&crate::commands::app_settings::application_language())
 }
@@ -255,6 +255,7 @@ pub(crate) fn managed_openclaw_locale() -> &'static str {
 fn openclaw_locale_for_application_language(language: &str) -> &'static str {
     match language {
         "zh" => "zh-CN",
+        "zh-TW" => "zh-TW",
         _ => "en-US",
     }
 }
@@ -1978,6 +1979,7 @@ mod tests {
     #[test]
     fn managed_gateway_uses_an_openclaw_supported_wizard_locale() {
         assert_eq!(openclaw_locale_for_application_language("zh"), "zh-CN");
+        assert_eq!(openclaw_locale_for_application_language("zh-TW"), "zh-TW");
         assert_eq!(openclaw_locale_for_application_language("en"), "en-US");
         assert_eq!(openclaw_locale_for_application_language("ar"), "en-US");
     }

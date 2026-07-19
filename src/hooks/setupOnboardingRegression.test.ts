@@ -56,7 +56,7 @@ test('BUG-ONB-05 install mode selection is explicit and confirmed by Next', () =
 });
 
 test('BUG-ONB-06 every setup message is complete in all supported locales', () => {
-  const locales = Object.fromEntries(['zh', 'en', 'ar'].map((locale) => [
+  const locales = Object.fromEntries(['zh', 'zh-TW', 'en', 'ar'].map((locale) => [
     locale,
     flattenMessages(JSON.parse(readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'))),
   ])) as Record<string, Record<string, unknown>>;

@@ -12,7 +12,7 @@ const requiredSetupKeys = [
 ];
 
 test('WIN-I18N-01 system dependency progress has every supported translation', () => {
-  for (const language of ['zh', 'en', 'ar']) {
+  for (const language of ['zh', 'zh-TW', 'en', 'ar']) {
     const locale = JSON.parse(read(`./locales/${language}.json`)) as Record<string, unknown>;
     for (const key of requiredSetupKeys) {
       assert.equal(typeof locale[key], 'string', `${language} must define ${key}`);

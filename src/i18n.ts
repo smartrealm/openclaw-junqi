@@ -1,30 +1,30 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import ar from './locales/ar.json';
 import en from './locales/en.json';
 import zh from './locales/zh.json';
+import zhTW from './locales/zh-TW.json';
 import {
   applyDocumentLanguage,
   browserDefaultLanguage,
-  isSupportedLanguage,
+  isAppLanguage,
   persistLanguagePreference,
-  type SupportedLanguage,
+  type AppLanguage,
 } from './i18n/languages';
 import { syncNativeLocale } from './services/nativeLocale';
 
 // ═══════════════════════════════════════════════════════════
-// i18n — Internationalization (EN + ZH, Arabic kept for later)
+// i18n — Internationalization (English, Simplified Chinese, Traditional Chinese)
 // ═══════════════════════════════════════════════════════════
 
 // Detect language priority:
-//   1. Saved user choice wins (including legacy Arabic users)
+//   1. Saved supported app choice wins
 //   2. First run uses the browser/system language (zh → ZH, otherwise EN)
 // Native startup reads the OS locale separately so the tray is localized even
 // before this webview has finished loading.
-const getInitialLang = (): SupportedLanguage => {
+const getInitialLang = (): AppLanguage => {
   const stored = localStorage.getItem('aegis-language');
 
-  if (stored && isSupportedLanguage(stored)) {
+  if (stored && isAppLanguage(stored)) {
     return stored;
   }
 
@@ -37,9 +37,9 @@ const savedLang = getInitialLang();
 
 i18n.use(initReactI18next).init({
   resources: {
-    ar: { translation: ar },
     en: { translation: en },
     zh: { translation: zh },
+    'zh-TW': { translation: zhTW },
   },
   lng: savedLang,
   fallbackLng: 'en',
@@ -48,13 +48,12 @@ i18n.use(initReactI18next).init({
 
 // Helper: get direction for current language
 export const getDirection = (lang?: string): 'rtl' | 'ltr' => {
-  const current = isSupportedLanguage(lang) ? lang : isSupportedLanguage(i18n.language) ? i18n.language : 'en';
-  return current === 'ar' ? 'rtl' : 'ltr';
+  return 'ltr';
 };
 
 // Helper: change language and persist
-export const changeLanguage = (lang: SupportedLanguage) => {
-  if (!isSupportedLanguage(lang)) return;
+export const changeLanguage = (lang: AppLanguage) => {
+  if (!isAppLanguage(lang)) return;
   i18n.changeLanguage(lang);
   persistLanguagePreference(lang);
   applyDocumentLanguage(lang);

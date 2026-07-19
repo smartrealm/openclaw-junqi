@@ -163,7 +163,7 @@ export interface SetupFlow {
   repairAndRetry: () => Promise<void>;
   disablePluginsAndRetry: () => Promise<void>;
   submitWizardStep: (stepId: string, value?: unknown) => Promise<OpenClawWizardResult | null>;
-  retryWizard: () => Promise<void>;
+  retryWizard: () => Promise<OpenClawWizardResult | null>;
   runNativeSetup: () => Promise<boolean>;
   runDockerSetup: () => Promise<boolean>;
   retrySetup: () => Promise<boolean>;
@@ -730,12 +730,11 @@ export function useSetupFlow(
     }
   }, [applyWizardResult, resumeOfficialOnboarding, setSetupError, startOfficialOnboarding, wizardFailureMessage, wizardSubmitting]);
 
-  const retryOfficialOnboarding = useCallback(async () => {
+  const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardClientRef.current!.hasActiveSession) {
-      await resumeOfficialOnboarding();
-      return;
+      return await resumeOfficialOnboarding();
     }
-    await startOfficialOnboarding();
+    return await startOfficialOnboarding();
   }, [resumeOfficialOnboarding, startOfficialOnboarding]);
 
   const wizardAutoStartRef = useRef(false);

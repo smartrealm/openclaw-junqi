@@ -48,7 +48,16 @@ const FALLBACK_APPLICATION_LANGUAGE: &str = "en";
 
 fn normalize_application_language(value: &str) -> Option<&'static str> {
     let normalized = value.trim().to_ascii_lowercase();
-    if normalized == "zh" || normalized.starts_with("zh-") || normalized.starts_with("zh_") {
+    if normalized == "zh-tw"
+        || normalized == "zh_tw"
+        || normalized == "zh-hk"
+        || normalized == "zh_hk"
+        || normalized == "zh-mo"
+        || normalized == "zh_mo"
+        || normalized.contains("hant")
+    {
+        Some("zh-TW")
+    } else if normalized == "zh" || normalized == "zh-cn" || normalized == "zh_cn" || normalized == "zh-sg" || normalized == "zh_sg" || normalized.contains("hans") {
         Some("zh")
     } else if normalized == "ar" || normalized.starts_with("ar-") || normalized.starts_with("ar_") {
         Some("ar")
@@ -415,6 +424,7 @@ mod tests {
     #[test]
     fn application_language_accepts_supported_locale_tags() {
         assert_eq!(normalize_application_language("zh-CN"), Some("zh"));
+        assert_eq!(normalize_application_language("zh-TW"), Some("zh-TW"));
         assert_eq!(normalize_application_language("en_US"), Some("en"));
         assert_eq!(normalize_application_language("ar-SA"), Some("ar"));
         assert_eq!(normalize_application_language("fr-FR"), None);

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { SupportedLanguage } from '@/i18n/languages';
+import type { AppLanguage } from '@/i18n/languages';
 
 let pendingSync: Promise<unknown> = Promise.resolve();
 
@@ -8,7 +8,7 @@ let pendingSync: Promise<unknown> = Promise.resolve();
  * webview locale. Requests are serialized so rapid language changes cannot
  * leave the native menu on an older selection.
  */
-export function syncNativeLocale(language: SupportedLanguage): void {
+export function syncNativeLocale(language: AppLanguage): void {
   const request = pendingSync.then(() =>
     invoke<string>('set_application_language', { language }),
   );

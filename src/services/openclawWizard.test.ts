@@ -36,6 +36,21 @@ test('localizes the official setup-mode presentation without changing option val
   assert.equal(presented.options?.[3]?.hint, '/Users/example/.claude');
 });
 
+test('localizes known official wizard copy without changing its protocol shape', () => {
+  const step = {
+    id: 'channels-primer',
+    type: 'note' as const,
+    title: 'How channels work',
+    message: 'Inbound DM safety defaults to pairing: unknown senders get a pairing code first.',
+  };
+  const presented = localizeOpenClawWizardStep(step, (key) => `zh:${key}`);
+
+  assert.equal(presented.id, step.id);
+  assert.equal(presented.type, step.type);
+  assert.equal(presented.title, 'zh:setup.wizard.presentation.channelsPrimer');
+  assert.equal(presented.message, 'zh:setup.wizard.presentation.channelsPrimerMessage');
+});
+
 test('accepts official wizard metadata or an existing default model', () => {
   assert.equal(requiresOpenClawOnboarding(true, { wizard: { lastRunAt: '2026-07-13T00:00:00Z' } }), false);
   assert.equal(requiresOpenClawOnboarding(true, { agents: { defaults: { model: { primary: 'openai/gpt-5' } } } }), false);
