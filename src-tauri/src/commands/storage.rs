@@ -2608,6 +2608,27 @@ pub async fn configure_storage(
         .and_then(|config| crate::commands::config::gateway_port_from_config(&config))
         .unwrap_or_else(crate::commands::config::default_gateway_port);
 
+    // 选择新位置时先做真实 chmod 能力探测(BUG-CPI-08):exFAT/网络盘会拒绝
+    // Gateway 启动所需的权限调整,必须在数据迁移发生前拦下,而不是让用户
+    // 迁完数据后陷入启动超时。Node 尚未安装时跳过,由 Gateway 启动前的
+    // 探测兜底。
+    if !paths::paths_refer_to_same_location(&target, &source) {
+        if let Some(probe_node) = crate::commands::system::check_node()
+            .await
+            .ok()
+            .as_ref()
+            .and_then(crate::commands::state_dir_probe::probe_node_path)
+        {
+            if let crate::commands::state_dir_probe::ChmodProbeOutcome::Unsupported(detail) =
+                crate::commands::state_dir_probe::probe_chmod_capability(&probe_node, &target).await
+            {
+                return Err(crate::commands::state_dir_probe::chmod_unsupported_message(
+                    &target, &detail,
+                ));
+            }
+        }
+    }
+
     if paths::paths_refer_to_same_location(&target, &source) {
         validate_location_changes(&layout, Some(&existing_layout))?;
         // Recovery can target the already-selected directory. Re-run the same

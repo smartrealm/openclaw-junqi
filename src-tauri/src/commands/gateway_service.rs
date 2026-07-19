@@ -4,7 +4,7 @@
 //! identifies the same state directory JunQi currently selected.
 
 use crate::{commands::system, paths, platform};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -22,6 +22,89 @@ pub(crate) struct GatewayServiceInspection {
     pub ownership: GatewayServiceOwnership,
     pub installed: bool,
     pub running: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayAutostartStatus {
+    pub supported: bool,
+    pub enabled: bool,
+    pub service_label: Option<String>,
+}
+
+fn selected_service_autostart_status(
+    inspection: GatewayServiceInspection,
+) -> GatewayAutostartStatus {
+    GatewayAutostartStatus {
+        supported: true,
+        enabled: belongs_to_selected_state(inspection.ownership) && inspection.installed,
+        service_label: Some("OpenClaw Gateway".to_string()),
+    }
+}
+
+async fn selected_native_service_context(
+) -> Result<(system::NativeOpenclawRuntime, PathBuf, PathBuf), String> {
+    if !matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        return Err("Gateway autostart requires the Native runtime".to_string());
+    }
+    let runtime = system::resolve_compatible_native_openclaw_runtime().await?;
+    Ok((runtime, paths::desktop_dir(), paths::active_config_path()))
+}
+
+#[tauri::command]
+pub async fn gateway_autostart_status() -> Result<GatewayAutostartStatus, String> {
+    if !matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        return Ok(GatewayAutostartStatus {
+            supported: false,
+            enabled: false,
+            service_label: None,
+        });
+    }
+    let (runtime, state_dir, config_path) = selected_native_service_context().await?;
+    let identity = GatewayServiceIdentity::for_runtime(&state_dir, &config_path, &runtime);
+    let inspection = inspect_gateway_service_state(&runtime, &identity, None).await?;
+    Ok(selected_service_autostart_status(inspection))
+}
+
+#[tauri::command]
+pub async fn enable_gateway_autostart() -> Result<GatewayAutostartStatus, String> {
+    let (runtime, state_dir, config_path) = selected_native_service_context().await?;
+    let port = crate::commands::gateway::gateway_port_for_config(&config_path);
+    install_selected_gateway_service(&runtime, &state_dir, &config_path, port).await?;
+    let identity = GatewayServiceIdentity::for_runtime(&state_dir, &config_path, &runtime);
+    let inspection = inspect_gateway_service_state(&runtime, &identity, None).await?;
+    let status = selected_service_autostart_status(inspection);
+    if !status.enabled {
+        return Err("Gateway service was installed but could not be verified for the selected OpenClaw state directory".to_string());
+    }
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn disable_gateway_autostart() -> Result<GatewayAutostartStatus, String> {
+    if !matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    ) {
+        return Ok(GatewayAutostartStatus {
+            supported: false,
+            enabled: false,
+            service_label: None,
+        });
+    }
+    let (runtime, state_dir, config_path) = selected_native_service_context().await?;
+    uninstall_selected_gateway_service(&runtime, &state_dir, &config_path, None).await?;
+    Ok(GatewayAutostartStatus {
+        supported: true,
+        enabled: false,
+        service_label: Some("OpenClaw Gateway".to_string()),
+    })
 }
 
 /// The complete identity of the official service selected by JunQi.

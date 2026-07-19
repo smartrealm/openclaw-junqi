@@ -57,6 +57,7 @@ pub mod session_labels;
 pub mod setup;
 pub mod setup_progress;
 pub mod skills;
+pub(crate) mod state_dir_probe;
 pub mod storage;
 pub mod system;
 pub mod system_metrics;

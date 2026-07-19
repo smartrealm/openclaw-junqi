@@ -2546,6 +2546,17 @@
     "settingUp": "正在配置 JunQi Desktop",
     "subtitle": "正在安装必需组件，可能需要几分钟。",
     "readySubtitle": "Gateway 已启动。请点击进入工作台完成向导，系统不会自动跳转。",
+    "autostart": {
+      "title": "要不要让 OpenClaw 开机自动运行？",
+      "hint": "开启后，电脑一开机 OpenClaw 就会自动在后台运行——不用打开本应用，你的消息渠道和定时任务也能照常工作。不开启也没关系：每次打开本应用时会自动启动它。",
+      "enabledHint": "已设置为开机自动运行：以后电脑一开机，OpenClaw 就会自动在后台工作，不需要打开本应用。随时可以在这里关闭。",
+      "enable": "开机自动运行",
+      "disable": "关闭",
+      "enabledBadge": "已开启",
+      "enabling": "正在设置开机自启…",
+      "disabling": "正在关闭开机自启…",
+      "switching": "正在切换 OpenClaw 的运行方式，请稍候…"
+    },
     "petReadyHint": "可以进入工作台了",
     "enterWorkspace": "进入工作台",
     "openclawDetectedTitle": "OpenClaw 已安装",

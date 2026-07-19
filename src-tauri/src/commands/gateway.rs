@@ -631,6 +631,10 @@ impl ConfigMetadata {
     }
 }
 
+pub(crate) fn gateway_port_for_config(config_path: &std::path::Path) -> u16 {
+    ConfigMetadata::load(config_path).port
+}
+
 /// Resolve the user-configured Gateway port for commands that need to target
 /// the Control UI without assuming OpenClaw's default port.
 pub(crate) fn configured_gateway_port() -> u16 {
@@ -2076,6 +2080,27 @@ pub(crate) async fn start_gateway_locked(
     let default_workspace = paths::default_workspace_dir();
     if !default_workspace.exists() {
         let _ = std::fs::create_dir_all(&default_workspace);
+    }
+    // State/config locations are passed through the command environment. The
+    // process cwd is deliberately independent, but OpenClaw still needs a
+    // filesystem that supports its credential-permission tightening.
+    std::fs::create_dir_all(&base_dir)
+        .map_err(|error| format!("Failed to create OpenClaw state directory: {error}"))?;
+    if let Some(probe_node) = crate::commands::state_dir_probe::probe_node_path(&node) {
+        if let crate::commands::state_dir_probe::ChmodProbeOutcome::Unsupported(detail) =
+            crate::commands::state_dir_probe::probe_chmod_capability(&probe_node, &base_dir).await
+        {
+            let message =
+                crate::commands::state_dir_probe::chmod_unsupported_message(&base_dir, &detail);
+            let _ = app.emit("gateway-log", &message);
+            crate::state::gateway_process::push_log(
+                &state.logs,
+                crate::state::gateway_process::LogSource::Lifecycle,
+                crate::state::gateway_process::LogLevel::Error,
+                message.clone(),
+            );
+            return Err(message);
+        }
     }
     let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
 
