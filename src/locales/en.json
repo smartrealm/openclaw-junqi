@@ -2645,11 +2645,31 @@
       "connectionTimeout": "Gateway started, but the setup wizard connection timed out.",
       "failed": "The OpenClaw setup wizard failed.",
       "missingStep": "The OpenClaw setup wizard did not return its next step.",
+      "sessionExpired": "The OpenClaw setup session expired. Reconnect to continue.",
+      "stepSynchronizing": "Restoring the OpenClaw setup session. Please wait.",
+      "alreadyRunning": "Another OpenClaw setup session is still running. Finish or close it before retrying.",
+      "requestTimeout": "The OpenClaw setup request timed out. Reconnect to continue.",
       "retry": "Retry",
       "run": "Run",
       "confirm": "Confirm and continue",
       "textInput": "OpenClaw configuration value",
-      "readyForStep": "OpenClaw will perform this step."
+      "readyForStep": "OpenClaw will perform this step.",
+      "channelEnrollment": {
+        "title": "Connect Feishu by QR code",
+        "subtitle": "Scan with your phone and JunQi will continue the official OpenClaw setup.",
+        "description": "Scanning creates and verifies a Feishu app. Credentials are passed only to the official OpenClaw wizard and are never displayed in JunQi.",
+        "domain": "Service region",
+        "feishu": "Feishu",
+        "lark": "Lark",
+        "start": "Show QR code",
+        "waiting": "Scan this code with the Feishu or Lark mobile app.",
+        "connected": "Verified. Continuing OpenClaw setup.",
+        "finalizing": "Passing the verified credentials to the official OpenClaw wizard…",
+        "denied": "Authorization was declined on the mobile app. Generate a new QR code to try again.",
+        "expired": "This QR code expired. Generate a new one and scan again.",
+        "error": "The QR service is temporarily unavailable. Generate a new code and try again.",
+        "handoffFailed": "The QR code was verified, but OpenClaw setup could not continue. Generate a new code and try again."
+      }
     }
   },
   "perf": {
@@ -3260,7 +3280,7 @@
   "setup.openclawUpdate.progress.preparing": "Preparing the OpenClaw update…",
   "setup.openclawUpdate.progress.targetContract": "Resolving the target OpenClaw runtime contract…",
   "setup.openclawUpdate.progress.targetNode": "Target OpenClaw requires Node.js {{requirement}}; validating update runtime…",
-  "setup.openclawUpdate.progress.stoppingGateway": "Stopping the managed Gateway if necessary…",
+  "setup.openclawUpdate.progress.preparingGatewayHandoff": "Preparing a safe Gateway update handoff…",
   "setup.openclawUpdate.progress.restoringGateway": "Restoring the Gateway…",
   "setup.openclawUpdate.progress.runningUpdater": "Running the official updater via {{registry}}…",
   "setup.openclawUpdate.progress.resolvingPackage": "Resolving OpenClaw package dependencies…",

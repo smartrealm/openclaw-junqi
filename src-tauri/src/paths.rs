@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const STORAGE_BOOTSTRAP_VERSION: u32 = 12;
+const STORAGE_BOOTSTRAP_VERSION: u32 = 13;
 
 /// The OpenClaw runtime selected by the user during setup.
 ///
@@ -20,6 +20,60 @@ pub enum OpenClawRuntimeMode {
     #[default]
     Native,
     Docker,
+}
+
+/// The package contract captured before a global npm-prefix relocation.
+///
+/// Once the new prefix is persisted, normal runtime discovery intentionally
+/// stops resolving the old binary. Keeping this small, path-independent
+/// contract lets setup reproduce the same package version instead of turning
+/// a directory move into an implicit OpenClaw upgrade.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct OpenclawRelocationContract {
+    version: String,
+    node_requirement: String,
+}
+
+impl OpenclawRelocationContract {
+    pub(crate) fn new(version: String, node_requirement: String) -> Result<Self, String> {
+        let contract = Self {
+            version: version.trim().to_string(),
+            node_requirement: node_requirement.trim().to_string(),
+        };
+        if contract.is_valid() {
+            Ok(contract)
+        } else {
+            Err("OpenClaw relocation contract is invalid".into())
+        }
+    }
+
+    pub(crate) fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub(crate) fn node_requirement(&self) -> &str {
+        &self.node_requirement
+    }
+
+    fn is_valid(&self) -> bool {
+        !self.version.is_empty()
+            && self.version.len() <= 128
+            && self
+                .version
+                .bytes()
+                .next()
+                .is_some_and(|byte| byte.is_ascii_digit())
+            && self
+                .version
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+            && !self.node_requirement.is_empty()
+            && self.node_requirement.len() <= 512
+            && self
+                .node_requirement
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+    }
 }
 
 /// A durable memento of the complete storage/runtime layout. Runtime mode
@@ -36,6 +90,7 @@ struct StorageLayoutSnapshot {
     node_runtime_dir: Option<PathBuf>,
     git_runtime_dir: Option<PathBuf>,
     openclaw_relocation_required: bool,
+    openclaw_relocation_contract: Option<OpenclawRelocationContract>,
     terminal_integration: bool,
     runtime_mode: OpenClawRuntimeMode,
     runtime_switch_rollback_mode: Option<OpenClawRuntimeMode>,
@@ -55,6 +110,7 @@ impl StorageLayoutSnapshot {
             node_runtime_dir: layout.node_runtime_dir.clone(),
             git_runtime_dir: layout.git_runtime_dir.clone(),
             openclaw_relocation_required: layout.openclaw_relocation_required,
+            openclaw_relocation_contract: layout.openclaw_relocation_contract.clone(),
             terminal_integration: layout.terminal_integration,
             runtime_mode: layout.runtime_mode,
             runtime_switch_rollback_mode: layout.runtime_switch_rollback_mode,
@@ -75,6 +131,7 @@ impl StorageLayoutSnapshot {
             node_runtime_dir: self.node_runtime_dir.clone(),
             git_runtime_dir: self.git_runtime_dir.clone(),
             openclaw_relocation_required: self.openclaw_relocation_required,
+            openclaw_relocation_contract: self.openclaw_relocation_contract.clone(),
             terminal_integration: self.terminal_integration,
             runtime_mode: self.runtime_mode,
             runtime_switch_rollback_mode: self.runtime_switch_rollback_mode,
@@ -320,6 +377,9 @@ pub struct StorageBootstrap {
     /// A changed npm prefix requires OpenClaw to be installed and verified at
     /// the new location before the migrated runtime can be considered ready.
     pub openclaw_relocation_required: bool,
+    /// Captured from the installed package before an npm-prefix move. It is
+    /// cleared only after the exact package has been installed at the target.
+    pub(crate) openclaw_relocation_contract: Option<OpenclawRelocationContract>,
     pub terminal_integration: bool,
     pub runtime_mode: OpenClawRuntimeMode,
     pub runtime_switch_rollback_mode: Option<OpenClawRuntimeMode>,
@@ -383,6 +443,8 @@ struct PersistedStorageBootstrap {
     #[serde(default)]
     openclaw_relocation_required: bool,
     #[serde(default)]
+    openclaw_relocation_contract: Option<OpenclawRelocationContract>,
+    #[serde(default)]
     terminal_integration: bool,
     #[serde(default)]
     runtime_mode: OpenClawRuntimeMode,
@@ -411,6 +473,7 @@ impl StorageBootstrap {
             node_runtime_dir: None,
             git_runtime_dir: None,
             openclaw_relocation_required: false,
+            openclaw_relocation_contract: None,
             terminal_integration: false,
             runtime_mode: OpenClawRuntimeMode::Native,
             runtime_switch_rollback_mode: None,
@@ -439,6 +502,7 @@ impl StorageBootstrap {
             node_runtime_dir: None,
             git_runtime_dir: None,
             openclaw_relocation_required: false,
+            openclaw_relocation_contract: None,
             terminal_integration,
             runtime_mode: OpenClawRuntimeMode::Native,
             runtime_switch_rollback_mode: None,
@@ -463,6 +527,7 @@ impl StorageBootstrap {
             node_runtime_dir,
             git_runtime_dir,
             openclaw_relocation_required,
+            openclaw_relocation_contract,
             terminal_integration,
             runtime_mode,
             runtime_switch_rollback_mode,
@@ -474,6 +539,8 @@ impl StorageBootstrap {
         let runtime_dir = runtime_dir.unwrap_or_else(|| state_dir.clone());
         let node_runtime_dir = node_runtime_dir.map(normalize_node_runtime_root);
         let git_runtime_dir = git_runtime_dir.map(normalize_git_runtime_root);
+        let openclaw_relocation_contract =
+            openclaw_relocation_contract.filter(OpenclawRelocationContract::is_valid);
         // Preserve explicit portable-runtime selections even when an older
         // bootstrap placed one inside the data tree. Storage validation will
         // surface the overlap and require a deliberate correction; silently
@@ -505,6 +572,7 @@ impl StorageBootstrap {
             node_runtime_dir,
             git_runtime_dir,
             openclaw_relocation_required,
+            openclaw_relocation_contract,
             terminal_integration,
             runtime_mode,
             runtime_switch_rollback_mode,
@@ -532,6 +600,7 @@ impl StorageBootstrap {
             node_runtime_dir: self.node_runtime_dir.clone(),
             git_runtime_dir: self.git_runtime_dir.clone(),
             openclaw_relocation_required: self.openclaw_relocation_required,
+            openclaw_relocation_contract: self.openclaw_relocation_contract.clone(),
             terminal_integration: self.terminal_integration,
             runtime_mode: self.runtime_mode,
             runtime_switch_rollback_mode: self.runtime_switch_rollback_mode,
@@ -1540,6 +1609,7 @@ pub fn complete_openclaw_relocation(expected_npm_prefix: Option<&Path>) -> Resul
         );
     }
     layout.openclaw_relocation_required = false;
+    layout.openclaw_relocation_contract = None;
     save_storage_bootstrap(&layout)
 }
 
@@ -1854,6 +1924,37 @@ mod storage_bootstrap_tests {
         assert!(!pending.matches_candidate(&candidate));
         assert_eq!(pending.gateway_recovery().port, 18_789);
         assert!(pending.native_workspace_was_written());
+    }
+
+    #[test]
+    fn relocation_contract_survives_a_runtime_reconfiguration_memento() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-relocation-contract-memento-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let mut layout = StorageBootstrap::with_locations(
+            root.join("state"),
+            root.join("workspace"),
+            root.join("runtime"),
+            None,
+            Some(root.join("npm-prefix")),
+            false,
+        );
+        let contract =
+            OpenclawRelocationContract::new("2026.7.1-2".to_string(), ">=24.15.0 <25".to_string())
+                .unwrap();
+        layout.openclaw_relocation_required = true;
+        layout.openclaw_relocation_contract = Some(contract.clone());
+
+        let snapshot = StorageLayoutSnapshot::capture(&layout);
+        let restored = snapshot.restore();
+
+        assert_eq!(restored.openclaw_relocation_contract, Some(contract));
+        assert!(OpenclawRelocationContract::new(
+            "2026.7.1/../../other".to_string(),
+            ">=24".to_string(),
+        )
+        .is_err());
     }
 
     #[test]

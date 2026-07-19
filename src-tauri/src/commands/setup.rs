@@ -1956,8 +1956,49 @@ struct OpenclawInstallTarget {
     node_requirement: NodeRuntimeRequirement,
 }
 
-async fn target_openclaw_install_target(node: &Path) -> Result<OpenclawInstallTarget, String> {
-    let release = npm_registry::resolve_latest_openclaw_release_target(node).await?;
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OpenclawInstallTargetResolution {
+    Latest,
+    PinnedRelocation(paths::OpenclawRelocationContract),
+}
+
+impl OpenclawInstallTargetResolution {
+    fn for_install(
+        mode: OpenclawInstallMode,
+        relocation: Option<&OpenclawRelocationRequest>,
+    ) -> Self {
+        if matches!(mode, OpenclawInstallMode::Relocate) {
+            if let Some(contract) = relocation.and_then(OpenclawRelocationRequest::package_contract)
+            {
+                return Self::PinnedRelocation(contract.clone());
+            }
+        }
+        Self::Latest
+    }
+}
+
+async fn target_openclaw_install_target(
+    node: &Path,
+    resolution: OpenclawInstallTargetResolution,
+) -> Result<OpenclawInstallTarget, String> {
+    let release = match resolution {
+        OpenclawInstallTargetResolution::Latest => {
+            npm_registry::resolve_latest_openclaw_release_target(node).await?
+        }
+        OpenclawInstallTargetResolution::PinnedRelocation(contract) => {
+            let release =
+                npm_registry::resolve_openclaw_release_target(node, contract.version()).await?;
+            if release.node_requirement() != contract.node_requirement() {
+                return Err(format!(
+                    "OpenClaw {} no longer matches the Node.js contract captured before relocation (expected {}, registry reported {}). Complete relocation with a registry that serves the original package contract, or finish the move and update OpenClaw explicitly afterwards.",
+                    contract.version(),
+                    contract.node_requirement(),
+                    release.node_requirement(),
+                ));
+            }
+            release
+        }
+    };
     let node_requirement = NodeRuntimeRequirement::parse(
         release.node_requirement(),
         NodeRequirementSource::RegistryPackage,
@@ -1978,7 +2019,11 @@ pub(crate) async fn target_openclaw_node_requirement() -> Result<NodeRuntimeRequ
     let Some(path) = node.path.as_deref().map(Path::new) else {
         return Ok(fallback);
     };
-    Ok(target_openclaw_install_target(path).await?.node_requirement)
+    Ok(
+        target_openclaw_install_target(path, OpenclawInstallTargetResolution::Latest)
+            .await?
+            .node_requirement,
+    )
 }
 
 /// Setup has two runtime contracts: an existing local OpenClaw package is
@@ -3997,11 +4042,7 @@ async fn validate_staged_openclaw_package(
             requirement.expression()
         ));
     }
-    if !crate::commands::system::validate_openclaw_entry_with_node(&launcher, node_path).await {
-        return Err(format!(
-            "Staged OpenClaw {version} failed the selected Node.js executable smoke check"
-        ));
-    }
+    crate::commands::system::validate_openclaw_runtime_payload(&launcher, node_path).await?;
     Ok(())
 }
 
@@ -4550,6 +4591,7 @@ fn verify_relocated_openclaw_prefix(binary: &Path, expected_prefix: &Path) -> Re
 struct OpenclawRelocationRequest {
     expected_npm_prefix: Option<PathBuf>,
     effective_target: Option<PathBuf>,
+    package_contract: Option<paths::OpenclawRelocationContract>,
 }
 
 impl OpenclawRelocationRequest {
@@ -4562,7 +4604,12 @@ impl OpenclawRelocationRequest {
         Ok(Self {
             expected_npm_prefix: layout.npm_prefix,
             effective_target: None,
+            package_contract: layout.openclaw_relocation_contract,
         })
+    }
+
+    fn package_contract(&self) -> Option<&paths::OpenclawRelocationContract> {
+        self.package_contract.as_ref()
     }
 
     fn freeze_target(&mut self, target: &Path) -> Result<(), String> {
@@ -4725,7 +4772,8 @@ async fn install_openclaw_impl_inner(
         .as_deref()
         .map(Path::new)
         .ok_or("The bootstrap Node.js runtime did not report an executable path")?;
-    let target = target_openclaw_install_target(bootstrap_node).await?;
+    let target_resolution = OpenclawInstallTargetResolution::for_install(mode, relocation.as_ref());
+    let target = target_openclaw_install_target(bootstrap_node, target_resolution).await?;
     let (compatible_node, _npm) =
         ensure_installable_node_runtime(&app, step, &target.node_requirement)
             .await?
@@ -5429,6 +5477,35 @@ mod tests {
             None
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn relocation_uses_the_persisted_package_contract_instead_of_latest() {
+        let contract = paths::OpenclawRelocationContract::new(
+            "2026.7.1-2".to_string(),
+            ">=24.15.0 <25".to_string(),
+        )
+        .unwrap();
+        let relocation = OpenclawRelocationRequest {
+            expected_npm_prefix: None,
+            effective_target: None,
+            package_contract: Some(contract.clone()),
+        };
+
+        assert_eq!(
+            OpenclawInstallTargetResolution::for_install(
+                OpenclawInstallMode::Relocate,
+                Some(&relocation),
+            ),
+            OpenclawInstallTargetResolution::PinnedRelocation(contract)
+        );
+        assert_eq!(
+            OpenclawInstallTargetResolution::for_install(
+                OpenclawInstallMode::Normal,
+                Some(&relocation),
+            ),
+            OpenclawInstallTargetResolution::Latest
+        );
     }
 
     #[tokio::test]

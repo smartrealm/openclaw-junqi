@@ -23,6 +23,7 @@ tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
 base64 = "0.22"
 image = { version = "0.25.10", default-features = false, features = ["png", "webp"] }
+qrcode = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 json5 = "1.3"

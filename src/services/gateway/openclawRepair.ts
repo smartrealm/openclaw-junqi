@@ -18,6 +18,63 @@ export function gatewayMigrationRetryDelayMs(error: string, now = Date.now()): n
   return Math.min(MAX_MIGRATION_RETRY_DELAY_MS, Math.max(0, timestamp - now + 1_000));
 }
 
+export interface GatewayMigrationRetryCoordinator {
+  wait: (delayMs: number) => Promise<boolean>;
+  cancel: () => boolean;
+}
+
+export interface GatewayMigrationRetryTimer {
+  schedule: (callback: () => void, delayMs: number) => number;
+  cancel: (timer: number) => void;
+}
+
+interface PendingGatewayMigrationRetry {
+  timer: number;
+  resolve: (proceed: boolean) => void;
+}
+
+const browserMigrationRetryTimer: GatewayMigrationRetryTimer = {
+  schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+  cancel: (timer) => window.clearTimeout(timer),
+};
+
+/**
+ * Owns the single delayed restart allowed while OpenClaw holds its startup
+ * migration lease. A verified selected Gateway can cancel the wait before its
+ * expiry, preventing a stale retry from taking over a service that recovered.
+ */
+export function createGatewayMigrationRetryCoordinator(
+  timer: GatewayMigrationRetryTimer = browserMigrationRetryTimer,
+): GatewayMigrationRetryCoordinator {
+  let pending: PendingGatewayMigrationRetry | null = null;
+
+  const cancel = (): boolean => {
+    if (!pending) return false;
+    const active = pending;
+    pending = null;
+    timer.cancel(active.timer);
+    active.resolve(false);
+    return true;
+  };
+
+  return {
+    wait: (delayMs) => {
+      if (delayMs <= 0) return Promise.resolve(true);
+      cancel();
+      return new Promise<boolean>((resolve) => {
+        const active: PendingGatewayMigrationRetry = { timer: 0, resolve };
+        pending = active;
+        active.timer = timer.schedule(() => {
+          if (pending !== active) return;
+          pending = null;
+          resolve(true);
+        }, delayMs);
+      });
+    },
+    cancel,
+  };
+}
+
 export interface OpenClawRepairCoordinator {
   run: () => Promise<boolean>;
   isRepairing: () => boolean;

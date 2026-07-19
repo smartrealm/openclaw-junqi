@@ -1000,7 +1000,7 @@ fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
     let _ = app.emit("gateway-log", &line);
 }
 
-async fn wait_for_selected_gateway(
+pub(crate) async fn wait_for_selected_gateway(
     port: u16,
     config_path: &std::path::Path,
     timeout_secs: u64,

@@ -239,7 +239,7 @@ export function OpenClawUpdatePanel({
             <span className="inline-flex min-w-0 items-center gap-1.5">
               <TerminalSquare size={13} className="shrink-0" />
               <span className="truncate">
-                {update.logs[update.logs.length - 1] || t('setup.openclawUpdate.preparing')}
+                {update.statusMessage || t('setup.openclawUpdate.preparing')}
               </span>
             </span>
             <span className="shrink-0 font-mono tabular-nums">

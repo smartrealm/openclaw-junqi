@@ -7,6 +7,7 @@ pub mod agent_task_pty;
 pub mod agent_workspace_storage;
 pub mod app_settings;
 pub mod builtin_skills;
+pub mod channel_enrollment;
 pub mod config;
 pub mod console;
 pub mod diagnostic_output;
@@ -21,6 +22,7 @@ pub mod gateway_logs;
 pub mod gateway_rescue;
 pub(crate) mod gateway_service;
 pub mod gateway_supervisor;
+pub(crate) mod gateway_update_handoff;
 pub mod git_neu;
 #[cfg(any(windows, test))]
 pub(crate) mod git_runtime;

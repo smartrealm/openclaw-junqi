@@ -944,6 +944,10 @@ pub(crate) async fn start_docker_gateway_locked(
     let token_env = format!("OPENCLAW_GATEWAY_TOKEN={}", token);
     let state_dir_env = format!("OPENCLAW_STATE_DIR={}", mapping.runtime_state_dir);
     let config_path_env = format!("OPENCLAW_CONFIG_PATH={}", mapping.runtime_config_path);
+    let locale_env = format!(
+        "OPENCLAW_LOCALE={}",
+        crate::commands::system::managed_openclaw_locale()
+    );
 
     let mut run_args = vec![
         "run".to_string(),
@@ -959,6 +963,8 @@ pub(crate) async fn start_docker_gateway_locked(
         token_env,
         "-e".to_string(),
         "OPENCLAW_GATEWAY_BIND=lan".to_string(),
+        "-e".to_string(),
+        locale_env,
         "-e".to_string(),
         state_dir_env,
         "-e".to_string(),

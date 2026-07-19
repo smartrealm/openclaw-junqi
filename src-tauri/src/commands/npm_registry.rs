@@ -665,7 +665,53 @@ pub(crate) async fn resolve_latest_openclaw_release_target(
         match source.latest_metadata(&client).await {
             Ok(metadata) => {
                 let version = metadata.version;
-                require_valid_openclaw_package_version(&version)?;
+                return resolve_pinned_openclaw_release_target(&client, &policy, &version).await;
+            }
+            Err(error) => failures.push(format!("{}: {error}", source.label())),
+        }
+    }
+    Err(format!(
+        "Unable to determine the target OpenClaw package version from the selected npm source: {}",
+        failures.join("; ")
+    ))
+}
+
+/// Resolve an exact OpenClaw release through the selected npm policy.
+///
+/// Runtime relocation uses this rather than `latest`: moving an npm prefix
+/// must reproduce the installed package contract, not silently upgrade it.
+/// Public registry fallbacks are retained only when they publish the exact
+/// same version and Node.js requirement.
+pub(crate) async fn resolve_openclaw_release_target(
+    node: &Path,
+    version: &str,
+) -> Result<OpenclawReleaseTarget, String> {
+    require_valid_openclaw_package_version(version)?;
+    let client = reqwest::Client::builder()
+        .connect_timeout(REGISTRY_PROBE_TIMEOUT)
+        .timeout(REGISTRY_PROBE_TIMEOUT)
+        .user_agent("JunQi Desktop npm metadata resolver")
+        .build()
+        .map_err(|error| format!("Failed to initialize npm metadata resolver: {error}"))?;
+    let policy = resolve_effective_npm_registry_policy(node).await?;
+    resolve_pinned_openclaw_release_target(&client, &policy, version).await
+}
+
+async fn resolve_pinned_openclaw_release_target(
+    client: &reqwest::Client,
+    policy: &EffectiveNpmRegistryPolicy,
+    version: &str,
+) -> Result<OpenclawReleaseTarget, String> {
+    require_valid_openclaw_package_version(version)?;
+    let mut failures = Vec::new();
+    for (index, source) in policy.sources().iter().enumerate() {
+        match source.metadata_for_version(client, version).await {
+            Ok(metadata) if metadata.version != version => failures.push(format!(
+                "{}: requested OpenClaw {version}, received {}",
+                source.label(),
+                metadata.version
+            )),
+            Ok(metadata) => {
                 let node_requirement = metadata.node_requirement.ok_or_else(|| {
                     format!(
                         "OpenClaw {version} does not publish an engines.node requirement; installation was not started"
@@ -677,12 +723,9 @@ pub(crate) async fn resolve_latest_openclaw_release_target(
                     ));
                 }
 
-                // A fallback is allowed only when it explicitly serves the
-                // exact same pinned package contract. This keeps a later npm
-                // retry from silently changing the Node.js requirement.
                 let mut sources = vec![source.clone()];
-                for fallback in policy.sources().iter().skip(1) {
-                    if let Ok(candidate) = fallback.metadata_for_version(&client, &version).await {
+                for fallback in policy.sources().iter().skip(index + 1) {
+                    if let Ok(candidate) = fallback.metadata_for_version(client, version).await {
                         if candidate.version == version
                             && candidate.node_requirement.as_deref()
                                 == Some(node_requirement.as_str())
@@ -692,7 +735,7 @@ pub(crate) async fn resolve_latest_openclaw_release_target(
                     }
                 }
                 return Ok(OpenclawReleaseTarget {
-                    version,
+                    version: version.to_string(),
                     node_requirement,
                     sources,
                 });
@@ -701,7 +744,7 @@ pub(crate) async fn resolve_latest_openclaw_release_target(
         }
     }
     Err(format!(
-        "Unable to determine the target OpenClaw package version from the selected npm source: {}",
+        "Unable to resolve OpenClaw {version} from the selected npm source: {}",
         failures.join("; ")
     ))
 }
@@ -1029,5 +1072,27 @@ mod tests {
         assert!(is_valid_openclaw_package_version("2026.7.1-beta.2"));
         assert!(!is_valid_openclaw_package_version("latest"));
         assert!(!is_valid_openclaw_package_version("2026.7.1/../../other"));
+    }
+
+    #[tokio::test]
+    async fn exact_release_target_uses_the_requested_version_contract() {
+        let version = "2026.7.1-2";
+        let node_requirement = ">=24.15.0 <25";
+        let server = TestRegistryServer::spawn(
+            NpmRegistryKind::Official,
+            &latest_package_metadata(version, node_requirement),
+        );
+        let client = reqwest::Client::builder().build().unwrap();
+        let policy = EffectiveNpmRegistryPolicy {
+            sources: vec![NpmPackageSource::public(server.registry)],
+        };
+
+        let target = resolve_pinned_openclaw_release_target(&client, &policy, version)
+            .await
+            .unwrap();
+
+        server.join();
+        assert_eq!(target.version(), version);
+        assert_eq!(target.node_requirement(), node_requirement);
     }
 }

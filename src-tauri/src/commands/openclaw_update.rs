@@ -1,10 +1,9 @@
 use crate::commands::{
-    gateway,
+    gateway_update_handoff::GatewayUpdateHandoff,
     npm_registry::{self, NpmPackageSource, NpmRegistryKind},
     setup, setup_progress, system,
 };
 use crate::paths;
-use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode};
 use crate::state::GatewayProcess;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -325,12 +324,12 @@ async fn run_openclaw_command(
         .map_err(|error| format!("Failed to run OpenClaw {}: {}", command_name, error))
 }
 
-fn emit_update_progress(app: &AppHandle, message: &str, progress: f64) {
-    setup_progress::emit(app, UPDATE_PROGRESS_STEP, message, progress);
-}
-
 fn emit_update_progress_keyed(app: &AppHandle, message: &str, key: &str, progress: f64) {
     setup_progress::emit_keyed(app, UPDATE_PROGRESS_STEP, message, key, progress);
+}
+
+fn emit_update_diagnostic(app: &AppHandle, message: &str, progress: f64) {
+    setup_progress::emit_diagnostic(app, UPDATE_PROGRESS_STEP, message, progress);
 }
 
 fn emit_update_error(app: &AppHandle, message: &str, progress: Option<f64>) {
@@ -361,7 +360,7 @@ where
                 let (message, key) = phase.event();
                 emit_update_progress_keyed(&app, message, key, observation.progress);
             }
-            emit_update_progress(&app, &safe_line, observation.progress);
+            emit_update_diagnostic(&app, &safe_line, observation.progress);
         }
     }
     Ok(output)
@@ -521,6 +520,12 @@ async fn validate_updated_runtime_contract(
     let node =
         setup::ensure_compatible_node_runtime(app, UPDATE_PROGRESS_STEP, &installed_requirement)
             .await?;
+    let node_path = node
+        .path
+        .as_deref()
+        .map(std::path::Path::new)
+        .ok_or("The selected Node.js runtime did not report an executable path")?;
+    system::validate_openclaw_runtime_payload(binary, node_path).await?;
     system::native_openclaw_runtime(binary.to_path_buf(), &node)
 }
 
@@ -937,42 +942,6 @@ pub async fn check_openclaw_update(app: AppHandle) -> Result<OpenclawUpdateStatu
     }
 }
 
-async fn stop_managed_gateway(state: &GatewayProcess) -> Result<bool, String> {
-    let managed = state.runtime_snapshot()?.mode == GatewayRuntimeMode::ManagedChild;
-    if !managed {
-        return Ok(false);
-    }
-
-    let child = state
-        .child
-        .lock()
-        .map_err(|error| error.to_string())?
-        .take();
-    if let Some(mut child) = child {
-        crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
-    }
-    state.transition(
-        Some(GatewayLifecycle::Stopped),
-        Some(GatewayRuntimeMode::None),
-        None,
-        "openclaw_update: managed child stopped before package replacement",
-    );
-    Ok(true)
-}
-
-async fn restore_managed_gateway(
-    app: AppHandle,
-    state: State<'_, GatewayProcess>,
-    should_restore: bool,
-) -> Result<bool, String> {
-    if !should_restore {
-        return Ok(false);
-    }
-    gateway::start_gateway_locked(app, state, None)
-        .await
-        .map(|status| status.running)
-}
-
 #[tauri::command]
 pub async fn update_openclaw(
     app: AppHandle,
@@ -1094,15 +1063,23 @@ pub async fn update_openclaw(
     }
     emit_update_progress_keyed(
         &app,
-        "Stopping the managed Gateway if necessary...",
-        "setup.openclawUpdate.progress.stoppingGateway",
+        "Preparing a safe Gateway update handoff...",
+        "setup.openclawUpdate.progress.preparingGatewayHandoff",
         0.45,
     );
-    let restore_gateway = stop_managed_gateway(&state).await?;
+    let handoff = match GatewayUpdateHandoff::prepare(&state, &runtime).await {
+        Ok(handoff) => handoff,
+        Err(error) => {
+            emit_update_error(&app, &error, Some(0.45));
+            return Err(error);
+        }
+    };
 
     // The update itself must use the exact source that supplied both the
-    // dry-run target and its engines.node contract. Retrying a different
-    // registry here would invalidate that preflight decision.
+    // dry-run target and its engines.node contract. The handoff owns the
+    // selected Gateway during replacement, so `--no-restart` prevents the
+    // official updater from racing a second service start before validation.
+    // Retrying a different registry here would invalidate preflight.
     let selected_source = metadata_source;
     let output = run_openclaw_command_streaming(
         &app,
@@ -1162,14 +1139,28 @@ pub async fn update_openclaw(
             .map(|registry| registry.kind);
     }
 
-    let mut updated_runtime = None;
-    if result.success {
+    let update_command_succeeded = result.success;
+    let mut recovery_runtime = None;
+    if update_command_succeeded {
         match validate_updated_runtime_contract(&app, &binary, target_contract.as_ref()).await {
-            Ok(runtime) => updated_runtime = Some(runtime),
+            Ok(runtime) => recovery_runtime = Some(runtime),
             Err(error) => mark_update_failure(
                 &mut result,
                 format!("OpenClaw package was updated but runtime validation failed: {error}"),
             ),
+        }
+    } else {
+        // A non-zero updater exit does not prove that npm left the installed
+        // package unusable. Validate the package before restoring an owner;
+        // this recovers a transient registry error without ever launching a
+        // partial package.
+        match validate_updated_runtime_contract(&app, &binary, None).await {
+            Ok(runtime) => recovery_runtime = Some(runtime),
+            Err(validation_error) => {
+                result.gateway_error = Some(format!(
+                    "OpenClaw update failed and the installed package cannot be validated for Gateway recovery: {validation_error}"
+                ));
+            }
         }
     }
     if result.success && result.mode.as_deref() == Some("npm") && target_contract.is_none() {
@@ -1178,8 +1169,11 @@ pub async fn update_openclaw(
             "OpenClaw performed an npm package update without a validated target contract",
         );
     }
-    if result.success && paths::terminal_integration_requested() {
-        match updated_runtime.as_ref() {
+    if update_command_succeeded
+        && recovery_runtime.is_some()
+        && paths::terminal_integration_requested()
+    {
+        match recovery_runtime.as_ref() {
             Some(runtime) => {
                 if let Err(error) = crate::commands::terminal_integration::sync_terminal_integration_with_native_runtime(runtime) {
                     mark_update_failure(
@@ -1201,11 +1195,14 @@ pub async fn update_openclaw(
         "setup.openclawUpdate.progress.restoringGateway",
         0.88,
     );
-    match restore_managed_gateway(app.clone(), state.clone(), restore_gateway).await {
-        Ok(restarted) => {
-            result.gateway_restarted = restarted;
-            if restore_gateway && !restarted {
-                let error = "Gateway did not report ready after the OpenClaw update".to_string();
+    match recovery_runtime.as_ref() {
+        Some(runtime) => match handoff.restore(app.clone(), state.clone(), runtime).await {
+            Ok(restarted) => result.gateway_restarted = restarted,
+            Err(error) => {
+                handoff.mark_unrecoverable_failure(
+                    &state,
+                    "openclaw_update: Gateway recovery failed after package replacement",
+                );
                 result.gateway_error = Some(error.clone());
                 if result.success {
                     mark_update_failure(
@@ -1214,16 +1211,25 @@ pub async fn update_openclaw(
                     );
                 }
             }
-        }
-        Err(error) => {
+        },
+        None if handoff.requires_running_gateway_restore() => {
+            let error = result.gateway_error.clone().unwrap_or_else(|| {
+                "OpenClaw package could not be validated after update, so the previous Gateway owner was left stopped"
+                    .to_string()
+            });
+            handoff.mark_unrecoverable_failure(
+                &state,
+                "openclaw_update: package validation prevented Gateway recovery",
+            );
             result.gateway_error = Some(error.clone());
             if result.success {
                 mark_update_failure(
                     &mut result,
-                    format!("OpenClaw was updated, but Gateway recovery failed: {error}"),
+                    format!("OpenClaw was updated, but Gateway recovery was blocked: {error}"),
                 );
             }
         }
+        None => {}
     }
 
     let refreshed = system::detect_openclaw().await;

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createOpenClawRepairCoordinator, gatewayMigrationRetryDelayMs } from './openclawRepair';
+import {
+  createGatewayMigrationRetryCoordinator,
+  createOpenClawRepairCoordinator,
+  gatewayMigrationRetryDelayMs,
+} from './openclawRepair';
 
 test('OpenClaw repair is single-flight and publishes its global busy state', async () => {
   let resolveRepair!: (value: boolean) => void;
@@ -32,4 +36,25 @@ test('migration lock retry waits for the official expiry without unbounded sleep
   assert.equal(gatewayMigrationRetryDelayMs(error, now), 166_044);
   assert.equal(gatewayMigrationRetryDelayMs(error, Date.parse('2026-07-15T04:51:00.000Z')), 0);
   assert.equal(gatewayMigrationRetryDelayMs('unrelated failure', now), 0);
+});
+
+test('a verified Gateway cancels the pending startup-migration retry', async () => {
+  let scheduled: (() => void) | undefined;
+  const cancelled: number[] = [];
+  const coordinator = createGatewayMigrationRetryCoordinator({
+    schedule: (callback) => {
+      scheduled = callback;
+      return 17;
+    },
+    cancel: (timer) => cancelled.push(timer),
+  });
+
+  const waiting = coordinator.wait(60_000);
+  assert.equal(coordinator.cancel(), true);
+  assert.equal(await waiting, false);
+  assert.deepEqual(cancelled, [17]);
+  assert.equal(coordinator.cancel(), false);
+
+  scheduled?.();
+  assert.equal(coordinator.cancel(), false);
 });

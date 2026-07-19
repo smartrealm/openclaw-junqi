@@ -22,9 +22,10 @@ test('OpenClaw update status uses semantic icon colors', () => {
   assert.match(source, /data-state=\{indicator\}/);
 });
 
-test('OpenClaw updater streams npm download detail into monotonic UI progress', () => {
+test('OpenClaw updater keeps npm output as diagnostics without replacing localized progress', () => {
   assert.match(updaterSource, /npm_config_loglevel", "http"/);
   assert.match(updaterSource, /lower\.contains\("npm http fetch"\)/);
   assert.match(updaterSource, /fetch_max\(candidate, Ordering::Relaxed\)/);
-  assert.match(updaterSource, /emit_update_progress\(&app, &safe_line, observation\.progress\)/);
+  assert.match(updaterSource, /emit_update_diagnostic\(&app, &safe_line, observation\.progress\)/);
+  assert.match(source, /update\.statusMessage \|\| t\('setup\.openclawUpdate\.preparing'\)/);
 });

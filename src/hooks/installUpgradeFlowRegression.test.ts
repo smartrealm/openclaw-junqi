@@ -7,6 +7,7 @@ const setupFlow = readFileSync(new URL('./useSetupFlow.ts', import.meta.url), 'u
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const storagePanel = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const storageCommand = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
+const setupCommand = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
 const updater = readFileSync(new URL('../../src-tauri/src/commands/openclaw_update.rs', import.meta.url), 'utf8');
 
 test('BUG-IU-01 fresh storage requires onboarding before Gateway start', () => {
@@ -22,7 +23,9 @@ test('BUG-IU-01 fresh storage requires onboarding before Gateway start', () => {
 
 test('BUG-IU-02 OpenClaw updater has one Gateway lifecycle owner', () => {
   assert.match(updater, /&\["update", "--yes", "--no-restart", "--json"\]/);
-  assert.match(updater, /stop_managed_gateway\(&state\)[\s\S]*restore_managed_gateway/);
+  assert.match(updater, /GatewayUpdateHandoff::prepare\(&state, &runtime\)/);
+  assert.match(updater, /handoff\.restore\(app\.clone\(\), state\.clone\(\), runtime\)/);
+  assert.match(updater, /handoff\.mark_unrecoverable_failure/);
   assert.doesNotMatch(updater, /reconcile_installed_update_with_restart_failure/);
   assert.doesNotMatch(updater, /GATEWAY_RESTART_FAILURE_MARKERS/);
 });
@@ -70,4 +73,12 @@ test('BUG-CPI-04 package updates require a target Node contract before Gateway s
   assert.match(completion, /validate_updated_runtime_contract/);
   assert.match(completion, /sync_terminal_integration_with_native_runtime/);
   assert.match(completion, /Gateway recovery failed[\s\S]*mark_update_failure/);
+});
+
+test('BUG-CPI-05 npm-prefix relocation preserves the installed package contract', () => {
+  assert.match(storageCommand, /OpenclawRelocationContract::new/);
+  assert.match(setupCommand, /enum OpenclawInstallTargetResolution/);
+  assert.match(setupCommand, /PinnedRelocation\(paths::OpenclawRelocationContract\)/);
+  assert.match(setupCommand, /resolve_openclaw_release_target\(node, contract\.version\(\)\)/);
+  assert.match(setupCommand, /OpenclawInstallTargetResolution::for_install\(mode, relocation\.as_ref\(\)\)/);
 });

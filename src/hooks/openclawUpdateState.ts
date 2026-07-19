@@ -8,6 +8,7 @@ export interface OpenclawUpdateState {
   result: OpenclawUpdateResult | null;
   error: string | null;
   progress: number | null;
+  statusMessage: string | null;
   logs: string[];
 }
 
@@ -17,7 +18,8 @@ export type OpenclawUpdateAction =
   | { type: 'updateStarted' }
   | { type: 'updateCompleted'; result: OpenclawUpdateResult; status: OpenclawUpdateStatus | null }
   | { type: 'operationFailed'; error: string }
-  | { type: 'progressReceived'; progress: number | null; message: string };
+  | { type: 'progressReceived'; progress: number | null; message: string }
+  | { type: 'diagnosticReceived'; message: string };
 
 export const initialOpenclawUpdateState: OpenclawUpdateState = {
   phase: 'idle',
@@ -25,6 +27,7 @@ export const initialOpenclawUpdateState: OpenclawUpdateState = {
   result: null,
   error: null,
   progress: null,
+  statusMessage: null,
   logs: [],
 };
 
@@ -43,6 +46,7 @@ export function openclawUpdateReducer(
         result: null,
         error: null,
         progress: 0,
+        statusMessage: null,
         logs: [],
       };
     case 'checkCompleted':
@@ -60,6 +64,7 @@ export function openclawUpdateReducer(
         result: null,
         error: null,
         progress: 0,
+        statusMessage: null,
         logs: [],
       };
     case 'updateCompleted':
@@ -69,6 +74,7 @@ export function openclawUpdateReducer(
         result: action.result,
         error: null,
         progress: 100,
+        statusMessage: state.statusMessage,
         logs: state.logs,
       };
     case 'operationFailed':
@@ -81,7 +87,14 @@ export function openclawUpdateReducer(
       const nextProgress = action.progress == null
         ? state.progress
         : Math.max(state.progress ?? 0, action.progress);
-      return { ...state, progress: nextProgress, logs };
+      return { ...state, progress: nextProgress, statusMessage: action.message, logs };
+    }
+    case 'diagnosticReceived': {
+      const last = state.logs[state.logs.length - 1];
+      const logs = last === action.message
+        ? state.logs
+        : [...state.logs, action.message].slice(-MAX_UPDATE_LOG_LINES);
+      return { ...state, logs };
     }
     default:
       return state;

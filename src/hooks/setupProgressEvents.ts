@@ -6,6 +6,7 @@ export interface SetupProgressEvent {
   key: string | null;
   params: Record<string, string>;
   progress: number | null;
+  diagnostic: boolean;
   error: string | null;
   status: 'running' | 'completed' | 'failed' | null;
 }
@@ -19,7 +20,16 @@ const SETUP_LOG_RULES: ReadonlyArray<{ level: SetupLogLevel; pattern: RegExp }> 
 export function normalizeSetupProgressPayload(payload: unknown): SetupProgressEvent | null {
   if (typeof payload === "string") {
     const message = payload.trim();
-    return message ? { step: null, message, key: null, params: {}, progress: null, error: null, status: null } : null;
+    return message ? {
+      step: null,
+      message,
+      key: null,
+      params: {},
+      progress: null,
+      diagnostic: false,
+      error: null,
+      status: null,
+    } : null;
   }
   if (!payload || typeof payload !== "object") return null;
   const value = payload as Record<string, unknown>;
@@ -39,6 +49,7 @@ export function normalizeSetupProgressPayload(payload: unknown): SetupProgressEv
     key: typeof value.key === "string" && value.key ? value.key : null,
     params,
     progress: rawProgress == null ? null : Math.max(0, Math.min(100, Math.round(rawProgress * 100))),
+    diagnostic: value.diagnostic === true,
     error: typeof value.error === "string" && value.error ? value.error : null,
     status: value.status === 'running' || value.status === 'completed' || value.status === 'failed'
       ? value.status

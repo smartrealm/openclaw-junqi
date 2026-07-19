@@ -2639,11 +2639,31 @@
       "connectionTimeout": "Gateway 已启动，但配置向导连接超时。",
       "failed": "OpenClaw 配置向导执行失败。",
       "missingStep": "OpenClaw 配置向导没有返回下一步。",
+      "sessionExpired": "OpenClaw 配置会话已失效，请重新连接。",
+      "stepSynchronizing": "正在恢复 OpenClaw 配置会话，请稍候。",
+      "alreadyRunning": "另一个 OpenClaw 配置会话仍在运行，请完成或关闭后重试。",
+      "requestTimeout": "OpenClaw 配置请求等待超时，请重新连接后继续。",
       "retry": "重试",
       "run": "执行",
       "confirm": "确认并继续",
       "textInput": "OpenClaw 配置值",
-      "readyForStep": "此步骤由 OpenClaw 执行。"
+      "readyForStep": "此步骤由 OpenClaw 执行。",
+      "channelEnrollment": {
+        "title": "扫描二维码连接飞书",
+        "subtitle": "使用手机扫码创建应用，JunQi 会继续完成 OpenClaw 官方配置。",
+        "description": "扫码会创建并验证飞书应用；凭据只会临时交给 OpenClaw 官方向导，不会显示在 JunQi 页面中。",
+        "domain": "服务区域",
+        "feishu": "飞书",
+        "lark": "Lark",
+        "start": "显示二维码",
+        "waiting": "请使用飞书或 Lark 手机端扫描二维码。",
+        "connected": "已验证，正在继续 OpenClaw 配置。",
+        "finalizing": "正在将已验证的凭据交给 OpenClaw 官方向导…",
+        "denied": "手机端拒绝了此次授权。请重新生成二维码。",
+        "expired": "二维码已过期。请重新生成后扫码。",
+        "error": "二维码服务暂时不可用。请重新生成后重试。",
+        "handoffFailed": "扫码已验证，但 OpenClaw 配置未能继续。请重新生成二维码后重试。"
+      }
     }
   },
   "perf": {
@@ -3284,7 +3304,7 @@
   "setup.openclawUpdate.progress.preparing": "正在准备更新 OpenClaw…",
   "setup.openclawUpdate.progress.targetContract": "正在解析目标 OpenClaw 的运行时要求…",
   "setup.openclawUpdate.progress.targetNode": "目标 OpenClaw 要求 Node.js {{requirement}}，正在验证更新运行时…",
-  "setup.openclawUpdate.progress.stoppingGateway": "正在按需停止托管的 Gateway…",
+  "setup.openclawUpdate.progress.preparingGatewayHandoff": "正在准备安全的 Gateway 更新交接…",
   "setup.openclawUpdate.progress.restoringGateway": "正在恢复 Gateway…",
   "setup.openclawUpdate.progress.runningUpdater": "正在通过 {{registry}} 运行官方更新器…",
   "setup.openclawUpdate.progress.resolvingPackage": "正在解析 OpenClaw 软件包依赖…",

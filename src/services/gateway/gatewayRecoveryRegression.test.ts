@@ -519,6 +519,20 @@ test('migration-lock failures wait for OpenClaw expiry before another restart at
   assert.match(app, /cancelGatewayMigrationRetry/);
 });
 
+test('BUG-GSC11 an authenticated external Gateway cancels a stale migration retry', () => {
+  const app = source('src/App.tsx');
+  const adapter = source('src/api/tauri-adapter.ts');
+  const manager = source('src/services/gateway/GatewayConnectionManager.ts');
+  const recovery = source('src/services/gateway/openclawRepair.ts');
+
+  assert.match(adapter, /probeSelectedGatewayReady/);
+  assert.match(adapter, /invoke<boolean>\('probe_selected_gateway'/);
+  assert.match(manager, /selectedGatewayReady/);
+  assert.match(manager, /type: 'SELECTED_GATEWAY_READY'/);
+  assert.match(app, /if \(snap\.selectedGatewayReady\)[\s\S]*cancelGatewayMigrationRetry\(\)/);
+  assert.match(recovery, /createGatewayMigrationRetryCoordinator/);
+});
+
 test('Windows recovery terminates the owned process tree before a new Gateway starts', () => {
   const supervisor = source('src-tauri/src/commands/gateway_supervisor.rs');
   const processControl = source('src-tauri/src/commands/process_control.rs');

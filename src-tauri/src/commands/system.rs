@@ -132,6 +132,7 @@ pub(crate) struct OpenclawCommandContext {
     config_path: PathBuf,
     working_dir: Option<PathBuf>,
     search_path: String,
+    locale: &'static str,
     npm_prefix: Option<PathBuf>,
     npm_cache_dir: Option<PathBuf>,
 }
@@ -185,6 +186,7 @@ impl OpenclawCommandContext {
             config_path,
             working_dir,
             search_path: openclaw_search_path(),
+            locale: managed_openclaw_locale(),
             npm_prefix,
             npm_cache_dir,
         }
@@ -220,6 +222,7 @@ impl OpenclawCommandContext {
             .env("PATH", &self.search_path)
             .env("OPENCLAW_STATE_DIR", &self.state_dir)
             .env("OPENCLAW_CONFIG_PATH", &self.config_path)
+            .env("OPENCLAW_LOCALE", self.locale)
             .env("OPENCLAW_NO_RESPAWN", "1")
             .env("NO_COLOR", "1");
         // Keep package-manager child operations on the same user-selected
@@ -237,6 +240,23 @@ impl OpenclawCommandContext {
 
 fn stable_openclaw_working_dir() -> Option<PathBuf> {
     paths::stable_openclaw_working_dir()
+}
+
+/// OpenClaw resolves classic-wizard copy from its process environment, not
+/// from the WebSocket client's locale field. Keep the managed Gateway in step
+/// with JunQi's persisted language without changing the user's shell
+/// environment. OpenClaw currently ships Chinese and English wizard catalogs;
+/// Arabic therefore uses its documented English fallback while JunQi's own UI
+/// remains Arabic.
+pub(crate) fn managed_openclaw_locale() -> &'static str {
+    openclaw_locale_for_application_language(&crate::commands::app_settings::application_language())
+}
+
+fn openclaw_locale_for_application_language(language: &str) -> &'static str {
+    match language {
+        "zh" => "zh-CN",
+        _ => "en-US",
+    }
 }
 
 impl NativeOpenclawRuntime {
@@ -1392,6 +1412,93 @@ pub(crate) async fn validate_openclaw_entry_with_node(binary: &Path, node_path: 
     result
 }
 
+/// Validate the complete file payload declared by newer OpenClaw npm packages.
+///
+/// OpenClaw's post-install inventory is generated with the published package.
+/// Verifying it after an install or update catches interrupted extractions that
+/// can leave `package.json` and the launcher intact while a lazy-loaded module
+/// is missing. Older package versions do not publish this optional inventory,
+/// so their existing package and executable checks remain the compatibility
+/// contract.
+pub(crate) fn validate_openclaw_package_payload(binary: &Path) -> Result<(), String> {
+    if !has_openclaw_package_contract(binary) {
+        return Err(format!(
+            "OpenClaw package contract is incomplete for {}",
+            binary.display()
+        ));
+    }
+    let package_dir = openclaw_package_dir(binary).ok_or_else(|| {
+        format!(
+            "OpenClaw package directory could not be resolved for {}",
+            binary.display()
+        )
+    })?;
+    let inventory_path = package_dir.join("dist").join("postinstall-inventory.json");
+    if !inventory_path.exists() {
+        return Ok(());
+    }
+
+    let raw = std::fs::read_to_string(&inventory_path).map_err(|error| {
+        format!(
+            "OpenClaw package inventory could not be read at {}: {error}",
+            inventory_path.display()
+        )
+    })?;
+    let entries = serde_json::from_str::<Vec<String>>(&raw).map_err(|error| {
+        format!(
+            "OpenClaw package inventory is invalid at {}: {error}",
+            inventory_path.display()
+        )
+    })?;
+    if entries.is_empty() {
+        return Err(format!(
+            "OpenClaw package inventory is empty at {}",
+            inventory_path.display()
+        ));
+    }
+
+    for entry in entries {
+        let relative = Path::new(&entry);
+        let safe_relative = !entry.trim().is_empty()
+            && !relative.is_absolute()
+            && relative
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)));
+        if !safe_relative {
+            return Err(format!(
+                "OpenClaw package inventory contains an unsafe path: {entry}"
+            ));
+        }
+
+        let expected = package_dir.join(relative);
+        if !expected.is_file() {
+            return Err(format!(
+                "OpenClaw package inventory is incomplete: missing {}",
+                expected.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Check an installed package before it becomes a Gateway runtime. This keeps
+/// expensive full-inventory validation out of routine discovery while making
+/// install and update promotion fail closed on incomplete package payloads.
+pub(crate) async fn validate_openclaw_runtime_payload(
+    binary: &Path,
+    node_path: &Path,
+) -> Result<(), String> {
+    validate_openclaw_package_payload(binary)?;
+    if !validate_openclaw_entry_with_node(binary, node_path).await {
+        return Err(format!(
+            "OpenClaw JavaScript entry failed the selected Node.js smoke check for {}",
+            binary.display()
+        ));
+    }
+    Ok(())
+}
+
 async fn validate_openclaw_entry_with_selected_node(binary: &Path) -> bool {
     let requirement = match required_node_requirement_for_openclaw_binary(binary) {
         Ok(requirement) => requirement,
@@ -1815,15 +1922,18 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 #[cfg(test)]
 mod tests {
     use super::{
-        native_openclaw_runtime, native_openclaw_runtime_from_gateway_service_launch_contract,
+        managed_openclaw_locale, native_openclaw_runtime,
+        native_openclaw_runtime_from_gateway_service_launch_contract,
         node_requirement_for_openclaw_binary, normalize_npm_prefix, npm_cli_for_node,
-        npm_openclaw_entry, npm_prefix_for_openclaw_binary, openclaw_package_dir,
+        npm_openclaw_entry, npm_prefix_for_openclaw_binary,
+        openclaw_locale_for_application_language, openclaw_package_dir,
         openclaw_package_version_for_binary, parse_node_runtime_probe, parse_openclaw_version,
         path_text_for_display, read_openclaw_package_metadata,
         required_node_requirement_for_openclaw_binary,
         resolve_openclaw_binary_from_effective_prefixes, search_path_with_executable_parent,
-        strip_windows_verbatim_prefix, NodeRuntimeCandidateSelection, NodeRuntimeContract,
-        NodeStatus, NpmExecutionContext, NpmStatus, OpenclawCommandContext, RuntimeToolSource,
+        strip_windows_verbatim_prefix, validate_openclaw_package_payload,
+        NodeRuntimeCandidateSelection, NodeRuntimeContract, NodeStatus, NpmExecutionContext,
+        NpmStatus, OpenclawCommandContext, RuntimeToolSource,
     };
     use std::ffi::OsStr;
     use std::path::Path;
@@ -1860,6 +1970,33 @@ mod tests {
             serde_json::to_value(RuntimeToolSource::Custom).unwrap(),
             "custom"
         );
+    }
+
+    #[test]
+    fn managed_gateway_uses_an_openclaw_supported_wizard_locale() {
+        assert_eq!(openclaw_locale_for_application_language("zh"), "zh-CN");
+        assert_eq!(openclaw_locale_for_application_language("en"), "en-US");
+        assert_eq!(openclaw_locale_for_application_language("ar"), "en-US");
+    }
+
+    #[test]
+    fn command_context_exports_the_managed_openclaw_locale() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-openclaw-locale-context-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let context = OpenclawCommandContext::for_paths(
+            root.join("state"),
+            root.join("state").join("openclaw.json"),
+        );
+        let mut command = tokio::process::Command::new("openclaw");
+        context.apply(&mut command);
+        let configured_locale = command.as_std().get_envs().find_map(|(key, value)| {
+            (key == OsStr::new("OPENCLAW_LOCALE"))
+                .then_some(value)
+                .flatten()
+        });
+        assert_eq!(configured_locale, Some(OsStr::new(context.locale)));
     }
 
     #[test]
@@ -2264,6 +2401,41 @@ mod tests {
                 .expression(),
             "*"
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn package_payload_inventory_rejects_missing_or_unsafe_files() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-openclaw-package-inventory-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let prefix = root.join("prefix");
+        let binary = write_global_npm_openclaw(&prefix);
+        let package = openclaw_package_dir(&binary).unwrap();
+        let dist = package.join("dist");
+        std::fs::create_dir_all(&dist).unwrap();
+        std::fs::write(dist.join("runtime.js"), "export {};").unwrap();
+        std::fs::write(
+            dist.join("postinstall-inventory.json"),
+            r#"["openclaw.mjs", "dist/runtime.js"]"#,
+        )
+        .unwrap();
+
+        assert!(validate_openclaw_package_payload(&binary).is_ok());
+
+        std::fs::remove_file(dist.join("runtime.js")).unwrap();
+        let missing = validate_openclaw_package_payload(&binary).unwrap_err();
+        assert!(missing.contains("inventory is incomplete"));
+
+        std::fs::write(
+            dist.join("postinstall-inventory.json"),
+            r#"["../outside.js"]"#,
+        )
+        .unwrap();
+        let unsafe_path = validate_openclaw_package_payload(&binary).unwrap_err();
+        assert!(unsafe_path.contains("unsafe path"));
+
         let _ = std::fs::remove_dir_all(root);
     }
 

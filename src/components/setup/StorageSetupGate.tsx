@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
-import type { SetupLog } from '@/stores/app-store';
+import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 interface StorageSetupStatus {
@@ -124,6 +124,8 @@ function LocationRow({ icon, label, value, onChoose, disabled }: LocationRowProp
 
 export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false }: StorageSetupStepProps) {
   const { t } = useTranslation();
+  const storageDraft = useAppStore((state) => state.storageDraft);
+  const setStorageDraft = useAppStore((state) => state.setStorageDraft);
   const checkedRef = useRef(false);
   const mountedRef = useRef(false);
   const onReadyRef = useRef(onReady);
@@ -159,34 +161,36 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       }
       const result = await invoke<StorageSetupStatus>('get_storage_setup_status');
       if (!mountedRef.current) return;
-      if (result.configured && !forceConfigure) {
+      if (result.configured && !forceConfigure && !storageDraft) {
         onReadyRef.current({
           createdFresh: false,
           openclawRelocationRequired: result.openclawRelocationRequired,
         });
         return;
       }
+      const draft = storageDraft;
       setStatus(result);
       setError(result.runtimeReconfigurationRecoveryError ?? result.configurationError ?? null);
-      setTargetDir(forceConfigure ? result.stateDir : result.legacyDir);
-      setWorkspaceDir(result.workspaceDir);
-      setRuntimeDir(result.runtimeDir);
-      setNpmCacheDir(result.npmCacheDir ?? '');
-      setCustomNpmCache(Boolean(result.npmCacheDir));
-      setNpmPrefix(result.npmPrefix ?? '');
-      setCustomNpmPrefix(Boolean(result.npmPrefix));
-      setNodeRuntimeDir(result.nodeRuntimeDir ?? '');
-      setCustomNodeRuntime(result.customNodeRuntimeSupported && Boolean(result.nodeRuntimeDir));
-      setGitRuntimeDir(result.gitRuntimeDir ?? '');
-      setCustomGitRuntime(result.customGitRuntimeSupported && Boolean(result.gitRuntimeDir));
-      setTerminalIntegration(result.terminalIntegration);
-      setMigrateExisting(forceConfigure || result.legacyExists);
+      setTargetDir(draft?.targetDir ?? (forceConfigure ? result.stateDir : result.legacyDir));
+      setWorkspaceDir(draft?.workspaceDir ?? result.workspaceDir);
+      setRuntimeDir(draft?.runtimeDir ?? result.runtimeDir);
+      setNpmCacheDir(draft?.npmCacheDir ?? result.npmCacheDir ?? '');
+      setCustomNpmCache(draft?.customNpmCache ?? Boolean(result.npmCacheDir));
+      setNpmPrefix(draft?.npmPrefix ?? result.npmPrefix ?? '');
+      setCustomNpmPrefix(draft?.customNpmPrefix ?? Boolean(result.npmPrefix));
+      setNodeRuntimeDir(draft?.nodeRuntimeDir ?? result.nodeRuntimeDir ?? '');
+      setCustomNodeRuntime(result.customNodeRuntimeSupported && (draft?.customNodeRuntime ?? Boolean(result.nodeRuntimeDir)));
+      setGitRuntimeDir(draft?.gitRuntimeDir ?? result.gitRuntimeDir ?? '');
+      setCustomGitRuntime(result.customGitRuntimeSupported && (draft?.customGitRuntime ?? Boolean(result.gitRuntimeDir)));
+      setTerminalIntegration(draft?.terminalIntegration ?? result.terminalIntegration);
+      setMigrateExisting(draft?.migrateExisting ?? (forceConfigure || result.legacyExists));
+      setShowLocations(draft?.showLocations ?? false);
     } catch (cause) {
       if (mountedRef.current) setError(String(cause));
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [forceConfigure]);
+  }, [forceConfigure, storageDraft]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -284,6 +288,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
         },
       });
       if (!mountedRef.current) return;
+      setStorageDraft(null);
       onReadyRef.current({
         createdFresh: result.createdFresh,
         runtimeReconfigurationRequired: result.runtimeReconfigurationRequired,
@@ -294,7 +299,32 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     } finally {
       if (mountedRef.current) setApplying(false);
     }
-  }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+  }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+
+  const rememberDraft = useCallback(() => {
+    const draft: StorageSetupDraft = {
+      targetDir,
+      workspaceDir,
+      runtimeDir,
+      npmCacheDir,
+      customNpmCache,
+      npmPrefix,
+      customNpmPrefix,
+      nodeRuntimeDir,
+      customNodeRuntime,
+      gitRuntimeDir,
+      customGitRuntime,
+      terminalIntegration,
+      migrateExisting,
+      showLocations,
+    };
+    setStorageDraft(draft);
+  }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, showLocations, targetDir, terminalIntegration, workspaceDir]);
+
+  const handleBack = useCallback(() => {
+    if (status && !applying && !recoveringRuntime) rememberDraft();
+    onBack();
+  }, [applying, onBack, recoveringRuntime, rememberDraft, status]);
 
   const recoverRuntimeReconfiguration = useCallback(async () => {
     if (recoveringRuntime) return;
@@ -317,7 +347,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
         title={t('storage.title', '选择 OpenClaw 数据位置')}
         subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
-        previousAction={{ onClick: onBack }}
+        previousAction={{ onClick: handleBack }}
         nextAction={{ label: t('storage.loading', '正在读取存储信息…'), disabled: true, loading: true, icon: 'none' }}
       >
         <div className="flex min-h-[220px] items-center justify-center">
@@ -334,7 +364,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
         title={t('storage.loadFailed', '无法读取存储配置')}
         subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
-        previousAction={{ onClick: onBack }}
+        previousAction={{ onClick: handleBack }}
         nextAction={{ label: t('common.retry', '重试'), onClick: () => window.location.reload(), icon: 'none' }}
       >
         <section className="border-y border-aegis-border py-7">
@@ -352,7 +382,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
         title={t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}
         subtitle={t('storage.runtimeRecoverySubtitle', 'OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。')}
         logs={logs}
-        previousAction={{ onClick: onBack, disabled: recoveringRuntime }}
+        previousAction={{ onClick: handleBack, disabled: recoveringRuntime }}
         nextAction={{
           label: recoveringRuntime
             ? t('storage.runtimeRecoveryRunning', '正在恢复…')
@@ -395,7 +425,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       title={t('storage.title', '选择 OpenClaw 数据位置')}
       subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
       logs={logs}
-      previousAction={{ onClick: onBack, disabled: applying }}
+      previousAction={{ onClick: handleBack, disabled: applying }}
       nextAction={{
         label: applying ? progress?.message || t('storage.preparing', '正在准备新存储位置…') : actionLabel,
         onClick: () => void applyStorage(),

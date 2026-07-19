@@ -167,6 +167,17 @@ async function readGatewayPort(): Promise<number> {
 }
 
 /**
+ * Readiness for desktop recovery means more than a listener on the configured
+ * port: the endpoint must authenticate with the currently selected OpenClaw
+ * state/config pair. This prevents an unrelated local Gateway from cancelling
+ * recovery work or being adopted by the UI.
+ */
+async function probeSelectedGatewayReady(status: { running?: unknown; port?: unknown }): Promise<boolean> {
+  if (!status.running) return false;
+  return invoke<boolean>('probe_selected_gateway', { port: status.port });
+}
+
+/**
  * Invalidate the port cache, e.g. after the user saves a new port in settings.
  * The next call to readGatewayPort() will re-read from disk.
  */
@@ -300,7 +311,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     getStatus: async () => {
       try {
         const s: any = await invoke("gateway_status");
-        const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
+        const ready = await probeSelectedGatewayReady(s);
         return { running: ready, ready, error: null, logs: await readRecentGatewayLogs() };
       } catch (e: any) {
         return { running: false, ready: false, error: String(e), logs: await readRecentGatewayLogs() };
@@ -371,7 +382,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
         try {
           const s: any = await invoke("gateway_status");
           if (!isCurrent()) return;
-          const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
+          const ready = await probeSelectedGatewayReady(s);
           if (!isCurrent()) return;
           const logs = await readRecentGatewayLogs();
           if (!isCurrent()) return;

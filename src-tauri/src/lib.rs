@@ -6,6 +6,7 @@ mod tray;
 mod window_adaptation;
 mod window_sizing;
 
+use commands::channel_enrollment::ChannelEnrollmentRegistry;
 use state::GatewayProcess;
 use tauri::{Emitter, Manager, RunEvent};
 
@@ -41,6 +42,7 @@ pub fn run() {
         // auto-saves on exit). First-launch sizing is handled in setup() below.
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(GatewayProcess::new())
+        .manage(ChannelEnrollmentRegistry::default())
         .invoke_handler(tauri::generate_handler![
             // Gateway
             commands::gateway::start_gateway,
@@ -142,6 +144,11 @@ pub fn run() {
             commands::openclaw_channel::get_openclaw_channel_capabilities,
             commands::openclaw_channel::get_openclaw_channel_status,
             commands::openclaw_channel::get_openclaw_channel_logs,
+            commands::channel_enrollment::start_channel_enrollment,
+            commands::channel_enrollment::poll_channel_enrollment,
+            commands::channel_enrollment::read_channel_enrollment_credential,
+            commands::channel_enrollment::complete_channel_enrollment,
+            commands::channel_enrollment::cancel_channel_enrollment,
             // Pairing
             commands::pairing::list_pairing_requests,
             commands::pairing::approve_pairing_request,

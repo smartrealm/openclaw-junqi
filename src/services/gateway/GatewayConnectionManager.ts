@@ -17,6 +17,7 @@ export class GatewayConnectionManager {
   private listeners = new Set<StateListener>();
   private error: string | null = null;
   private retrying = false;
+  private selectedGatewayReady = false;
   private logs: { stdout: string; stderr: string } | undefined;
   private statusUnsub: (() => void) | undefined;
   private pendingStart: {
@@ -43,7 +44,7 @@ export class GatewayConnectionManager {
     this.dispatch({ type: 'INITIALIZE' });
 
     if (!window.aegis?.gateway) {
-      this.dispatch({ type: 'STATUS_RECEIVED', running: true, error: null, retrying: false });
+      this.dispatch({ type: 'STATUS_RECEIVED', running: true, ready: true, error: null, retrying: false });
       return;
     }
 
@@ -53,6 +54,7 @@ export class GatewayConnectionManager {
       this.dispatch({
         type: 'STATUS_RECEIVED',
         running: Boolean(status.running),
+        ready: Boolean(status.ready),
         error: status.error ?? null,
         retrying: Boolean(status.retrying),
         logs: status.logs,
@@ -90,7 +92,7 @@ export class GatewayConnectionManager {
    */
   probe(): void {
     if (!window.aegis?.gateway) {
-      this.dispatch({ type: 'STATUS_RECEIVED', running: true, error: null, retrying: false });
+      this.dispatch({ type: 'STATUS_RECEIVED', running: true, ready: true, error: null, retrying: false });
       return;
     }
     const generation = this.lifecycleEpoch.capture();
@@ -99,6 +101,7 @@ export class GatewayConnectionManager {
       this.dispatch({
         type: 'STATUS_RECEIVED',
         running: Boolean(status.running),
+        ready: Boolean(status.ready),
         error: status.error ?? null,
         retrying: Boolean(status.retrying),
         logs: status.logs,
@@ -108,6 +111,7 @@ export class GatewayConnectionManager {
       this.dispatch({
         type: 'STATUS_RECEIVED',
         running: false,
+        ready: false,
         error: String(error),
         retrying: false,
       });
@@ -161,11 +165,13 @@ export class GatewayConnectionManager {
     }
     if (!this.isCurrent(generation)) return { ...result, superseded: true };
     if (result?.healthy) {
+      this.dispatch({ type: 'SELECTED_GATEWAY_READY' });
       this.reconnect();
     } else {
       this.dispatch({
         type: 'STATUS_RECEIVED',
         running: false,
+        ready: false,
         error: result?.error ?? 'Gateway recovery failed',
         retrying: false,
       });
@@ -176,7 +182,7 @@ export class GatewayConnectionManager {
   async restart(): Promise<any> {
     if (!window.aegis?.gateway?.retry) {
       const result = { success: false, error: 'Gateway restart is unavailable in this runtime.' };
-      this.dispatch({ type: 'STATUS_RECEIVED', running: false, error: result.error, retrying: false });
+      this.dispatch({ type: 'STATUS_RECEIVED', running: false, ready: false, error: result.error, retrying: false });
       return result;
     }
     const generation = this.beginProcessRecovery();
@@ -191,6 +197,7 @@ export class GatewayConnectionManager {
       this.dispatch({
         type: 'STATUS_RECEIVED',
         running: false,
+        ready: false,
         error: result.error ?? 'Gateway restart failed',
         retrying: false,
       });
@@ -229,16 +236,24 @@ export class GatewayConnectionManager {
       this.logs = undefined;
       this.retrying = false;
       this.error = null;
+      this.selectedGatewayReady = false;
     } else if (event.type === 'RECOVERY_REQUESTED') {
       this.retrying = true;
       this.error = null;
+      this.selectedGatewayReady = false;
     } else if (event.type === 'STATUS_RECEIVED') {
       if (event.logs) this.logs = event.logs;
       this.retrying = event.retrying;
       this.error = event.error;
+      if (typeof event.ready === 'boolean') {
+        this.selectedGatewayReady = event.ready;
+      }
+    } else if (event.type === 'SELECTED_GATEWAY_READY') {
+      this.selectedGatewayReady = true;
     } else if (event.type === 'START_FAILED') {
       this.error = event.error;
       this.retrying = false;
+      this.selectedGatewayReady = false;
     } else if (
       event.type === 'RESET'
       || event.type === 'RETRY'
@@ -285,7 +300,7 @@ export class GatewayConnectionManager {
 
   private snapshot(): GatewayStateSnapshot {
     return {
-      ...this.fsm.snapshot(this.error, this.retrying),
+      ...this.fsm.snapshot(this.error, this.retrying, this.selectedGatewayReady),
       logs: this.logs,
     };
   }
@@ -314,6 +329,7 @@ export class GatewayConnectionManager {
       return;
     }
     if (result?.success) {
+      this.dispatch({ type: 'SELECTED_GATEWAY_READY' });
       this.dispatch({ type: 'START_SUCCESS' });
       this.pendingStart?.resolve(result);
     } else {

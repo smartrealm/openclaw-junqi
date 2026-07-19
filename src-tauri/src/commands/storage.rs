@@ -108,6 +108,22 @@ fn apply_runtime_location_transition(
     native && (changes.requires_setup() || current.openclaw_relocation_required)
 }
 
+fn relocation_contract_for_binary(
+    binary: Option<&Path>,
+) -> Result<Option<paths::OpenclawRelocationContract>, String> {
+    let Some(binary) = binary else {
+        return Ok(None);
+    };
+    let version = crate::commands::system::openclaw_package_version_for_binary(binary)?;
+    let node_requirement =
+        crate::commands::system::required_node_requirement_for_openclaw_binary(binary)?;
+    paths::OpenclawRelocationContract::new(version, node_requirement.expression().to_string())
+        .map(Some)
+        .map_err(|error| {
+            format!("Could not freeze the installed OpenClaw relocation contract: {error}")
+        })
+}
+
 fn emit_progress(app: &AppHandle, key: &'static str, message: &'static str, progress: f64) {
     let _ = app.emit(
         "storage-migration-progress",
@@ -2574,9 +2590,18 @@ pub async fn configure_storage(
     layout.gateway_service_rebind_required = existing_layout.gateway_service_rebind_required;
     layout.gateway_service_was_running = existing_layout.gateway_service_was_running;
     layout.runtime_switch_rollback_mode = existing_layout.runtime_switch_rollback_mode;
+    let runtime_location_changes = RuntimeLocationChanges::between(&existing_layout, &layout);
     let native_runtime_reconfiguration =
         apply_runtime_location_transition(&existing_layout, &mut layout);
     let binary = crate::commands::system::resolve_openclaw_binary_async().await;
+    layout.openclaw_relocation_contract = if runtime_location_changes.npm_prefix {
+        relocation_contract_for_binary(binary.as_deref())?
+            .or_else(|| existing_layout.openclaw_relocation_contract.clone())
+    } else if layout.openclaw_relocation_required {
+        existing_layout.openclaw_relocation_contract.clone()
+    } else {
+        None
+    };
     let port = std::fs::read_to_string(&old_config)
         .ok()
         .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok())

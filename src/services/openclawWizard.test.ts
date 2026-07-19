@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isOpenClawWizardSessionLost, OpenClawWizardClient, requiresOpenClawOnboarding } from './openclawWizard';
+import {
+  classifyOpenClawWizardFailure,
+  isOpenClawWizardSessionLost,
+  isOpenClawWizardStepDesynchronized,
+  isTerminalRenderedQrChoice,
+  OpenClawWizardClient,
+  requiresOpenClawOnboarding,
+  supportedWizardOptions,
+} from './openclawWizard';
 
 test('requires onboarding for a missing or model-less config', () => {
   assert.equal(requiresOpenClawOnboarding(false, {}), true);
@@ -13,9 +21,9 @@ test('accepts official wizard metadata or an existing default model', () => {
 });
 
 test('wizard client preserves dynamic option values and session lifecycle', async () => {
-  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
-  const client = new OpenClawWizardClient(async (method, params) => {
-    calls.push({ method, params });
+  const calls: Array<{ method: string; params: Record<string, unknown>; options?: { timeoutMs?: number | null } }> = [];
+  const client = new OpenClawWizardClient(async (method, params, options) => {
+    calls.push({ method, params, ...(options ? { options } : {}) });
     if (method === 'wizard.start') {
       return {
         sessionId: 'session-1',
@@ -32,7 +40,11 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
   await client.next('provider', { id: 'dynamic' });
   assert.deepEqual(calls, [
     { method: 'wizard.start', params: { mode: 'local', workspace: '/tmp/workspace' } },
-    { method: 'wizard.next', params: { sessionId: 'session-1', answer: { stepId: 'provider', value: { id: 'dynamic' } } } },
+    {
+      method: 'wizard.next',
+      params: { sessionId: 'session-1', answer: { stepId: 'provider', value: { id: 'dynamic' } } },
+      options: { timeoutMs: null },
+    },
   ]);
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
 });
@@ -45,5 +57,54 @@ test('wizard client rejects malformed gateway responses', async () => {
 test('recognizes only recoverable wizard session loss errors', () => {
   assert.equal(isOpenClawWizardSessionLost(new Error('wizard not found')), true);
   assert.equal(isOpenClawWizardSessionLost(new Error('Wizard not running')), true);
+  assert.equal(isOpenClawWizardSessionLost(new Error('OpenClaw wizard session is not running.')), true);
   assert.equal(isOpenClawWizardSessionLost(new Error('provider authentication failed')), false);
+  assert.equal(classifyOpenClawWizardFailure(new Error('wizard already running')), 'already_running');
+  assert.equal(classifyOpenClawWizardFailure(new Error('Request timeout (120000ms)')), 'request_timeout');
+});
+
+test('resumes a desynchronized wizard without replaying an answer', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown>; options?: { timeoutMs?: number | null } }> = [];
+  const client = new OpenClawWizardClient(async (method, params, options) => {
+    calls.push({ method, params, ...(options ? { options } : {}) });
+    if (method === 'wizard.start') {
+      return {
+        sessionId: 'session-2',
+        done: false,
+        status: 'running',
+        step: { id: 'initial', type: 'note' },
+      };
+    }
+    return {
+      done: false,
+      status: 'running',
+      step: { id: 'current', type: 'text' },
+    };
+  });
+
+  await client.start();
+  const resumed = await client.resume();
+
+  assert.equal(resumed.step?.id, 'current');
+  assert.deepEqual(calls[1], {
+    method: 'wizard.next',
+    params: { sessionId: 'session-2' },
+    options: { timeoutMs: null },
+  });
+  assert.equal(isOpenClawWizardStepDesynchronized(new Error('wizard: no pending step')), true);
+});
+
+test('filters the terminal-only scan branch from the embedded wizard', () => {
+  const step = {
+    id: 'feishu-method',
+    type: 'select' as const,
+    initialValue: 'manual',
+    options: [
+      { value: 'manual', label: 'Manual' },
+      { value: 'scan', label: 'Scan' },
+    ],
+  };
+
+  assert.equal(isTerminalRenderedQrChoice(step), true);
+  assert.deepEqual(supportedWizardOptions(step).map((option) => option.value), ['manual']);
 });
