@@ -18,12 +18,10 @@ import {
   checkSetupNode, checkNpm, checkGit, checkOpenclaw,
   installNode, installGit, installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
   applyTerminalIntegration,
-  prepareGateway,
   checkDocker, pullOpenclawImage, detectGatewayConfig, setActiveGatewayRuntime,
   type DockerStatus,
   type OpenclawStatus,
 } from "@/api/tauri-commands";
-import { debugWarn } from "@/utils/debugLog";
 import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import {
   setupProgressI18nParams,
@@ -824,36 +822,12 @@ export function useSetupFlow(
       await configureTerminalIntegration(runId);
       if (!isRunActive(runId)) return;
 
-      // Gateway — 准备阶段。前端 `setup-progress` 监听会把 Rust 端
-      // 通过 `prepare_gateway` 流式上报的每一条 step="gateway" 文案
-      // 原样展示到 statusMessage 上，与 install_* 的呈现形态完全一致。
-      patchStep("gateway", "running", t("setup.preparingGateway"));
-      replaceSetupStep("install-openclaw");
-      reportPhase("gatewayPrepare", t("setup.preparingGateway"));
-      let gatewayPrepareWarning: string | null = null;
-      try {
-        await prepareGateway();
-      } catch (e) {
-        // start_gateway performs its own validation, so this remains recoverable.
-        // Keep the warning visible instead of claiming preparation succeeded.
-        const message = e instanceof Error ? e.message : String(e);
-        gatewayPrepareWarning = t("setup.gatewayPrepareWillRetry", {
-          error: message,
-          defaultValue: "Gateway 准备检查未完成：{{error}}。点击启动时将自动重试。",
-        });
-        appendSetupLog({ source: "setup", step: "gateway", message: gatewayPrepareWarning, level: "warn" });
-        debugWarn('gateway', '[setup] prepare_gateway failed, continuing to start_gateway:', e);
-      }
-      if (!isRunActive(runId)) return;
-      patchStep(
-        "gateway",
-        "running",
-        gatewayPrepareWarning ?? t("setup.preparingGateway"),
-      );
-      // Installation and Gateway startup are separate user-visible stages.
-      // Keep the verified result available until the user explicitly starts
-      // the Gateway from the confirmation screen.
+      // Gateway validation belongs to the explicit start action. Keeping this
+      // step pending makes the completion screen truthful: no port probe,
+      // permission probe, or process launch has happened yet.
+      patchStep("gateway", "pending", t("setup.gatewayNotRunning"));
       replaceSetupStep("install-complete");
+      presentSetupStep("install-complete");
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       const msg = err?.message || String(err);
@@ -862,7 +836,7 @@ export function useSetupFlow(
       report(msg);
       replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
+  }, [beginRun, isRunActive, replaceSetupStep, presentSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
       setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement]);
 
   const runDockerSetup = useCallback(async () => {
