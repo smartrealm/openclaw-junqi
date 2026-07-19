@@ -645,6 +645,22 @@ export function currentStepOf(steps: StepState[]): StepState | null {
     ?? null;
 }
 
+function installationCompletionPercent(steps: StepState[]): number {
+  if (steps.length === 0) return 0;
+  const completed = steps.reduce((total, step) => {
+    if (step.status === "done" || step.status === "skipped") return total + 1;
+    if (step.status !== "running") return total;
+    // A running step may report byte/process progress. It contributes only its
+    // completed fraction and cannot make the overall workflow read as complete
+    // until the step itself has settled.
+    const fraction = typeof step.progress === "number"
+      ? Math.max(0, Math.min(99, step.progress)) / 100
+      : 0;
+    return total + fraction;
+  }, 0);
+  return Math.round((completed / steps.length) * 100);
+}
+
 export function installStepTitle(step: StepState | null, t: TFunction): string | null {
   if (!step) return null;
   const meta = STEP_META[step.id];
@@ -850,7 +866,9 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
-  const percent = Math.max(0, Math.min(100, Math.round(flow.progress)));
+  const percent = setupStep === "ready"
+    ? 100
+    : installationCompletionPercent(flow.steps);
   const isReady = setupStep === "ready";
   const isError = setupStep === "error";
   const isAwaitingGatewayStart = setupStep === "install-complete";
