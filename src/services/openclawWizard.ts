@@ -18,11 +18,13 @@ export interface OpenClawWizardStep {
   type: OpenClawWizardStepType;
   title?: string;
   message?: string;
+  format?: 'plain';
   options?: OpenClawWizardOption[];
   initialValue?: unknown;
   placeholder?: string;
   sensitive?: boolean;
   executor?: 'gateway' | 'client';
+  [key: string]: unknown;
 }
 
 export interface OpenClawWizardResult {
@@ -33,136 +35,39 @@ export interface OpenClawWizardResult {
   error?: string;
 }
 
-type WizardPresentationTranslator = (
-  key: string,
-  fallback: string,
-) => string;
+const WIZARD_STEP_TYPES = new Set<OpenClawWizardStepType>([
+  'note',
+  'select',
+  'text',
+  'confirm',
+  'multiselect',
+  'progress',
+  'action',
+]);
 
-const SETUP_MODE_OPTION_COPY: Record<string, { label: string; hint?: string }> = {
-  'keep-model': {
-    label: 'setup.wizard.setupMode.keepModel.label',
-    hint: 'setup.wizard.setupMode.keepModel.hint',
-  },
-  quickstart: {
-    label: 'setup.wizard.setupMode.quickstart.label',
-    hint: 'setup.wizard.setupMode.quickstart.hint',
-  },
-  advanced: {
-    label: 'setup.wizard.setupMode.manual.label',
-    hint: 'setup.wizard.setupMode.manual.hint',
-  },
-  'import:claude': { label: 'setup.wizard.setupMode.importClaude' },
-  'import:hermes': { label: 'setup.wizard.setupMode.importHermes' },
-  'import:codex': { label: 'setup.wizard.setupMode.importCodex' },
-};
-
-const SETUP_MODE_FALLBACKS: Record<string, { label: string; hint?: string }> = {
-  'keep-model': {
-    label: 'Keep existing model config',
-    hint: 'Skip model/auth setup and keep the current default model.',
-  },
-  quickstart: {
-    label: 'QuickStart (recommended)',
-    hint: 'Recommended local setup. Change details later with openclaw configure.',
-  },
-  advanced: {
-    label: 'Manual setup',
-    hint: 'Choose Gateway port, network exposure, Tailscale, and auth.',
-  },
-  'import:claude': { label: 'Import from Claude' },
-  'import:hermes': { label: 'Import from Hermes' },
-  'import:codex': { label: 'Import from Codex' },
-};
-
-const WIZARD_TITLE_COPY: Record<string, string> = {
-  'Setup mode': 'setup.wizard.presentation.setupMode',
-  'How channels work': 'setup.wizard.presentation.channelsPrimer',
-  'Select channel (QuickStart)': 'setup.wizard.presentation.selectQuickstartChannel',
-  'Select a channel': 'setup.wizard.presentation.selectChannel',
-  'Feishu scan-to-create': 'setup.wizard.presentation.feishuScan',
-  'How do you want to connect Feishu?': 'setup.wizard.presentation.feishuMethod',
-  'Feishu setup': 'setup.wizard.presentation.feishuSetup',
-};
-
-const WIZARD_MESSAGE_COPY: Record<string, string> = {
-  'Inbound DM safety defaults to pairing: unknown senders get a pairing code first.': 'setup.wizard.presentation.channelsPrimerMessage',
-  'Scan the QR with Lark/Feishu on your phone. If the mobile app does not react, rerun setup and choose manual input.': 'setup.wizard.presentation.feishuScanMessage',
-};
-
-function isSetupModeStep(step: OpenClawWizardStep): boolean {
-  if (step.type !== 'select') return false;
-  const values = new Set((step.options ?? []).map((option) => option.value));
-  return values.has('quickstart') && values.has('advanced');
+function isWizardOption(value: unknown): value is OpenClawWizardOption {
+  if (!value || typeof value !== 'object') return false;
+  const option = value as Record<string, unknown>;
+  return Object.prototype.hasOwnProperty.call(option, 'value')
+    && typeof option.label === 'string'
+    && (option.hint === undefined || typeof option.hint === 'string');
 }
 
-/**
- * The Gateway protocol transfers display strings but not i18n keys. Adapt
- * stable structured choices here while preserving their official values and
- * leaving unknown choices untouched for forward compatibility.
- */
-export function localizeOpenClawWizardStep(
-  step: OpenClawWizardStep,
-  translate: WizardPresentationTranslator,
-): OpenClawWizardStep {
-  const titleKey = step.title ? WIZARD_TITLE_COPY[step.title] : undefined;
-  const messageKey = step.message ? WIZARD_MESSAGE_COPY[step.message] : undefined;
-  const presented: OpenClawWizardStep = {
-    ...step,
-    ...(titleKey ? { title: translate(titleKey, step.title!) } : {}),
-    ...(messageKey ? { message: translate(messageKey, step.message!) } : {}),
-  };
-  if (!isSetupModeStep(step)) return presented;
+function normalizeWizardStep(value: unknown): OpenClawWizardStep | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.id !== 'string' || !WIZARD_STEP_TYPES.has(raw.type as OpenClawWizardStepType)) return null;
+  if (raw.title !== undefined && typeof raw.title !== 'string') return null;
+  if (raw.message !== undefined && typeof raw.message !== 'string') return null;
+  if (raw.format !== undefined && raw.format !== 'plain') return null;
+  if (raw.options !== undefined && (!Array.isArray(raw.options) || !raw.options.every(isWizardOption))) return null;
+  if (raw.placeholder !== undefined && typeof raw.placeholder !== 'string') return null;
+  if (raw.sensitive !== undefined && typeof raw.sensitive !== 'boolean') return null;
+  if (raw.executor !== undefined && raw.executor !== 'gateway' && raw.executor !== 'client') return null;
 
-  return {
-    ...presented,
-    title: translate('setup.wizard.setupMode.title', 'Setup mode'),
-    options: step.options?.map((option) => {
-      const value = typeof option.value === 'string' ? option.value : '';
-      const copy = SETUP_MODE_OPTION_COPY[value];
-      const fallback = SETUP_MODE_FALLBACKS[value];
-      if (!copy || !fallback) return option;
-      return {
-        ...option,
-        label: translate(copy.label, fallback.label),
-        ...(option.hint && copy.hint && fallback.hint
-          ? { hint: translate(copy.hint, fallback.hint) }
-          : {}),
-      };
-    }),
-  };
-}
-
-/**
- * The official Feishu branch renders its QR directly to a terminal. JunQi
- * recognizes this protocol step and routes it through its desktop QR session
- * instead of letting the terminal-only branch consume the wizard request.
- */
-export function isFeishuQrSetupMethodStep(step: OpenClawWizardStep): boolean {
-  if (step.type !== 'select' || !step.options) return false;
-  const values = step.options.map((option) => option.value);
-  return values.length === 2 && values.includes('manual') && values.includes('scan');
-}
-
-export function isFeishuDomainSelectionStep(step: OpenClawWizardStep): boolean {
-  if (step.type !== 'select' || !step.options) return false;
-  const values = step.options.map((option) => option.value);
-  return values.length === 2 && values.includes('feishu') && values.includes('lark');
-}
-
-export function isPlaintextSecretModeStep(step: OpenClawWizardStep): boolean {
-  if (step.type !== 'select' || !step.options) return false;
-  const values = step.options.map((option) => option.value);
-  return values.length === 2 && values.includes('plaintext') && values.includes('ref');
-}
-
-/** @deprecated Use `isFeishuQrSetupMethodStep` for QR routing. */
-export function isTerminalRenderedQrChoice(step: OpenClawWizardStep): boolean {
-  return isFeishuQrSetupMethodStep(step);
-}
-
-export function supportedWizardOptions(step: OpenClawWizardStep): OpenClawWizardOption[] {
-  if (!isTerminalRenderedQrChoice(step)) return step.options ?? [];
-  return (step.options ?? []).filter((option) => option.value !== 'scan');
+  // The Gateway is the source of truth for presentation and option identity.
+  // Keep the complete object so newer protocol metadata survives unchanged.
+  return value as OpenClawWizardStep;
 }
 
 export interface OpenClawWizardRequestOptions {
@@ -182,6 +87,45 @@ type GatewayCaller = (
   options?: OpenClawWizardRequestOptions,
 ) => Promise<unknown>;
 
+/**
+ * The official Gateway owns wizard state, while the desktop owns the view.
+ * Keep only the opaque session id locally so a renderer or application restart
+ * can resume the same official step. The id contains no credentials.
+ */
+export interface OpenClawWizardSessionStore {
+  load(): string | null;
+  save(sessionId: string): void;
+  clear(): void;
+}
+
+const WIZARD_SESSION_STORAGE_KEY = 'junqi.openclaw-wizard-session-id';
+
+export function createBrowserOpenClawWizardSessionStore(): OpenClawWizardSessionStore {
+  return {
+    load: () => {
+      try {
+        return globalThis.localStorage?.getItem(WIZARD_SESSION_STORAGE_KEY) || null;
+      } catch {
+        return null;
+      }
+    },
+    save: (sessionId) => {
+      try {
+        globalThis.localStorage?.setItem(WIZARD_SESSION_STORAGE_KEY, sessionId);
+      } catch {
+        // Storage must not prevent the official wizard from operating.
+      }
+    },
+    clear: () => {
+      try {
+        globalThis.localStorage?.removeItem(WIZARD_SESSION_STORAGE_KEY);
+      } catch {
+        // Storage must not prevent the official wizard from operating.
+      }
+    },
+  };
+}
+
 function assertWizardResult(value: unknown): OpenClawWizardResult {
   if (!value || typeof value !== 'object') {
     throw new Error('OpenClaw returned an invalid wizard response.');
@@ -191,21 +135,34 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
     throw new Error('OpenClaw wizard response is missing `done`.');
   }
   if (!result.done) {
-    const step = result.step as Record<string, unknown> | undefined;
-    if (!step || typeof step.id !== 'string' || typeof step.type !== 'string') {
+    const step = normalizeWizardStep(result.step);
+    if (!step) {
       throw new Error('OpenClaw wizard response is missing the next step.');
     }
+    return { ...value as OpenClawWizardResult, step };
   }
   return value as OpenClawWizardResult;
 }
 
 export class OpenClawWizardClient {
   private sessionId: string | null = null;
+  private currentStep: OpenClawWizardStep | null = null;
+  private workspace: string | undefined;
+  private history: Array<{ step: OpenClawWizardStep; value: unknown }> = [];
 
-  constructor(private readonly callGateway: GatewayCaller) {}
+  constructor(
+    private readonly callGateway: GatewayCaller,
+    private readonly sessionStore?: OpenClawWizardSessionStore,
+  ) {
+    this.sessionId = sessionStore?.load() ?? null;
+  }
 
   get hasActiveSession(): boolean {
     return this.sessionId !== null;
+  }
+
+  get canGoBack(): boolean {
+    return this.sessionId !== null && this.history.length > 0;
   }
 
   async start(workspace?: string): Promise<OpenClawWizardResult> {
@@ -215,11 +172,15 @@ export class OpenClawWizardClient {
     if (this.sessionId) {
       await this.cancel();
     }
+    this.workspace = workspace?.trim() || undefined;
+    this.history = [];
+    this.currentStep = null;
     const result = assertWizardResult(await this.callGateway('wizard.start', {
       mode: 'local',
-      ...(workspace?.trim() ? { workspace: workspace.trim() } : {}),
+      ...(this.workspace ? { workspace: this.workspace } : {}),
     }));
-    this.sessionId = result.done ? null : String(result.sessionId ?? '');
+    this.setSession(result.done ? null : String(result.sessionId ?? ''));
+    this.currentStep = result.step ?? null;
     if (!result.done && !this.sessionId) {
       throw new Error('OpenClaw wizard did not return a session id.');
     }
@@ -228,6 +189,7 @@ export class OpenClawWizardClient {
 
   async next(stepId: string, value?: unknown): Promise<OpenClawWizardResult> {
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
+    const submittedStep = this.currentStep;
     const result = assertWizardResult(await this.callGateway('wizard.next', {
       sessionId: this.sessionId,
       answer: {
@@ -236,7 +198,11 @@ export class OpenClawWizardClient {
       },
     }, { timeoutMs: null }));
     if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
-      this.sessionId = null;
+      this.setSession(null);
+      this.currentStep = null;
+    } else {
+      if (submittedStep && submittedStep.id === stepId) this.history.push({ step: submittedStep, value });
+      this.currentStep = result.step ?? null;
     }
     return result;
   }
@@ -252,13 +218,38 @@ export class OpenClawWizardClient {
       sessionId: this.sessionId,
     }, { timeoutMs: null }));
     if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
-      this.sessionId = null;
+      this.setSession(null);
+      this.currentStep = null;
+    } else {
+      this.currentStep = result.step ?? null;
     }
     return result;
   }
 
+  /**
+   * Gateway exposes no wizard.back RPC. Recreate the official session and
+   * replay only answers that were already accepted, stopping at the prior
+   * step. Values remain memory-only and are never written to localStorage.
+   */
+  async back(): Promise<OpenClawWizardResult | null> {
+    if (!this.canGoBack) return null;
+    const replay = this.history.slice(0, -1).map((entry) => ({ ...entry }));
+    await this.cancel();
+    const result = await this.start(this.workspace);
+    let current = result;
+    for (const entry of replay) {
+      if (current.done || !current.step || current.step.id !== entry.step.id) {
+        throw new Error('OpenClaw wizard could not restore the previous step.');
+      }
+      current = await this.next(entry.step.id, entry.value);
+    }
+    return current;
+  }
+
   forgetSession(): void {
-    this.sessionId = null;
+    this.setSession(null);
+    this.currentStep = null;
+    this.history = [];
   }
 
   async cancel(): Promise<void> {
@@ -266,13 +257,19 @@ export class OpenClawWizardClient {
     const sessionId = this.sessionId;
     try {
       await this.callGateway('wizard.cancel', { sessionId });
-      this.sessionId = null;
+      this.setSession(null);
     } catch (error) {
       // A server-side expiry means the session is already gone. For transport
       // failures retain the id so a later start/back action can retry cleanup.
-      if (isOpenClawWizardSessionLost(error)) this.sessionId = null;
+      if (isOpenClawWizardSessionLost(error)) this.setSession(null);
       throw error;
     }
+  }
+
+  private setSession(sessionId: string | null): void {
+    this.sessionId = sessionId;
+    if (sessionId) this.sessionStore?.save(sessionId);
+    else this.sessionStore?.clear();
   }
 }
 

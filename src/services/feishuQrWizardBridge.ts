@@ -4,12 +4,34 @@ import {
   type ChannelEnrollmentCompletion,
 } from '@/services/channelEnrollment';
 import {
-  isFeishuDomainSelectionStep,
-  isFeishuQrSetupMethodStep,
-  isPlaintextSecretModeStep,
   type OpenClawWizardResult,
   type OpenClawWizardStep,
 } from '@/services/openclawWizard';
+
+function hasExactStringOptions(step: OpenClawWizardStep, expected: readonly string[]): boolean {
+  if (step.type !== 'select' || !Array.isArray(step.options)) return false;
+  const values = step.options.map((option) => option.value);
+  return values.length === expected.length
+    && expected.every((value) => values.includes(value));
+}
+
+/**
+ * Compatibility adapter for OpenClaw's Feishu 2026.7.x terminal-QR branch.
+ * It matches official option identities only; display text and step ids remain
+ * fully Gateway-owned. Unknown or changed protocol shapes fall back to the
+ * generic wizard instead of being guessed from translated copy.
+ */
+export function isFeishuQrSetupMethodStep(step: OpenClawWizardStep): boolean {
+  return hasExactStringOptions(step, ['manual', 'scan']);
+}
+
+function isFeishuDomainSelectionStep(step: OpenClawWizardStep): boolean {
+  return hasExactStringOptions(step, ['feishu', 'lark']);
+}
+
+function isPlaintextSecretModeStep(step: OpenClawWizardStep): boolean {
+  return hasExactStringOptions(step, ['plaintext', 'ref']);
+}
 
 export type WizardStepSubmitter = (
   stepId: string,

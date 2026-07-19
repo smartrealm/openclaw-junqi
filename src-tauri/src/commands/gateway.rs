@@ -91,6 +91,9 @@ fn official_gateway_handoff(
         GatewayServiceOwnership::StaleRuntime => Some(OfficialGatewayHandoff::RebindStale {
             stop_running_service: inspection.running,
         }),
+        GatewayServiceOwnership::StaleLocale => Some(OfficialGatewayHandoff::RebindStale {
+            stop_running_service: inspection.running,
+        }),
         GatewayServiceOwnership::Absent
         | GatewayServiceOwnership::Foreign
         | GatewayServiceOwnership::Unverifiable => None,
@@ -144,7 +147,8 @@ fn restart_target_for_service(
         ownership,
         Some(
             crate::commands::gateway_service::GatewayServiceOwnership::SelectedState
-                | crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime,
+                | crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime
+                | crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale,
         )
     ) {
         GatewayRestartTarget::OfficialService
@@ -271,6 +275,10 @@ mod runtime_observation_tests {
         );
         assert_eq!(
             restart_target_for_service(Some(GatewayServiceOwnership::StaleRuntime)),
+            GatewayRestartTarget::OfficialService
+        );
+        assert_eq!(
+            restart_target_for_service(Some(GatewayServiceOwnership::StaleLocale)),
             GatewayRestartTarget::OfficialService
         );
         for ownership in [
@@ -535,6 +543,55 @@ mod gateway_config_tests {
     }
 
     #[test]
+    fn gateway_locale_is_seeded_into_gateway_config() {
+        let path = isolated_config_path("gateway-locale");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"gateway":{"auth":{"token":"existing"}}}"#).unwrap();
+
+        ensure_config_with_token(
+            &path,
+            crate::commands::config::default_gateway_port(),
+            "loopback",
+        )
+        .unwrap();
+        let config: serde_json::Value = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&path).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            config["env"]["vars"]["OPENCLAW_LOCALE"],
+            crate::commands::system::managed_openclaw_locale()
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn existing_gateway_locale_remains_gateway_owned() {
+        let path = isolated_config_path("existing-gateway-locale");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"gateway":{"auth":{"token":"existing"}},"env":{"vars":{"OPENCLAW_LOCALE":"zh-TW"}}}"#,
+        )
+        .unwrap();
+
+        ensure_config_with_token(
+            &path,
+            crate::commands::config::default_gateway_port(),
+            "loopback",
+        )
+        .unwrap();
+        let config: serde_json::Value = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&path).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(config["env"]["vars"]["OPENCLAW_LOCALE"], "zh-TW");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn inferred_password_auth_is_not_rewritten_as_token_auth() {
         let path = isolated_config_path("inferred-password-mode");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -628,6 +685,38 @@ impl ConfigMetadata {
             .unwrap_or_default();
 
         Self { port, env_vars }
+    }
+}
+
+/// Seed the Gateway-owned locale once when JunQi creates or adopts a local
+/// config. Subsequent wizard responses are rendered by Gateway itself; this
+/// value is not a client-side translation preference.
+fn ensure_gateway_locale_config(config: &mut serde_json::Value) -> Result<(), String> {
+    let root = config
+        .as_object_mut()
+        .ok_or("OpenClaw config root must be an object")?;
+    let env = root.entry("env").or_insert_with(|| serde_json::json!({}));
+    let env_obj = env
+        .as_object_mut()
+        .ok_or("OpenClaw config `env` must be an object")?;
+    let vars = env_obj
+        .entry("vars")
+        .or_insert_with(|| serde_json::json!({}));
+    let vars_obj = vars
+        .as_object_mut()
+        .ok_or("OpenClaw config `env.vars` must be an object")?;
+    match vars_obj.get("OPENCLAW_LOCALE") {
+        Some(value) if !value.is_string() => {
+            Err("OpenClaw config `env.vars.OPENCLAW_LOCALE` must be a string".into())
+        }
+        Some(_) => Ok(()),
+        None => {
+            vars_obj.insert(
+                "OPENCLAW_LOCALE".into(),
+                serde_json::json!(crate::commands::system::managed_openclaw_locale()),
+            );
+            Ok(())
+        }
     }
 }
 
@@ -758,6 +847,8 @@ pub(crate) fn ensure_config_with_token(
                 gw.insert("controlUi".into(), control_ui.clone());
             }
 
+            ensure_gateway_locale_config(&mut config)?;
+
             write_openclaw_config_safely(config_path, &config)?;
 
             return Ok(token);
@@ -791,6 +882,8 @@ pub(crate) fn ensure_config_with_token(
         let token = generate_token()?;
         auth_obj.insert("token".into(), serde_json::json!(token));
 
+        ensure_gateway_locale_config(&mut config)?;
+
         write_openclaw_config_safely(config_path, &config)?;
 
         return Ok(token);
@@ -817,6 +910,11 @@ pub(crate) fn ensure_config_with_token(
                 "token": token
             },
             "controlUi": control_ui
+        },
+        "env": {
+            "vars": {
+                "OPENCLAW_LOCALE": crate::commands::system::managed_openclaw_locale()
+            }
         }
     });
     write_openclaw_config_safely(config_path, &default_config)?;
@@ -1311,8 +1409,11 @@ pub async fn restart_gateway(
     let (ownership, stale_service_running) = match inspection {
         Ok(inspection)
             if inspection.installed
-                && inspection.ownership
-                    == crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime =>
+                && matches!(
+                    inspection.ownership,
+                    crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime
+                        | crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale
+                ) =>
         {
             (Ok(inspection.ownership), Some(inspection.running))
         }
@@ -1340,6 +1441,10 @@ pub async fn restart_gateway(
             }
             Ok(crate::commands::gateway_service::GatewayServiceOwnership::StaleRuntime) => {
                 "The installed OpenClaw Gateway service still references an old Node.js or OpenClaw package path"
+                    .to_string()
+            }
+            Ok(crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale) => {
+                "The installed OpenClaw Gateway service uses a different locale than the selected Gateway configuration"
                     .to_string()
             }
             Ok(crate::commands::gateway_service::GatewayServiceOwnership::SelectedState) => {
@@ -1982,6 +2087,71 @@ pub(crate) async fn start_gateway_locked(
     // Do not create or rewrite Gateway configuration until the selected state
     // directory has passed the authoritative Node.js probe above.
     let token = ensure_config_with_token(&config_path, port, &bind)?;
+    let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
+    let gw_path = augmented_path();
+
+    // A service installed before Gateway locale was persisted can still be
+    // healthy while returning the wrong wizard language. Reconcile only a
+    // service proven to own JunQi's selected state/config; foreign and remote
+    // Gateways remain untouched and keep their own language.
+    if let Ok(inspection) = crate::commands::gateway_service::inspect_gateway_service_state(
+        &runtime,
+        &crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+            &base_dir,
+            &config_path,
+            &runtime,
+        ),
+        Some(&gw_path),
+    )
+    .await
+    {
+        if inspection.installed
+            && inspection.ownership
+                == crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale
+        {
+            if inspection.running {
+                crate::commands::gateway_service::stop_selected_gateway_service(
+                    &runtime,
+                    &base_dir,
+                    &config_path,
+                    Some(&gw_path),
+                )
+                .await?;
+                crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
+            }
+            crate::commands::gateway_service::rebind_selected_gateway_service(
+                &runtime,
+                &base_dir,
+                &config_path,
+                port,
+                inspection.running,
+                Some(&gw_path),
+            )
+            .await
+            .map_err(|error| format!("Failed to align Gateway service locale: {error}"))?;
+            if inspection.running {
+                if !wait_for_selected_gateway(port, &config_path, 45).await {
+                    return Err(format!(
+                        "Gateway service locale was aligned, but the service did not become ready on port {}",
+                        port
+                    ));
+                }
+                *state.port.lock().map_err(|e| e.to_string())? = port;
+                state.transition(
+                    Some(GatewayLifecycle::Running),
+                    Some(GatewayRuntimeMode::SystemService),
+                    None,
+                    "start_gateway: aligned selected Gateway service locale",
+                );
+                return Ok(GatewayStatus {
+                    running: true,
+                    port,
+                    pid: None,
+                    token: Some(token),
+                });
+            }
+        }
+    }
 
     // `/healthz` proves an OpenClaw process is alive, but does not prove it
     // belongs to JunQi's selected state/config pair. Confirm the configured
@@ -2102,9 +2272,6 @@ pub(crate) async fn start_gateway_locked(
             return Err(message);
         }
     }
-    let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
-
-    let gw_path = augmented_path();
     let pending_service_running = paths::pending_gateway_service_rebind();
     if let Some(was_running) = pending_service_running {
         // A mode switch or storage migration may have stopped an official

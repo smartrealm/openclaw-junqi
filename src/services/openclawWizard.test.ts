@@ -4,51 +4,13 @@ import {
   classifyOpenClawWizardFailure,
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
-  isTerminalRenderedQrChoice,
-  localizeOpenClawWizardStep,
   OpenClawWizardClient,
   requiresOpenClawOnboarding,
-  supportedWizardOptions,
 } from './openclawWizard';
 
 test('requires onboarding for a missing or model-less config', () => {
   assert.equal(requiresOpenClawOnboarding(false, {}), true);
   assert.equal(requiresOpenClawOnboarding(true, { gateway: { mode: 'local' } }), true);
-});
-
-test('localizes the official setup-mode presentation without changing option values', () => {
-  const step = {
-    id: 'select-1',
-    type: 'select' as const,
-    title: 'Setup mode',
-    options: [
-      { value: 'keep-model', label: 'Keep existing model config', hint: 'Keep the current model.' },
-      { value: 'quickstart', label: 'QuickStart (recommended)', hint: 'Local setup.' },
-      { value: 'advanced', label: 'Manual setup', hint: 'Choose details.' },
-      { value: 'import:claude', label: 'Import from Claude', hint: '/Users/example/.claude' },
-    ],
-  };
-  const presented = localizeOpenClawWizardStep(step, (key) => `zh:${key}`);
-
-  assert.equal(presented.title, 'zh:setup.wizard.setupMode.title');
-  assert.deepEqual(presented.options?.map((option) => option.value), step.options.map((option) => option.value));
-  assert.equal(presented.options?.[1]?.label, 'zh:setup.wizard.setupMode.quickstart.label');
-  assert.equal(presented.options?.[3]?.hint, '/Users/example/.claude');
-});
-
-test('localizes known official wizard copy without changing its protocol shape', () => {
-  const step = {
-    id: 'channels-primer',
-    type: 'note' as const,
-    title: 'How channels work',
-    message: 'Inbound DM safety defaults to pairing: unknown senders get a pairing code first.',
-  };
-  const presented = localizeOpenClawWizardStep(step, (key) => `zh:${key}`);
-
-  assert.equal(presented.id, step.id);
-  assert.equal(presented.type, step.type);
-  assert.equal(presented.title, 'zh:setup.wizard.presentation.channelsPrimer');
-  assert.equal(presented.message, 'zh:setup.wizard.presentation.channelsPrimerMessage');
 });
 
 test('accepts official wizard metadata or an existing default model', () => {
@@ -83,6 +45,98 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
     },
   ]);
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
+});
+
+test('wizard client restores an unfinished official session after a renderer restart', async () => {
+  let storedSessionId: string | null = null;
+  const store = {
+    load: () => storedSessionId,
+    save: (sessionId: string) => { storedSessionId = sessionId; },
+    clear: () => { storedSessionId = null; },
+  };
+  const firstClient = new OpenClawWizardClient(async () => ({
+    sessionId: 'persisted-session',
+    done: false,
+    status: 'running',
+    step: { id: 'model', type: 'select' },
+  }), store);
+
+  await firstClient.start();
+  assert.equal(storedSessionId, 'persisted-session');
+
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const resumedClient = new OpenClawWizardClient(async (method, params) => {
+    calls.push({ method, params });
+    return { done: true, status: 'done' };
+  }, store);
+  await resumedClient.resume();
+
+  assert.deepEqual(calls, [{ method: 'wizard.next', params: { sessionId: 'persisted-session' } }]);
+  assert.equal(storedSessionId, null);
+});
+
+test('wizard client recreates a session to provide a previous-step action', async () => {
+  let starts = 0;
+  const calls: string[] = [];
+  const client = new OpenClawWizardClient(async (method, params) => {
+    calls.push(`${method}:${String((params.answer as any)?.stepId ?? '')}`);
+    if (method === 'wizard.start') {
+      starts += 1;
+      return {
+        sessionId: `session-${starts}`,
+        done: false,
+        status: 'running',
+        step: { id: 'first', type: 'select', options: [{ value: 'yes', label: 'Yes' }] },
+      };
+    }
+    if ((params.answer as any)?.stepId === 'first') {
+      return {
+        done: false,
+        status: 'running',
+        step: { id: 'second', type: 'select', options: [{ value: 'next', label: 'Next' }] },
+      };
+    }
+    if (method === 'wizard.cancel') return { status: 'cancelled' };
+    throw new Error(`unexpected ${method}`);
+  });
+
+  await client.start();
+  await client.next('first', 'yes');
+  assert.equal(client.canGoBack, true);
+  const previous = await client.back();
+  assert.equal(previous?.step?.id, 'first');
+  assert.deepEqual(calls, [
+    'wizard.start:',
+    'wizard.next:first',
+    'wizard.cancel:',
+    'wizard.start:',
+  ]);
+});
+
+test('wizard client preserves Gateway option identity and extra metadata', async () => {
+  const client = new OpenClawWizardClient(async () => ({
+    sessionId: 'session-feishu',
+    done: false,
+    status: 'running',
+    step: {
+      id: 'channels',
+      type: 'select',
+      format: 'plain',
+      futureMetadata: { source: 'gateway' },
+      options: [
+        { value: 'openclaw-lark', label: 'Feishu/Lark (飞书)' },
+        { value: 'feishu', label: 'Feishu/Lark (飞书)' },
+      ],
+    },
+  }));
+
+  const result = await client.start();
+  assert.deepEqual(result.step?.options, [
+    { value: 'openclaw-lark', label: 'Feishu/Lark (飞书)' },
+    { value: 'feishu', label: 'Feishu/Lark (飞书)' },
+  ]);
+  assert.equal(result.step?.format, 'plain');
+  assert.deepEqual(result.step?.futureMetadata, { source: 'gateway' });
 });
 
 test('wizard client rejects malformed gateway responses', async () => {
@@ -128,19 +182,4 @@ test('resumes a desynchronized wizard without replaying an answer', async () => 
     options: { timeoutMs: null },
   });
   assert.equal(isOpenClawWizardStepDesynchronized(new Error('wizard: no pending step')), true);
-});
-
-test('filters the terminal-only scan branch from the embedded wizard', () => {
-  const step = {
-    id: 'feishu-method',
-    type: 'select' as const,
-    initialValue: 'manual',
-    options: [
-      { value: 'manual', label: 'Manual' },
-      { value: 'scan', label: 'Scan' },
-    ],
-  };
-
-  assert.equal(isTerminalRenderedQrChoice(step), true);
-  assert.deepEqual(supportedWizardOptions(step).map((option) => option.value), ['manual']);
 });

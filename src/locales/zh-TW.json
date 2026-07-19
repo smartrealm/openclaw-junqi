@@ -2657,31 +2657,15 @@
       "missingStep": "OpenClaw 配置嚮導沒有返回下一步。",
       "sessionExpired": "OpenClaw 配置會話已失效，請重新連接。",
       "stepSynchronizing": "正在恢復 OpenClaw 配置會話，請稍候。",
-      "alreadyRunning": "另一個 OpenClaw 配置會話仍在運行，請完成或關閉後重試。",
+      "alreadyRunning": "現有 OpenClaw 配置會話仍在運行。點擊「重新接管設定精靈」會重啟目前的 Gateway 並繼續配置，不會變更資料目錄或工作區。",
+      "reclaim": "重新接管設定精靈",
       "requestTimeout": "OpenClaw 配置請求等待超時，請重新連接後繼續。",
       "retry": "重試",
       "run": "執行",
       "confirm": "確認並繼續",
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步驟由 OpenClaw 執行。",
-      "setupMode": {
-        "title": "設置模式",
-        "keepModel": {
-          "label": "保留現有模型配置",
-          "hint": "跳過模型與認證配置，並保留當前默認模型。"
-        },
-        "quickstart": {
-          "label": "快速開始（推薦）",
-          "hint": "推薦的本機配置。以後可通過 openclaw configure 修改詳細設置。"
-        },
-        "manual": {
-          "label": "手動配置",
-          "hint": "選擇 Gateway 端口、網絡暴露、Tailscale 和認證方式。"
-        },
-        "importClaude": "從 Claude 導入",
-        "importHermes": "從 Hermes 導入",
-        "importCodex": "從 Codex 導入"
-      },
+      "qrAlt": "掃描授權二維碼",
       "channelEnrollment": {
         "title": "掃描二維碼連接飛書",
         "subtitle": "使用手機掃碼創建應用，JunQi 會繼續完成 OpenClaw 官方配置。",
@@ -2699,17 +2683,6 @@
         "handoffFailed": "掃碼已驗證，但 OpenClaw 配置未能繼續。請重新生成二維碼後重試。",
         "handoffRecoverable": "掃碼已驗證，但 OpenClaw 配置會話需要恢復。點擊“繼續配置”即可，無需重新掃碼。",
         "resume": "繼續配置"
-      },
-      "presentation": {
-        "setupMode": "設置模式",
-        "channelsPrimer": "渠道說明",
-        "channelsPrimerMessage": "私信默認使用配對保護：陌生髮送者會先獲得配對碼。你可以在完成嚮導後，於渠道設置中調整訪問策略和多用戶會話隔離方式。",
-        "selectQuickstartChannel": "選擇渠道（快速開始）",
-        "selectChannel": "選擇渠道",
-        "feishuScan": "飛書掃碼創建",
-        "feishuMethod": "如何連接飛書？",
-        "feishuSetup": "飛書配置",
-        "feishuScanMessage": "請使用飛書或 Lark 手機端掃描二維碼。若手機端無響應，請重新進入此步驟並選擇手動填寫。"
       }
     }
   },
@@ -3276,6 +3249,7 @@
   "channelsCenter.scanQr": "掃描二維碼",
   "channelsCenter.qrUnavailable": "OpenClaw 未返回二維碼，請檢查 Gateway 和渠道日誌。",
   "channelsCenter.qrTimedOut": "二維碼已過期，請刷新後重試。",
+  "channelsCenter.qrRequestFailed": "OpenClaw 無法啟動此渠道的二維碼登入。請確認目前的 OpenClaw 版本支援該渠道的二維碼登入。",
   "channelsCenter.qrWaiting": "正在等待 OpenClaw 生成二維碼…",
   "channelsCenter.probe": "探測",
   "channelsCenter.channelLogs": "渠道日誌",

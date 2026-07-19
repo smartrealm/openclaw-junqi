@@ -57,19 +57,17 @@ import clsx from "clsx";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
 import { OpenClawUpdatePanel } from "@/components/shared/OpenClawUpdatePanel";
 import { ChannelEnrollmentDialog } from "@/components/channels/ChannelEnrollmentDialog";
-import {
-  isFeishuQrSetupMethodStep,
-  localizeOpenClawWizardStep,
-  type OpenClawWizardStep,
-} from "@/services/openclawWizard";
+import { type OpenClawWizardStep } from "@/services/openclawWizard";
 import {
   FeishuQrWizardBridge,
   FeishuQrWizardSessionChangedError,
+  isFeishuQrSetupMethodStep,
 } from "@/services/feishuQrWizardBridge";
 import {
   cancelChannelEnrollment,
   type ChannelEnrollmentCompletion,
 } from "@/services/channelEnrollment";
+import { extractWizardUrls, renderWizardQrDataUrl } from "@/services/wizardQr";
 import {
   setupStepMessageKey,
   setupStepProgress,
@@ -482,7 +480,7 @@ function wizardInitialValue(step: OpenClawWizardStep): unknown {
   if (step.type === "confirm") return Boolean(step.initialValue);
   if (step.type === "multiselect") return Array.isArray(step.initialValue) ? step.initialValue : [];
   if (step.type === "select") {
-    const options = step.options ?? [];
+    const options = Array.isArray(step.options) ? step.options : [];
     return options.some((option) => wizardValuesEqual(option.value, step.initialValue))
       ? step.initialValue
       : options[0]?.value;
@@ -506,6 +504,8 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const [enrollmentFinalizing, setEnrollmentFinalizing] = useState(false);
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
   const [pendingEnrollment, setPendingEnrollment] = useState<ChannelEnrollmentCompletion | null>(null);
+  const [wizardQrDataUrl, setWizardQrDataUrl] = useState<string | null>(null);
+  const [wizardQrSource, setWizardQrSource] = useState<string | null>(null);
   const enrollmentFinalizingRef = useRef(enrollmentFinalizing);
   const pendingEnrollmentRef = useRef<ChannelEnrollmentCompletion | null>(null);
 
@@ -524,12 +524,26 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
   useEffect(() => {
     setValue(step ? wizardInitialValue(step) : undefined);
+    setWizardQrDataUrl(null);
+    setWizardQrSource(null);
     if (!enrollmentFinalizingRef.current) {
       setEnrollmentDomain(null);
       setEnrollmentError(null);
       setPendingEnrollment(null);
     }
   }, [step?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const source = step?.type === "note" ? extractWizardUrls(step.message)[0] : undefined;
+    setWizardQrSource(source ?? null);
+    setWizardQrDataUrl(null);
+    if (!source) return () => { cancelled = true; };
+    void renderWizardQrDataUrl(source).then((dataUrl) => {
+      if (!cancelled) setWizardQrDataUrl(dataUrl);
+    });
+    return () => { cancelled = true; };
+  }, [step?.id, step?.message, step?.type]);
 
   if (!step) {
     return (
@@ -540,8 +554,10 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         logs={logs}
         previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
         nextAction={{
-          label: flow.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
-          onClick: () => void flow.retryWizard(),
+          label: flow.wizardRecoveryRequired
+            ? t("setup.wizard.reclaim", "重新接管向导")
+            : flow.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
+          onClick: () => void (flow.wizardRecoveryRequired ? flow.reclaimWizard() : flow.retryWizard()),
           disabled: flow.wizardSubmitting && !flow.wizardError,
           loading: flow.wizardSubmitting,
           icon: "none",
@@ -554,12 +570,11 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
     );
   }
 
-  const presentedStep = localizeOpenClawWizardStep(
-    step,
-    (key, fallback) => t(key, { defaultValue: fallback }),
-  );
+  // Gateway owns wizard presentation and language. Keep its rendered step
+  // intact so local, remote, and externally managed Gateways behave alike.
+  const presentedStep = step;
   const feishuQrSetupMethod = isFeishuQrSetupMethodStep(presentedStep);
-  const options = presentedStep.options ?? [];
+  const options = Array.isArray(presentedStep.options) ? presentedStep.options : [];
   const selectedValues = Array.isArray(value) ? value : [];
   const toggleMulti = (optionValue: unknown) => {
     setValue((current: unknown) => {
@@ -639,7 +654,11 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       title={wizardTitle}
       subtitle={wizardSubtitle}
       logs={logs}
-      previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
+      previousAction={{
+        label: flow.wizardCanGoBack ? t("setup.previousStep", "上一步") : undefined,
+        onClick: flow.wizardCanGoBack ? flow.backWizard : flow.goBack,
+        disabled: flow.wizardSubmitting || Boolean(enrollmentDomain) || enrollmentFinalizing,
+      }}
       nextAction={{
         label: pendingEnrollment
           ? t("setup.wizard.channelEnrollment.resume", "继续配置")
@@ -729,7 +748,15 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           </div>
         )}
         {(presentedStep.type === "note" || presentedStep.type === "progress" || presentedStep.type === "action") && (
-          <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</div>
+          <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
+            <pre className="whitespace-pre-wrap break-words font-[inherit]">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</pre>
+            {wizardQrDataUrl && wizardQrSource && (
+              <div className="mt-4 flex flex-col items-center gap-3 rounded-md border border-aegis-border bg-white p-3">
+                <img src={wizardQrDataUrl} alt={t("setup.wizard.qrAlt", "扫描授权二维码")} className="h-64 w-64" />
+                <a href={wizardQrSource} target="_blank" rel="noreferrer" className="max-w-full break-all text-center text-xs text-blue-700 underline">{wizardQrSource}</a>
+              </div>
+            )}
+          </div>
         )}
         {enrollmentError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{enrollmentError}</div>}
         {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}

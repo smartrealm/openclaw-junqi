@@ -30,7 +30,6 @@ import {
 } from '@/services/channelConfig';
 import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
 import {
-  buildChannelLoginCommand,
   buildChannelSetupCommand,
   channelAccountStatus,
   channelLinkMode,
@@ -506,13 +505,9 @@ export function ChannelsCenterPage() {
     group: ChannelGroupWithName,
     account: ChannelAccountBinding,
   ) => {
-    const mode = channelLinkMode(group.id, entry?.installed === true);
+    const mode = channelLinkMode(capabilityByChannel[group.id], entry?.installed === true);
     if (mode === 'embedded_qr') {
       setQrTarget({ channelId: group.id, accountId: account.id });
-      return;
-    }
-    if (mode === 'terminal_login') {
-      openChannelTerminal(buildChannelLoginCommand(group.id, account.id));
       return;
     }
     openChannelTerminal(buildChannelSetupCommand(group.id, account.id));
@@ -965,7 +960,7 @@ export function ChannelsCenterPage() {
                                   : t(`channelsCenter.readinessHint.${readiness.state}`, '');
 
                               const catalogEntry = catalog.entries.find((entry) => entry.id === group.id);
-                              const linkMode = channelLinkMode(group.id, catalogEntry?.installed === true);
+                              const linkMode = channelLinkMode(capabilityByChannel[group.id], catalogEntry?.installed === true);
                               const runtimeBusyPrefix = `${group.id}:${account.id}`;
 
                               return (
@@ -1091,8 +1086,9 @@ export function ChannelsCenterPage() {
           onDelete={(account) => handleDeleteAccount(editingAccount.group, account)}
         />
       )}
-      {qrTarget?.channelId === 'whatsapp' && (
+      {qrTarget && (
         <ChannelQrLoginDialog
+          channelId={qrTarget.channelId}
           accountId={qrTarget.accountId}
           onClose={() => setQrTarget(null)}
           onConnected={() => {

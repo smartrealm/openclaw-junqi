@@ -946,7 +946,7 @@ pub(crate) async fn start_docker_gateway_locked(
     let config_path_env = format!("OPENCLAW_CONFIG_PATH={}", mapping.runtime_config_path);
     let locale_env = format!(
         "OPENCLAW_LOCALE={}",
-        crate::commands::system::managed_openclaw_locale()
+        crate::commands::system::configured_openclaw_locale(&config_path)
     );
 
     let mut run_args = vec![

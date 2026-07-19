@@ -24,6 +24,7 @@ export interface OfficialChannelCapability {
   required: string[];
   support: Record<string, unknown>;
   actions: string[];
+  qrLogin: boolean;
 }
 
 export interface ChannelAccountRuntimeStatus {
@@ -57,11 +58,7 @@ export interface ChannelsRuntimeSnapshot {
   configuredChannels?: string[];
 }
 
-export type ChannelLinkMode = 'embedded_qr' | 'terminal_login' | 'terminal_setup' | 'none';
-
-const EMBEDDED_QR_CHANNELS = new Set(['whatsapp']);
-const TERMINAL_LOGIN_CHANNELS = new Set(['feishu', 'whatsapp', 'zalouser', 'openclaw-weixin']);
-const TERMINAL_QR_SETUP_CHANNELS = new Set(['signal', 'zalouser']);
+export type ChannelLinkMode = 'embedded_qr' | 'terminal_setup' | 'none';
 const CLI_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 let catalogPromise: Promise<OfficialChannelCatalog> | undefined;
@@ -147,6 +144,7 @@ export function normalizeOfficialChannelCapability(payload: unknown): OfficialCh
     actions: Array.isArray(row.actions)
       ? row.actions.filter((action: unknown): action is string => typeof action === 'string')
       : [],
+    qrLogin: row.qrLogin === true,
   };
 }
 
@@ -169,12 +167,12 @@ export function loadOfficialChannelCapability(
   return pending;
 }
 
-export function channelLinkMode(channelId: string, installed: boolean): ChannelLinkMode {
-  const id = channelId.trim().toLowerCase();
+export function channelLinkMode(
+  capability: OfficialChannelCapability | null | undefined,
+  installed: boolean,
+): ChannelLinkMode {
   if (!installed) return 'terminal_setup';
-  if (EMBEDDED_QR_CHANNELS.has(id)) return 'embedded_qr';
-  if (TERMINAL_LOGIN_CHANNELS.has(id)) return 'terminal_login';
-  if (TERMINAL_QR_SETUP_CHANNELS.has(id)) return 'terminal_setup';
+  if (capability?.qrLogin) return 'embedded_qr';
   return 'none';
 }
 
@@ -184,14 +182,6 @@ export function buildChannelSetupCommand(channelId: string, accountId?: string):
     ? ` --account ${assertChannelCliIdentifier(accountId, 'Account ID')}`
     : '';
   return `openclaw channels add --channel ${channel}${account}\n`;
-}
-
-export function buildChannelLoginCommand(channelId: string, accountId?: string): string {
-  const channel = assertChannelCliIdentifier(channelId, 'Channel ID');
-  const account = accountId?.trim()
-    ? ` --account ${assertChannelCliIdentifier(accountId, 'Account ID')}`
-    : '';
-  return `openclaw channels login --channel ${channel}${account}\n`;
 }
 
 const SENSITIVE_KEY = /(token|secret|password|passwd|cookie|authorization|private.?key|api.?key|credential)$/i;
