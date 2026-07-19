@@ -73,7 +73,7 @@ export function SettingsPageFull() {
   }, [budgetLimit]);
   const { connected, connecting } = useChatStore();
   const prefersDark = usePrefersDark();
-  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petIdea, setPetIdea] = useState('');
   const [preparingPetSkill, setPreparingPetSkill] = useState(false);
@@ -820,6 +820,26 @@ export function SettingsPageFull() {
             <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.backdropContrastHint', '根据萌宠附近桌面颜色调整提示文字，不保存桌面图像')}</div>
           </div>
           <Toggle enabled={backdropContrastEnabled} onChange={setBackdropContrastEnabled} />
+        </div>
+
+        <div className="mt-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('pet.settings.captionScale', '提示文字大小')}</div>
+              <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.captionScaleHint', '调整萌宠状态与提示文字的显示大小')}</div>
+            </div>
+            <span className="w-10 text-right font-mono text-xs text-aegis-primary">{Math.round(petCaptionScale * 100)}%</span>
+          </div>
+          <input
+            className="mt-2 w-full accent-[rgb(var(--aegis-primary))]"
+            type="range"
+            min="0.85"
+            max="1.35"
+            step="0.05"
+            value={petCaptionScale}
+            onChange={(event) => setPetCaptionScale(Number(event.target.value))}
+            aria-label={t('pet.settings.captionScale', '提示文字大小')}
+          />
         </div>
 
         {/* Custom static upload */}

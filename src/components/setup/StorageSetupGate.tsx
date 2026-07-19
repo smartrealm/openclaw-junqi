@@ -5,11 +5,14 @@ import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, Lo
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
+import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
 import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 interface StorageSetupStatus {
   configured: boolean;
+  configurationError?: string | null;
+  runtimeReconfigurationRecoveryError?: string | null;
   stateDir: string;
   configPath: string;
   workspaceDir: string;
@@ -34,6 +37,9 @@ interface StorageConfigureResult {
   openclawRelocationRequired: boolean;
 }
 
+type StorageCompletion = Pick<StorageConfigureResult, 'createdFresh'>
+  & Partial<Pick<StorageConfigureResult, 'runtimeReconfigurationRequired' | 'openclawRelocationRequired'>>;
+
 interface MigrationProgress {
   key?: string;
   message: string;
@@ -41,11 +47,7 @@ interface MigrationProgress {
 }
 
 interface StorageSetupStepProps {
-  onReady: (result?: {
-    createdFresh: boolean;
-    runtimeReconfigurationRequired?: boolean;
-    openclawRelocationRequired?: boolean;
-  }) => void;
+  onReady: (result?: StorageCompletion) => void;
   onBack: () => void;
   logs: SetupLog[];
   forceConfigure?: boolean;
@@ -79,6 +81,13 @@ function remapChildPath(path: string, source: string, target: string): string {
   const separator = path.includes('\\') ? '\\' : '/';
   if (!candidate.startsWith(`${root}${separator}`)) return path;
   return `${target.replace(/[\\/]+$/, '')}${pathNormalized.slice(sourceNormalized.length)}`;
+}
+
+function migrationSource(status: StorageSetupStatus, forceConfigure: boolean): string {
+  // Forced recovery is a relocation of the currently selected layout, not a
+  // migration from the legacy default. Using legacyDir here silently detached
+  // the workspace/runtime fields when the user's active state lived elsewhere.
+  return forceConfigure ? status.stateDir : status.legacyDir;
 }
 
 interface LocationRowProps {
@@ -118,6 +127,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const setStorageDraft = useAppStore((state) => state.setStorageDraft);
   const checkedRef = useRef(false);
   const mountedRef = useRef(false);
+  const initialCompletionHandledRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const [status, setStatus] = useState<StorageSetupStatus | null>(null);
@@ -137,49 +147,54 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   const [migrateExisting, setMigrateExisting] = useState(true);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  const [recoveringRuntime, setRecoveringRuntime] = useState(false);
   const [progress, setProgress] = useState<MigrationProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [completion, setCompletion] = useState<StorageCompletion | null>(null);
+
+  const loadStorageStatus = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (!(window as any).__TAURI_INTERNALS__) {
+        return;
+      }
+      const result = await invoke<StorageSetupStatus>('get_storage_setup_status');
+      if (!mountedRef.current) return;
+      const draft = storageDraft;
+      setStatus(result);
+      setError(result.runtimeReconfigurationRecoveryError ?? result.configurationError ?? null);
+      setTargetDir(draft?.targetDir ?? result.stateDir);
+      setWorkspaceDir(draft?.workspaceDir ?? result.workspaceDir);
+      setRuntimeDir(draft?.runtimeDir ?? result.runtimeDir);
+      setNpmCacheDir(draft?.npmCacheDir ?? result.npmCacheDir ?? '');
+      setCustomNpmCache(draft?.customNpmCache ?? Boolean(result.npmCacheDir));
+      setNpmPrefix(draft?.npmPrefix ?? result.npmPrefix ?? '');
+      setCustomNpmPrefix(draft?.customNpmPrefix ?? Boolean(result.npmPrefix));
+      setNodeRuntimeDir(draft?.nodeRuntimeDir ?? result.nodeRuntimeDir ?? '');
+      setCustomNodeRuntime(result.customNodeRuntimeSupported && (draft?.customNodeRuntime ?? Boolean(result.nodeRuntimeDir)));
+      setGitRuntimeDir(draft?.gitRuntimeDir ?? result.gitRuntimeDir ?? '');
+      setCustomGitRuntime(result.customGitRuntimeSupported && (draft?.customGitRuntime ?? Boolean(result.gitRuntimeDir)));
+      setTerminalIntegration(draft?.terminalIntegration ?? result.terminalIntegration);
+      setMigrateExisting(draft?.migrateExisting ?? (forceConfigure || (!result.configured && result.legacyExists)));
+      setShowLocations(draft?.showLocations ?? false);
+    } catch (cause) {
+      if (mountedRef.current) setError(String(cause));
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [forceConfigure, storageDraft]);
 
   useEffect(() => {
     mountedRef.current = true;
     if (!checkedRef.current) {
       checkedRef.current = true;
-      if (!(window as any).__TAURI_INTERNALS__) {
-        setLoading(false);
-        setError(t('storage.loadFailed', '无法读取存储配置'));
-      } else {
-        void invoke<StorageSetupStatus>('get_storage_setup_status')
-          .then((result) => {
-            if (!mountedRef.current) return;
-            const draft = storageDraft;
-            setStatus(result);
-            setTargetDir(draft?.targetDir ?? (forceConfigure ? result.stateDir : result.legacyDir));
-            setWorkspaceDir(draft?.workspaceDir ?? result.workspaceDir);
-            setRuntimeDir(draft?.runtimeDir ?? result.runtimeDir);
-            setNpmCacheDir(draft?.npmCacheDir ?? result.npmCacheDir ?? '');
-            setCustomNpmCache(draft?.customNpmCache ?? Boolean(result.npmCacheDir));
-            setNpmPrefix(draft?.npmPrefix ?? result.npmPrefix ?? '');
-            setCustomNpmPrefix(draft?.customNpmPrefix ?? Boolean(result.npmPrefix));
-            setNodeRuntimeDir(draft?.nodeRuntimeDir ?? result.nodeRuntimeDir ?? '');
-            setCustomNodeRuntime(result.customNodeRuntimeSupported && (draft?.customNodeRuntime ?? Boolean(result.nodeRuntimeDir)));
-            setGitRuntimeDir(draft?.gitRuntimeDir ?? result.gitRuntimeDir ?? '');
-            setCustomGitRuntime(result.customGitRuntimeSupported && (draft?.customGitRuntime ?? Boolean(result.gitRuntimeDir)));
-            setTerminalIntegration(draft?.terminalIntegration ?? result.terminalIntegration);
-            setMigrateExisting(draft?.migrateExisting ?? (forceConfigure || result.legacyExists));
-            setShowLocations(draft?.showLocations ?? false);
-          })
-          .catch((cause) => {
-            if (mountedRef.current) setError(String(cause));
-          })
-          .finally(() => {
-            if (mountedRef.current) setLoading(false);
-          });
-      }
+      void loadStorageStatus();
     }
     return () => {
       mountedRef.current = false;
     };
-  }, [forceConfigure, storageDraft]);
+  }, [loadStorageStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,7 +227,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     if (typeof selected !== 'string') return;
     const target = childStoragePath(selected);
     const shouldMigrate = Boolean(forceConfigure || status?.legacyExists);
-    const source = forceConfigure ? status?.stateDir ?? '' : status?.legacyDir ?? '';
+    const source = status ? migrationSource(status, forceConfigure) : '';
     setTargetDir(target);
     setMigrateExisting(shouldMigrate);
     if (status && shouldMigrate) {
@@ -249,9 +264,12 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       progress: 0.02,
     });
     try {
+      const shouldMigrateSelectedState = !usingLegacy
+        && migrateExisting
+        && (forceConfigure || status.legacyExists);
       const result = await invoke<StorageConfigureResult>('configure_storage', {
         targetDir,
-        migrateExisting: !usingLegacy && migrateExisting && (forceConfigure || status.legacyExists),
+        migrateExisting: shouldMigrateSelectedState,
         locations: {
           workspaceDir,
           runtimeDir,
@@ -274,20 +292,63 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     } finally {
       if (mountedRef.current) setApplying(false);
     }
-  }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+  }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingLegacy, workspaceDir]);
+
+  useEffect(() => {
+    setCompletion(null);
+  }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, targetDir, terminalIntegration, workspaceDir]);
+
+  useEffect(() => {
+    if (initialCompletionHandledRef.current || !status?.configured || storageDraft) return;
+    initialCompletionHandledRef.current = true;
+    setCompletion({
+      createdFresh: false,
+      openclawRelocationRequired: status.openclawRelocationRequired,
+    });
+  }, [status, storageDraft]);
+
+  const advanceAfterStorage = useCallback(() => {
+    if (completion) onReadyRef.current(completion);
+  }, [completion]);
+
+  const rememberDraft = useCallback(() => {
+    const draft: StorageSetupDraft = {
+      targetDir,
+      workspaceDir,
+      runtimeDir,
+      npmCacheDir,
+      customNpmCache,
+      npmPrefix,
+      customNpmPrefix,
+      nodeRuntimeDir,
+      customNodeRuntime,
+      gitRuntimeDir,
+      customGitRuntime,
+      terminalIntegration,
+      migrateExisting,
+      showLocations,
+    };
+    setStorageDraft(draft);
+  }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, showLocations, targetDir, terminalIntegration, workspaceDir]);
 
   const handleBack = useCallback(() => {
-    if (status && !applying) {
-      const draft: StorageSetupDraft = {
-        targetDir, workspaceDir, runtimeDir, npmCacheDir, customNpmCache,
-        npmPrefix, customNpmPrefix, nodeRuntimeDir, customNodeRuntime,
-        gitRuntimeDir, customGitRuntime, terminalIntegration, migrateExisting,
-        showLocations,
-      };
-      setStorageDraft(draft);
-    }
+    if (status && !applying && !recoveringRuntime) rememberDraft();
     onBack();
-  }, [applying, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, onBack, runtimeDir, setStorageDraft, showLocations, status, targetDir, terminalIntegration, workspaceDir]);
+  }, [applying, onBack, recoveringRuntime, rememberDraft, status]);
+
+  const recoverRuntimeReconfiguration = useCallback(async () => {
+    if (recoveringRuntime) return;
+    setRecoveringRuntime(true);
+    setError(null);
+    try {
+      await rollbackRuntimeReconfiguration();
+      await loadStorageStatus();
+    } catch (cause) {
+      if (mountedRef.current) setError(String(cause));
+    } finally {
+      if (mountedRef.current) setRecoveringRuntime(false);
+    }
+  }, [loadStorageStatus, recoveringRuntime]);
 
   if (loading) {
     return (
@@ -324,11 +385,37 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     );
   }
 
-  const actionLabel = usingLegacy
-    ? t('storage.continue', '继续')
-    : migrateExisting && status.legacyExists
-      ? t('storage.migrateAndContinue', '迁移并继续')
-      : t('storage.createAndContinue', '创建并继续');
+  if (status.runtimeReconfigurationRecoveryError) {
+    return (
+      <SetupShell
+        active={2}
+        title={t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}
+        subtitle={t('storage.runtimeRecoverySubtitle', 'OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。')}
+        logs={logs}
+        previousAction={{ onClick: handleBack, disabled: recoveringRuntime }}
+        nextAction={{
+          label: recoveringRuntime
+            ? t('storage.runtimeRecoveryRunning', '正在恢复…')
+            : t('storage.runtimeRecoveryRetry', '重试恢复'),
+          onClick: () => void recoverRuntimeReconfiguration(),
+          disabled: recoveringRuntime,
+          loading: recoveringRuntime,
+          icon: 'none',
+        }}
+      >
+        <section className="border-y border-aegis-border py-7">
+          <h1 className="text-lg font-semibold">{t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}</h1>
+          <p className="mt-3 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">
+            {error ?? status.runtimeReconfigurationRecoveryError}
+          </p>
+        </section>
+      </SetupShell>
+    );
+  }
+
+  // Selecting a location is a setup transition: persistence happens as part
+  // of advancing to the next stage, rather than as a separate save action.
+  const actionLabel = t('setup.nextStep', '下一步');
   const dataLayoutLocked = !usingLegacy && status.legacyExists && migrateExisting;
   const layoutComplete = Boolean(
     targetDir.trim()
@@ -349,12 +436,17 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
       previousAction={{ onClick: handleBack, disabled: applying }}
       nextAction={{
         label: applying ? progress?.message || t('storage.preparing', '正在准备新存储位置…') : actionLabel,
-        onClick: () => void applyStorage(),
+        onClick: completion ? advanceAfterStorage : () => void applyStorage(),
         disabled: applying || !layoutComplete,
         loading: applying,
         icon: 'none',
       }}
     >
+      {completion && (
+        <p className="border-l-2 border-aegis-success py-2 pl-3 text-sm text-aegis-success" role="status">
+          {t('storage.saved', '存储位置已保存，请点击下一步继续。')}
+        </p>
+      )}
       <section className="border-y border-aegis-border py-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <button
@@ -413,10 +505,11 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
                 checked={migrateExisting}
                 onChange={() => {
                   setMigrateExisting(true);
-                  setWorkspaceDir(remapChildPath(status.workspaceDir, status.legacyDir, targetDir));
-                  setRuntimeDir(remapChildPath(status.runtimeDir, status.legacyDir, targetDir));
+                  const source = migrationSource(status, forceConfigure);
+                  setWorkspaceDir(remapChildPath(status.workspaceDir, source, targetDir));
+                  setRuntimeDir(remapChildPath(status.runtimeDir, source, targetDir));
                   if (customNpmCache && status.npmCacheDir) {
-                    setNpmCacheDir(remapChildPath(status.npmCacheDir, status.legacyDir, targetDir));
+                    setNpmCacheDir(remapChildPath(status.npmCacheDir, source, targetDir));
                   } else {
                     setNpmCacheDir('');
                   }

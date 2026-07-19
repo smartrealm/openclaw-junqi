@@ -21,9 +21,9 @@ import { resolveTab, type SidebarTab } from '@/components/Layout/tab-utils';
 import {
   applyDocumentLanguage,
   browserDefaultLanguage,
-  isSupportedLanguage,
+  isAppLanguage,
   persistLanguagePreference,
-  type SupportedLanguage,
+  type AppLanguage,
 } from '@/i18n/languages';
 
 // ═══════════════════════════════════════════════════════════
@@ -46,7 +46,7 @@ interface SettingsState {
   sidebarOpen: boolean;
   sidebarWidth: number;
   settingsOpen: boolean;
-  language: SupportedLanguage;
+  language: AppLanguage;
   notificationsEnabled: boolean;
   soundEnabled: boolean;
   dndMode: boolean;
@@ -83,7 +83,7 @@ interface SettingsState {
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
   setSettingsOpen: (open: boolean) => void;
-  setLanguage: (lang: SupportedLanguage) => void;
+  setLanguage: (lang: AppLanguage) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setSoundEnabled: (enabled: boolean) => void;
   setDndMode: (dnd: boolean) => void;
@@ -124,11 +124,13 @@ async function applyUiZoom(scale: number): Promise<void> {
 }
 
 // Auto-detect language on first run: check saved → system language → fallback to English
-const detectLang = (): SupportedLanguage => {
+const detectLang = (): AppLanguage => {
   const saved = localStorage.getItem('aegis-language');
-  if (isSupportedLanguage(saved)) return saved;
+  if (isAppLanguage(saved)) return saved;
   // First run — detect from system/browser language
-  return browserDefaultLanguage();
+  const language = browserDefaultLanguage();
+  persistLanguagePreference(language);
+  return language;
 };
 const savedLang = detectLang();
 
@@ -234,7 +236,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setLanguage: (lang) => {
-    if (!isSupportedLanguage(lang)) return;
+    if (!isAppLanguage(lang)) return;
     persistLanguagePreference(lang);
     applyDocumentLanguage(lang);
     set({ language: lang });

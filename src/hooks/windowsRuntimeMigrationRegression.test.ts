@@ -22,6 +22,10 @@ const terminalIntegration = readFileSync(
   new URL('../../src-tauri/src/commands/terminal_integration/mod.rs', import.meta.url),
   'utf8',
 );
+const terminalWindows = readFileSync(
+  new URL('../../src-tauri/src/commands/terminal_integration/windows.rs', import.meta.url),
+  'utf8',
+);
 
 test('BUG-WRM-01 migration locks data layout but permits independent runtime locations', () => {
   assert.match(storagePanel, /const dataLayoutLocked =/);
@@ -40,7 +44,7 @@ test('BUG-WRM-02 npm prefix change runs a dedicated dynamic-prefix relocation', 
   assert.match(setup, /OpenclawInstallMode::Relocate/);
   assert.match(
     setup,
-    /OpenclawInstallMode::Relocate => \{[\s\S]*?pick_install_target\(&app, step\)/,
+    /OpenclawInstallMode::Relocate => \{[\s\S]*?pick_install_target\(&app, step, &compatible_node\)/,
   );
   assert.match(setupFlow, /await relocateOpenclaw\(\)/);
   assert.match(api, /invoke<string>\("relocate_openclaw"\)/);
@@ -60,9 +64,12 @@ test('BUG-WRM-03 pending relocation survives restart and clears only after succe
     relocationCommit.indexOf('complete_openclaw_relocation')
       > relocationCommit.indexOf('persist_selected_openclaw_binary'),
   );
-  assert.match(
-    relocationCommit,
-    /verify_relocated_openclaw_prefix\(binary, installed_prefix\)/,
+  assert.match(relocationCommit, /fn freeze_target\(&mut self, target: &Path\)/);
+  assert.match(relocationCommit, /self\.effective_target = Some\(target\.to_path_buf\(\)\)/);
+  assert.match(relocationCommit, /verify_relocated_openclaw_prefix\(binary, target\)/);
+  assert.ok(
+    relocationCommit.indexOf('self.effective_target = Some(target.to_path_buf())')
+      < relocationCommit.indexOf('verify_relocated_openclaw_prefix(binary, target)'),
   );
   const system = readFileSync(
     new URL('../../src-tauri/src/commands/system.rs', import.meta.url),
@@ -70,7 +77,7 @@ test('BUG-WRM-03 pending relocation survives restart and clears only after succe
   );
   assert.match(
     system,
-    /if paths::openclaw_relocation_required\(\) \{\s*return None;/,
+    /fn resolve_authoritative_openclaw_binary\(\)[\s\S]*?paths::openclaw_relocation_required\(\)[\s\S]*?AuthoritativeOpenclawResolution::Blocked/,
   );
   assert.match(system, /ensure_openclaw_relocation_complete/);
   assert.match(setup, /fn for_current_storage\(self\) -> Self/);
@@ -111,27 +118,34 @@ test('BUG-WRM-06 an explicit portable Node never falls through to system npm', (
     new URL('../../src-tauri/src/commands/system.rs', import.meta.url),
     'utf8',
   );
-  const npmCheck = system.slice(system.indexOf('pub async fn check_npm'), system.indexOf('fn portable_node_is_compatible'));
-  assert.match(npmCheck, /if let Some\(node\) = paths::configured_node_path\(\)/);
-  assert.ok(npmCheck.indexOf('return Ok(NpmStatus') < npmCheck.indexOf('let system_npm'));
+  const npmCheck = system.slice(system.indexOf('pub\(crate\) async fn check_npm_for_node'), system.indexOf('fn npm_openclaw_entry'));
+  assert.match(npmCheck, /NpmExecutionContext::for_node\(Path::new\(node_path\)\)/);
+  assert.match(system, /impl NpmExecutionContext[\s\S]*?search_path_with_executable_parent\(node, &openclaw_search_path\(\)\)/);
+  assert.match(system, /struct NodeRuntimeContract/);
+  assert.match(setup, /NodeRuntimeContract::resolve\(requirement\)/);
+  assert.match(setup, /NpmExecutionContext::for_node\(&node_path\)/);
+  assert.match(setup, /npm: &npm_context/);
+  assert.doesNotMatch(npmCheck, /detect_path\("npm"\)/);
   assert.match(setup, /let target_node = runtime_binary\(&target, "node"\)/);
-  assert.match(setup, /let target_npm = staged_npm_cli\(&target\)/);
-  assert.match(setup, /if !force && target_npm\.is_file\(\)/);
-  assert.match(setup, /requirement\.supports\(&version\)/);
+  assert.match(setup, /validate_node_runtime_pair\(&target_node, &requirement\)/);
+  assert.doesNotMatch(setup, /staged_npm_cli/);
 });
 
-test('BUG-WRM-07 terminal integration succeeds before relocation is committed', () => {
+test('BUG-WRM-07 terminal integration uses the validated runtime before relocation commits', () => {
   const relocationCommit = setup.slice(
     setup.indexOf('impl OpenclawRelocationRequest'),
     setup.indexOf('async fn install_openclaw_impl'),
   );
-  const terminalSync = relocationCommit.indexOf('sync_terminal_integration_for_relocation');
+  const terminalSync = relocationCommit.indexOf('sync_terminal_integration_with_native_runtime');
   const persistBinary = relocationCommit.indexOf('persist_selected_openclaw_binary');
   const completeRelocation = relocationCommit.indexOf('complete_openclaw_relocation');
   assert.ok(terminalSync >= 0);
-  assert.ok(terminalSync < persistBinary);
-  assert.ok(persistBinary < completeRelocation);
-  assert.match(terminalIntegration, /native_binary_override: Option<&Path>/);
+  assert.ok(persistBinary < terminalSync);
+  assert.ok(terminalSync < completeRelocation);
+  assert.match(terminalIntegration, /NativeOpenclawLaunchSpec/);
+  assert.match(terminalWindows, /NativeOpenclawLaunchSpec::NodeScript/);
+  assert.doesNotMatch(terminalWindows, /detect_path\("node"\)/);
+  assert.doesNotMatch(terminalWindows, /configured_node_path\(\)/);
 });
 
 test('BUG-WRM-08 path policy and relocation commit each have one owner', () => {
@@ -141,11 +155,62 @@ test('BUG-WRM-08 path policy and relocation commit each have one owner', () => {
   assert.doesNotMatch(setup, /fn paths_refer_to_same_location/);
   assert.doesNotMatch(storage, /fn locations_overlap/);
   assert.match(setup, /struct OpenclawRelocationRequest/);
-  assert.match(setup, /fn commit\(&self, binary: &Path, installed_prefix: &Path\)/);
+  assert.match(setup, /async fn commit\([\s\S]*?runtime: &crate::commands::system::NativeOpenclawRuntime/);
+});
+
+test('BUG-WRM-09 runtime location changes persist a compensating transaction until Gateway health commits it', () => {
+  assert.match(paths, /struct PendingRuntimeReconfiguration/);
+  assert.match(paths, /fn begin_runtime_reconfiguration/);
+  assert.match(paths, /fn commit_runtime_reconfiguration/);
+  assert.match(paths, /fn stage_runtime_reconfiguration_previous_layout/);
+  assert.match(paths, /fn complete_runtime_reconfiguration_recovery/);
+  assert.doesNotMatch(paths, /fn rollback_runtime_reconfiguration/);
+  assert.match(storage, /pub async fn commit_runtime_reconfiguration/);
+  assert.match(storage, /pub async fn rollback_runtime_reconfiguration/);
+  assert.match(storage, /recover_interrupted_runtime_reconfiguration/);
+  assert.match(storage, /recover_runtime_reconfiguration_after_failure/);
+  assert.match(storage, /StorageReconfigurationFailurePolicy/);
+  assert.match(lib, /commands::storage::recover_interrupted_runtime_reconfiguration/);
+  assert.match(lib, /commands::storage::commit_runtime_reconfiguration/);
+  assert.match(lib, /commands::storage::rollback_runtime_reconfiguration/);
+  assert.match(api, /invoke<boolean>\("commit_runtime_reconfiguration"\)/);
+  assert.match(api, /invoke<boolean>\("rollback_runtime_reconfiguration"\)/);
+
+  const selection = setupFlow.slice(
+    setupFlow.indexOf('const selectMode = useCallback'),
+    setupFlow.indexOf('const requestReinstall = useCallback'),
+  );
+  assert.match(selection, /await commitRuntimeReconfiguration\(\)/);
+  assert.match(selection, /const restoredRuntimeLocations = await rollbackRuntimeReconfiguration\(\)/);
+  assert.ok(
+    selection.indexOf('rollbackRuntimeReconfiguration')
+      < selection.indexOf('rollbackActiveGatewayRuntime'),
+  );
+});
+
+test('BUG-WRM-10 incomplete runtime recovery blocks storage edits and offers a retryable restoration action', () => {
+  assert.match(storage, /runtime_reconfiguration_recovery_error: Option<String>/);
+  assert.match(storage, /runtime_reconfiguration_recovery_error\.is_none\(\)/);
+  assert.match(storagePanel, /runtimeReconfigurationRecoveryError\?: string \| null/);
+  assert.match(storagePanel, /await rollbackRuntimeReconfiguration\(\);[\s\S]*await loadStorageStatus\(\);/);
+  assert.match(storagePanel, /if \(status\.runtimeReconfigurationRecoveryError\)/);
+  assert.match(storagePanel, /runtimeRecoveryRetry/);
+});
+
+test('BUG-WRM-11 recovery uses the prior verified service launch when the candidate npm runtime is incomplete', () => {
+  const recovery = storage.slice(
+    storage.indexOf('async fn recover_pending_runtime_reconfiguration'),
+    storage.indexOf('async fn recover_runtime_reconfiguration_after_failure'),
+  );
+  assert.match(paths, /struct NativeGatewayServiceLaunchContract/);
+  assert.match(recovery, /gateway_recovery\.native_service_launch\(\)/);
+  assert.match(recovery, /native_openclaw_runtime_from_gateway_service_launch_contract/);
+  assert.match(recovery, /stop_all_locked_with_service_runtime/);
+  assert.doesNotMatch(recovery, /stop_all_locked\(\n\s*state,\n\s*candidate_binary/);
 });
 
 test('runtime migration messages exist in every supported locale', () => {
-  for (const locale of ['zh', 'en', 'ar']) {
+  for (const locale of ['zh', 'zh-TW', 'en', 'ar']) {
     const messages = JSON.parse(
       readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'),
     ) as Record<string, unknown>;

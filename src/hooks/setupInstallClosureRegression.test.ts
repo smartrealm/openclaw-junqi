@@ -5,23 +5,30 @@ import test from "node:test";
 const setup = readFileSync(new URL("../../src-tauri/src/commands/setup.rs", import.meta.url), "utf8");
 const nodeRuntime = readFileSync(new URL("../../src-tauri/src/commands/node_runtime.rs", import.meta.url), "utf8");
 const setupProgress = readFileSync(new URL("../../src-tauri/src/commands/setup_progress.rs", import.meta.url), "utf8");
+const api = readFileSync(new URL("../api/tauri-commands.ts", import.meta.url), "utf8");
 const flow = readFileSync(new URL("./useSetupFlow.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../pages/SetupPage.tsx", import.meta.url), "utf8");
 const panels = readFileSync(new URL("../components/setup/SetupFlowPanels.tsx", import.meta.url), "utf8");
 const progressEvents = readFileSync(new URL("./setupProgressEvents.ts", import.meta.url), "utf8");
 
-test("BUG-INSTALL-01 Node checksums use independent mainland mirror consensus", () => {
+test("BUG-INSTALL-01 Node checksums use independent sources with an official fallback", () => {
   const checksumFunction = nodeRuntime.match(/pub\(crate\) fn node_checksum_sources[\s\S]*?\n}/)?.[0] ?? "";
-  assert.match(checksumFunction, /NODE_DISTRIBUTION_SOURCES/);
-  assert.doesNotMatch(checksumFunction, /nodejs\.org/);
+  assert.match(checksumFunction, /NODE_DISTRIBUTION_CATALOG/);
+  assert.match(nodeRuntime, /NodeChecksumAuthority/);
+  assert.match(nodeRuntime, /https:\/\/nodejs\.org\/dist/);
   assert.match(setup, /HashMap::<String, Vec<&'static str>>/);
   assert.match(setup, /providers\.len\(\) >= 2/);
 });
 
-test("BUG-INSTALL-02 a missing npm forces Node installer repair", () => {
-  assert.match(flow, /if \(!npmStatus\.available\)[\s\S]*?await installNode\(true\)/);
-  assert.match(setup, /install_node\(app: tauri::AppHandle, force: Option<bool>\)/);
-  assert.match(setup, /current\.available && npm_available && !force/);
+test("BUG-INSTALL-02 a missing bundled npm uses the constrained runtime repair path", () => {
+  assert.match(flow, /let npmStatus = setupNode\.npm/);
+  assert.match(flow, /nodeStatus\.available && !npmStatus\.available[\s\S]*?await runDependencyInstall\(runId, "node", repairSetupNodeRuntime\)/);
+  assert.doesNotMatch(flow, /await installNode\(true\)/);
+  assert.match(api, /repairSetupNodeRuntime/);
+  assert.match(setup, /pub async fn repair_setup_node_runtime/);
+  assert.match(setup, /pub async fn install_node\([\s\S]*?force: Option<bool>,[\s\S]*?operation_id: Option<String>/);
+  assert.match(setup, /resolve_complete_node_runtime_contract/);
+  assert.match(setup, /install_node_for_requirement_with_operation\(app, requirement\.clone\(\), false, &operation\)/);
 });
 
 test("BUG-INSTALL-03 damaged OpenClaw metadata cannot block its repair", () => {
@@ -70,5 +77,5 @@ test("BUG-INSTALL-09 Windows installers request elevation and retain exit status
   assert.match(setup, /ShellExecuteExW/);
   assert.match(setup, /"runas\\0"/);
   assert.match(setup, /GetExitCodeProcess/);
-  assert.match(setup, /exit_code == 0 \|\| exit_code == 3010/);
+  assert.match(setup, /Ok\(Some\(0 \| 3010\)\)/);
 });

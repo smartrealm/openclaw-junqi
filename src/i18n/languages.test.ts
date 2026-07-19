@@ -3,22 +3,25 @@ import assert from 'node:assert/strict';
 import {
   APP_LANGUAGE_OPTIONS,
   browserDefaultLanguage,
+  isAppLanguage,
   isSupportedLanguage,
   languageDirection,
   nextPrimaryLanguage,
 } from './languages';
 
-test('visible app language options are Chinese and English', () => {
-  assert.deepEqual(APP_LANGUAGE_OPTIONS.map((option) => option.value), ['zh', 'en']);
+test('visible app language options include both official Chinese wizard locales', () => {
+  assert.deepEqual(APP_LANGUAGE_OPTIONS.map((option) => option.value), ['zh', 'zh-TW', 'en']);
 });
 
-test('legacy Arabic remains supported for persisted users', () => {
+test('legacy Arabic is not an active application language', () => {
   assert.equal(isSupportedLanguage('ar'), true);
+  assert.equal(isAppLanguage('ar'), false);
   assert.equal(languageDirection('ar'), 'rtl');
 });
 
 test('command palette cycles between primary languages only', () => {
-  assert.equal(nextPrimaryLanguage('zh'), 'en');
+  assert.equal(nextPrimaryLanguage('zh'), 'zh-TW');
+  assert.equal(nextPrimaryLanguage('zh-TW'), 'en');
   assert.equal(nextPrimaryLanguage('en'), 'zh');
   assert.equal(nextPrimaryLanguage('ar'), 'zh');
 });

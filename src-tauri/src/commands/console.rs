@@ -15,7 +15,7 @@ const CONTROL_UI_LABEL: &str = "control-ui";
 /// (`~/.openclaw/openclaw.json` → gateway.auth.token).
 fn read_gateway_token() -> Option<String> {
     let raw = std::fs::read_to_string(paths::active_config_path()).ok()?;
-    let cfg: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let cfg = crate::commands::config::parse_openclaw_config(&raw).ok()?;
     cfg.get("gateway")?
         .get("auth")?
         .get("token")?

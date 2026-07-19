@@ -6,11 +6,22 @@ mod tray;
 mod window_adaptation;
 mod window_sizing;
 
+use commands::channel_enrollment::ChannelEnrollmentRegistry;
 use state::GatewayProcess;
 use tauri::{Emitter, Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if commands::uninstall::requested() {
+        if let Err(error) = commands::uninstall::run() {
+            eprintln!("[uninstall] {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if let Err(error) = paths::recover_interrupted_runtime_mode_switch() {
+        eprintln!("[runtime-switch] {error}");
+    }
     // GUI-launched processes on macOS can miss the user's login PATH. Resolve
     // it before Tauri starts worker threads so child tools inherit it reliably.
     commands::app_settings::prime_login_shell_path();
@@ -31,6 +42,7 @@ pub fn run() {
         // auto-saves on exit). First-launch sizing is handled in setup() below.
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(GatewayProcess::new())
+        .manage(ChannelEnrollmentRegistry::default())
         .invoke_handler(tauri::generate_handler![
             // Gateway
             commands::gateway::start_gateway,
@@ -39,6 +51,8 @@ pub fn run() {
             commands::gateway::stop_gateway,
             commands::gateway::gateway_status,
             commands::gateway::probe_gateway_port,
+            commands::gateway::probe_selected_gateway,
+            commands::gateway::handoff_gateway_to_official_service,
             commands::state_dir_probe::detect_state_dir_split,
             commands::gateway_service::gateway_autostart_status,
             commands::gateway_service::enable_gateway_autostart,
@@ -54,6 +68,8 @@ pub fn run() {
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,
+            commands::storage::commit_runtime_reconfiguration,
+            commands::storage::rollback_runtime_reconfiguration,
             commands::storage::update_npm_cache_directory,
             commands::terminal_integration::apply_terminal_integration,
             commands::terminal_integration::get_terminal_integration_status,
@@ -72,7 +88,7 @@ pub fn run() {
             commands::system::get_platform_info,
             commands::system::check_node,
             commands::setup::check_setup_node,
-            commands::system::check_npm,
+            commands::setup::repair_setup_node_runtime,
             commands::system::check_git,
             commands::system::check_openclaw,
             commands::openclaw_update::check_openclaw_update,
@@ -97,6 +113,7 @@ pub fn run() {
             commands::voice_wake::voice_wake_status,
             // Setup
             commands::setup::install_node,
+            commands::setup::cancel_dependency_install,
             commands::managed_runtime::update_managed_node,
             commands::setup::install_git,
             commands::managed_runtime::update_managed_git,
@@ -121,6 +138,8 @@ pub fn run() {
             commands::config::read_provider_api_key,
             commands::config::detect_gateway_config,
             commands::config::set_active_gateway_runtime,
+            commands::config::commit_active_gateway_runtime,
+            commands::config::rollback_active_gateway_runtime,
             commands::openclaw_provider::get_openclaw_provider_catalog,
             commands::openclaw_provider::get_openclaw_config_schema,
             commands::openclaw_provider::get_openclaw_auth_profiles,
@@ -129,6 +148,11 @@ pub fn run() {
             commands::openclaw_channel::get_openclaw_channel_capabilities,
             commands::openclaw_channel::get_openclaw_channel_status,
             commands::openclaw_channel::get_openclaw_channel_logs,
+            commands::channel_enrollment::start_channel_enrollment,
+            commands::channel_enrollment::poll_channel_enrollment,
+            commands::channel_enrollment::read_channel_enrollment_credential,
+            commands::channel_enrollment::complete_channel_enrollment,
+            commands::channel_enrollment::cancel_channel_enrollment,
             // Pairing
             commands::pairing::list_pairing_requests,
             commands::pairing::approve_pairing_request,
@@ -305,6 +329,21 @@ pub fn run() {
             commands::agent_workspace_storage::save_agent_workspace_tasks,
         ])
         .setup(|app| {
+            // A location reconfiguration can own a platform service (notably a
+            // Windows Scheduled Task), so recover it only after Tauri has
+            // constructed the managed Gateway state and service APIs. The
+            // memento remains durable when this fails and setup can surface a
+            // retryable recovery state instead of launching mixed paths.
+            let recovery_handle = app.handle().clone();
+            let recovery_state = app.state::<GatewayProcess>();
+            if let Err(error) = tauri::async_runtime::block_on(
+                commands::storage::recover_interrupted_runtime_reconfiguration(
+                    &recovery_handle,
+                    recovery_state,
+                ),
+            ) {
+                eprintln!("[runtime-reconfiguration] {error}");
+            }
             commands::fs_watcher::init(app);
             let _ = commands::hooks::ensure_installed();
             commands::agent_event_watcher::start(app.handle().clone());

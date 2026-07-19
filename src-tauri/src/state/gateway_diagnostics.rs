@@ -20,6 +20,14 @@ const REPAIR_PATTERNS: &[&str] = &[
     "plugin payload",
 ];
 
+const STATE_DIRECTORY_PATTERNS: &[&str] = &[
+    "openclaw state directory is incompatible",
+    "junqi_state_directory_probe_failed",
+    "operation not permitted, chmod",
+    "eperm: operation not permitted, chmod",
+    "does not accept the token from junqi's selected state directory",
+];
+
 const TRANSIENT_START_ERROR_PATTERNS: &[&str] = &[
     "startup migrations are already running",
     "WebSocket closed before handshake",
@@ -72,6 +80,7 @@ pub fn is_transient_start_failure(stderr_lines: &[String]) -> bool {
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryAction {
     InspectConfig,
+    SelectStorage,
     Retry,
     Repair,
 }
@@ -81,6 +90,14 @@ pub fn diagnose_startup_failure(
     stderr_lines: &[String],
     _already_attempted_config_repair: bool,
 ) -> RecoveryAction {
+    if stderr_lines.iter().any(|line| {
+        let normalized = line.to_ascii_lowercase();
+        STATE_DIRECTORY_PATTERNS
+            .iter()
+            .any(|pattern| normalized.contains(pattern))
+    }) {
+        return RecoveryAction::SelectStorage;
+    }
     if has_invalid_config_signal(stderr_lines) {
         return RecoveryAction::InspectConfig;
     }
@@ -193,5 +210,14 @@ mod tests {
     fn diagnosis_recommends_repair_for_missing_plugin_entry() {
         let action = diagnose_startup_failure(&["openclaw-lark missing-main-entry".into()], false);
         assert_eq!(action, RecoveryAction::Repair);
+    }
+
+    #[test]
+    fn state_directory_permission_failure_returns_to_storage_selection() {
+        let action = diagnose_startup_failure(
+            &["EPERM: operation not permitted, chmod 'F:\\Tools\\AI\\OpenClaw\\state'".into()],
+            false,
+        );
+        assert_eq!(action, RecoveryAction::SelectStorage);
     }
 }

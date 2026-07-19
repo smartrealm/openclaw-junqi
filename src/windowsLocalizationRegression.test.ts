@@ -12,7 +12,7 @@ const requiredSetupKeys = [
 ];
 
 test('WIN-I18N-01 system dependency progress has every supported translation', () => {
-  for (const language of ['zh', 'en', 'ar']) {
+  for (const language of ['zh', 'zh-TW', 'en', 'ar']) {
     const locale = JSON.parse(read(`./locales/${language}.json`)) as Record<string, unknown>;
     for (const key of requiredSetupKeys) {
       assert.equal(typeof locale[key], 'string', `${language} must define ${key}`);
@@ -22,10 +22,19 @@ test('WIN-I18N-01 system dependency progress has every supported translation', (
 
 test('WIN-I18N-02 Windows installers build Chinese and English variants', () => {
   const config = JSON.parse(read('../src-tauri/tauri.conf.json')) as {
-    bundle: { windows: { nsis: { languages: string[]; displayLanguageSelector: boolean }; wix: { language: string[] } } };
+    bundle: {
+      windows: {
+        nsis: { languages: string[]; displayLanguageSelector: boolean; installerHooks?: string };
+        wix: { language: string[] };
+      };
+    };
   };
   assert.deepEqual(config.bundle.windows.nsis.languages, ['English', 'SimpChinese']);
   assert.equal(config.bundle.windows.nsis.displayLanguageSelector, true);
+  assert.equal(config.bundle.windows.nsis.installerHooks, 'installer-hooks.nsh');
+  const hooks = read('../src-tauri/installer-hooks.nsh');
+  assert.match(hooks, /!macro NSIS_HOOK_PREUNINSTALL/);
+  assert.match(hooks, /--junqi-uninstall-cleanup/);
   assert.deepEqual(config.bundle.windows.wix.language, ['en-US', 'zh-CN']);
 });
 

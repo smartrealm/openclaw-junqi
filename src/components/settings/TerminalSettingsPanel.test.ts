@@ -38,9 +38,10 @@ test('terminal settings have native persistence and a deep-linkable settings tab
 });
 
 test('terminal settings are translated in every supported locale', () => {
-  const locales = ['zh', 'en', 'ar'] as const;
+  const locales = ['zh', 'zh-TW', 'en', 'ar'] as const;
   const openTerminalMarkers: Record<(typeof locales)[number], string> = {
     zh: '已打开',
+    'zh-TW': '已打開',
     en: 'open',
     ar: 'المفتوحة',
   };

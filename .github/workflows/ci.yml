@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════
 # JunQi Desktop — CI
 #
-# Runs on push and PR to main. Four jobs:
+# Runs on push to main/daxia and PRs targeting either integration branch. Four jobs:
 #   1. rust        — cargo check + cargo test --lib (catches backend regressions)
 #   2. frontend    — pnpm install + tsc --noEmit + lint (catches type / style regressions)
 #   3. build       — Vite production build (catches bundler / asset regressions)
@@ -19,9 +19,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, daxia]
   pull_request:
-    branches: [main]
+    branches: [main, daxia]
 
 # Cancel in-progress runs for the same branch on a new push — saves CI minutes
 # when a developer pushes rapid follow-up commits.

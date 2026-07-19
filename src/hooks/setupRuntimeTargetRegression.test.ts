@@ -52,7 +52,7 @@ test('BUG-RT-02 selected Docker recovery never invokes native repair', () => {
   assert.doesNotMatch(dockerRepair, /runOpenClawRepair/);
   assert.match(
     ensure,
-    /matches!\(paths::active_runtime_mode\(\), OpenClawRuntimeMode::Docker\)[\s\S]*return ensure_selected_docker_gateway/,
+    /let selected_mode = paths::active_runtime_mode\(\);[\s\S]*matches!\(selected_mode, OpenClawRuntimeMode::Docker\)[\s\S]*return ensure_selected_docker_gateway/,
   );
   assert.match(
     gateway,

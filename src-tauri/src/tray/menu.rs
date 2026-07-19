@@ -22,6 +22,12 @@ fn labels_for_language(language: &str) -> TrayLabels {
             toggle_island: "显示/隐藏灵动岛",
             quit: "退出 JunQi Desktop",
         },
+        "zh-TW" => TrayLabels {
+            toggle: "顯示/隱藏主視窗",
+            toggle_pet: "顯示/隱藏萌寵",
+            toggle_island: "顯示/隱藏動態島",
+            quit: "結束 JunQi Desktop",
+        },
         "ar" => TrayLabels {
             toggle: "إظهار/إخفاء النافذة الرئيسية",
             toggle_pet: "إظهار/إخفاء الرفيق",
@@ -129,6 +135,7 @@ mod tests {
     #[test]
     fn tray_labels_cover_every_supported_application_language() {
         assert_eq!(labels_for_language("zh").toggle, "显示/隐藏主窗口");
+        assert_eq!(labels_for_language("zh-TW").toggle, "顯示/隱藏主視窗");
         assert_eq!(labels_for_language("en").quit, "Quit JunQi Desktop");
         assert_eq!(labels_for_language("ar").toggle_pet, "إظهار/إخفاء الرفيق");
     }

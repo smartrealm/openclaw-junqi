@@ -15,10 +15,13 @@ import {
   type SetupStep,
 } from "@/stores/setup-navigation";
 import {
-  checkSetupNode, checkNpm, checkGit, checkOpenclaw,
-  installNode, installGit, installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
+  checkSetupNode, checkGit, checkOpenclaw,
+  installNode, repairSetupNodeRuntime, installGit, cancelDependencyInstall,
+  installOpenclaw, reinstallOpenclaw, relocateOpenclaw,
   applyTerminalIntegration,
   checkDocker, pullOpenclawImage, detectGatewayConfig, setActiveGatewayRuntime,
+  commitActiveGatewayRuntime, rollbackActiveGatewayRuntime,
+  commitRuntimeReconfiguration, rollbackRuntimeReconfiguration,
   type DockerStatus,
   type OpenclawStatus,
 } from "@/api/tauri-commands";
@@ -34,6 +37,7 @@ import {
 } from "./setupProgressModel";
 import { normalizeSetupProgressPayload } from "./setupProgressEvents";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
+import { debugWarn } from "@/utils/debugLog";
 import { gateway } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import {
@@ -56,9 +60,12 @@ import {
 } from "@/services/gateway/pluginRecovery";
 import { defaultGatewayWsUrl } from "@/config/runtimeDefaults";
 import {
+  classifyOpenClawWizardFailure,
   OpenClawWizardClient,
   isOpenClawWizardSessionLost,
+  isOpenClawWizardStepDesynchronized,
   requiresOpenClawOnboarding,
+  type OpenClawWizardResult,
   type OpenClawWizardStep,
 } from "@/services/openclawWizard";
 
@@ -98,6 +105,10 @@ const INSTALL_TARGET_KEYS = {
   custom: "setup.openclaw.customNpmPrefix",
   existing: "setup.openclaw.useExisting",
 } as const;
+
+const AUTO_ADVANCE_GATEWAY_STEPS = new Set<SetupStep>([
+  "gateway-stopped",
+]);
 
 function pickInstallTargetFromProgress(
   key: string,
@@ -146,16 +157,16 @@ export interface SetupFlow {
   repairing: boolean;
   brokenPlugins: BrokenGatewayPlugin[];
   forceStorageSelection: boolean;
-  startGateway: () => Promise<void>;
+  startGateway: () => Promise<boolean>;
+  retryGateway: () => Promise<boolean>;
   continueAfterGatewayReady: () => Promise<void>;
-  retryGateway: () => Promise<void>;
   repairAndRetry: () => Promise<void>;
   disablePluginsAndRetry: () => Promise<void>;
-  submitWizardStep: (stepId: string, value?: unknown) => Promise<void>;
-  retryWizard: () => Promise<void>;
-  runNativeSetup: () => Promise<void>;
-  runDockerSetup: () => Promise<void>;
-  retrySetup: () => Promise<void>;
+  submitWizardStep: (stepId: string, value?: unknown) => Promise<OpenClawWizardResult | null>;
+  retryWizard: () => Promise<OpenClawWizardResult | null>;
+  runNativeSetup: () => Promise<boolean>;
+  runDockerSetup: () => Promise<boolean>;
+  retrySetup: () => Promise<boolean>;
   requestReinstall: () => void;
   completeStorageSetup: (result?: {
     createdFresh: boolean;
@@ -165,7 +176,7 @@ export interface SetupFlow {
   selectMode: (mode: InstallMode) => Promise<void>;
   detectDocker: () => Promise<void>;
   refreshRuntime: () => Promise<{ status: OpenclawStatus | null; gatewayRunning: boolean }>;
-  goBack: () => void;
+  goBack: () => Promise<void>;
   retryGit: () => void;
   retryNode: () => void;
   enterWorkspace: (origin?: Element | null) => void;
@@ -245,8 +256,11 @@ export function useSetupFlow(
   }, []);
   const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
   if (!wizardClientRef.current) {
-    wizardClientRef.current = new OpenClawWizardClient((method, params) => gateway.call(method, params));
+    wizardClientRef.current = new OpenClawWizardClient((method, params, options) => gateway.call(method, params, options));
   }
+  useEffect(() => () => {
+    void wizardClientRef.current?.cancel().catch(() => {});
+  }, []);
   const progressRef = useRef(progress);
   progressRef.current = progress;
   const stepsRef = useRef(steps);
@@ -256,16 +270,44 @@ export function useSetupFlow(
     setSteps(next);
   }, [setSteps]);
   const activeRunRef = useRef(0);
-  const beginRun = useCallback(() => {
+  const dependencyInstallScopeRef = useRef(
+    `setup-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+  );
+  const activeDependencyOperationRef = useRef<string | null>(null);
+  const requestDependencyCancellation = useCallback((operationId: string) => {
+    void cancelDependencyInstall(operationId).catch((error) => {
+      debugWarn("app", "[setup] dependency installer cancellation request failed:", error);
+    });
+  }, []);
+  const cancelActiveRun = useCallback(() => {
+    const operationId = activeDependencyOperationRef.current;
+    activeDependencyOperationRef.current = null;
     activeRunRef.current += 1;
+    if (operationId) requestDependencyCancellation(operationId);
+  }, [requestDependencyCancellation]);
+  const beginRun = useCallback(() => {
+    cancelActiveRun();
     setInstallTarget(null);
     setNodeRequirement(null);
     return activeRunRef.current;
-  }, [setInstallTarget]);
-  const cancelActiveRun = useCallback(() => {
-    activeRunRef.current += 1;
-  }, []);
+  }, [cancelActiveRun, setInstallTarget]);
   const isRunActive = useCallback((runId: number) => activeRunRef.current === runId, []);
+  const runDependencyInstall = useCallback(async <T,>(
+    runId: number,
+    tool: "git" | "node",
+    install: (operationId: string) => Promise<T>,
+  ): Promise<T> => {
+    if (!isRunActive(runId)) throw new Error("setup cancelled");
+    const operationId = `${dependencyInstallScopeRef.current}:${runId}:${tool}`;
+    activeDependencyOperationRef.current = operationId;
+    try {
+      return await install(operationId);
+    } finally {
+      if (activeDependencyOperationRef.current === operationId) {
+        activeDependencyOperationRef.current = null;
+      }
+    }
+  }, [isRunActive]);
   const dockerDetectingRef = useRef(false);
 
   const report = useCallback((message: string, nextProgress?: number) => {
@@ -289,6 +331,31 @@ export function useSetupFlow(
     report(message, nextProgress);
   }, [report]);
 
+  const wizardFailureMessage = useCallback((error: unknown): string => {
+    const diagnostic = error instanceof Error ? error.message : String(error);
+    appendSetupLog({
+      source: "setup",
+      step: "gateway",
+      message: diagnostic,
+      level: "error",
+    });
+    if (diagnostic === t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。")) {
+      return diagnostic;
+    }
+    switch (classifyOpenClawWizardFailure(error)) {
+      case "session_lost":
+        return t("setup.wizard.sessionExpired", "OpenClaw 配置会话已失效，请重新连接。");
+      case "step_desynchronized":
+        return t("setup.wizard.stepSynchronizing", "正在恢复 OpenClaw 配置会话，请稍候。");
+      case "already_running":
+        return t("setup.wizard.alreadyRunning", "另一个 OpenClaw 配置会话仍在运行，请完成或关闭后重试。");
+      case "request_timeout":
+        return t("setup.wizard.requestTimeout", "OpenClaw 配置请求等待超时，请重新连接后继续。");
+      case "unknown":
+        return t("setup.wizard.failed", "OpenClaw 配置向导执行失败。");
+    }
+  }, [appendSetupLog, t]);
+
   const presentSetupStep = useCallback((step: SetupStep) => {
     const message = t(setupStepMessageKey(step));
     const nextProgress = setupStepProgress(step);
@@ -304,7 +371,7 @@ export function useSetupFlow(
       if (!isRunActive(runId)) throw new Error("setup cancelled");
       try {
         if (port) {
-          const reachable: boolean = await invoke("probe_gateway_port", { port });
+          const reachable: boolean = await invoke("probe_selected_gateway", { port });
           if (reachable) return { running: true, port };
         } else {
           const status: any = await invoke("gateway_status");
@@ -375,7 +442,7 @@ export function useSetupFlow(
         // 进入工作台，避免用户在向导中前后切换时被跳过确认步骤。
         try {
           // 不传端口时由 Rust 读取配置；读取失败时使用共享运行时默认值。
-          const reachable: boolean = await invoke("probe_gateway_port", {});
+          const reachable: boolean = await invoke("probe_selected_gateway", {});
           if (cancelled) return;
           if (reachable) {
             setGatewayRunning(true);
@@ -429,7 +496,8 @@ export function useSetupFlow(
       (event) => {
         const normalized = normalizeSetupProgressPayload(event.payload);
         if (!normalized) return;
-        const { step, message, progress: localProgress, error, key, params } = normalized;
+        const { step, message, progress: localProgress, diagnostic, error, key, params, status } = normalized;
+        if (diagnostic) return;
         if (!step) {
           report(message);
           return;
@@ -471,11 +539,16 @@ export function useSetupFlow(
         };
         const sid = stepMap[step];
         if (sid) {
+          const eventStepStatus: StepStatus = status === "completed"
+            ? "done"
+            : status === "failed" || error
+              ? "error"
+              : "running";
           const newSteps = stepsRef.current.map((s) =>
             s.id === sid
               ? {
                   ...s,
-                  status: (error ? "error" : "running") as StepStatus,
+                  status: eventStepStatus,
                   detail: display,
                   progress: typeof localProgress === "number"
                     ? Math.max(s.progress ?? 0, localProgress)
@@ -555,18 +628,22 @@ export function useSetupFlow(
     }
   }, []);
 
-  const applyWizardResult = useCallback(async (result: { done: boolean; status?: string; step?: OpenClawWizardStep; error?: string }) => {
+  const applyWizardResult = useCallback(async (result: OpenClawWizardResult): Promise<OpenClawWizardResult> => {
     if (result.error || result.status === "error") {
       throw new Error(result.error || t("setup.wizard.failed", "OpenClaw 配置向导执行失败。"));
     }
     if (result.done || result.status === "done") {
+      // OpenClaw's official wizard may install its platform service by
+      // default. Reconcile ownership before declaring setup complete so the
+      // foreground bootstrap child and Scheduled Task never race on one port.
+      await invoke<boolean>("handoff_gateway_to_official_service", {});
       setWizardStep(null);
       updateOnboardingRequirement(false);
       setPostStorageStep("ready");
       await refreshGatewayConnectionTarget();
       report(t("setup.ready"), 100);
       replaceSetupStep("ready");
-      return;
+      return result;
     }
     if (!result.step) {
       throw new Error(t("setup.wizard.missingStep", "OpenClaw 配置向导没有返回下一步。"));
@@ -574,15 +651,16 @@ export function useSetupFlow(
     setWizardStep(result.step);
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
     replaceSetupStep("configure-openclaw");
+    return result;
   }, [refreshGatewayConnectionTarget, report, setPostStorageStep, replaceSetupStep, t, updateOnboardingRequirement]);
 
-  const startOfficialOnboarding = useCallback(async () => {
+  const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
     setWizardSubmitting(true);
     try {
       await waitForGatewayConnection();
       const client = wizardClientRef.current!;
-      let result;
+      let result: OpenClawWizardResult;
       if (client.hasActiveSession) {
         try {
           result = await client.resume();
@@ -594,36 +672,70 @@ export function useSetupFlow(
       } else {
         result = await client.start();
       }
-      await applyWizardResult(result);
+      return await applyWizardResult(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = wizardFailureMessage(error);
       setWizardError(message);
       setSetupError(message);
       replaceSetupStep("configure-openclaw");
+      return null;
     } finally {
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, setSetupError, replaceSetupStep, waitForGatewayConnection]);
+  }, [applyWizardResult, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
+
+  const resumeOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
+    setWizardError(null);
+    setWizardSubmitting(true);
+    try {
+      await waitForGatewayConnection();
+      const result = await wizardClientRef.current!.resume();
+      return await applyWizardResult(result);
+    } catch (error) {
+      if (isOpenClawWizardSessionLost(error)) {
+        wizardClientRef.current!.forgetSession();
+        return await startOfficialOnboarding();
+      }
+      const message = wizardFailureMessage(error);
+      setWizardError(message);
+      setSetupError(message);
+      replaceSetupStep("configure-openclaw");
+      return null;
+    } finally {
+      setWizardSubmitting(false);
+    }
+  }, [applyWizardResult, replaceSetupStep, setSetupError, startOfficialOnboarding, waitForGatewayConnection, wizardFailureMessage]);
 
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
-    if (wizardSubmitting) return;
+    if (wizardSubmitting) return null;
     setWizardError(null);
     setWizardSubmitting(true);
     try {
       const result = await wizardClientRef.current!.next(stepId, value);
-      await applyWizardResult(result);
+      return await applyWizardResult(result);
     } catch (error) {
-      if (isOpenClawWizardSessionLost(error)) {
-        await startOfficialOnboarding();
-        return;
+      if (isOpenClawWizardStepDesynchronized(error)) {
+        return await resumeOfficialOnboarding();
       }
-      const message = error instanceof Error ? error.message : String(error);
+      if (isOpenClawWizardSessionLost(error)) {
+        wizardClientRef.current!.forgetSession();
+        return await startOfficialOnboarding();
+      }
+      const message = wizardFailureMessage(error);
       setWizardError(message);
       setSetupError(message);
+      return null;
     } finally {
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, setSetupError, startOfficialOnboarding, wizardSubmitting]);
+  }, [applyWizardResult, resumeOfficialOnboarding, setSetupError, startOfficialOnboarding, wizardFailureMessage, wizardSubmitting]);
+
+  const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
+    if (wizardClientRef.current!.hasActiveSession) {
+      return await resumeOfficialOnboarding();
+    }
+    return await startOfficialOnboarding();
+  }, [resumeOfficialOnboarding, startOfficialOnboarding]);
 
   const wizardAutoStartRef = useRef(false);
   useEffect(() => {
@@ -636,8 +748,11 @@ export function useSetupFlow(
   }, [setupStep, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
 
   // ── Actions ──
-  const startGatewayAction = useCallback(async () => {
-    const runId = beginRun();
+  const startGatewayAction = useCallback(async (
+    requestedMode?: InstallMode,
+    existingRunId?: number,
+  ): Promise<boolean> => {
+    const runId = existingRunId ?? beginRun();
     setGatewayRunning(false);
     navigateSetup("checking", "push");
     reportPhase("gatewayConfig", t("setup.gatewayReadingConfig", "正在读取 Gateway 配置…"));
@@ -647,7 +762,7 @@ export function useSetupFlow(
       commitSteps([{ id: "gateway", label: "Gateway", status: "running", detail: t("setup.startingGateway") }]);
     }
     try {
-      const isDockerRuntime = installMode === "docker";
+      const isDockerRuntime = (requestedMode ?? installMode) === "docker";
       const status: any = isDockerRuntime
         ? await gatewayManager.startDockerForSetup()
         : await gatewayManager.startForSetup();
@@ -655,11 +770,11 @@ export function useSetupFlow(
       patchStep("gateway", "running", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       reportPhase("gatewayPort", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       await waitForGatewayReady(runId, isDockerRuntime ? 30_000 : 10_000, status?.port);
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       if (isDockerRuntime) {
         patchStep("container", "done");
         await configureTerminalIntegration(runId);
-        if (!isRunActive(runId)) return;
+        if (!isRunActive(runId)) return false;
       }
       setGatewayRunning(true);
       // Gateway 已真实就绪：此前的插件启动验证记录随之失效。
@@ -671,12 +786,13 @@ export function useSetupFlow(
         commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
       }
       reportPhase("ready", t("setup.gatewayConnected", "Gateway 已连接"));
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       // Starting a runtime and choosing what to do with it are separate user
       // decisions. The next stage is entered only from continueAfterGatewayReady.
       replaceSetupStep("gateway-ready");
+      return true;
     } catch (e: any) {
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       setGatewayRunning(false);
       if (stepsRef.current.some((s) => s.id === "gateway")) {
         patchStep("gateway", "error", String(e?.message ?? e));
@@ -687,6 +803,7 @@ export function useSetupFlow(
       setSetupError(e?.message || String(e));
       report(e?.message || String(e));
       replaceSetupStep("error");
+      return false;
     }
   }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, configureTerminalIntegration, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
 
@@ -704,8 +821,23 @@ export function useSetupFlow(
     navigateSetup("ready", "push");
   }, [gatewayRunning, navigateSetup, report, startGatewayAction, startOfficialOnboarding, t]);
 
-  const runNativeSetup = useCallback(async () => {
-    const runId = beginRun();
+  // Gateway startup is an installation transition, not a user decision. Keep
+  // storage, runtime selection, and the official OpenClaw wizard interactive,
+  // but automatically continue from every state that only means "runtime is
+  // ready and the local Gateway has not been started yet".
+  const autoStartedGatewayStepRef = useRef<SetupStep | null>(null);
+  useEffect(() => {
+    if (!AUTO_ADVANCE_GATEWAY_STEPS.has(setupStep)) {
+      autoStartedGatewayStepRef.current = null;
+      return;
+    }
+    if (autoStartedGatewayStepRef.current === setupStep) return;
+    autoStartedGatewayStepRef.current = setupStep;
+    void startGatewayAction();
+  }, [setupStep, startGatewayAction]);
+
+  const runNativeSetup = useCallback(async (existingRunId?: number): Promise<boolean> => {
+    const runId = existingRunId ?? beginRun();
     clearSetupLogs();
     const s = [...INITIAL_NATIVE_STEPS];
     commitSteps(s);
@@ -716,7 +848,7 @@ export function useSetupFlow(
       patchStep("git", "running", t("setup.checkingGit"));
       reportPhase("git", t("setup.checkingGit"));
       const gitStatus = await checkGit();
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       if (!gitStatus.available) {
         const isWindows = navigator.userAgent.toLowerCase().includes("windows");
         const isMac = window.aegis?.platform === "darwin";
@@ -725,18 +857,20 @@ export function useSetupFlow(
           setNeedsGit(true);
           replaceSetupStep("git-missing");
           reportPhase("git", t("setup.gitRequiredDesc"), 100);
-          return;
+          return false;
         }
         patchStep("git", "running", t("setup.installingGit", "正在静默安装 Git…"));
         replaceSetupStep("install-git");
-        await installGit();
+        await runDependencyInstall(runId, "git", installGit);
+        if (!isRunActive(runId)) return false;
         const installedGit = await checkGit();
+        if (!isRunActive(runId)) return false;
         if (!installedGit.available) {
           patchStep("git", "error", t("setup.gitRequiredDesc"));
           setNeedsGit(true);
           replaceSetupStep("git-missing");
           reportPhase("git", t("setup.gitRequiredDesc"), 100);
-          return;
+          return false;
         }
         patchStep("git", "done", installedGit.version ?? undefined);
       } else {
@@ -746,36 +880,54 @@ export function useSetupFlow(
       // Node
       patchStep("node", "running", t("setup.checkingNode"));
       reportPhase("node", t("setup.checkingNode"));
-      const setupNode = await checkSetupNode();
-      const nodeStatus = setupNode.node;
+      let setupNode = await checkSetupNode();
+      let nodeStatus = setupNode.node;
       setNodeRequirement(setupNode.requirement);
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       if (!nodeStatus.available) {
         patchStep("node", "running", t("setup.installingNode"));
         replaceSetupStep("install-node");
         reportPhase("node", t("setup.installingNode"), 20);
-        await installNode();
-        if (!isRunActive(runId)) return;
-        const installedSetupNode = await checkSetupNode();
-        const installedNode = installedSetupNode.node;
-        setNodeRequirement(installedSetupNode.requirement);
+        await runDependencyInstall(runId, "node", (operationId) => installNode(false, operationId));
+        if (!isRunActive(runId)) return false;
+        setupNode = await checkSetupNode();
+        const installedNode = setupNode.node;
+        nodeStatus = installedNode;
+        setNodeRequirement(setupNode.requirement);
         if (!installedNode.available) throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
         patchStep("node", "done", installedNode.version ?? undefined);
       } else {
         patchStep("node", "done", nodeStatus.version ?? undefined);
       }
 
-      // npm is independently verified because a system Node installation can
-      // exist without npm. Installation keeps npm's own default cache unless
-      // the user explicitly selected an override in storage settings.
+      // npm is verified through the exact Node.js runtime selected above. A
+      // repair preserves that contract: portable runtimes must be JunQi-owned,
+      // while a requested system repair installs a verified system runtime
+      // rather than mixing in an unrelated PATH npm shim.
       patchStep("npm", "running", t("setup.checkingNpm", "正在检查 npm 版本…"));
-      let npmStatus = await checkNpm();
-      if (!npmStatus.available) {
-        patchStep("npm", "running", t("setup.installingNpm", "正在通过系统 Node.js 安装 npm…"));
-        await installNode(true);
-        npmStatus = await checkNpm();
+      let npmStatus = setupNode.npm;
+      if (nodeStatus.available && !npmStatus.available) {
+        patchStep("node", "running", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"));
+        patchStep("npm", "running", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"));
+        replaceSetupStep("install-node");
+        reportPhase("node", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"), 20);
+        await runDependencyInstall(runId, "node", repairSetupNodeRuntime);
+        if (!isRunActive(runId)) return false;
+        setupNode = await checkSetupNode();
+        nodeStatus = setupNode.node;
+        npmStatus = setupNode.npm;
+        setNodeRequirement(setupNode.requirement);
+        if (!nodeStatus.available) {
+          throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
+        }
+        patchStep("node", "done", nodeStatus.version ?? undefined);
       }
-      if (!npmStatus.available) throw new Error(t("setup.npmInstallFailed", "npm 安装后校验失败"));
+      if (!npmStatus.available) {
+        const npmError = npmStatus.reason
+          ?? t("setup.npmInstallFailed", "所选 Node.js 未提供可用 npm");
+        patchStep("npm", "error", npmError);
+        throw new Error(npmError);
+      }
       patchStep("npm", "done", npmStatus.version ?? undefined);
 
       // OpenClaw
@@ -783,7 +935,7 @@ export function useSetupFlow(
       reportPhase("openclaw", t("setup.checkingOpenclaw"));
       const oclawStatus = await checkOpenclaw();
       setOpenclawStatus(oclawStatus);
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       const repairInvalidInstall = oclawStatus.binary_found && (
         !oclawStatus.version_ok
         || !oclawStatus.package_valid
@@ -803,9 +955,10 @@ export function useSetupFlow(
         } else {
           await installOpenclaw();
         }
+        if (!isRunActive(runId)) return false;
         const installedStatus = await checkOpenclaw();
         setOpenclawStatus(installedStatus);
-        if (!isRunActive(runId)) return;
+        if (!isRunActive(runId)) return false;
         if (!installedStatus.installed) throw new Error(installedStatus.error || t("setup.openclawInstallFailed", "OpenClaw 安装后校验失败"));
         reinstallRequestedRef.current = false;
         relocationRequestedRef.current = false;
@@ -821,25 +974,26 @@ export function useSetupFlow(
       // This is shared by Native and Docker so their terminal contracts stay
       // aligned while keeping their launch mechanisms separate.
       await configureTerminalIntegration(runId);
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
 
       // Once the user has confirmed the selected runtime, setup owns the
       // complete installation transaction, including Gateway startup. It stops
       // at gateway-ready; only entering the official wizard remains explicit.
-      await startGatewayAction();
+      return await startGatewayAction("native", runId);
     } catch (err: any) {
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       const msg = err?.message || String(err);
       failRunningStep(msg);
       setSetupError(msg);
       report(msg);
       replaceSetupStep("error");
+      return false;
     }
   }, [beginRun, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
-      setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement, startGatewayAction]);
+      setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement, startGatewayAction, runDependencyInstall]);
 
-  const runDockerSetup = useCallback(async () => {
-    const runId = beginRun();
+  const runDockerSetup = useCallback(async (existingRunId?: number): Promise<boolean> => {
+    const runId = existingRunId ?? beginRun();
     clearSetupLogs();
     commitSteps([...INITIAL_DOCKER_STEPS]);
     try {
@@ -848,29 +1002,53 @@ export function useSetupFlow(
       patchStep("pull", "running", t("setup.pullingImage"));
       report(t("setup.pullingImage"), 10);
       await pullOpenclawImage("latest");
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       patchStep("pull", "done");
 
-      await startGatewayAction();
+      return await startGatewayAction("docker", runId);
     } catch (err: any) {
-      if (!isRunActive(runId)) return;
+      if (!isRunActive(runId)) return false;
       setGatewayRunning(false);
       const message = err?.message || String(err);
       failRunningStep(message);
       setSetupError(message);
       report(message);
       replaceSetupStep("error");
+      return false;
     }
   }, [beginRun, isRunActive, replaceSetupStep, t, report, commitSteps,
-      setSetupError, clearSetupLogs, appendSetupLog, startGatewayAction]);
+      setGatewayRunning, setSetupError, clearSetupLogs, appendSetupLog, startGatewayAction]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
+    const runId = beginRun();
     setSetupError(null);
+    const previousMode = installMode;
+    const switchedMode = mode !== previousMode;
     try {
+      // A pending location change is a Native runtime contract. Selecting
+      // Docker means that contract will not be exercised, so compensate it
+      // before Docker can become the active runtime.
+      if (mode === "docker") {
+        const restoredNativeLocations = await rollbackRuntimeReconfiguration();
+        if (!isRunActive(runId)) return;
+        if (restoredNativeLocations) {
+          appendSetupLog({
+            source: "setup",
+            step: "gateway",
+            message: "Discarded the pending Native runtime location change before selecting Docker",
+            level: "warn",
+          });
+        }
+      }
+      if (!isRunActive(runId)) return;
       await setActiveGatewayRuntime(mode);
+      if (!isRunActive(runId)) return;
       setInstallMode(mode);
-      updateOnboardingRequirement(await resolveActiveRuntimeOnboardingRequirement());
+      const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
+      if (!isRunActive(runId)) return;
+      updateOnboardingRequirement(onboardingRequired);
     } catch (error) {
+      if (!isRunActive(runId)) return;
       const message = error instanceof Error ? error.message : String(error);
       appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
       setSetupError(message);
@@ -878,16 +1056,85 @@ export function useSetupFlow(
       replaceSetupStep("error");
       return;
     }
+    if (!isRunActive(runId)) return;
     navigateSetup("checking", "push");
+    let completed: boolean;
     if (mode === "native") {
       commitSteps([...INITIAL_NATIVE_STEPS]);
-      await runNativeSetup();
+      completed = await runNativeSetup(runId);
     } else {
       reinstallRequestedRef.current = false;
       commitSteps([...INITIAL_DOCKER_STEPS]);
-      await runDockerSetup();
+      completed = await runDockerSetup(runId);
     }
-  }, [setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement]);
+    if (!isRunActive(runId)) return;
+    if (completed) {
+      try {
+        await commitActiveGatewayRuntime(mode);
+        if (!isRunActive(runId)) return;
+        await commitRuntimeReconfiguration();
+        if (!isRunActive(runId)) return;
+        return;
+      } catch (commitError) {
+        if (!isRunActive(runId)) return;
+        const message = commitError instanceof Error ? commitError.message : String(commitError);
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+        setSetupError(message);
+        report(message);
+      }
+    }
+    if (!isRunActive(runId)) return;
+
+    // Runtime selection is a transaction from the user's perspective. The
+    // backend persists the target before setup can prepare its dependencies,
+    // so a failed/cancelled attempt must restore the previous selection before
+    // the next app launch interprets the bootstrap file.
+    try {
+      const restoredRuntimeLocations = await rollbackRuntimeReconfiguration();
+      if (!isRunActive(runId)) return;
+      if (switchedMode && !restoredRuntimeLocations) {
+        await rollbackActiveGatewayRuntime(mode);
+        if (!isRunActive(runId)) return;
+      }
+      setInstallMode(previousMode);
+      const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
+      if (!isRunActive(runId)) return;
+      updateOnboardingRequirement(onboardingRequired);
+      if (switchedMode && !restoredRuntimeLocations) {
+        try {
+          if (previousMode === "native") {
+            await gatewayManager.startForSetup();
+          } else {
+            await gatewayManager.startDockerForSetup();
+          }
+          if (!isRunActive(runId)) return;
+        } catch (restoreError) {
+          if (!isRunActive(runId)) return;
+          appendSetupLog({
+            source: "setup",
+            step: "gateway",
+            message: `Previous ${previousMode} Gateway could not be restored: ${String(restoreError)}`,
+            level: "error",
+          });
+        }
+      }
+      if (!isRunActive(runId)) return;
+      appendSetupLog({
+        source: "setup",
+        step: "gateway",
+        message: `Runtime switch to ${mode} failed; restored ${previousMode}`,
+        level: "warn",
+      });
+      report(t("setup.runtimeSwitchRolledBack", "运行时切换失败，已恢复之前的运行模式"));
+    } catch (rollbackError) {
+      if (!isRunActive(runId)) return;
+      const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+      setSetupError(message);
+      report(message);
+      replaceSetupStep("error");
+    }
+  }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement, setActiveGatewayRuntime, commitActiveGatewayRuntime, rollbackActiveGatewayRuntime, commitRuntimeReconfiguration, rollbackRuntimeReconfiguration, gatewayManager, t]);
 
   const requestReinstall = useCallback(() => {
     reinstallRequestedRef.current = true;
@@ -895,13 +1142,13 @@ export function useSetupFlow(
     navigateSetup("choosing-mode", "push");
   }, [setSetupError, navigateSetup]);
 
-  const retrySetup = useCallback(async () => {
+  const retrySetup = useCallback(async (): Promise<boolean> => {
     setSetupError(null);
     setNeedsGit(false);
     if (installMode === "docker") {
-      await runDockerSetup();
+      return await runDockerSetup();
     } else {
-      await runNativeSetup();
+      return await runNativeSetup();
     }
   }, [installMode, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
 
@@ -978,6 +1225,19 @@ export function useSetupFlow(
       const recommendation = failure
         ? await diagnoseGatewayRecovery(failure).catch(() => "repair" as const)
         : "repair";
+      if (recommendation === "select_storage") {
+        const message = t(
+          "setup.stateDirectoryIncompatible",
+          "当前 OpenClaw 数据目录不支持所需权限操作。请选择本机支持权限操作的数据目录后重试。",
+        );
+        setForceStorageSelection(true);
+        setGatewayRunning(false);
+        setPostStorageStep("choosing-mode");
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+        report(message);
+        replaceSetupStep("storage");
+        return;
+      }
       if (recommendation === "retry") {
         const retryDelay = gatewayMigrationRetryDelayMs(failure || "");
         if (retryDelay > 0) {
@@ -1129,7 +1389,7 @@ export function useSetupFlow(
         message: t("setup.repairComplete", "修复完成，正在重新启动 Gateway…"),
         level: "info",
       });
-      await startGatewayAction();
+      await startGatewayAction("native");
     } catch (error) {
       if (!isRunActive(runId)) return;
       const message = error instanceof Error ? error.message : String(error);
@@ -1141,7 +1401,7 @@ export function useSetupFlow(
     } finally {
       setRepairing(false);
     }
-  }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode]);
+  }, [repairing, setupError, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep, installMode, setGatewayRunning, setPostStorageStep]);
 
   // BUG-CPI-07 最后一级降级：临时禁用不可自愈的插件后继续启动。插件保持
   // 已安装状态，待其修复版本发布后可在设置中重新启用并重走自愈梯子。
@@ -1188,13 +1448,26 @@ export function useSetupFlow(
     }
   }, [repairing, brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
 
-  const goBack = useCallback(() => {
+  const goBack = useCallback(async () => {
+    // Backing out of the official wizard means "pause and review", not
+    // "discard progress". Keep its server-side session in this app process so
+    // returning to the wizard resumes the same pending official step.
     if (setupStep !== "configure-openclaw") {
       void wizardClientRef.current?.cancel().catch(() => {});
     }
     setWizardStep(null);
     setWizardError(null);
     cancelActiveRun();
+    try {
+      await rollbackRuntimeReconfiguration();
+    } catch (rollbackError) {
+      const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+      setSetupError(message);
+      report(message);
+      replaceSetupStep("error");
+      return;
+    }
     setSetupError(null);
     setNeedsGit(false);
     setNodeRequirement(null);
@@ -1207,10 +1480,12 @@ export function useSetupFlow(
     if (destination === "storage") {
       setForceStorageSelection(true);
     }
-    // Navigation is not a new installation attempt. Preserve stage results
-    // and logs until the user explicitly starts a new attempt.
+    // Navigation is not a new installation attempt. Keep the completed
+    // stage results and their logs available when the user returns to inspect
+    // an earlier choice; `beginRun` creates the explicit boundary that clears
+    // results for a genuinely new attempt.
     presentSetupStep(destination);
-  }, [cancelActiveRun, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, presentSetupStep, setForceStorageSelection, setupStep]);
+  }, [cancelActiveRun, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, commitSteps, presentSetupStep, rollbackRuntimeReconfiguration, appendSetupLog, report, replaceSetupStep, setForceStorageSelection, setupStep]);
 
   const retryGit = useCallback(() => {
     setNeedsGit(false);
@@ -1254,7 +1529,7 @@ export function useSetupFlow(
         : { tier: "existing", path: status.path!, version: status.version ?? undefined });
     }
 
-    const gatewayRunning = await invoke<boolean>("probe_gateway_port", {}).catch(() => false);
+    const gatewayRunning = await invoke<boolean>("probe_selected_gateway", {}).catch(() => false);
     setGatewayRunning(gatewayRunning);
     if (gatewayRunning) {
       setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
@@ -1286,7 +1561,7 @@ export function useSetupFlow(
     repairAndRetry,
     disablePluginsAndRetry,
     submitWizardStep,
-    retryWizard: startOfficialOnboarding,
+    retryWizard: retryOfficialOnboarding,
     runNativeSetup,
     runDockerSetup,
     retrySetup,

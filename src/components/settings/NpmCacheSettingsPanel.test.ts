@@ -41,7 +41,7 @@ test('npm cache settings and running step labels exist in every locale', () => {
     'setup.installPanel.runningStep',
     'setup.installPanel.live',
   ];
-  for (const locale of ['zh', 'en', 'ar']) {
+  for (const locale of ['zh', 'zh-TW', 'en', 'ar']) {
     const messages = JSON.parse(
       readFileSync(new URL(`../../locales/${locale}.json`, import.meta.url), 'utf8'),
     ) as Record<string, unknown>;

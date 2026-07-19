@@ -17,6 +17,7 @@ export class GatewayConnectionManager {
   private listeners = new Set<StateListener>();
   private error: string | null = null;
   private retrying = false;
+  private selectedGatewayReady = false;
   private logs: { stdout: string; stderr: string } | undefined;
   private statusUnsub: (() => void) | undefined;
   private pendingStart: {
@@ -165,6 +166,7 @@ export class GatewayConnectionManager {
     }
     if (!this.isCurrent(generation)) return { ...result, superseded: true };
     if (result?.healthy) {
+      this.dispatch({ type: 'SELECTED_GATEWAY_READY' });
       this.reconnect();
     } else {
       this.dispatch({
@@ -235,16 +237,24 @@ export class GatewayConnectionManager {
       this.logs = undefined;
       this.retrying = false;
       this.error = null;
+      this.selectedGatewayReady = false;
     } else if (event.type === 'RECOVERY_REQUESTED') {
       this.retrying = true;
       this.error = null;
+      this.selectedGatewayReady = false;
     } else if (event.type === 'STATUS_RECEIVED') {
       if (event.logs) this.logs = event.logs;
       this.retrying = event.retrying;
       this.error = event.error;
+      if (typeof event.endpointReady === 'boolean') {
+        this.selectedGatewayReady = event.endpointReady;
+      }
+    } else if (event.type === 'SELECTED_GATEWAY_READY') {
+      this.selectedGatewayReady = true;
     } else if (event.type === 'START_FAILED') {
       this.error = event.error;
       this.retrying = false;
+      this.selectedGatewayReady = false;
     } else if (
       event.type === 'RESET'
       || event.type === 'RETRY'
@@ -291,7 +301,7 @@ export class GatewayConnectionManager {
 
   private snapshot(): GatewayStateSnapshot {
     return {
-      ...this.fsm.snapshot(this.error, this.retrying),
+      ...this.fsm.snapshot(this.error, this.retrying, this.selectedGatewayReady),
       logs: this.logs,
     };
   }
@@ -320,6 +330,7 @@ export class GatewayConnectionManager {
       return;
     }
     if (result?.success) {
+      this.dispatch({ type: 'SELECTED_GATEWAY_READY' });
       this.dispatch({ type: 'START_SUCCESS' });
       this.pendingStart?.resolve(result);
     } else {

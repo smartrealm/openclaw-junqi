@@ -4,12 +4,18 @@
 // Backward-compatible with: import { gateway } from '@/services/gateway'
 // ═══════════════════════════════════════════════════════════
 
-import { GatewayConnection, type GatewayCallbacks, type ChatMessage, type MediaInfo } from './Connection';
+import {
+  GatewayConnection,
+  type GatewayCallbacks,
+  type GatewayRequestOptions,
+  type ChatMessage,
+  type MediaInfo,
+} from './Connection';
 import { ChatHandler } from './ChatHandler';
 import { debugWarn } from '@/utils/debugLog';
 
 // Re-export types for consumers
-export type { ChatMessage, MediaInfo, GatewayCallbacks };
+export type { ChatMessage, MediaInfo, GatewayCallbacks, GatewayRequestOptions };
 
 // ── Create instances ──
 const connection = new GatewayConnection();
@@ -154,7 +160,9 @@ export const gateway = {
   // Models & Usage
   async getSessionStatus(sessionKey = 'agent:main:main') { return connection.request('sessions.list', {}); },
   async getAvailableModels() { return connection.request('models.list', {}); },
-  async call(method: string, params: any = {}) { return connection.request(method, params); },
+  async call(method: string, params: any = {}, options?: GatewayRequestOptions) {
+    return connection.request(method, params, options);
+  },
   // Skills — list installed skills with status (input for the @skill picker)
   async getSkills(agentId?: string) { return connection.request('skills.status', agentId ? { agentId } : {}); },
   async getCostSummary(days = 30) { return connection.request('usage.cost', { days }); },

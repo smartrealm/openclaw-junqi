@@ -4,7 +4,8 @@ use std::collections::HashMap;
 /// A Git for Windows archive whose contents are checked before activation.
 ///
 /// Version and publisher digest are reviewed when JunQi is released. End-user
-/// installation only downloads the pinned archive from domestic mirrors.
+/// installation prefers domestic mirrors and falls back to the official Git
+/// for Windows release for networks where those mirrors are unavailable.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub(crate) struct ManagedGitArtifact {
     pub(crate) version: String,
@@ -49,6 +50,11 @@ const GIT_DISTRIBUTION_SOURCES: &[GitDistributionSource] = &[
         base_url: "https://mirrors.huaweicloud.com/git-for-windows",
         log_label: "华为云镜像（国内）",
         display_name: "华为云",
+    },
+    GitDistributionSource {
+        base_url: "https://github.com/git-for-windows/git/releases/download",
+        log_label: "Git for Windows（官方）",
+        display_name: "Git for Windows",
     },
 ];
 
@@ -185,7 +191,10 @@ mod tests {
         assert_eq!(artifact.sha256.len(), 64);
         assert!(artifact.sources()[0].0.contains("registry.npmmirror.com"));
         assert!(artifact.sources()[1].0.contains("mirrors.huaweicloud.com"));
-        assert_eq!(artifact.sources().len(), 2);
+        assert!(artifact.sources()[2]
+            .0
+            .contains("github.com/git-for-windows/git/releases/download"));
+        assert_eq!(artifact.sources().len(), 3);
     }
 
     #[test]
@@ -211,7 +220,10 @@ mod tests {
         assert_eq!(sources.len(), order.len());
         assert!(sources[0].0.starts_with("https://registry.npmmirror.com/"));
         assert!(sources[1].0.starts_with("https://mirrors.huaweicloud.com/"));
-        assert!(sources.iter().all(|(url, _)| !url.contains("github.com")));
+        assert!(sources[2]
+            .0
+            .starts_with("https://github.com/git-for-windows/git/releases/download/"));
+        assert_eq!(order.last().map(String::as_str), Some("Git for Windows"));
     }
 
     #[test]

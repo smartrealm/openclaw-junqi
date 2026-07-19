@@ -11,7 +11,11 @@ import {
 export type { InstallMode, SetupStep } from "./setup-navigation";
 
 export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "configure-openclaw" | "ready";
-/** Editable, uncommitted choices for the current setup session only. */
+/**
+ * Editable storage choices belong to the in-progress JunQi setup session.
+ * They intentionally do not survive an app restart: a directory selection is
+ * not configuration until the user confirms it through `configure_storage`.
+ */
 export type StorageSetupDraft = {
   targetDir: string;
   workspaceDir: string;

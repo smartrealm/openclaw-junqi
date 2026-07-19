@@ -613,7 +613,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   //   Official docs example: provider = 'kimi-coding', model = 'kimi-coding/k2p5'
   //   ENV: KIMI_API_KEY  (NEVER use MOONSHOT_API_KEY here)
   //   api: anthropic-messages  (Anthropic-compatible)
-  //   Ref: extensions/kimi-coding/index.ts, docs/concepts/model-providers.md
+  //   Ref: extensions/kimi-coding/index.ts
   {
     id: 'kimi-coding',
     nameKey: 'config.provider.kimi-coding',

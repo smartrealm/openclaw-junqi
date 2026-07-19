@@ -119,7 +119,7 @@ test('empty task state stays secondary to the task sidebar action', () => {
 });
 
 test('AI workspace navigation labels exist in every supported locale', () => {
-  for (const locale of ['zh', 'en', 'ar']) {
+  for (const locale of ['zh', 'zh-TW', 'en', 'ar']) {
     const messages = JSON.parse(readFileSync(new URL(`../../locales/${locale}.json`, import.meta.url), 'utf8'));
     assert.equal(typeof messages.agentWorkspace.backToTask, 'string');
     assert.equal(typeof messages.agentWorkspace.backToTaskList, 'string');

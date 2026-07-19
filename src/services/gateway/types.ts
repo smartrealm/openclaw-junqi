@@ -26,6 +26,7 @@ export type GatewayEvent =
       logs?: { stdout: string; stderr: string };
     }
   | { type: 'START_SUCCESS' }
+  | { type: 'SELECTED_GATEWAY_READY' }
   | { type: 'START_FAILED'; error: string }
   | { type: 'START_REQUESTED' }
   | { type: 'DOCKER_START_REQUESTED' }
@@ -57,4 +58,6 @@ export interface GatewayStateSnapshot {
   error: string | null;
   logs?: { stdout: string; stderr: string };
   retrying: boolean;
+  /** The selected state/config pair has an authenticated, healthy endpoint. */
+  selectedGatewayReady: boolean;
 }

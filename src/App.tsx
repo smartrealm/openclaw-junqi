@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { useTheme } from '@/theme/useTheme';
@@ -20,7 +21,11 @@ import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
-import { gatewayMigrationRetryDelayMs } from '@/services/gateway/openclawRepair';
+import {
+  createGatewayMigrationRetryCoordinator,
+  gatewayMigrationRetryDelayMs,
+  type GatewayMigrationRetryCoordinator,
+} from '@/services/gateway/openclawRepair';
 import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import {
@@ -110,6 +115,7 @@ export default function App() {
   const [gatewayRetrying, setGatewayRetrying] = useState(false);
   const connected = useChatStore((s) => s.connected);
   const setupComplete = useAppStore((s) => s.setupComplete);
+  const setupHealthCheckedRef = useRef(false);
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
@@ -121,15 +127,35 @@ export default function App() {
   const gatewayBootErrorRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
   const manualGatewayRecoveryInFlightRef = useRef(false);
-  const pendingGatewayMigrationRetryRef = useRef<{
-    timer: number;
-    resolve: (proceed: boolean) => void;
-  } | null>(null);
+  const gatewayMigrationRetryCoordinatorRef = useRef<GatewayMigrationRetryCoordinator | null>(null);
+  if (!gatewayMigrationRetryCoordinatorRef.current) {
+    gatewayMigrationRetryCoordinatorRef.current = createGatewayMigrationRetryCoordinator();
+  }
   const openControlUiAfterRecoveryRef = useRef(false);
   const [bootRecoveryAttempt, setBootRecoveryAttempt] = useState(0);
   const [bootRecoveryReady, setBootRecoveryReady] = useState(false);
   const [bootRecoveryRestarting, setBootRecoveryRestarting] = useState(false);
   const [bootRecoveryLogs, setBootRecoveryLogs] = useState<string[]>([]);
+
+  // The local marker is only a cache. Validate the selected Gateway identity
+  // before bypassing SetupPage; a moved/removed npm prefix or a stale service
+  // must re-enter the recovery flow instead of booting the workbench blind.
+  useEffect(() => {
+    if (setupComplete !== true || !hasTauriEventBridge() || setupHealthCheckedRef.current) return;
+    setupHealthCheckedRef.current = true;
+    void invoke<boolean>('probe_selected_gateway', {})
+      .then((ready) => {
+        if (ready) return;
+        const store = useAppStore.getState();
+        store.setSetupComplete(null);
+        store.navigateSetup('detecting', 'replace');
+      })
+      .catch(() => {
+        const store = useAppStore.getState();
+        store.setSetupComplete(null);
+        store.navigateSetup('detecting', 'replace');
+      });
+  }, [setupComplete]);
 
   useEffect(() => {
     const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));
@@ -341,18 +367,13 @@ export default function App() {
   }, []);
 
   const cancelGatewayMigrationRetry = useCallback(() => {
-    const pending = pendingGatewayMigrationRetryRef.current;
-    if (!pending) return;
-    window.clearTimeout(pending.timer);
-    pendingGatewayMigrationRetryRef.current = null;
-    pending.resolve(false);
+    return gatewayMigrationRetryCoordinatorRef.current?.cancel() ?? false;
   }, []);
 
   const waitForGatewayMigrationLock = useCallback(async (diagnostic?: string) => {
     const delayMs = gatewayMigrationRetryDelayMs(diagnostic || '');
     if (!delayMs) return true;
 
-    cancelGatewayMigrationRetry();
     const seconds = Math.max(1, Math.ceil(delayMs / 1_000));
     addBootRecoveryLog(`OpenClaw startup migration is still active; retrying after ${seconds}s`);
     emitGatewayProgress(
@@ -362,21 +383,8 @@ export default function App() {
       { seconds },
     );
 
-    return new Promise<boolean>((resolve) => {
-      let pending!: {
-        timer: number;
-        resolve: (proceed: boolean) => void;
-      };
-      const timer = window.setTimeout(() => {
-        if (pendingGatewayMigrationRetryRef.current === pending) {
-          pendingGatewayMigrationRetryRef.current = null;
-        }
-        resolve(true);
-      }, delayMs);
-      pending = { timer, resolve };
-      pendingGatewayMigrationRetryRef.current = pending;
-    });
-  }, [addBootRecoveryLog, cancelGatewayMigrationRetry, emitGatewayProgress]);
+    return gatewayMigrationRetryCoordinatorRef.current?.wait(delayMs) ?? Promise.resolve(true);
+  }, [addBootRecoveryLog, emitGatewayProgress]);
 
   const triggerGatewayReconnect = useCallback((label = 'manual', minimumProgress = 0.30) => {
     addBootRecoveryLog(`Reconnect requested (${label})`);
@@ -451,6 +459,7 @@ export default function App() {
     if (setupComplete !== true) return;
     if (openclawUpdateActive) return;
     if (connected) {
+      cancelGatewayMigrationRetry();
       bootRecoveryStartedRef.current = false;
       setBootRecoveryAttempt(0);
       setBootRecoveryReady(false);
@@ -474,6 +483,7 @@ export default function App() {
         if (cancelled || useChatStore.getState().connected) return;
         if (result?.superseded) return;
         if (result?.healthy) {
+          cancelGatewayMigrationRetry();
           addBootRecoveryLog(`Gateway healthy (${result.mode ?? 'native'}); reconnecting WebSocket`);
           emitGatewayProgress(
             `Gateway healthy (${result.mode ?? 'native'}), reconnecting…`,
@@ -506,6 +516,7 @@ export default function App() {
         const status = await window.aegis?.gateway?.getStatus?.();
         if (cancelled || useChatStore.getState().connected) return;
         if (status?.running && !status.error) {
+          cancelGatewayMigrationRetry();
           addBootRecoveryLog('Gateway process is running; reconnecting WebSocket quietly…');
           emitGatewayProgress(
             'Gateway process is running, reconnecting…',
@@ -680,6 +691,7 @@ export default function App() {
           }
         }
         if (status.connected) {
+          cancelGatewayMigrationRetry();
           // Successfully connected — dismiss pairing screen if showing
           if (needsPairing) {
             setNeedsPairing(false);
@@ -770,6 +782,13 @@ export default function App() {
         });
       }
       setGatewayRetrying(snap.retrying);
+
+      // `selectedGatewayReady` is backed by probe_selected_gateway, which
+      // authenticates the selected state/config pair. Once it is true an old
+      // startup-migration timer must never issue a competing restart.
+      if (snap.selectedGatewayReady) {
+        cancelGatewayMigrationRetry();
+      }
 
       const toastKey = `${snap.state}|${snap.connected}|${snap.connecting}|${snap.retrying}|${snap.error ?? ''}`;
       const previousToastKey = lastGatewayToastKeyRef.current;
@@ -901,6 +920,7 @@ export default function App() {
           emitGatewayProgress('Detecting, connecting, and syncing runtime state…', 0.45, 'gateway.progress.detectConnectSync');
           const result = await gatewayManager.ensureRunning();
           if (result?.superseded) return;
+          if (result?.healthy) cancelGatewayMigrationRetry();
           addBootRecoveryLog(result?.healthy
             ? `Gateway healthy (${result.mode ?? 'native'}) — reconnecting`
             : 'ensure_gateway_running returned unhealthy — restarting');
@@ -940,7 +960,7 @@ export default function App() {
       window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
       gatewayManager.destroy();
     };
-  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, triggerGatewayReconnect]);
+  }, [loadAvailableModels, setupComplete, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, triggerGatewayReconnect, cancelGatewayMigrationRetry]);
 
 
   // ── Pairing Handlers ──

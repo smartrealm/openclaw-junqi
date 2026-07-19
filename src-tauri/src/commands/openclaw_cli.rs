@@ -37,6 +37,7 @@ impl OpenClawCliTarget {
 /// such as maintenance can then run config validation and doctor consistently
 /// against the same selected runtime.
 pub(crate) async fn resolve_active_openclaw_target() -> Result<OpenClawCliTarget, String> {
+    paths::validate_runtime_mode(paths::active_runtime_mode())?;
     match paths::active_runtime_mode() {
         OpenClawRuntimeMode::Native => system::resolve_compatible_native_openclaw_runtime()
             .await
@@ -78,6 +79,7 @@ fn docker_command(docker_bin: &Path, args: &[&str]) -> tokio::process::Command {
         "OPENCLAW_CONFIG_PATH={}",
         docker::OPENCLAW_CONTAINER_CONFIG_PATH
     );
+    let locale_env = format!("OPENCLAW_LOCALE={}", system::managed_openclaw_locale());
     let mut command = tokio::process::Command::new(docker_bin);
     command
         .arg("exec")
@@ -86,6 +88,8 @@ fn docker_command(docker_bin: &Path, args: &[&str]) -> tokio::process::Command {
         .arg("OPENCLAW_NO_RESPAWN=1")
         .arg("-e")
         .arg("NO_COLOR=1")
+        .arg("-e")
+        .arg(locale_env)
         .arg("-e")
         .arg(state_dir_env)
         .arg("-e")
@@ -117,6 +121,7 @@ fn docker_candidate_command(docker_bin: &Path, args: &[&str]) -> tokio::process:
         "OPENCLAW_STATE_DIR={}",
         docker::OPENCLAW_CONTAINER_STATE_DIR
     );
+    let locale_env = format!("OPENCLAW_LOCALE={}", system::managed_openclaw_locale());
     let mut command = tokio::process::Command::new(docker_bin);
     command
         .arg("exec")
@@ -125,6 +130,8 @@ fn docker_candidate_command(docker_bin: &Path, args: &[&str]) -> tokio::process:
         .arg("OPENCLAW_NO_RESPAWN=1")
         .arg("-e")
         .arg("NO_COLOR=1")
+        .arg("-e")
+        .arg(locale_env)
         .arg("-e")
         .arg(state_dir_env)
         .arg(docker::OPENCLAW_CONTAINER_NAME)

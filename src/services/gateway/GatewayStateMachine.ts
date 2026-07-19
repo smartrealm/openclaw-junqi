@@ -120,13 +120,18 @@ export class GatewayStateMachine {
   }
 
   /** Build a UI-facing snapshot of the current state. */
-  snapshot(error: string | null, retrying: boolean): GatewayStateSnapshot {
+  snapshot(
+    error: string | null,
+    retrying: boolean,
+    selectedGatewayReady = false,
+  ): GatewayStateSnapshot {
     return {
       state: this.state,
       connecting: this.state === GatewayState.CONNECTING || this.state === GatewayState.STARTING,
       connected: this.state === GatewayState.CONNECTED,
       error,
       retrying,
+      selectedGatewayReady,
     };
   }
 }

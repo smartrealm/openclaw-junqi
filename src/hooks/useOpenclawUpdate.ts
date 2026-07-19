@@ -38,6 +38,10 @@ export function useOpenclawUpdate() {
       if (!busy.current) return;
       const detail = normalizeSetupProgressPayload(event.payload);
       if (!detail || !['openclaw-update', 'node'].includes(detail.step || '')) return;
+      if (detail.diagnostic) {
+        dispatch({ type: 'diagnosticReceived', message: detail.message });
+        return;
+      }
       dispatch({
         type: 'progressReceived',
         progress: detail.progress,

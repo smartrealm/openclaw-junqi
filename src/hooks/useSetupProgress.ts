@@ -16,7 +16,7 @@
 // independent.
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GatewayRecoveryStatus } from '@/services/gateway/recoveryProgress';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
@@ -32,24 +32,27 @@ export interface SetupProgressDetail {
   status?: GatewayRecoveryStatus;
 }
 
-interface RawSetupProgressDetail extends SetupProgressDetail {
+export interface SetupProgressEventPayload extends SetupProgressDetail {
   /** Interpolation args merged into the t() call. */
   params?: Record<string, unknown>;
   /** Rust producers set this for terminal failures. Keep it as a compatibility
    * fallback for older producers that have not added an explicit status yet. */
   error?: string | null;
+  /** Third-party command output belongs in diagnostics, not status surfaces. */
+  diagnostic?: boolean;
 }
 
 export function useSetupProgress(filterStep?: string): SetupProgressDetail | null {
   const { t } = useTranslation();
-  const initialTRef = useRef(t);
-  const [latest, setLatest] = useState<SetupProgressDetail | null>(null);
+  const [latest, setLatest] = useState<SetupProgressEventPayload | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    function accept(d: Partial<RawSetupProgressDetail> | undefined): void {
-      if (!d || typeof d.step !== 'string' || typeof d.message !== 'string') return;
+    function accept(d: Partial<SetupProgressEventPayload> | undefined): void {
+      const message = d?.message;
+      if (!d || typeof d.step !== 'string' || typeof message !== 'string') return;
+      if (d.diagnostic === true) return;
       if (filterStep && d.step !== filterStep) return;
       const step = d.step;
       const progress = typeof d.progress === 'number' ? d.progress : 0;
@@ -58,10 +61,6 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
         ? d.status
         : undefined;
       const status = explicitStatus ?? (typeof d.error === 'string' && d.error.trim() ? 'failed' : undefined);
-      const display = key ? initialTRef.current(key, d.params ?? {}) : d.message;
-      // If t() returned the key unchanged (no translation registered),
-      // gracefully fall back to the raw message string.
-      const message = display === key ? d.message : display;
       setLatest((previous) => {
         // A recovery may switch from ensure -> restart -> health check. Those
         // producers report their own local percentages, so retain the furthest
@@ -71,12 +70,19 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
         const resolvedProgress = previous && previous.step === step && previousRunning && nextRunning
           ? Math.max(previous.progress, progress)
           : progress;
-        return { step, message, progress: resolvedProgress, key, status };
+        return {
+          step,
+          message,
+          progress: resolvedProgress,
+          key,
+          status,
+          params: d.params,
+        };
       });
     }
 
     // Producer 1: Tauri event from Rust.
-    const unlisten = subscribeTauriEvent<RawSetupProgressDetail>('setup-progress', (e) => {
+    const unlisten = subscribeTauriEvent<SetupProgressEventPayload>('setup-progress', (e) => {
       if (!cancelled) accept(e.payload);
     });
 
@@ -95,14 +101,30 @@ export function useSetupProgress(filterStep?: string): SetupProgressDetail | nul
     };
   }, [filterStep]);
 
-  return latest;
+  return useMemo(() => {
+    if (!latest) return null;
+    return localizeSetupProgressDetail(t, latest);
+  }, [latest, t]);
+}
+
+export function localizeSetupProgressDetail(
+  t: (key: string, params?: Record<string, unknown>) => string,
+  detail: SetupProgressEventPayload,
+): SetupProgressDetail {
+  return {
+    step: detail.step,
+    message: resolveProgressMessage(t, detail),
+    progress: detail.progress,
+    key: detail.key,
+    status: detail.status,
+  };
 }
 
 /** Static helper: resolve a one-off event payload (used in setup-producers
  *  that aren't inside a React tree). Returns the raw message if no key. */
 export function resolveProgressMessage(
   t: (key: string, params?: Record<string, unknown>) => string,
-  detail: Partial<RawSetupProgressDetail>,
+  detail: Partial<SetupProgressEventPayload>,
 ): string {
   if (typeof detail.key === 'string' && detail.message) {
     const out = t(detail.key, detail.params ?? {});

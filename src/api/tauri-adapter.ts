@@ -167,6 +167,17 @@ async function readGatewayPort(): Promise<number> {
 }
 
 /**
+ * Readiness for desktop recovery means more than a listener on the configured
+ * port: the endpoint must authenticate with the currently selected OpenClaw
+ * state/config pair. This prevents an unrelated local Gateway from cancelling
+ * recovery work or being adopted by the UI.
+ */
+async function probeSelectedGatewayReady(status: { running?: unknown; port?: unknown }): Promise<boolean> {
+  if (!status.running) return false;
+  return invoke<boolean>('probe_selected_gateway', { port: status.port });
+}
+
+/**
  * Invalidate the port cache, e.g. after the user saves a new port in settings.
  * The next call to readGatewayPort() will re-read from disk.
  */
@@ -300,7 +311,11 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     getStatus: async () => {
       try {
         const s: any = await invoke("gateway_status");
-        const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
+        const ready = await probeSelectedGatewayReady(s);
+        // `gateway_status` reports a PID while a JunQi-managed child is still
+        // booting. Preserve that liveness fact independently from authenticated
+        // readiness: treating a live child as stopped makes the lifecycle FSM
+        // spawn it again on every status poll.
         const processAlive = Boolean(s.running || s.pid);
         return { running: processAlive, processAlive, ready, error: null, logs: await readRecentGatewayLogs() };
       } catch (e: any) {
@@ -372,7 +387,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
         try {
           const s: any = await invoke("gateway_status");
           if (!isCurrent()) return;
-          const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
+          const ready = await probeSelectedGatewayReady(s);
           if (!isCurrent()) return;
           const logs = await readRecentGatewayLogs();
           if (!isCurrent()) return;

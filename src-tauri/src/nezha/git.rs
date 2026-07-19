@@ -36,7 +36,7 @@ fn run_git<S: AsRef<std::ffi::OsStr>>(
 ) -> Result<std::process::Output, String> {
     validate_project_path(project_path)?;
 
-    let mut cmd = std::process::Command::new("git");
+    let mut cmd = std::process::Command::new(crate::platform::resolve_spawn_program("git"));
     crate::subprocess::configure_background_command(&mut cmd);
     cmd.args(args)
         .current_dir(project_path)
@@ -64,7 +64,7 @@ async fn run_git_with_timeout(
 ) -> Result<Output, String> {
     validate_project_path(&project_path)?;
 
-    let mut cmd = tokio::process::Command::new("git");
+    let mut cmd = tokio::process::Command::new(crate::platform::resolve_spawn_program("git"));
     crate::subprocess::configure_background_tokio_command(&mut cmd);
     let mut child = cmd
         .args(&args)

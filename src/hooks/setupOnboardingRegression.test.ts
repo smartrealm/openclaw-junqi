@@ -56,7 +56,7 @@ test('BUG-ONB-05 install mode selection is explicit and confirmed by Next', () =
 });
 
 test('BUG-ONB-06 every setup message is complete in all supported locales', () => {
-  const locales = Object.fromEntries(['zh', 'en', 'ar'].map((locale) => [
+  const locales = Object.fromEntries(['zh', 'zh-TW', 'en', 'ar'].map((locale) => [
     locale,
     flattenMessages(JSON.parse(readFileSync(new URL(`../locales/${locale}.json`, import.meta.url), 'utf8'))),
   ])) as Record<string, Record<string, unknown>>;
@@ -76,9 +76,9 @@ test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
     setupPage.indexOf('function ReadyScreen'),
   );
 
-  assert.match(wizard, /const messageRenderedInBody = step\.type === "confirm"/);
+  assert.match(wizard, /const messageRenderedInBody = presentedStep\.type === "confirm"/);
   assert.match(wizard, /subtitle=\{wizardSubtitle\}/);
-  assert.match(wizard, /aria-label=\{step\.title \|\| t\("setup\.wizard\.textInput"/);
+  assert.match(wizard, /aria-label=\{presentedStep\.title \|\| t\("setup\.wizard\.textInput"/);
 });
 
 test('BUG-ONB-08 the product summary is not constrained to an awkward narrow line length', () => {
@@ -124,18 +124,34 @@ test('BUG-ONB-14 selected runtimes resume their full startup closure after stora
   assert.match(completeStorage, /installMode === "docker"[\s\S]*?void runDockerSetup\(\)[\s\S]*?void runNativeSetup\(\)/);
 });
 
-test('BUG-ONB-15 runtime navigation uses its own label instead of repeating environment detection', () => {
+test('BUG-ONB-15 setup navigation has one complete six-step translation contract per locale', () => {
   const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
   const en = JSON.parse(readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
+  const ar = JSON.parse(readFileSync(new URL('../locales/ar.json', import.meta.url), 'utf8'));
 
-  assert.deepEqual(zh.setup.steps.runtime, {
-    title: '运行时',
-    description: '安装并启动 Gateway',
-  });
-  assert.deepEqual(en.setup.steps.runtime, {
-    title: 'Runtime',
-    description: 'Install and start Gateway',
-  });
+  const zhExpected = {
+    identity: { title: '品牌与偏好', description: '语言 / 主题' },
+    environment: { title: '环境检测', description: 'OpenClaw / Docker' },
+    storage: { title: '数据位置', description: '配置与工作区' },
+    runtime: { title: '运行时', description: '安装并启动 Gateway' },
+    configuration: { title: 'OpenClaw 配置', description: '模型、凭据与渠道' },
+    ready: { title: '完成', description: '进入工作台' },
+  };
+  const enExpected = {
+    identity: { title: 'Preferences', description: 'Language / Theme' },
+    environment: { title: 'Environment', description: 'OpenClaw / Docker' },
+    storage: { title: 'Data location', description: 'Configuration / Workspace' },
+    runtime: { title: 'Runtime', description: 'Install and start Gateway' },
+    configuration: { title: 'OpenClaw setup', description: 'Models / credentials / channels' },
+    ready: { title: 'Ready', description: 'Enter workspace' },
+  };
+
+  assert.deepEqual(zh.setup.steps, zhExpected);
+  assert.deepEqual(en.setup.steps, enExpected);
+  for (const step of Object.keys(zhExpected)) {
+    assert.equal(typeof ar[`setup.steps.${step}.title`], 'string');
+    assert.equal(typeof ar[`setup.steps.${step}.description`], 'string');
+  }
 });
 
 test('BUG-ONB-09 native setup verifies optional terminal integration after OpenClaw', () => {
@@ -160,9 +176,9 @@ test('BUG-ONB-10 setup leaves system tools and npm cache at their native default
 });
 
 test('BUG-CPI-03 macOS missing Node runs the domestic system-installer recovery path', () => {
-  assert.match(setupFlow, /const setupNode = await checkSetupNode\(\)/);
+  assert.match(setupFlow, /let setupNode = await checkSetupNode\(\)/);
   assert.doesNotMatch(setupFlow, /useMacSystemRecovery/);
-  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?await installNode\(\)/);
+  assert.match(setupFlow, /if \(!nodeStatus\.available\)[\s\S]*?await runDependencyInstall\(runId, "node", \(operationId\) => installNode\(false, operationId\)\)/);
   assert.match(setupCommand, /install_macos_system_node/);
   assert.match(setupCommand, /Command::new\("\/usr\/bin\/open"\)/);
   assert.doesNotMatch(setupPage, /nodejs\.org/);
@@ -195,9 +211,9 @@ test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', 
   // Enable/disable goes through the official CLI service commands and then
   // hands the port over via the existing restart path, so exactly one owner
   // (system service or desktop app) serves the gateway afterwards.
-  assert.match(gatewayService, /"gateway", "install", "--json", "--force"/);
-  assert.match(gatewayService, /"gateway", "uninstall"/);
-  assert.match(gatewayService, /"gateway", "status", "--json", "--no-probe"/);
+  assert.match(gatewayService, /"gateway", "install", "--force", "--port", port\.as_str\(\)/);
+  assert.match(gatewayService, /"gateway", "uninstall", "--json"/);
+  assert.match(gatewayService, /let args = \["gateway", "status", "--json"\];/);
   assert.match(gatewayService, /OpenClawRuntimeMode::Native/);
   assert.match(setupPage, /await window\.aegis\.config\.restart\(\)/);
 
