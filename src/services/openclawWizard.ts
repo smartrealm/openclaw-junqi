@@ -33,6 +33,83 @@ export interface OpenClawWizardResult {
   error?: string;
 }
 
+type WizardPresentationTranslator = (
+  key: string,
+  fallback: string,
+) => string;
+
+const SETUP_MODE_OPTION_COPY: Record<string, { label: string; hint?: string }> = {
+  'keep-model': {
+    label: 'setup.wizard.setupMode.keepModel.label',
+    hint: 'setup.wizard.setupMode.keepModel.hint',
+  },
+  quickstart: {
+    label: 'setup.wizard.setupMode.quickstart.label',
+    hint: 'setup.wizard.setupMode.quickstart.hint',
+  },
+  advanced: {
+    label: 'setup.wizard.setupMode.manual.label',
+    hint: 'setup.wizard.setupMode.manual.hint',
+  },
+  'import:claude': { label: 'setup.wizard.setupMode.importClaude' },
+  'import:hermes': { label: 'setup.wizard.setupMode.importHermes' },
+  'import:codex': { label: 'setup.wizard.setupMode.importCodex' },
+};
+
+const SETUP_MODE_FALLBACKS: Record<string, { label: string; hint?: string }> = {
+  'keep-model': {
+    label: 'Keep existing model config',
+    hint: 'Skip model/auth setup and keep the current default model.',
+  },
+  quickstart: {
+    label: 'QuickStart (recommended)',
+    hint: 'Recommended local setup. Change details later with openclaw configure.',
+  },
+  advanced: {
+    label: 'Manual setup',
+    hint: 'Choose Gateway port, network exposure, Tailscale, and auth.',
+  },
+  'import:claude': { label: 'Import from Claude' },
+  'import:hermes': { label: 'Import from Hermes' },
+  'import:codex': { label: 'Import from Codex' },
+};
+
+function isSetupModeStep(step: OpenClawWizardStep): boolean {
+  if (step.type !== 'select') return false;
+  const values = new Set((step.options ?? []).map((option) => option.value));
+  return values.has('quickstart') && values.has('advanced');
+}
+
+/**
+ * The Gateway protocol transfers display strings but not i18n keys. Adapt
+ * stable structured choices here while preserving their official values and
+ * leaving unknown choices untouched for forward compatibility.
+ */
+export function localizeOpenClawWizardStep(
+  step: OpenClawWizardStep,
+  translate: WizardPresentationTranslator,
+): OpenClawWizardStep {
+  if (!isSetupModeStep(step)) return step;
+
+  return {
+    ...step,
+    title: translate('setup.wizard.setupMode.title', 'Setup mode'),
+    options: step.options?.map((option) => {
+      const value = typeof option.value === 'string' ? option.value : '';
+      const copy = SETUP_MODE_OPTION_COPY[value];
+      const fallback = SETUP_MODE_FALLBACKS[value];
+      if (!copy || !fallback) return option;
+      return {
+        ...option,
+        label: translate(copy.label, fallback.label),
+        ...(option.hint && copy.hint && fallback.hint
+          ? { hint: translate(copy.hint, fallback.hint) }
+          : {}),
+      };
+    }),
+  };
+}
+
 /**
  * The official Feishu branch renders its QR directly to a terminal. JunQi
  * recognizes this protocol step and routes it through its desktop QR session

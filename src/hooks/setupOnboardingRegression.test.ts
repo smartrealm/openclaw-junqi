@@ -76,9 +76,9 @@ test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
     setupPage.indexOf('function ReadyScreen'),
   );
 
-  assert.match(wizard, /const messageRenderedInBody = step\.type === "confirm"/);
+  assert.match(wizard, /const messageRenderedInBody = presentedStep\.type === "confirm"/);
   assert.match(wizard, /subtitle=\{wizardSubtitle\}/);
-  assert.match(wizard, /aria-label=\{step\.title \|\| t\("setup\.wizard\.textInput"/);
+  assert.match(wizard, /aria-label=\{presentedStep\.title \|\| t\("setup\.wizard\.textInput"/);
 });
 
 test('BUG-ONB-08 the product summary is not constrained to an awkward narrow line length', () => {

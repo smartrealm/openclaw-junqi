@@ -2670,6 +2670,24 @@
       "confirm": "Confirm and continue",
       "textInput": "OpenClaw configuration value",
       "readyForStep": "OpenClaw will perform this step.",
+      "setupMode": {
+        "title": "Setup mode",
+        "keepModel": {
+          "label": "Keep existing model config",
+          "hint": "Skip model/auth setup and keep the current default model."
+        },
+        "quickstart": {
+          "label": "QuickStart (recommended)",
+          "hint": "Recommended local setup. Change details later with openclaw configure."
+        },
+        "manual": {
+          "label": "Manual setup",
+          "hint": "Choose Gateway port, network exposure, Tailscale, and auth."
+        },
+        "importClaude": "Import from Claude",
+        "importHermes": "Import from Hermes",
+        "importCodex": "Import from Codex"
+      },
       "channelEnrollment": {
         "title": "Connect Feishu by QR code",
         "subtitle": "Scan with your phone and JunQi will continue the official OpenClaw setup.",

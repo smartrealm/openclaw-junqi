@@ -5,6 +5,7 @@ import {
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
   isTerminalRenderedQrChoice,
+  localizeOpenClawWizardStep,
   OpenClawWizardClient,
   requiresOpenClawOnboarding,
   supportedWizardOptions,
@@ -13,6 +14,26 @@ import {
 test('requires onboarding for a missing or model-less config', () => {
   assert.equal(requiresOpenClawOnboarding(false, {}), true);
   assert.equal(requiresOpenClawOnboarding(true, { gateway: { mode: 'local' } }), true);
+});
+
+test('localizes the official setup-mode presentation without changing option values', () => {
+  const step = {
+    id: 'select-1',
+    type: 'select' as const,
+    title: 'Setup mode',
+    options: [
+      { value: 'keep-model', label: 'Keep existing model config', hint: 'Keep the current model.' },
+      { value: 'quickstart', label: 'QuickStart (recommended)', hint: 'Local setup.' },
+      { value: 'advanced', label: 'Manual setup', hint: 'Choose details.' },
+      { value: 'import:claude', label: 'Import from Claude', hint: '/Users/example/.claude' },
+    ],
+  };
+  const presented = localizeOpenClawWizardStep(step, (key) => `zh:${key}`);
+
+  assert.equal(presented.title, 'zh:setup.wizard.setupMode.title');
+  assert.deepEqual(presented.options?.map((option) => option.value), step.options.map((option) => option.value));
+  assert.equal(presented.options?.[1]?.label, 'zh:setup.wizard.setupMode.quickstart.label');
+  assert.equal(presented.options?.[3]?.hint, '/Users/example/.claude');
 });
 
 test('accepts official wizard metadata or an existing default model', () => {

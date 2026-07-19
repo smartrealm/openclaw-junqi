@@ -2664,6 +2664,24 @@
       "confirm": "确认并继续",
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步骤由 OpenClaw 执行。",
+      "setupMode": {
+        "title": "设置模式",
+        "keepModel": {
+          "label": "保留现有模型配置",
+          "hint": "跳过模型与认证配置，并保留当前默认模型。"
+        },
+        "quickstart": {
+          "label": "快速开始（推荐）",
+          "hint": "推荐的本机配置。以后可通过 openclaw configure 修改详细设置。"
+        },
+        "manual": {
+          "label": "手动配置",
+          "hint": "选择 Gateway 端口、网络暴露、Tailscale 和认证方式。"
+        },
+        "importClaude": "从 Claude 导入",
+        "importHermes": "从 Hermes 导入",
+        "importCodex": "从 Codex 导入"
+      },
       "channelEnrollment": {
         "title": "扫描二维码连接飞书",
         "subtitle": "使用手机扫码创建应用，JunQi 会继续完成 OpenClaw 官方配置。",

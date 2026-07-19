@@ -59,6 +59,7 @@ import { OpenClawUpdatePanel } from "@/components/shared/OpenClawUpdatePanel";
 import { ChannelEnrollmentDialog } from "@/components/channels/ChannelEnrollmentDialog";
 import {
   isFeishuQrSetupMethodStep,
+  localizeOpenClawWizardStep,
   type OpenClawWizardStep,
 } from "@/services/openclawWizard";
 import { FeishuQrWizardBridge } from "@/services/feishuQrWizardBridge";
@@ -538,8 +539,12 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
     );
   }
 
-  const feishuQrSetupMethod = isFeishuQrSetupMethodStep(step);
-  const options = step.options ?? [];
+  const presentedStep = localizeOpenClawWizardStep(
+    step,
+    (key, fallback) => t(key, { defaultValue: fallback }),
+  );
+  const feishuQrSetupMethod = isFeishuQrSetupMethodStep(presentedStep);
+  const options = presentedStep.options ?? [];
   const selectedValues = Array.isArray(value) ? value : [];
   const toggleMulti = (optionValue: unknown) => {
     setValue((current: unknown) => {
@@ -552,18 +557,18 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const blocked = !feishuQrSetupMethod
     && (step.type === "select" || step.type === "multiselect")
     && options.length === 0;
-  const messageRenderedInBody = step.type === "confirm"
-    || step.type === "note"
-    || step.type === "progress"
-    || step.type === "action";
+  const messageRenderedInBody = presentedStep.type === "confirm"
+    || presentedStep.type === "note"
+    || presentedStep.type === "progress"
+    || presentedStep.type === "action";
   const wizardTitle = feishuQrSetupMethod
     ? t("setup.wizard.channelEnrollment.title", "扫描二维码连接飞书")
-    : step.title || t("setup.wizard.title", "配置 OpenClaw");
+    : presentedStep.title || t("setup.wizard.title", "配置 OpenClaw");
   const wizardSubtitle = feishuQrSetupMethod
     ? t("setup.wizard.channelEnrollment.subtitle", "使用手机扫码创建应用，JunQi 会继续完成 OpenClaw 官方配置。")
     : messageRenderedInBody
       ? t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")
-      : step.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
+      : presentedStep.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
   const handleEnrollmentConnected = async (completion: ChannelEnrollmentCompletion) => {
     setEnrollmentFinalizing(true);
     try {
@@ -621,24 +626,24 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             </div>
           </div>
         )}
-        {step.type === "text" && (
+        {presentedStep.type === "text" && (
           <input
-            type={step.sensitive ? "password" : "text"}
+            type={presentedStep.sensitive ? "password" : "text"}
             value={typeof value === "string" ? value : ""}
             onChange={(event) => setValue(event.target.value)}
-            placeholder={step.placeholder}
-            aria-label={step.title || t("setup.wizard.textInput", "OpenClaw 配置值")}
-            autoComplete={step.sensitive ? "new-password" : "off"}
+            placeholder={presentedStep.placeholder}
+            aria-label={presentedStep.title || t("setup.wizard.textInput", "OpenClaw 配置值")}
+            autoComplete={presentedStep.sensitive ? "new-password" : "off"}
             className="w-full rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5 text-sm text-aegis-text outline-none focus:border-aegis-primary"
           />
         )}
-        {step.type === "confirm" && (
+        {presentedStep.type === "confirm" && (
           <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-aegis-border bg-aegis-surface p-4 text-sm text-aegis-text">
             <input type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} className="h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
-            <span>{step.message || t("setup.wizard.confirm", "确认并继续")}</span>
+            <span>{presentedStep.message || t("setup.wizard.confirm", "确认并继续")}</span>
           </label>
         )}
-        {step.type === "select" && !feishuQrSetupMethod && (
+        {presentedStep.type === "select" && !feishuQrSetupMethod && (
           <div className="grid gap-2 sm:grid-cols-2">
             {options.map((option, index) => {
               const selected = wizardValuesEqual(value, option.value);
@@ -654,7 +659,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             })}
           </div>
         )}
-        {step.type === "multiselect" && (
+        {presentedStep.type === "multiselect" && (
           <div className="grid gap-2 sm:grid-cols-2">
             {options.map((option, index) => {
               const selected = selectedValues.some((item) => wizardValuesEqual(item, option.value));
@@ -667,8 +672,8 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
             })}
           </div>
         )}
-        {(step.type === "note" || step.type === "progress" || step.type === "action") && (
-          <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">{step.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</div>
+        {(presentedStep.type === "note" || presentedStep.type === "progress" || presentedStep.type === "action") && (
+          <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</div>
         )}
         {enrollmentError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{enrollmentError}</div>}
         {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}
