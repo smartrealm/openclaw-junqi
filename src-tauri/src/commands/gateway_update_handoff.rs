@@ -311,7 +311,11 @@ impl GatewayUpdateHandoff {
                 .await?;
         }
 
-        if inspection.ownership == gateway_service::GatewayServiceOwnership::StaleRuntime {
+        if matches!(
+            inspection.ownership,
+            gateway_service::GatewayServiceOwnership::StaleRuntime
+                | gateway_service::GatewayServiceOwnership::StaleLocale
+        ) {
             gateway_service::rebind_selected_gateway_service(
                 runtime,
                 &self.state_dir,

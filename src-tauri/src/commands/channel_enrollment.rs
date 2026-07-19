@@ -527,6 +527,21 @@ pub async fn cancel_channel_enrollment(
     Ok(())
 }
 
+/// Render an authorization URL supplied by an official Gateway wizard note.
+/// The URL remains Gateway-owned; this command only turns it into a local
+/// image when terminal QR rendering is unavailable.
+#[tauri::command]
+pub fn render_qr_code_data_url(content: String) -> Result<String, String> {
+    let content = content.trim();
+    let url = Url::parse(content).map_err(|_| "QR content must be a valid URL.".to_string())?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("QR content must use HTTP or HTTPS.".into());
+    }
+    qr_svg_data_url(content).map_err(|_| {
+        "Could not render the authorization QR code. Please use the URL instead.".into()
+    })
+}
+
 fn session_for_current_runtime<'a>(
     sessions: &'a mut HashMap<String, EnrollmentSession>,
     session_id: &str,
@@ -665,4 +680,31 @@ fn qr_svg_data_url(content: &str) -> Result<String, EnrollmentError> {
         "data:image/svg+xml;base64,{}",
         STANDARD.encode(svg)
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{qr_svg_data_url, render_qr_code_data_url};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+
+    #[test]
+    fn qr_renderer_returns_an_inline_svg_data_url() {
+        let data_url = qr_svg_data_url("https://example.com/verify?code=test")
+            .ok()
+            .expect("QR content should be renderable");
+        assert!(data_url.starts_with("data:image/svg+xml;base64,"));
+        let encoded = data_url.trim_start_matches("data:image/svg+xml;base64,");
+        let svg = String::from_utf8(STANDARD.decode(encoded).unwrap()).unwrap();
+        assert!(svg.contains("shape-rendering=\"crispEdges\""));
+        assert!(svg.contains("<path"));
+    }
+
+    #[test]
+    fn generic_qr_renderer_accepts_authorization_urls_only() {
+        assert!(
+            render_qr_code_data_url("https://example.com/authorization?code=test".into()).is_ok()
+        );
+        assert!(render_qr_code_data_url("not a URL".into()).is_err());
+        assert!(render_qr_code_data_url("file:///tmp/secret".into()).is_err());
+    }
 }

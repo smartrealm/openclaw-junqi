@@ -132,7 +132,7 @@ pub(crate) struct OpenclawCommandContext {
     config_path: PathBuf,
     working_dir: Option<PathBuf>,
     search_path: String,
-    locale: &'static str,
+    locale: String,
     npm_prefix: Option<PathBuf>,
     npm_cache_dir: Option<PathBuf>,
 }
@@ -181,12 +181,13 @@ impl OpenclawCommandContext {
         npm_prefix: Option<PathBuf>,
         npm_cache_dir: Option<PathBuf>,
     ) -> Self {
+        let locale = configured_openclaw_locale(&config_path);
         Self {
             state_dir,
             config_path,
             working_dir,
             search_path: openclaw_search_path(),
-            locale: managed_openclaw_locale(),
+            locale,
             npm_prefix,
             npm_cache_dir,
         }
@@ -222,7 +223,7 @@ impl OpenclawCommandContext {
             .env("PATH", &self.search_path)
             .env("OPENCLAW_STATE_DIR", &self.state_dir)
             .env("OPENCLAW_CONFIG_PATH", &self.config_path)
-            .env("OPENCLAW_LOCALE", self.locale)
+            .env("OPENCLAW_LOCALE", &self.locale)
             .env("OPENCLAW_NO_RESPAWN", "1")
             .env("NO_COLOR", "1");
         // Keep package-manager child operations on the same user-selected
@@ -242,14 +243,30 @@ fn stable_openclaw_working_dir() -> Option<PathBuf> {
     paths::stable_openclaw_working_dir()
 }
 
-/// OpenClaw resolves classic-wizard copy from its process environment, not
-/// from the WebSocket client's locale field. Keep the managed Gateway in step
-/// with JunQi's persisted language without changing the user's shell
-/// environment. OpenClaw currently ships English, Simplified Chinese, and
-/// Traditional Chinese wizard catalogs. Arabic therefore uses its documented
-/// English fallback while JunQi's own UI remains Arabic.
+/// Bootstrap locale used only when a Gateway config has no locale of its own.
+/// Once persisted, `env.vars.OPENCLAW_LOCALE` is the Gateway's source of truth;
+/// wizard display text is never translated in the JunQi webview.
 pub(crate) fn managed_openclaw_locale() -> &'static str {
     openclaw_locale_for_application_language(&crate::commands::app_settings::application_language())
+}
+
+/// Read the Gateway-owned locale from its config. The application language is
+/// only a bootstrap value for a config that has not declared one yet.
+pub(crate) fn configured_openclaw_locale(config_path: &Path) -> String {
+    std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok())
+        .and_then(|config| {
+            config
+                .get("env")
+                .and_then(|env| env.get("vars"))
+                .and_then(|vars| vars.get("OPENCLAW_LOCALE"))
+                .and_then(|locale| locale.as_str())
+                .map(str::trim)
+                .filter(|locale| !locale.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| managed_openclaw_locale().to_string())
 }
 
 fn openclaw_locale_for_application_language(language: &str) -> &'static str {
@@ -1926,8 +1943,7 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 #[cfg(test)]
 mod tests {
     use super::{
-        managed_openclaw_locale, native_openclaw_runtime,
-        native_openclaw_runtime_from_gateway_service_launch_contract,
+        native_openclaw_runtime, native_openclaw_runtime_from_gateway_service_launch_contract,
         node_requirement_for_openclaw_binary, normalize_npm_prefix, npm_cli_for_node,
         npm_openclaw_entry, npm_prefix_for_openclaw_binary,
         openclaw_locale_for_application_language, openclaw_package_dir,
@@ -2001,7 +2017,7 @@ mod tests {
                 .then_some(value)
                 .flatten()
         });
-        assert_eq!(configured_locale, Some(OsStr::new(context.locale)));
+        assert_eq!(configured_locale, Some(OsStr::new(context.locale.as_str())));
     }
 
     #[test]

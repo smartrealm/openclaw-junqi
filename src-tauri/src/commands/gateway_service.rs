@@ -13,6 +13,7 @@ pub(crate) enum GatewayServiceOwnership {
     Absent,
     SelectedState,
     StaleRuntime,
+    StaleLocale,
     Foreign,
     Unverifiable,
 }
@@ -116,6 +117,7 @@ pub(crate) struct GatewayServiceIdentity {
     state_dir: PathBuf,
     config_path: PathBuf,
     runtime: Option<system::NativeOpenclawRuntimeIdentity>,
+    locale: Option<String>,
 }
 
 impl GatewayServiceIdentity {
@@ -125,6 +127,7 @@ impl GatewayServiceIdentity {
             state_dir: state_dir.to_path_buf(),
             config_path: config_path.to_path_buf(),
             runtime: None,
+            locale: None,
         }
     }
 
@@ -137,6 +140,7 @@ impl GatewayServiceIdentity {
             state_dir: state_dir.to_path_buf(),
             config_path: config_path.to_path_buf(),
             runtime: Some(runtime.identity()),
+            locale: Some(system::configured_openclaw_locale(config_path)),
         }
     }
 
@@ -332,7 +336,15 @@ fn classify_service_ownership(
             .as_ref()
             .and_then(|command| command_matches_runtime(command, runtime))
         {
-            Some(true) => GatewayServiceOwnership::SelectedState,
+            Some(true) => match identity.locale.as_deref() {
+                Some(expected) => match declared_environment(environment, "OPENCLAW_LOCALE") {
+                    Some(actual) if actual.eq_ignore_ascii_case(expected) => {
+                        GatewayServiceOwnership::SelectedState
+                    }
+                    _ => GatewayServiceOwnership::StaleLocale,
+                },
+                None => GatewayServiceOwnership::SelectedState,
+            },
             Some(false) => GatewayServiceOwnership::StaleRuntime,
             None => GatewayServiceOwnership::Unverifiable,
         },
@@ -376,7 +388,9 @@ fn inspect_document(
 pub(crate) fn belongs_to_selected_state(ownership: GatewayServiceOwnership) -> bool {
     matches!(
         ownership,
-        GatewayServiceOwnership::SelectedState | GatewayServiceOwnership::StaleRuntime
+        GatewayServiceOwnership::SelectedState
+            | GatewayServiceOwnership::StaleRuntime
+            | GatewayServiceOwnership::StaleLocale
     )
 }
 
@@ -749,6 +763,7 @@ mod tests {
                 executable: None,
                 npm_prefix: Some(root.join("npm")),
             }),
+            locale: None,
         };
         let status = |program_arguments: Option<Vec<String>>| GatewayStatusDocument {
             service: Some(GatewayServiceDocument {
@@ -762,6 +777,7 @@ mod tests {
                             "OPENCLAW_CONFIG_PATH".into(),
                             config.to_string_lossy().into_owned(),
                         ),
+                        ("OPENCLAW_LOCALE".into(), "en-US".into()),
                     ])),
                     program_arguments,
                     source_path: Some(root.join("gateway-service").display().to_string()),
@@ -795,6 +811,19 @@ mod tests {
                 &identity,
             ),
             GatewayServiceOwnership::StaleRuntime,
+        );
+        let mut locale_identity = identity.clone();
+        locale_identity.locale = Some("zh-CN".into());
+        assert_eq!(
+            classify_service_ownership(
+                &status(Some(vec![
+                    node.to_string_lossy().into_owned(),
+                    entry.to_string_lossy().into_owned(),
+                    "gateway".into(),
+                ])),
+                &locale_identity,
+            ),
+            GatewayServiceOwnership::StaleLocale,
         );
         assert_eq!(
             classify_service_ownership(

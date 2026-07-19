@@ -79,7 +79,10 @@ fn docker_command(docker_bin: &Path, args: &[&str]) -> tokio::process::Command {
         "OPENCLAW_CONFIG_PATH={}",
         docker::OPENCLAW_CONTAINER_CONFIG_PATH
     );
-    let locale_env = format!("OPENCLAW_LOCALE={}", system::managed_openclaw_locale());
+    let locale_env = format!(
+        "OPENCLAW_LOCALE={}",
+        system::configured_openclaw_locale(&paths::active_config_path())
+    );
     let mut command = tokio::process::Command::new(docker_bin);
     command
         .arg("exec")
@@ -121,7 +124,10 @@ fn docker_candidate_command(docker_bin: &Path, args: &[&str]) -> tokio::process:
         "OPENCLAW_STATE_DIR={}",
         docker::OPENCLAW_CONTAINER_STATE_DIR
     );
-    let locale_env = format!("OPENCLAW_LOCALE={}", system::managed_openclaw_locale());
+    let locale_env = format!(
+        "OPENCLAW_LOCALE={}",
+        system::configured_openclaw_locale(&paths::active_config_path())
+    );
     let mut command = tokio::process::Command::new(docker_bin);
     command
         .arg("exec")

@@ -2665,24 +2665,7 @@
       "confirm": "确认并继续",
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步骤由 OpenClaw 执行。",
-      "setupMode": {
-        "title": "设置模式",
-        "keepModel": {
-          "label": "保留现有模型配置",
-          "hint": "跳过模型与认证配置，并保留当前默认模型。"
-        },
-        "quickstart": {
-          "label": "快速开始（推荐）",
-          "hint": "推荐的本机配置。以后可通过 openclaw configure 修改详细设置。"
-        },
-        "manual": {
-          "label": "手动配置",
-          "hint": "选择 Gateway 端口、网络暴露、Tailscale 和认证方式。"
-        },
-        "importClaude": "从 Claude 导入",
-        "importHermes": "从 Hermes 导入",
-        "importCodex": "从 Codex 导入"
-      },
+      "qrAlt": "扫描授权二维码",
       "channelEnrollment": {
         "title": "扫描二维码连接飞书",
         "subtitle": "使用手机扫码创建应用，JunQi 会继续完成 OpenClaw 官方配置。",
@@ -2700,17 +2683,6 @@
         "handoffFailed": "扫码已验证，但 OpenClaw 配置未能继续。请重新生成二维码后重试。",
         "handoffRecoverable": "扫码已验证，但 OpenClaw 配置会话需要恢复。点击“继续配置”即可，无需重新扫码。",
         "resume": "继续配置"
-      },
-      "presentation": {
-        "setupMode": "设置模式",
-        "channelsPrimer": "渠道说明",
-        "channelsPrimerMessage": "私信默认使用配对保护：陌生发送者会先获得配对码。你可以在完成向导后，于渠道设置中调整访问策略和多用户会话隔离方式。",
-        "selectQuickstartChannel": "选择渠道（快速开始）",
-        "selectChannel": "选择渠道",
-        "feishuScan": "飞书扫码创建",
-        "feishuMethod": "如何连接飞书？",
-        "feishuSetup": "飞书配置",
-        "feishuScanMessage": "请使用飞书或 Lark 手机端扫描二维码。若手机端无响应，请重新进入此步骤并选择手动填写。"
       }
     }
   },
@@ -3277,6 +3249,7 @@
   "channelsCenter.scanQr": "扫描二维码",
   "channelsCenter.qrUnavailable": "OpenClaw 未返回二维码，请检查 Gateway 和渠道日志。",
   "channelsCenter.qrTimedOut": "二维码已过期，请刷新后重试。",
+  "channelsCenter.qrRequestFailed": "OpenClaw 无法启动此渠道的二维码登录。请确认当前 OpenClaw 版本支持该渠道的二维码登录。",
   "channelsCenter.qrWaiting": "正在等待 OpenClaw 生成二维码…",
   "channelsCenter.probe": "探测",
   "channelsCenter.channelLogs": "渠道日志",

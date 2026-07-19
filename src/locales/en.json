@@ -2671,24 +2671,7 @@
       "confirm": "Confirm and continue",
       "textInput": "OpenClaw configuration value",
       "readyForStep": "OpenClaw will perform this step.",
-      "setupMode": {
-        "title": "Setup mode",
-        "keepModel": {
-          "label": "Keep existing model config",
-          "hint": "Skip model/auth setup and keep the current default model."
-        },
-        "quickstart": {
-          "label": "QuickStart (recommended)",
-          "hint": "Recommended local setup. Change details later with openclaw configure."
-        },
-        "manual": {
-          "label": "Manual setup",
-          "hint": "Choose Gateway port, network exposure, Tailscale, and auth."
-        },
-        "importClaude": "Import from Claude",
-        "importHermes": "Import from Hermes",
-        "importCodex": "Import from Codex"
-      },
+      "qrAlt": "Scan authorization QR code",
       "channelEnrollment": {
         "title": "Connect Feishu by QR code",
         "subtitle": "Scan with your phone and JunQi will continue the official OpenClaw setup.",
@@ -2706,17 +2689,6 @@
         "handoffFailed": "The QR code was verified, but OpenClaw setup could not continue. Generate a new code and try again.",
         "handoffRecoverable": "The QR code was verified, but the OpenClaw setup session needs to be restored. Select Continue setup; you do not need to scan again.",
         "resume": "Continue setup"
-      },
-      "presentation": {
-        "setupMode": "Setup mode",
-        "channelsPrimer": "How channels work",
-        "channelsPrimerMessage": "Inbound DMs use pairing by default: unknown senders receive a pairing code first. You can adjust access policies and multi-user session isolation in channel settings after setup.",
-        "selectQuickstartChannel": "Select channel (QuickStart)",
-        "selectChannel": "Select a channel",
-        "feishuScan": "Feishu scan-to-create",
-        "feishuMethod": "How do you want to connect Feishu?",
-        "feishuSetup": "Feishu setup",
-        "feishuScanMessage": "Scan the QR with the Feishu or Lark mobile app. If the mobile app does not react, return to this step and choose manual input."
       }
     }
   },
@@ -3253,6 +3225,7 @@
   "channelsCenter.scanQr": "Scan QR code",
   "channelsCenter.qrUnavailable": "OpenClaw did not return a QR code. Check the Gateway and channel logs.",
   "channelsCenter.qrTimedOut": "The QR code expired. Refresh it and try again.",
+  "channelsCenter.qrRequestFailed": "OpenClaw could not start QR login for this channel. Confirm that this OpenClaw version supports QR login for the selected channel.",
   "channelsCenter.qrWaiting": "Waiting for OpenClaw to prepare the QR code...",
   "channelsCenter.probe": "Probe",
   "channelsCenter.channelLogs": "Channel logs",

@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildChannelLoginCommand,
   buildChannelSetupCommand,
   channelLinkMode,
   normalizeOfficialChannelCapability,
@@ -29,23 +28,22 @@ describe('openclawChannelRuntime', () => {
         properties: { botToken: { type: 'string' } }, required: ['botToken'],
       } } },
       support: { media: true },
-      actions: ['send'],
+      actions: ['send'], qrLogin: true,
     }] });
     assert.equal(capability?.schema.botToken?.type, 'string');
     assert.deepEqual(capability?.required, ['botToken']);
+    assert.equal(capability?.qrLogin, true);
   });
 
   test('routes official link flows by supported interaction', () => {
-    assert.equal(channelLinkMode('whatsapp', true), 'embedded_qr');
-    assert.equal(channelLinkMode('feishu', true), 'terminal_login');
-    assert.equal(channelLinkMode('openclaw-weixin', true), 'terminal_login');
-    assert.equal(channelLinkMode('signal', true), 'terminal_setup');
-    assert.equal(channelLinkMode('new-plugin', false), 'terminal_setup');
+    const qrCapability = normalizeOfficialChannelCapability({ channels: [{ channel: 'provider', qrLogin: true }] });
+    assert.equal(channelLinkMode(qrCapability, true), 'embedded_qr');
+    assert.equal(channelLinkMode(null, true), 'none');
+    assert.equal(channelLinkMode(null, false), 'terminal_setup');
   });
 
   test('builds safe cross-platform CLI commands and rejects flag injection', () => {
     assert.equal(buildChannelSetupCommand('telegram', 'work'), 'openclaw channels add --channel telegram --account work\n');
-    assert.equal(buildChannelLoginCommand('feishu'), 'openclaw channels login --channel feishu\n');
     assert.throws(() => buildChannelSetupCommand('--delete'), /unsupported characters/);
   });
 

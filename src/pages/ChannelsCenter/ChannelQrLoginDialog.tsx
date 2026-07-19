@@ -5,17 +5,19 @@ import { gateway } from '@/services/gateway';
 import { ChannelQrLoginSession, type ChannelQrState } from '@/services/channelQrLogin';
 
 export function ChannelQrLoginDialog({
+  channelId,
   accountId,
   onClose,
   onConnected,
 }: {
+  channelId: string;
   accountId?: string;
   onClose: () => void;
   onConnected: () => void;
 }) {
   const { t } = useTranslation();
   const titleId = useId();
-  const session = useMemo(() => new ChannelQrLoginSession(gateway, accountId), [accountId]);
+  const session = useMemo(() => new ChannelQrLoginSession(gateway, channelId, accountId), [accountId, channelId]);
   const [state, setState] = useState<ChannelQrState>(() => session.snapshot());
   const connectedNotified = useRef(false);
   const busy = state.phase === 'preparing' || state.phase === 'waiting';
@@ -48,7 +50,9 @@ export function ChannelQrLoginDialog({
     ? t('channelsCenter.qrUnavailable', 'OpenClaw did not return a QR code. Check the Gateway and channel logs.')
     : state.error === 'qr_expired'
       ? t('channelsCenter.qrTimedOut', 'The QR code expired. Refresh it and try again.')
-      : state.error || state.message || t('channelsCenter.qrWaiting', 'Waiting for OpenClaw to prepare the QR code...');
+      : state.error === 'qr_request_failed'
+        ? t('channelsCenter.qrRequestFailed', 'OpenClaw could not start QR login. Check that this OpenClaw version supports QR login for the selected channel.')
+        : state.message || t('channelsCenter.qrWaiting', 'Waiting for OpenClaw to prepare the QR code...');
 
   return (
     <div className="fixed inset-0 z-[2147482500] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
