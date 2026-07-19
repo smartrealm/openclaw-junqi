@@ -657,6 +657,7 @@ export function useSetupFlow(
       await waitForGatewayReady(runId, isDockerRuntime ? 30_000 : 10_000, status?.port);
       if (!isRunActive(runId)) return;
       if (isDockerRuntime) {
+        patchStep("container", "done");
         await configureTerminalIntegration(runId);
         if (!isRunActive(runId)) return;
       }
@@ -822,12 +823,10 @@ export function useSetupFlow(
       await configureTerminalIntegration(runId);
       if (!isRunActive(runId)) return;
 
-      // Gateway validation belongs to the explicit start action. Keeping this
-      // step pending makes the completion screen truthful: no port probe,
-      // permission probe, or process launch has happened yet.
-      patchStep("gateway", "pending", t("setup.gatewayNotRunning"));
-      replaceSetupStep("install-complete");
-      presentSetupStep("install-complete");
+      // Once the user has confirmed the selected runtime, setup owns the
+      // complete installation transaction, including Gateway startup. It stops
+      // at gateway-ready; only entering the official wizard remains explicit.
+      await startGatewayAction();
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       const msg = err?.message || String(err);
@@ -836,8 +835,8 @@ export function useSetupFlow(
       report(msg);
       replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, replaceSetupStep, presentSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
-      setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement]);
+  }, [beginRun, isRunActive, replaceSetupStep, t, report, reportPhase, setNeedsGit, commitSteps,
+      setSetupError, clearSetupLogs, appendSetupLog, updateOnboardingRequirement, startGatewayAction]);
 
   const runDockerSetup = useCallback(async () => {
     const runId = beginRun();
@@ -852,10 +851,7 @@ export function useSetupFlow(
       if (!isRunActive(runId)) return;
       patchStep("pull", "done");
 
-      patchStep("container", "done", t("setup.installComplete"));
-      patchStep("gateway", "pending", t("setup.gatewayNotRunning"));
-      report(t("setup.installComplete"), 68);
-      replaceSetupStep("install-complete");
+      await startGatewayAction();
     } catch (err: any) {
       if (!isRunActive(runId)) return;
       setGatewayRunning(false);
@@ -866,7 +862,7 @@ export function useSetupFlow(
       replaceSetupStep("error");
     }
   }, [beginRun, isRunActive, replaceSetupStep, t, report, commitSteps,
-      setSetupError, clearSetupLogs, appendSetupLog]);
+      setSetupError, clearSetupLogs, appendSetupLog, startGatewayAction]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
     setSetupError(null);
@@ -920,17 +916,21 @@ export function useSetupFlow(
     relocationRequestedRef.current = result?.openclawRelocationRequired === true;
     if (createdFresh) updateOnboardingRequirement(true);
 
-    // An existing Native OpenClaw install still relies on host Git, Node.js,
-    // and npm. Route it through the same preflight/install closure as a fresh
-    // Native setup instead of skipping directly to Gateway startup.
-    if (
-      installMode === "native"
+    // A selected runtime is always brought back through its own preflight and
+    // startup orchestration after storage is confirmed. Native verifies host
+    // Git, Node.js, npm, and OpenClaw; Docker verifies the selected image and
+    // container. Neither path asks the user to manually start Gateway.
+    const canResumeNativeRuntime = installMode === "native"
       && openclawStatus?.installed
-      && !runtimeReconfigurationRequired
-      && !relocationRequestedRef.current
-    ) {
+      && !relocationRequestedRef.current;
+    const canResumeSelectedRuntime = installMode === "docker" || canResumeNativeRuntime;
+    if (!runtimeReconfigurationRequired && canResumeSelectedRuntime) {
       navigateSetup("checking", "push");
-      void runNativeSetup();
+      if (installMode === "docker") {
+        void runDockerSetup();
+      } else {
+        void runNativeSetup();
+      }
       return;
     }
 
@@ -959,6 +959,7 @@ export function useSetupFlow(
     t,
     updateOnboardingRequirement,
     runNativeSetup,
+    runDockerSetup,
     setForceStorageSelection,
   ]);
 

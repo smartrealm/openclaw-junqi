@@ -10,7 +10,6 @@ export type SetupStep =
   | "node-missing"
   | "install-node"
   | "install-openclaw"
-  | "install-complete"
   | "gateway-ready"
   | "configure-openclaw"
   | "ready"
@@ -54,8 +53,6 @@ export function setupStepMessageKey(step: SetupStep): string {
     case "install-git":
     case "install-node":
     case "install-openclaw":
-    case "install-complete":
-      return "setup.installComplete";
     case "gateway-ready":
       return "setup.gatewayConnected";
     case "configure-openclaw":
@@ -81,8 +78,6 @@ export function setupStepProgress(step: SetupStep): number {
     case "install-openclaw":
     case "error":
       return 52;
-    case "install-complete":
-      return 68;
     case "gateway-ready":
       return 74;
     case "configure-openclaw":

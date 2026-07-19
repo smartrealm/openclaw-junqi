@@ -2466,16 +2466,24 @@
     "copiedLogs": "Copied",
     "steps": {
       "identity": {
-        "title": "Brand & Preferences",
+        "title": "Preferences",
         "description": "Language / Theme"
+      },
+      "environment": {
+        "title": "Environment",
+        "description": "OpenClaw / Docker"
+      },
+      "storage": {
+        "title": "Data location",
+        "description": "Configuration / Workspace"
       },
       "runtime": {
         "title": "Runtime",
-        "description": "Install and start services"
+        "description": "Install and start Gateway"
       },
-      "install": {
-        "title": "Install & Start",
-        "description": "Components / Gateway"
+      "configuration": {
+        "title": "OpenClaw setup",
+        "description": "Models / credentials / channels"
       },
       "ready": {
         "title": "Ready",
@@ -3048,6 +3056,8 @@
   "gateway.progress.ensureUnhealthy": "ensure_gateway_running status abnormal, restarting…",
   "gateway.progress.ensureFailed": "ensure_gateway_running call failed, restarting…",
   "setup.installComplete": "Required components installed",
+  "setup.gatewayConnected": "Gateway is ready",
+  "setup.gatewayReadySubtitle": "Gateway has started. Click Next to begin the official OpenClaw setup wizard.",
   "setup.installCompleteSubtitle": "Installation and configuration are complete. The next step only starts Gateway; you still enter the workspace manually afterward.",
   "setup.installCompleteGatewayPending": "Gateway configuration is ready. Start Gateway to continue.",
   "setup.gatewayPrepareWillRetry": "Gateway preparation did not complete: {{error}}. Starting Gateway will retry automatically.",

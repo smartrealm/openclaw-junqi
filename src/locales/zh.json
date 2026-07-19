@@ -2463,13 +2463,21 @@
         "title": "品牌与偏好",
         "description": "语言 / 主题"
       },
+      "environment": {
+        "title": "环境检测",
+        "description": "OpenClaw / Docker"
+      },
+      "storage": {
+        "title": "数据位置",
+        "description": "配置与工作区"
+      },
       "runtime": {
         "title": "运行时",
-        "description": "安装并启动服务"
+        "description": "安装并启动 Gateway"
       },
-      "install": {
-        "title": "安装与启动",
-        "description": "组件 / Gateway"
+      "configuration": {
+        "title": "OpenClaw 配置",
+        "description": "模型、凭据与渠道"
       },
       "ready": {
         "title": "完成",
@@ -3072,6 +3080,8 @@
   "gateway.progress.ensureUnhealthy": "ensure_gateway_running 状态异常，正在执行重启…",
   "gateway.progress.ensureFailed": "ensure_gateway_running 调用失败，正在执行重启…",
   "setup.installComplete": "必需组件已安装完成",
+  "setup.gatewayConnected": "Gateway 已就绪",
+  "setup.gatewayReadySubtitle": "Gateway 已启动。点击下一步开始 OpenClaw 官方配置向导。",
   "setup.installCompleteSubtitle": "安装与配置已完成。下一步只会启动 Gateway，启动后仍需手动进入工作台。",
   "setup.installCompleteGatewayPending": "Gateway 配置已准备，点击启动 Gateway 继续。",
   "setup.gatewayPrepareWillRetry": "Gateway 准备检查未完成：{{error}}。点击启动时将自动重试。",

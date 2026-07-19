@@ -40,8 +40,8 @@ function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): st
       return i18n.t('setup.installingNode', { defaultValue: 'Installing Node.js...' });
     case 'install-openclaw':
       return i18n.t('setup.installingOpenclaw', { defaultValue: 'Installing OpenClaw...' });
-    case 'install-complete':
-      return i18n.t('setup.installComplete', { defaultValue: 'Installation complete' });
+    case 'gateway-ready':
+      return i18n.t('setup.gatewayConnected', { defaultValue: 'Gateway is ready' });
     case 'configure-openclaw':
       return i18n.t('setup.preparingGateway', { defaultValue: 'Preparing Gateway...' });
     case 'ready':

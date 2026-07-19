@@ -25,12 +25,12 @@ import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
 
 const SETUP_STEPS = [
-  { id: "identity", title: "偏好", description: "语言与外观" },
-  { id: "environment", title: "环境检测", description: "OpenClaw / Docker" },
-  { id: "storage", title: "数据位置", description: "配置与工作区" },
-  { id: "runtime", title: "运行时", description: "安装并启动服务" },
-  { id: "configuration", title: "配置", description: "模型与提供商" },
-  { id: "ready", title: "完成", description: "进入工作台" },
+  { id: "identity", titleKey: "setup.steps.identity.title", titleFallback: "Preferences", descriptionKey: "setup.steps.identity.description", descriptionFallback: "Language / Theme" },
+  { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
+  { id: "storage", titleKey: "setup.steps.storage.title", titleFallback: "Data location", descriptionKey: "setup.steps.storage.description", descriptionFallback: "Configuration / Workspace" },
+  { id: "runtime", titleKey: "setup.steps.runtime.title", titleFallback: "Runtime", descriptionKey: "setup.steps.runtime.description", descriptionFallback: "Install and start Gateway" },
+  { id: "configuration", titleKey: "setup.steps.configuration.title", titleFallback: "OpenClaw setup", descriptionKey: "setup.steps.configuration.description", descriptionFallback: "Models / credentials / channels" },
+  { id: "ready", titleKey: "setup.steps.ready.title", titleFallback: "Complete", descriptionKey: "setup.steps.ready.description", descriptionFallback: "Enter workspace" },
 ] as const;
 
 export const STEP_META: Record<string, { titleKey: string; titleFallback: string; descriptionKey: string; descriptionFallback: string }> = {
@@ -101,7 +101,7 @@ function Stepper({ active }: { active: number }) {
   return (
     <div className="px-6 pt-6" dir="ltr">
       <div className="mx-auto flex w-fit max-w-full items-start justify-center gap-2 overflow-x-auto rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
-        {SETUP_STEPS.map(({ id, title, description }, i) => {
+        {SETUP_STEPS.map(({ id, titleKey, titleFallback, descriptionKey, descriptionFallback }, i) => {
           const done = i < active;
           const current = i === active;
           return (
@@ -127,13 +127,13 @@ function Stepper({ active }: { active: number }) {
                     )}
                     dir="auto"
                   >
-                    {t(`setup.steps.${id}.title`, title)}
+                    {t(titleKey, titleFallback)}
                   </div>
                   <div
                     className={clsx("mt-0.5 hidden text-[11px] font-medium sm:block", current ? "text-aegis-text-secondary" : "text-aegis-text-dim")}
                     dir="auto"
                   >
-                    {t(`setup.steps.${id}.description`, description)}
+                    {t(descriptionKey, descriptionFallback)}
                   </div>
                 </div>
               </div>
@@ -667,7 +667,7 @@ export function installStepTitle(step: StepState | null, t: TFunction): string |
   return meta ? t(meta.titleKey, meta.titleFallback) : step.label;
 }
 
-function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: StepState[]; awaitingGatewayStart?: boolean }) {
+function InstallationTimeline({ steps }: { steps: StepState[] }) {
   const { t } = useTranslation();
   const visibleSteps = steps.length > 0 ? steps : [{ id: "gateway", label: "Gateway", status: "pending" as const }];
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -737,9 +737,7 @@ function InstallationTimeline({ steps, awaitingGatewayStart = false }: { steps: 
                 s.status === "skipped" && "bg-aegis-surface text-aegis-text-muted",
                 s.status === "pending" && "bg-aegis-surface text-aegis-text-dim",
               )}>
-                {awaitingGatewayStart && s.id === "gateway" && s.status === "pending"
-                  ? t("setup.installPanel.waitingToStart", "等待启动")
-                  : stepStatusText(s.status, t)}
+                {stepStatusText(s.status, t)}
               </span>
             </div>
             {s.detail && <div className="mt-2 break-words rounded-lg bg-aegis-surface/55 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-secondary">{s.detail}</div>}
@@ -866,22 +864,20 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
-  const percent = setupStep === "ready"
+  const isGatewayReady = setupStep === "gateway-ready";
+  const isReady = setupStep === "ready" || isGatewayReady;
+  const percent = isReady
     ? 100
     : installationCompletionPercent(flow.steps);
-  const isReady = setupStep === "ready";
   const isError = setupStep === "error";
-  const isAwaitingGatewayStart = setupStep === "install-complete";
   useEffect(() => {
     if (isError) setMobileView("logs");
   }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
   const currentTitle = installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
-  const currentDescription = isAwaitingGatewayStart && current?.id === "gateway"
-    ? t("setup.gatewayNotRunning", "Gateway 未运行，点击下方按钮启动。")
-    : currentMeta
-      ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
-      : t("setup.subtitle");
+  const currentDescription = currentMeta
+    ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
+    : t("setup.subtitle");
 
   return (
     <div className="space-y-4">
@@ -891,12 +887,10 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
       )}>
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-            {isReady || isAwaitingGatewayStart ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
+            {isReady ? <CheckCircle2 size={15} className="text-aegis-success" /> : isError ? <X size={15} className="text-red-300" /> : <CircleDot size={15} className="text-aegis-primary" />}
             {isReady
               ? t("setup.ready", "就绪")
-              : isAwaitingGatewayStart
-                ? t("setup.installComplete", "必需组件已安装完成")
-                : isError
+              : isError
                   ? t("setup.error", "安装遇到问题")
                   : t("setup.installPanel.current", "当前执行")}
           </div>
@@ -910,7 +904,7 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
           {flow.installTarget && (
             <InstallTargetCard target={flow.installTarget} />
           )}
-          {current?.id === "gateway" && !isReady && !isAwaitingGatewayStart && (
+          {current?.id === "gateway" && !isReady && (
             <GatewayLifecyclePanel variant="compact" className="mt-3" />
           )}
         </div>
@@ -957,7 +951,7 @@ export function InstallationConsole({ flow, logs, setupStep }: { flow: SetupFlow
         </div>
         <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
           <div className={clsx(mobileView !== "steps" && "hidden lg:block")}>
-            <InstallationTimeline steps={flow.steps} awaitingGatewayStart={isAwaitingGatewayStart} />
+            <InstallationTimeline steps={flow.steps} />
           </div>
           <div className={clsx(mobileView !== "logs" && "hidden lg:block")}>
             <InstallLiveLog logs={logs} />

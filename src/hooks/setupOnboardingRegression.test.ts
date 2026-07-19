@@ -111,7 +111,7 @@ test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () =>
   assert.doesNotMatch(stopped, /setup\.foundOclaw/);
 });
 
-test('BUG-ONB-14 existing Native OpenClaw runs the full dependency closure after storage', () => {
+test('BUG-ONB-14 selected runtimes resume their full startup closure after storage', () => {
   const completeStorage = setupFlow.slice(
     setupFlow.indexOf('const completeStorageSetup = useCallback'),
     setupFlow.indexOf('const repairAndRetry = useCallback'),
@@ -119,7 +119,9 @@ test('BUG-ONB-14 existing Native OpenClaw runs the full dependency closure after
 
   assert.match(completeStorage, /installMode === "native"/);
   assert.match(completeStorage, /openclawStatus\?\.installed/);
-  assert.match(completeStorage, /navigateSetup\("checking", "push"\);\s*void runNativeSetup\(\);\s*return;/);
+  assert.match(completeStorage, /const canResumeSelectedRuntime = installMode === "docker" \|\| canResumeNativeRuntime/);
+  assert.match(completeStorage, /if \(!runtimeReconfigurationRequired && canResumeSelectedRuntime\)[\s\S]*?navigateSetup\("checking", "push"\)/);
+  assert.match(completeStorage, /installMode === "docker"[\s\S]*?void runDockerSetup\(\)[\s\S]*?void runNativeSetup\(\)/);
 });
 
 test('BUG-ONB-15 runtime navigation uses its own label instead of repeating environment detection', () => {
@@ -128,11 +130,11 @@ test('BUG-ONB-15 runtime navigation uses its own label instead of repeating envi
 
   assert.deepEqual(zh.setup.steps.runtime, {
     title: '运行时',
-    description: '安装并启动服务',
+    description: '安装并启动 Gateway',
   });
   assert.deepEqual(en.setup.steps.runtime, {
     title: 'Runtime',
-    description: 'Install and start services',
+    description: 'Install and start Gateway',
   });
 });
 
