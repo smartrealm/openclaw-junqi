@@ -3271,7 +3271,6 @@
   "setup.openclawUpdate.title": "OpenClaw updates",
   "setup.openclawUpdate.subtitle": "Use the official OpenClaw updater to detect the install type, channel, and available version. Checking never blocks the next step.",
   "setup.openclawUpdate.currentVersion": "Current",
-  "setup.openclawUpdate.packageRevision": "npm package revision {{version}}",
   "setup.openclawUpdate.latestVersion": "Available",
   "setup.openclawUpdate.unknown": "Unknown",
   "setup.openclawUpdate.check": "Check for updates",

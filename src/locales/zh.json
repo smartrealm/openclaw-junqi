@@ -3295,7 +3295,6 @@
   "setup.openclawUpdate.title": "OpenClaw 更新",
   "setup.openclawUpdate.subtitle": "使用 OpenClaw 官方更新器识别安装方式、渠道和可用版本。检查更新不会阻止你继续下一步。",
   "setup.openclawUpdate.currentVersion": "当前版本",
-  "setup.openclawUpdate.packageRevision": "npm 包修订 {{version}}",
   "setup.openclawUpdate.latestVersion": "可用版本",
   "setup.openclawUpdate.unknown": "未知",
   "setup.openclawUpdate.check": "检查更新",
