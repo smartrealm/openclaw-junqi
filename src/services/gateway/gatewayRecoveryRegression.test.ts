@@ -351,8 +351,9 @@ test('BUG-GL10 status polling is serial and invalidates in-flight results on cle
 test('BUG-05 recovery log surfaces retain useful diagnostic context', () => {
   const offline = source('src/components/OfflineOverlay.tsx');
   const boot = source('src/components/BootTimelineOverlay.tsx');
-  assert.match(offline, /max-h-64/);
-  assert.match(offline, /slice\(-40\)/);
+  assert.match(offline, /max-h-24/);
+  assert.match(offline, /slice\(-12\)/);
+  assert.match(offline, /copyRecoveryLogs/);
   assert.match(boot, /max-h-64/);
   assert.match(boot, /slice\(-40\)/);
 });
