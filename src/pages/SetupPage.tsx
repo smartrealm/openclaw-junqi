@@ -4,16 +4,19 @@
 // ═══════════════════════════════════════════════════════════
 
 import {
+  AlertTriangle,
   Check,
   CheckCircle2,
   Container,
   Circle,
   Globe2,
+  LoaderCircle,
   Monitor,
   Moon,
   Minus,
   Package,
   Palette,
+  Power,
   RefreshCw,
   Sun,
   X,
@@ -30,7 +33,14 @@ import { changeLanguage } from "@/i18n";
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from "@/i18n/languages";
 import { useSetupFlow } from "@/hooks/useSetupFlow";
 import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
-import type { DockerStatus } from "@/api/tauri-commands";
+import type { DockerStatus, GatewayAutostartStatus } from "@/api/tauri-commands";
+import {
+  detectStateDirSplit,
+  disableGatewayAutostart,
+  enableGatewayAutostart,
+  gatewayAutostartStatus,
+  type StateDirSplit,
+} from "@/api/tauri-commands";
 import type { ThemeSetting } from "@/theme/types";
 import { setThemeWithTransition } from "@/motion/themeTransition";
 import {
@@ -587,6 +597,105 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   );
 }
 
+// ── 开机自启卡片(仅 Native 运行时) ──
+// 通过官方 `openclaw gateway install/uninstall` 注册或移除系统服务;切换后
+// 用现有 restart 流程把 Gateway 从"桌面托管"交接给系统服务(或反向),保证
+// 结束时只有一个明确的托管方持有端口。Docker 运行时由容器重启策略负责。
+function GatewayAutostartCard({ installMode }: { installMode: InstallMode }) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<GatewayAutostartStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (installMode !== "native") return;
+    let cancelled = false;
+    void gatewayAutostartStatus()
+      .then((next) => { if (!cancelled) setStatus(next); })
+      .catch(() => { if (!cancelled) setStatus(null); });
+    return () => { cancelled = true; };
+  }, [installMode]);
+
+  if (installMode !== "native" || !status?.supported) return null;
+  const enabled = status.enabled;
+
+  const toggleAutostart = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setPhase(enabled
+        ? t("setup.autostart.disabling", "正在关闭开机自启…")
+        : t("setup.autostart.enabling", "正在设置开机自启…"));
+      const next = enabled ? await disableGatewayAutostart() : await enableGatewayAutostart();
+      setStatus(next);
+      // 交接托管方:开启后交给系统服务,关闭后回落到桌面托管。
+      setPhase(t("setup.autostart.switching", "正在切换 OpenClaw 的运行方式,请稍候…"));
+      await window.aegis.config.restart();
+      setStatus(await gatewayAutostartStatus().catch(() => next));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+      setPhase(null);
+    }
+  };
+
+  return (
+    <div className="w-full rounded-xl border-2 border-aegis-primary/40 bg-aegis-primary/5 p-5 text-left">
+      <div className="flex items-start gap-3">
+        <span className={clsx(
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+          enabled ? "bg-aegis-success/15 text-aegis-success" : "bg-aegis-primary/15 text-aegis-primary",
+        )}>
+          <Power size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-aegis-text">
+              {t("setup.autostart.title", "要不要让 OpenClaw 开机自动运行?")}
+            </span>
+            {enabled && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-aegis-success/30 bg-aegis-success/10 px-2 py-0.5 text-[11px] font-medium text-aegis-success">
+                <Check size={11} strokeWidth={3} />
+                {t("setup.autostart.enabledBadge", "已开启")}
+              </span>
+            )}
+          </div>
+          <p className="mt-1.5 text-xs leading-5 text-aegis-text-secondary">
+            {enabled
+              ? t("setup.autostart.enabledHint", "已设置为开机自动运行:以后电脑一开机,OpenClaw 就会自动在后台工作,不需要打开本应用。随时可以在这里关闭。")
+              : t("setup.autostart.hint", "开启后,电脑一开机 OpenClaw 就会自动在后台运行——不用打开本应用,你的消息渠道和定时任务也能照常工作。不开启也没关系:每次打开本应用时会自动启动它。")}
+          </p>
+          {busy && phase && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-aegis-text-muted">
+              <LoaderCircle size={12} className="animate-spin" />
+              {phase}
+            </p>
+          )}
+          {error && <p className="mt-2 break-all text-xs text-aegis-danger">{error}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => void toggleAutostart()}
+          disabled={busy}
+          className={clsx(
+            "shrink-0 rounded-lg px-4 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
+            enabled
+              ? "border border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface"
+              : "bg-aegis-primary text-white hover:opacity-90",
+          )}
+        >
+          {enabled
+            ? t("setup.autostart.disable", "关闭")
+            : t("setup.autostart.enable", "开机自动运行")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const settledCount = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
@@ -598,6 +707,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}
+      previousAction={{ onClick: flow.goBack }}
       nextAction={{ label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }}
     >
       <div className="flex flex-col items-center gap-6 py-5 text-center">
@@ -633,6 +743,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         <div className="text-xs text-aegis-text-dim">
           {settledCount}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}
         </div>
+        <GatewayAutostartCard installMode={flow.installMode} />
         {flow.openclawStatus?.installed && (
           <div className="w-full text-left">
             <OpenClawUpdatePanel
@@ -756,7 +867,7 @@ export function SetupPage() {
   switch (setupStep) {
     case "welcome": return <WelcomeScreen logs={sharedLogs} />;
     case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
-    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} />;
+    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
     case "gateway-stopped": return <GatewayStoppedScreen flow={flow} logs={sharedLogs} />;
     case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
     case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;

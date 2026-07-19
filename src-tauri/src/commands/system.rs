@@ -338,7 +338,10 @@ fn is_npm_command_shim(path: &Path) -> bool {
         })
 }
 
-fn path_for_node_argument(path: &Path) -> PathBuf {
+/// Normalize a path for use as a Node.js process argument. Windows verbatim
+/// (`\\?\`) prefixes break Node's fs/path handling, so they are stripped the
+/// same way for every Node invocation (gateway entrypoint, probes).
+pub(crate) fn path_for_node_argument(path: &Path) -> PathBuf {
     if cfg!(windows) {
         PathBuf::from(strip_windows_verbatim_prefix(&path.to_string_lossy()))
     } else {

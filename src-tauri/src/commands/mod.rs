@@ -18,6 +18,7 @@ pub mod fs_watcher;
 pub mod gateway;
 pub mod gateway_logs;
 pub mod gateway_rescue;
+pub mod gateway_service;
 pub mod gateway_supervisor;
 pub mod git_neu;
 #[cfg(any(windows, test))]
@@ -52,6 +53,7 @@ pub mod session_labels;
 pub mod setup;
 pub mod setup_progress;
 pub mod skills;
+pub mod state_dir_probe;
 pub mod storage;
 pub mod system;
 pub mod system_metrics;

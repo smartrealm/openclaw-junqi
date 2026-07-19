@@ -135,6 +135,32 @@ export interface EnsureResult {
  */
 export const ensureGatewayRunning = () => invoke<EnsureResult>("ensure_gateway_running");
 
+/**
+ * Gateway 开机自启（系统服务）状态 — see src-tauri/src/commands/gateway_service.rs
+ * 仅 Native 运行时 supported；enabled 表示服务已注册并被系统加载。
+ */
+export interface GatewayAutostartStatus {
+  supported: boolean;
+  enabled: boolean;
+  serviceLabel: string | null;
+}
+export const gatewayAutostartStatus = () => invoke<GatewayAutostartStatus>("gateway_autostart_status");
+
+/**
+ * 状态目录分裂检测 — see src-tauri/src/commands/state_dir_probe.rs
+ * split=true 表示选定目录与系统默认目录(~/.openclaw)不同,且默认目录也
+ * 存在一份 OpenClaw 配置(外部命令/服务会读取它,造成配置不一致)。
+ */
+export interface StateDirSplit {
+  split: boolean;
+  activeDir: string;
+  defaultDir: string;
+  defaultHasConfig: boolean;
+}
+export const detectStateDirSplit = () => invoke<StateDirSplit>("detect_state_dir_split");
+export const enableGatewayAutostart = () => invoke<GatewayAutostartStatus>("enable_gateway_autostart");
+export const disableGatewayAutostart = () => invoke<GatewayAutostartStatus>("disable_gateway_autostart");
+
 /** Gateway log buffer access (200-entry circular, see gateway_process.rs). */
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
 export type LogSource = 'child_stdout' | 'child_stderr' | 'docker_stdout' | 'docker_stderr' | 'lifecycle';

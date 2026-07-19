@@ -234,10 +234,11 @@ export function DashboardPage() {
     })).slice(0, 5);
   }, [sessions, chatSessions]);
 
-  // Chart data: last 14 days (oldest first)
+  // Match the upstream desktop chart: the cost API defines the available day
+  // buckets, and the category axis renders those compact MM-DD labels.
   const chartData = useMemo(() => {
     const sorted = [...allDaily]
-      .sort((a, b) => a.date.localeCompare(b.date))
+      .sort((left, right) => left.date.localeCompare(right.date))
       .slice(-14);
     return sorted.map((d: any) => {
       const input = d.inputCost || 0;
@@ -245,7 +246,7 @@ export function DashboardPage() {
       const cache = (d.cacheReadCost || 0) + (d.cacheWriteCost || 0);
       const total = d.totalCost || input + output + cache;
       return {
-        date: d.date.slice(5), // MM-DD
+        date: d.date.slice(5),
         input,
         output,
         cache,
@@ -584,48 +585,52 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-3 shrink-0">
 
         {/* Daily Cost Chart */}
-        <GlassCard hover={false} delay={0.16}>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp size={15} className="text-aegis-primary" />
-              <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.dailyCostChart')}</span>
+        <GlassCard hover={false} delay={0.16} noPad className="h-full">
+          <div className="flex h-full min-h-[250px] flex-col p-5">
+            <div className="mb-4 flex shrink-0 items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={15} className="text-aegis-primary" />
+                <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.dailyCostChart')}</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{t('dashboard.inputCostLabel')}</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{t('dashboard.outputCostLabel')}</span>
+                {chartData.some((d: any) => d.cache > 0) && (
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{t('dashboard.cacheCostLabel', 'Cache')}</span>
+                )}
+              </div>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{t('dashboard.inputCostLabel')}</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{t('dashboard.outputCostLabel')}</span>
-              {chartData.some((d: any) => d.cache > 0) && (
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{t('dashboard.cacheCostLabel', 'Cache')}</span>
+            <div className="min-h-[160px] flex-1">
+              {chartData.length > 0 ? (
+                <Suspense fallback={<div className="h-full" />}>
+                  <CostChart data={chartData} />
+                </Suspense>
+              ) : !connected ? (
+                <div className="flex h-full items-center justify-center text-[13px] text-aegis-text-dim">
+                  {t('dashboard.notConnected')}
+                </div>
+              ) : costError ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-[13px] text-aegis-text-dim">
+                  <span>{t('dashboard.costError')}</span>
+                  <button
+                    onClick={handleRefresh}
+                    className="text-aegis-primary hover:underline text-[12px]"
+                  >
+                    {t('dashboard.costRetry')}
+                  </button>
+                </div>
+              ) : (costLoading && !costData) ? (
+                <div className="flex h-full items-center justify-center text-[13px] text-aegis-text-dim">
+                  {t('common.loading')}
+                </div>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-1 text-[13px] text-aegis-text-dim">
+                  <BarChart3 size={18} className="text-aegis-text-muted" />
+                  <span>{t('dashboard.costEmpty', 'No usage recorded yet')}</span>
+                </div>
               )}
             </div>
           </div>
-          {chartData.length > 0 ? (
-            <Suspense fallback={<div className="h-[160px]" />}>
-              <CostChart data={chartData} />
-            </Suspense>
-          ) : !connected ? (
-            <div className="h-[160px] flex items-center justify-center text-[13px] text-aegis-text-dim">
-              {t('dashboard.notConnected')}
-            </div>
-          ) : costError ? (
-            <div className="h-[160px] flex flex-col items-center justify-center gap-2 text-[13px] text-aegis-text-dim">
-              <span>{t('dashboard.costError')}</span>
-              <button
-                onClick={handleRefresh}
-                className="text-aegis-primary hover:underline text-[12px]"
-              >
-                {t('dashboard.costRetry')}
-              </button>
-            </div>
-          ) : (costLoading && !costData) ? (
-            <div className="h-[160px] flex items-center justify-center text-[13px] text-aegis-text-dim">
-              {t('common.loading')}
-            </div>
-          ) : (
-            <div className="h-[160px] flex flex-col items-center justify-center gap-1 text-[13px] text-aegis-text-dim">
-              <BarChart3 size={18} className="text-aegis-text-muted" />
-              <span>{t('dashboard.costEmpty', 'No usage recorded yet')}</span>
-            </div>
-          )}
         </GlassCard>
 
         {/* Active Agents */}

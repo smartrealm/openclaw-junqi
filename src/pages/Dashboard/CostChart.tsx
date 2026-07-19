@@ -61,8 +61,8 @@ function CostTooltip({ active, payload, label }: any) {
 
 export function CostChart({ data }: { data: ChartPoint[] }) {
   return (
-    <ResponsiveContainer width="100%" height={160}>
-        <AreaChart data={data} margin={{ top: 4, right: 4, left: -14, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
         <defs>
           <linearGradient id="gInput" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={themeColorVar('accent')} stopOpacity={0.25} />
@@ -74,7 +74,7 @@ export function CostChart({ data }: { data: ChartPoint[] }) {
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--aegis-overlay) / 0.04)" vertical={false} />
-        <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'rgb(var(--aegis-text-dim))' }} axisLine={false} tickLine={false} />
+        <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgb(var(--aegis-text-dim))' }} axisLine={false} tickLine={false} />
         <YAxis
           tick={{ fontSize: 11, fill: 'rgb(var(--aegis-text-dim))' }}
           axisLine={false}

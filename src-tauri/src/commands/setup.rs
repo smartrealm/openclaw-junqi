@@ -2886,8 +2886,9 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         0.12,
     );
 
-    let node_ok = crate::commands::system::check_node()
-        .await
+    let node_status = crate::commands::system::check_node().await.ok();
+    let node_ok = node_status
+        .as_ref()
         .map(|status| status.available)
         .unwrap_or(false);
     let openclaw_status = crate::commands::system::detect_openclaw().await;
@@ -2915,6 +2916,53 @@ pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
         ));
     }
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    // ⓘ Stage 1.5: state directory chmod capability (fail fast, see BUG-CPI-08)
+    // exFAT/网络盘/受策略限制的目录会拒绝 Gateway 启动时的 chmod,表现为
+    // 60 秒就绪超时。这里用已确认的 Node 做真实探测,把问题在启动前指出来。
+    if let Some(probe_node) = node_status
+        .as_ref()
+        .and_then(crate::commands::state_dir_probe::probe_node_path)
+    {
+        let state_dir = paths::desktop_dir();
+        emit_keyed(
+            &app,
+            step,
+            &format!(
+                "Verifying permission support of the data directory {}...",
+                state_dir.display()
+            ),
+            "setup.gateway.chmodProbe",
+            0.26,
+        );
+        match crate::commands::state_dir_probe::probe_chmod_capability(&probe_node, &state_dir)
+            .await
+        {
+            crate::commands::state_dir_probe::ChmodProbeOutcome::Unsupported(detail) => {
+                return Err(crate::commands::state_dir_probe::chmod_unsupported_message(
+                    &state_dir, &detail,
+                ));
+            }
+            crate::commands::state_dir_probe::ChmodProbeOutcome::Inconclusive(detail) => {
+                emit_keyed(
+                    &app,
+                    step,
+                    &format!("Permission probe was inconclusive; continuing: {detail}"),
+                    "setup.gateway.chmodProbeInconclusive",
+                    0.28,
+                );
+            }
+            crate::commands::state_dir_probe::ChmodProbeOutcome::Supported => {
+                emit_keyed(
+                    &app,
+                    step,
+                    "Data directory supports required permission changes ✓",
+                    "setup.gateway.chmodProbeOk",
+                    0.28,
+                );
+            }
+        }
+    }
 
     // ⓘ Stage 2: config port probing
     let config_path = paths::config_path();

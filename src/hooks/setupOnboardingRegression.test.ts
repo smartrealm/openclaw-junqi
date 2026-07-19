@@ -218,3 +218,35 @@ test('BUG-CPI-06 workspace and Gateway progress paths are resolved from storage 
   assert.match(setupCommand, /let config_path = paths::config_path\(\)/);
   assert.match(setupCommand, /Reading gateway port from \{\}\.\.\./);
 });
+
+test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', () => {
+  const gatewayService = readFileSync(
+    new URL('../../src-tauri/src/commands/gateway_service.rs', import.meta.url),
+    'utf8',
+  );
+  const registration = readFileSync(new URL('../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+
+  // The option is only offered for the Native runtime; Docker containers rely
+  // on their restart policy instead of a host-level service.
+  assert.match(setupPage, /function GatewayAutostartCard/);
+  assert.match(setupPage, /installMode !== "native" \|\| !status\?\.supported/);
+  assert.match(setupPage, /<GatewayAutostartCard installMode=\{flow\.installMode\} \/>/);
+
+  // Enable/disable goes through the official CLI service commands and then
+  // hands the port over via the existing restart path, so exactly one owner
+  // (system service or desktop app) serves the gateway afterwards.
+  assert.match(gatewayService, /"gateway", "install", "--json", "--force"/);
+  assert.match(gatewayService, /"gateway", "uninstall"/);
+  assert.match(gatewayService, /"gateway", "status", "--json", "--no-probe"/);
+  assert.match(gatewayService, /OpenClawRuntimeMode::Native/);
+  assert.match(setupPage, /await window\.aegis\.config\.restart\(\)/);
+
+  // All three commands are reachable from the frontend.
+  for (const command of [
+    'gateway_autostart_status',
+    'enable_gateway_autostart',
+    'disable_gateway_autostart',
+  ]) {
+    assert.match(registration, new RegExp(command));
+  }
+});

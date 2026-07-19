@@ -2540,6 +2540,17 @@
     "settingUp": "Setting up JunQi Desktop",
     "subtitle": "Installing required components. This may take a few minutes.",
     "readySubtitle": "Gateway is running. Click Enter workspace to finish setup; JunQi will not switch automatically.",
+    "autostart": {
+      "title": "Want OpenClaw to start automatically when your computer boots?",
+      "hint": "When enabled, OpenClaw quietly runs in the background as soon as your computer starts — your chat channels and scheduled tasks keep working even without opening this app. It's fine to skip: OpenClaw will start whenever you open this app.",
+      "enabledHint": "Autostart is on: OpenClaw will run in the background every time your computer boots, no need to open this app. You can turn it off here anytime.",
+      "enable": "Start on boot",
+      "disable": "Turn off",
+      "enabledBadge": "On",
+      "enabling": "Setting up autostart…",
+      "disabling": "Turning off autostart…",
+      "switching": "Switching how OpenClaw runs, one moment…"
+    },
     "petReadyHint": "You can enter the workspace now.",
     "enterWorkspace": "Enter workspace",
     "openclawDetectedTitle": "OpenClaw is installed",

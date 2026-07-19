@@ -147,6 +147,7 @@ export interface SetupFlow {
   needsOnboarding: boolean;
   repairing: boolean;
   brokenPlugins: BrokenGatewayPlugin[];
+  forceStorageSelection: boolean;
   startGateway: () => Promise<void>;
   retryGateway: () => Promise<void>;
   repairAndRetry: () => Promise<void>;
@@ -229,6 +230,7 @@ export function useSetupFlow(
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
+  const [forceStorageSelection, setForceStorageSelection] = useState(false);
   // gateway-smoke-check 类发现无法离线验证修复效果：自愈梯子跑完后先用一次
   // 真实 Gateway 启动做验证；此处记录已验证过的插件，二次失败直达禁用降级，
   // 避免"虚假修复→重启→再失败"的死循环。Gateway 成功就绪时清空。
@@ -580,7 +582,19 @@ export function useSetupFlow(
     setWizardSubmitting(true);
     try {
       await waitForGatewayConnection();
-      const result = await wizardClientRef.current!.start();
+      const client = wizardClientRef.current!;
+      let result;
+      if (client.hasActiveSession) {
+        try {
+          result = await client.resume();
+        } catch (error) {
+          if (!isOpenClawWizardSessionLost(error)) throw error;
+          client.forgetSession();
+          result = await client.start();
+        }
+      } else {
+        result = await client.start();
+      }
       await applyWizardResult(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -939,6 +953,7 @@ export function useSetupFlow(
     runtimeReconfigurationRequired?: boolean;
     openclawRelocationRequired?: boolean;
   }) => {
+    setForceStorageSelection(false);
     const createdFresh = result?.createdFresh === true;
     const runtimeReconfigurationRequired = result?.runtimeReconfigurationRequired === true;
     relocationRequestedRef.current = result?.openclawRelocationRequired === true;
@@ -989,6 +1004,7 @@ export function useSetupFlow(
     updateOnboardingRequirement,
     runNativeSetup,
     startGatewayAction,
+    setForceStorageSelection,
   ]);
 
   const repairAndRetry = useCallback(async () => {
@@ -1217,7 +1233,9 @@ export function useSetupFlow(
   }, [repairing, brokenPlugins, beginRun, isRunActive, setSetupError, patchStep, t, report, appendSetupLog, startGatewayAction, replaceSetupStep]);
 
   const goBack = useCallback(() => {
-    void wizardClientRef.current?.cancel().catch(() => {});
+    if (setupStep !== "configure-openclaw") {
+      void wizardClientRef.current?.cancel().catch(() => {});
+    }
     setWizardStep(null);
     setWizardError(null);
     cancelActiveRun();
@@ -1230,19 +1248,13 @@ export function useSetupFlow(
     while (isStaleSetupBackDestination(destination, gatewayRunning)) {
       destination = goBackSetup("welcome");
     }
-    // The setup summary belongs to the active runtime attempt. Returning to an
-    // earlier decision point must not leave a completed/failed later attempt
-    // visible as if it still described the current stage.
-    if (
-      destination === "welcome"
-      || destination === "detecting"
-      || destination === "storage"
-      || destination === "choosing-mode"
-    ) {
-      commitSteps([]);
+    if (destination === "storage") {
+      setForceStorageSelection(true);
     }
+    // Navigation is not a new installation attempt. Preserve stage results
+    // and logs until the user explicitly starts a new attempt.
     presentSetupStep(destination);
-  }, [cancelActiveRun, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, commitSteps, presentSetupStep]);
+  }, [cancelActiveRun, setSetupError, setNeedsGit, goBackSetup, gatewayRunning, presentSetupStep, setForceStorageSelection, setupStep]);
 
   const retryGit = useCallback(() => {
     setNeedsGit(false);
@@ -1311,6 +1323,7 @@ export function useSetupFlow(
     needsOnboarding,
     repairing,
     brokenPlugins,
+    forceStorageSelection,
     startGateway: startGatewayAction,
     retryGateway: startGatewayAction,
     repairAndRetry,

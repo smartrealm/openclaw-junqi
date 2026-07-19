@@ -57,6 +57,10 @@ export class OpenClawWizardClient {
 
   constructor(private readonly callGateway: GatewayCaller) {}
 
+  get hasActiveSession(): boolean {
+    return this.sessionId !== null;
+  }
+
   async start(workspace?: string): Promise<OpenClawWizardResult> {
     const result = assertWizardResult(await this.callGateway('wizard.start', {
       mode: 'local',
@@ -82,6 +86,21 @@ export class OpenClawWizardClient {
       this.sessionId = null;
     }
     return result;
+  }
+
+  async resume(): Promise<OpenClawWizardResult> {
+    if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
+    const result = assertWizardResult(await this.callGateway('wizard.next', {
+      sessionId: this.sessionId,
+    }));
+    if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
+      this.sessionId = null;
+    }
+    return result;
+  }
+
+  forgetSession(): void {
+    this.sessionId = null;
   }
 
   async cancel(): Promise<void> {

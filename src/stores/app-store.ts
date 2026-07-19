@@ -11,6 +11,23 @@ import {
 export type { InstallMode, SetupStep } from "./setup-navigation";
 
 export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "configure-openclaw" | "ready";
+/** Editable, uncommitted choices for the current setup session only. */
+export type StorageSetupDraft = {
+  targetDir: string;
+  workspaceDir: string;
+  runtimeDir: string;
+  npmCacheDir: string;
+  customNpmCache: boolean;
+  npmPrefix: string;
+  customNpmPrefix: boolean;
+  nodeRuntimeDir: string;
+  customNodeRuntime: boolean;
+  gitRuntimeDir: string;
+  customGitRuntime: boolean;
+  terminalIntegration: boolean;
+  migrateExisting: boolean;
+  showLocations: boolean;
+};
 export type SetupLogLevel = "info" | "success" | "warn" | "error";
 export type SetupLog = {
   source: "setup" | "gateway";
@@ -32,6 +49,7 @@ interface AppState {
   gatewayRunning: boolean;
   setupLogs: SetupLog[];
   postStorageStep: PostStorageStep;
+  storageDraft: StorageSetupDraft | null;
 
   setSetupComplete: (v: boolean | null) => void;
   /** Replace an internal execution phase without adding browser-like history. */
@@ -45,6 +63,7 @@ interface AppState {
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
   clearSetupLogs: () => void;
   setPostStorageStep: (step: PostStorageStep) => void;
+  setStorageDraft: (draft: StorageSetupDraft | null) => void;
 }
 
 const savedMode = normalizeInstallMode(localStorage.getItem("junqi-install-mode"));
@@ -64,6 +83,7 @@ export const useAppStore = create<AppState>((set) => ({
   gatewayRunning: false,
   setupLogs: [],
   postStorageStep: "choosing-mode",
+  storageDraft: null,
 
   setSetupComplete: (v) => {
     if (v === true) {
@@ -101,4 +121,5 @@ export const useAppStore = create<AppState>((set) => ({
   })),
   clearSetupLogs: () => set({ setupLogs: [] }),
   setPostStorageStep: (step) => set({ postStorageStep: step }),
+  setStorageDraft: (draft) => set({ storageDraft: draft }),
 }));
