@@ -154,6 +154,7 @@ pub fn run() {
             commands::channel_enrollment::complete_channel_enrollment,
             commands::channel_enrollment::cancel_channel_enrollment,
             commands::channel_enrollment::render_qr_code_data_url,
+            commands::channel_enrollment::render_local_qr_data_url,
             // Pairing
             commands::pairing::list_pairing_requests,
             commands::pairing::approve_pairing_request,

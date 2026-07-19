@@ -1,6 +1,11 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ChannelQrLoginSession, safeChannelQrDataUrl, type ChannelGatewayRpc } from './channelQrLogin';
+import {
+  ChannelQrLoginSession,
+  safeChannelQrContent,
+  safeChannelQrDataUrl,
+  type ChannelGatewayRpc,
+} from './channelQrLogin';
 
 function rpc(results: Array<unknown | Error>): ChannelGatewayRpc & { calls: Array<{ method: string; params: Record<string, unknown> }> } {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -38,7 +43,8 @@ describe('ChannelQrLoginSession', () => {
     const gateway: ChannelGatewayRpc = {
       async call(method) {
         if (method === 'web.login.start') return { qrDataUrl: 'data:image/png;base64,AAAA' };
-        return new Promise((resolve) => { resolveWait = resolve; });
+        if (method === 'web.login.wait') return new Promise((resolve) => { resolveWait = resolve; });
+        return { cancelled: true };
       },
     };
     const session = new ChannelQrLoginSession(gateway, 'whatsapp');
@@ -55,6 +61,50 @@ describe('ChannelQrLoginSession', () => {
     assert.equal(safeChannelQrDataUrl('data:image/svg+xml;base64,AAAA'), null);
     assert.equal(safeChannelQrDataUrl('data:image/png;base64,AAAA'), 'data:image/png;base64,AAAA');
     assert.equal(safeChannelQrDataUrl(`data:image/png;base64,${'A'.repeat(16_400)}`), null);
+  });
+
+  test('accepts only bounded HTTPS QR content for local rendering', () => {
+    assert.equal(safeChannelQrContent('https://ilinkai.weixin.qq.com/login?id=one'), 'https://ilinkai.weixin.qq.com/login?id=one');
+    assert.equal(safeChannelQrContent('http://example.com/qr'), null);
+    assert.equal(safeChannelQrContent('sgnl://linkdevice?uuid=one'), 'sgnl://linkdevice?uuid=one');
+    assert.equal(safeChannelQrContent(`https://example.com/${'x'.repeat(4_100)}`), null);
+  });
+
+  test('preserves an opaque provider session across QR waits', async () => {
+    const gateway = rpc([
+      { qrContent: 'https://ilinkai.weixin.qq.com/login?id=one', sessionId: 'provider-session', message: 'scan' },
+      { connected: true, message: 'linked' },
+    ]);
+    const session = new ChannelQrLoginSession(gateway, 'openclaw-weixin');
+    await session.start();
+    assert.deepEqual(gateway.calls, [
+      { method: 'web.login.start', params: { channel: 'openclaw-weixin', force: false, timeoutMs: 30000 } },
+      { method: 'web.login.wait', params: { channel: 'openclaw-weixin', sessionId: 'provider-session', timeoutMs: 120000, currentQrDataUrl: null } },
+    ]);
+  });
+
+  test('cancels the provider session when the dialog closes', async () => {
+    let resolveWait: ((value: unknown) => void) | undefined;
+    const gateway: ChannelGatewayRpc & { calls: Array<{ method: string; params: Record<string, unknown> }> } = {
+      calls: [],
+      async call(method, params) {
+        this.calls.push({ method, params });
+        if (method === 'web.login.start') return { qrContent: 'https://example.com/qr', sessionId: 'session-1' };
+        if (method === 'web.login.wait') return new Promise((resolve) => { resolveWait = resolve; });
+        return { cancelled: true };
+      },
+    };
+    const session = new ChannelQrLoginSession(gateway, 'qqbot', 'primary');
+    const pending = session.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    session.cancel();
+    resolveWait?.({ connected: true });
+    await pending;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(gateway.calls.at(-1), {
+      method: 'web.login.cancel',
+      params: { channel: 'qqbot', accountId: 'primary', sessionId: 'session-1' },
+    });
   });
 
   test('does not expose a raw Gateway error to the UI state', async () => {

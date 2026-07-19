@@ -3249,6 +3249,7 @@
   "channelsCenter.scanQr": "掃描二維碼",
   "channelsCenter.qrUnavailable": "OpenClaw 未返回二維碼，請檢查 Gateway 和渠道日誌。",
   "channelsCenter.qrTimedOut": "二維碼已過期，請刷新後重試。",
+  "channelsCenter.qrRenderFailed": "二維碼無法顯示，請刷新後重試。",
   "channelsCenter.qrRequestFailed": "OpenClaw 無法啟動此渠道的二維碼登入。請確認目前的 OpenClaw 版本支援該渠道的二維碼登入。",
   "channelsCenter.qrWaiting": "正在等待 OpenClaw 生成二維碼…",
   "channelsCenter.probe": "探測",

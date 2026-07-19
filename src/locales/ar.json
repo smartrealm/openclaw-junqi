@@ -2315,6 +2315,7 @@
   "channelsCenter.scanQr": "مسح رمز QR",
   "channelsCenter.qrUnavailable": "لم يُرجع OpenClaw رمز QR. تحقق من Gateway وسجلات القناة.",
   "channelsCenter.qrTimedOut": "انتهت صلاحية رمز QR. حدّثه ثم حاول مجددًا.",
+  "channelsCenter.qrRenderFailed": "تعذر عرض رمز QR. حدّثه ثم حاول مجددًا.",
   "channelsCenter.qrRequestFailed": "تعذر على OpenClaw بدء تسجيل الدخول برمز QR لهذه القناة. تأكد من أن إصدار OpenClaw يدعم تسجيل الدخول برمز QR للقناة المحددة.",
   "channelsCenter.qrWaiting": "بانتظار OpenClaw لإعداد رمز QR...",
   "channelsCenter.probe": "فحص",

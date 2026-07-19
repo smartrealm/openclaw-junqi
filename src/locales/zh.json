@@ -3249,6 +3249,7 @@
   "channelsCenter.scanQr": "扫描二维码",
   "channelsCenter.qrUnavailable": "OpenClaw 未返回二维码，请检查 Gateway 和渠道日志。",
   "channelsCenter.qrTimedOut": "二维码已过期，请刷新后重试。",
+  "channelsCenter.qrRenderFailed": "二维码无法显示，请刷新后重试。",
   "channelsCenter.qrRequestFailed": "OpenClaw 无法启动此渠道的二维码登录。请确认当前 OpenClaw 版本支持该渠道的二维码登录。",
   "channelsCenter.qrWaiting": "正在等待 OpenClaw 生成二维码…",
   "channelsCenter.probe": "探测",
