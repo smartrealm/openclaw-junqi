@@ -294,7 +294,7 @@
     "context": "上下文",
     "contextCard": "上下文",
     "contextUsage": "上下文使用情况",
-    "costEmpty": "暂无使用记录",
+    "costEmpty": "暂无费用数据",
     "costError": "加载费用数据失败",
     "costRetry": "重试",
     "costToday": "今日成本",

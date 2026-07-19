@@ -294,7 +294,7 @@
     "context": "Context",
     "contextCard": "Context",
     "contextUsage": "Context Usage",
-    "costEmpty": "No usage recorded yet",
+    "costEmpty": "No cost data yet",
     "costError": "Failed to load cost data",
     "costRetry": "Retry",
     "costToday": "cost today",
