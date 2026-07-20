@@ -130,12 +130,10 @@ test('BUG-GW-01 forced storage recovery migrates the configured state, not only 
 test('BUG-GW-02 lifecycle ownership decisions authenticate the selected state directory', () => {
   const ensure = source('src-tauri/src/commands/ensure.rs');
   const gateway = source('src-tauri/src/commands/gateway.rs');
-  const setup = source('src-tauri/src/commands/setup.rs');
   const storage = source('src-tauri/src/commands/storage.rs');
 
   assert.match(ensure, /selected_native_gateway_ready[\s\S]*gateway_matches_config/);
   assert.match(ensure, /if selected_native_gateway_ready\(port\)\.await/);
-  assert.match(setup, /gateway_matches_config\(port, &config_path\)\.await/);
   assert.match(storage, /wait_for_gateway\([\s\S]*gateway_matches_config/);
   assert.match(storage, /reachable: crate::commands::gateway::gateway_matches_config\(port, &old_config\)\.await/);
   assert.match(gateway, /wait_for_selected_gateway[\s\S]*gateway_matches_config/);

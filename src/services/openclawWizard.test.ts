@@ -13,9 +13,10 @@ test('requires onboarding for a missing or model-less config', () => {
   assert.equal(requiresOpenClawOnboarding(true, { gateway: { mode: 'local' } }), true);
 });
 
-test('accepts official wizard metadata or an existing default model', () => {
-  assert.equal(requiresOpenClawOnboarding(true, { wizard: { lastRunAt: '2026-07-13T00:00:00Z' } }), false);
+test('requires a primary model instead of trusting wizard run metadata', () => {
+  assert.equal(requiresOpenClawOnboarding(true, { wizard: { lastRunAt: '2026-07-13T00:00:00Z' } }), true);
   assert.equal(requiresOpenClawOnboarding(true, { agents: { defaults: { model: { primary: 'openai/gpt-5' } } } }), false);
+  assert.equal(requiresOpenClawOnboarding(true, { agents: { defaults: { model: 'openai/gpt-5' } } }), false);
 });
 
 test('wizard client preserves dynamic option values and session lifecycle', async () => {
@@ -153,6 +154,8 @@ test('wizard client preserves Gateway option identity and extra metadata', async
       id: 'channels',
       type: 'select',
       format: 'plain',
+      externalUrl: 'https://auth.example/device',
+      deviceCode: { code: 'ABCD-1234', expiresInMinutes: 10, message: 'Enter this code' },
       futureMetadata: { source: 'gateway' },
       options: [
         { value: 'openclaw-lark', label: 'Feishu/Lark (飞书)' },
@@ -167,6 +170,12 @@ test('wizard client preserves Gateway option identity and extra metadata', async
     { value: 'feishu', label: 'Feishu/Lark (飞书)' },
   ]);
   assert.equal(result.step?.format, 'plain');
+  assert.equal(result.step?.externalUrl, 'https://auth.example/device');
+  assert.deepEqual(result.step?.deviceCode, {
+    code: 'ABCD-1234',
+    expiresInMinutes: 10,
+    message: 'Enter this code',
+  });
   assert.deepEqual(result.step?.futureMetadata, { source: 'gateway' });
 });
 

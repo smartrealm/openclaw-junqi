@@ -4,20 +4,17 @@
 // ═══════════════════════════════════════════════════════════
 
 import { debugLog } from '@/utils/debugLog';
-import { DEFAULT_GATEWAY_PORT, defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 
-export interface GwConfig { token: string; ws_url: string }
+export interface GwConfig { token: string; ws_url: string; credential_scope?: string }
 export interface ConfigResolver { name: string; resolve(): Promise<GwConfig | null> }
 
-/** Resolver 1: Cached token from a prior start_gateway call. */
+/** Volatile fallback from a prior lifecycle result, scoped to its endpoint. */
 export class CachedTokenResolver implements ConfigResolver {
   name = 'cached';
-  constructor(private get: () => string | null, private getPort: () => number | null) {}
+  constructor(private get: () => GwConfig | null) {}
   async resolve(): Promise<GwConfig | null> {
-    const token = this.get();
-    if (!token) return null;
-    const port = this.getPort() ?? DEFAULT_GATEWAY_PORT;
-    return { token, ws_url: defaultGatewayWsUrl(port) };
+    const config = this.get();
+    return config?.ws_url ? { ...config } : null;
   }
 }
 
@@ -27,7 +24,9 @@ export class EventPayloadResolver implements ConfigResolver {
   constructor(private get: () => any | null) {}
   async resolve(): Promise<GwConfig | null> {
     const cfg = this.get();
-    return cfg?.token ? { token: cfg.token, ws_url: cfg.ws_url } : null;
+    return typeof cfg?.ws_url === 'string' && cfg.ws_url.trim()
+      ? { token: typeof cfg.token === 'string' ? cfg.token : '', ws_url: cfg.ws_url }
+      : null;
   }
 }
 
@@ -38,8 +37,14 @@ export class FileReadResolver implements ConfigResolver {
   async resolve(): Promise<GwConfig | null> {
     try {
       const gw: any = await this.invoke('detect_gateway_config');
-      if (!gw?.token) return null;
-      return { token: gw.token, ws_url: gw.ws_url };
+      if (typeof gw?.ws_url !== 'string' || !gw.ws_url.trim()) return null;
+      const runtimeMode = typeof gw.runtime_mode === 'string' ? gw.runtime_mode : 'unknown';
+      const configPath = typeof gw.config_path === 'string' ? gw.config_path : '';
+      return {
+        token: typeof gw.token === 'string' ? gw.token : '',
+        ws_url: gw.ws_url,
+        credential_scope: `${runtimeMode}:${configPath}`,
+      };
     } catch { return null; }
   }
 }

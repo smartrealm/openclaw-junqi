@@ -56,16 +56,9 @@ export function CommandPalette() {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const reconnectWithBestConfig = async () => {
-    const state = useSettingsStore.getState();
-    const storeUrl = state.gatewayUrl?.trim();
-    const storeToken = state.gatewayToken?.trim() || '';
-    if (storeUrl) {
-      gatewayManager.connect(storeUrl, storeToken);
-      return;
-    }
     const config = await window.aegis?.config?.get();
     const cfgUrl = config?.gatewayUrl || config?.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL;
-    gatewayManager.connect(cfgUrl, config?.gatewayToken || storeToken);
+    gatewayManager.connect(cfgUrl, config?.gatewayToken || '');
   };
 
   // Define commands — all names use i18n keys

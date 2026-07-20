@@ -288,15 +288,28 @@ pub struct GatewayConfigInfo {
     pub runtime_mode: paths::OpenClawRuntimeMode,
 }
 
-fn extract_token_from_config(raw: &str) -> Option<String> {
-    let config = parse_openclaw_config(raw).ok()?;
+pub(crate) fn gateway_token_string_is_reference(value: &str) -> bool {
+    let value = value.trim();
+    (value.starts_with("${") && value.ends_with('}'))
+        || (value.starts_with('$') && value.len() > 1 && !value.contains(char::is_whitespace))
+        || value.starts_with("secretref-env:")
+        || value.starts_with("__env__:")
+}
+
+pub(crate) fn literal_gateway_token_from_config(config: &serde_json::Value) -> Option<String> {
     config
         .get("gateway")?
         .get("auth")?
         .get("token")?
         .as_str()
-        .filter(|token| !token.trim().is_empty())
-        .map(|s| s.to_string())
+        .map(str::trim)
+        .filter(|token| !token.is_empty() && !gateway_token_string_is_reference(token))
+        .map(str::to_string)
+}
+
+fn extract_token_from_config(raw: &str) -> Option<String> {
+    let config = parse_openclaw_config(raw).ok()?;
+    literal_gateway_token_from_config(&config)
 }
 
 fn extract_port_from_config(raw: &str) -> Option<u16> {

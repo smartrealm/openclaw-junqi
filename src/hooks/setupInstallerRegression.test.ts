@@ -211,7 +211,12 @@ test('Gateway setup errors expose explicit repair and direct retry actions', () 
 });
 
 test('setup failures are retained in the copyable activity log without a duplicate error card', () => {
+  const progressScreen = setupPage.slice(
+    setupPage.indexOf('function ProgressScreen'),
+    setupPage.indexOf('function WizardScreen'),
+  );
+
   assert.match(setupFlow, /appendSetupLog\(\{[\s\S]*?level: "error"/);
   assert.doesNotMatch(setupPage, /setup\.copyError/);
-  assert.doesNotMatch(setupPage, /navigator\.clipboard/);
+  assert.doesNotMatch(progressScreen, /navigator\.clipboard/);
 });

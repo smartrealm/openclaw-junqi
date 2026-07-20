@@ -2,6 +2,7 @@ use crate::paths;
 use crate::state::gateway_process::{GatewayLifecycle, GatewayRuntimeMode, GatewayRuntimeState};
 use crate::state::GatewayProcess;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 fn write_json_atomic(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
@@ -22,8 +23,8 @@ pub struct GatewayStatus {
     pub running: bool,
     pub port: u16,
     pub pid: Option<u32>,
-    /// The gateway auth token. Present when `running` is true so the frontend
-    /// can use it directly without a second round-trip to read the config file.
+    /// Literal gateway auth token when one exists. SecretRef-managed values are
+    /// deliberately not materialized across the native/renderer boundary.
     pub token: Option<String>,
 }
 
@@ -77,13 +78,13 @@ enum OfficialGatewayHandoff {
 
 fn official_gateway_handoff(
     inspection: crate::commands::gateway_service::GatewayServiceInspection,
-) -> Option<OfficialGatewayHandoff> {
+) -> Result<Option<OfficialGatewayHandoff>, String> {
     use crate::commands::gateway_service::GatewayServiceOwnership;
 
     if !inspection.installed {
-        return None;
+        return Ok(None);
     }
-    match inspection.ownership {
+    let handoff = match inspection.ownership {
         GatewayServiceOwnership::SelectedState if inspection.running => {
             Some(OfficialGatewayHandoff::RetainCurrentOwner)
         }
@@ -94,10 +95,17 @@ fn official_gateway_handoff(
         GatewayServiceOwnership::StaleLocale => Some(OfficialGatewayHandoff::RebindStale {
             stop_running_service: inspection.running,
         }),
-        GatewayServiceOwnership::Absent
-        | GatewayServiceOwnership::Foreign
-        | GatewayServiceOwnership::Unverifiable => None,
-    }
+        GatewayServiceOwnership::Absent => {
+            return Err("OpenClaw reported an installed Gateway service without an inspectable service definition".into());
+        }
+        GatewayServiceOwnership::Foreign => {
+            return Err("The installed OpenClaw Gateway service belongs to a different state directory; JunQi left it untouched".into());
+        }
+        GatewayServiceOwnership::Unverifiable => {
+            return Err("The installed OpenClaw Gateway service ownership could not be verified; JunQi left it untouched".into());
+        }
+    };
+    Ok(handoff)
 }
 
 /// Immutable runtime contract for a single official Gateway handoff. Keeping
@@ -304,14 +312,15 @@ mod runtime_observation_tests {
             running: true,
         };
         assert_eq!(
-            official_gateway_handoff(selected_running),
+            official_gateway_handoff(selected_running).unwrap(),
             Some(OfficialGatewayHandoff::RetainCurrentOwner)
         );
         assert_eq!(
             official_gateway_handoff(GatewayServiceInspection {
                 running: false,
                 ..selected_running
-            }),
+            })
+            .unwrap(),
             Some(OfficialGatewayHandoff::StartSelected)
         );
         assert_eq!(
@@ -319,16 +328,24 @@ mod runtime_observation_tests {
                 ownership: GatewayServiceOwnership::StaleRuntime,
                 running: true,
                 ..selected_running
-            }),
+            })
+            .unwrap(),
             Some(OfficialGatewayHandoff::RebindStale {
                 stop_running_service: true,
             })
         );
+        assert!(official_gateway_handoff(GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::Foreign,
+            ..selected_running
+        })
+        .is_err());
         assert_eq!(
             official_gateway_handoff(GatewayServiceInspection {
-                ownership: GatewayServiceOwnership::Foreign,
-                ..selected_running
-            }),
+                ownership: GatewayServiceOwnership::Absent,
+                installed: false,
+                running: false,
+            })
+            .unwrap(),
             None
         );
     }
@@ -535,7 +552,7 @@ mod gateway_config_tests {
         )
         .unwrap();
 
-        assert_eq!(token, "existing");
+        assert_eq!(token.as_deref(), Some("existing"));
         assert!(config["gateway"]["auth"].get("mode").is_none());
         assert_eq!(config["gateway"]["auth"]["token"], "existing");
 
@@ -543,7 +560,7 @@ mod gateway_config_tests {
     }
 
     #[test]
-    fn existing_gateway_policy_is_preserved_during_startup_normalization() {
+    fn incompatible_existing_gateway_bind_is_rejected_without_mutation() {
         let path = isolated_config_path("existing-gateway-policy");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let original = r#"{
@@ -557,15 +574,9 @@ mod gateway_config_tests {
         }"#;
         std::fs::write(&path, original).unwrap();
 
-        ensure_config_with_token(&path, 18789, "loopback").unwrap();
-        let config = crate::commands::config::parse_openclaw_config(
-            &std::fs::read_to_string(&path).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(config["gateway"]["bind"], "tailnet");
-        assert_eq!(config["gateway"]["port"], 19991);
-        assert_eq!(config["gateway"]["controlUi"]["allowedOrigins"][0], "https://example.test");
-        assert_eq!(config["gateway"]["controlUi"]["allowInsecureAuth"], false);
+        let error = ensure_config_with_token(&path, 18789, "loopback").unwrap_err();
+        assert!(error.contains("tailnet"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
@@ -585,15 +596,33 @@ mod gateway_config_tests {
     }
 
     #[test]
-    fn secretref_gateway_token_is_rejected_without_replacement() {
+    fn secretref_gateway_token_is_preserved_and_control_ui_origins_are_merged() {
         let path = isolated_config_path("secretref-gateway-token");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let original = r#"{"gateway":{"mode":"local","auth":{"token":{"source":"env","id":"OPENCLAW_TOKEN"}}}}"#;
+        let original = r#"{
+            "gateway": {
+                "mode": "local",
+                "bind": "loopback",
+                "port": 18789,
+                "auth": {"token": {"source":"env","provider":"default","id":"OPENCLAW_TOKEN"}},
+                "controlUi": {"allowedOrigins": ["https://example.test"], "allowInsecureAuth": false}
+            }
+        }"#;
         std::fs::write(&path, original).unwrap();
 
-        let error = ensure_config_with_token(&path, 18789, "loopback").unwrap_err();
-        assert!(error.contains("SecretRef"));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        let token = ensure_config_with_token(&path, 18789, "loopback").unwrap();
+        assert_eq!(token, None);
+        let config = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&path).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(config["gateway"]["auth"]["token"]["source"], "env");
+        assert_eq!(config["gateway"]["controlUi"]["allowInsecureAuth"], false);
+        let origins = config["gateway"]["controlUi"]["allowedOrigins"]
+            .as_array()
+            .unwrap();
+        assert_eq!(origins[0], "https://example.test");
+        assert!(origins.iter().any(|origin| origin == "tauri://localhost"));
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
@@ -678,6 +707,7 @@ mod gateway_config_tests {
             crate::commands::config::default_gateway_port(),
             "loopback",
         )
+        .unwrap()
         .unwrap();
         let config: serde_json::Value = crate::commands::config::parse_openclaw_config(
             &std::fs::read_to_string(&path).unwrap(),
@@ -699,6 +729,54 @@ mod gateway_config_tests {
 
         assert!(error.contains("port"));
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn fresh_gateway_config_keeps_device_auth_enabled() {
+        let path = isolated_config_path("fresh-secure-control-ui");
+        let token = ensure_config_with_token(&path, 18789, "loopback")
+            .unwrap()
+            .expect("fresh config has a literal token");
+        let config = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&path).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(token.len(), 64);
+        assert!(config["gateway"]["controlUi"]
+            .get("allowInsecureAuth")
+            .is_none());
+        assert!(config["gateway"]["controlUi"]
+            .get("dangerouslyDisableDeviceAuth")
+            .is_none());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn official_secret_resolution_selects_only_the_gateway_token_assignment() {
+        let payload = serde_json::json!({
+            "assignments": [
+                {"path": "models.providers.demo.apiKey", "pathSegments": ["models", "providers", "demo", "apiKey"], "value": "other-secret"},
+                {"pathSegments": ["gateway", "auth", "token"], "value": " resolved-token "}
+            ]
+        });
+        assert_eq!(
+            gateway_token_from_resolution_payload(&payload).as_deref(),
+            Some("resolved-token")
+        );
+    }
+
+    #[test]
+    fn environment_token_templates_are_not_exposed_as_literal_tokens() {
+        let path = isolated_config_path("env-token-template");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"gateway":{"auth":{"token":"${OPENCLAW_GATEWAY_TOKEN}"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(read_gateway_token(&path), None);
+        assert!(gateway_uses_secret_reference(&path));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }
 
@@ -791,12 +869,7 @@ pub(crate) fn configured_gateway_port() -> u16 {
 fn read_gateway_token(config_path: &std::path::Path) -> Option<String> {
     let raw = std::fs::read_to_string(config_path).ok()?;
     let v = crate::commands::config::parse_openclaw_config(&raw).ok()?;
-    v.get("gateway")?
-        .get("auth")?
-        .get("token")?
-        .as_str()
-        .filter(|token| !token.trim().is_empty())
-        .map(|s| s.to_string())
+    crate::commands::config::literal_gateway_token_from_config(&v)
 }
 
 /// Generate a 256-bit token from the operating system CSPRNG.
@@ -820,25 +893,114 @@ pub(crate) fn ensure_config_with_token(
     config_path: &std::path::Path,
     port: u16,
     bind: &str,
-) -> Result<String, String> {
+) -> Result<Option<String>, String> {
     if port == 0 {
         return Err("Gateway port must be between 1 and 65535".into());
     }
-    // Origins that Tauri webviews may send depending on OS/version
-    let allowed_origins = serde_json::json!([
+    const REQUIRED_CONTROL_UI_ORIGINS: [&str; 4] = [
         "tauri://localhost",
         "https://tauri.localhost",
         "http://tauri.localhost",
-        "http://localhost:5173"
-    ]);
+        "http://localhost:5173",
+    ];
 
-    // controlUi config: allow Tauri origins + disable device identity checks
-    // (safe for local-only loopback gateway)
-    let control_ui = serde_json::json!({
-        "allowedOrigins": allowed_origins,
-        "allowInsecureAuth": true,
-        "dangerouslyDisableDeviceAuth": true
-    });
+    fn secret_input_is_configured(value: Option<&serde_json::Value>) -> bool {
+        match value {
+            Some(serde_json::Value::String(value)) => !value.trim().is_empty(),
+            Some(serde_json::Value::Object(_)) => true,
+            _ => false,
+        }
+    }
+
+    fn normalize_managed_gateway(
+        config: &mut serde_json::Value,
+        port: u16,
+        bind: &str,
+        required_origins: &[&str],
+    ) -> Result<Option<String>, String> {
+        let gateway = config
+            .as_object_mut()
+            .ok_or("Config is not an object")?
+            .entry("gateway")
+            .or_insert_with(|| serde_json::json!({}));
+        let gateway = gateway.as_object_mut().ok_or("gateway is not an object")?;
+
+        match gateway.get("bind") {
+            Some(value) if value.as_str() != Some(bind) => {
+                let configured = value.as_str().unwrap_or("<invalid>");
+                return Err(format!(
+                    "Gateway bind `{configured}` is incompatible with JunQi's managed `{bind}` runtime; choose a compatible runtime or update gateway.bind first"
+                ));
+            }
+            None => {
+                gateway.insert("bind".into(), serde_json::json!(bind));
+            }
+            _ => {}
+        }
+        match gateway.get("port") {
+            Some(value) if value.as_u64() != Some(u64::from(port)) => {
+                return Err(format!(
+                    "Gateway port `{}` does not match the selected managed port `{port}`",
+                    value
+                ));
+            }
+            None => {
+                gateway.insert("port".into(), serde_json::json!(port));
+            }
+            _ => {}
+        }
+        gateway
+            .entry("mode")
+            .or_insert_with(|| serde_json::json!("local"));
+
+        let control_ui = gateway
+            .entry("controlUi")
+            .or_insert_with(|| serde_json::json!({}));
+        let control_ui = control_ui
+            .as_object_mut()
+            .ok_or("gateway.controlUi must be an object")?;
+        let allowed = control_ui
+            .entry("allowedOrigins")
+            .or_insert_with(|| serde_json::json!([]));
+        let allowed = allowed
+            .as_array_mut()
+            .ok_or("gateway.controlUi.allowedOrigins must be an array")?;
+        if allowed.iter().any(|origin| !origin.is_string()) {
+            return Err("gateway.controlUi.allowedOrigins entries must be strings".into());
+        }
+        for origin in required_origins {
+            if !allowed
+                .iter()
+                .any(|existing| existing.as_str() == Some(origin))
+            {
+                allowed.push(serde_json::json!(origin));
+            }
+        }
+
+        let auth = gateway
+            .entry("auth")
+            .or_insert_with(|| serde_json::json!({}));
+        let auth = auth
+            .as_object_mut()
+            .ok_or("gateway.auth must be an object")?;
+        let existing_token = auth.get("token").cloned();
+        match existing_token {
+            Some(serde_json::Value::String(value)) if !value.trim().is_empty() => {
+                if crate::commands::config::gateway_token_string_is_reference(&value) {
+                    Ok(None)
+                } else {
+                    Ok(Some(value.trim().to_string()))
+                }
+            }
+            Some(serde_json::Value::Object(_)) => Ok(None),
+            Some(serde_json::Value::Null) | None | Some(serde_json::Value::String(_)) => {
+                let token = generate_token()?;
+                auth.insert("token".into(), serde_json::json!(token));
+                Ok(Some(token))
+            }
+            Some(_) => Err("gateway.auth.token must be a string or SecretRef object".into()),
+        }
+    }
 
     // 默认工作区落在 JunQi 管理目录下，避免首次启动时依赖用户 shell 环境。
     let default_workspace = paths::default_workspace_dir();
@@ -876,93 +1038,18 @@ pub(crate) fn ensure_config_with_token(
                     mode
                 ));
             }
-        } else if auth_config
-            .and_then(|auth| auth.get("password"))
-            .and_then(|password| password.as_str())
-            .is_some_and(|password| !password.is_empty())
-        {
+        } else if secret_input_is_configured(auth_config.and_then(|auth| auth.get("password"))) {
             return Err(
                 "Gateway password authentication is configured without an explicit auth mode; select a Gateway authentication mode before JunQi adds a token"
                     .into(),
             );
         }
 
-        // Try to get existing token. Non-string values (including SecretRef)
-        // cannot be resolved by the renderer-side connection contract.
-        if let Some(token) = config
-            .get("gateway")
-            .and_then(|g| g.get("auth"))
-            .and_then(|a| a.get("token"))
-            .and_then(|t| t.as_str())
-            .filter(|token| !token.trim().is_empty())
-        {
-            let token = token.to_string();
-
-            let mut config = config;
-
-            // Seed only missing local bootstrap fields. Existing Gateway policy
-            // belongs to the user and must not be replaced during startup.
-            if let Some(gw) = config.get_mut("gateway").and_then(|g| g.as_object_mut()) {
-                if !gw.contains_key("mode") {
-                    gw.insert("mode".into(), serde_json::json!("local"));
-                }
-                gw.entry("bind").or_insert_with(|| serde_json::json!(bind));
-                gw.entry("port").or_insert_with(|| serde_json::json!(port));
-                gw.entry("controlUi").or_insert(control_ui.clone());
-            }
-
-            ensure_gateway_locale_config(&mut config)?;
-
-            write_openclaw_config_safely(config_path, &config)?;
-
-            return Ok(token);
-        }
-
-        if auth_config
-            .and_then(|auth| auth.get("token"))
-            .is_some_and(|token| !token.is_string() && !token.is_null())
-        {
-            return Err(
-                "Gateway token uses SecretRef or another non-string credential; resolve it in OpenClaw before connecting JunQi"
-                    .into(),
-            );
-        }
-
-        // Config exists but no token — add token auth
         let mut config = config;
-        let gateway = config
-            .as_object_mut()
-            .ok_or("Config is not an object")?
-            .entry("gateway")
-            .or_insert_with(|| serde_json::json!({}));
-        let gw_obj = gateway.as_object_mut().ok_or("gateway is not an object")?;
-
-        // Ensure gateway.mode is set
-        gw_obj
-            .entry("mode")
-            .or_insert_with(|| serde_json::json!("local"));
-
-        gw_obj
-            .entry("bind")
-            .or_insert_with(|| serde_json::json!(bind));
-        gw_obj
-            .entry("port")
-            .or_insert_with(|| serde_json::json!(port));
-        gw_obj
-            .entry("controlUi")
-            .or_insert(control_ui.clone());
-
-        let auth = gw_obj
-            .entry("auth")
-            .or_insert_with(|| serde_json::json!({}));
-        let auth_obj = auth.as_object_mut().ok_or("auth is not an object")?;
-        let token = generate_token()?;
-        auth_obj.insert("token".into(), serde_json::json!(token));
-
+        let token =
+            normalize_managed_gateway(&mut config, port, bind, &REQUIRED_CONTROL_UI_ORIGINS)?;
         ensure_gateway_locale_config(&mut config)?;
-
         write_openclaw_config_safely(config_path, &config)?;
-
         return Ok(token);
     }
 
@@ -986,7 +1073,9 @@ pub(crate) fn ensure_config_with_token(
             "auth": {
                 "token": token
             },
-            "controlUi": control_ui
+            "controlUi": {
+                "allowedOrigins": REQUIRED_CONTROL_UI_ORIGINS
+            }
         },
         "env": {
             "vars": {
@@ -996,7 +1085,7 @@ pub(crate) fn ensure_config_with_token(
     });
     write_openclaw_config_safely(config_path, &default_config)?;
 
-    Ok(token)
+    Ok(Some(token))
 }
 
 /// Ensure all paired devices have full operator scopes.
@@ -1067,26 +1156,80 @@ fn ensure_paired_devices_full_scopes(base_dir: &std::path::Path) {
     }
 }
 
-/// Read the gateway auth token from the config file
+fn gateway_token_from_resolution_payload(payload: &serde_json::Value) -> Option<String> {
+    payload
+        .get("assignments")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .find_map(|assignment| {
+            let is_gateway_token = assignment.get("path").and_then(serde_json::Value::as_str)
+                == Some("gateway.auth.token")
+                || assignment
+                    .get("pathSegments")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|segments| {
+                        segments
+                            .iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .eq(["gateway", "auth", "token"])
+                    });
+            if !is_gateway_token {
+                return None;
+            }
+            assignment
+                .get("value")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+}
+
+async fn resolve_gateway_token_with_official_cli(
+    config_path: &std::path::Path,
+) -> Result<String, String> {
+    const RESOLVE_PARAMS: &str = r#"{"commandName":"junqi gateway connection","targetIds":["gateway.auth.token"],"allowedPaths":["gateway.auth.token"],"forcedActivePaths":["gateway.auth.token"]}"#;
+    let output = crate::commands::openclaw_cli::run_openclaw(
+        &[
+            "gateway",
+            "call",
+            "secrets.resolve",
+            "--params",
+            RESOLVE_PARAMS,
+            "--json",
+            "--timeout",
+            "15000",
+        ],
+        Some(config_path),
+        std::time::Duration::from_secs(20),
+    )
+    .await?;
+    if !output.success {
+        return Err("OpenClaw could not resolve the configured Gateway SecretRef".into());
+    }
+    let payload = crate::commands::openclaw_cli::parse_cli_json(&output)
+        .map_err(|_| "OpenClaw returned an invalid SecretRef resolution response".to_string())?;
+    gateway_token_from_resolution_payload(&payload)
+        .ok_or_else(|| "OpenClaw did not resolve gateway.auth.token".to_string())
+}
+
+/// Resolve the selected Gateway credential without changing its config form.
+/// Literal values are returned directly; SecretRefs stay in openclaw.json and
+/// are materialized by OpenClaw's own resolver only for the active connection.
 #[tauri::command]
 pub async fn get_gateway_token() -> Result<String, String> {
     let config_path = paths::active_config_path();
     if !config_path.exists() {
         return Err("Config not found".into());
     }
-
-    let raw = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read config: {}", e))?;
-    let config = crate::commands::config::parse_openclaw_config(&raw)
-        .map_err(|error| format!("Failed to parse config: {}", error))?;
-
-    config
-        .get("gateway")
-        .and_then(|g| g.get("auth"))
-        .and_then(|a| a.get("token"))
-        .and_then(|t| t.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "No gateway token found in config".into())
+    if let Some(token) = read_gateway_token(&config_path) {
+        return Ok(token);
+    }
+    if gateway_uses_secret_reference(&config_path) {
+        return resolve_gateway_token_with_official_cli(&config_path).await;
+    }
+    Err("No Gateway token found in config".into())
 }
 
 /// Returns true only when the local OpenClaw Gateway exposes its dedicated
@@ -1167,10 +1310,97 @@ async fn gateway_accepts_configured_token(port: u16, token: &str) -> bool {
 }
 
 pub(crate) async fn gateway_matches_config(port: u16, config_path: &std::path::Path) -> bool {
-    let Some(token) = read_gateway_token(config_path) else {
+    if ConfigMetadata::load(config_path).port != port || !is_gateway_healthy(port).await {
+        return false;
+    }
+    if let Some(token) = read_gateway_token(config_path) {
+        return gateway_accepts_configured_token(port, &token).await;
+    }
+    if !gateway_uses_secret_reference(config_path) {
+        return false;
+    }
+    official_gateway_rpc_accepts_selected_config(config_path, port).await
+}
+
+fn gateway_uses_secret_reference(config_path: &std::path::Path) -> bool {
+    let config = std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|raw| crate::commands::config::parse_openclaw_config(&raw).ok());
+    let Some(token) = config
+        .as_ref()
+        .and_then(|config| config.get("gateway"))
+        .and_then(|gateway| gateway.get("auth"))
+        .and_then(|auth| auth.get("token"))
+    else {
         return false;
     };
-    is_gateway_healthy(port).await && gateway_accepts_configured_token(port, &token).await
+    token.is_object()
+        || token
+            .as_str()
+            .is_some_and(crate::commands::config::gateway_token_string_is_reference)
+}
+
+struct OfficialGatewayProbeCache {
+    config_path: std::path::PathBuf,
+    config_fingerprint: [u8; 32],
+    port: u16,
+    checked_at: std::time::Instant,
+    ready: bool,
+}
+
+fn official_gateway_probe_cache() -> &'static tokio::sync::Mutex<Option<OfficialGatewayProbeCache>>
+{
+    static CACHE: std::sync::OnceLock<tokio::sync::Mutex<Option<OfficialGatewayProbeCache>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| tokio::sync::Mutex::new(None))
+}
+
+async fn official_gateway_rpc_accepts_selected_config(
+    config_path: &std::path::Path,
+    port: u16,
+) -> bool {
+    let config_fingerprint: [u8; 32] = match std::fs::read(config_path) {
+        Ok(raw) => Sha256::digest(raw).into(),
+        Err(_) => return false,
+    };
+    let mut cache = official_gateway_probe_cache().lock().await;
+    if let Some(cached) = cache.as_ref() {
+        if cached.config_path == config_path
+            && cached.config_fingerprint == config_fingerprint
+            && cached.port == port
+            && cached.checked_at.elapsed() < std::time::Duration::from_secs(3)
+        {
+            return cached.ready;
+        }
+    }
+    let ready = match crate::commands::openclaw_cli::run_openclaw(
+        &[
+            "gateway",
+            "status",
+            "--json",
+            "--require-rpc",
+            "--timeout",
+            "3000",
+        ],
+        Some(config_path),
+        std::time::Duration::from_secs(8),
+    )
+    .await
+    {
+        Ok(output) if output.success => crate::commands::openclaw_cli::parse_cli_json(&output)
+            .ok()
+            .and_then(|payload| payload.get("rpc")?.get("ok")?.as_bool())
+            .unwrap_or(false),
+        _ => false,
+    };
+    *cache = Some(OfficialGatewayProbeCache {
+        config_path: config_path.to_path_buf(),
+        config_fingerprint,
+        port,
+        checked_at: std::time::Instant::now(),
+        ready,
+    });
+    ready
 }
 
 fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
@@ -1908,17 +2138,12 @@ pub async fn handoff_gateway_to_official_service(
         Some(context.search_path),
     )
     .await;
-    let inspection = match inspection {
-        Ok(inspection) => inspection,
-        Err(error) => {
-            let _ = app.emit(
-                "gateway-log",
-                format!("Official Gateway service was not available after wizard: {error}"),
-            );
-            return Ok(false);
-        }
-    };
-    let Some(handoff) = official_gateway_handoff(inspection) else {
+    let inspection = inspection.map_err(|error| {
+        let message = format!("Official Gateway service inspection failed after wizard: {error}");
+        let _ = app.emit("gateway-log", &message);
+        message
+    })?;
+    let Some(handoff) = official_gateway_handoff(inspection)? else {
         return Ok(false);
     };
     let child = {
@@ -2224,7 +2449,7 @@ pub(crate) async fn start_gateway_locked(
                     running: true,
                     port,
                     pid: None,
-                    token: Some(token),
+                    token: token.clone(),
                 });
             }
         }
@@ -2252,7 +2477,7 @@ pub(crate) async fn start_gateway_locked(
             running: true,
             port,
             pid: None,
-            token: Some(token),
+            token: token.clone(),
         });
     }
 
@@ -2381,7 +2606,7 @@ pub(crate) async fn start_gateway_locked(
                 running: true,
                 port,
                 pid: None,
-                token: Some(token),
+                token: token.clone(),
             });
         }
     } else if stop_offline_gateway_service(&app, &runtime, &gw_path).await? {

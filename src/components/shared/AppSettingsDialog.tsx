@@ -420,16 +420,59 @@ function ConnectPanel() {
   const { t } = useTranslation();
   const { connected, connecting } = useChatStore();
   const gatewayUrl = useSettingsStore((s) => s.gatewayUrl);
-  const gatewayToken = useSettingsStore((s) => s.gatewayToken);
   const setGatewayUrl = useSettingsStore((s) => s.setGatewayUrl);
   const setGatewayToken = useSettingsStore((s) => s.setGatewayToken);
   const [editUrl, setEditUrl] = useState(gatewayUrl);
-  const [editToken, setEditToken] = useState(gatewayToken);
+  const [editToken, setEditToken] = useState('');
+  const [tokenDirty, setTokenDirty] = useState(false);
+  const [hasStoredToken, setHasStoredToken] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testOk, setTestOk] = useState<boolean|null>(null);
-  const dirty = editUrl !== gatewayUrl || editToken !== gatewayToken;
-  const handleSave = () => { setGatewayUrl(editUrl.trim()); setGatewayToken(editToken.trim()); gatewayManager.connect(editUrl.trim() || defaultGatewayWsUrl(), editToken.trim()); };
-  const handleTest = async () => { setTesting(true); setTestOk(null); try { gatewayManager.connect(editUrl.trim() || defaultGatewayWsUrl(), editToken.trim()); await new Promise(r=>setTimeout(r,2500)); setTestOk(useChatStore.getState().connected); } catch { setTestOk(false); } finally { setTesting(false); } };
+  const dirty = editUrl !== gatewayUrl || tokenDirty;
+  useEffect(() => {
+    let cancelled = false;
+    void window.aegis?.pairing?.getToken(gatewayUrl.trim() || undefined).then((token) => {
+      if (!cancelled) setHasStoredToken(Boolean(token));
+    });
+    return () => { cancelled = true; };
+  }, [gatewayUrl]);
+  const resolveTarget = async () => {
+    const url = editUrl.trim();
+    if (url) {
+      const token = tokenDirty
+        ? editToken.trim()
+        : await window.aegis?.pairing?.getToken(url) || '';
+      return { url, token };
+    }
+    const config = await window.aegis?.config?.get();
+    return {
+      url: config?.gatewayUrl || config?.gatewayWsUrl || defaultGatewayWsUrl(),
+      token: tokenDirty ? editToken.trim() : config?.gatewayToken || '',
+    };
+  };
+  const handleSave = async () => {
+    setGatewayUrl(editUrl.trim());
+    if (tokenDirty) setGatewayToken(editToken.trim());
+    const { url, token } = await resolveTarget();
+    setEditToken('');
+    setTokenDirty(false);
+    setHasStoredToken(Boolean(token));
+    gatewayManager.connect(url, token);
+  };
+  const handleTest = async () => {
+    setTesting(true);
+    setTestOk(null);
+    try {
+      const { url, token } = await resolveTarget();
+      gatewayManager.connect(url, token);
+      await new Promise(r=>setTimeout(r,2500));
+      setTestOk(useChatStore.getState().connected);
+    } catch {
+      setTestOk(false);
+    } finally {
+      setTesting(false);
+    }
+  };
   return (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.connect', 'Connect')}</h2>
@@ -440,8 +483,8 @@ function ConnectPanel() {
           <span className={connected?'text-aegis-success':connecting?'text-aegis-warning':'text-aegis-danger'}>{connected?t('connection.connected'):connecting?t('connection.connecting'):t('connection.disconnected')}</span></span>
       </div>
       <div className="flex flex-col gap-3">
-        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.webSocketUrl', 'WebSocket URL')}</label><input value={editUrl} onChange={e=>setEditUrl(e.target.value)} placeholder={defaultGatewayWsUrl()} className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
-        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.token', 'Token')}</label><input type="password" value={editToken} onChange={e=>setEditToken(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
+        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.webSocketUrl', 'WebSocket URL')}</label><input value={editUrl} onChange={e=>{setEditUrl(e.target.value);setEditToken('');setTokenDirty(false);setHasStoredToken(false);}} placeholder={defaultGatewayWsUrl()} className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
+        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.token', 'Token')}</label><div className="flex items-center gap-2"><input type="password" value={editToken} onChange={e=>{setEditToken(e.target.value);setTokenDirty(true);}} placeholder={hasStoredToken?t('settingsExtra.tokenStoredPlaceholder','Stored securely; enter a replacement'):'••••••••'} className="min-w-0 flex-1 px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/>{hasStoredToken&&!tokenDirty&&<button type="button" onClick={()=>{setEditToken('');setTokenDirty(true);setHasStoredToken(false);}} className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-aegis-border text-aegis-text-dim hover:text-aegis-danger" title={t('settingsExtra.clearGatewayToken','Clear saved token')} aria-label={t('settingsExtra.clearGatewayToken','Clear saved token')}><Trash2 size={14}/></button>}</div></div>
         <div className="flex items-center gap-2">
           {dirty && <button onClick={handleSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/25">{t('appSettings.saveReconnect', 'Save & Reconnect')}</button>}
           <button onClick={handleTest} disabled={testing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] border border-aegis-border/20 text-aegis-text-dim hover:text-aegis-text">{testing?<Loader2 size={13} className="animate-spin"/>:<Wifi size={13}/>}{t('settings.testConnection')}</button>

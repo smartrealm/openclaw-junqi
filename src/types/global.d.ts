@@ -59,6 +59,7 @@ interface AegisAPI {
       }>;
     }>;
     probe: (data: any, provider: string, profileKey?: string) => Promise<Record<string, unknown>>;
+    probeActive: () => Promise<{ ready: boolean; model?: string | null; detail?: string | null }>;
   };
   channelRuntime: {
     catalog: () => Promise<Record<string, unknown>>;
@@ -355,8 +356,9 @@ interface AegisAPI {
     readLocal: (dirPath: string) => Promise<{ success: boolean; files: any[]; error?: string }>;
   };
   pairing: {
-    getToken: () => Promise<string | null>;
-    saveToken: (token: string) => Promise<{ success: boolean }>;
+    getToken: (endpoint?: string) => Promise<string | null>;
+    saveToken: (token: string, endpoint?: string) => Promise<{ success: boolean }>;
+    clearToken: (endpoint?: string) => Promise<{ success: boolean }>;
     requestPairing: (httpBaseUrl: string) => Promise<{ code: string; deviceId: string }>;
     poll: (httpBaseUrl: string, deviceId: string) => Promise<{ status: string; token?: string }>;
   };

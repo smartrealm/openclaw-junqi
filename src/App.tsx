@@ -974,14 +974,6 @@ export default function App() {
   // ── Pairing Handlers ──
   const handlePairingComplete = useCallback(async (token: string) => {
     debugLog('gateway', '[App] 🔑 Pairing complete — reconnecting with new token');
-    // Save token to config via IPC
-    if (window.aegis?.pairing?.saveToken) {
-      await window.aegis.pairing.saveToken(token);
-    }
-    // Also update config via the existing config:save IPC
-    if (window.aegis?.config?.save) {
-      await window.aegis.config.save({ gatewayToken: token });
-    }
     // Reconnect gateway with new token
     gatewayManager.reconnectWithToken(token);
     setNeedsPairing(false);

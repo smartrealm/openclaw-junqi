@@ -8,7 +8,9 @@ import {
   Check,
   CheckCircle2,
   Container,
+  Copy,
   Circle,
+  ExternalLink,
   Globe2,
   LoaderCircle,
   Monitor,
@@ -503,6 +505,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const [enrollmentFinalizing, setEnrollmentFinalizing] = useState(false);
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
   const [pendingEnrollment, setPendingEnrollment] = useState<ChannelEnrollmentCompletion | null>(null);
+  const [deviceCodeCopied, setDeviceCodeCopied] = useState(false);
   const enrollmentFinalizingRef = useRef(enrollmentFinalizing);
   const pendingEnrollmentRef = useRef<ChannelEnrollmentCompletion | null>(null);
 
@@ -521,6 +524,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
   useEffect(() => {
     setValue(step ? wizardInitialValue(step) : undefined);
+    setDeviceCodeCopied(false);
     if (!enrollmentFinalizingRef.current) {
       setEnrollmentDomain(null);
       setEnrollmentError(null);
@@ -556,6 +560,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   // Gateway owns wizard presentation and language. Keep its rendered step
   // intact so local, remote, and externally managed Gateways behave alike.
   const presentedStep = step;
+  const deviceCode = presentedStep.deviceCode;
   const feishuQrSetupMethod = isFeishuQrSetupMethodStep(presentedStep);
   const options = Array.isArray(presentedStep.options) ? presentedStep.options : [];
   const selectedValues = Array.isArray(value) ? value : [];
@@ -628,6 +633,31 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
     } finally {
       enrollmentFinalizingRef.current = false;
       setEnrollmentFinalizing(false);
+    }
+  };
+  const openWizardExternalUrl = async () => {
+    if (!presentedStep.externalUrl) return;
+    let target: URL;
+    try {
+      target = new URL(presentedStep.externalUrl);
+      if (target.protocol !== 'https:' && target.protocol !== 'http:') return;
+    } catch {
+      return;
+    }
+    try {
+      const { open } = await import('@tauri-apps/plugin-shell');
+      await open(target.toString());
+    } catch {
+      window.open(target.toString(), '_blank', 'noopener,noreferrer');
+    }
+  };
+  const copyWizardDeviceCode = async () => {
+    if (!deviceCode?.code) return;
+    try {
+      await navigator.clipboard.writeText(deviceCode.code);
+      setDeviceCodeCopied(true);
+    } catch {
+      setDeviceCodeCopied(false);
     }
   };
 
@@ -733,6 +763,33 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         {(presentedStep.type === "note" || presentedStep.type === "progress" || presentedStep.type === "action") && (
           <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
             <pre className="whitespace-pre-wrap break-words font-[inherit]">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</pre>
+          </div>
+        )}
+        {(presentedStep.externalUrl || deviceCode) && (
+          <div className="space-y-3 border-t border-aegis-border pt-4">
+            {deviceCode && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <code className="block break-all font-mono text-lg font-semibold text-aegis-text" dir="ltr">{deviceCode.code}</code>
+                  {deviceCode.message && deviceCode.message !== presentedStep.message && (
+                    <p className="mt-1 text-xs leading-5 text-aegis-text-muted">{deviceCode.message}</p>
+                  )}
+                  {deviceCode.expiresInMinutes && (
+                    <p className="mt-1 text-xs text-aegis-text-dim">{t("setup.wizard.deviceCodeExpires", { count: deviceCode.expiresInMinutes, defaultValue: "Expires in {{count}} minutes" })}</p>
+                  )}
+                </div>
+                <button type="button" onClick={() => void copyWizardDeviceCode()} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-aegis-border px-3 text-sm font-semibold text-aegis-text-secondary hover:border-aegis-primary/40 hover:text-aegis-text">
+                  <Copy size={15} />
+                  {deviceCodeCopied ? t("common.copied", "Copied") : t("common.copy", "Copy")}
+                </button>
+              </div>
+            )}
+            {presentedStep.externalUrl && (
+              <button type="button" onClick={() => void openWizardExternalUrl()} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-aegis-primary px-3 text-sm font-semibold text-aegis-btn-primary-text hover:bg-[rgb(var(--aegis-primary-hover))]">
+                <ExternalLink size={15} />
+                {t("setup.wizard.openAuthorization", "Open authorization")}
+              </button>
+            )}
           </div>
         )}
         {enrollmentError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{enrollmentError}</div>}

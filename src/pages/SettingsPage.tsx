@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -60,7 +60,7 @@ export function SettingsPageFull() {
     dynamicIslandAutoExpand, setDynamicIslandAutoExpand,
     gatewayUrl, setGatewayUrl,
     budgetLimit, setBudgetLimit,
-    gatewayToken, setGatewayToken,
+    setGatewayToken,
     accentColor, setAccentColor,
     picovoiceAccessKey, setPicovoiceAccessKey,
     wakeWord, setWakeWord,
@@ -174,7 +174,9 @@ export function SettingsPageFull() {
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
   const [editUrl, setEditUrl] = useState(gatewayUrl);
-  const [editToken, setEditToken] = useState(gatewayToken);
+  const [editToken, setEditToken] = useState('');
+  const [tokenDirty, setTokenDirty] = useState(false);
+  const [hasStoredGatewayToken, setHasStoredGatewayToken] = useState(false);
   const [connectionDirty, setConnectionDirty] = useState(false);
   const requestedTab = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => (
@@ -184,6 +186,15 @@ export function SettingsPageFull() {
   useEffect(() => {
     if (SETTINGS_TABS.includes(requestedTab as SettingsTab)) setActiveTab(requestedTab as SettingsTab);
   }, [requestedTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'connect') return;
+    let cancelled = false;
+    void window.aegis?.pairing?.getToken(gatewayUrl.trim() || undefined).then((token) => {
+      if (!cancelled) setHasStoredGatewayToken(Boolean(token));
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, gatewayUrl]);
 
   const selectTab = (tab: SettingsTab) => {
     setActiveTab(tab);
@@ -311,7 +322,7 @@ export function SettingsPageFull() {
 
   const copyDiagnosticInfo = async () => {
     const gatewayUrl = localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || defaultGatewayWsUrl();
-    const hasGatewayToken = Boolean((editToken || '').trim() || (gatewayToken || '').trim());
+    const hasGatewayToken = Boolean(editToken.trim() || hasStoredGatewayToken);
     const platformInfo = await window.aegis?.app?.platformInfo?.() ?? `${navigator.platform || '—'}`;
     const info = [
       `JunQi Desktop v${APP_VERSION}`,
@@ -382,12 +393,16 @@ export function SettingsPageFull() {
   const resolveConnectionUrl = async (): Promise<{ url: string; token: string }> => {
     const userUrl = editUrl.trim();
     const userToken = editToken.trim();
-    if (userUrl) return { url: userUrl, token: userToken };
+    if (userUrl) {
+      if (tokenDirty) return { url: userUrl, token: userToken };
+      const storedToken = await window.aegis?.pairing?.getToken(userUrl);
+      return { url: userUrl, token: storedToken || '' };
+    }
     try {
       const config = await window.aegis?.config.get();
       return {
         url: config?.gatewayUrl || config?.gatewayWsUrl || defaultGatewayWsUrl(),
-        token: config?.gatewayToken || '',
+        token: tokenDirty ? userToken : config?.gatewayToken || '',
       };
     } catch {
       return { url: defaultGatewayWsUrl(), token: '' };
@@ -420,13 +435,15 @@ export function SettingsPageFull() {
     gatewayManager.connect(url, token);
   };
 
-  const handleSaveConnection = () => {
+  const handleSaveConnection = async () => {
     setGatewayUrl(editUrl.trim());
-    setGatewayToken(editToken.trim());
+    if (tokenDirty) setGatewayToken(editToken.trim());
     setConnectionDirty(false);
-    // Reconnect with new settings
-    const url = editUrl.trim() || defaultGatewayWsUrl();
-    gatewayManager.connect(url, editToken.trim());
+    const { url, token } = await resolveConnectionUrl();
+    setHasStoredGatewayToken(Boolean(token));
+    setEditToken('');
+    setTokenDirty(false);
+    gatewayManager.connect(url, token);
   };
 
   // Toggle switch — unified design (used everywhere in settings)
@@ -1074,7 +1091,13 @@ export function SettingsPageFull() {
             <input
               type="text"
               value={editUrl}
-              onChange={(e) => { setEditUrl(e.target.value); setConnectionDirty(true); }}
+              onChange={(e) => {
+                setEditUrl(e.target.value);
+                setEditToken('');
+                setTokenDirty(false);
+                setHasStoredGatewayToken(false);
+                setConnectionDirty(true);
+              }}
               placeholder={defaultGatewayWsUrl()}
               className="w-full px-3 py-2.5 rounded-xl text-[13px] font-mono
                 bg-[rgb(var(--aegis-overlay)/0.03)] border border-aegis-border
@@ -1095,17 +1118,41 @@ export function SettingsPageFull() {
             <label className="text-[12px] text-aegis-text-muted font-medium mb-1.5 block">
               {t('settingsExtra.gatewayTokenLabel', 'Gateway Token')}
             </label>
-            <input
-              type="password"
-              value={editToken}
-              onChange={(e) => { setEditToken(e.target.value); setConnectionDirty(true); }}
-              placeholder={t('settingsExtra.tokenPlaceholder')}
-              className="w-full px-3 py-2.5 rounded-xl text-[13px] font-mono
-                bg-[rgb(var(--aegis-overlay)/0.03)] border border-aegis-border
-                text-aegis-text placeholder:text-aegis-text-dim
-                outline-none focus:border-aegis-accent/40 focus:bg-aegis-accent/[0.03] transition-all"
-              dir="ltr"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={editToken}
+                onChange={(e) => {
+                  setEditToken(e.target.value);
+                  setTokenDirty(true);
+                  setConnectionDirty(true);
+                }}
+                placeholder={hasStoredGatewayToken
+                  ? t('settingsExtra.tokenStoredPlaceholder', 'Stored securely; enter a replacement')
+                  : t('settingsExtra.tokenPlaceholder')}
+                className="min-w-0 flex-1 px-3 py-2.5 rounded-xl text-[13px] font-mono
+                  bg-[rgb(var(--aegis-overlay)/0.03)] border border-aegis-border
+                  text-aegis-text placeholder:text-aegis-text-dim
+                  outline-none focus:border-aegis-accent/40 focus:bg-aegis-accent/[0.03] transition-all"
+                dir="ltr"
+              />
+              {hasStoredGatewayToken && !tokenDirty && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditToken('');
+                    setTokenDirty(true);
+                    setHasStoredGatewayToken(false);
+                    setConnectionDirty(true);
+                  }}
+                  className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-aegis-border text-aegis-text-muted hover:border-aegis-danger/40 hover:text-aegis-danger"
+                  title={t('settingsExtra.clearGatewayToken', 'Clear saved token')}
+                  aria-label={t('settingsExtra.clearGatewayToken', 'Clear saved token')}
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Buttons */}

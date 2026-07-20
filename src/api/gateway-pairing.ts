@@ -9,6 +9,12 @@ export interface GatewayPairingStatus {
 }
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type GatewayStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+export interface LegacyGatewayCredential {
+  token: string;
+  endpoint: string | null;
+}
 
 const PAIRING_TIMEOUT_MS = 15_000;
 
@@ -85,16 +91,77 @@ export async function pollGatewayPairing(
   };
 }
 
-export function persistGatewayToken(token: string, storage: Pick<Storage, 'getItem' | 'setItem'>): void {
-  const normalized = token.trim();
-  if (!normalized) throw new Error('Gateway token cannot be empty');
-  let current: Record<string, unknown> = {};
-  const raw = storage.getItem('aegis-config');
-  if (raw) {
+function parseObject(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
     const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      current = parsed as Record<string, unknown>;
-    }
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
   }
-  storage.setItem('aegis-config', JSON.stringify({ ...current, gatewayToken: normalized }));
+}
+
+function parseStoredString(raw: string | null): string {
+  if (!raw) return '';
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'string' ? parsed.trim() : raw.trim();
+  } catch {
+    return raw.trim();
+  }
+}
+
+export function canonicalGatewayEndpoint(endpoint: string): string {
+  const url = new URL(endpoint.trim());
+  if (url.username || url.password) throw new Error('Gateway endpoint must not contain credentials');
+  if (url.protocol === 'http:') url.protocol = 'ws:';
+  else if (url.protocol === 'https:') url.protocol = 'wss:';
+  else if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+    throw new Error(`Unsupported Gateway protocol: ${url.protocol}`);
+  }
+  url.search = '';
+  url.hash = '';
+  url.pathname = url.pathname.replace(/\/+$/, '') || '/';
+  return url.toString().replace(/\/$/, '');
+}
+
+export function readLegacyGatewayEndpoint(storage: Pick<Storage, 'getItem'>): string | null {
+  const config = parseObject(storage.getItem('aegis-config'));
+  const configEndpoint = typeof config.gatewayUrl === 'string' ? config.gatewayUrl.trim() : '';
+  const standaloneEndpoint = (storage.getItem('aegis-gateway-url') || '').trim();
+  const settingsEndpoint = parseStoredString(storage.getItem('aegis-setting:gatewayUrl'));
+  return configEndpoint || standaloneEndpoint || settingsEndpoint || null;
+}
+
+export function readLegacyGatewayCredential(storage: Pick<Storage, 'getItem'>): LegacyGatewayCredential | null {
+  const config = parseObject(storage.getItem('aegis-config'));
+  const configToken = typeof config.gatewayToken === 'string' ? config.gatewayToken.trim() : '';
+  const standaloneToken = (storage.getItem('aegis-gateway-token') || '').trim();
+  const settingsToken = parseStoredString(storage.getItem('aegis-setting:gatewayToken'));
+  const token = configToken || standaloneToken || settingsToken;
+  if (!token) return null;
+  return { token, endpoint: readLegacyGatewayEndpoint(storage) };
+}
+
+export function removeLegacyGatewayCredentials(storage: GatewayStorage): void {
+  const config = parseObject(storage.getItem('aegis-config'));
+  if (Object.prototype.hasOwnProperty.call(config, 'gatewayToken')) {
+    delete config.gatewayToken;
+    storage.setItem('aegis-config', JSON.stringify(config));
+  }
+  storage.removeItem('aegis-gateway-token');
+  storage.removeItem('aegis-setting:gatewayToken');
+}
+
+export function mergeDesktopGatewaySettings(
+  update: Record<string, unknown>,
+  storage: GatewayStorage,
+): Record<string, unknown> {
+  const current = parseObject(storage.getItem('aegis-config'));
+  const next = { ...current, ...update };
+  delete next.gatewayToken;
+  storage.setItem('aegis-config', JSON.stringify(next));
+  return next;
 }
