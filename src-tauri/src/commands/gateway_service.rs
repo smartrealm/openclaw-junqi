@@ -7,6 +7,10 @@ use crate::{commands::system, paths, platform};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+const SERVICE_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+const STARTUP_SERVICE_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GatewayServiceOwnership {
@@ -400,6 +404,23 @@ async fn run_service_command(
     search_path: Option<&str>,
     args: &[&str],
 ) -> Result<std::process::Output, String> {
+    run_service_command_with_timeout(
+        runtime,
+        identity,
+        search_path,
+        args,
+        SERVICE_COMMAND_TIMEOUT,
+    )
+    .await
+}
+
+async fn run_service_command_with_timeout(
+    runtime: &system::NativeOpenclawRuntime,
+    identity: &GatewayServiceIdentity,
+    search_path: Option<&str>,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
     let context = identity.command_context(search_path);
     let mut command = runtime.command(&context);
     command
@@ -407,7 +428,7 @@ async fn run_service_command(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
-    tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
+    tokio::time::timeout(timeout, command.output())
         .await
         .map_err(|_| format!("OpenClaw service command timed out: {}", args.join(" ")))?
         .map_err(|error| format!("Failed to run OpenClaw service command: {error}"))
@@ -425,16 +446,46 @@ fn command_success(output: &std::process::Output, args: &[&str]) -> Result<(), S
     })
 }
 
-pub(crate) async fn inspect_gateway_service_identity(
+fn service_status_args() -> [&'static str; 4] {
+    ["gateway", "status", "--json", "--no-probe"]
+}
+
+/// OpenClaw returns a useful JSON service document even when the configured
+/// Gateway endpoint is offline, and the CLI may use a non-zero exit status for
+/// that expected condition. Parse the document before interpreting the exit
+/// code so an offline/absent service cannot block a foreground Gateway start.
+fn parse_service_status_output(
+    output: &std::process::Output,
+    args: &[&str],
+) -> Result<GatewayStatusDocument, String> {
+    match parse_gateway_status(&output.stdout) {
+        Ok(document) => Ok(document),
+        Err(parse_error) => {
+            command_success(output, args)?;
+            Err(parse_error)
+        }
+    }
+}
+
+/// Inspect service ownership for the foreground start path. This probe is
+/// deliberately bounded and best-effort: service metadata is useful for a
+/// stale-service handoff, but an unavailable service must never prevent the
+/// managed `gateway run` child from being spawned.
+pub(crate) async fn inspect_gateway_service_state_for_start(
     runtime: &system::NativeOpenclawRuntime,
     identity: &GatewayServiceIdentity,
     search_path: Option<&str>,
-) -> Result<GatewayServiceOwnership, String> {
-    let args = ["gateway", "status", "--json"];
-    let output = run_service_command(runtime, identity, search_path, &args).await?;
-    command_success(&output, &args)?;
-    parse_gateway_status(&output.stdout)
-        .map(|document| classify_service_ownership(&document, identity))
+) -> Result<GatewayServiceInspection, String> {
+    let args = service_status_args();
+    let output = run_service_command_with_timeout(
+        runtime,
+        identity,
+        search_path,
+        &args,
+        STARTUP_SERVICE_STATUS_TIMEOUT,
+    )
+    .await?;
+    parse_service_status_output(&output, &args).map(|document| inspect_document(document, identity))
 }
 
 pub(crate) async fn inspect_gateway_service_state(
@@ -442,10 +493,29 @@ pub(crate) async fn inspect_gateway_service_state(
     identity: &GatewayServiceIdentity,
     search_path: Option<&str>,
 ) -> Result<GatewayServiceInspection, String> {
-    let args = ["gateway", "status", "--json"];
+    let args = service_status_args();
     let output = run_service_command(runtime, identity, search_path, &args).await?;
+    parse_service_status_output(&output, &args).map(|document| inspect_document(document, identity))
+}
+
+pub(crate) async fn stop_selected_gateway_service_verified(
+    runtime: &system::NativeOpenclawRuntime,
+    state_dir: &Path,
+    config_path: &Path,
+    search_path: Option<&str>,
+    inspection: GatewayServiceInspection,
+) -> Result<bool, String> {
+    if !inspection.installed
+        || !inspection.running
+        || !belongs_to_selected_state(inspection.ownership)
+    {
+        return Ok(false);
+    }
+    let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
+    let args = ["gateway", "stop"];
+    let output = run_service_command(runtime, &identity, search_path, &args).await?;
     command_success(&output, &args)?;
-    parse_gateway_status(&output.stdout).map(|document| inspect_document(document, identity))
+    Ok(true)
 }
 
 pub(crate) async fn stop_selected_gateway_service(
@@ -455,15 +525,9 @@ pub(crate) async fn stop_selected_gateway_service(
     search_path: Option<&str>,
 ) -> Result<bool, String> {
     let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
-    if !belongs_to_selected_state(
-        inspect_gateway_service_identity(runtime, &identity, search_path).await?,
-    ) {
-        return Ok(false);
-    }
-    let args = ["gateway", "stop"];
-    let output = run_service_command(runtime, &identity, search_path, &args).await?;
-    command_success(&output, &args)?;
-    Ok(true)
+    let inspection = inspect_gateway_service_state(runtime, &identity, search_path).await?;
+    stop_selected_gateway_service_verified(runtime, state_dir, config_path, search_path, inspection)
+        .await
 }
 
 /// Remove the official Gateway service only after its persisted state/config
@@ -600,9 +664,35 @@ pub(crate) async fn reconcile_pending_gateway_service(
 mod tests {
     use super::*;
 
+    fn status_output(success: bool, stdout: &[u8], stderr: &[u8]) -> std::process::Output {
+        #[cfg(unix)]
+        let status = {
+            use std::os::unix::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(if success { 0 } else { 1 })
+        };
+        #[cfg(windows)]
+        let status = {
+            use std::os::windows::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(if success { 0 } else { 1 })
+        };
+        std::process::Output {
+            status,
+            stdout: stdout.to_vec(),
+            stderr: stderr.to_vec(),
+        }
+    }
+
     fn classify(output: &[u8], identity: &GatewayServiceIdentity) -> GatewayServiceOwnership {
         let document = parse_gateway_status(output).unwrap();
         classify_service_ownership(&document, identity)
+    }
+
+    #[test]
+    fn offline_status_json_is_usable_even_when_cli_exits_nonzero() {
+        let output = status_output(false, br#"{"service":null}"#, b"Gateway is not reachable");
+        let args = service_status_args();
+        let document = parse_service_status_output(&output, &args).unwrap();
+        assert!(document.service.is_none());
     }
 
     #[test]

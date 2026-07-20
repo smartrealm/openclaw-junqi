@@ -25,13 +25,22 @@ test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /patchStep\("openclaw", "done", installedStatus\.version/);
 });
 
+test('BUG-INSTALL-12 Windows installs Git only after npm reports a missing Git process', () => {
+  assert.match(setupFlow, /function isMissingGitDependencyError/);
+  assert.match(setupFlow, /if \(isWindows\) \{[\s\S]*?"git",[\s\S]*?"skipped"/);
+  assert.match(
+    setupFlow,
+    /await installSelectedOpenclaw\(\)[\s\S]*isMissingGitDependencyError\(error\)[\s\S]*runDependencyInstall\(runId, "git", installGit\)[\s\S]*await installSelectedOpenclaw\(\)/,
+  );
+});
+
 test('bug 04 Windows setup installs system defaults from domestic vendor installers before package-manager fallback', () => {
   assert.match(setupCommands, /install_windows_system_node/);
   assert.match(setupCommands, /install_windows_system_node_from_mirrors/);
   assert.match(setupCommands, /install_windows_system_node_with_winget/);
   assert.match(setupCommands, /install_windows_system_git/);
   assert.match(setupCommands, /install_windows_system_git_from_mirrors/);
-  assert.match(setupCommands, /install_or_upgrade_winget_package/);
+  assert.match(setupCommands, /ensure_winget_package/);
   assert.match(setupCommands, /WINGET_NODE_LTS_PACKAGE/);
   assert.match(setupCommands, /WINGET_GIT_PACKAGE/);
   assert.match(setupCommands, /paths::configured_node_runtime_dir\(\)/);
@@ -77,7 +86,7 @@ test('bug 04 Windows setup installs system defaults from domestic vendor install
     setupCommands.indexOf('async fn install_windows_system_git('),
     setupCommands.indexOf('async fn install_windows_system_git_from_mirrors('),
   );
-  assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('install_or_upgrade_winget_package'));
+  assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('ensure_winget_package'));
 });
 
 test('dependency runtime locations are explicit onboarding choices instead of children of OpenClaw storage', () => {
@@ -116,6 +125,10 @@ test('system-installer fallback progress is translated in every supported locale
       'setup.git.systemPackageFallback',
       'setup.windows.installerWaiting',
       'setup.windows.packageManagerWaiting',
+      'setup.windows.adminPrompt',
+      'setup.node.runtimeSettling',
+      'setup.git.runtimeSettling',
+      'setup.git.onDemand',
     ]) {
       assert.equal(typeof messages[key], 'string', `${locale} is missing ${key}`);
       assert.notEqual((messages[key] as string).trim(), '', `${locale} has an empty ${key}`);
@@ -132,6 +145,27 @@ test('BUG-INSTALL-10 Windows installer and package-manager waits keep setup prog
   assert.match(setupCommands, /async fn run_winget_package_command[\s\S]*wait_for_controlled_child[\s\S]*report_package_manager_wait/);
   assert.match(setupCommands, /WindowsInstallProgress::new\(app, "node", "Node\.js", 0\.64, 0\.92\)/);
   assert.match(setupCommands, /WindowsInstallProgress::new\(app, "git", "Git", 0\.64, 0\.92\)/);
+});
+
+test('BUG-INSTALL-11 Windows installer progress does not fabricate completion percentages', () => {
+  assert.match(setupCommands, /progress bar at the phase boundary/);
+  assert.doesNotMatch(setupCommands, /expected_install_seconds/);
+  assert.match(setupCommands, /setup\.windows\.adminPrompt/);
+  assert.match(setupCommands, /wait_for_node_runtime_settle/);
+  assert.match(setupCommands, /wait_for_git_runtime_settle/);
+});
+
+test('BUG-INSTALL-13 winget installation is one forced, source-pinned operation', () => {
+  assert.match(setupCommands, /async fn ensure_winget_package/);
+  assert.match(setupCommands, /"install",[\s\S]*"--force",[\s\S]*"--source",[\s\S]*"winget"/);
+  assert.doesNotMatch(setupCommands, /"upgrade"[\s\S]*winget install/);
+});
+
+test('BUG-INSTALL-14 npm failures retain redacted diagnostics for conditional Git recovery', () => {
+  assert.match(setupCommands, /type NpmDiagnostics = Arc<Mutex<Vec<String>>>/);
+  assert.match(setupCommands, /record_npm_diagnostic/);
+  assert.match(setupCommands, /npm_diagnostic_text\(&diagnostics\)/);
+  assert.match(setupFlow, /isMissingGitDependencyError\(error\)/);
 });
 
 test('npm setup step is translated in every supported locale', () => {

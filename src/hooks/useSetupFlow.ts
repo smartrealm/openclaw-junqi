@@ -221,6 +221,11 @@ function cacheGatewayTarget(port?: number | null): void {
   }
 }
 
+function isMissingGitDependencyError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /(?:spawn\s+git(?:\.exe)?\s+enoent|git(?:\.exe)?.*(?:enoent|not found|not recognized)|(?:cannot|could not|failed to)\s+(?:find|spawn)\s+git)/i.test(message);
+}
+
 export function useSetupFlow(
   progress: number, setProgress: (v: number) => void,
   statusMessage: string, setStatusMessage: (v: string) => void,
@@ -1039,35 +1044,53 @@ export function useSetupFlow(
     try {
       replaceSetupStep("checking");
 
-      // Git
+      const runtimePlatform = window.aegis?.platform?.toLowerCase() ?? "";
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isWindows = runtimePlatform === "win32"
+        || runtimePlatform === "windows"
+        || userAgent.includes("windows");
+
+      // Git is conditional for the npm installation path. Most published npm
+      // packages do not execute Git at all, so Windows defers the elevated
+      // system installer until npm explicitly reports a missing Git process.
+      // Existing Git remains visible and selected custom Git locations keep
+      // their normal validation contract.
       patchStep("git", "running", t("setup.checkingGit"));
       reportPhase("git", t("setup.checkingGit"));
       const gitStatus = await checkGit();
+      let gitReady = gitStatus.available;
       if (!isRunActive(runId)) return false;
-      if (!gitStatus.available) {
-        const isWindows = navigator.userAgent.toLowerCase().includes("windows");
-        const isMac = window.aegis?.platform === "darwin";
-        if (!isWindows && !isMac) {
+      if (!gitReady) {
+        const isMac = runtimePlatform === "darwin" || userAgent.includes("mac");
+        if (isWindows) {
+          patchStep(
+            "git",
+            "skipped",
+            t("setup.git.onDemand", "npm 需要 Git 时再安装"),
+          );
+        } else if (!isMac) {
           patchStep("git", "error", t("setup.gitRequiredDesc"));
           setNeedsGit(true);
           replaceSetupStep("git-missing");
           reportPhase("git", t("setup.gitRequiredDesc"), 100);
           return false;
+        } else {
+          patchStep("git", "running", t("setup.installingGit", "正在静默安装 Git…"));
+          replaceSetupStep("install-git");
+          await runDependencyInstall(runId, "git", installGit);
+          if (!isRunActive(runId)) return false;
+          const installedGit = await checkGit();
+          if (!isRunActive(runId)) return false;
+          if (!installedGit.available) {
+            patchStep("git", "error", t("setup.gitRequiredDesc"));
+            setNeedsGit(true);
+            replaceSetupStep("git-missing");
+            reportPhase("git", t("setup.gitRequiredDesc"), 100);
+            return false;
+          }
+          gitReady = true;
+          patchStep("git", "done", installedGit.version ?? undefined);
         }
-        patchStep("git", "running", t("setup.installingGit", "正在静默安装 Git…"));
-        replaceSetupStep("install-git");
-        await runDependencyInstall(runId, "git", installGit);
-        if (!isRunActive(runId)) return false;
-        const installedGit = await checkGit();
-        if (!isRunActive(runId)) return false;
-        if (!installedGit.available) {
-          patchStep("git", "error", t("setup.gitRequiredDesc"));
-          setNeedsGit(true);
-          replaceSetupStep("git-missing");
-          reportPhase("git", t("setup.gitRequiredDesc"), 100);
-          return false;
-        }
-        patchStep("git", "done", installedGit.version ?? undefined);
       } else {
         patchStep("git", "done", gitStatus.version ?? undefined);
       }
@@ -1143,12 +1166,35 @@ export function useSetupFlow(
         patchStep("openclaw", "running", t("setup.installingOpenclaw"));
         replaceSetupStep("install-openclaw");
         reportPhase("openclaw", t("setup.installingOpenclaw"), 10);
-        if (forceRelocation) {
-          await relocateOpenclaw();
-        } else if (forceReinstall) {
-          await reinstallOpenclaw();
-        } else {
-          await installOpenclaw();
+        const installSelectedOpenclaw = async () => {
+          if (forceRelocation) {
+            await relocateOpenclaw();
+          } else if (forceReinstall) {
+            await reinstallOpenclaw();
+          } else {
+            await installOpenclaw();
+          }
+        };
+        try {
+          await installSelectedOpenclaw();
+        } catch (error) {
+          if (!isWindows || gitReady || !isMissingGitDependencyError(error)) throw error;
+
+          patchStep("git", "running", t("setup.installingGit", "正在安装 Git…"));
+          replaceSetupStep("install-git");
+          reportPhase("git", t("setup.installingGit", "正在安装 Git…"), 20);
+          await runDependencyInstall(runId, "git", installGit);
+          if (!isRunActive(runId)) return false;
+          const installedGit = await checkGit();
+          if (!isRunActive(runId)) return false;
+          if (!installedGit.available) {
+            throw new Error(t("setup.gitRequiredDesc"));
+          }
+          gitReady = true;
+          patchStep("git", "done", installedGit.version ?? undefined);
+          replaceSetupStep("install-openclaw");
+          reportPhase("openclaw", t("setup.installingOpenclaw"), 10);
+          await installSelectedOpenclaw();
         }
         if (!isRunActive(runId)) return false;
         const installedStatus = await checkOpenclaw();

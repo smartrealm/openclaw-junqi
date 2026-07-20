@@ -9,6 +9,9 @@ const requiredSetupKeys = [
   'setup.node.systemReady',
   'setup.git.systemInstall',
   'setup.git.systemReady',
+  'setup.windows.adminPrompt',
+  'setup.node.runtimeSettling',
+  'setup.git.runtimeSettling',
 ];
 
 test('WIN-I18N-01 system dependency progress has every supported translation', () => {

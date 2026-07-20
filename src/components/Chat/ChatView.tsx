@@ -20,6 +20,8 @@ import type {
   WorkshopEventBlock,
 } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
+import { ExecutionProcessGroup } from './ExecutionProcessGroup';
+import { groupExecutionProcessBlocks } from './executionProcessGrouping';
 import clsx from 'clsx';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
@@ -860,22 +862,36 @@ export function ChatView() {
     }
   }, [handleEditMessage, handleRegenerate, handleInlineButtonClick, handleDecisionSelect, handleErrorAction]);
 
-  const renderGroup = useCallback((index: number, group: ResponseGroup) => (
-    <div
-      className={clsx(
-        'px-1',
-        group.role === 'assistant' ? 'space-y-2.5 py-1.5' : 'space-y-2 py-0.5',
-      )}
-      data-group-id={group.id}
-      data-group-index={index}
-    >
-      {projectResponseGroupToRenderBlocks(group).map((block) => (
-        <div key={block.id}>
-          {renderBlock(block)}
-        </div>
-      ))}
-    </div>
-  ), [renderBlock]);
+  const renderGroup = useCallback((index: number, group: ResponseGroup) => {
+    const blocks = projectResponseGroupToRenderBlocks(group);
+    const groupedBlocks = groupExecutionProcessBlocks(blocks);
+    const isStreaming = group.status === 'streaming' || blocks.some((block) => block.isStreaming);
+    return (
+      <div
+        className={clsx(
+          'px-1',
+          group.role === 'assistant' ? 'space-y-2.5 py-1.5' : 'space-y-2 py-0.5',
+        )}
+        data-group-id={group.id}
+        data-group-index={index}
+      >
+        {groupedBlocks.map((row, rowIndex) => (
+          row.type === 'execution' ? (
+            <ExecutionProcessGroup
+              key={`execution-${row.blocks[0]?.id ?? rowIndex}`}
+              blocks={row.blocks}
+              streaming={isStreaming}
+              renderBlock={renderBlock}
+            />
+          ) : (
+            <div key={row.block.id}>
+              {renderBlock(row.block)}
+            </div>
+          )
+        ))}
+      </div>
+    );
+  }, [renderBlock]);
 
   // ── Header: loading indicator / session start divider ──
   const Header = useCallback(() => {

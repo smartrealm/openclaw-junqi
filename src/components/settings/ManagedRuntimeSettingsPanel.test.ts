@@ -27,7 +27,7 @@ test('runtime commands use domestic vendor installers for system defaults and re
   assert.match(setup, /install_windows_system_node_with_winget/);
   assert.match(setup, /install_windows_system_git/);
   assert.match(setup, /install_windows_system_git_from_mirrors/);
-  assert.match(setup, /install_or_upgrade_winget_package/);
+  assert.match(setup, /ensure_winget_package/);
   assert.match(setup, /WINGET_NODE_LTS_PACKAGE/);
   assert.match(setup, /WINGET_GIT_PACKAGE/);
   assert.match(setup, /install_portable_node_runtime/);

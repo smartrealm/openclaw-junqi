@@ -20,7 +20,9 @@ use crate::commands::process_control::{
     process_tree_was_already_gone, request_windows_process_tree_termination,
     terminate_windows_process_tree,
 };
-use crate::commands::setup_progress::{emit, emit_keyed, emit_keyed_with_params};
+use crate::commands::setup_progress::{
+    emit, emit_keyed, emit_keyed_with_params, record_timeline_note, reset_timeline_log,
+};
 use crate::paths;
 use crate::platform;
 use crate::state::GatewayProcess;
@@ -56,10 +58,15 @@ const DEPENDENCY_INSTALL_DEADLINE: std::time::Duration = std::time::Duration::fr
 const DOWNLOAD_SOURCE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2 * 60);
 const DOWNLOAD_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const NODE_INDEX_STAGGER: std::time::Duration = std::time::Duration::from_millis(250);
+// A normal Node.js/Git MSI or Inno Setup transaction completes well within a
+// few minutes. A longer wait hides a blocked Windows Installer service and
+// prevents the controlled fallback from producing a useful diagnostic.
 #[cfg(any(windows, test))]
-const WINDOWS_INSTALLER_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(20 * 60);
+const WINDOWS_INSTALLER_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 #[cfg(any(windows, test))]
 const PROCESS_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+#[cfg(windows)]
+const WINDOWS_RUNTIME_SETTLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const PROCESS_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 const DEPENDENCY_INSTALL_OPERATION_ID_MAX_LEN: usize = 160;
@@ -512,11 +519,11 @@ impl<'a> WindowsInstallProgress<'a> {
     }
 
     fn progress(&self) -> f64 {
-        let elapsed = self.started_at.elapsed().as_secs_f64();
-        let expected_install_seconds = 20.0 * 60.0;
-        self.progress_start
-            + (self.progress_end - self.progress_start)
-                * (elapsed / expected_install_seconds).clamp(0.0, 1.0)
+        // Installer APIs do not expose a trustworthy percentage. Keep the
+        // progress bar at the phase boundary and expose elapsed time through
+        // the heartbeat text instead of presenting a fabricated completion
+        // percentage that can look stuck or falsely complete.
+        self.progress_start.min(self.progress_end)
     }
 
     fn elapsed(&self) -> String {
@@ -533,6 +540,20 @@ impl<'a> WindowsInstallProgress<'a> {
             "setup.windows.installerWaiting",
             &[("tool", self.tool), ("elapsed", &elapsed)],
             self.progress(),
+        );
+    }
+
+    fn report_admin_prompt(&self) {
+        emit_keyed_with_params(
+            self.app,
+            self.step,
+            &format!(
+                "Waiting for Windows administrator approval before starting the {} installer…",
+                self.tool
+            ),
+            "setup.windows.adminPrompt",
+            &[("tool", self.tool)],
+            self.progress_start,
         );
     }
 
@@ -905,6 +926,19 @@ async fn download_with_fallback_with_budget(
     let mut last_error = "no download source responded".to_string();
     for (index, (url, label)) in sources.iter().enumerate() {
         operation.ensure_active()?;
+        let source_started = std::time::Instant::now();
+        // A mirror that stalls or errors out must still leave a trace: without
+        // this, hopping to the next source looks identical to a slow single
+        // attempt in the timeline log.
+        let note_source_failure = |reason: &str| {
+            record_timeline_note(
+                step,
+                &format!(
+                    "{label} failed after {:.1}s: {reason}",
+                    source_started.elapsed().as_secs_f64()
+                ),
+            );
+        };
         let attempt = match DownloadAttemptBudget::new(budget) {
             Ok(attempt) => attempt,
             Err(DownloadTimeout::Transaction) => {
@@ -946,16 +980,19 @@ async fn download_with_fallback_with_budget(
                     Ok(response) => response,
                     Err(error) => {
                         last_error = format!("{label}: {error}");
+                        note_source_failure(&error.to_string());
                         continue;
                     }
                 },
                 Err(error) => {
                     last_error = format!("{label}: {error}");
+                    note_source_failure(&error.to_string());
                     continue;
                 }
             },
             Err(_) => {
                 if matches!(connect_limit, DownloadTimeout::Transaction) {
+                    note_source_failure("30-minute transaction deadline exceeded while connecting");
                     return Err(format!(
                         "下载 {} 超过 30 分钟总时限。最后错误：{}",
                         step, last_error
@@ -965,6 +1002,10 @@ async fn download_with_fallback_with_budget(
                     "{label}: connection exceeded {}",
                     download_timeout_message(connect_limit)
                 );
+                note_source_failure(&format!(
+                    "connection exceeded {}",
+                    download_timeout_message(connect_limit)
+                ));
                 continue;
             }
         };
@@ -1091,12 +1132,14 @@ async fn download_with_fallback_with_budget(
         }
         if let Some(error) = stream_error {
             last_error = format!("{label}: {error}");
+            note_source_failure(&error);
             drop(file);
             let _ = tokio::fs::remove_file(destination).await;
             continue;
         }
         if downloaded == 0 {
             last_error = format!("{label}: empty response");
+            note_source_failure("empty response");
             drop(file);
             let _ = tokio::fs::remove_file(destination).await;
             continue;
@@ -1113,9 +1156,17 @@ async fn download_with_fallback_with_budget(
         let actual = format!("{:x}", hasher.finalize());
         if !actual.eq_ignore_ascii_case(expected_sha256) {
             last_error = format!("{label}: SHA-256 mismatch");
+            note_source_failure("SHA-256 mismatch");
             let _ = tokio::fs::remove_file(destination).await;
             continue;
         }
+        record_timeline_note(
+            step,
+            &format!(
+                "{label} succeeded after {:.1}s",
+                source_started.elapsed().as_secs_f64()
+            ),
+        );
         emit(
             app,
             step,
@@ -1270,6 +1321,7 @@ async fn extract_node_archive(
 // ─── npm install with registry fallback ───────────────────────────────────────
 
 const NPM_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+const NPM_DIAGNOSTIC_LINE_LIMIT: usize = 24;
 
 const NPM_NOISY_LOG_PREFIXES: &[&str] = &["npm verbose", "npm sill", "npm timing", "npm notice"];
 
@@ -1333,6 +1385,28 @@ fn npm_log_line_for_display(line: &str) -> Option<String> {
                 .collect(),
         )
     }
+}
+
+type NpmDiagnostics = Arc<Mutex<Vec<String>>>;
+
+fn record_npm_diagnostic(diagnostics: &NpmDiagnostics, line: &str) {
+    let mut lines = diagnostics
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if lines.last().is_some_and(|last| last == line) {
+        return;
+    }
+    if lines.len() == NPM_DIAGNOSTIC_LINE_LIMIT {
+        lines.remove(0);
+    }
+    lines.push(line.to_owned());
+}
+
+fn npm_diagnostic_text(diagnostics: &NpmDiagnostics) -> String {
+    diagnostics
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .join(" | ")
 }
 
 enum NpmWaitResult {
@@ -1562,6 +1636,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         };
         let child_pid = child.id();
         let (activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
+        let diagnostics = Arc::new(Mutex::new(Vec::new()));
 
         // Stream stdout to progress events so the user sees live npm output
         let prog_live = prog_start + (prog_end - prog_start) * 0.4;
@@ -1569,6 +1644,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let app_c = app.clone();
             let step_c = step.to_string();
             let activity_tx = activity_tx.clone();
+            let diagnostics = Arc::clone(&diagnostics);
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stdout).lines();
@@ -1581,6 +1657,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     let Some(line) = npm_log_line_for_display(&line) else {
                         continue;
                     };
+                    record_npm_diagnostic(&diagnostics, &line);
                     emit(&app_c, &step_c, &format!("npm › {}", line), prog_live);
                 }
                 Ok(())
@@ -1592,6 +1669,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let step_e = step.to_string();
             let tar_warning_count_e = Arc::clone(&tar_warning_count);
             let activity_tx = activity_tx.clone();
+            let diagnostics = Arc::clone(&diagnostics);
             tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
@@ -1612,6 +1690,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                             continue;
                         }
                     }
+                    record_npm_diagnostic(&diagnostics, &line);
                     emit(&app_e, &step_e, &format!("npm › {}", line), prog_live);
                 }
                 Ok(())
@@ -1669,7 +1748,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 status
             }
             NpmWaitResult::Exited(Err(e)) => {
-                last_err = format!("npm process error: {}", e);
+                let diagnostic = npm_diagnostic_text(&diagnostics);
+                last_err = if diagnostic.is_empty() {
+                    format!("npm process error: {e}")
+                } else {
+                    format!("npm process error: {e}; {diagnostic}")
+                };
                 if let Err(cleanup_error) = stop_npm_process(&mut child, child_pid, output).await {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
@@ -1691,10 +1775,16 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             timeout @ (NpmWaitResult::Inactive | NpmWaitResult::DeadlineExceeded) => {
                 let deadline_expired = matches!(timeout, NpmWaitResult::DeadlineExceeded)
                     || std::time::Instant::now() >= deadline;
-                last_err = if deadline_expired {
-                    "npm install exceeded the 30-minute dependency deadline".into()
+                let diagnostic = npm_diagnostic_text(&diagnostics);
+                let base_error = if deadline_expired {
+                    "npm install exceeded the 30-minute dependency deadline"
                 } else {
-                    "npm install produced no child-process output for 10 minutes".into()
+                    "npm install produced no child-process output for 10 minutes"
+                };
+                last_err = if diagnostic.is_empty() {
+                    base_error.into()
+                } else {
+                    format!("{base_error}; {diagnostic}")
                 };
                 if let Err(cleanup_error) = stop_npm_process(&mut child, child_pid, output).await {
                     return Err(format!(
@@ -1781,7 +1871,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             ));
         }
 
-        last_err = format!("npm 退出码 {}", status.code().unwrap_or(-1));
+        let diagnostic = npm_diagnostic_text(&diagnostics);
+        last_err = if diagnostic.is_empty() {
+            format!("npm 退出码 {}", status.code().unwrap_or(-1))
+        } else {
+            format!("npm 退出码 {}: {}", status.code().unwrap_or(-1), diagnostic)
+        };
         if reg_idx + 1 < total_regs {
             emit(
                 app,
@@ -2096,6 +2191,118 @@ fn ready_node_runtime_message(runtime: &crate::commands::system::NodeRuntimeCont
     )
 }
 
+/// Windows package managers can exit before the MSI has published its PATH
+/// and registry changes. Give the selected runtime a short, bounded settle
+/// window before deciding that the channel failed or starting another
+/// installer. This keeps one install transaction serialized without hiding a
+/// genuinely incompatible package for more than a few seconds.
+#[cfg(windows)]
+async fn wait_for_node_runtime_settle(
+    app: &tauri::AppHandle,
+    requirement: &NodeRuntimeRequirement,
+    budget: DependencyInstallBudget,
+    operation: &DependencyInstallOperation,
+) -> Result<crate::commands::system::NodeRuntimeContract, WindowsInstallerFailure> {
+    let remaining = budget.remaining().unwrap_or_default();
+    let deadline = std::time::Instant::now() + remaining.min(WINDOWS_RUNTIME_SETTLE_TIMEOUT);
+    let mut last_error = None;
+
+    loop {
+        operation
+            .ensure_active()
+            .map_err(WindowsInstallerFailure::cancelled)?;
+        platform::refresh_process_path_from_registry();
+        match resolve_complete_node_runtime_contract(requirement).await {
+            Ok(runtime) => return Ok(runtime),
+            Err(error) => last_error = Some(error),
+        }
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            break;
+        };
+        let elapsed = WINDOWS_RUNTIME_SETTLE_TIMEOUT
+            .saturating_sub(remaining)
+            .as_secs();
+        emit_keyed_with_params(
+            app,
+            "node",
+            "Waiting for Windows to publish the installed Node.js runtime…",
+            "setup.node.runtimeSettling",
+            &[("elapsed", &elapsed.to_string())],
+            0.94,
+        );
+        tokio::select! {
+            _ = tokio::time::sleep(remaining.min(PROCESS_HEARTBEAT_INTERVAL)) => {}
+            _ = operation.cancelled() => {
+                return Err(WindowsInstallerFailure::cancelled(
+                    DEPENDENCY_INSTALL_CANCELLED_MESSAGE,
+                ));
+            }
+        }
+    }
+
+    Err(WindowsInstallerFailure::retryable(format!(
+        "Node.js runtime did not become usable after the installer completed: {}",
+        last_error.unwrap_or_else(|| "the installed runtime was not visible".into())
+    )))
+}
+
+#[cfg(windows)]
+async fn wait_for_git_runtime_settle(
+    app: &tauri::AppHandle,
+    budget: DependencyInstallBudget,
+    operation: &DependencyInstallOperation,
+) -> Result<crate::commands::system::GitStatus, WindowsInstallerFailure> {
+    let remaining = budget.remaining().unwrap_or_default();
+    let deadline = std::time::Instant::now() + remaining.min(WINDOWS_RUNTIME_SETTLE_TIMEOUT);
+    let mut last_error = None;
+
+    loop {
+        operation
+            .ensure_active()
+            .map_err(WindowsInstallerFailure::cancelled)?;
+        platform::refresh_process_path_from_registry();
+        match crate::commands::system::check_git().await {
+            Ok(status) if status.available => return Ok(status),
+            Ok(status) => {
+                last_error = Some("git.exe was not detected after the installer completed".into());
+                if let Some(version) = status.version {
+                    last_error = Some(format!(
+                        "detected Git {version}, but its executable contract was incomplete"
+                    ));
+                }
+            }
+            Err(error) => last_error = Some(error),
+        }
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            break;
+        };
+        let elapsed = WINDOWS_RUNTIME_SETTLE_TIMEOUT
+            .saturating_sub(remaining)
+            .as_secs();
+        emit_keyed_with_params(
+            app,
+            "git",
+            "Waiting for Windows to publish the installed Git runtime…",
+            "setup.git.runtimeSettling",
+            &[("elapsed", &elapsed.to_string())],
+            0.94,
+        );
+        tokio::select! {
+            _ = tokio::time::sleep(remaining.min(PROCESS_HEARTBEAT_INTERVAL)) => {}
+            _ = operation.cancelled() => {
+                return Err(WindowsInstallerFailure::cancelled(
+                    DEPENDENCY_INSTALL_CANCELLED_MESSAGE,
+                ));
+            }
+        }
+    }
+
+    Err(WindowsInstallerFailure::retryable(format!(
+        "Git runtime did not become usable after the installer completed: {}",
+        last_error.unwrap_or_else(|| "git.exe was not visible on the refreshed PATH".into())
+    )))
+}
+
 /// Check the current Node.js runtime against the active setup contract: the
 /// installed package when one exists, otherwise the exact target release.
 #[tauri::command]
@@ -2265,6 +2472,9 @@ async fn install_node_for_requirement_inner(
     )
     .await?;
     operation.ensure_active()?;
+    // Reset only after acquiring the per-tool lock so a queued retry cannot
+    // erase the timeline of an installer that is still running.
+    reset_timeline_log("node");
 
     #[cfg(windows)]
     let result = {
@@ -2644,28 +2854,45 @@ async fn install_windows_system_node_from_mirrors(
     let msiexec = platform_path("msiexec.exe", "msiexec").ok_or_else(|| {
         WindowsInstallerFailure::retryable("Windows Installer (msiexec) is unavailable")
     })?;
-    let args = [
+    let installer_log = temp_dir.join("node-msi.log");
+    let args = vec![
         std::ffi::OsString::from("/i"),
         installer.into_os_string(),
         std::ffi::OsString::from("/qn"),
         std::ffi::OsString::from("/norestart"),
+        std::ffi::OsString::from("/L*V"),
+        installer_log.clone().into_os_string(),
     ];
-    run_windows_installer(
+    let installer_result = run_windows_installer(
         &msiexec,
         &args,
         budget.process_policy("Node.js MSI installer")?,
         WindowsInstallProgress::new(app, "node", "Node.js", 0.64, 0.92),
         operation,
     )
-    .await?;
+    .await;
+    // Preserve the verbose MSI log regardless of outcome: a slow-but-successful
+    // install still needs its ACTION timestamps to find the real bottleneck.
+    let preserved_log = preserve_windows_installer_log(&installer_log, "node");
+    if let Some(path) = &preserved_log {
+        record_timeline_note(
+            "node",
+            &format!("msiexec verbose log preserved at {}", path.display()),
+        );
+    }
+    if let Err(error) = installer_result {
+        let error = match preserved_log {
+            Some(path) => error.with_context(format!("installer log: {}", path.display())),
+            None => error,
+        };
+        return Err(error);
+    }
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
     platform::refresh_process_path_from_registry();
 
-    let installed = resolve_complete_node_runtime_contract(requirement)
-        .await
-        .map_err(WindowsInstallerFailure::retryable)?;
+    let installed = wait_for_node_runtime_settle(app, requirement, budget, operation).await?;
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
@@ -2686,7 +2913,7 @@ async fn install_windows_system_node_with_winget(
     budget: DependencyInstallBudget,
     operation: &DependencyInstallOperation,
 ) -> Result<String, WindowsInstallerFailure> {
-    install_or_upgrade_winget_package(
+    ensure_winget_package(
         app,
         "node",
         "Node.js",
@@ -2699,37 +2926,33 @@ async fn install_windows_system_node_with_winget(
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
     platform::refresh_process_path_from_registry();
-    let mut installed = resolve_complete_node_runtime_contract(requirement).await;
-    operation
-        .ensure_active()
-        .map_err(WindowsInstallerFailure::cancelled)?;
-    if installed.is_err() {
-        emit_keyed(
-            &app,
-            "node",
-            "The LTS channel does not satisfy OpenClaw; trying the current Node.js channel...",
-            "setup.node.systemCurrentInstall",
-            0.55,
-        );
-        install_or_upgrade_winget_package(
-            app,
-            "node",
-            "Node.js",
-            WINGET_NODE_CURRENT_PACKAGE,
-            budget,
-            operation,
-        )
-        .await?;
-        operation
-            .ensure_active()
-            .map_err(WindowsInstallerFailure::cancelled)?;
-        platform::refresh_process_path_from_registry();
-        installed = resolve_complete_node_runtime_contract(requirement).await;
-        operation
-            .ensure_active()
-            .map_err(WindowsInstallerFailure::cancelled)?;
-    }
-    let installed = installed.map_err(WindowsInstallerFailure::retryable)?;
+    let installed = match wait_for_node_runtime_settle(app, requirement, budget, operation).await {
+        Ok(runtime) => runtime,
+        Err(WindowsInstallerFailure::Retryable(_)) => {
+            emit_keyed(
+                &app,
+                "node",
+                "The LTS channel does not satisfy OpenClaw; trying the current Node.js channel...",
+                "setup.node.systemCurrentInstall",
+                0.55,
+            );
+            ensure_winget_package(
+                app,
+                "node",
+                "Node.js",
+                WINGET_NODE_CURRENT_PACKAGE,
+                budget,
+                operation,
+            )
+            .await?;
+            operation
+                .ensure_active()
+                .map_err(WindowsInstallerFailure::cancelled)?;
+            platform::refresh_process_path_from_registry();
+            wait_for_node_runtime_settle(app, requirement, budget, operation).await?
+        }
+        Err(error) => return Err(error),
+    };
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
@@ -2812,6 +3035,18 @@ impl WindowsInstallerFailure {
         Self::CleanupIncomplete(message.into())
     }
 
+    #[cfg(windows)]
+    fn with_context(self, context: impl Into<String>) -> Self {
+        let context = context.into();
+        match self {
+            Self::Retryable(message) => Self::Retryable(format!("{message}; {context}")),
+            Self::Cancelled(message) => Self::Cancelled(format!("{message}; {context}")),
+            Self::CleanupIncomplete(message) => {
+                Self::CleanupIncomplete(format!("{message}; {context}"))
+            }
+        }
+    }
+
     fn permits_fallback(&self) -> bool {
         matches!(self, Self::Retryable(_))
     }
@@ -2852,6 +3087,22 @@ impl WindowsInstallerFailure {
             )),
         }
     }
+}
+
+#[cfg(windows)]
+fn preserve_windows_installer_log(path: &Path, tool: &str) -> Option<PathBuf> {
+    if !path.is_file() {
+        return None;
+    }
+    let directory = paths::app_config_dir().join("installer-logs");
+    std::fs::create_dir_all(&directory).ok()?;
+    let destination = directory.join(format!(
+        "{}-{}.log",
+        tool.to_ascii_lowercase(),
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::copy(path, &destination).ok()?;
+    Some(destination)
 }
 
 #[cfg(windows)]
@@ -3133,6 +3384,7 @@ async fn run_windows_installer(
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
+    progress.report_admin_prompt();
     let mut process = launch_elevated_windows_process(executable, args, progress.tool).await?;
     // ShellExecuteExW may be blocked by the Windows UAC dialog. A cancel
     // request is retained by the coordinator while that OS call is pending;
@@ -3222,7 +3474,7 @@ impl Drop for WindowsChildTreeCancellationGuard {
 }
 
 #[cfg(windows)]
-async fn install_or_upgrade_winget_package(
+async fn ensure_winget_package(
     app: &tauri::AppHandle,
     step: &str,
     tool: &str,
@@ -3239,41 +3491,34 @@ async fn install_or_upgrade_winget_package(
             "Windows Package Manager (winget) is unavailable. Install the dependency with its standard system installer or select an explicit portable runtime directory in JunQi.",
         ));
     }
+    // `winget upgrade` is not an installation contract: it exits successfully
+    // when the package is absent, already current, or owned by another source.
+    // That was the reason a machine could remain on Node.js 20 after JunQi had
+    // reported a successful LTS operation. Use one idempotent, forced install
+    // and let the caller validate the resulting executable contract before any
+    // channel fallback is considered.
     let progress = WindowsInstallProgress::new(app, step, tool, 0.62, 0.92);
-    match run_winget_package_command(
-        &winget,
-        "upgrade",
-        package_id,
-        budget.process_policy(&format!("winget upgrade for {package_id}"))?,
-        &progress,
-        operation,
-    )
-    .await
-    {
-        Ok(output) if output.status.success() => return Ok(()),
-        Ok(_) | Err(WindowsInstallerFailure::Retryable(_)) => {}
-        Err(error @ WindowsInstallerFailure::Cancelled(_))
-        | Err(error @ WindowsInstallerFailure::CleanupIncomplete(_)) => return Err(error),
-    }
     let install = run_winget_package_command(
         &winget,
-        "install",
         package_id,
         budget.process_policy(&format!("winget install for {package_id}"))?,
         &progress,
         operation,
     )
     .await?;
+    // Persist winget's own output regardless of outcome: a successful-but-slow
+    // install still needs its "Downloading"/"Installing" lines to see where
+    // the time went, and they would otherwise only surface on failure.
+    let diagnostic = windows_package_manager_output(&install);
+    if !diagnostic.is_empty() {
+        record_timeline_note(
+            step,
+            &format!("winget install {package_id} output: {diagnostic}"),
+        );
+    }
     if install.status.success() {
         return Ok(());
     }
-    let diagnostic = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&install.stdout).trim(),
-        String::from_utf8_lossy(&install.stderr).trim()
-    )
-    .trim()
-    .to_string();
     Err(WindowsInstallerFailure::retryable(
         if diagnostic.is_empty() {
             format!("winget could not install {package_id}")
@@ -3284,9 +3529,18 @@ async fn install_or_upgrade_winget_package(
 }
 
 #[cfg(windows)]
+fn windows_package_manager_output(output: &std::process::Output) -> String {
+    let raw = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout).trim(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    crate::commands::diagnostic_output::sanitize_diagnostic_text(raw.trim(), 1_200)
+}
+
+#[cfg(windows)]
 async fn run_winget_package_command(
     winget: &str,
-    verb: &str,
     package_id: &str,
     policy: ControlledProcessPolicy,
     progress: &WindowsInstallProgress<'_>,
@@ -3297,10 +3551,13 @@ async fn run_winget_package_command(
         .map_err(WindowsInstallerFailure::cancelled)?;
     let mut command = tokio::process::Command::new(winget);
     command.args([
-        verb,
+        "install",
         "-e",
         "--id",
         package_id,
+        "--force",
+        "--source",
+        "winget",
         "--silent",
         "--disable-interactivity",
         "--accept-source-agreements",
@@ -3313,7 +3570,7 @@ async fn run_winget_package_command(
     platform::configure_background_command(&mut command);
     let mut child = command.spawn().map_err(|error| {
         WindowsInstallerFailure::retryable(format!(
-            "Failed to run winget {verb} for {package_id}: {error}"
+            "Failed to run winget install for {package_id}: {error}"
         ))
     })?;
     let mut cancellation_guard = WindowsChildTreeCancellationGuard::new(child.id());
@@ -3341,7 +3598,7 @@ async fn run_winget_package_command(
         ));
     }
     let status = status.map_err(|error| {
-        WindowsInstallerFailure::from_wait_error(&format!("winget {verb} for {package_id}"), error)
+        WindowsInstallerFailure::from_wait_error(&format!("winget install for {package_id}"), error)
     })?;
     let stdout = stdout.map_err(WindowsInstallerFailure::from_output_failure)?;
     let stderr = stderr.map_err(WindowsInstallerFailure::from_output_failure)?;
@@ -3534,6 +3791,9 @@ async fn install_git_impl_inner(
     .await?;
     operation.ensure_active()?;
     let step = "git";
+    // The lock is held before this reset, so concurrent setup attempts retain
+    // the active installer timeline until its transaction has finished.
+    reset_timeline_log(step);
 
     // ① Detect
     emit_keyed(
@@ -3644,16 +3904,7 @@ async fn install_windows_system_git(
         0.60,
     );
     operation.ensure_active()?;
-    match install_or_upgrade_winget_package(
-        &app,
-        "git",
-        "Git",
-        WINGET_GIT_PACKAGE,
-        budget,
-        operation,
-    )
-    .await
-    {
+    match ensure_winget_package(&app, "git", "Git", WINGET_GIT_PACKAGE, budget, operation).await {
         Ok(()) => {}
         Err(error @ WindowsInstallerFailure::Cancelled(_))
         | Err(error @ WindowsInstallerFailure::CleanupIncomplete(_)) => {
@@ -3667,8 +3918,9 @@ async fn install_windows_system_git(
         }
     }
     operation.ensure_active()?;
-    platform::refresh_process_path_from_registry();
-    let installed = crate::commands::system::check_git().await?;
+    let installed = wait_for_git_runtime_settle(&app, budget, operation)
+        .await
+        .map_err(WindowsInstallerFailure::into_message)?;
     operation.ensure_active()?;
     if !installed.available {
         return Err(
@@ -3730,25 +3982,42 @@ async fn install_windows_system_git_from_mirrors(
     .await
     .map_err(dependency_install_windows_failure)?;
 
-    let args = [
+    let installer_log = temp_dir.join("git-installer.log");
+    let args = vec![
         std::ffi::OsString::from("/VERYSILENT"),
         std::ffi::OsString::from("/NORESTART"),
         std::ffi::OsString::from("/SUPPRESSMSGBOXES"),
         std::ffi::OsString::from("/SP-"),
+        std::ffi::OsString::from(format!("/LOG={}", installer_log.display())),
     ];
-    run_windows_installer(
+    let installer_result = run_windows_installer(
         &installer,
         &args,
         budget.process_policy("Git installer")?,
         WindowsInstallProgress::new(app, "git", "Git", 0.64, 0.92),
         operation,
     )
-    .await?;
+    .await;
+    // Preserve the Inno Setup log regardless of outcome: a slow-but-successful
+    // install still needs its timestamps to find the real bottleneck.
+    let preserved_log = preserve_windows_installer_log(&installer_log, "git");
+    if let Some(path) = &preserved_log {
+        record_timeline_note(
+            "git",
+            &format!("Inno Setup log preserved at {}", path.display()),
+        );
+    }
+    if let Err(error) = installer_result {
+        let error = match preserved_log {
+            Some(path) => error.with_context(format!("installer log: {}", path.display())),
+            None => error,
+        };
+        return Err(error);
+    }
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
-    platform::refresh_process_path_from_registry();
-    let installed = crate::commands::system::check_git().await?;
+    let installed = wait_for_git_runtime_settle(app, budget, operation).await?;
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
@@ -5062,6 +5331,24 @@ mod tests {
         let output = npm_log_line_for_display(&"x".repeat(1_500)).expect("line remains visible");
         assert_eq!(output.chars().count(), 1_001);
         assert!(output.ends_with('…'));
+    }
+
+    #[test]
+    fn npm_failure_diagnostics_are_bounded_and_already_redacted() {
+        let diagnostics = Arc::new(Mutex::new(Vec::new()));
+        for index in 0..(NPM_DIAGNOSTIC_LINE_LIMIT + 3) {
+            let line =
+                npm_log_line_for_display(&format!("npm error spawn git ENOENT {index}")).unwrap();
+            record_npm_diagnostic(&diagnostics, &line);
+        }
+        let text = npm_diagnostic_text(&diagnostics);
+        assert_eq!(text.split(" | ").count(), NPM_DIAGNOSTIC_LINE_LIMIT);
+        assert!(text.contains("spawn git ENOENT"));
+        assert!(!text.contains("secret"));
+
+        let secret = npm_log_line_for_display("npm error authorization: Bearer secret").unwrap();
+        record_npm_diagnostic(&diagnostics, &secret);
+        assert!(!npm_diagnostic_text(&diagnostics).contains("secret"));
     }
 
     #[tokio::test]
