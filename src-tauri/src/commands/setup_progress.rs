@@ -1,6 +1,101 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::io::Write;
 use tauri::Emitter;
+
+/// Every Node.js/Git download-and-install event also lands in a persistent,
+/// on-disk timeline so a slow-but-successful run can be diagnosed after the
+/// fact. The in-memory `setup-progress` events above are only seen by a
+/// running frontend; this file survives regardless of outcome.
+fn timeline_log_path(step: &str) -> std::path::PathBuf {
+    crate::paths::app_config_dir()
+        .join("installer-logs")
+        .join(format!("{step}-timeline.log"))
+}
+
+fn timeline_tracked(step: &str) -> bool {
+    matches!(step, "node" | "git")
+}
+
+/// Start a fresh timeline for one dependency-install attempt. The caller invokes
+/// this after acquiring the per-tool install lock so a queued retry cannot erase
+/// a still-running transaction's diagnostics.
+pub fn reset_timeline_log(step: &str) {
+    if !timeline_tracked(step) {
+        return;
+    }
+    let path = timeline_log_path(step);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(
+        &path,
+        format!(
+            "=== {step} dependency install started {} ===\n",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+        ),
+    );
+}
+
+fn append_timeline_log(step: &str, line: &str) {
+    if !timeline_tracked(step) {
+        return;
+    }
+    let path = timeline_log_path(step);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    else {
+        return;
+    };
+    let _ = writeln!(
+        file,
+        "[{}] {}",
+        chrono::Local::now().format("%H:%M:%S%.3f"),
+        line
+    );
+}
+
+fn record_timeline(step: &str, message: &str, metadata: &SetupProgressMetadata<'_>) {
+    if !timeline_tracked(step) {
+        return;
+    }
+    let mut line = String::new();
+    if let Some(progress) = metadata.progress {
+        line.push_str(&format!("[{:>5.1}%] ", progress.clamp(0.0, 1.0) * 100.0));
+    }
+    if metadata.diagnostic {
+        line.push_str("(diag) ");
+    }
+    line.push_str(message);
+    if let Some(key) = metadata.key {
+        line.push_str(&format!("  [key={key}]"));
+    }
+    if let Some(params) = &metadata.params {
+        if !params.is_empty() {
+            let joined = params
+                .iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            line.push_str(&format!("  [{joined}]"));
+        }
+    }
+    if let Some(error) = metadata.error {
+        line.push_str(&format!("  ERROR: {error}"));
+    }
+    append_timeline_log(step, &line);
+}
+
+/// Append an already-formatted line to a step's timeline log, e.g. to record a
+/// failed mirror attempt that never becomes a user-facing progress event.
+pub fn record_timeline_note(step: &str, note: &str) {
+    append_timeline_log(step, note);
+}
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -148,6 +243,7 @@ fn emit_event(
     message: &str,
     metadata: SetupProgressMetadata<'_>,
 ) {
+    record_timeline(step, message, &metadata);
     let _ = app.emit(
         "setup-progress",
         SetupProgress {

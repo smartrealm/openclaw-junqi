@@ -247,7 +247,7 @@ test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', 
   // (system service or desktop app) serves the gateway afterwards.
   assert.match(gatewayService, /"gateway", "install", "--force", "--port", port\.as_str\(\)/);
   assert.match(gatewayService, /"gateway", "uninstall", "--json"/);
-  assert.match(gatewayService, /let args = \["gateway", "status", "--json"\];/);
+  assert.match(gatewayService, /fn service_status_args\(\)[\s\S]*"gateway", "status", "--json", "--no-probe"/);
   assert.match(gatewayService, /OpenClawRuntimeMode::Native/);
   assert.match(setupPage, /await window\.aegis\.config\.restart\(\)/);
 

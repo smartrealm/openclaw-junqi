@@ -48,7 +48,7 @@ test('Windows package uses the small WebView2 bootstrapper and standard system r
   assert.match(setup, /install_windows_system_node_with_winget/);
   assert.match(setup, /install_windows_system_git/);
   assert.match(setup, /install_windows_system_git_from_mirrors/);
-  assert.match(setup, /install_or_upgrade_winget_package/);
+  assert.match(setup, /ensure_winget_package/);
   assert.match(setup, /paths::configured_node_runtime_dir\(\)/);
   assert.match(setup, /paths::configured_git_runtime_dir\(\)/);
   assert.match(setup, /install_portable_node_runtime/);
@@ -83,7 +83,7 @@ test('Windows package uses the small WebView2 bootstrapper and standard system r
     setup.indexOf('async fn install_windows_system_git('),
     setup.indexOf('async fn install_windows_system_git_from_mirrors('),
   );
-  assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('install_or_upgrade_winget_package'));
+  assert.ok(gitDefaultInstall.indexOf('install_windows_system_git_from_mirrors') < gitDefaultInstall.indexOf('ensure_winget_package'));
 });
 
 test('Windows releases sign and verify Authenticode when SignPath is configured', () => {

@@ -2584,7 +2584,7 @@
     "installSteps": {
       "git": {
         "title": "Git",
-        "description": "Verify the source and package-management prerequisite"
+        "description": "Detect the source-management tool and install it only when required"
       },
       "node": {
         "title": "Node.js",
@@ -3195,6 +3195,9 @@
   "setup.node.systemReady": "A compatible system Node.js runtime is ready",
   "setup.windows.installerWaiting": "{{tool}} installer is running (elapsed {{elapsed}})…",
   "setup.windows.packageManagerWaiting": "Windows Package Manager is processing {{tool}} (elapsed {{elapsed}})…",
+  "setup.windows.adminPrompt": "Waiting for Windows administrator approval before starting the {{tool}} installer…",
+  "setup.node.runtimeSettling": "Waiting for Windows to publish the installed Node.js runtime (elapsed {{elapsed}}s)…",
+  "setup.git.runtimeSettling": "Waiting for Windows to publish the installed Git runtime (elapsed {{elapsed}}s)…",
   "setup.node.runtimeReady": "A compatible Node.js runtime is ready",
   "setup.node.prepareDownload": "Preparing to download Node.js v{{version}}, prefer CN mirror…",
   "setup.node.extract": "Extracting to {{path}}…",
@@ -3203,6 +3206,7 @@
   "setup.node.done": "Node.js {{version}} installed successfully ✓",
   "setup.git.check": "Checking Git installation…",
   "setup.git.skip": "Git already installed, skipping",
+  "setup.git.onDemand": "Git will be installed only if npm requires it",
   "setup.git.systemInstall": "Installing Git to the official Windows default location…",
   "setup.git.systemPackageFallback": "The mainland mirror installer did not complete; trying Windows Package Manager…",
   "setup.git.systemReady": "System Git is ready",

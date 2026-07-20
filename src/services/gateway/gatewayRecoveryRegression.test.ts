@@ -164,13 +164,16 @@ test('BUG-WIN-CWD-01 managed Gateway uses stable non-root cwd', () => {
   assert.doesNotMatch(managed, /working_dir = state_dir[.\s]*Some/);
 });
 
-test('offline system services are stopped before the desktop-managed Gateway starts', () => {
+test('offline system service handoff reuses one bounded ownership snapshot', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const service = source('src-tauri/src/commands/gateway_service.rs');
   assert.match(service, /OPENCLAW_STATE_DIR/);
   assert.match(service, /paths_refer_to_same_location/);
-  assert.match(service, /stop_selected_gateway_service/);
-  assert.match(gateway, /stop_offline_gateway_service\(&app, &runtime, &gw_path\)\.await\?/);
+  assert.match(service, /inspect_gateway_service_state_for_start/);
+  assert.match(service, /stop_selected_gateway_service_verified/);
+  assert.match(service, /"--no-probe"/);
+  assert.match(gateway, /let service_inspection =/);
+  assert.match(gateway, /stop_offline_gateway_service\([\s\S]*inspection/);
 });
 
 test('BUG-GW-04 storage migration preserves only a verified official service binding', () => {

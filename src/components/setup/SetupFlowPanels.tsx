@@ -38,7 +38,7 @@ export const STEP_META: Record<string, { titleKey: string; titleFallback: string
     titleKey: "setup.installSteps.git.title",
     titleFallback: "Git",
     descriptionKey: "setup.installSteps.git.description",
-    descriptionFallback: "验证源码与包管理所需的基础工具",
+    descriptionFallback: "检测源码与包管理工具，仅在安装需要时补齐",
   },
   node: {
     titleKey: "setup.installSteps.node.title",

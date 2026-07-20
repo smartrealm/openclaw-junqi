@@ -2578,7 +2578,7 @@
     "installSteps": {
       "git": {
         "title": "Git",
-        "description": "验证源码与包管理所需的基础工具"
+        "description": "检测源码与包管理工具，仅在安装需要时补齐"
       },
       "node": {
         "title": "Node.js",
@@ -3219,6 +3219,9 @@
   "setup.node.systemReady": "兼容的系统 Node.js 运行时已就绪",
   "setup.windows.installerWaiting": "{{tool}} 安装器正在运行（已等待 {{elapsed}}）…",
   "setup.windows.packageManagerWaiting": "Windows 包管理器正在处理 {{tool}}（已等待 {{elapsed}}）…",
+  "setup.windows.adminPrompt": "正在等待 Windows 管理员确认后启动 {{tool}} 安装器…",
+  "setup.node.runtimeSettling": "正在等待 Windows 发布已安装的 Node.js 运行时（已等待 {{elapsed}} 秒）…",
+  "setup.git.runtimeSettling": "正在等待 Windows 发布已安装的 Git 运行时（已等待 {{elapsed}} 秒）…",
   "setup.node.runtimeReady": "兼容的 Node.js 运行时已就绪",
   "setup.node.prepareDownload": "准备下载 Node.js v{{version}}，优先使用国内镜像源…",
   "setup.node.extract": "正在解压至 {{path}}…",
@@ -3227,6 +3230,7 @@
   "setup.node.done": "Node.js {{version}} 安装成功 ✓",
   "setup.git.check": "正在检测 Git 安装状态…",
   "setup.git.skip": "Git 已安装，跳过安装步骤",
+  "setup.git.onDemand": "仅在 npm 明确需要 Git 时安装",
   "setup.git.systemInstall": "正在将 Git 安装到 Windows 官方默认位置…",
   "setup.git.systemPackageFallback": "国内镜像安装器未完成，正在尝试 Windows 包管理器…",
   "setup.git.systemReady": "系统 Git 已就绪",
