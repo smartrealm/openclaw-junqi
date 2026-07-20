@@ -4978,8 +4978,10 @@ async fn install_openclaw_impl_inner(
 /// 当作实时状态文本展示。这一组文案与 "正在准备 OpenClaw Gateway…
 /// 检测、连接并同步运行时状态…" 的形态保持一致——逐条细分、可读、
 /// 进度平滑推进。
-#[tauri::command]
-pub async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
+// Retained as a private compatibility helper for older internal callers; the
+// public setup path uses GatewayConnectionManager.startForSetup().
+#[allow(dead_code)]
+async fn prepare_gateway(app: tauri::AppHandle) -> Result<String, String> {
     paths::validate_runtime_mode(paths::OpenClawRuntimeMode::Native)?;
     if matches!(
         paths::active_runtime_mode(),

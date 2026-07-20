@@ -23,6 +23,7 @@ import clsx from 'clsx';
 import { themeColorVar } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { formatTokens } from '@/utils/format';
+import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import { useSceneRecovery } from '@/motion/sceneRecovery';
 import { gateway } from '@/services/gateway';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -218,11 +219,11 @@ export function DashboardPage() {
   const recentSessions = useMemo(() => {
     const byKey = new Map<string, any>();
     for (const s of sessions) {
-      if (!s?.key || String(s.key).includes(':subagent:')) continue;
+      if (!s?.key || isIsolatedExecutionSessionKey(String(s.key))) continue;
       byKey.set(s.key, s);
     }
     for (const s of chatSessions) {
-      if (!s?.key || String(s.key).includes(':subagent:')) continue;
+      if (!s?.key || isIsolatedExecutionSessionKey(String(s.key))) continue;
       byKey.set(s.key, { ...(byKey.get(s.key) ?? {}), ...s });
     }
     return sortSessionsByActivity(Array.from(byKey.values()).filter((s: any) => {

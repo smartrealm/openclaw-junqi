@@ -302,6 +302,26 @@ export interface Session {
   kind?: string;
   channel?: string | null;
   lastChannel?: string | null;
+  /** OpenClaw's persisted source metadata. Kept name-for-name for projection. */
+  origin?: {
+    label?: string;
+    provider?: string;
+    surface?: string;
+    chatType?: string;
+    from?: string;
+    to?: string;
+    nativeChannelId?: string;
+    nativeDirectUserId?: string;
+    accountId?: string;
+    threadId?: string | number;
+  };
+  spawnedBy?: string;
+  parentSessionKey?: string;
+  status?: string;
+  hasActiveRun?: boolean;
+  hasActiveSubagentRun?: boolean;
+  subagentRunState?: string;
+  systemSent?: boolean;
   // Per-session model/thinking/token data cached from sessions.list
   model?: string | null;
   thinkingLevel?: string | null;

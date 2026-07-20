@@ -72,8 +72,10 @@ export function ChannelEnrollmentDialog({
             ? t('setup.wizard.channelEnrollment.networkFailed', '无法连接飞书服务。请检查网络后重试。')
             : state.error === 'rate_limited'
               ? t('setup.wizard.channelEnrollment.rateLimited', '飞书服务繁忙，请稍后重新生成二维码。')
-              : state.error === 'provider_rejected'
+          : state.error === 'provider_rejected'
                 ? t('setup.wizard.channelEnrollment.providerRejected', '飞书拒绝了本次二维码注册请求。请稍后重试。')
+              : state.error === 'unsupported_verification_host'
+                ? t('setup.wizard.channelEnrollment.protocolChanged', '飞书扫码入口已更新，当前 JunQi 版本尚不支持。请升级 JunQi 后重试。')
           : state.error
             ? t('setup.wizard.channelEnrollment.error', '二维码服务暂时不可用。请重新生成后重试。')
             : t('setup.wizard.channelEnrollment.waiting', '请使用飞书或 Lark 手机端扫描二维码。');

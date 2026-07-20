@@ -203,19 +203,18 @@ const INITIAL_DOCKER_STEPS: StepState[] = [
   { id: "gateway",   label: "Gateway",       status: "pending" },
 ];
 
-function cacheGatewayTarget(port?: number | null, token?: string | null): void {
-  if (!port && token === undefined) return;
+function cacheGatewayTarget(port?: number | null): void {
+  if (!port) return;
   try {
     const current = JSON.parse(localStorage.getItem("aegis-config") || "{}");
     const next = {
       ...current,
       ...(port ? { gatewayUrl: defaultGatewayWsUrl(port) } : {}),
     };
-    if (token === null) {
-      delete next.gatewayToken;
-    } else if (token) {
-      next.gatewayToken = token;
-    }
+    // Gateway credentials belong to the native OpenClaw config boundary, not
+    // renderer localStorage. Remove legacy cached values while refreshing the
+    // selected endpoint so old installs do not keep a second credential copy.
+    delete next.gatewayToken;
     localStorage.setItem("aegis-config", JSON.stringify(next));
   } catch {
     // Best effort: connection resolution can still fall back to config files.
@@ -244,6 +243,7 @@ export function useSetupFlow(
   const [wizardCanGoBack, setWizardCanGoBack] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [wizardRecoveryRequired, setWizardRecoveryRequired] = useState(false);
+  const wizardSubmitInFlightRef = useRef(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
@@ -358,8 +358,23 @@ export function useSetupFlow(
         return t("setup.wizard.alreadyRunning", "另一个 OpenClaw 配置会话仍在运行，请完成或关闭后重试。");
       case "request_timeout":
         return t("setup.wizard.requestTimeout", "OpenClaw 配置请求等待超时，请重新连接后继续。");
-      case "unknown":
-        return t("setup.wizard.failed", "OpenClaw 配置向导执行失败。");
+      case "unknown": {
+        // A 改动在 applyWizardResult 已附 step+session 上下文,但错误在
+        // submitWizardStep/startOfficialOnboarding/resumeOfficialOnboarding
+        // catch 这三条入口被这条 switch 收口、丢弃成一句通用文案。这里把
+        // 同等的诊断面附加回来,用户从 Toast 上能直接拿到 Gateway 真实
+        // 错误,而不是再看到一句无法定位的"执行失败"。
+        const sessionId = wizardClientRef.current?.activeSessionId ?? "(none)";
+        const lastStepId = wizardClientRef.current?.failedStepView?.id
+          ?? wizardClientRef.current?.currentStepView?.id
+          ?? "(unknown)";
+        return diagnostic.startsWith("OpenClaw wizard failed at step ")
+          ? diagnostic
+          : `OpenClaw wizard failed at step "${lastStepId}" (session=${sessionId}): ${t(
+              "setup.wizard.failed",
+              "OpenClaw 配置向导执行失败。",
+            )}`;
+      }
     }
   }, [appendSetupLog, t]);
 
@@ -383,7 +398,7 @@ export function useSetupFlow(
         } else {
           const status: any = await invoke("gateway_status");
           if (status?.running) {
-            cacheGatewayTarget(status.port, status.token);
+            cacheGatewayTarget(status.port);
             return status;
           }
         }
@@ -422,7 +437,7 @@ export function useSetupFlow(
         if (cancelled) return;
         const selectedRuntime = runtimeTarget.runtime_mode;
         setInstallMode(selectedRuntime);
-        cacheGatewayTarget(runtimeTarget.port, runtimeTarget.token);
+        cacheGatewayTarget(runtimeTarget.port);
 
         // A Docker runtime is self-contained. Its host may intentionally have
         // no OpenClaw package, so checking it would produce a false "fresh
@@ -628,7 +643,7 @@ export function useSetupFlow(
   const refreshGatewayConnectionTarget = useCallback(async () => {
     try {
       const target = await detectGatewayConfig();
-      cacheGatewayTarget(target.port, target.token);
+      cacheGatewayTarget(target.port);
       gatewayManager.reconnect();
     } catch {
       // The normal connection resolver can still read settings/config later.
@@ -637,25 +652,61 @@ export function useSetupFlow(
 
   const applyWizardResult = useCallback(async (result: OpenClawWizardResult): Promise<OpenClawWizardResult> => {
     if (result.error || result.status === "error") {
-      throw new Error(result.error || t("setup.wizard.failed", "OpenClaw 配置向导执行失败。"));
+      // 终端错误往往包含 Gateway 的真实诊断(`wizard: ...` / JSON 校验失败
+      // / 单会话冲突等),但此前统一替换成一句通用文案,导致同一症状
+      // 会反复复现而拿不到根因。透传原文并附上当前会话上下文,异常发生时
+      // 用户能直接看到错误并复贴给我们定位。
+      const rawError = result.error
+        ? result.error
+        : t("setup.wizard.failed", "OpenClaw 配置向导执行失败。");
+      const sessionId = wizardClientRef.current?.activeSessionId ?? "(none)";
+      const lastStepId = wizardClientRef.current?.failedStepView?.id
+        ?? wizardClientRef.current?.currentStepView?.id
+        ?? "(unknown)";
+      const debugMessage = `OpenClaw wizard failed at step "${lastStepId}" (session=${sessionId}): ${rawError}`;
+      appendSetupLog({
+        source: "setup",
+        step: "wizard",
+        message: debugMessage,
+        level: "error",
+      });
+      throw new Error(result.error ? debugMessage : rawError);
     }
     if (result.done || result.status === "done") {
+      // The official session is terminal even when the lifecycle handoff below
+      // fails. Do not replay accepted model credentials on recovery; recover
+      // only the Gateway owner and verify the selected config identity.
+      updateOnboardingRequirement(false);
       // OpenClaw's official wizard may install its platform service by
       // default. Reconcile ownership before declaring setup complete so the
       // foreground bootstrap child and Scheduled Task never race on one port.
       try {
         await invoke<boolean>("handoff_gateway_to_official_service", {});
+        const selectedGatewayReady = await invoke<boolean>("probe_selected_gateway", {});
+        if (!selectedGatewayReady) {
+          throw new Error(t(
+            "setup.wizard.handoffNotReady",
+            "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
+          ));
+        }
       } catch (handoffError) {
-        // The official wizard has already completed at this point. A service
-        // handoff failure must not turn the successful wizard result into a
-        // misleading "wizard failed" screen; keep the managed Gateway alive
-        // and leave an actionable diagnostic in the setup log instead.
         const message = handoffError instanceof Error ? handoffError.message : String(handoffError);
-        appendSetupLog({ source: "setup", step: "gateway", message, level: "warn" });
+        setWizardStep(null);
+        setWizardCanGoBack(false);
+        setWizardRecoveryRequired(false);
+        setGatewayRunning(false);
+        patchStep("gateway", "error", message);
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+        setSetupError(message);
+        report(message);
+        replaceSetupStep("error");
+        return result;
       }
       setWizardStep(null);
       setWizardCanGoBack(false);
-      updateOnboardingRequirement(false);
+      setWizardError(null);
+      setWizardRecoveryRequired(false);
+      setSetupError(null);
       setPostStorageStep("ready");
       await refreshGatewayConnectionTarget();
       report(t("setup.ready"), 100);
@@ -670,7 +721,7 @@ export function useSetupFlow(
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
     replaceSetupStep("configure-openclaw");
     return result;
-  }, [appendSetupLog, refreshGatewayConnectionTarget, report, setPostStorageStep, replaceSetupStep, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
 
   const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
@@ -729,7 +780,12 @@ export function useSetupFlow(
   }, [applyWizardResult, replaceSetupStep, setSetupError, startOfficialOnboarding, waitForGatewayConnection, wizardFailureMessage]);
 
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
-    if (wizardSubmitting) return null;
+    // React state updates are asynchronous. A final note can receive two click
+    // events before `wizardSubmitting` reaches the button, causing the second
+    // request to race the official terminal response and report "wizard not
+    // found" after onboarding already completed.
+    if (wizardSubmitInFlightRef.current) return null;
+    wizardSubmitInFlightRef.current = true;
     setWizardError(null);
     setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
@@ -750,9 +806,10 @@ export function useSetupFlow(
       setSetupError(message);
       return null;
     } finally {
+      wizardSubmitInFlightRef.current = false;
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, resumeOfficialOnboarding, setSetupError, startOfficialOnboarding, wizardFailureMessage, wizardSubmitting]);
+  }, [applyWizardResult, resumeOfficialOnboarding, setSetupError, startOfficialOnboarding, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
@@ -848,7 +905,7 @@ export function useSetupFlow(
       const status: any = isDockerRuntime
         ? await gatewayManager.startDockerForSetup()
         : await gatewayManager.startForSetup();
-      cacheGatewayTarget(status?.port, status?.token);
+      cacheGatewayTarget(status?.port);
       patchStep("gateway", "running", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       reportPhase("gatewayPort", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       await waitForGatewayReady(runId, isDockerRuntime ? 30_000 : 10_000, status?.port);
@@ -1600,7 +1657,7 @@ export function useSetupFlow(
     const runtimeTarget = await detectGatewayConfig();
     const selectedRuntime = runtimeTarget.runtime_mode;
     setInstallMode(selectedRuntime);
-    cacheGatewayTarget(runtimeTarget.port, runtimeTarget.token);
+    cacheGatewayTarget(runtimeTarget.port);
     const status = selectedRuntime === "native" ? await checkOpenclaw() : null;
     setOpenclawStatus(status);
     if (status?.path) {

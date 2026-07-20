@@ -38,6 +38,29 @@ describe('ChannelQrLoginSession', () => {
     assert.equal(session.snapshot().message, 'linked');
   });
 
+  test('publishes connected only after the official channel status is verified', async () => {
+    const verified = new ChannelQrLoginSession(
+      rpc([{ connected: true, message: 'linked' }]),
+      'qqbot',
+      'work',
+      async () => true,
+    );
+    const phases: string[] = [];
+    verified.subscribe((state) => phases.push(state.phase));
+    await verified.start();
+    assert.deepEqual(phases, ['idle', 'preparing', 'verifying', 'connected']);
+
+    const notReady = new ChannelQrLoginSession(
+      rpc([{ connected: true }]),
+      'qqbot',
+      'work',
+      async () => false,
+    );
+    await notReady.start();
+    assert.equal(notReady.snapshot().phase, 'error');
+    assert.equal(notReady.snapshot().error, 'qr_not_ready');
+  });
+
   test('cancel prevents an old wait request from publishing stale success', async () => {
     let resolveWait: ((value: unknown) => void) | undefined;
     const gateway: ChannelGatewayRpc = {
@@ -63,11 +86,12 @@ describe('ChannelQrLoginSession', () => {
     assert.equal(safeChannelQrDataUrl(`data:image/png;base64,${'A'.repeat(16_400)}`), null);
   });
 
-  test('accepts only bounded HTTPS QR content for local rendering', () => {
+  test('accepts bounded opaque QR payloads from the selected local provider', () => {
     assert.equal(safeChannelQrContent('https://ilinkai.weixin.qq.com/login?id=one'), 'https://ilinkai.weixin.qq.com/login?id=one');
-    assert.equal(safeChannelQrContent('http://example.com/qr'), null);
+    assert.equal(safeChannelQrContent('dingtalk://dingtalkclient/action/openapp?corpId=one'), 'dingtalk://dingtalkclient/action/openapp?corpId=one');
     assert.equal(safeChannelQrContent('sgnl://linkdevice?uuid=one'), 'sgnl://linkdevice?uuid=one');
     assert.equal(safeChannelQrContent(`https://example.com/${'x'.repeat(4_100)}`), null);
+    assert.equal(safeChannelQrContent('opaque\nprovider-payload'), null);
   });
 
   test('preserves an opaque provider session across QR waits', async () => {
@@ -128,12 +152,57 @@ describe('ChannelQrLoginSession', () => {
     assert.throws(() => new ChannelQrLoginSession(rpc([]), '../whatsapp'), /invalid/);
   });
 
-  test('reports expiration when wait returns no replacement QR', async () => {
+  test('keeps the active QR visible while the provider remains pending without a replacement code', async () => {
     const session = new ChannelQrLoginSession(rpc([
       { qrDataUrl: 'data:image/png;base64,AAAA' },
-      { connected: false },
+      { connected: false, message: 'still waiting', pollAfterMs: 1 },
+      { connected: true },
     ]), 'whatsapp');
     await session.start();
-    assert.equal(session.snapshot().phase, 'expired');
+    assert.equal(session.snapshot().phase, 'connected');
+  });
+
+  test('releases an earlier provider session before refreshing the QR code', async () => {
+    let resolveFirstWait: ((value: unknown) => void) | undefined;
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const gateway: ChannelGatewayRpc = {
+      async call(method, params) {
+        calls.push({ method, params });
+        if (method === 'web.login.start' && calls.filter((call) => call.method === method).length === 1) {
+          return { qrContent: 'https://example.com/first', sessionId: 'first-session' };
+        }
+        if (method === 'web.login.start') return { connected: true };
+        if (method === 'web.login.wait') return new Promise((resolve) => { resolveFirstWait = resolve; });
+        return { cancelled: true };
+      },
+    };
+    const session = new ChannelQrLoginSession(gateway, 'qqbot');
+    const first = session.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await session.start(true);
+    resolveFirstWait?.({ connected: true });
+    await first;
+    assert.ok(calls.some((call) => call.method === 'web.login.cancel' && call.params.sessionId === 'first-session'));
+    assert.equal(session.snapshot().phase, 'connected');
+  });
+
+  test('maps explicit provider terminal states without waiting for the local deadline', async () => {
+    const denied = new ChannelQrLoginSession(rpc([{ status: 'denied', message: 'declined' }]), 'whatsapp');
+    await denied.start();
+    assert.equal(denied.snapshot().phase, 'denied');
+
+    const expired = new ChannelQrLoginSession(rpc([
+      { qrDataUrl: 'data:image/png;base64,AAAA' },
+      { status: 'expired' },
+    ]), 'whatsapp');
+    await expired.start();
+    assert.equal(expired.snapshot().phase, 'expired');
+
+    const failed = new ChannelQrLoginSession(rpc([
+      { status: 'error', message: 'provider ended login' },
+    ]), 'qqbot');
+    await failed.start();
+    assert.equal(failed.snapshot().phase, 'error');
+    assert.equal(failed.snapshot().error, 'qr_login_failed');
   });
 });

@@ -17,6 +17,7 @@ import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
 import { createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecycle';
+import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
@@ -185,7 +186,7 @@ function sessionLabel(
 ): string {
   const { agentId } = parseSessionKey(key);
   const agent = agents.find((a) => a.id === agentId);
-  const agentDisplayName = agent?.name ?? (agentId === 'main' ? mainAgentName : agentId);
+  const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
   const cachedPreview = [...(cachedMessages ?? [])]
     .reverse()
     .filter((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'system')
@@ -370,7 +371,10 @@ function NewSessionPicker({
   const { t } = useTranslation();
 
   const hasMain = agents.some((a) => a.id === 'main');
-  const mainDisplayName = agents.find((a) => a.id === 'main')?.name ?? t('agents.mainAgent', 'Main Agent');
+  const mainDisplayName = getAgentDisplayName(
+    agents.find((a) => a.id === 'main'),
+    t('agents.mainAgent', 'Main Agent'),
+  );
   const agentList: AgentInfo[] =
     agents.length === 0
       ? [{ id: 'main', name: t('agents.mainAgent', 'Main Agent') }]
@@ -511,7 +515,12 @@ function NewSessionPicker({
                 )}
               >
                 <Bot size={13} className="text-aegis-text-dim shrink-0" />
-                <span className="flex-1 text-start truncate">{selectedAgent?.name || selectedAgent?.id}</span>
+                <span className="flex-1 text-start truncate">
+                  {getAgentDisplayName(
+                    selectedAgent,
+                    selectedAgent?.id === 'main' ? mainDisplayName : (selectedAgent?.id ?? 'Agent'),
+                  )}
+                </span>
                 <ChevronDown size={11} className={clsx('text-aegis-text-dim shrink-0 transition-transform duration-150', agentDropdownOpen && 'rotate-180')} />
               </button>
 
@@ -533,7 +542,9 @@ function NewSessionPicker({
                             : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)]',
                         )}
                       >
-                        <span className="truncate">{a.name || a.id}</span>
+                        <span className="truncate">
+                          {getAgentDisplayName(a, a.id === 'main' ? mainDisplayName : a.id)}
+                        </span>
                         {isActive && <Check size={11} className="text-aegis-primary shrink-0 ms-2" />}
                       </button>
                     );
@@ -1182,8 +1193,9 @@ export function ChatTabs() {
                 onClick={() => isActive ? undefined : setActiveSession(key)}
                 onAuxClick={(e) => !isMain && handleTabAuxClick(e, key)}
                 className={clsx(
-                  'flex items-center gap-1.5 h-[38px] px-3 pr-[68px] text-[12px] font-medium transition-colors select-none relative',
+                  'flex items-center gap-1.5 h-[38px] pl-3 text-[12px] font-medium transition-colors select-none relative',
                   'border-b-2 focus-visible:outline-none',
+                  isMain ? 'pr-3' : 'pr-10',
                   isActive
                     ? 'text-aegis-text border-aegis-primary bg-[rgb(var(--aegis-overlay)/0.04)]'
                     : 'text-aegis-text-dim border-transparent hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
@@ -1270,32 +1282,8 @@ export function ChatTabs() {
                 )}
 
               </button>
-              <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
-                <IconButton
-                  size="xs"
-                  aria-label={t('chat.renameSession', 'Rename session')}
-                  title={t('chat.renameSession', 'Rename session')}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    startRename(key, session?.label || label);
-                  }}
-                >
-                  <Pencil size={12} />
-                </IconButton>
-                {!isMainSession && (
-                  <IconButton
-                    size="xs"
-                    tone="danger"
-                    aria-label={t('chat.deleteSession', 'Delete session')}
-                    title={t('chat.deleteSession', 'Delete session')}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => { event.stopPropagation(); requestDeleteSession(key); }}
-                  >
-                    <Trash2 size={12} />
-                  </IconButton>
-                )}
-                {!isMain && (
+              {!isMain && (
+                <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
                   <IconButton
                     size="xs"
                     aria-label={t('chat.closeTab', 'Close tab')}
@@ -1305,8 +1293,8 @@ export function ChatTabs() {
                   >
                     <X size={12} />
                   </IconButton>
-                )}
-              </span>
+                </span>
+              )}
 
             </div>
             </SortableTab>

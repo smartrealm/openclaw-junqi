@@ -49,6 +49,7 @@ function normalizedDelay(value: unknown): number {
 
 function enrollmentFailureCode(error: unknown): string {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (message.includes('unsupported_verification_host')) return 'unsupported_verification_host';
   if (message.includes('network') || message.includes('connect') || message.includes('timeout')) return 'network_failed';
   if (message.includes('rate') || message.includes('429')) return 'rate_limited';
   if (message.includes('rejected') || message.includes('invalid')) return 'provider_rejected';

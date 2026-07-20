@@ -30,6 +30,7 @@ const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_EXPIRY: Duration = Duration::from_secs(600);
 const MAX_POLL_INTERVAL: Duration = Duration::from_secs(60);
 const MAX_ACTIVE_SESSIONS: usize = 16;
+const MAX_PROVIDER_QR_CONTENT_LENGTH: usize = 4_096;
 
 /// Process-local registry for channel enrollment transactions. The registry
 /// deliberately owns device codes and generated credentials so neither is
@@ -220,21 +221,21 @@ enum EnrollmentErrorKind {
 
 struct EnrollmentError {
     kind: EnrollmentErrorKind,
-    public_message: Option<&'static str>,
+    renderer_code: Option<&'static str>,
 }
 
 impl EnrollmentError {
     fn transient() -> Self {
         Self {
             kind: EnrollmentErrorKind::Transient,
-            public_message: None,
+            renderer_code: None,
         }
     }
 
     fn permanent() -> Self {
         Self {
             kind: EnrollmentErrorKind::Permanent,
-            public_message: None,
+            renderer_code: None,
         }
     }
 
@@ -245,12 +246,12 @@ impl EnrollmentError {
     fn unsupported_verification_host() -> Self {
         Self {
             kind: EnrollmentErrorKind::Permanent,
-            public_message: Some("Feishu returned an unrecognized QR entry host. Update JunQi and try again."),
+            renderer_code: Some("unsupported_verification_host"),
         }
     }
 
-    fn public_message(&self) -> Option<&'static str> {
-        self.public_message
+    fn renderer_code(&self) -> Option<&'static str> {
+        self.renderer_code
     }
 }
 
@@ -422,8 +423,8 @@ pub async fn start_channel_enrollment(
         .start(&registry.client, domain.as_deref())
         .await
         .map_err(|error| {
-            if let Some(message) = error.public_message() {
-                message.to_string()
+            if let Some(code) = error.renderer_code() {
+                format!("channel_enrollment:{code}")
             } else if error.is_transient() {
                 "Could not connect to the Feishu enrollment service. Please check your network and try again."
                     .to_string()
@@ -561,29 +562,16 @@ pub async fn cancel_channel_enrollment(
     Ok(())
 }
 
-/// Render an authorization URL supplied by an official Gateway wizard note.
-/// The URL remains Gateway-owned; this command only turns it into a local
-/// image when terminal QR rendering is unavailable.
-#[tauri::command]
-pub fn render_qr_code_data_url(content: String) -> Result<String, String> {
-    let content = content.trim();
-    let url = Url::parse(content).map_err(|_| "QR content must be a valid URL.".to_string())?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err("QR content must use HTTP or HTTPS.".into());
-    }
-    qr_svg_data_url(content).map_err(|_| {
-        "Could not render the authorization QR code. Please use the URL instead.".into()
-    })
-}
-
-/// Render a QR payload returned by a locally installed OpenClaw channel
-/// adapter. The payload is never fetched; it is only encoded as SVG locally.
+/// Render an opaque QR payload returned by a locally installed OpenClaw channel
+/// adapter. It is never fetched or executed; it is only encoded as SVG locally.
 #[tauri::command]
 pub fn render_local_qr_data_url(content: String) -> Result<String, String> {
     let content = content.trim();
-    let url = Url::parse(content).map_err(|_| "QR content must be a valid URL.".to_string())?;
-    if !matches!(url.scheme(), "https" | "sgnl") {
-        return Err("QR content must use HTTPS or the Signal link scheme.".into());
+    if content.is_empty()
+        || content.len() > MAX_PROVIDER_QR_CONTENT_LENGTH
+        || content.chars().any(char::is_control)
+    {
+        return Err("QR content is not a valid provider payload.".into());
     }
     qr_svg_data_url(content).map_err(|_| {
         "Could not render the channel QR code. Please refresh the login session.".into()
@@ -732,7 +720,10 @@ fn qr_svg_data_url(content: &str) -> Result<String, EnrollmentError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{qr_svg_data_url, render_local_qr_data_url, render_qr_code_data_url};
+    use super::{
+        is_feishu_registration_host, qr_svg_data_url, render_local_qr_data_url,
+        MAX_PROVIDER_QR_CONTENT_LENGTH,
+    };
     use base64::{engine::general_purpose::STANDARD, Engine as _};
 
     #[test]
@@ -748,19 +739,20 @@ mod tests {
     }
 
     #[test]
-    fn generic_qr_renderer_accepts_authorization_urls_only() {
-        assert!(
-            render_qr_code_data_url("https://example.com/authorization?code=test".into()).is_ok()
-        );
-        assert!(render_qr_code_data_url("not a URL".into()).is_err());
-        assert!(render_qr_code_data_url("file:///tmp/secret".into()).is_err());
+    fn feishu_registration_hosts_cover_official_qr_entrypoints_only() {
+        assert!(is_feishu_registration_host(Some("accounts.feishu.cn")));
+        assert!(is_feishu_registration_host(Some("accounts.larksuite.com")));
+        assert!(is_feishu_registration_host(Some("open.feishu.cn")));
+        assert!(is_feishu_registration_host(Some("open.larksuite.com")));
+        assert!(!is_feishu_registration_host(Some("evil.example")));
     }
 
     #[test]
-    fn local_channel_qr_renderer_accepts_only_safe_link_schemes() {
+    fn local_channel_qr_renderer_accepts_bounded_provider_payloads() {
         assert!(render_local_qr_data_url("https://example.com/link".into()).is_ok());
         assert!(render_local_qr_data_url("sgnl://linkdevice?uuid=test".into()).is_ok());
-        assert!(render_local_qr_data_url("file:///tmp/secret".into()).is_err());
-        assert!(render_local_qr_data_url("javascript:alert(1)".into()).is_err());
+        assert!(render_local_qr_data_url("dingtalk://openapp?corp=one".into()).is_ok());
+        assert!(render_local_qr_data_url("opaque\nprovider-payload".into()).is_err());
+        assert!(render_local_qr_data_url("x".repeat(MAX_PROVIDER_QR_CONTENT_LENGTH + 1)).is_err());
     }
 }

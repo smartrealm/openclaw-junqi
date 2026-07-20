@@ -17,6 +17,16 @@ export interface GatewayAgentCreatePayload {
   workspace?: string;
 }
 
+/**
+ * The official `agents.create` RPC derives the internal id from `name`.
+ * JunQi keeps those concepts separate, so the gateway service adapts this
+ * domain payload into the official create-then-update sequence.
+ */
+export interface GatewayAgentDisplayNameUpdate {
+  agentId: string;
+  name: string;
+}
+
 export interface GatewayAgentConfigEntry {
   id: string;
   name?: string;
@@ -41,8 +51,10 @@ export function buildGatewayAgentCreatePayload(
   };
   const name = String(input.name ?? '').trim();
   const model = String(input.model ?? '').trim();
-  const workspace = String(input.workspace ?? '').trim()
-    || (input.inheritWorkspace ? defaultWorkspace.trim() : '');
+  // OpenClaw's official create RPC requires a workspace. An empty field means
+  // "use the configured default" in the JunQi wizard, regardless of whether
+  // the value came from the inherit checkbox or the review step.
+  const workspace = String(input.workspace ?? '').trim() || defaultWorkspace.trim();
   if (name) payload.name = name;
   if (model) payload.model = model;
   if (workspace) payload.workspace = workspace;

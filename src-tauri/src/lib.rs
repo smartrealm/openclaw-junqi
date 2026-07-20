@@ -121,7 +121,6 @@ pub fn run() {
             commands::setup::install_openclaw,
             commands::setup::reinstall_openclaw,
             commands::setup::relocate_openclaw,
-            commands::setup::prepare_gateway,
             // Control UI (Console)
             commands::console::open_control_ui,
             commands::console::return_to_desktop,
@@ -153,7 +152,6 @@ pub fn run() {
             commands::channel_enrollment::read_channel_enrollment_credential,
             commands::channel_enrollment::complete_channel_enrollment,
             commands::channel_enrollment::cancel_channel_enrollment,
-            commands::channel_enrollment::render_qr_code_data_url,
             commands::channel_enrollment::render_local_qr_data_url,
             // Pairing
             commands::pairing::list_pairing_requests,
