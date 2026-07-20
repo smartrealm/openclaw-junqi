@@ -673,36 +673,48 @@ export function ChatView() {
     revealConversationTail({ instant: true });
   }, [activeSessionKey, activeHistoryMeta?.loaded, revealConversationTail]);
 
-  const handleResend = useCallback(async (content: string, prevId?: string) => {
-    const text = content;
-    if (prevId) {
-      useChatStore.getState().addMessage({ id: `user-${Date.now()}`, role: 'user', content: text, timestamp: new Date().toISOString() }, activeSessionKey);
-      // Strip old message and trailing aborted assistant
-      const st = useChatStore.getState();
-      const oldIdx = st._blocksCache[activeSessionKey]?.findIndex((b) => b.id === prevId) ?? -1;
-      if (oldIdx >= 0) {
-        const filtered = st._blocksCache[activeSessionKey]?.filter((_, i) => i < oldIdx) ?? [];
-        useChatStore.setState((s) => ({ _blocksCache: { ...s._blocksCache, [activeSessionKey]: filtered } }));
-      }
-      useChatStore.getState().setIsTyping(true, activeSessionKey);
-      try { await gateway.sendMessage(text, undefined, activeSessionKey); } catch {}
-      return;
+  const handleEditMessage = useCallback(async (messageId: string, content: string) => {
+    const text = content.trim();
+    if (!text) return;
+
+    const state = useChatStore.getState();
+    const originalMessages = state.messagesPerSession[activeSessionKey] ?? [];
+    const messageIndex = originalMessages.findIndex((message) => message.id === messageId && message.role === 'user');
+    if (messageIndex < 0) throw new Error(`User message ${messageId} is no longer available`);
+
+    if (state.typingBySession[activeSessionKey]) {
+      await gateway.abortChat(activeSessionKey).catch(() => undefined);
     }
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
+
+    const editedMessage: ChatMessage = {
+      ...originalMessages[messageIndex],
       content: text,
       timestamp: new Date().toISOString(),
+      status: 'sent',
     };
-    addMessage(userMsg, activeSessionKey);
+    const optimisticMessages = [
+      ...originalMessages.slice(0, messageIndex),
+      editedMessage,
+    ];
+    state.setMessages(optimisticMessages, activeSessionKey);
     revealConversationTail({ instant: true });
-    useChatStore.getState().setIsTyping(true, activeSessionKey);
+    state.setIsTyping(true, activeSessionKey);
     try {
       await gateway.sendMessage(text, undefined, activeSessionKey);
     } catch (err) {
-      debugError('app', '[Resend] Send error:', err);
+      const currentMessages = useChatStore.getState().messagesPerSession[activeSessionKey] ?? [];
+      const stillOptimistic = currentMessages.length === optimisticMessages.length
+        && currentMessages.every((message, index) => (
+          message.id === optimisticMessages[index].id
+          && message.content === optimisticMessages[index].content
+        ));
+      if (stillOptimistic) {
+        useChatStore.getState().setMessages(originalMessages, activeSessionKey);
+        useChatStore.getState().setIsTyping(false, activeSessionKey);
+      }
+      throw err;
     }
-  }, [activeSessionKey, addMessage, revealConversationTail]);
+  }, [activeSessionKey, revealConversationTail]);
 
   // Regenerate: re-send the last user message
   const handleRegenerate = useCallback(() => {
@@ -831,7 +843,7 @@ export function ChatView() {
           <Suspense fallback={<MessageBubbleFallback block={block} />}>
             <MessageBubble
               block={block}
-              onResend={block.role === 'user' ? handleResend : undefined}
+              onEdit={block.role === 'user' ? handleEditMessage : undefined}
               onRegenerate={block.role === 'assistant' ? handleRegenerate : undefined}
               onErrorAction={block.role === 'assistant' ? handleErrorAction : undefined}
               onDelete={() => {
@@ -846,7 +858,7 @@ export function ChatView() {
       default:
         return <div />;
     }
-  }, [handleResend, handleRegenerate, handleInlineButtonClick, handleDecisionSelect, handleErrorAction]);
+  }, [handleEditMessage, handleRegenerate, handleInlineButtonClick, handleDecisionSelect, handleErrorAction]);
 
   const renderGroup = useCallback((index: number, group: ResponseGroup) => (
     <div
