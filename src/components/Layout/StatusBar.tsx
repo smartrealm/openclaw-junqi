@@ -62,6 +62,7 @@ export function StatusBar() {
   // aegis:gateway-progress window events). We only care about step="gateway"
   // — install steps have their own progress surface in the Setup page.
   const [reconnecting, setReconnecting] = useState(false);
+  const [showGatewayResult, setShowGatewayResult] = useState(false);
   const [gatewayPanelOpen, setGatewayPanelOpen] = useState(false);
   const gatewayPanelRef = useRef<HTMLDivElement>(null);
   const gatewayButtonRef = useRef<HTMLButtonElement>(null);
@@ -69,7 +70,11 @@ export function StatusBar() {
   const gatewayProgressActive = Boolean(gatewayProgress)
     && gatewayProgress?.status !== 'completed'
     && gatewayProgress?.status !== 'failed';
-  const showGatewayProgress = Boolean(gatewayProgress) && !connected;
+  const gatewayProgressTerminal = gatewayProgress?.status === 'completed'
+    || gatewayProgress?.status === 'failed';
+  const gatewayOperationActive = reconnecting || gatewayProgressActive;
+  const showGatewayProgress = Boolean(gatewayProgress)
+    && (gatewayProgressActive || showGatewayResult || (!connected && !gatewayProgressTerminal));
   const gatewayMsg = showGatewayProgress ? gatewayProgress?.message ?? null : null;
   const gatewayProg = showGatewayProgress ? gatewayProgress?.progress ?? null : null;
 
@@ -85,13 +90,17 @@ export function StatusBar() {
   }, [gatewayPanelOpen]);
 
   useEffect(() => {
-    if (connected || gatewayProgress?.status === 'completed' || gatewayProgress?.status === 'failed') {
-      setReconnecting(false);
-    }
-  }, [connected, gatewayProgress?.status]);
+    if (!gatewayProgressTerminal) return;
+    setReconnecting(false);
+    setShowGatewayResult(true);
+    const timer = window.setTimeout(() => setShowGatewayResult(false), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [gatewayProgressTerminal, gatewayProgress?.message]);
 
   const handleRestart = () => {
-    if (reconnecting) return;
+    if (gatewayOperationActive || isBooting) return;
+    setGatewayPanelOpen(true);
+    setShowGatewayResult(false);
     setReconnecting(true);
     // App owns the complete lifecycle sequence. Keeping this surface event-only
     // prevents a status-bar click from racing the offline recovery route.
@@ -100,7 +109,7 @@ export function StatusBar() {
     }));
   };
 
-  const reconnectBusy = isBooting || (!connected && (reconnecting || gatewayProgressActive));
+  const reconnectBusy = isBooting || gatewayOperationActive;
   const reconnectPct = gatewayProg != null
     ? Math.round(Math.max(0, Math.min(1, gatewayProg)) * 100)
     : (reconnecting ? null : 0);
@@ -110,6 +119,8 @@ export function StatusBar() {
   const gatewayPanelTitle = connected
     ? t('statusBar.gatewayPanelRestartHint', '重启会重新拉起本地 Gateway，并刷新模型、会话和运行时状态。')
     : t('statusBar.gatewayPanelReconnectHint', '重新连接会先检测本地 Gateway，必要时自动启动或重启。');
+  const gatewayPanelMessage = gatewayMsg
+    || (reconnectBusy ? t('statusBar.gatewayBusy', '处理中') : gatewayPanelTitle);
 
   const resolvedTheme: AegisTheme = theme.startsWith('aegis-') ? (theme as AegisTheme) : 'aegis-dark';
   const isDarkish = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
@@ -136,7 +147,7 @@ export function StatusBar() {
           title={t('statusBar.gatewayPanelTitle', 'Gateway 控制')}
           aria-label={t('statusBar.gatewayPanelTitle', 'Gateway 控制')}
         >
-          <StatusDot tone={connected ? 'ok' : reconnectBusy ? 'warn' : 'err'} size="sm" live={connected || reconnectBusy} />
+          <StatusDot tone={reconnectBusy ? 'warn' : connected ? 'ok' : 'err'} size="sm" live={connected || reconnectBusy} />
           <span className="font-medium">{t('statusBar.gateway', '网关')}</span>
           <span className="font-mono text-aegis-text">:{port}</span>
           <ChevronUp size={10} className={clsx('transition-transform', !gatewayPanelOpen && 'rotate-180')} />
@@ -161,7 +172,9 @@ export function StatusBar() {
           <span>
             {gatewayMsg
               ? (reconnectPct != null ? `${reconnectPct}%` : t('statusBar.gatewayBusy', '处理中'))
-              : (isBooting ? `${bootPct}%` : gatewayActionLabel)}
+              : reconnectBusy
+                ? (isBooting ? `${bootPct}%` : t('statusBar.gatewayBusy', '处理中'))
+                : gatewayActionLabel}
           </span>
         </button>
       </div>
@@ -176,11 +189,12 @@ export function StatusBar() {
             connected={connected}
             busy={reconnectBusy}
             port={port}
-            progressMessage={gatewayMsg || gatewayPanelTitle}
-            progressPercent={reconnectPct ?? bootPct ?? null}
+            progressMessage={gatewayPanelMessage}
+            progressPercent={reconnectPct ?? (isBooting ? bootPct : null)}
             primaryActionLabel={gatewayActionLabel}
             onPrimaryAction={() => void handleRestart()}
-            error={gatewayMsg || gatewayPanelTitle}
+            onOpenLogs={() => { window.location.hash = '#/logs'; }}
+            error={gatewayPanelMessage}
           />
         </div>,
         document.body,
@@ -189,7 +203,14 @@ export function StatusBar() {
       {/* 重连步骤详情（与 install 步骤 statusMessage 同一信息源） */}
       {gatewayMsg && (
         <span
-          className="flex items-center gap-1.5 px-2.5 h-full border-r border-aegis-border/50 text-aegis-warning/90 max-w-[280px]"
+          className={clsx(
+            'flex h-full max-w-[280px] items-center gap-1.5 border-r border-aegis-border/50 px-2.5',
+            gatewayProgress?.status === 'completed'
+              ? 'text-aegis-success'
+              : gatewayProgress?.status === 'failed'
+                ? 'text-aegis-danger'
+                : 'text-aegis-warning/90',
+          )}
           title={gatewayMsg}
         >
           <span className="truncate text-[10.5px]">{gatewayMsg}</span>

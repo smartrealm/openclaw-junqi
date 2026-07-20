@@ -173,8 +173,11 @@ export const gateway = {
   },
   // Skills — list installed skills with status (input for the @skill picker)
   async getSkills(agentId?: string) { return connection.request('skills.status', agentId ? { agentId } : {}); },
-  async getCostSummary(days = 30) { return connection.request('usage.cost', { days }); },
-  async getSessionsUsage(params: any = {}) { return connection.request('sessions.usage', { limit: 50, ...params }); },
+  async getCostSummary(days = 30) { return connection.request('usage.cost', { days, agentScope: 'all' }); },
+  async getSessionsUsage(params: any = {}) {
+    const scope = params.agentId || params.key ? {} : { agentScope: 'all' };
+    return connection.request('sessions.usage', { limit: 50, ...scope, ...params });
+  },
   async getSessionTimeseries(key: string) { return connection.request('sessions.usage.timeseries', { key }); },
   async getSessionLogs(key: string, limit = 200) { return connection.request('sessions.usage.logs', { key, limit }); },
 

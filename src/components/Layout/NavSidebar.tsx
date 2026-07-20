@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, RefreshCw, type LucideIcon } from 'lucide-react';
+import { Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -221,7 +221,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           }
         }}
         className={clsx(
-          'grid w-full cursor-pointer grid-cols-[4px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-1.5 py-2 text-left transition-colors',
+          'flex w-full cursor-pointer items-start gap-2 rounded-lg border px-2 py-2 text-left transition-colors',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/55',
           isActive
             ? 'border-aegis-primary/35 bg-aegis-primary/[0.14] text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.14)]'
@@ -230,12 +230,33 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
         >
         <span
           className={clsx(
-            'h-8 w-1 rounded-full',
-            isActive ? 'bg-aegis-primary' : isWorking ? 'bg-aegis-success/80' : hasPendingCompletion ? 'bg-aegis-primary/55' : 'bg-aegis-border',
+            'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors',
+            isWorking
+              ? 'bg-aegis-success/12 text-aegis-success'
+              : hasPendingCompletion
+                ? 'bg-aegis-primary/12 text-aegis-primary'
+                : isActive
+                  ? 'bg-aegis-primary/10 text-aegis-primary'
+                  : 'bg-aegis-overlay/[0.05] text-aegis-text-dim',
           )}
-          aria-hidden="true"
-        />
-        <span className="min-w-0">
+          title={isWorking
+            ? t('chat.sessionWorking', 'Working…')
+            : hasPendingCompletion
+              ? t('chat.sessionCompleted', 'Reply ready')
+              : undefined}
+          aria-label={isWorking
+            ? t('chat.sessionWorking', 'Working…')
+            : hasPendingCompletion
+              ? t('chat.sessionCompleted', 'Reply ready')
+              : undefined}
+        >
+          {isWorking
+            ? <Activity size={15} className="animate-pulse" aria-hidden="true" />
+            : hasPendingCompletion
+              ? <CheckCircle2 size={15} aria-hidden="true" />
+              : <MessageSquare size={14} aria-hidden="true" />}
+        </span>
+        <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className={clsx(
               'min-w-0 flex-1 truncate text-[13px] font-semibold leading-[18px] tracking-normal',
@@ -247,24 +268,6 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] leading-4 text-aegis-text-dim">
             <Bot size={10.5} className="shrink-0 opacity-65" />
             <span className="min-w-0 flex-1 truncate" title={agentName}>{agentLabel}</span>
-            {isWorking && (
-              <span
-                className="inline-flex h-5 w-3 shrink-0 items-center justify-center"
-                title={t('chat.sessionWorking', 'Working…')}
-                aria-label={t('chat.sessionWorking', 'Working…')}
-              >
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-aegis-success shadow-[0_0_7px_rgb(var(--aegis-success)/0.7)]" aria-hidden="true" />
-              </span>
-            )}
-            {hasPendingCompletion && (
-              <span
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-aegis-primary"
-                title={t('chat.sessionCompleted', 'Reply ready')}
-                aria-label={t('chat.sessionCompleted', 'Reply ready')}
-              >
-                <CheckCircle2 size={11} aria-hidden="true" />
-              </span>
-            )}
             {timeLabel && (
               <span className="ml-auto shrink-0 pl-1 text-[10.5px] tabular-nums text-aegis-text-dim/70">
                 {timeLabel}
@@ -273,7 +276,6 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           </span>
         </span>
       </div>
-      {isWorking && <span className="aegis-session-running-border absolute inset-0 z-10 rounded-lg" aria-hidden="true" />}
       <span className="pointer-events-none absolute end-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated p-0.5 opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100">
         <button
           type="button"
@@ -321,7 +323,6 @@ function WorkbenchPanel() {
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
   const [nowMs, setNowMs] = useState(Date.now());
   const [backgroundOpen, setBackgroundOpen] = useState(false);
-  const [refreshingSessions, setRefreshingSessions] = useState(false);
   const [expandedBuckets, setExpandedBuckets] = useState<Record<SessionBucketKey, boolean>>({
     today: true,
     withinWeek: true,
@@ -360,31 +361,21 @@ function WorkbenchPanel() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const handleRefreshed = () => setRefreshingSessions(false);
-    window.addEventListener('aegis:sessions-refreshed', handleRefreshed);
-    return () => window.removeEventListener('aegis:sessions-refreshed', handleRefreshed);
-  }, []);
-
-  useEffect(() => {
-    if (!refreshingSessions) return;
-    const fallback = window.setTimeout(() => setRefreshingSessions(false), 12_000);
-    return () => window.clearTimeout(fallback);
-  }, [refreshingSessions]);
-
-  const refreshSessions = useCallback(() => {
-    if (refreshingSessions) return;
-    setRefreshingSessions(true);
-    window.dispatchEvent(new CustomEvent('aegis:sessions-changed', {
-      detail: { reason: 'manual-refresh' },
-    }));
-  }, [refreshingSessions]);
-
   const openBackgroundSession = useCallback((sessionKey: string) => {
     cleanupEmptyActiveSession(sessionKey);
     useChatStore.getState().openTab(sessionKey);
     navigate('/chat');
   }, [navigate]);
+
+  const deleteBackgroundSession = useCallback((sessionKey: string) => {
+    showConfirm(
+      t('chat.deleteSession', '删除会话'),
+      t('chat.deleteSessionConfirm', '确定删除此会话及其历史记录？此操作不可撤销。'),
+      async () => {
+        await deleteSessionEverywhere(sessionKey);
+      },
+    );
+  }, [t]);
 
   useEffect(() => {
     const activeBucket = buckets.find((bucket) => bucket.sessions.some((session) => session.key === activeKey));
@@ -488,16 +479,6 @@ function WorkbenchPanel() {
           {t('sidebar.userSessions', '用户会话')}
         </span>
         <span className="font-mono text-[10.5px] text-aegis-text-dim/70">{visibleSessions.length}</span>
-        <button
-          type="button"
-          onClick={refreshSessions}
-          disabled={refreshingSessions}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-aegis-text-dim transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text disabled:cursor-wait disabled:opacity-60"
-          title={t('sidebar.refreshSessions', '刷新会话')}
-          aria-label={t('sidebar.refreshSessions', '刷新会话')}
-        >
-          <RefreshCw size={11.5} className={refreshingSessions ? 'animate-spin' : undefined} aria-hidden="true" />
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0 px-1">
@@ -603,39 +584,49 @@ function WorkbenchPanel() {
                                   ? t('sidebar.background.status.stopped', '已停止')
                                   : '';
                           return (
-                            <button
-                              key={session.key}
-                              type="button"
-                              onClick={() => openBackgroundSession(session.key)}
-                              className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/35 hover:text-aegis-text-secondary"
-                              title={parentSessionKey
-                                ? `${session.key}\n${delegationLabel}\n${parentSessionKey}`
-                                : session.key}
-                            >
-                              <span className={clsx(
-                                'h-1.5 w-1.5 shrink-0 rounded-full',
-                                state === 'running' && 'animate-pulse bg-aegis-success',
-                                state === 'done' && 'bg-aegis-primary/70',
-                                state === 'failed' && 'bg-aegis-danger',
-                                (state === 'stopped' || state === 'unknown') && 'bg-aegis-border',
-                              )} aria-hidden="true" />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[11px] text-aegis-text-secondary">{title}</span>
-                                <span className="mt-0.5 block truncate text-[9.5px] text-aegis-text-dim/80">{delegationLabel}</span>
-                              </span>
-                              {status && (
+                            <div key={session.key} className="group/background-session relative">
+                              <button
+                                type="button"
+                                onClick={() => openBackgroundSession(session.key)}
+                                className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 pr-9 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/35 hover:text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/50"
+                                title={parentSessionKey
+                                  ? `${session.key}\n${delegationLabel}\n${parentSessionKey}`
+                                  : session.key}
+                              >
                                 <span className={clsx(
-                                  'inline-flex shrink-0 items-center gap-1 text-[9.5px]',
-                                  state === 'running' && 'text-aegis-success',
-                                  state === 'done' && 'text-aegis-primary',
-                                  state === 'failed' && 'text-aegis-danger',
-                                )}>
-                                  {state === 'done' && <CheckCircle2 size={10} aria-hidden="true" />}
-                                  {state === 'failed' && <X size={10} aria-hidden="true" />}
-                                  {status}
+                                  'h-1.5 w-1.5 shrink-0 rounded-full',
+                                  state === 'running' && 'animate-pulse bg-aegis-success',
+                                  state === 'done' && 'bg-aegis-primary/70',
+                                  state === 'failed' && 'bg-aegis-danger',
+                                  (state === 'stopped' || state === 'unknown') && 'bg-aegis-border',
+                                )} aria-hidden="true" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-[11px] text-aegis-text-secondary">{title}</span>
+                                  <span className="mt-0.5 block truncate text-[9.5px] text-aegis-text-dim/80">{delegationLabel}</span>
                                 </span>
-                              )}
-                            </button>
+                                {status && (
+                                  <span className={clsx(
+                                    'inline-flex shrink-0 items-center gap-1 text-[9.5px] transition-opacity group-hover/background-session:opacity-0 group-focus-within/background-session:opacity-0',
+                                    state === 'running' && 'text-aegis-success',
+                                    state === 'done' && 'text-aegis-primary',
+                                    state === 'failed' && 'text-aegis-danger',
+                                  )}>
+                                    {state === 'done' && <CheckCircle2 size={10} aria-hidden="true" />}
+                                    {state === 'failed' && <X size={10} aria-hidden="true" />}
+                                    {status}
+                                  </span>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteBackgroundSession(session.key)}
+                                className="absolute end-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-aegis-text-dim opacity-0 transition-[opacity,color,background-color] hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-danger/50 group-hover/background-session:opacity-100 group-focus-within/background-session:opacity-100"
+                                title={t('chat.deleteSession', '删除会话')}
+                                aria-label={t('chat.deleteSession', '删除会话')}
+                              >
+                                <Trash2 size={11} aria-hidden="true" />
+                              </button>
+                            </div>
                           );
                         })}
                       </div>

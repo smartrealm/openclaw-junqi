@@ -52,9 +52,13 @@ export interface DailyEntry {
   outputCost: number;
   input: number;
   output: number;
-  cacheRead?: number;
-  cacheWrite?: number;
-  requests: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cacheReadCost: number;
+  cacheWriteCost: number;
+  totalTokens: number;
+  missingCostEntries: number;
+  requests?: number;
   [k: string]: any;
 }
 
@@ -69,7 +73,11 @@ export interface CostSummary {
     output: number;
     cacheRead: number;
     cacheWrite: number;
-    requests: number;
+    cacheReadCost: number;
+    cacheWriteCost: number;
+    totalTokens: number;
+    missingCostEntries: number;
+    requests?: number;
     [k: string]: any;
   };
   updatedAt?: number;
@@ -400,7 +408,7 @@ async function fetchCost() {
   const store = useGatewayDataStore.getState();
   store.setLoading('cost', true);
   try {
-    const res = await gw.request('usage.cost', { days: 30 });
+    const res = await gw.request('usage.cost', { days: 30, agentScope: 'all' });
     if (res) store.setCostSummary(res);
   } catch (e: any) {
     store.setError('cost', e?.message || String(e));
@@ -413,7 +421,7 @@ async function fetchUsage() {
   const store = useGatewayDataStore.getState();
   store.setLoading('usage', true);
   try {
-    const res = await gw.request('sessions.usage', { limit: 100 });
+    const res = await gw.request('sessions.usage', { limit: 100, agentScope: 'all' });
     if (res) store.setSessionsUsage(res);
   } catch (e: any) {
     store.setError('usage', e?.message || String(e));
@@ -569,7 +577,7 @@ export async function ensureGroupFresh(group: PollGroup, maxAgeMs = DEFAULT_FRES
 export async function fetchFullCost(days = 365): Promise<CostSummary | null> {
   if (!gw) return null;
   try {
-    return await gw.request('usage.cost', { days });
+    return await gw.request('usage.cost', { days, agentScope: 'all' });
   } catch {
     return null;
   }
@@ -581,7 +589,7 @@ export async function fetchFullCost(days = 365): Promise<CostSummary | null> {
 export async function fetchFullUsage(limit = 2000): Promise<SessionsUsage | null> {
   if (!gw) return null;
   try {
-    return await gw.request('sessions.usage', { limit });
+    return await gw.request('sessions.usage', { limit, agentScope: 'all' });
   } catch {
     return null;
   }
