@@ -134,7 +134,10 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
   if (typeof result.done !== 'boolean') {
     throw new Error('OpenClaw wizard response is missing `done`.');
   }
-  if (!result.done) {
+  // Terminal error/cancel responses intentionally do not carry a next step.
+  // They are valid official Wizard outcomes and must reach the recovery
+  // state machine instead of being misclassified as malformed Gateway data.
+  if (!result.done && result.status !== 'error' && result.status !== 'cancelled') {
     const step = normalizeWizardStep(result.step);
     if (!step) {
       throw new Error('OpenClaw wizard response is missing the next step.');
@@ -147,6 +150,7 @@ function assertWizardResult(value: unknown): OpenClawWizardResult {
 export class OpenClawWizardClient {
   private sessionId: string | null = null;
   private currentStep: OpenClawWizardStep | null = null;
+  private failedStep: OpenClawWizardStep | null = null;
   private workspace: string | undefined;
   private history: Array<{ step: OpenClawWizardStep; value: unknown }> = [];
 
@@ -162,7 +166,7 @@ export class OpenClawWizardClient {
   }
 
   get canGoBack(): boolean {
-    return this.sessionId !== null && this.history.length > 0;
+    return this.history.length > 0 && (this.sessionId !== null || this.failedStep !== null);
   }
 
   async start(workspace?: string): Promise<OpenClawWizardResult> {
@@ -175,6 +179,7 @@ export class OpenClawWizardClient {
     this.workspace = workspace?.trim() || undefined;
     this.history = [];
     this.currentStep = null;
+    this.failedStep = null;
     const result = assertWizardResult(await this.callGateway('wizard.start', {
       mode: 'local',
       ...(this.workspace ? { workspace: this.workspace } : {}),
@@ -199,10 +204,13 @@ export class OpenClawWizardClient {
     }, { timeoutMs: null }));
     if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
       this.setSession(null);
-      this.currentStep = null;
+      const failed = Boolean(result.error || result.status === 'error');
+      this.currentStep = failed ? submittedStep : null;
+      this.failedStep = failed ? submittedStep : null;
     } else {
       if (submittedStep && submittedStep.id === stepId) this.history.push({ step: submittedStep, value });
       this.currentStep = result.step ?? null;
+      this.failedStep = null;
     }
     return result;
   }
@@ -220,6 +228,7 @@ export class OpenClawWizardClient {
     if (result.done || result.status === 'done' || result.status === 'cancelled' || result.status === 'error') {
       this.setSession(null);
       this.currentStep = null;
+      this.failedStep = null;
     } else {
       this.currentStep = result.step ?? null;
     }
@@ -246,9 +255,33 @@ export class OpenClawWizardClient {
     return current;
   }
 
+  /**
+   * Rebuilds a terminally failed official session at the same step without
+   * replaying its rejected answer. This keeps recovery deterministic while
+   * leaving all configuration writes with the Gateway.
+   */
+  async retry(): Promise<OpenClawWizardResult> {
+    if (this.sessionId) return await this.resume();
+    const failedStep = this.failedStep;
+    if (!failedStep) return await this.start(this.workspace);
+    const replay = this.history.map((entry) => ({ ...entry }));
+    let current = await this.start(this.workspace);
+    for (const entry of replay) {
+      if (current.done || !current.step || current.step.id !== entry.step.id) {
+        throw new Error('OpenClaw wizard could not restore the failed step.');
+      }
+      current = await this.next(entry.step.id, entry.value);
+    }
+    if (current.done || !current.step || current.step.id !== failedStep.id) {
+      throw new Error('OpenClaw wizard could not restore the failed step.');
+    }
+    return current;
+  }
+
   forgetSession(): void {
     this.setSession(null);
     this.currentStep = null;
+    this.failedStep = null;
     this.history = [];
   }
 

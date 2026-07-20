@@ -113,6 +113,37 @@ test('wizard client recreates a session to provide a previous-step action', asyn
   ]);
 });
 
+test('wizard client restores a failed step for retry and preserves a previous-step action', async () => {
+  let starts = 0;
+  const client = new OpenClawWizardClient(async (method, params) => {
+    if (method === 'wizard.cancel') return { done: true, status: 'cancelled' };
+    if (method === 'wizard.start') {
+      starts += 1;
+      return { sessionId: `session-${starts}`, done: false, status: 'running', step: { id: 'first', type: 'select' } };
+    }
+    const stepId = (params.answer as { stepId?: string } | undefined)?.stepId;
+    if (stepId === 'first') {
+      return { done: false, status: 'running', step: { id: 'second', type: 'select' } };
+    }
+    if (stepId === 'second' && starts === 1) {
+      return { done: false, status: 'error', error: 'gateway choice rejected' };
+    }
+    throw new Error(`unexpected ${method}:${stepId ?? ''}`);
+  });
+
+  await client.start();
+  await client.next('first', 'keep');
+  const failed = await client.next('second', 'channels');
+  assert.equal(failed.status, 'error');
+  assert.equal(client.canGoBack, true);
+
+  const retried = await client.retry();
+  assert.equal(retried.step?.id, 'second');
+  assert.equal(client.canGoBack, true);
+  const previous = await client.back();
+  assert.equal(previous?.step?.id, 'first');
+});
+
 test('wizard client preserves Gateway option identity and extra metadata', async () => {
   const client = new OpenClawWizardClient(async () => ({
     sessionId: 'session-feishu',
