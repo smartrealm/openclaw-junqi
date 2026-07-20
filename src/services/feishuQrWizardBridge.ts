@@ -94,7 +94,7 @@ export class FeishuQrWizardBridge {
     stage: string,
   ): Promise<OpenClawWizardStep> {
     const result = await submit(step.id, value);
-    if (!result || result.done || !result.step) {
+    if (!result || result.error || result.status === 'error' || result.done || !result.step) {
       throw new Error(`OpenClaw did not continue after the Feishu ${stage} step.`);
     }
     return result.step;
@@ -107,7 +107,7 @@ export class FeishuQrWizardBridge {
     stage: string,
   ): Promise<OpenClawWizardResult> {
     const result = await submit(step.id, value);
-    if (!result) {
+    if (!result || result.error || result.status === 'error') {
       throw new Error(`OpenClaw did not accept the Feishu ${stage} step.`);
     }
     return result;

@@ -398,7 +398,15 @@ pub async fn start_channel_enrollment(
     let started = provider
         .start(&registry.client, domain.as_deref())
         .await
-        .map_err(|_| "Could not create a QR enrollment session. Please try again.".to_string())?;
+        .map_err(|error| {
+            if error.is_transient() {
+                "Could not connect to the Feishu enrollment service. Please check your network and try again."
+                    .to_string()
+            } else {
+                "The Feishu enrollment service rejected this request. Please try again later."
+                    .to_string()
+            }
+        })?;
     let qr_data_url = qr_svg_data_url(&started.qr_url)
         .map_err(|_| "Could not render the channel QR code. Please try again.".to_string())?;
     let session_id = Uuid::new_v4().to_string();
