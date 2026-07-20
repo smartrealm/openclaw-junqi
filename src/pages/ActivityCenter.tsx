@@ -31,6 +31,7 @@ import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { sessionExecutionState } from '@/utils/sessionPresentation';
 import { formatTokens } from '@/utils/format';
 import { shortModelName, formatActivityTimeTitle } from '@/pages/Dashboard/dashboardData';
+import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionRecord } from '@/utils/activitySessions';
 
 type ActivityFilter = 'all' | 'running' | 'attention' | 'done' | 'failed';
 
@@ -108,24 +109,8 @@ function runtimeForSession(session: Session): string {
   return session.origin?.surface || session.origin?.provider || session.channel || 'Gateway';
 }
 
-function modelForSession(value: unknown): string | undefined {
-  if (typeof value === 'string' && value.trim()) return shortModelName(value);
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    const primary = record.primary ?? record.id ?? record.model;
-    if (typeof primary === 'string' && primary.trim()) return shortModelName(primary);
-  }
-  return undefined;
-}
-
 function agentIdForSession(session: Session | SessionInfo): string {
   return session.agentId || session.key.split(':')[1] || 'main';
-}
-
-function usageForSession(usage: unknown, key: string): Record<string, unknown> | undefined {
-  const list = Array.isArray((usage as any)?.sessions) ? (usage as any).sessions : [];
-  const match = list.find((item: any) => item?.key === key || item?.sessionKey === key);
-  return match && typeof match === 'object' ? match : undefined;
 }
 
 function workspaceEntry(task: AgentWorkspaceTask, labels: ActivityLabels): ActivityEntry {
@@ -136,7 +121,6 @@ function workspaceEntry(task: AgentWorkspaceTask, labels: ActivityLabels): Activ
     title: task.title || task.prompt.trim().split(/\r?\n/)[0]?.slice(0, 100) || 'AI workspace task',
     kind: 'workspace',
     agent: task.agent,
-    model: task.agent,
     runtime: task.launchMode === 'worktree' ? 'Worktree' : 'Local workspace',
     project: task.projectPath.split(/[\\/]/).pop() || task.projectPath,
     status: task.status,
@@ -150,11 +134,11 @@ function workspaceEntry(task: AgentWorkspaceTask, labels: ActivityLabels): Activ
 }
 
 function sessionEntry(
-  session: Session,
+  record: ActivitySessionRecord,
   agents: Array<{ id: string; name?: string }>,
-  usage: unknown,
   labels: ActivityLabels,
 ): ActivityEntry | null {
+  const session = record.session;
   const execution = sessionExecutionState(session);
   const status = execution;
   const attention = session.hasPendingCompletion === true
@@ -163,25 +147,23 @@ function sessionEntry(
   if (!timestamp) return null;
   const agentId = agentIdForSession(session);
   const agent = agents.find((candidate) => candidate.id === agentId);
-  const sessionUsage = usageForSession(usage, session.key);
-  const durationValue = Number(sessionUsage?.durationMs ?? sessionUsage?.duration ?? (session as any).durationMs);
-  const costValue = Number(sessionUsage?.totalCost ?? sessionUsage?.cost ?? (session as any).totalCost ?? (session as any).cost);
+  const metrics = activitySessionMetrics(record);
   const normalizedStatus = status === 'unknown' ? 'stopped' : status;
   return {
     id: `session:${session.key}`,
     title: getSessionDisplayLabel(session, { mainSessionLabel: labels.mainSession, genericSessionLabel: labels.genericSession }),
     kind: 'session',
     agent: getAgentDisplayName(agent, agentId === 'main' ? 'Main Agent' : agentId),
-    model: modelForSession(session.model),
+    model: typeof session.model === 'string' && session.model.trim() ? shortModelName(session.model) : undefined,
     runtime: runtimeForSession(session),
     project: session.topic,
     status: normalizedStatus,
     statusLabel: attention ? labels.status.attention : statusLabel(normalizedStatus, labels.status),
     lifecycle: toLifecycle(normalizedStatus, attention),
     timestamp,
-    durationMs: Number.isFinite(durationValue) && durationValue > 0 ? durationValue : undefined,
-    tokens: Number(session.totalTokens) > 0 ? Number(session.totalTokens) : undefined,
-    cost: Number.isFinite(costValue) && costValue > 0 ? costValue : undefined,
+    durationMs: metrics.durationMs,
+    tokens: metrics.tokens,
+    cost: metrics.cost,
     attention,
     href: '/chat',
   };
@@ -239,21 +221,23 @@ export function ActivityCenterPage() {
 
   useEffect(() => {
     void ensureGroupFresh('sessions');
+    void ensureGroupFresh('agents');
     void ensureGroupFresh('usage');
     void refreshSkills();
   }, [refreshSkills]);
 
   const entries = useMemo(() => {
-    const byKey = new Map<string, Session>();
-    for (const session of gatewaySessions) byKey.set(session.key, session as Session);
-    for (const session of chatSessions) {
-      const previous = byKey.get(session.key);
-      byKey.set(session.key, previous ? { ...previous, ...session } : session);
-    }
-    const sessionEntries = [...byKey.values()]
-      .map((session) => sessionEntry(session, agents, sessionsUsage, labels))
+    const sessionEntries = mergeActivitySessions({
+      usageSessions: sessionsUsage?.sessions,
+      gatewaySessions,
+      chatSessions,
+    })
+      .map((record) => sessionEntry(record, agents, labels))
       .filter((entry): entry is ActivityEntry => Boolean(entry));
-    return [...workspaceTasks.map((task) => workspaceEntry(task, labels)), ...sessionEntries]
+    return [
+      ...workspaceTasks.filter((task) => !task.isDraft).map((task) => workspaceEntry(task, labels)),
+      ...sessionEntries,
+    ]
       .sort((left, right) => {
         if (left.attention !== right.attention) return left.attention ? -1 : 1;
         if (left.status === 'running' && right.status !== 'running') return -1;

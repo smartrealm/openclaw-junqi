@@ -14,6 +14,7 @@ import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { sessionActivityTime } from '@/components/Layout/sidebarUtils';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { sessionExecutionState } from '@/utils/sessionPresentation';
+import { activitySessionMetrics, mergeActivitySessions } from '@/utils/activitySessions';
 
 function workspaceStatus(status: AgentWorkspaceTask['status']): TimelineTask['status'] {
   if (status === 'running') return 'running';
@@ -30,7 +31,7 @@ function sessionStatus(session: Session | SessionInfo): TimelineTask['status'] {
   if (state === 'running') return 'running';
   if (state === 'failed') return 'failed';
   if (state === 'done') return 'done';
-  if (state === 'stopped') return 'idle';
+  if (state === 'stopped' || state === 'unknown') return 'idle';
   return 'queued';
 }
 
@@ -75,6 +76,7 @@ function deriveTimelineTasks({
   workshopTasks,
   chatSessions,
   gatewaySessions,
+  sessionsUsage,
   messagesPerSession,
   agents,
 }: {
@@ -82,12 +84,13 @@ function deriveTimelineTasks({
   workshopTasks: Array<{ id: string; title: string; assignedAgent?: string; status: string; createdAt: string }>;
   chatSessions: Session[];
   gatewaySessions: SessionInfo[];
+  sessionsUsage?: { sessions?: unknown[] } | null;
   messagesPerSession: Record<string, Array<{ role?: string; content?: string; timestamp?: string }> | undefined>;
   agents: Array<{ id: string; name?: string }>;
 }): TimelineTask[] {
   const out: TimelineTask[] = [];
 
-  for (const task of workspaceTasks) {
+  for (const task of workspaceTasks.filter((candidate) => !candidate.isDraft)) {
     const durationMs = task.status === 'done' || task.status === 'failed'
       ? Math.max(0, task.updatedAt - task.createdAt)
       : undefined;
@@ -95,7 +98,6 @@ function deriveTimelineTasks({
       id: `workspace:${task.id}`,
       title: task.title || task.prompt.trim().split(/\r?\n/)[0]?.slice(0, 90) || 'AI workspace task',
       agent: task.agent,
-      model: task.agent,
       runtime: task.launchMode === 'worktree' ? '工作树' : '本地工作区',
       status: workspaceStatus(task.status),
       statusLabel: statusLabel(workspaceStatus(task.status)),
@@ -124,14 +126,14 @@ function deriveTimelineTasks({
   }
 
   const agentNames = new Map(agents.map((agent) => [agent.id, getAgentDisplayName(agent, agent.id)]));
-  const mergedByKey = new Map<string, Session | SessionInfo>();
-  for (const session of gatewaySessions) mergedByKey.set(session.key, session);
-  for (const session of chatSessions) {
-    const previous = mergedByKey.get(session.key);
-    mergedByKey.set(session.key, previous ? { ...previous, ...session } : session);
-  }
+  const activitySessions = mergeActivitySessions({
+    usageSessions: sessionsUsage?.sessions,
+    gatewaySessions,
+    chatSessions,
+  });
 
-  for (const session of mergedByKey.values()) {
+  for (const activityRecord of activitySessions) {
+    const session = activityRecord.session;
     const prompt = latestUserPrompt(messagesPerSession[session.key]);
     const activity = sessionActivityTime(session as Session) || prompt.timestamp || 0;
     if (!activity) continue;
@@ -141,7 +143,7 @@ function deriveTimelineTasks({
       || (session as Session).origin?.provider
       || (session as Session).channel
       || 'Gateway';
-    const totalCost = Number((session as any).totalCost ?? (session as any).cost);
+    const metrics = activitySessionMetrics(activityRecord);
     out.push({
       id: `session:${session.key}`,
       title: prompt.text || getSessionDisplayLabel(session as any, { mainSessionLabel: '主会话', genericSessionLabel: '会话' }),
@@ -151,8 +153,9 @@ function deriveTimelineTasks({
       status,
       statusLabel: statusLabel(status),
       createdAt: activity,
-      tokens: Number(session.totalTokens) || undefined,
-      cost: Number.isFinite(totalCost) && totalCost > 0 ? totalCost : undefined,
+      tokens: metrics.tokens,
+      cost: metrics.cost,
+      durationMs: metrics.durationMs,
       project: (session as Session).topic || undefined,
       href: '/chat',
     });
@@ -169,15 +172,17 @@ export function TimelinePage() {
   const chatSessions = useChatStore((state) => state.sessions);
   const messagesPerSession = useChatStore((state) => state.messagesPerSession);
   const gatewaySessions = useGatewayDataStore((state) => state.sessions);
+  const sessionsUsage = useGatewayDataStore((state) => state.sessionsUsage);
   const agents = useGatewayDataStore((state) => state.agents);
   const tasks = useMemo(() => deriveTimelineTasks({
     workspaceTasks,
     workshopTasks,
     chatSessions,
     gatewaySessions,
+    sessionsUsage,
     messagesPerSession,
     agents,
-  }), [agents, chatSessions, gatewaySessions, messagesPerSession, workshopTasks, workspaceTasks]);
+  }), [agents, chatSessions, gatewaySessions, messagesPerSession, sessionsUsage, workshopTasks, workspaceTasks]);
 
   return (
     <TimelineView
