@@ -644,7 +644,23 @@ export function ChannelsCenterPage() {
     );
   };
 
-  const handleAdd = (entry: OfficialChannelCatalogEntry) => {
+  const handleAdd = async (entry: OfficialChannelCatalogEntry) => {
+    // 已安装渠道不一定要走终端命令——catalog 声明支持扫码绑定时,与
+    // handleLinkAccount 一样把首次关联也交给 ChannelQrLoginDialog。未安装
+    // 渠道的安装语义由 `openclaw channels add` 承担,终端仍是合适场景。
+    if (entry.installed) {
+      let capability = capabilityByChannel[entry.id];
+      if (capability === undefined) {
+        capability = await loadOfficialChannelCapability(entry.id)
+          .catch(() => null);
+        setCapabilityByChannel((current) => ({ ...current, [entry.id]: capability ?? null }));
+      }
+      if (channelLinkMode(capability ?? null, true) === 'embedded_qr') {
+        const accountId = nextAccountId(entry.id, groups);
+        setQrTarget({ channelId: entry.id, accountId });
+        return;
+      }
+    }
     openChannelTerminal(buildChannelSetupCommand(entry.id));
   };
 

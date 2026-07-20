@@ -67,7 +67,6 @@ import {
   cancelChannelEnrollment,
   type ChannelEnrollmentCompletion,
 } from "@/services/channelEnrollment";
-import { extractWizardUrls, renderWizardQrDataUrl } from "@/services/wizardQr";
 import {
   setupStepMessageKey,
   setupStepProgress,
@@ -504,8 +503,6 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const [enrollmentFinalizing, setEnrollmentFinalizing] = useState(false);
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
   const [pendingEnrollment, setPendingEnrollment] = useState<ChannelEnrollmentCompletion | null>(null);
-  const [wizardQrDataUrl, setWizardQrDataUrl] = useState<string | null>(null);
-  const [wizardQrSource, setWizardQrSource] = useState<string | null>(null);
   const enrollmentFinalizingRef = useRef(enrollmentFinalizing);
   const pendingEnrollmentRef = useRef<ChannelEnrollmentCompletion | null>(null);
 
@@ -524,26 +521,12 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
   useEffect(() => {
     setValue(step ? wizardInitialValue(step) : undefined);
-    setWizardQrDataUrl(null);
-    setWizardQrSource(null);
     if (!enrollmentFinalizingRef.current) {
       setEnrollmentDomain(null);
       setEnrollmentError(null);
       setPendingEnrollment(null);
     }
   }, [step?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const source = step?.type === "note" ? extractWizardUrls(step.message)[0] : undefined;
-    setWizardQrSource(source ?? null);
-    setWizardQrDataUrl(null);
-    if (!source) return () => { cancelled = true; };
-    void renderWizardQrDataUrl(source).then((dataUrl) => {
-      if (!cancelled) setWizardQrDataUrl(dataUrl);
-    });
-    return () => { cancelled = true; };
-  }, [step?.id, step?.message, step?.type]);
 
   if (!step) {
     return (
@@ -750,12 +733,6 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
         {(presentedStep.type === "note" || presentedStep.type === "progress" || presentedStep.type === "action") && (
           <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
             <pre className="whitespace-pre-wrap break-words font-[inherit]">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</pre>
-            {wizardQrDataUrl && wizardQrSource && (
-              <div className="mt-4 flex flex-col items-center gap-3 rounded-md border border-aegis-border bg-white p-3">
-                <img src={wizardQrDataUrl} alt={t("setup.wizard.qrAlt", "扫描授权二维码")} className="h-64 w-64" />
-                <a href={wizardQrSource} target="_blank" rel="noreferrer" className="max-w-full break-all text-center text-xs text-blue-700 underline">{wizardQrSource}</a>
-              </div>
-            )}
           </div>
         )}
         {enrollmentError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{enrollmentError}</div>}

@@ -450,9 +450,9 @@ export function AgentSettingsPanel({
   const canSave = hasChanges && !!trimmedAgentName && !saving && !loadingConfig && !configError;
 
   // ── Save handler ──
-  // Only model change is supported via agents.update RPC.
+  // Send only fields accepted by the official agents.update RPC.
   // Per-agent params (cacheRetention, temperature, etc.) are NOT supported
-  // in agents.list[] schema (.strict()) — removed until Gateway adds support.
+  // in agents.list[] schema (.strict()), so they never enter this patch.
   const handleSave = useCallback(async () => {
     if (!agent) return;
     setSaving(true);
@@ -1343,7 +1343,7 @@ export function AgentSettingsPanel({
                           {activeSessions}
                         </div>
                         <div className="text-[9px] text-aegis-text-dim mt-0.5">
-                          of {totalSessionCount} total
+                          {t('agentSettings.sessionsTotal', { total: totalSessionCount, defaultValue: 'of {{total}} total' })}
                         </div>
                       </div>
 
@@ -1368,7 +1368,7 @@ export function AgentSettingsPanel({
                           {formatTk(totalTokens)}
                         </div>
                         <div className="text-[9px] text-aegis-text-dim mt-0.5">
-                          all sessions
+                          {t('agentSettings.allSessions', 'all sessions')}
                         </div>
                       </div>
                     </div>
@@ -1412,7 +1412,7 @@ export function AgentSettingsPanel({
                       {/* No sessions fallback */}
                       {mergedSessions.length === 0 && (
                         <div className="px-3.5 py-3 text-center text-[10px] text-aegis-text-dim bg-[rgb(var(--aegis-overlay)/0.02)]">
-                          No sessions yet
+                          {t('agentSettings.noSessionsYet', 'No sessions yet')}
                         </div>
                       )}
                     </div>

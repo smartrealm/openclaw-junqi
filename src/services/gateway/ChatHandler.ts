@@ -11,6 +11,7 @@ import { handleGatewayEvent } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { parseButtons } from '@/utils/buttonParser';
 import { debugLog, debugWarn } from '@/utils/debugLog';
+import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import i18n from '@/i18n';
 import { GatewayConnection, type MediaInfo } from './Connection';
 import { APP_VERSION } from '@/hooks/useAppVersion';
@@ -716,32 +717,32 @@ export class ChatHandler {
     }
 
     if (event === 'agent' && p.stream === 'assistant') {
-      if (sessionKey && (sessionKey.includes(':subagent:') || sessionKey.includes(':cron:'))) return;
+      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
       this.handleAssistantStream(p);
       return;
     }
 
     if (event === 'agent' && p.stream === 'lifecycle') {
-      if (sessionKey && (sessionKey.includes(':subagent:') || sessionKey.includes(':cron:'))) return;
+      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
       this.handleLifecycleStream(p);
       return;
     }
 
     if (event === 'agent' && p.stream === 'tool') {
-      if (sessionKey && (sessionKey.includes(':subagent:') || sessionKey.includes(':cron:'))) return;
+      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
       this.handleToolStream(p);
       return;
     }
 
     if (event === 'agent' && p.stream === 'thinking') {
-      if (sessionKey && (sessionKey.includes(':subagent:') || sessionKey.includes(':cron:'))) return;
+      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
       this.handleThinkingStream(p);
       return;
     }
 
     // Agent "item" stream — newer event format for tool lifecycle.
     if (event === 'agent' && p.stream === 'item' && p.data?.kind === 'tool') {
-      if (sessionKey && (sessionKey.includes(':subagent:') || sessionKey.includes(':cron:'))) return;
+      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
       const data = p.data;
       const itemId = typeof data.itemId === 'string' ? data.itemId : '';
       const toolCallId = itemId.replace(/^tool:/, '');
@@ -773,7 +774,7 @@ export class ChatHandler {
     // Only show messages from main session or sessions the user explicitly opened
     // Block only truly isolated sessions (cron jobs and sub-agent runs).
     // Main sessions may use any suffix: agent:main:main, agent:main:webchat, etc.
-    if (sessionKey && (sessionKey.includes(':subagent:') || sessionKey.includes(':cron:'))) {
+    if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) {
       debugLog('gateway', '[GW] Ignoring event from isolated session:', sessionKey);
       return;
     }

@@ -13,6 +13,7 @@ import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { isAgentMainSession } from '@/utils/sessionLifecycle';
+import { isSubagentSessionKey } from '@/utils/sessionPresentation';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import type { AgentInfo, SessionInfo } from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
@@ -78,7 +79,7 @@ function getAgentId(session: SessionInfo): string | undefined {
 
 function getSessionKind(session: SessionInfo): 'main' | 'subagent' | 'agent' | 'session' {
   if (isAgentMainSession(session.key)) return 'main';
-  if (String(session.key || '').includes(':subagent:')) return 'subagent';
+  if (isSubagentSessionKey(String(session.key || ''))) return 'subagent';
   if (String(session.key || '').startsWith('agent:')) return 'agent';
   return 'session';
 }

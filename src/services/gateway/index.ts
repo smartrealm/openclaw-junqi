@@ -12,7 +12,12 @@ import {
   type MediaInfo,
 } from './Connection';
 import { ChatHandler } from './ChatHandler';
+import {
+  GatewayAgentDisplayNameUpdateError,
+  OpenClawAgentManagement,
+} from './AgentManagement';
 import { debugWarn } from '@/utils/debugLog';
+import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 
 // Re-export types for consumers
 export type { ChatMessage, MediaInfo, GatewayCallbacks, GatewayRequestOptions };
@@ -20,7 +25,10 @@ export type { ChatMessage, MediaInfo, GatewayCallbacks, GatewayRequestOptions };
 // ── Create instances ──
 const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
+const agentManagement = new OpenClawAgentManagement(connection);
 const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
+
+export { GatewayAgentDisplayNameUpdateError };
 
 async function cleanupSessionArtifacts(sessionKey: string): Promise<void> {
   const operations: Array<{ label: string; task: Promise<unknown> | undefined }> = [
@@ -106,7 +114,7 @@ export const gateway = {
   // Sessions & Agents
   async getSessions() { return connection.request('sessions.list', {}); },
   async getAgents() { return connection.request('agents.list', {}); },
-  async createAgent(agent: any) { return connection.request('agents.create', agent); },
+  async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
   async updateAgent(agentId: string, patch: any) { return connection.request('agents.update', { agentId, ...patch }); },
   async deleteAgent(agentId: string) { return connection.request('agents.delete', { agentId }); },
 

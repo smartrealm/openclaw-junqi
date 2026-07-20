@@ -8,6 +8,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import { exportChatMarkdown } from '@/utils/exportChat';
+import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { debugError } from '@/utils/debugLog';
 
@@ -271,8 +272,8 @@ export function SessionContextBar() {
   const keyParts = activeSessionKey.split(':');
   const agentId = keyParts.length >= 3 ? (keyParts[1] ?? 'main') : 'main';
   const agent = agents.find((a) => a.id === agentId);
-  const mainAgentName = agents.find((a) => a.id === 'main')?.name || 'Main Agent';
-  const agentDisplayName = agent?.name ?? (agentId === 'main' ? mainAgentName : agentId);
+  const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent', 'Main Agent'));
+  const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
 
   const usedTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
@@ -283,7 +284,7 @@ export function SessionContextBar() {
 
   return (
     <div className="h-[32px] shrink-0 flex items-center gap-2 px-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[var(--aegis-bg-frosted-60)]">
-      <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim">
+      <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim" title={agentDisplayName}>
         {agentDisplayName}
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />

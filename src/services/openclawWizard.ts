@@ -165,6 +165,22 @@ export class OpenClawWizardClient {
     return this.sessionId !== null;
   }
 
+  /// Public read-only views used by upstream state machines (e.g. setup flow)
+  /// to include the current wizard context in error diagnostics. They never
+  /// mutate internal state and remain intentionally narrow so the protocol
+  /// boundary stays at `start` / `next` / `resume` / `cancel`.
+  get currentStepView(): OpenClawWizardStep | null {
+    return this.currentStep;
+  }
+
+  get failedStepView(): OpenClawWizardStep | null {
+    return this.failedStep;
+  }
+
+  get activeSessionId(): string | null {
+    return this.sessionId;
+  }
+
   get canGoBack(): boolean {
     return this.history.length > 0 && (this.sessionId !== null || this.failedStep !== null);
   }

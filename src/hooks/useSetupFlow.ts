@@ -243,6 +243,7 @@ export function useSetupFlow(
   const [wizardCanGoBack, setWizardCanGoBack] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [wizardRecoveryRequired, setWizardRecoveryRequired] = useState(false);
+  const wizardSubmitInFlightRef = useRef(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
@@ -357,8 +358,23 @@ export function useSetupFlow(
         return t("setup.wizard.alreadyRunning", "另一个 OpenClaw 配置会话仍在运行，请完成或关闭后重试。");
       case "request_timeout":
         return t("setup.wizard.requestTimeout", "OpenClaw 配置请求等待超时，请重新连接后继续。");
-      case "unknown":
-        return t("setup.wizard.failed", "OpenClaw 配置向导执行失败。");
+      case "unknown": {
+        // A 改动在 applyWizardResult 已附 step+session 上下文,但错误在
+        // submitWizardStep/startOfficialOnboarding/resumeOfficialOnboarding
+        // catch 这三条入口被这条 switch 收口、丢弃成一句通用文案。这里把
+        // 同等的诊断面附加回来,用户从 Toast 上能直接拿到 Gateway 真实
+        // 错误,而不是再看到一句无法定位的"执行失败"。
+        const sessionId = wizardClientRef.current?.activeSessionId ?? "(none)";
+        const lastStepId = wizardClientRef.current?.failedStepView?.id
+          ?? wizardClientRef.current?.currentStepView?.id
+          ?? "(unknown)";
+        return diagnostic.startsWith("OpenClaw wizard failed at step ")
+          ? diagnostic
+          : `OpenClaw wizard failed at step "${lastStepId}" (session=${sessionId}): ${t(
+              "setup.wizard.failed",
+              "OpenClaw 配置向导执行失败。",
+            )}`;
+      }
     }
   }, [appendSetupLog, t]);
 
@@ -636,7 +652,25 @@ export function useSetupFlow(
 
   const applyWizardResult = useCallback(async (result: OpenClawWizardResult): Promise<OpenClawWizardResult> => {
     if (result.error || result.status === "error") {
-      throw new Error(result.error || t("setup.wizard.failed", "OpenClaw 配置向导执行失败。"));
+      // 终端错误往往包含 Gateway 的真实诊断(`wizard: ...` / JSON 校验失败
+      // / 单会话冲突等),但此前统一替换成一句通用文案,导致同一症状
+      // 会反复复现而拿不到根因。透传原文并附上当前会话上下文,异常发生时
+      // 用户能直接看到错误并复贴给我们定位。
+      const rawError = result.error
+        ? result.error
+        : t("setup.wizard.failed", "OpenClaw 配置向导执行失败。");
+      const sessionId = wizardClientRef.current?.activeSessionId ?? "(none)";
+      const lastStepId = wizardClientRef.current?.failedStepView?.id
+        ?? wizardClientRef.current?.currentStepView?.id
+        ?? "(unknown)";
+      const debugMessage = `OpenClaw wizard failed at step "${lastStepId}" (session=${sessionId}): ${rawError}`;
+      appendSetupLog({
+        source: "setup",
+        step: "wizard",
+        message: debugMessage,
+        level: "error",
+      });
+      throw new Error(result.error ? debugMessage : rawError);
     }
     if (result.done || result.status === "done") {
       // The official session is terminal even when the lifecycle handoff below
@@ -746,7 +780,12 @@ export function useSetupFlow(
   }, [applyWizardResult, replaceSetupStep, setSetupError, startOfficialOnboarding, waitForGatewayConnection, wizardFailureMessage]);
 
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
-    if (wizardSubmitting) return null;
+    // React state updates are asynchronous. A final note can receive two click
+    // events before `wizardSubmitting` reaches the button, causing the second
+    // request to race the official terminal response and report "wizard not
+    // found" after onboarding already completed.
+    if (wizardSubmitInFlightRef.current) return null;
+    wizardSubmitInFlightRef.current = true;
     setWizardError(null);
     setWizardRecoveryRequired(false);
     setWizardSubmitting(true);
@@ -767,9 +806,10 @@ export function useSetupFlow(
       setSetupError(message);
       return null;
     } finally {
+      wizardSubmitInFlightRef.current = false;
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, resumeOfficialOnboarding, setSetupError, startOfficialOnboarding, wizardFailureMessage, wizardSubmitting]);
+  }, [applyWizardResult, resumeOfficialOnboarding, setSetupError, startOfficialOnboarding, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);

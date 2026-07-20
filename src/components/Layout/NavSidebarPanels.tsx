@@ -8,6 +8,7 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { SidebarRow, SidebarSection } from './SidebarRow';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
+import { getAgentDisplayName } from '@/utils/agentDisplayName';
 
 type NavigationItem = FeatureLinkedItem & { to: string; icon: React.ReactNode; label: string };
 
@@ -102,7 +103,7 @@ export function AgentsPanel() {
       if (aRunning !== bRunning) return bRunning - aRunning;
       if (a.id === 'main') return -1;
       if (b.id === 'main') return 1;
-      return String(a.name || a.id).localeCompare(String(b.name || b.id));
+      return getAgentDisplayName(a).localeCompare(getAgentDisplayName(b));
     });
   }, [agents, runningIds, sessions, t]);
 
@@ -120,7 +121,10 @@ export function AgentsPanel() {
             {sortedAgents.map((a: any) => {
               const isLive = runningIds.has(a.id);
               const sessionCount = sessionCounts.get(a.id) ?? 0;
-              const displayName = String(a.name || a.id);
+              const displayName = getAgentDisplayName(
+                a,
+                a.id === 'main' ? t('agents.mainAgent', 'Main Agent') : a.id,
+              );
               const model = typeof a.model === 'string' ? a.model.split('/').pop() : '';
               return (
                 <button
