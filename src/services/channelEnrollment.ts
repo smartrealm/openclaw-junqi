@@ -5,6 +5,7 @@ export type ChannelEnrollmentPhase = 'idle' | 'preparing' | 'waiting' | 'connect
 export interface ChannelEnrollmentState {
   phase: ChannelEnrollmentPhase;
   qrDataUrl: string | null;
+  qrContent?: string | null;
   error: string;
 }
 
@@ -19,6 +20,7 @@ interface ChannelEnrollmentSnapshot {
   channel?: unknown;
   phase?: unknown;
   qrDataUrl?: unknown;
+  qrContent?: unknown;
   pollAfterMs?: unknown;
   domain?: unknown;
 }
@@ -43,6 +45,14 @@ function asRecord(value: unknown): ChannelEnrollmentSnapshot {
 function normalizedDelay(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_POLL_DELAY_MS;
   return Math.max(MIN_POLL_DELAY_MS, Math.min(MAX_POLL_DELAY_MS, Math.round(value)));
+}
+
+function enrollmentFailureCode(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (message.includes('network') || message.includes('connect') || message.includes('timeout')) return 'network_failed';
+  if (message.includes('rate') || message.includes('429')) return 'rate_limited';
+  if (message.includes('rejected') || message.includes('invalid')) return 'provider_rejected';
+  return 'start_failed';
 }
 
 function completionFrom(snapshot: ChannelEnrollmentSnapshot): ChannelEnrollmentCompletion | null {
@@ -110,9 +120,9 @@ export class ChannelEnrollmentSession {
       }
       this.sessionId = snapshot.sessionId;
       this.applySnapshot(generation, snapshot);
-    } catch {
+    } catch (error) {
       if (this.isCurrent(generation)) {
-        this.publish({ phase: 'error', qrDataUrl: null, error: 'start_failed' });
+        this.publish({ phase: 'error', qrDataUrl: null, error: enrollmentFailureCode(error) });
       }
     }
   }
@@ -144,9 +154,9 @@ export class ChannelEnrollmentSession {
       const snapshot = asRecord(await invoke('poll_channel_enrollment', { sessionId: this.sessionId }));
       if (!this.isCurrent(generation)) return;
       this.applySnapshot(generation, snapshot);
-    } catch {
+    } catch (error) {
       if (this.isCurrent(generation)) {
-        this.publish({ phase: 'error', qrDataUrl: null, error: 'poll_failed' });
+        this.publish({ phase: 'error', qrDataUrl: null, error: enrollmentFailureCode(error) });
       }
     }
   }
@@ -155,11 +165,14 @@ export class ChannelEnrollmentSession {
     const phase = snapshot.phase;
     if (phase === 'waiting') {
       const qrDataUrl = safeChannelEnrollmentQrDataUrl(snapshot.qrDataUrl);
+      const qrContent = typeof snapshot.qrContent === 'string' && snapshot.qrContent.startsWith('https://')
+        ? snapshot.qrContent
+        : null;
       if (!qrDataUrl) {
         this.publish({ phase: 'error', qrDataUrl: null, error: 'qr_unavailable' });
         return;
       }
-      this.publish({ phase: 'waiting', qrDataUrl, error: '' });
+      this.publish({ phase: 'waiting', qrDataUrl, qrContent, error: '' });
       void this.poll(generation, normalizedDelay(snapshot.pollAfterMs));
       return;
     }

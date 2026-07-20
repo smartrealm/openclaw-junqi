@@ -19,6 +19,12 @@ use uuid::Uuid;
 const REGISTRATION_PATH: &str = "/oauth/v1/app/registration";
 const FEISHU_ACCOUNTS_URL: &str = "https://accounts.feishu.cn";
 const LARK_ACCOUNTS_URL: &str = "https://accounts.larksuite.com";
+const FEISHU_REGISTRATION_HOSTS: &[&str] = &[
+    "accounts.feishu.cn",
+    "accounts.larksuite.com",
+    "open.feishu.cn",
+    "open.larksuite.com",
+];
 const REGISTRATION_TIMEOUT: Duration = Duration::from_secs(15);
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_EXPIRY: Duration = Duration::from_secs(600);
@@ -130,6 +136,7 @@ struct EnrollmentSession {
     registration: ProviderRegistration,
     state: EnrollmentState,
     qr_data_url: String,
+    qr_content: String,
     poll_after: Duration,
     expires_at: Instant,
     expires_at_ms: u64,
@@ -171,6 +178,8 @@ pub struct ChannelEnrollmentSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     qr_data_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    qr_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     poll_after_ms: Option<u64>,
     expires_at: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,23 +220,37 @@ enum EnrollmentErrorKind {
 
 struct EnrollmentError {
     kind: EnrollmentErrorKind,
+    public_message: Option<&'static str>,
 }
 
 impl EnrollmentError {
     fn transient() -> Self {
         Self {
             kind: EnrollmentErrorKind::Transient,
+            public_message: None,
         }
     }
 
     fn permanent() -> Self {
         Self {
             kind: EnrollmentErrorKind::Permanent,
+            public_message: None,
         }
     }
 
     fn is_transient(&self) -> bool {
         matches!(self.kind, EnrollmentErrorKind::Transient)
+    }
+
+    fn unsupported_verification_host() -> Self {
+        Self {
+            kind: EnrollmentErrorKind::Permanent,
+            public_message: Some("Feishu returned an unrecognized QR entry host. Update JunQi and try again."),
+        }
+    }
+
+    fn public_message(&self) -> Option<&'static str> {
+        self.public_message
     }
 }
 
@@ -289,7 +312,7 @@ impl ChannelEnrollmentProvider for FeishuEnrollmentProvider {
             let mut qr_url =
                 Url::parse(&verification_uri).map_err(|_| EnrollmentError::permanent())?;
             if qr_url.scheme() != "https" || !is_feishu_registration_host(qr_url.host_str()) {
-                return Err(EnrollmentError::permanent());
+                return Err(EnrollmentError::unsupported_verification_host());
             }
             qr_url
                 .query_pairs_mut()
@@ -398,7 +421,17 @@ pub async fn start_channel_enrollment(
     let started = provider
         .start(&registry.client, domain.as_deref())
         .await
-        .map_err(|_| "Could not create a QR enrollment session. Please try again.".to_string())?;
+        .map_err(|error| {
+            if let Some(message) = error.public_message() {
+                message.to_string()
+            } else if error.is_transient() {
+                "Could not connect to the Feishu enrollment service. Please check your network and try again."
+                    .to_string()
+            } else {
+                "The Feishu enrollment service rejected this request. Please try again later."
+                    .to_string()
+            }
+        })?;
     let qr_data_url = qr_svg_data_url(&started.qr_url)
         .map_err(|_| "Could not render the channel QR code. Please try again.".to_string())?;
     let session_id = Uuid::new_v4().to_string();
@@ -408,6 +441,7 @@ pub async fn start_channel_enrollment(
         registration: started.registration,
         state: EnrollmentState::Waiting,
         qr_data_url,
+        qr_content: started.qr_url,
         poll_after: started.poll_after,
         expires_at,
         expires_at_ms: unix_millis_after(started.expires_in),
@@ -574,10 +608,11 @@ fn session_for_current_runtime<'a>(
 }
 
 fn snapshot(session_id: &str, session: &EnrollmentSession) -> ChannelEnrollmentSnapshot {
-    let (phase, qr_data_url, poll_after_ms, domain) = match &session.state {
+    let (phase, qr_data_url, qr_content, poll_after_ms, domain) = match &session.state {
         EnrollmentState::Waiting | EnrollmentState::Polling => (
             EnrollmentPhase::Waiting,
             Some(session.qr_data_url.clone()),
+            Some(session.qr_content.clone()),
             Some(session.poll_after.as_millis().min(u128::from(u64::MAX)) as u64),
             None,
         ),
@@ -585,17 +620,19 @@ fn snapshot(session_id: &str, session: &EnrollmentSession) -> ChannelEnrollmentS
             EnrollmentPhase::Connected,
             None,
             None,
+            None,
             Some(credentials.domain.as_str()),
         ),
-        EnrollmentState::Denied => (EnrollmentPhase::Denied, None, None, None),
-        EnrollmentState::Expired => (EnrollmentPhase::Expired, None, None, None),
-        EnrollmentState::Failed => (EnrollmentPhase::Error, None, None, None),
+        EnrollmentState::Denied => (EnrollmentPhase::Denied, None, None, None, None),
+        EnrollmentState::Expired => (EnrollmentPhase::Expired, None, None, None, None),
+        EnrollmentState::Failed => (EnrollmentPhase::Error, None, None, None, None),
     };
     ChannelEnrollmentSnapshot {
         session_id: session_id.to_string(),
         channel: session.channel.as_str(),
         phase,
         qr_data_url,
+        qr_content,
         poll_after_ms,
         expires_at: session.expires_at_ms,
         domain,
@@ -657,10 +694,7 @@ fn expiry(value: &Value) -> Duration {
 }
 
 fn is_feishu_registration_host(host: Option<&str>) -> bool {
-    matches!(
-        host,
-        Some("accounts.feishu.cn") | Some("accounts.larksuite.com")
-    )
+    host.is_some_and(|host| FEISHU_REGISTRATION_HOSTS.contains(&host))
 }
 
 fn unix_millis_after(duration: Duration) -> u64 {

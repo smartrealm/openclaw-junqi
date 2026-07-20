@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, Loader2, QrCode, RefreshCw, X } from 'lucide-react';
+import { CheckCircle2, Copy, Loader2, QrCode, RefreshCw, X } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { ChannelQrLoginSession, type ChannelQrState } from '@/services/channelQrLogin';
 import { renderLocalQrDataUrl } from '@/services/wizardQr';
@@ -94,6 +94,7 @@ export function ChannelQrLoginDialog({
             <QrCode size={48} className="text-aegis-text-muted" />
           )}
           <p className="text-xs leading-relaxed text-aegis-text-secondary">{statusText}</p>
+          {state.qrContent && <button type="button" onClick={() => void navigator.clipboard.writeText(state.qrContent!).catch(() => undefined)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"><Copy size={13} />{t('common.copy', 'Copy link')}</button>}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-aegis-border px-4 py-3">
           <button type="button" onClick={onClose} className="rounded-md border border-aegis-border px-3 py-2 text-xs font-semibold text-aegis-text-secondary">{t('common.close', 'Close')}</button>
