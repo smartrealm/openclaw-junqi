@@ -12,7 +12,7 @@
 
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, Inbox } from 'lucide-react';
+import { Clock, Coins, Cpu, Inbox, Timer } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { StatusIcon, type StatusIconValue } from './StatusIcon';
 
@@ -26,6 +26,13 @@ export interface TimelineTask {
   deletions?: number;
   /** Optional project label (junqi may not have a project; falls back to "All"). */
   project?: string;
+  /** Canonical execution metadata shown beside the activity title. */
+  model?: string;
+  runtime?: string;
+  durationMs?: number;
+  tokens?: number;
+  cost?: number;
+  statusLabel?: string;
   /** Optional click-through target. When set, row click navigates here. */
   href?: string;
 }
@@ -63,6 +70,27 @@ function formatTime(ts: number): string {
   return `${hh}:${mm}`;
 }
 
+function formatDuration(ms?: number): string | null {
+  if (!Number.isFinite(ms) || !ms || ms <= 0) return null;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.floor((ms % 60_000) / 1000);
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
+function formatTokens(tokens?: number): string | null {
+  if (!Number.isFinite(tokens) || !tokens || tokens <= 0) return null;
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M tok`;
+  if (tokens >= 1000) return `${Math.round(tokens / 100) / 10}K tok`;
+  return `${Math.round(tokens)} tok`;
+}
+
+function formatCost(cost?: number): string | null {
+  if (!Number.isFinite(cost) || !cost || cost <= 0) return null;
+  return `$${cost < 0.01 ? cost.toFixed(3) : cost.toFixed(2)}`;
+}
+
 function TimelineRow({
   task,
   onClick,
@@ -73,6 +101,9 @@ function TimelineRow({
   const additions = task.additions ?? 0;
   const deletions = task.deletions ?? 0;
   const hasDiff = additions > 0 || deletions > 0;
+  const duration = formatDuration(task.durationMs);
+  const tokens = formatTokens(task.tokens);
+  const cost = formatCost(task.cost);
 
   return (
     <button
@@ -83,13 +114,28 @@ function TimelineRow({
       <span className="font-mono text-[11px] text-aegis-text-dim tabular-nums w-[44px] shrink-0">
         {formatTime(task.createdAt)}
       </span>
-      <span className="shrink-0">
+      <span className="shrink-0" title={task.statusLabel}>
         <StatusIcon status={task.status as StatusIconValue} size={13} />
       </span>
       <div className="flex-1 min-w-0">
         <div className="text-[12.5px] font-medium text-aegis-text truncate">{task.title}</div>
-        <div className="text-[10.5px] text-aegis-text-dim flex items-center gap-1.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10.5px] text-aegis-text-dim">
           {task.agent && <span>{task.agent}</span>}
+          {task.model && (
+            <>
+              <span className="opacity-50">·</span>
+              <span className="inline-flex min-w-0 max-w-[180px] items-center gap-1 truncate font-mono" title={task.model}>
+                <Cpu size={9} className="shrink-0" />
+                {task.model}
+              </span>
+            </>
+          )}
+          {task.runtime && (
+            <>
+              <span className="opacity-50">·</span>
+              <span className="truncate">{task.runtime}</span>
+            </>
+          )}
           {task.project && (
             <>
               <span className="opacity-50">·</span>
@@ -105,6 +151,25 @@ function TimelineRow({
               </span>
             </>
           )}
+          {duration && (
+            <>
+              <span className="opacity-50">·</span>
+              <span className="inline-flex items-center gap-1 font-mono tabular-nums"><Timer size={9} />{duration}</span>
+            </>
+          )}
+          {tokens && (
+            <>
+              <span className="opacity-50">·</span>
+              <span className="font-mono tabular-nums">{tokens}</span>
+            </>
+          )}
+          {cost && (
+            <>
+              <span className="opacity-50">·</span>
+              <span className="inline-flex items-center gap-1 font-mono tabular-nums"><Coins size={9} />{cost}</span>
+            </>
+          )}
+          {task.statusLabel && <span className="text-aegis-text-secondary">{task.statusLabel}</span>}
         </div>
       </div>
     </button>

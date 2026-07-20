@@ -5,6 +5,7 @@ export const GATEWAY_OPTIONAL_PATHS = [
   '/config',
   '/logs',
   '/openclaw-commands',
+  '/activity',
 ] as const;
 
 export function routePathFromLocation(location: Pick<Location, 'hash' | 'pathname'>): string {

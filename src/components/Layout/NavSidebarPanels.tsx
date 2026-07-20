@@ -14,6 +14,7 @@ type NavigationItem = FeatureLinkedItem & { to: string; icon: React.ReactNode; l
 
 function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<NavigationItem> {
   return [
+    { to: '/activity',  icon: <Activity size={14} />,  label: t('nav.activity', '活动中心'), feature: 'dashboard' },
     { to: '/workshop', icon: <Folder size={14} />,    label: t('nav.workspace', '工作空间'), feature: 'workshop' },
     { to: '/ai-workspace', icon: <Bot size={14} />,   label: t('nav.aiWorkspace', 'AI 工作台'), feature: 'agentRun' },
     { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端'), feature: 'terminal' },

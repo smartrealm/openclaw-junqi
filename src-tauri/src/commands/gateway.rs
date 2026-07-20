@@ -31,13 +31,17 @@ pub struct GatewayStatus {
 async fn stop_offline_gateway_service(
     app: &AppHandle,
     runtime: &crate::commands::system::NativeOpenclawRuntime,
+    state_dir: &std::path::Path,
+    config_path: &std::path::Path,
     search_path: &str,
+    inspection: crate::commands::gateway_service::GatewayServiceInspection,
 ) -> Result<bool, String> {
-    let stopped = crate::commands::gateway_service::stop_selected_gateway_service(
+    let stopped = crate::commands::gateway_service::stop_selected_gateway_service_verified(
         runtime,
-        &paths::desktop_dir(),
-        &paths::config_path(),
+        state_dir,
+        config_path,
         Some(search_path),
+        inspection,
     )
     .await?;
     if stopped {
@@ -2392,31 +2396,53 @@ pub(crate) async fn start_gateway_locked(
     let runtime = crate::commands::system::native_openclaw_runtime(openclaw, &node)?;
     let gw_path = augmented_path();
 
+    // Take one bounded ownership snapshot. A missing/unreachable official
+    // service is a normal foreground-start condition; it must not be queried
+    // again or turned into a hard failure before `gateway run` is spawned.
+    let service_identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+        &base_dir,
+        &config_path,
+        &runtime,
+    );
+    let service_inspection =
+        match crate::commands::gateway_service::inspect_gateway_service_state_for_start(
+            &runtime,
+            &service_identity,
+            Some(&gw_path),
+        )
+        .await
+        {
+            Ok(inspection) => Some(inspection),
+            Err(error) => {
+                let message =
+                    format!("Gateway service inspection skipped before foreground start: {error}");
+                let _ = app.emit("gateway-log", &message);
+                crate::state::gateway_process::push_log(
+                    &state.logs,
+                    crate::state::gateway_process::LogSource::Lifecycle,
+                    crate::state::gateway_process::LogLevel::Warn,
+                    message,
+                );
+                None
+            }
+        };
+
     // A service installed before Gateway locale was persisted can still be
     // healthy while returning the wrong wizard language. Reconcile only a
     // service proven to own JunQi's selected state/config; foreign and remote
     // Gateways remain untouched and keep their own language.
-    if let Ok(inspection) = crate::commands::gateway_service::inspect_gateway_service_state(
-        &runtime,
-        &crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
-            &base_dir,
-            &config_path,
-            &runtime,
-        ),
-        Some(&gw_path),
-    )
-    .await
-    {
+    if let Some(inspection) = service_inspection {
         if inspection.installed
             && inspection.ownership
                 == crate::commands::gateway_service::GatewayServiceOwnership::StaleLocale
         {
             if inspection.running {
-                crate::commands::gateway_service::stop_selected_gateway_service(
+                crate::commands::gateway_service::stop_selected_gateway_service_verified(
                     &runtime,
                     &base_dir,
                     &config_path,
                     Some(&gw_path),
+                    inspection,
                 )
                 .await?;
                 crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await?;
@@ -2499,9 +2525,39 @@ pub(crate) async fn start_gateway_locked(
         None,
         "start_gateway: beginning spawn sequence",
     );
+    #[derive(Clone, Copy)]
+    enum GatewayStartStage {
+        Preparation,
+        OwnedChild,
+        StateDirectory,
+        ServiceRebind,
+        Spawn,
+        Readiness,
+    }
+    impl GatewayStartStage {
+        fn failure_reason(self) -> &'static str {
+            match self {
+                Self::Preparation | Self::OwnedChild => "start_gateway: startup preparation failed",
+                Self::StateDirectory => "start_gateway: state-directory probe failed",
+                Self::ServiceRebind => "start_gateway: service rebind failed",
+                Self::Spawn => "start_gateway: spawn failed",
+                Self::Readiness => "start_gateway: readiness failed",
+            }
+        }
+    }
     struct StartFailureGuard<'a> {
         state: &'a GatewayProcess,
+        stage: GatewayStartStage,
         armed: bool,
+    }
+    impl StartFailureGuard<'_> {
+        fn stage(&mut self, stage: GatewayStartStage) {
+            self.stage = stage;
+        }
+
+        fn disarm(&mut self) {
+            self.armed = false;
+        }
     }
     impl Drop for StartFailureGuard<'_> {
         fn drop(&mut self) {
@@ -2510,15 +2566,17 @@ pub(crate) async fn start_gateway_locked(
                     Some(GatewayLifecycle::Error),
                     None,
                     None,
-                    "start_gateway: spawn sequence failed",
+                    self.stage.failure_reason(),
                 );
             }
         }
     }
     let mut start_failure_guard = StartFailureGuard {
         state: &state,
+        stage: GatewayStartStage::Preparation,
         armed: true,
     };
+    start_failure_guard.stage(GatewayStartStage::OwnedChild);
     let old_child = {
         let mut lock = state.child.lock().map_err(|e| e.to_string())?;
         lock.take()
@@ -2535,6 +2593,7 @@ pub(crate) async fn start_gateway_locked(
                 None,
                 "start_gateway: owned child terminated but port remained occupied",
             );
+            start_failure_guard.disarm();
             return Err(format!(
                 "Gateway process was terminated, but port {} did not become available: {}",
                 port, error
@@ -2556,6 +2615,7 @@ pub(crate) async fn start_gateway_locked(
     // State/config locations are passed through the command environment. The
     // process cwd is deliberately independent, but OpenClaw still needs a
     // filesystem that supports its credential-permission tightening.
+    start_failure_guard.stage(GatewayStartStage::StateDirectory);
     std::fs::create_dir_all(&base_dir)
         .map_err(|error| format!("Failed to create OpenClaw state directory: {error}"))?;
     if let Some(probe_node) = crate::commands::state_dir_probe::probe_node_path(&node) {
@@ -2576,6 +2636,7 @@ pub(crate) async fn start_gateway_locked(
     }
     let pending_service_running = paths::pending_gateway_service_rebind();
     if let Some(was_running) = pending_service_running {
+        start_failure_guard.stage(GatewayStartStage::ServiceRebind);
         // A mode switch or storage migration may have stopped an official
         // service before committing the new Native paths. Reconcile it at the
         // common start boundary as well as in the setup guide, so a direct
@@ -2609,13 +2670,24 @@ pub(crate) async fn start_gateway_locked(
                 token: token.clone(),
             });
         }
-    } else if stop_offline_gateway_service(&app, &runtime, &gw_path).await? {
-        state.transition(
-            Some(GatewayLifecycle::Stopped),
-            Some(GatewayRuntimeMode::None),
-            None,
-            "start_gateway: stopped competing offline system service",
-        );
+    } else if let Some(inspection) = service_inspection {
+        if stop_offline_gateway_service(
+            &app,
+            &runtime,
+            &base_dir,
+            &config_path,
+            &gw_path,
+            inspection,
+        )
+        .await?
+        {
+            state.transition(
+                Some(GatewayLifecycle::Stopped),
+                Some(GatewayRuntimeMode::None),
+                None,
+                "start_gateway: stopped competing offline system service",
+            );
+        }
     }
 
     // Inject env.vars into the gateway process so providers that rely on
@@ -2624,6 +2696,7 @@ pub(crate) async fn start_gateway_locked(
     // ConfigMetadata already parsed env.vars above — no additional disk IO here.
     let extra_env_vars = meta.env_vars;
 
+    start_failure_guard.stage(GatewayStartStage::Spawn);
     let context = crate::commands::system::OpenclawCommandContext::managed_gateway(
         base_dir.clone(),
         config_path.clone(),
@@ -2702,6 +2775,7 @@ pub(crate) async fn start_gateway_locked(
     // and preserves the real stderr instead of reducing failures to a UI timer.
     let startup_deadline = std::time::Instant::now()
         + std::time::Duration::from_secs(MANAGED_GATEWAY_START_TIMEOUT_SECS);
+    start_failure_guard.stage(GatewayStartStage::Readiness);
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -2756,7 +2830,7 @@ pub(crate) async fn start_gateway_locked(
         None,
         "start_gateway: managed child health check passed",
     );
-    start_failure_guard.armed = false;
+    start_failure_guard.disarm();
 
     // Re-read the token that ensure_config_with_token just wrote/read
     // so we return it in a single IPC round-trip.

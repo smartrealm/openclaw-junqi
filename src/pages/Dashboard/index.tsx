@@ -11,7 +11,7 @@ import {
   RefreshCw, BarChart3,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
   TrendingUp, TrendingDown, Minus, MessageSquarePlus,
-  ChartNoAxesCombined, Blocks, Gauge,
+  ChartNoAxesCombined, Blocks, Gauge, Clock3, FolderKanban, TerminalSquare,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { SceneTransition } from '@/components/shared/SceneTransition';
@@ -732,6 +732,24 @@ export function DashboardPage() {
                 glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
                 onClick={() => navigate('/skills')} />
             )}
+            <QuickAction icon={Activity} label={t('nav.activity', '活动中心')}
+              glowColor={themeColorVar('primary', 0.08)} bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
+              onClick={() => navigate('/activity')} />
+            {isFeatureEnabled('agentRun') && (
+              <QuickAction icon={FolderKanban} label={t('nav.aiWorkspace', 'AI 工作台')}
+                glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
+                onClick={() => navigate('/ai-workspace')} />
+            )}
+            {isFeatureEnabled('terminal') && (
+              <QuickAction icon={TerminalSquare} label={t('nav.terminal', '终端')}
+                glowColor={themeColorVar('success', 0.08)} bgColor={themeColorVar('success', 0.1)} iconColor={themeColorVar('success')}
+                onClick={() => navigate('/terminal')} />
+            )}
+            {isFeatureEnabled('cron') && (
+              <QuickAction icon={Clock3} label={t('nav.cron', '定时任务')}
+                glowColor={themeColorVar('warning', 0.08)} bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
+                onClick={() => navigate('/cron')} />
+            )}
             <QuickAction icon={RefreshCw} label={t('dashboard.compact')}
               glowColor={themeColorVar('warning', 0.08)} bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
               onClick={() => void handleQuickAction('compact')} loading={quickActionLoading === 'compact'} disabled={!connected} />
@@ -802,11 +820,16 @@ export function DashboardPage() {
               <Activity size={15} className="text-aegis-primary" />
               <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.activity')}</span>
             </div>
-            {connected && (
-              <span className="text-[10px] font-bold text-aegis-success bg-aegis-success-surface px-2 py-0.5 rounded-md tracking-normal animate-pulse-soft">
-                {t('dashboard.live', 'LIVE')}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {connected && (
+                <span className="text-[10px] font-bold text-aegis-success bg-aegis-success-surface px-2 py-0.5 rounded-md tracking-normal animate-pulse-soft">
+                  {t('dashboard.live', 'LIVE')}
+                </span>
+              )}
+              <button type="button" onClick={() => navigate('/activity')} className="flex items-center gap-0.5 text-[11px] text-aegis-primary hover:underline">
+                {t('dashboard.viewAll')}<ChevronRight size={12} />
+              </button>
+            </div>
           </div>
 
           <div className="max-h-[220px] overflow-y-auto scrollbar-hidden">

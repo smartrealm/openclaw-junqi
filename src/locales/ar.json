@@ -62,7 +62,8 @@
     "subPages": "صفحات فرعية",
     "workbench": "مساحة العمل",
     "tools": "أدوات",
-    "openclawCommands": "أوامر OpenClaw"
+    "openclawCommands": "أوامر OpenClaw",
+    "activity": "مركز النشاط"
   },
   "openclawCommands": {
     "title": "مرجع أوامر OpenClaw",
@@ -220,6 +221,40 @@
     "viewBrowse": "تصفح الكل",
     "startChat": "بدء المحادثة",
     "startChatWithPersona": "ابدأ المحادثة بهذه الشخصية"
+  },
+  "activity": {
+    "title": "مركز النشاط",
+    "subtitle": "تتبّع جلسات الدردشة ومهام مساحة عمل AI وعمليات الخلفية في خط زمني واحد.",
+    "openWorkspace": "فتح مساحة عمل AI",
+    "live": "مزامنة مباشرة",
+    "offline": "بانتظار اتصال Gateway",
+    "runsTitle": "سجل التنفيذ",
+    "runsSubtitle": "يعرض كل صف الوكيل والنموذج وبيئة التشغيل والوقت.",
+    "empty": "لا توجد أنشطة مطابقة لهذا المرشح.",
+    "offlineEmpty": "ستظهر الأنشطة المباشرة بعد اتصال Gateway.",
+    "attentionTitle": "يتطلب إجراءً",
+    "noAttention": "لا توجد مهام تنتظر إدخالاً أو مراجعة.",
+    "capabilitiesTitle": "قدرات مساحة العمل",
+    "skills": "المهارات",
+    "mcp": "MCP / الأدوات",
+    "memory": "الذاكرة",
+    "open": "فتح",
+    "shortcutsTitle": "وصول سريع",
+    "skillsHint": "عرض المهارات المتاحة",
+    "mcpHint": "عرض أدوات MCP",
+    "filters": {
+      "all": "الكل",
+      "running": "قيد التشغيل",
+      "attention": "يتطلب إجراءً",
+      "done": "مكتمل",
+      "failed": "فشل"
+    },
+    "summary": {
+      "running": "قيد التشغيل",
+      "attention": "يتطلب إجراءً",
+      "done": "مكتمل",
+      "failed": "فشل"
+    }
   },
   "dashboard": {
     "activeAgents": "الوكلاء النشطون",
@@ -683,7 +718,15 @@
     "contextCacheRead": "قراءة cache",
     "contextCacheWrite": "كتابة cache",
     "budgetExceededTitle": "تم بلوغ حد الميزانية",
-    "budgetExceededDesc": "بلغ الإنفاق خلال 30 يومًا $${used} الحد $${limit}. ارفع الميزانية في الإعدادات أو توقف."
+    "budgetExceededDesc": "بلغ الإنفاق خلال 30 يومًا $${used} الحد $${limit}. ارفع الميزانية في الإعدادات أو توقف.",
+    "execution": {
+      "ariaLabel": "عملية التنفيذ",
+      "error": "خطأ في التنفيذ",
+      "running": "قيد التنفيذ",
+      "done": "مكتمل",
+      "toolCount": "{{count}} أدوات",
+      "thinkingCount": "{{count}} أفكار"
+    }
   },
   "titlebar": {
     "minimize": "تصغير",
@@ -2071,7 +2114,7 @@
   "setup.stepStatus.error": "يتطلب إجراءً",
   "setup.stepStatus.skipped": "تم التخطي",
   "setup.installSteps.git.title": "Git",
-  "setup.installSteps.git.description": "التحقق من الأداة الأساسية المطلوبة لإدارة المصدر والحزم",
+  "setup.installSteps.git.description": "اكتشاف أداة إدارة المصدر وتثبيتها فقط عند الحاجة",
   "setup.installSteps.node.title": "Node.js",
   "setup.installSteps.node.description": "فحص بيئة التشغيل المحلية وتثبيت النسخة المضمنة عند الحاجة",
   "setup.installSteps.openclaw.title": "OpenClaw",
@@ -2195,6 +2238,9 @@
   "setup.node.systemReady": "بيئة Node.js النظامية المتوافقة جاهزة",
   "setup.windows.installerWaiting": "مثبّت {{tool}} قيد التشغيل (الوقت المنقضي {{elapsed}})…",
   "setup.windows.packageManagerWaiting": "Windows Package Manager يعالج {{tool}} (الوقت المنقضي {{elapsed}})…",
+  "setup.windows.adminPrompt": "في انتظار موافقة مسؤول Windows قبل بدء مثبّت {{tool}}…",
+  "setup.node.runtimeSettling": "في انتظار Windows لنشر بيئة Node.js المثبّتة ({{elapsed}} ثانية)…",
+  "setup.git.runtimeSettling": "في انتظار Windows لنشر بيئة Git المثبّتة ({{elapsed}} ثانية)…",
   "setup.node.runtimeReady": "بيئة Node.js المتوافقة جاهزة",
   "setup.node.prepareDownload": "جارٍ تحضير تنزيل Node.js v{{version}}، يُفضل مرآة CN…",
   "setup.node.extract": "جارٍ الاستخراج إلى {{path}}…",
@@ -2203,6 +2249,7 @@
   "setup.node.done": "تم تثبيت Node.js {{version}} بنجاح ✓",
   "setup.git.check": "جارٍ فحص تثبيت Git…",
   "setup.git.skip": "Git مثبت بالفعل، جارٍ التخطي",
+  "setup.git.onDemand": "سيتم تثبيت Git فقط إذا طلبه npm",
   "setup.git.systemInstall": "جارٍ تثبيت Git في موقع Windows الرسمي الافتراضي…",
   "setup.git.systemPackageFallback": "لم يكتمل مثبت المرآة المحلية؛ جارٍ تجربة Windows Package Manager…",
   "setup.git.systemReady": "Git النظامي جاهز",

@@ -63,7 +63,8 @@
     "subPages": "Sub-pages",
     "workbench": "Workbench",
     "tools": "Tools",
-    "openclawCommands": "OpenClaw Commands"
+    "openclawCommands": "OpenClaw Commands",
+    "activity": "Activity Center"
   },
   "openclawCommands": {
     "title": "OpenClaw Command Reference",
@@ -267,6 +268,40 @@
     "showingOf": "Showing {{shown}} of {{total}} skills",
     "startChat": "Start chat",
     "startChatWithPersona": "Start chat with this persona"
+  },
+  "activity": {
+    "title": "Activity Center",
+    "subtitle": "Track chat sessions, AI workspace tasks, and background runs on one timeline.",
+    "openWorkspace": "Open AI Workspace",
+    "live": "Live sync",
+    "offline": "Waiting for Gateway",
+    "runsTitle": "Runs",
+    "runsSubtitle": "Every row includes its agent, model, runtime, and timestamp.",
+    "empty": "No activity matches this filter.",
+    "offlineEmpty": "Live activity will appear after Gateway connects.",
+    "attentionTitle": "Needs action",
+    "noAttention": "No task is waiting for input or review.",
+    "capabilitiesTitle": "Workspace capabilities",
+    "skills": "Skills",
+    "mcp": "MCP / Tools",
+    "memory": "Memory",
+    "open": "Open",
+    "shortcutsTitle": "Quick access",
+    "skillsHint": "View available skills",
+    "mcpHint": "View MCP tools",
+    "filters": {
+      "all": "All",
+      "running": "Running",
+      "attention": "Needs action",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "summary": {
+      "running": "Running",
+      "attention": "Needs action",
+      "done": "Completed",
+      "failed": "Failed"
+    }
   },
   "dashboard": {
     "activeAgents": "Active Agents",
@@ -959,7 +994,15 @@
     "budgetExceededTitle": "Budget limit reached",
     "budgetExceededDesc": "30-day spend $${used} reached the limit $${limit}. Raise the budget in Settings or pause usage.",
     "budgetLimit": "30-day budget limit ($)",
-    "budgetLimitHint": "0 = no limit. New messages are blocked once exceeded."
+    "budgetLimitHint": "0 = no limit. New messages are blocked once exceeded.",
+    "execution": {
+      "ariaLabel": "Execution process",
+      "error": "Execution error",
+      "running": "Running",
+      "done": "Completed",
+      "toolCount": "{{count}} tools",
+      "thinkingCount": "{{count}} thoughts"
+    }
   },
   "titlebar": {
     "minimize": "Minimize",
@@ -2541,7 +2584,7 @@
     "installSteps": {
       "git": {
         "title": "Git",
-        "description": "Verify the source and package-management prerequisite"
+        "description": "Detect the source-management tool and install it only when required"
       },
       "node": {
         "title": "Node.js",
@@ -3152,6 +3195,9 @@
   "setup.node.systemReady": "A compatible system Node.js runtime is ready",
   "setup.windows.installerWaiting": "{{tool}} installer is running (elapsed {{elapsed}})…",
   "setup.windows.packageManagerWaiting": "Windows Package Manager is processing {{tool}} (elapsed {{elapsed}})…",
+  "setup.windows.adminPrompt": "Waiting for Windows administrator approval before starting the {{tool}} installer…",
+  "setup.node.runtimeSettling": "Waiting for Windows to publish the installed Node.js runtime (elapsed {{elapsed}}s)…",
+  "setup.git.runtimeSettling": "Waiting for Windows to publish the installed Git runtime (elapsed {{elapsed}}s)…",
   "setup.node.runtimeReady": "A compatible Node.js runtime is ready",
   "setup.node.prepareDownload": "Preparing to download Node.js v{{version}}, prefer CN mirror…",
   "setup.node.extract": "Extracting to {{path}}…",
@@ -3160,6 +3206,7 @@
   "setup.node.done": "Node.js {{version}} installed successfully ✓",
   "setup.git.check": "Checking Git installation…",
   "setup.git.skip": "Git already installed, skipping",
+  "setup.git.onDemand": "Git will be installed only if npm requires it",
   "setup.git.systemInstall": "Installing Git to the official Windows default location…",
   "setup.git.systemPackageFallback": "The mainland mirror installer did not complete; trying Windows Package Manager…",
   "setup.git.systemReady": "System Git is ready",

@@ -59,5 +59,9 @@ test('quick actions expose real product routes in addition to compaction', () =>
   assert.match(dashboard, /navigate\('\/agents'\)/);
   assert.match(dashboard, /navigate\('\/analytics'\)/);
   assert.match(dashboard, /navigate\('\/skills'\)/);
+  assert.match(dashboard, /navigate\('\/activity'\)/);
+  assert.match(dashboard, /navigate\('\/ai-workspace'\)/);
+  assert.match(dashboard, /navigate\('\/terminal'\)/);
+  assert.match(dashboard, /navigate\('\/cron'\)/);
   assert.match(dashboard, /isFeatureEnabled\('chat'\)/);
 });

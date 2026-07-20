@@ -7,7 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, MessageCircle, Kanban, DollarSign, Clock, Bot, Brain,
   Settings, Wifi, WifiOff, Heart, Mail, Calendar, RefreshCw,
-  Globe, Bell, BellOff, BookOpenText, Command, Sparkles, Terminal, Cpu
+  Globe, Bell, BellOff, BookOpenText, Command, Sparkles, Terminal, Cpu,
+  Activity, FolderKanban,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -71,6 +72,8 @@ export function CommandPalette() {
     { id: 'nav-cron', feature: 'cron', icon: Clock, name: t('nav.cron'), shortcut: 'Ctrl+5', keywords: ['cron', 'schedule', 'جدولة'], action: () => navigate('/cron') },
     { id: 'nav-agents', feature: 'agents', icon: Bot, name: t('nav.agents'), shortcut: 'Ctrl+6', keywords: ['agents', 'وكلاء', 'sessions'], action: () => navigate('/agents') },
     { id: 'nav-memory', feature: 'memory', icon: Brain, name: t('nav.memory'), shortcut: 'Ctrl+7', keywords: ['memory', 'ذاكرة', 'search'], action: () => navigate('/memory') },
+    { id: 'nav-activity', feature: 'dashboard', icon: Activity, name: t('nav.activity', 'Activity Center'), keywords: ['activity', 'runs', 'approvals', '活动', '审批'], action: () => navigate('/activity') },
+    { id: 'nav-ai-workspace', feature: 'agentRun', icon: FolderKanban, name: t('nav.aiWorkspace', 'AI Workspace'), keywords: ['workspace', 'agent run', 'tasks', '工作台'], action: () => navigate('/ai-workspace') },
     { id: 'nav-settings', feature: 'settings', icon: Settings, name: t('nav.settings'), shortcut: 'Ctrl+,', keywords: ['settings', 'إعدادات'], action: () => navigate('/settings') },
 
     // Actions
