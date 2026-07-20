@@ -755,11 +755,23 @@ export function useSetupFlow(
   }, [applyWizardResult, resumeOfficialOnboarding, setSetupError, startOfficialOnboarding, wizardFailureMessage, wizardSubmitting]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
-    if (wizardClientRef.current!.hasActiveSession) {
-      return await resumeOfficialOnboarding();
+    setWizardError(null);
+    setWizardRecoveryRequired(false);
+    setWizardSubmitting(true);
+    try {
+      await waitForGatewayConnection();
+      return await applyWizardResult(await wizardClientRef.current!.retry());
+    } catch (error) {
+      const message = wizardFailureMessage(error);
+      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
+      setWizardError(message);
+      setSetupError(message);
+      replaceSetupStep("configure-openclaw");
+      return null;
+    } finally {
+      setWizardSubmitting(false);
     }
-    return await startOfficialOnboarding();
-  }, [resumeOfficialOnboarding, startOfficialOnboarding]);
+  }, [applyWizardResult, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const backOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (!wizardClientRef.current?.canGoBack || wizardSubmitting) return null;

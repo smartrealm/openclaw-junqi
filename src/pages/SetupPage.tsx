@@ -655,7 +655,7 @@ function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
       subtitle={wizardSubtitle}
       logs={logs}
       previousAction={{
-        label: flow.wizardCanGoBack ? t("setup.previousStep", "上一步") : undefined,
+        label: t("setup.previousStep", "上一步"),
         onClick: flow.wizardCanGoBack ? flow.backWizard : flow.goBack,
         disabled: flow.wizardSubmitting || Boolean(enrollmentDomain) || enrollmentFinalizing,
       }}
