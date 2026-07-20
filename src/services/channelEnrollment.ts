@@ -5,6 +5,7 @@ export type ChannelEnrollmentPhase = 'idle' | 'preparing' | 'waiting' | 'connect
 export interface ChannelEnrollmentState {
   phase: ChannelEnrollmentPhase;
   qrDataUrl: string | null;
+  qrContent?: string | null;
   error: string;
 }
 
@@ -19,6 +20,7 @@ interface ChannelEnrollmentSnapshot {
   channel?: unknown;
   phase?: unknown;
   qrDataUrl?: unknown;
+  qrContent?: unknown;
   pollAfterMs?: unknown;
   domain?: unknown;
 }
@@ -163,11 +165,14 @@ export class ChannelEnrollmentSession {
     const phase = snapshot.phase;
     if (phase === 'waiting') {
       const qrDataUrl = safeChannelEnrollmentQrDataUrl(snapshot.qrDataUrl);
+      const qrContent = typeof snapshot.qrContent === 'string' && snapshot.qrContent.startsWith('https://')
+        ? snapshot.qrContent
+        : null;
       if (!qrDataUrl) {
         this.publish({ phase: 'error', qrDataUrl: null, error: 'qr_unavailable' });
         return;
       }
-      this.publish({ phase: 'waiting', qrDataUrl, error: '' });
+      this.publish({ phase: 'waiting', qrDataUrl, qrContent, error: '' });
       void this.poll(generation, normalizedDelay(snapshot.pollAfterMs));
       return;
     }
