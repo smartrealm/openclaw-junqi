@@ -57,7 +57,13 @@ fn normalize_application_language(value: &str) -> Option<&'static str> {
         || normalized.contains("hant")
     {
         Some("zh-TW")
-    } else if normalized == "zh" || normalized == "zh-cn" || normalized == "zh_cn" || normalized == "zh-sg" || normalized == "zh_sg" || normalized.contains("hans") {
+    } else if normalized == "zh"
+        || normalized == "zh-cn"
+        || normalized == "zh_cn"
+        || normalized == "zh-sg"
+        || normalized == "zh_sg"
+        || normalized.contains("hans")
+    {
         Some("zh")
     } else if normalized == "ar" || normalized.starts_with("ar-") || normalized.starts_with("ar_") {
         Some("ar")
