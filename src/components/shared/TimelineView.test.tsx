@@ -116,6 +116,28 @@ test('shows agent + project meta when both set', () => {
   assert.match(html, /junqi/);
 });
 
+test('renders model, runtime, duration, token and cost metadata when provided', () => {
+  const html = render([
+    task({
+      id: 'execution-meta',
+      createdAt: NOW,
+      agent: 'Researcher',
+      model: 'sonnet',
+      runtime: 'Gateway',
+      durationMs: 2500,
+      tokens: 12500,
+      cost: 0.12,
+      statusLabel: 'Running',
+    }),
+  ]);
+  assert.match(html, /sonnet/);
+  assert.match(html, /Gateway/);
+  assert.match(html, /2\.5s/);
+  assert.match(html, /12\.5K tok/);
+  assert.match(html, /\$0\.12/);
+  assert.match(html, /Running/);
+});
+
 test('does not crash when given a future-dated task', () => {
   // Sanity: a task with createdAt > now should still render (categorized
   // as "today" since the boundary is in UTC). We just check it renders.

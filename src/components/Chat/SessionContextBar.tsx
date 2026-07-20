@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Download, Folder, Plus, RotateCcw } from 'lucide-react';
+import { Activity, Check, ChevronDown, Download, Folder, Plus, Puzzle, RotateCcw, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -11,6 +11,9 @@ import { exportChatMarkdown } from '@/utils/exportChat';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { debugError } from '@/utils/debugLog';
+import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
+import { useSkillsStore } from '@/stores/skillsStore';
+import { sessionExecutionState } from '@/utils/sessionPresentation';
 
 const THINKING_LEVELS = [
   { id: 'auto', label: 'Auto' },
@@ -262,8 +265,11 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession } = useChatStore();
+  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession, sessions, typingBySession } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
+  const skills = useSkillsStore((s) => s.skills);
+  const refreshSkills = useSkillsStore((s) => s.refresh);
+  const navigate = useNavigate();
   const hasProviders = availableModels.length > 0;
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshed, setIsRefreshed] = useState(false);
@@ -274,6 +280,31 @@ export function SessionContextBar() {
   const agent = agents.find((a) => a.id === agentId);
   const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent', 'Main Agent'));
   const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
+  const activeSession = sessions.find((session) => session.key === activeSessionKey);
+  const executionState = typingBySession[activeSessionKey]
+    ? 'running'
+    : activeSession
+      ? sessionExecutionState(activeSession)
+      : 'unknown';
+  const lifecycle: LifecycleState = executionState === 'running'
+    ? 'running'
+    : executionState === 'failed'
+      ? 'failed'
+      : executionState === 'done'
+        ? 'ended'
+        : 'idle';
+  const lifecycleLabel = executionState === 'running'
+    ? t('lifecycle.running', '运行中')
+    : executionState === 'failed'
+      ? t('lifecycle.failed', '失败')
+      : executionState === 'done'
+        ? t('lifecycle.ended', '已完成')
+        : t('lifecycle.idle', '空闲');
+  const enabledSkillCount = Object.values(skills).filter((skill) => skill.enabled !== false).length;
+
+  useEffect(() => {
+    void refreshSkills();
+  }, [refreshSkills]);
 
   const usedTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
@@ -289,6 +320,10 @@ export function SessionContextBar() {
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />
 
+      <span className="hidden items-center gap-1.5 xl:inline-flex">
+        <StatusBadge state={lifecycle} label size={7} labelText={lifecycleLabel} />
+      </span>
+
       <SessionModelPicker currentModel={currentModel} />
       {hasProviders && (
         <>
@@ -297,6 +332,32 @@ export function SessionContextBar() {
         </>
       )}
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
+        <div className="hidden items-center gap-0.5 lg:flex">
+          <button
+            type="button"
+            onClick={() => navigate('/skills')}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
+            title={t('activity.skillsHint', '查看当前可用技能')}
+          >
+            <Puzzle size={11} />{enabledSkillCount}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/tools')}
+            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
+            title={t('activity.mcpHint', '查看 MCP 工具')}
+          >
+            <Wrench size={11} />
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/activity')}
+            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
+            title={t('activity.open', '打开活动中心')}
+          >
+            <Activity size={11} />
+          </button>
+        </div>
         {maxTokens > 0 && (
           <span className="text-[10px] text-aegis-text-muted font-mono hidden lg:inline" title={`${usedK}K / ${maxLabel} (${Math.round((usedTokens / maxTokens) * 100)}%)`}>
             {usedK}K/{maxLabel}

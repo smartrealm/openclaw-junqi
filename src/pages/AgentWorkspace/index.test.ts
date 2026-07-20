@@ -151,6 +151,15 @@ test('task history and attention badge preferences live in Nezha app settings', 
   assert.match(source, /<Trash2 size=\{12\} \/>清空/);
 });
 
+test('workspace capability panel reuses shared skills and persisted task settings', () => {
+  assert.match(source, /useSkillsStore/);
+  assert.match(source, /task\.permissionMode/);
+  assert.match(source, /task\.planMode/);
+  assert.match(source, /task\.launchMode/);
+  assert.match(source, /toggleRightPanel\('capabilities'\)/);
+  assert.match(source, /onNavigate\('\/activity'\)/);
+});
+
 test('task list delegates Nezha attention ordering to the shared model', () => {
   assert.match(source, /sort\(compareAgentWorkspaceTasks\)/);
   assert.match(source, /agentTaskNeedsAttention\(task\)/);

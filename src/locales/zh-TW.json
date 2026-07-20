@@ -63,7 +63,8 @@
     "subPages": "子頁面",
     "workbench": "工作臺",
     "tools": "工具",
-    "openclawCommands": "常用命令"
+    "openclawCommands": "常用命令",
+    "activity": "活動中心"
   },
   "openclawCommands": {
     "title": "OpenClaw 常用命令",
@@ -267,6 +268,40 @@
     "showingOf": "已顯示 {{shown}} / {{total}} 個技能",
     "startChat": "開始對話",
     "startChatWithPersona": "以此人格開始對話"
+  },
+  "activity": {
+    "title": "活動中心",
+    "subtitle": "把聊天會話、AI 工作臺任務和後臺執行放到同一條可追蹤的時間線上。",
+    "openWorkspace": "打開 AI 工作臺",
+    "live": "實時同步",
+    "offline": "等待 Gateway 連接",
+    "runsTitle": "執行記錄",
+    "runsSubtitle": "每一行都帶有智能體、模型、運行時和時間信息。",
+    "empty": "當前篩選沒有活動記錄。",
+    "offlineEmpty": "連接 Gateway 後，這裏會顯示實時活動。",
+    "attentionTitle": "需要處理",
+    "noAttention": "沒有等待輸入或審閱的任務。",
+    "capabilitiesTitle": "工作區能力",
+    "skills": "Skills",
+    "mcp": "MCP / 工具",
+    "memory": "Memory",
+    "open": "打開",
+    "shortcutsTitle": "快速入口",
+    "skillsHint": "查看當前可用技能",
+    "mcpHint": "查看 MCP 工具",
+    "filters": {
+      "all": "全部",
+      "running": "運行中",
+      "attention": "待關注",
+      "done": "已完成",
+      "failed": "失敗"
+    },
+    "summary": {
+      "running": "運行中",
+      "attention": "待關注",
+      "done": "已完成",
+      "failed": "失敗"
+    }
   },
   "dashboard": {
     "activeAgents": "活躍智能體",
@@ -957,7 +992,15 @@
     "budgetExceededTitle": "已達預算上限",
     "budgetExceededDesc": "近 30 天已花費 ${{used}}，達到上限 ${{limit}}。請在設置中調高預算或暫停使用。",
     "budgetLimit": "30 天預算上限 ($)",
-    "budgetLimitHint": "設為 0 表示不限制。超限後新消息將被攔截。"
+    "budgetLimitHint": "設為 0 表示不限制。超限後新消息將被攔截。",
+    "execution": {
+      "ariaLabel": "執行過程",
+      "error": "執行出現錯誤",
+      "running": "執行中",
+      "done": "執行完成",
+      "toolCount": "{{count}} 次工具調用",
+      "thinkingCount": "{{count}} 條思考"
+    }
   },
   "titlebar": {
     "minimize": "最小化",

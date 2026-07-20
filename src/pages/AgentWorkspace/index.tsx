@@ -20,12 +20,17 @@ import {
   Pencil,
   Play,
   Plus,
+  Puzzle,
   Search,
   Settings,
+  ShieldCheck,
   Star,
   Sun,
   TerminalSquare,
   Trash2,
+  Wrench,
+  Brain,
+  Activity,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -66,8 +71,9 @@ import {
 } from '@/components/Layout/agentWorkspaceSidebarEvents';
 import { nextWorkspaceSidebarMode, type WorkspaceSidebarMode } from '@/components/Layout/workspaceSidebarChannel';
 import { SceneTransition } from '@/components/shared/SceneTransition';
+import { useSkillsStore } from '@/stores/skillsStore';
 
-type RightPanel = 'files' | 'changes' | 'history' | null;
+type RightPanel = 'files' | 'changes' | 'history' | 'capabilities' | null;
 type DiffTarget =
   | { mode: 'file'; filePath: string; staged: boolean; title: string }
   | { mode: 'commit'; commitHash: string; title: string }
@@ -139,6 +145,79 @@ function workspacePath(workspace: { projectDirectory?: string; workingDirectory?
   return workspace?.projectDirectory || workspace?.workingDirectory || '';
 }
 
+function permissionModeLabel(mode: AgentWorkspaceTask['permissionMode']): string {
+  if (mode === 'full_access') return '完全访问';
+  if (mode === 'auto_edit') return '自动编辑';
+  return '每次询问';
+}
+
+function WorkspaceCapabilitiesPanel({
+  projectPath,
+  projectName,
+  task,
+  skills,
+  onNavigate,
+}: {
+  projectPath: string;
+  projectName: string;
+  task?: AgentWorkspaceTask;
+  skills: Record<string, { name: string; enabled: boolean }>;
+  onNavigate: (path: string) => void;
+}) {
+  const { t } = useTranslation();
+  const enabledSkills = Object.entries(skills).filter(([, skill]) => skill.enabled !== false);
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col bg-aegis-surface">
+      <header className="shrink-0 border-b border-aegis-border px-3 py-3">
+        <div className="flex items-center gap-2">
+          <Puzzle size={15} className="text-aegis-primary" />
+          <h2 className="text-[12.5px] font-semibold text-aegis-text">{t('activity.capabilitiesTitle', '工作区能力')}</h2>
+        </div>
+        <p className="mt-1 truncate text-[10.5px] text-aegis-text-dim" title={projectPath}>{projectName || projectPath}</p>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <section className="border-b border-aegis-border pb-3">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim">当前任务</div>
+          {task ? (
+            <div className="space-y-2 text-[11px]">
+              <div className="flex items-center justify-between gap-2"><span className="text-aegis-text-dim">智能体</span><strong className="truncate font-mono font-medium text-aegis-text-secondary">{task.agent}</strong></div>
+              <div className="flex items-center justify-between gap-2"><span className="text-aegis-text-dim">权限</span><span className="inline-flex items-center gap-1 text-aegis-text-secondary"><ShieldCheck size={11} />{permissionModeLabel(task.permissionMode)}</span></div>
+              <div className="flex items-center justify-between gap-2"><span className="text-aegis-text-dim">执行方式</span><span className="text-aegis-text-secondary">{task.planMode ? 'Plan mode' : 'Direct'} · {task.launchMode === 'worktree' ? 'Worktree' : 'Local'}</span></div>
+              <div className="flex items-center justify-between gap-2"><span className="text-aegis-text-dim">状态</span><span className="text-aegis-text-secondary">{taskStatusLabel(task.status)}</span></div>
+            </div>
+          ) : (
+            <p className="text-[11px] leading-5 text-aegis-text-dim">未选择任务</p>
+          )}
+        </section>
+
+        <section className="border-b border-aegis-border py-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-aegis-text-dim">Skills</span>
+            <button type="button" onClick={() => onNavigate('/skills')} className="text-[10px] text-aegis-primary hover:underline">{enabledSkills.length}/{Object.keys(skills).length}</button>
+          </div>
+          {enabledSkills.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {enabledSkills.slice(0, 8).map(([slug, skill]) => (
+                <span key={slug} title={skill.name} className="max-w-full truncate rounded border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.03)] px-1.5 py-1 text-[10px] text-aegis-text-secondary">{skill.name}</span>
+              ))}
+              {enabledSkills.length > 8 && <span className="px-1.5 py-1 font-mono text-[10px] text-aegis-text-dim">+{enabledSkills.length - 8}</span>}
+            </div>
+          ) : (
+            <p className="text-[11px] text-aegis-text-dim">暂无已启用技能。</p>
+          )}
+        </section>
+
+        <section className="space-y-1 py-3">
+          <button type="button" onClick={() => onNavigate('/tools')} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text"><Wrench size={12} className="text-aegis-accent" /><span className="flex-1">MCP / 工具</span></button>
+          <button type="button" onClick={() => onNavigate('/memory')} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text"><Brain size={12} className="text-aegis-success" /><span className="flex-1">Memory</span></button>
+          <button type="button" onClick={() => onNavigate('/activity')} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[11px] text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text"><Activity size={12} className="text-aegis-primary" /><span className="flex-1">{t('nav.activity', '活动中心')}</span></button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 export function AgentWorkspacePage() {
   const { t, i18n } = useTranslation();
   const sidebarEnterX = i18n.dir() === 'rtl' ? 8 : -8;
@@ -150,6 +229,8 @@ export function AgentWorkspacePage() {
   const configuredMonoFont = useSettingsStore((state) => state.monoFont);
   const setTheme = useSettingsStore((state) => state.setTheme);
   const monoFontFamily = (configuredMonoFont || getDefaultMonoFont()) as FontFamily;
+  const skills = useSkillsStore((state) => state.skills);
+  const refreshSkills = useSkillsStore((state) => state.refresh);
   const darkTheme = resolvedTheme === 'aegis-dark' || resolvedTheme === 'aegis-midnight';
   const { scrollback: terminalScrollback, shiftEnterNewline: terminalShiftEnterNewline } = useTerminalPreferences();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
@@ -216,6 +297,10 @@ export function AgentWorkspacePage() {
   const [taskListScrollTop, setTaskListScrollTop] = useState(0);
   const projectUiStatesRef = useRef<Record<string, ProjectUiState>>({});
   const previousProjectPathRef = useRef(projectPath);
+
+  useEffect(() => {
+    void refreshSkills();
+  }, [refreshSkills]);
 
   useEffect(() => {
     if (!projectPath || workspace?.sshRemoteHost) return;
@@ -1298,6 +1383,15 @@ export function AgentWorkspacePage() {
               />
             </ErrorBoundary>
           )}
+          {rightPanel === 'capabilities' && (
+            <WorkspaceCapabilitiesPanel
+              projectPath={projectPath}
+              projectName={workspace?.name || 'Project'}
+              task={selected ?? undefined}
+              skills={skills}
+              onNavigate={navigate}
+            />
+          )}
         </aside>
       )}
 
@@ -1325,6 +1419,14 @@ export function AgentWorkspacePage() {
           className={`flex h-8 w-8 items-center justify-center rounded ${rightPanel === 'history' ? 'bg-aegis-primary/15 text-aegis-primary' : 'text-aegis-text-dim hover:bg-aegis-hover'}`}
         >
           <History size={15} />
+        </button>
+        <button
+          type="button"
+          title={t('activity.capabilitiesTitle', '工作区能力')}
+          onClick={() => toggleRightPanel('capabilities')}
+          className={`flex h-8 w-8 items-center justify-center rounded ${rightPanel === 'capabilities' ? 'bg-aegis-primary/15 text-aegis-primary' : 'text-aegis-text-dim hover:bg-aegis-hover'}`}
+        >
+          <Puzzle size={15} />
         </button>
         <button
           type="button"

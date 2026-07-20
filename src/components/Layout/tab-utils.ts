@@ -5,7 +5,7 @@ const TAB_ROUTE_MAP: [SidebarTab, string[]][] = [
   ['workbench', ['/', '/chat', '/welcome', '/session']],
   ['agents',    ['/agents', '/agent-run', '/agents/live', '/channels', '/memory', '/config', '/sessions', '/skills', '/skill-hub']],
   ['commands',  ['/openclaw-commands']],
-  ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools', '/kanban', '/timeline', '/workshop', '/ai-workspace']],
+  ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools', '/kanban', '/timeline', '/activity', '/workshop', '/ai-workspace']],
   ['settings',  ['/settings', '/logs', '/perf', '/analytics', '/ui-showcase']],
 ];
 

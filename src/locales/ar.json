@@ -62,7 +62,8 @@
     "subPages": "صفحات فرعية",
     "workbench": "مساحة العمل",
     "tools": "أدوات",
-    "openclawCommands": "أوامر OpenClaw"
+    "openclawCommands": "أوامر OpenClaw",
+    "activity": "مركز النشاط"
   },
   "openclawCommands": {
     "title": "مرجع أوامر OpenClaw",
@@ -220,6 +221,40 @@
     "viewBrowse": "تصفح الكل",
     "startChat": "بدء المحادثة",
     "startChatWithPersona": "ابدأ المحادثة بهذه الشخصية"
+  },
+  "activity": {
+    "title": "مركز النشاط",
+    "subtitle": "تتبّع جلسات الدردشة ومهام مساحة عمل AI وعمليات الخلفية في خط زمني واحد.",
+    "openWorkspace": "فتح مساحة عمل AI",
+    "live": "مزامنة مباشرة",
+    "offline": "بانتظار اتصال Gateway",
+    "runsTitle": "سجل التنفيذ",
+    "runsSubtitle": "يعرض كل صف الوكيل والنموذج وبيئة التشغيل والوقت.",
+    "empty": "لا توجد أنشطة مطابقة لهذا المرشح.",
+    "offlineEmpty": "ستظهر الأنشطة المباشرة بعد اتصال Gateway.",
+    "attentionTitle": "يتطلب إجراءً",
+    "noAttention": "لا توجد مهام تنتظر إدخالاً أو مراجعة.",
+    "capabilitiesTitle": "قدرات مساحة العمل",
+    "skills": "المهارات",
+    "mcp": "MCP / الأدوات",
+    "memory": "الذاكرة",
+    "open": "فتح",
+    "shortcutsTitle": "وصول سريع",
+    "skillsHint": "عرض المهارات المتاحة",
+    "mcpHint": "عرض أدوات MCP",
+    "filters": {
+      "all": "الكل",
+      "running": "قيد التشغيل",
+      "attention": "يتطلب إجراءً",
+      "done": "مكتمل",
+      "failed": "فشل"
+    },
+    "summary": {
+      "running": "قيد التشغيل",
+      "attention": "يتطلب إجراءً",
+      "done": "مكتمل",
+      "failed": "فشل"
+    }
   },
   "dashboard": {
     "activeAgents": "الوكلاء النشطون",
@@ -683,7 +718,15 @@
     "contextCacheRead": "قراءة cache",
     "contextCacheWrite": "كتابة cache",
     "budgetExceededTitle": "تم بلوغ حد الميزانية",
-    "budgetExceededDesc": "بلغ الإنفاق خلال 30 يومًا $${used} الحد $${limit}. ارفع الميزانية في الإعدادات أو توقف."
+    "budgetExceededDesc": "بلغ الإنفاق خلال 30 يومًا $${used} الحد $${limit}. ارفع الميزانية في الإعدادات أو توقف.",
+    "execution": {
+      "ariaLabel": "عملية التنفيذ",
+      "error": "خطأ في التنفيذ",
+      "running": "قيد التنفيذ",
+      "done": "مكتمل",
+      "toolCount": "{{count}} أدوات",
+      "thinkingCount": "{{count}} أفكار"
+    }
   },
   "titlebar": {
     "minimize": "تصغير",
