@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Download, Maximize2, X, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
+import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 
 // ═══════════════════════════════════════════════════════════
 // ChatImage — Image display with save, zoom, and lightbox
@@ -36,7 +37,7 @@ function resolveImageSrcSync(src: string): string | null {
   // Relative gateway media path (e.g., /media/xxx.png)
   if (src.startsWith('/media/') || src.startsWith('/v1/media/')) {
     // Resolve against gateway URL (read from config, fallback to localhost)
-    const gwUrl = localStorage.getItem('aegis-gateway-http') || 'http://127.0.0.1:18789';
+    const gwUrl = localStorage.getItem('aegis-gateway-http') || defaultGatewayHttpUrl();
     return `${gwUrl}${src}`;
   }
 

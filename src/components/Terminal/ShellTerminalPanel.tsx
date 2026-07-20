@@ -1,13 +1,16 @@
 import type React from "react";
 import { createPortal } from "react-dom";
 import { APP_PLATFORM } from "./_nezha-platform";
-import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
-import { attachSmartCopy } from "./terminalCopyHelper";
+import { attachSmartCopy, smartCopy } from "./terminalCopyHelper";
+import { matchesTerminalNewline, TERMINAL_NEWLINE_SEQUENCE } from "@/_nezha_root/shortcuts";
+import { TERMINAL_CONTEXT_MENU_STYLE } from "./terminalMenuStyles";
+import { Icon } from '@/components/shared/icons';
 import type { TerminalFontSize, FontFamily, ThemeVariant } from "./_nezha-types";
 import {
   applyTerminalThemeOnPanel,
@@ -27,6 +30,7 @@ import { attachLinuxIMEFix, attachMacWebKitShiftInputFix } from "./terminalInput
 import {
   advanceShellLaunchPath,
   applyTerminalToolCallEvent,
+  beginShellRename,
   createShellRunId,
   markStalledTerminalToolCalls,
   migrateShellTitleState,
@@ -35,12 +39,14 @@ import {
   parseJunqiAgentStatusTitle,
   recordClosedTerminalShell,
   resolveShellDisplayTitle,
+  resolveShellRename,
   shellStateFromExit,
   takeRecentlyClosedTerminalShell,
   terminalAgentLaunchCommand,
   type TerminalAgentId,
   type TerminalAgentActivity,
   type TerminalHookEvent,
+  type ShellRenameSession,
   type TerminalToolCall,
   type OpenShellResult,
   type ShellProxyInfo,
@@ -75,9 +81,9 @@ import {
   takeTerminalPtyHandoffSnapshot,
   unregisterTerminalPtyOwner,
 } from './terminalPtyHandoff';
-import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
+import { combineUnlisteners, hasTauriEventBridge, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { Bot, ChevronDown, Code2, Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, RotateCcw } from "lucide-react";
+import { ChevronDown, Code2, Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, RotateCcw } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
 import { PaneComposerBar } from "./PaneComposerBar";
@@ -114,6 +120,7 @@ interface TabShellItemProps {
   onClose: () => void;
   onCloseOthers?: () => void;
   onCloseToRight?: () => void;
+  onCloseAll?: () => void;
   onRename?: (name: string) => void;
   onDuplicate?: () => void;
   onMoveToNewWindow?: () => void;
@@ -130,7 +137,7 @@ interface TabShellItemProps {
 
 function TabShellItem({
   title, status, exitCode, selected, index, totalCount,
-  onSelect, onClose, onCloseOthers, onCloseToRight, onRename,
+  onSelect, onClose, onCloseOthers, onCloseToRight, onCloseAll, onRename,
   onDuplicate, onMoveToNewWindow, onSplitH, onSplitV, onRevealDirectory,
   onDragStart, onDragEnter, onDragEnd, onExternalDrop, renameRequested = false, onRenameRequestHandled,
 }: TabShellItemProps) {
@@ -138,12 +145,13 @@ function TabShellItem({
   const [hovered, setHovered] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState('');
+  const [renameSession, setRenameSession] = useState<ShellRenameSession | null>(null);
+  const renaming = renameSession !== null;
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const pendingRenameFrameRef = useRef<number | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (renaming && renameInputRef.current) {
       renameInputRef.current.focus();
       renameInputRef.current.select();
@@ -152,18 +160,34 @@ function TabShellItem({
 
   useEffect(() => {
     if (!renameRequested) return;
-    setRenameValue(title);
-    setRenaming(true);
+    setCtxMenu(null);
+    setRenameSession((current) => current ?? beginShellRename(title));
     onRenameRequestHandled?.();
   }, [onRenameRequestHandled, renameRequested, title]);
 
+  useEffect(() => () => {
+    if (pendingRenameFrameRef.current !== null) cancelAnimationFrame(pendingRenameFrameRef.current);
+  }, []);
+
   useEffect(() => {
     if (!ctxMenu) return;
-    const handler = (event: MouseEvent) => {
+    const dismissOutside = (event: MouseEvent) => {
       if (!contextMenuRef.current?.contains(event.target as Node)) setCtxMenu(null);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCtxMenu(null);
+    };
+    const dismiss = () => setCtxMenu(null);
+    document.addEventListener('mousedown', dismissOutside);
+    window.addEventListener('keydown', dismissOnEscape);
+    window.addEventListener('resize', dismiss);
+    window.addEventListener('blur', dismiss);
+    return () => {
+      document.removeEventListener('mousedown', dismissOutside);
+      window.removeEventListener('keydown', dismissOnEscape);
+      window.removeEventListener('resize', dismiss);
+      window.removeEventListener('blur', dismiss);
+    };
   }, [ctxMenu]);
 
   const menuItemStyle: React.CSSProperties = {
@@ -175,16 +199,28 @@ function TabShellItem({
   const menuHover = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.06)'; };
   const menuLeave = (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; };
 
-  const startRename = () => { setRenameValue(title); setRenaming(true); setCtxMenu(null); };
-  const commitRename = () => {
-    onRename?.(renameValue);
-    setRenaming(false);
+  const startRename = (deferred = false) => {
+    const open = () => {
+      pendingRenameFrameRef.current = null;
+      setRenameSession((current) => current ?? beginShellRename(title));
+    };
+    setCtxMenu(null);
+    if (pendingRenameFrameRef.current !== null) cancelAnimationFrame(pendingRenameFrameRef.current);
+    if (deferred) pendingRenameFrameRef.current = requestAnimationFrame(open);
+    else open();
   };
+  const commitRename = () => {
+    if (!renameSession) return;
+    const result = resolveShellRename(renameSession);
+    setRenameSession(null);
+    if (result.changed) onRename?.(result.value);
+  };
+  const cancelRename = () => setRenameSession(null);
 
   return (
     <>
       <div
-        draggable
+        draggable={!renaming}
         onClick={onSelect}
         onDoubleClick={(e) => {
           e.preventDefault();
@@ -241,15 +277,19 @@ function TabShellItem({
         {renaming ? (
           <input
             ref={renameInputRef}
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
+            value={renameSession.draft}
+            aria-label={t('terminal.rename', 'Rename terminal')}
+            onChange={(e) => setRenameSession((current) => current ? { ...current, draft: e.target.value } : current)}
             onBlur={commitRename}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
-              if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); }
+              if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
               e.stopPropagation();
             }}
             onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.stopPropagation()}
             style={{
               fontSize: 12,
               background: 'rgb(var(--aegis-surface))',
@@ -271,8 +311,8 @@ function TabShellItem({
             background: "none", border: "none", color: "rgb(var(--aegis-text-dim))",
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: 1, borderRadius: 3, cursor: "pointer",
-            opacity: (hovered || selected) ? 1 : 0,
-            pointerEvents: (hovered || selected) ? "auto" : "none",
+            opacity: !renaming && (hovered || selected) ? 1 : 0,
+            pointerEvents: !renaming && (hovered || selected) ? "auto" : "none",
             transition: "opacity 0.1s, background 0.12s, color 0.12s",
           }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.10)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
@@ -288,9 +328,9 @@ function TabShellItem({
           role="menu"
           onMouseDown={(event) => event.stopPropagation()}
           style={{
-          position: 'fixed', left: Math.min(ctxMenu.x, window.innerWidth - 220), top: Math.min(ctxMenu.y, window.innerHeight - 280), zIndex: 2147482000,
-          background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(255 255 255 / 0.08)',
-          borderRadius: 6, boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
+          position: 'fixed', left: Math.max(4, Math.min(ctxMenu.x, window.innerWidth - 220)), top: Math.max(4, Math.min(ctxMenu.y, window.innerHeight - 280)), zIndex: 2147482000,
+          ...TERMINAL_CONTEXT_MENU_STYLE,
+          borderRadius: 6,
           padding: '4px 0', minWidth: 180, display: 'flex', flexDirection: 'column',
           }}
         >
@@ -300,6 +340,8 @@ function TabShellItem({
             onClick={() => { if (onCloseOthers && totalCount > 1) { onCloseOthers(); setCtxMenu(null); } }}>{t('terminal.closeOthers', 'Close Others')}</button>
           <button type="button" role="menuitem" disabled={!onCloseToRight || index >= totalCount - 1} style={{ ...menuItemStyle, opacity: onCloseToRight && index < totalCount - 1 ? 1 : 0.45, cursor: onCloseToRight && index < totalCount - 1 ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
             onClick={() => { if (onCloseToRight && index < totalCount - 1) { onCloseToRight(); setCtxMenu(null); } }}>{t('terminal.closeTabsToRight', 'Close Tabs to the Right')}</button>
+          <button type="button" role="menuitem" disabled={!onCloseAll} style={{ ...menuItemStyle, opacity: onCloseAll ? 1 : 0.45, cursor: onCloseAll ? 'pointer' : 'default' }} onMouseEnter={menuHover} onMouseLeave={menuLeave}
+            onClick={() => { if (onCloseAll) { onCloseAll(); setCtxMenu(null); } }}>{t('file.closeAllTabs', 'Close All Tabs')}</button>
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onSplitH && (
             <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
@@ -316,7 +358,7 @@ function TabShellItem({
           <div style={{ height: 1, background: 'rgb(255 255 255 / 0.07)', margin: '3px 0' }} />
           {onRename && (
             <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
-              onClick={startRename}>{t('terminal.rename', 'Rename...')}</button>
+              onClick={() => startRename(true)}>{t('terminal.rename', 'Rename...')}</button>
           )}
           {onDuplicate && (
             <button type="button" role="menuitem" style={menuItemStyle} onMouseEnter={menuHover} onMouseLeave={menuLeave}
@@ -333,21 +375,26 @@ function TabShellItem({
   );
 }
 
-function TerminalLaunchMenuItem({ icon, label, onClick }: {
+function TerminalLaunchMenuItem({ icon, label, onClick, disabled = false, meta }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
+  meta?: string;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
+      disabled={disabled}
       onClick={onClick}
-      style={{ width: '100%', height: 28, display: 'flex', alignItems: 'center', gap: 8, border: 'none', borderRadius: 4, background: 'transparent', color: 'rgb(var(--aegis-text))', padding: '0 8px', cursor: 'pointer', textAlign: 'left', fontSize: 11.5 }}
-      onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; }}
+      style={{ width: '100%', height: 30, display: 'flex', alignItems: 'center', gap: 8, border: 'none', borderRadius: 4, background: 'transparent', color: 'rgb(var(--aegis-text))', opacity: disabled ? 0.48 : 1, padding: '0 8px', cursor: disabled ? 'default' : 'pointer', textAlign: 'left', fontSize: 11.5 }}
+      onMouseEnter={(event) => { if (!disabled) event.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; }}
       onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
     >
-      <span style={{ color: 'rgb(var(--aegis-text-dim))', display: 'inline-flex' }}>{icon}</span>{label}
+      <span style={{ color: 'rgb(var(--aegis-text-dim))', display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+      <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {meta && <span style={{ color: 'rgb(var(--aegis-text-dim))', fontSize: 10, flexShrink: 0 }}>{meta}</span>}
     </button>
   );
 }
@@ -392,6 +439,39 @@ interface ShellSession {
   agentActivity?: TerminalAgentActivity;
   toolCalls?: TerminalToolCall[];
   restartNonce: number;
+}
+
+interface DetectedCliTool {
+  id: string;
+  label: string;
+  cmd_no_nl: string;
+}
+
+const TERMINAL_AGENT_LAUNCHERS = [
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'gemini', label: 'Gemini CLI' },
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'amp', label: 'Amp' },
+  { id: 'cursor-agent', label: 'Cursor CLI' },
+  { id: 'copilot', label: 'Copilot CLI' },
+  { id: 'grok', label: 'Grok Build' },
+  { id: 'agy', label: 'Antigravity CLI' },
+  { id: 'kimi', label: 'Kimi Code' },
+  { id: 'pi', label: 'Pi' },
+  { id: 'kiro-cli', label: 'Kiro CLI' },
+  { id: 'droid', label: 'Droid' },
+  { id: 'aider', label: 'Aider' },
+  { id: 'qwen', label: 'Qwen CLI' },
+] as const;
+
+const TERMINAL_AGENT_LAUNCHER_IDS = new Set<string>(TERMINAL_AGENT_LAUNCHERS.map((launcher) => launcher.id));
+
+function terminalLauncherIcon(id: string): React.ReactNode {
+  const registered = Icon.agent[id];
+  return registered
+    ? <span style={{ color: `#${registered.tint}`, display: 'inline-flex' }}>{registered.icon}</span>
+    : <Code2 size={13} />;
 }
 
 const TERMINAL_SHELL_TRANSFER_MIME = 'application/x-junqi-terminal-shell';
@@ -442,6 +522,8 @@ interface Props {
   onClose: () => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: number;
+  terminalShiftEnterNewline: boolean;
   monoFontFamily: FontFamily;
   onReady?: () => void;
   height?: number;
@@ -533,6 +615,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
   handoffSnapshot?: string;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: number;
+  terminalShiftEnterNewline: boolean;
   monoFontFamily: FontFamily;
   onReady?: () => void;
   onActiveTermChange?: (term: XTermType | null) => void;
@@ -563,6 +647,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
       handoffSnapshot,
       themeVariant,
       terminalFontSize,
+      terminalScrollback,
+      terminalShiftEnterNewline,
       monoFontFamily,
       onReady,
       onActiveTermChange,
@@ -592,6 +678,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     const isActiveRef = useRef(isActive);
     const isFocusedRef = useRef(isFocused);
     const terminalFontSizeRef = useRef(terminalFontSize);
+    const terminalScrollbackRef = useRef(terminalScrollback);
+    const terminalShiftEnterNewlineRef = useRef(terminalShiftEnterNewline);
     const monoFontFamilyRef = useRef(monoFontFamily);
     const onReadyRef = useRef(onReady);
     const onLifecycleChangeRef = useRef(onLifecycleChange);
@@ -615,6 +703,8 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     isActiveRef.current = isActive;
     isFocusedRef.current = isFocused;
     terminalFontSizeRef.current = terminalFontSize;
+    terminalScrollbackRef.current = terminalScrollback;
+    terminalShiftEnterNewlineRef.current = terminalShiftEnterNewline;
     monoFontFamilyRef.current = monoFontFamily;
     onReadyRef.current = onReady;
     onLifecycleChangeRef.current = onLifecycleChange;
@@ -740,7 +830,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
 
       const { term, fitAddon, whenFontsReady } = initTerminal(
         themeVariantRef.current,
-        5000,
+        terminalScrollbackRef.current,
         terminalFontSizeRef.current,
         monoFontFamilyRef.current,
       );
@@ -814,7 +904,17 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         listenersReady = true;
         startShell?.();
       };
-      void subscribe();
+      if (hasTauriEventBridge()) {
+        void subscribe().catch((error) => {
+          if (cleaned) return;
+          onLifecycleChangeRef.current?.('failed');
+          debugError('terminal', '[ShellTerminalPanel] unable to subscribe to PTY events:', error);
+        });
+      } else {
+        // Browser previews have no native PTY bridge. Render xterm without
+        // registering callbacks that only exist inside the desktop runtime.
+        listenersReady = true;
+      }
 
       // safeOpenTerminal waits for non-zero layout dimensions. The PTY is
       // deliberately not spawned until both xterm and its event listeners are
@@ -832,7 +932,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
         term.loadAddon(serializeAddon);
         serializeAddonRef.current = serializeAddon;
         disposeMacWebKitGuard = attachMacWebKitTerminalGuard({ term, container, writer });
-        disposeSmartCopy = attachSmartCopy(term, { onPaste: pasteFromSystemClipboard });
+        disposeSmartCopy = attachSmartCopy(term, {
+          onPaste: pasteFromSystemClipboard,
+          matchesNewline: (event) => matchesTerminalNewline(event, terminalShiftEnterNewlineRef.current),
+          onNewline: () => { sendInput(TERMINAL_NEWLINE_SEQUENCE); },
+        });
         const handleNativeImagePaste = (event: ClipboardEvent) => {
           if (!imageFromClipboardEvent(event)) return;
           event.preventDefault();
@@ -1074,6 +1178,11 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     }, [requestResize, terminalFontSize]);
 
     useEffect(() => {
+      if (!terminalRef.current) return;
+      terminalRef.current.options.scrollback = terminalScrollback;
+    }, [terminalScrollback]);
+
+    useEffect(() => {
       if (!termCtxMenu) return;
       const close = () => setTermCtxMenu(null);
       const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
@@ -1086,10 +1195,10 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
     }, [termCtxMenu]);
 
     const copySelection = async () => {
-      const selected = terminalRef.current?.getSelection?.() ?? '';
-      if (selected) await navigator.clipboard.writeText(selected);
+      const terminal = terminalRef.current;
+      if (terminal) await smartCopy(terminal);
       setTermCtxMenu(null);
-      terminalRef.current?.focus();
+      terminal?.focus();
     };
 
     const pasteClipboard = async () => {
@@ -1167,9 +1276,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           minWidth: 150,
           padding: '4px 0',
           borderRadius: 6,
-          background: 'rgb(var(--aegis-elevated))',
-          border: '1px solid rgb(var(--aegis-overlay)/0.10)',
-          boxShadow: '0 8px 24px rgb(0 0 0 / 0.4)',
+          ...TERMINAL_CONTEXT_MENU_STYLE,
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -1180,7 +1287,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
           <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => askAgent('opencode')}>Ask OpenCode</button>
           <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
         </>}
-        <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={copySelection}>{t('terminal.copy', 'Copy')}</button>
+        <button disabled={!selectedText} style={{ ...menuItemStyle, opacity: selectedText ? 1 : 0.45, cursor: selectedText ? 'pointer' : 'default' }} onMouseEnter={(e) => { if (selectedText) e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)'; }} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => void copySelection()}>{t('terminal.copy', 'Copy')}</button>
         <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={() => void pasteClipboard()}>{t('terminal.paste', 'Paste')}</button>
         <button style={menuItemStyle} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.08)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')} onClick={selectAllTerminal}>{t('terminal.selectAll', 'Select All')}</button>
         <div style={{ height: 1, background: 'rgb(var(--aegis-overlay)/0.08)', margin: '3px 0' }} />
@@ -1262,6 +1369,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       onClose,
       themeVariant,
       terminalFontSize,
+      terminalScrollback,
+      terminalShiftEnterNewline,
       monoFontFamily,
       onReady,
       onSplitHorizontal,
@@ -1309,6 +1418,11 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     const [renameShellRequestId, setRenameShellRequestId] = useState<string | null>(null);
     const [addMenuOpen, setAddMenuOpen] = useState(false);
     const addMenuRef = useRef<HTMLDivElement>(null);
+    const addMenuPopupRef = useRef<HTMLDivElement>(null);
+    const addMenuButtonRef = useRef<HTMLButtonElement>(null);
+    const [detectedLaunchers, setDetectedLaunchers] = useState<DetectedCliTool[]>([]);
+    const [launchersLoading, setLaunchersLoading] = useState(false);
+    const launchersLoadedRef = useRef(false);
     const [terminalDropActive, setTerminalDropActive] = useState(false);
     const [workspacePathDropActive, setWorkspacePathDropActive] = useState(false);
     const activeShellIdRef = useRef(activeShellId);
@@ -1595,11 +1709,28 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     useEffect(() => {
       if (!addMenuOpen) return;
       const close = (event: MouseEvent) => {
-        if (!addMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
+        const target = event.target as Node;
+        if (!addMenuRef.current?.contains(target) && !addMenuPopupRef.current?.contains(target)) {
+          setAddMenuOpen(false);
+        }
       };
       document.addEventListener('mousedown', close);
       return () => document.removeEventListener('mousedown', close);
     }, [addMenuOpen]);
+
+    useEffect(() => {
+      if (!addMenuOpen || launchersLoadedRef.current || launchersLoading) return;
+      setLaunchersLoading(true);
+      void invoke<DetectedCliTool[]>('detect_cli_tools')
+        .then((tools) => {
+          setDetectedLaunchers((tools ?? []).filter((tool) => (
+            TERMINAL_AGENT_LAUNCHER_IDS.has(tool.id) && Boolean(tool.cmd_no_nl?.trim())
+          )));
+          launchersLoadedRef.current = true;
+        })
+        .catch(() => setDetectedLaunchers([]))
+        .finally(() => setLaunchersLoading(false));
+    }, [addMenuOpen, launchersLoading]);
 
     const updateShell = useCallback((shellId: string, patch: Partial<ShellSession>) => {
       setShells((previous) => previous.map((shell) => (
@@ -1856,6 +1987,10 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
       return () => window.removeEventListener(TERMINAL_SHELL_MOVED_EVENT, handleTransfer);
     }, [onClose, projectId, shells]);
 
+    const detectedLauncherById = new Map(detectedLaunchers.map((launcher) => [launcher.id, launcher]));
+    const availableLaunchers = TERMINAL_AGENT_LAUNCHERS.filter((launcher) => detectedLauncherById.has(launcher.id));
+    const unavailableLaunchers = TERMINAL_AGENT_LAUNCHERS.filter((launcher) => !detectedLauncherById.has(launcher.id));
+
     return (
       <div
         ref={panelRef}
@@ -1943,6 +2078,13 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                         setActiveShellId(shell.id);
                       }
                     }}
+                    onCloseAll={() => {
+                      shells.forEach(recordClosedTerminalShell);
+                      setShells([]);
+                      setActiveShellId(null);
+                      shellRefs.current = {};
+                      onClose();
+                    }}
                     onRename={(name) => {
                       const customTitle = normalizeShellCustomTitle(name);
                       setShells((prev) => prev.map((s) => {
@@ -2008,6 +2150,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
             <div style={{ display: "flex", gap: 2, paddingRight: 4, flexShrink: 0 }}>
               <div ref={addMenuRef} style={{ position: 'relative' }}>
                 <button
+                  ref={addMenuButtonRef}
                   onClick={() => setAddMenuOpen((open) => !open)}
                   title={t("terminal.newTerminal")}
                   style={{ width: 32, height: 28, borderRadius: 5, border: "none", background: addMenuOpen ? 'rgb(var(--aegis-overlay)/0.08)' : "transparent", color: "rgb(var(--aegis-text-secondary))", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, flexShrink: 0, transition: "background 0.12s, color 0.12s" }}
@@ -2016,13 +2159,68 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 >
                   <Plus size={14} /><ChevronDown size={10} />
                 </button>
-                {addMenuOpen && (
-                  <div role="menu" style={{ position: 'absolute', top: 32, right: 0, zIndex: 200, minWidth: 168, padding: 4, borderRadius: 6, background: 'rgb(var(--aegis-elevated))', border: '1px solid rgb(var(--aegis-overlay)/0.12)', boxShadow: '0 8px 24px rgb(0 0 0 / 0.32)' }}>
+                {addMenuOpen && createPortal(
+                  <div
+                    ref={addMenuPopupRef}
+                    role="menu"
+                    style={{
+                      position: 'fixed',
+                      left: Math.max(8, Math.min((addMenuButtonRef.current?.getBoundingClientRect().right ?? window.innerWidth) - 220, window.innerWidth - 228)),
+                      top: Math.max(8, Math.min((addMenuButtonRef.current?.getBoundingClientRect().bottom ?? 32) + 4, window.innerHeight - 368)),
+                      zIndex: 2147482000,
+                      width: 220,
+                      maxHeight: 360,
+                      overflowY: 'auto',
+                      padding: 4,
+                      borderRadius: 6,
+                      ...TERMINAL_CONTEXT_MENU_STYLE,
+                    }}
+                  >
                     <TerminalLaunchMenuItem icon={<TerminalIcon size={13} />} label={t('terminal.newTerminal')} onClick={() => { handleAddShell(); setAddMenuOpen(false); }} />
-                    <TerminalLaunchMenuItem icon={<Bot size={13} />} label="Claude Code" onClick={() => { handleAddShell({ command: 'claude', title: 'Claude Code' }); setAddMenuOpen(false); }} />
-                    <TerminalLaunchMenuItem icon={<Code2 size={13} />} label="Codex" onClick={() => { handleAddShell({ command: 'codex', title: 'Codex' }); setAddMenuOpen(false); }} />
-                    <TerminalLaunchMenuItem icon={<Code2 size={13} />} label="OpenCode" onClick={() => { handleAddShell({ command: 'opencode', title: 'OpenCode' }); setAddMenuOpen(false); }} />
-                  </div>
+                    <div style={{ height: 1, margin: '3px 0', background: 'rgb(var(--aegis-overlay)/0.08)' }} />
+                    {availableLaunchers.length > 0 && (
+                      <div style={{ padding: '5px 8px 3px', color: 'rgb(var(--aegis-text-dim))', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase' }}>
+                        {t('terminal.availableAgents', 'Available')}
+                      </div>
+                    )}
+                    {availableLaunchers.map((launcher) => (
+                      <TerminalLaunchMenuItem
+                        key={launcher.id}
+                        icon={terminalLauncherIcon(launcher.id)}
+                        label={launcher.label}
+                        onClick={() => {
+                          const detected = detectedLauncherById.get(launcher.id);
+                          if (!detected) return;
+                          handleAddShell({ command: detected.cmd_no_nl, title: launcher.label });
+                          setAddMenuOpen(false);
+                        }}
+                      />
+                    ))}
+                    {launchersLoading && (
+                      <div style={{ padding: '7px 8px', color: 'rgb(var(--aegis-text-dim))', fontSize: 11.5 }}>
+                        {t('terminal.detectingAgents', 'Detecting installed AI CLIs...')}
+                      </div>
+                    )}
+                    {!launchersLoading && unavailableLaunchers.length > 0 && (
+                      <>
+                        <div style={{ height: 1, margin: '3px 0', background: 'rgb(var(--aegis-overlay)/0.08)' }} />
+                        <div style={{ padding: '5px 8px 3px', color: 'rgb(var(--aegis-text-dim))', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase' }}>
+                          {t('terminal.unavailableAgents', 'Not detected')}
+                        </div>
+                        {unavailableLaunchers.map((launcher) => (
+                          <TerminalLaunchMenuItem
+                            key={launcher.id}
+                            icon={terminalLauncherIcon(launcher.id)}
+                            label={launcher.label}
+                            meta={t('terminal.notInstalled', 'Not installed')}
+                            disabled
+                            onClick={() => undefined}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </div>,
+                  document.body,
                 )}
               </div>
               <button
@@ -2071,6 +2269,8 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 handoffSnapshot={shell.handoffSnapshot}
                 themeVariant={themeVariant}
                 terminalFontSize={terminalFontSize}
+                terminalScrollback={terminalScrollback}
+                terminalShiftEnterNewline={terminalShiftEnterNewline}
                 monoFontFamily={monoFontFamily}
                 onReady={() => {
                   flushPendingTerminalPaste();

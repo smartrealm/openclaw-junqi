@@ -134,7 +134,7 @@ fn validate_project_root(project_path: &str) -> Result<std::path::PathBuf, Strin
     Ok(canonical)
 }
 
-fn is_filesystem_link(metadata: &std::fs::Metadata) -> bool {
+pub(crate) fn is_filesystem_link(metadata: &std::fs::Metadata) -> bool {
     if metadata.file_type().is_symlink() {
         return true;
     }
@@ -438,7 +438,7 @@ fn read_directory_entries(
     if !result.is_empty() {
         let ignored_set: std::collections::HashSet<String> = {
             use std::io::Write;
-            let mut cmd = std::process::Command::new("git");
+            let mut cmd = std::process::Command::new(crate::platform::resolve_spawn_program("git"));
             crate::platform::suppress_console_window(&mut cmd);
             cmd.args(["check-ignore", "-z", "--stdin"])
                 .current_dir(project_path)
@@ -838,7 +838,7 @@ pub async fn delete_path(path: String, project_path: String) -> Result<(), Strin
 #[tauri::command]
 pub async fn list_project_files(project_path: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = std::process::Command::new(crate::platform::resolve_spawn_program("git"));
         crate::platform::suppress_console_window(&mut cmd);
         let output = cmd
             .args([
@@ -906,7 +906,7 @@ pub async fn search_project_files(
             .collect();
         let limit = limit.unwrap_or(80).clamp(1, MAX_FILE_SEARCH_RESULTS);
 
-        let mut cmd = Command::new("git");
+        let mut cmd = Command::new(crate::platform::resolve_spawn_program("git"));
         crate::platform::suppress_console_window(&mut cmd);
         let output = cmd
             .args(["-c", "core.quotePath=false", "ls-files", "-z"])

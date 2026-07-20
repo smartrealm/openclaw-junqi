@@ -7,6 +7,7 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useChatStore, type ChatMessage } from '@/stores/chatStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 import { projectResponseGroupToRenderBlocks } from '@/processing/projectResponseGroup';
 import type {
@@ -21,6 +22,9 @@ import type {
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import clsx from 'clsx';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
+import { isSessionDeleted } from '@/utils/sessionLifecycle';
+import { resetSessionEverywhere } from '@/utils/sessionReset';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -28,7 +32,7 @@ const HISTORY_BACKGROUND_RETRY_BASE_MS = 30_000;
 const HISTORY_BACKGROUND_RETRY_MAX_MS = 120_000;
 const HISTORY_STARTUP_RETRY_BASE_MS = 3_000;
 const HISTORY_STARTUP_RETRY_MAX_MS = 12_000;
-const DEFAULT_GATEWAY_WS_URL = 'ws://127.0.0.1:18789';
+const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 
 const InlineButtonBar = lazy(() => import('./InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('./ResultCards').then((m) => ({ default: m.DecisionCard })));
@@ -212,8 +216,6 @@ export function ChatView() {
   const addMessage = useChatStore((s) => s.addMessage);
   const setHistoryLoader = useChatStore((s) => s.setHistoryLoader);
   const setQuickReplies = useChatStore((s) => s.setQuickReplies);
-  const clearSessionTokens = useChatStore((s) => s.clearSessionTokens);
-  const clearSessionMessages = useChatStore((s) => s.clearSessionMessages);
 
   // ── Virtuoso ref & scroll state ──
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -331,6 +333,7 @@ export function ChatView() {
   const loadHistory = useCallback(
     async (targetSessionKey?: string, options?: { force?: boolean; background?: boolean }) => {
       const sessionKey = targetSessionKey || activeSessionKey;
+      if (isSessionDeleted(sessionKey)) return;
 
       if (inFlightHistoryBySession.current[sessionKey]) {
         await inFlightHistoryBySession.current[sessionKey];
@@ -382,7 +385,7 @@ export function ChatView() {
         try {
           const result = await gateway.getHistory(sessionKey, HISTORY_LIMIT, HISTORY_REQUEST_TIMEOUT_MS);
           const requestMs = Math.round(performance.now() - requestStartedAt);
-          if (latestHistoryRequestBySession.current[sessionKey] !== requestId) return;
+          if (latestHistoryRequestBySession.current[sessionKey] !== requestId || isSessionDeleted(sessionKey)) return;
 
           const normalizeStartedAt = performance.now();
           const rawMessages = Array.isArray(result?.messages) ? result.messages : [];
@@ -426,7 +429,7 @@ export function ChatView() {
           if (shouldProgressivelyHydrate) {
             setMessages(messages.slice(-20), sessionKey);
             requestAnimationFrame(() => {
-              if (latestHistoryRequestBySession.current[sessionKey] !== requestId) return;
+              if (latestHistoryRequestBySession.current[sessionKey] !== requestId || isSessionDeleted(sessionKey)) return;
               setMessages(messages, sessionKey);
               cacheMessagesForSession(sessionKey, messages);
               setHistoryMetaBySession((prev) => ({
@@ -470,6 +473,7 @@ export function ChatView() {
           historyTimeoutCountBySession.current[sessionKey] = 0;
           historyStartupRetryCountBySession.current[sessionKey] = 0;
         } catch (err) {
+          if (isSessionDeleted(sessionKey)) return;
           const errText = String(err);
           const isHistoryUnavailableDuringStartup =
             /chat\.history/i.test(errText) &&
@@ -491,6 +495,7 @@ export function ChatView() {
             if (!historyRetryTimerBySession.current[sessionKey]) {
               historyRetryTimerBySession.current[sessionKey] = setTimeout(() => {
                 delete historyRetryTimerBySession.current[sessionKey];
+                if (isSessionDeleted(sessionKey)) return;
                 void loadHistory(sessionKey, { force: true, background: true });
               }, retryDelay);
             }
@@ -513,6 +518,7 @@ export function ChatView() {
             if (!historyRetryTimerBySession.current[sessionKey]) {
               historyRetryTimerBySession.current[sessionKey] = setTimeout(() => {
                 delete historyRetryTimerBySession.current[sessionKey];
+                if (isSessionDeleted(sessionKey)) return;
                 void loadHistory(sessionKey, { force: true, background: true });
               }, retryDelay);
             }
@@ -520,7 +526,11 @@ export function ChatView() {
           }
         } finally {
           delete inFlightHistoryBySession.current[sessionKey];
-          if (latestHistoryRequestBySession.current[sessionKey] === requestId) {
+          if (
+            !options?.background
+            && latestHistoryRequestBySession.current[sessionKey] === requestId
+            && useChatStore.getState().activeSessionKey === sessionKey
+          ) {
             setIsLoadingHistory(false);
           }
         }
@@ -557,6 +567,7 @@ export function ChatView() {
   const isLoadingOlderRef = useRef(false);
   const loadOlderMessages = useCallback(async () => {
     const sk = activeSessionKey;
+    if (isSessionDeleted(sk)) return;
     if (isLoadingOlderRef.current) return;
     const meta = historyMetaBySession[sk];
     if (!meta || !meta.hasMore) return;
@@ -573,6 +584,7 @@ export function ChatView() {
         limit: HISTORY_LIMIT,
         cursor: meta.nextCursor,
       });
+      if (isSessionDeleted(sk)) return;
       const normalized = normalizeHistoryMessages(page.messages as unknown[]);
       const existing = useChatStore.getState().messagesPerSession[sk] || [];
       const { merged, addedCount } = prependOlderMessages(existing, normalized);
@@ -707,15 +719,9 @@ export function ChatView() {
   // ── Error Action Handler — called by MessageBubble when user clicks an error action button ──
   const handleErrorAction = useCallback(async (action: string) => {
     if (action === 'reset-session') {
-      try {
-        await gateway.resetSession(activeSessionKey);
-      } catch { /* ignore — session may already be fresh */ }
-      clearSessionMessages(activeSessionKey);
-      clearSessionTokens(activeSessionKey);
-      // Trigger App-level session refresh to sync token counts from gateway
-      window.dispatchEvent(new CustomEvent('aegis:session-reset'));
+      await resetSessionEverywhere(activeSessionKey);
     }
-  }, [activeSessionKey, clearSessionMessages, clearSessionTokens]);
+  }, [activeSessionKey]);
 
   const handleInlineButtonClick = useCallback(async (callbackData: string) => {
     const text = callbackData;
@@ -944,7 +950,7 @@ export function ChatView() {
               {connectionError && <span className="opacity-60"> — {connectionError}</span>}
               <button onClick={() => {
                 window.aegis?.config.get().then((c: any) => {
-                  gateway.connect(c.gatewayUrl || c.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL, c.gatewayToken || '');
+                  gatewayManager.connect(c.gatewayUrl || c.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL, c.gatewayToken || '');
                 });
               }} className="mx-2 underline hover:no-underline">
                 {t('connection.reconnect')}

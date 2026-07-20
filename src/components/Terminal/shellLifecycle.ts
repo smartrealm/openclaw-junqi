@@ -251,6 +251,21 @@ export function normalizeShellCustomTitle(value: unknown): string | undefined {
   return normalized || undefined;
 }
 
+export interface ShellRenameSession {
+  original: string;
+  draft: string;
+}
+
+export function beginShellRename(title: string): ShellRenameSession {
+  return { original: title, draft: title };
+}
+
+export function resolveShellRename(session: ShellRenameSession): { value: string; changed: boolean } {
+  const original = normalizeShellCustomTitle(session.original) ?? '';
+  const value = normalizeShellCustomTitle(session.draft) ?? '';
+  return { value, changed: value !== original };
+}
+
 export function migrateShellTitleState(
   value: Record<string, unknown>,
   fallbackGeneratedTitle: string,

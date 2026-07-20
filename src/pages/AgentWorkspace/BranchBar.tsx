@@ -62,37 +62,72 @@ export function AgentWorkspaceBranchBar({ projectPath, active = true }: { projec
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const requestRef = useRef(0);
+  const inflightRef = useRef<Promise<void> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     if (!projectPath || !active) return;
-    const request = ++requestRef.current;
-    try {
-      const result = await invoke<GitBranchInfo[]>('git_list_branches', { projectPath });
-      if (request === requestRef.current) setBranches(result);
-    } catch (reason) {
-      if (request === requestRef.current) setError(String(reason));
-    }
+    if (inflightRef.current) return inflightRef.current;
+    const request = (async () => {
+      try {
+        setBranches(await invoke<GitBranchInfo[]>('git_list_branches', { projectPath }));
+      } catch (reason) {
+        setError(String(reason));
+      } finally {
+        inflightRef.current = null;
+      }
+    })();
+    inflightRef.current = request;
+    return request;
   }, [active, projectPath]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!active) return;
+    const onFocus = () => void refresh();
+    window.addEventListener('focus', onFocus);
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(timer);
+    };
+  }, [active, refresh]);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setQuery('');
+        setError(null);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open]);
   const current = branches.find((branch) => branch.current)?.name ?? '';
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return normalized ? branches.filter((branch) => branch.name.toLowerCase().includes(normalized)) : branches;
   }, [branches, query]);
+  const localBranches = filtered.filter((branch) => branch.remote === null);
+  const remoteGroups = filtered.filter((branch) => branch.remote !== null).reduce<Record<string, GitBranchInfo[]>>((groups, branch) => {
+    (groups[branch.remote!] ??= []).push(branch);
+    return groups;
+  }, {});
 
   const checkout = async (branch: GitBranchInfo) => {
     if (busy || branch.current) return;
     setBusy(true); setError(null);
     try {
       await invoke('git_checkout_branch', { projectPath, branchName: branch.name, isRemote: Boolean(branch.remote) });
+      const staleRequest = inflightRef.current;
+      if (staleRequest) await staleRequest;
       await refresh(); setOpen(false); setQuery('');
     } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
   };
 
   return (
-    <div className="relative mx-3 mb-2">
+    <div ref={containerRef} className="relative mx-3 mb-2">
       <button type="button" disabled={!projectPath} onClick={() => setOpen((value) => !value)} className="flex h-8 w-full items-center gap-2 rounded-md border border-aegis-border bg-aegis-bg px-2 text-left text-xs text-aegis-text-dim hover:text-aegis-text disabled:opacity-40">
         <GitBranch size={13} /><span className="min-w-0 flex-1 truncate font-mono">{current || '未检测到 Git 分支'}</span><ChevronDown size={12} />
       </button>
@@ -104,7 +139,9 @@ export function AgentWorkspaceBranchBar({ projectPath, active = true }: { projec
             {query && <button type="button" onClick={() => setQuery('')}><X size={11} /></button>}
           </div>
           <div className="max-h-52 overflow-y-auto py-1">
-            {filtered.map((branch) => <button key={branch.name} type="button" disabled={busy} onClick={() => void checkout(branch)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-aegis-hover disabled:cursor-wait"><GitBranch size={11} /><span className="min-w-0 flex-1 truncate font-mono">{branch.name}</span>{branch.current && <Check size={12} className="text-aegis-primary" />}</button>)}
+            {localBranches.length > 0 && <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold text-aegis-text-dim">本地</p>}
+            {localBranches.map((branch) => <button key={branch.name} type="button" disabled={busy} onClick={() => void checkout(branch)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-aegis-hover disabled:cursor-wait"><GitBranch size={11} /><span className="min-w-0 flex-1 truncate font-mono">{branch.name}</span>{branch.current && <Check size={12} className="text-aegis-primary" />}</button>)}
+            {Object.entries(remoteGroups).map(([remote, remoteBranches]) => <div key={remote}><p className="mt-1 border-t border-aegis-border px-2.5 pb-1 pt-2 text-[10px] font-semibold text-aegis-text-dim">{remote}</p>{remoteBranches.map((branch) => <button key={branch.name} type="button" disabled={busy} onClick={() => void checkout(branch)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-aegis-hover disabled:cursor-wait"><GitBranch size={11} /><span className="min-w-0 flex-1 truncate font-mono">{branch.name}</span></button>)}</div>)}
             {!filtered.length && <p className="px-3 py-3 text-center text-[11px] text-aegis-text-dim">未找到分支</p>}
           </div>
           <button type="button" onClick={() => { setOpen(false); setQuery(''); setShowCreateDialog(true); }} className="flex w-full items-center gap-2 border-t border-aegis-border px-2.5 py-2 text-left text-xs text-aegis-primary hover:bg-aegis-hover"><Plus size={12} />新建分支</button>

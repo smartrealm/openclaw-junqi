@@ -1,41 +1,165 @@
-use crate::paths;
+use crate::{paths, state::GatewayProcess};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use tauri::State;
+
+#[derive(Deserialize)]
+struct RuntimeDefaults {
+    gateway: GatewayRuntimeDefaults,
+}
+
+#[derive(Deserialize)]
+struct GatewayRuntimeDefaults {
+    host: String,
+    port: u16,
+}
+
+fn runtime_defaults() -> &'static RuntimeDefaults {
+    static DEFAULTS: OnceLock<RuntimeDefaults> = OnceLock::new();
+    DEFAULTS.get_or_init(|| {
+        let defaults: RuntimeDefaults = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../src/config/runtime-defaults.json"
+        )))
+        .expect("runtime-defaults.json must contain valid JSON");
+        assert!(
+            defaults.gateway.port > 0,
+            "runtime-defaults.json gateway.port must be a valid TCP port"
+        );
+        assert!(
+            defaults
+                .gateway
+                .host
+                .parse::<std::net::Ipv4Addr>()
+                .is_ok_and(|host| host.is_loopback()),
+            "runtime-defaults.json gateway.host must be an IPv4 loopback address"
+        );
+        defaults
+    })
+}
+
+pub(crate) fn default_gateway_port() -> u16 {
+    runtime_defaults().gateway.port
+}
+
+pub(crate) fn default_gateway_host() -> &'static str {
+    runtime_defaults().gateway.host.as_str()
+}
+
+pub(crate) fn gateway_port_from_config(value: &serde_json::Value) -> Option<u16> {
+    value
+        .get("gateway")?
+        .get("port")?
+        .as_u64()
+        .filter(|port| (1..=u16::MAX as u64).contains(port))
+        .map(|port| port as u16)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigData {
     pub raw: String,
     pub path: String,
+    pub exists: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfigValidation {
+    pub valid: bool,
+    pub path: String,
+    pub exists: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[tauri::command]
 pub async fn read_config() -> Result<ConfigData, String> {
-    let path = paths::config_path();
+    let mode = paths::active_runtime_mode();
+    paths::validate_runtime_mode(mode)?;
+    let path = paths::active_config_path();
     if path.exists() {
         let raw =
             std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {}", e))?;
         return Ok(ConfigData {
             raw,
             path: path.to_string_lossy().to_string(),
+            exists: true,
         });
     }
     Ok(ConfigData {
         raw: "{}".into(),
         path: path.to_string_lossy().to_string(),
+        exists: false,
     })
 }
 
 #[tauri::command]
-pub async fn write_config(json: String) -> Result<String, String> {
-    let value = parse_openclaw_config_json(&json)?;
-    let path = paths::config_path();
+pub async fn validate_openclaw_config() -> ConfigValidation {
+    let mode = paths::active_runtime_mode();
+    if let Err(error) = paths::validate_runtime_mode(mode) {
+        return ConfigValidation {
+            valid: false,
+            path: String::new(),
+            exists: false,
+            error: Some(error),
+        };
+    }
+    let path = paths::active_config_path();
+    validate_openclaw_config_path(&path)
+}
+
+fn validate_openclaw_config_path(path: &Path) -> ConfigValidation {
+    if !path.exists() {
+        return ConfigValidation {
+            valid: true,
+            path: path.to_string_lossy().to_string(),
+            exists: false,
+            error: None,
+        };
+    }
+    match std::fs::read_to_string(path)
+        .map_err(|error| format!("Failed to read config: {error}"))
+        .and_then(|raw| parse_openclaw_config(&raw).map(|_| ()))
+    {
+        Ok(()) => ConfigValidation {
+            valid: true,
+            path: path.to_string_lossy().to_string(),
+            exists: true,
+            error: None,
+        },
+        Err(error) => ConfigValidation {
+            valid: false,
+            path: path.to_string_lossy().to_string(),
+            exists: true,
+            error: Some(error),
+        },
+    }
+}
+
+#[tauri::command]
+pub async fn write_config(
+    state: State<'_, GatewayProcess>,
+    json: String,
+) -> Result<String, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
+        "Gateway or storage maintenance is running; try saving again shortly".to_string()
+    })?;
+    let mode = paths::active_runtime_mode();
+    paths::validate_runtime_mode(mode)?;
+    let value = parse_openclaw_config(&json)?;
+    crate::commands::openclaw_provider::validate_candidate_config(&value).await?;
+    let path = paths::active_config_path();
     write_openclaw_config_value(&path, &value)?;
     Ok("Config saved".into())
 }
 
-fn parse_openclaw_config_json(raw: &str) -> Result<serde_json::Value, String> {
+/// Parse an OpenClaw configuration according to the JSON5 syntax accepted by
+/// OpenClaw. Keeping this contract in one place prevents readers, validators,
+/// and writers from disagreeing about otherwise valid user configuration.
+pub(crate) fn parse_openclaw_config(raw: &str) -> Result<serde_json::Value, String> {
     let value: serde_json::Value =
-        serde_json::from_str(raw).map_err(|e| format!("Invalid JSON: {}", e))?;
+        json5::from_str(raw).map_err(|error| format!("Invalid JSON5 config: {error}"))?;
     validate_openclaw_config_shape(&value)?;
     Ok(value)
 }
@@ -60,6 +184,16 @@ fn validate_openclaw_config_shape(value: &serde_json::Value) -> Result<(), Strin
         "agents", "auth", "models", "gateway", "env", "channels", "tools",
     ] {
         validate_object_field(value, key)?;
+    }
+    if value
+        .get("gateway")
+        .and_then(|gateway| gateway.get("port"))
+        .is_some()
+        && gateway_port_from_config(value).is_none()
+    {
+        return Err(
+            "Invalid openclaw.json: `gateway.port` must be an integer from 1 to 65535".into(),
+        );
     }
     if let Some(env_vars) = value.get("env").and_then(|env| env.get("vars")) {
         if !env_vars.is_object() {
@@ -88,7 +222,7 @@ pub(crate) fn write_openclaw_config_value(
 ) -> Result<(), String> {
     validate_openclaw_config_shape(value)?;
     if let Ok(existing_raw) = std::fs::read_to_string(path) {
-        if let Ok(existing_value) = serde_json::from_str::<serde_json::Value>(&existing_raw) {
+        if let Ok(existing_value) = parse_openclaw_config(&existing_raw) {
             if existing_value == *value {
                 return Ok(());
             }
@@ -141,22 +275,7 @@ fn prune_config_backups(dir: &Path, keep: usize) {
 /// 任何会改写 `openclaw.json` 的路径都应复用这里，避免进程退出、
 /// 断电或并发保存时把主配置截断成半个 JSON。
 pub(crate) fn atomic_write_text(path: &Path, content: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create config dir: {}", e))?;
-    }
-    let suffix = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp_path = path.with_extension(format!("{}.{}.tmp", std::process::id(), suffix));
-    std::fs::write(&tmp_path, content)
-        .map_err(|e| format!("Failed to write temp config: {}", e))?;
-    std::fs::rename(&tmp_path, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        format!("Failed to finalize config write: {}", e)
-    })?;
-    Ok(())
+    paths::atomic_write_text(path, content)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,42 +285,40 @@ pub struct GatewayConfigInfo {
     pub ws_url: String,
     pub http_url: String,
     pub config_path: Option<String>,
+    pub runtime_mode: paths::OpenClawRuntimeMode,
 }
 
 fn extract_token_from_config(raw: &str) -> Option<String> {
-    let config: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let config = parse_openclaw_config(raw).ok()?;
     config
         .get("gateway")?
         .get("auth")?
         .get("token")?
         .as_str()
+        .filter(|token| !token.trim().is_empty())
         .map(|s| s.to_string())
 }
 
 fn extract_port_from_config(raw: &str) -> Option<u16> {
-    let config: serde_json::Value = serde_json::from_str(raw).ok()?;
-    config
-        .get("gateway")?
-        .get("port")?
-        .as_u64()
-        .map(|v| v as u16)
+    let config = parse_openclaw_config(raw).ok()?;
+    gateway_port_from_config(&config)
 }
 
 #[tauri::command]
 pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
-    let path = paths::config_path();
+    let mode = paths::active_runtime_mode();
+    paths::validate_runtime_mode(mode)?;
+    let path = paths::active_config_path();
     let mut token: Option<String> = None;
-    let mut port: u16 = 18789;
+    let mut port = default_gateway_port();
     let mut found_path: Option<String> = None;
 
     if path.exists() {
+        found_path = Some(path.to_string_lossy().to_string());
         if let Ok(raw) = std::fs::read_to_string(&path) {
             token = extract_token_from_config(&raw);
             if let Some(p) = extract_port_from_config(&raw) {
                 port = p;
-            }
-            if token.is_some() {
-                found_path = Some(path.to_string_lossy().to_string());
             }
         }
     }
@@ -209,16 +326,62 @@ pub async fn detect_gateway_config() -> Result<GatewayConfigInfo, String> {
     Ok(GatewayConfigInfo {
         token,
         port,
-        ws_url: format!("ws://127.0.0.1:{}", port),
-        http_url: format!("http://127.0.0.1:{}", port),
+        ws_url: format!("ws://{}:{}", default_gateway_host(), port),
+        http_url: format!("http://{}:{}", default_gateway_host(), port),
         config_path: found_path,
+        runtime_mode: mode,
     })
+}
+
+/// Commit the user's explicit Native/Docker selection before any Gateway work
+/// begins. The operation gate prevents storage migration and runtime selection
+/// from racing over the same bootstrap file.
+#[tauri::command]
+pub async fn set_active_gateway_runtime(
+    state: State<'_, GatewayProcess>,
+    mode: paths::OpenClawRuntimeMode,
+) -> Result<(), String> {
+    paths::validate_runtime_mode(mode)?;
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
+        "Gateway or storage maintenance is running; choose the runtime after it completes"
+            .to_string()
+    })?;
+    paths::begin_active_runtime_mode_switch(mode)
+}
+
+#[tauri::command]
+pub async fn commit_active_gateway_runtime(
+    state: State<'_, GatewayProcess>,
+    mode: paths::OpenClawRuntimeMode,
+) -> Result<(), String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
+        "Gateway or storage maintenance is running; commit the runtime after it completes"
+            .to_string()
+    })?;
+    paths::commit_active_runtime_mode_switch(mode)
+}
+
+#[tauri::command]
+pub async fn rollback_active_gateway_runtime(
+    state: State<'_, GatewayProcess>,
+    mode: paths::OpenClawRuntimeMode,
+) -> Result<(), String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
+        "Gateway or storage maintenance is running; roll back the runtime after it completes"
+            .to_string()
+    })?;
+    paths::rollback_active_runtime_mode_switch(mode)
 }
 
 /// 直接从配置文件读取供应商 API Key（未脱敏）。
 #[tauri::command]
 pub async fn read_provider_api_key(provider_key: String) -> Result<Option<String>, String> {
-    let path = paths::config_path();
+    let mode = paths::active_runtime_mode();
+    paths::validate_runtime_mode(mode)?;
+    let path = paths::active_config_path();
     if !path.exists() {
         return Ok(None);
     }
@@ -226,8 +389,8 @@ pub async fn read_provider_api_key(provider_key: String) -> Result<Option<String
     let raw =
         std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {}", e))?;
 
-    let config: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse config: {}", e))?;
+    let config =
+        parse_openclaw_config(&raw).map_err(|error| format!("Failed to parse config: {error}"))?;
 
     let api_key = config
         .get("models")
@@ -267,8 +430,58 @@ mod tests {
 
     #[test]
     fn rejects_non_object_config_root() {
-        let err = parse_openclaw_config_json("[]").unwrap_err();
+        let err = parse_openclaw_config("[]").unwrap_err();
         assert!(err.contains("root must be an object"));
+    }
+
+    #[test]
+    fn parses_openclaw_json5_configuration() {
+        let value = parse_openclaw_config(
+            r#"
+            // OpenClaw permits JSON5 configuration files.
+            {
+              gateway: {
+                port: 18789,
+                auth: { token: 'test-token', },
+              },
+              models: {
+                providers: {
+                  demo: { apiKey: 'test-key', },
+                },
+              },
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(gateway_port_from_config(&value), Some(18789));
+        assert_eq!(
+            value
+                .get("gateway")
+                .and_then(|gateway| gateway.get("auth"))
+                .and_then(|auth| auth.get("token"))
+                .and_then(|token| token.as_str()),
+            Some("test-token")
+        );
+    }
+
+    #[test]
+    fn config_read_helpers_accept_json5_syntax() {
+        let raw = r#"
+        {
+          // Both values are read through the shared JSON5 contract.
+          gateway: {
+            port: 18790,
+            auth: { token: 'gateway-token', },
+          },
+        }
+        "#;
+
+        assert_eq!(extract_port_from_config(raw), Some(18790));
+        assert_eq!(
+            extract_token_from_config(raw),
+            Some("gateway-token".to_string())
+        );
     }
 
     #[test]
@@ -285,7 +498,7 @@ mod tests {
             ),
             (r#"{"env":{"vars":[]}}"#, "`env.vars` must be an object"),
         ] {
-            let err = parse_openclaw_config_json(raw).unwrap_err();
+            let err = parse_openclaw_config(raw).unwrap_err();
             assert!(
                 err.contains(expected),
                 "expected `{}` in `{}`",
@@ -293,6 +506,77 @@ mod tests {
                 err
             );
         }
+    }
+
+    #[test]
+    fn gateway_port_requires_a_valid_tcp_port() {
+        for invalid in [
+            json!(0),
+            json!(65536),
+            json!(70000),
+            json!("18789"),
+            json!(1.5),
+        ] {
+            let value = json!({"gateway": {"port": invalid}});
+            assert_eq!(gateway_port_from_config(&value), None);
+            assert!(validate_openclaw_config_shape(&value)
+                .unwrap_err()
+                .contains("gateway.port"));
+        }
+
+        let value = json!({"gateway": {"port": 65535}});
+        assert_eq!(gateway_port_from_config(&value), Some(65535));
+        validate_openclaw_config_shape(&value).unwrap();
+    }
+
+    #[test]
+    fn validation_reports_malformed_and_wrong_shape_configs() {
+        let path = isolated_config_path("validation");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        fs::write(&path, "{not-json").unwrap();
+        let malformed = validate_openclaw_config_path(&path);
+        assert!(!malformed.valid);
+        assert!(malformed.exists);
+        assert!(malformed.error.unwrap().contains("Invalid JSON"));
+
+        fs::write(&path, r#"{"gateway":{"port":"18789"}}"#).unwrap();
+        let wrong_shape = validate_openclaw_config_path(&path);
+        assert!(!wrong_shape.valid);
+        assert!(wrong_shape.error.unwrap().contains("gateway.port"));
+
+        fs::write(&path, r#"{"gateway":{"port":18789}}"#).unwrap();
+        assert!(validate_openclaw_config_path(&path).valid);
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn validation_accepts_json5_configuration_syntax() {
+        let path = isolated_config_path("validation-json5");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            r#"
+            {
+              // OpenClaw's JSON5 config supports comments and unquoted keys.
+              gateway: { port: 18789, },
+            }
+            "#,
+        )
+        .unwrap();
+
+        let validation = validate_openclaw_config_path(&path);
+        assert!(validation.valid, "{validation:?}");
+        assert!(validation.exists);
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn shared_runtime_defaults_provide_a_valid_gateway_port() {
+        assert!(default_gateway_port() > 0);
+        assert!(!default_gateway_host().trim().is_empty());
     }
 
     #[test]
@@ -309,6 +593,26 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
             json!({"models":{"providers":{}}})
         );
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn unchanged_json5_config_does_not_create_backup_or_rewrite_source() {
+        let path = isolated_config_path("unchanged-json5");
+        let original = r#"
+        {
+          // Preserve user formatting when the value has not changed.
+          models: { providers: {}, },
+        }
+        "#;
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, original).unwrap();
+
+        write_openclaw_config_value(&path, &json!({"models":{"providers":{}}})).unwrap();
+
+        assert!(!backup_dir_for(&path).exists());
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

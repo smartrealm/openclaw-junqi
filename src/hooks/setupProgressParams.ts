@@ -30,6 +30,11 @@ export interface ParamRule {
   readonly extract: ParamExtractor;
 }
 
+type ProgressTranslator = (
+  key: string,
+  options: Record<string, unknown>,
+) => unknown;
+
 /**
  * Build a single-capture extractor. Returns a function that, when
  * applied to a message, emits `{ [name]: capture[1] }` on match, or
@@ -97,29 +102,23 @@ export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
   },
   {
     suffix: ".useLocalNode",
-    extract: capture(/Using local Node\.js:\s+(.+)$/, "path"),
+    extract: capture(/Using (?:local|detected) Node\.js:\s+(.+)$/, "path"),
   },
   {
     suffix: ".useLocalNpm",
     extract: capture(/Using local npm:\s+(.+)$/, "path"),
   },
   {
-    suffix: ".userNpmPrefix",
+    suffix: ".useNodeNpm",
+    extract: capture(/Using npm bundled with selected Node\.js:\s+(.+)$/, "path"),
+  },
+  {
+    suffix: [".userNpmPrefix", ".userNpmPrefixMissingPath"],
     extract: capture(/Detected npm prefix\s+(.+?)\s+\(matches/, "path"),
   },
   {
-    // Two captures — inline arrow is clearer than a 2-arg factory.
-    suffix: ".localNpmPrefix",
-    extract: (message) => {
-      const m = message.match(
-        /using XDG fallback\s+(.+?)\s+\(add\s+(.+?)\s+to your PATH/,
-      );
-      return m ? { path: m[1]!, binPath: m[2]! } : null;
-    },
-  },
-  {
-    suffix: ".sandboxNpmPrefix",
-    extract: capture(/using JunQi sandbox\s+(.+)$/, "path"),
+    suffix: ".customNpmPrefix",
+    extract: capture(/Using custom npm prefix\s+(.+)$/, "path"),
   },
   {
     // `setup.openclaw.useExisting` ships three message variants from
@@ -143,8 +142,31 @@ export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
     extract: capture(/Runtime check done:\s+(.+)$/, "summary"),
   },
   {
+    suffix: ".binary",
+    extract: capture(/^OpenClaw binary:\s+(.+)$/, "path"),
+  },
+  {
+    suffix: ".readPort",
+    extract: capture(/^Reading gateway port from\s+(.+?)(?:\.\.\.|…)?$/, "path"),
+  },
+  {
+    suffix: ".targetNode",
+    extract: capture(/^Target OpenClaw requires Node\.js\s+(.+?);/, "requirement"),
+  },
+  {
+    suffix: ".runningUpdater",
+    extract: capture(/^Running official updater via\s+(.+)$/, "registry"),
+  },
+  {
+    suffix: ".retryingRegistry",
+    extract: (message) => {
+      const match = message.match(/^Network failure via\s+(.+?);\s+retrying via\s+(.+)$/);
+      return match ? { primary: match[1]!, fallback: match[2]! } : null;
+    },
+  },
+  {
     suffix: [".portResolved", ".alreadyUp"],
-    extract: capture(/(?:Target port =|Port)\s+(\d+)/, "port"),
+    extract: capture(/(?:Target port =|[Pp]ort)\s+(\d+)/, "port"),
   },
   {
     suffix: ".probe",
@@ -177,4 +199,20 @@ export function setupProgressI18nParams(
     }
   }
   return {};
+}
+
+/** Resolve a keyed setup event while preserving raw diagnostic lines verbatim. */
+export function translateSetupProgressMessage(
+  key: string | null | undefined,
+  message: string,
+  translate: ProgressTranslator,
+  explicitParams: Partial<Record<string, string>> = {},
+): string {
+  if (!key) return message;
+  const translated = String(translate(key, {
+    defaultValue: message,
+    ...setupProgressI18nParams(key, message),
+    ...explicitParams,
+  }));
+  return translated !== key && !translated.includes("{{") ? translated : message;
 }

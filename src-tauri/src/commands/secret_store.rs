@@ -1,20 +1,18 @@
-//! Provider secret store — macOS Keychain + file-based fallback.
+//! Provider secret store backed by the operating system credential vault.
 //!
 //! Stores API keys and OAuth tokens outside `openclaw.json` so the
 //! config file never contains credentials in plaintext. Matches
 //! JunQi's `electron/services/secrets/` pattern.
 //!
-//! On macOS: uses the built-in Keychain via `security` CLI.
-//! On Linux/Windows: falls back to JSON file with 600 permissions.
+//! macOS uses Keychain, Windows uses Credential Manager, and Linux uses
+//! Secret Service. There is deliberately no plaintext file fallback.
 //!
-//! Frontend calls:
-//!   store_secret   — save a credential for an account
-//!   get_secret     — retrieve a credential (UI shows masked)
-//!   delete_secret  — remove a credential
-//!   list_secrets   — enumerate stored credential labels
+//! Only non-sensitive labels and masked suffixes are persisted locally so
+//! credentials remain enumerable after an application restart.
 
+use crate::paths;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::sync::OnceLock;
 
 /// A secret stored in the keychain. The id is the ProviderAccount id;
 /// the label is a human-readable name shown in the macOS Keychain UI.
@@ -26,183 +24,110 @@ pub struct StoredSecret {
     pub masked: String,
 }
 
-/// In-memory cache of stored secrets so the frontend can list them
-/// without hitting the keychain on every render. Refreshed on each
-/// mutation (store/delete).
-static SECRETS_CACHE: std::sync::OnceLock<std::sync::Mutex<Vec<StoredSecret>>> =
-    std::sync::OnceLock::new();
-
-fn secrets_cache() -> &'static std::sync::Mutex<Vec<StoredSecret>> {
-    SECRETS_CACHE.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+fn secret_operation() -> &'static tokio::sync::Mutex<()> {
+    static OPERATION: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    OPERATION.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
 fn mask_secret(value: &str) -> String {
-    if value.len() <= 4 {
+    let suffix: String = value
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    if value.chars().count() <= 4 {
         return "••••".to_string();
     }
-    format!("…{}", &value[value.len() - 4..])
+    format!("…{suffix}")
 }
 
-#[cfg(target_os = "macos")]
+fn metadata_path() -> std::path::PathBuf {
+    paths::app_config_dir().join("provider-secrets.json")
+}
+
+fn load_metadata_from(path: &std::path::Path) -> Result<Vec<StoredSecret>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(path)
+        .map_err(|error| format!("read provider secret metadata: {error}"))?;
+    serde_json::from_str(&raw).map_err(|error| format!("parse provider secret metadata: {error}"))
+}
+
+fn save_metadata_to(path: &std::path::Path, entries: &[StoredSecret]) -> Result<(), String> {
+    let raw = serde_json::to_string_pretty(entries)
+        .map_err(|error| format!("serialize provider secret metadata: {error}"))?;
+    paths::atomic_write_text(path, &raw)
+        .map_err(|error| format!("write provider secret metadata: {error}"))
+}
+
+fn upsert_metadata(entries: &mut Vec<StoredSecret>, secret: StoredSecret) {
+    entries.retain(|entry| entry.account_id != secret.account_id);
+    entries.push(secret);
+    entries.sort_by(|left, right| left.account_id.cmp(&right.account_id));
+}
+
+fn validate_secret_input(account_id: &str, value: &str) -> Result<(), String> {
+    if account_id.trim().is_empty()
+        || account_id.len() > 256
+        || account_id.chars().any(char::is_control)
+    {
+        return Err("Provider secret account ID is invalid".into());
+    }
+    if value.trim().is_empty() {
+        return Err("Provider secret value cannot be empty".into());
+    }
+    Ok(())
+}
+
 fn keychain_service_name() -> &'static str {
     "junqi-desktop-provider-secrets"
 }
 
-/// Store a secret using macOS Keychain.
-#[cfg(target_os = "macos")]
-async fn store_in_keychain(account_id: &str, label: &str, value: &str) -> Result<(), String> {
-    let service = keychain_service_name();
-    let output = tokio::process::Command::new("security")
-        .args([
-            "add-generic-password",
-            "-a",
-            account_id,
-            "-s",
-            service,
-            "-l",
-            label,
-            "-w",
-            value,
-            "-U", // update if exists
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("spawn security: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Exit code 45 = "password already exists" when `-U` is not
-        // passed; we pass `-U` so this shouldn't happen, but if it
-        // does, delete first and retry.
-        if output.status.code() == Some(45) {
-            let _ = tokio::process::Command::new("security")
-                .args(["delete-generic-password", "-a", account_id, "-s", service])
-                .output()
-                .await;
-            return Box::pin(store_in_keychain(account_id, label, value)).await;
-        }
-        return Err(format!("security add-generic-password failed: {stderr}"));
-    }
-    Ok(())
+fn credential_entry(account_id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(keychain_service_name(), account_id)
+        .map_err(|error| format!("open system credential store: {error}"))
 }
 
-/// Retrieve a secret from macOS Keychain.
-#[cfg(target_os = "macos")]
+async fn store_in_keychain(account_id: &str, _label: &str, value: &str) -> Result<(), String> {
+    let account_id = account_id.to_string();
+    let value = value.to_string();
+    tokio::task::spawn_blocking(move || {
+        credential_entry(&account_id)?
+            .set_password(&value)
+            .map_err(|error| format!("store credential in system vault: {error}"))
+    })
+    .await
+    .map_err(|error| format!("credential store task failed: {error}"))?
+}
+
 async fn get_from_keychain(account_id: &str) -> Result<String, String> {
-    let service = keychain_service_name();
-    let output = tokio::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-a",
-            account_id,
-            "-s",
-            service,
-            "-w",
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("spawn security: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "security find-generic-password failed: {}",
-            String::from_utf8_lossy(&output.stderr),
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let account_id = account_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        credential_entry(&account_id)?
+            .get_password()
+            .map_err(|error| format!("read credential from system vault: {error}"))
+    })
+    .await
+    .map_err(|error| format!("credential read task failed: {error}"))?
 }
 
-/// Delete a secret from macOS Keychain.
-#[cfg(target_os = "macos")]
 async fn delete_from_keychain(account_id: &str) -> Result<(), String> {
-    let service = keychain_service_name();
-    let output = tokio::process::Command::new("security")
-        .args(["delete-generic-password", "-a", account_id, "-s", service])
-        .output()
-        .await
-        .map_err(|e| format!("spawn security: {e}"))?;
-    // Exit status 44 = "item not found" — not an error for delete.
-    if !output.status.success() && output.status.code() != Some(44) {
-        return Err(format!(
-            "security delete-generic-password failed: {}",
-            String::from_utf8_lossy(&output.stderr),
-        ));
-    }
-    Ok(())
-}
-
-// ── File-based fallback (non-macOS) ──────────────────────────────────────
-
-fn secrets_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
-    let dir = home.join(".openclaw").join("secrets");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create secrets dir: {e}"))?;
-    Ok(dir.join("provider-secrets.json"))
-}
-
-#[cfg(not(target_os = "macos"))]
-async fn store_in_keychain(account_id: &str, label: &str, value: &str) -> Result<(), String> {
-    let path = secrets_file_path()?;
-    let mut entries: serde_json::Map<String, serde_json::Value> = if path.exists() {
-        let raw = std::fs::read_to_string(&path).unwrap_or_default();
-        serde_json::from_str(&raw).unwrap_or_default()
-    } else {
-        Default::default()
-    };
-    entries.insert(
-        account_id.to_string(),
-        serde_json::json!({
-            "label": label,
-            "value": value,
-        }),
-    );
-    let json = serde_json::to_string_pretty(&entries).map_err(|e| format!("serialize: {e}"))?;
-    std::fs::write(&path, &json).map_err(|e| format!("write: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-async fn get_from_keychain(account_id: &str) -> Result<String, String> {
-    let path = secrets_file_path()?;
-    let raw = std::fs::read_to_string(&path).map_err(|e| format!("read secrets file: {e}"))?;
-    let entries: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(&raw).map_err(|e| format!("parse secrets file: {e}"))?;
-    let entry = entries
-        .get(account_id)
-        .ok_or_else(|| "secret not found".to_string())?;
-    entry["value"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "invalid secret entry".to_string())
-}
-
-#[cfg(not(target_os = "macos"))]
-async fn delete_from_keychain(account_id: &str) -> Result<(), String> {
-    let path = secrets_file_path()?;
-    let mut entries: serde_json::Map<String, serde_json::Value> = if path.exists() {
-        let raw = std::fs::read_to_string(&path).unwrap_or_default();
-        serde_json::from_str(&raw).unwrap_or_default()
-    } else {
-        return Ok(());
-    };
-    entries.remove(account_id);
-    let json = serde_json::to_string_pretty(&entries).map_err(|e| format!("serialize: {e}"))?;
-    std::fs::write(&path, &json).map_err(|e| format!("write: {e}"))?;
-    Ok(())
+    let account_id = account_id.to_string();
+    tokio::task::spawn_blocking(
+        move || match credential_entry(&account_id)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(format!("delete credential from system vault: {error}")),
+        },
+    )
+    .await
+    .map_err(|error| format!("credential delete task failed: {error}"))?
 }
 
 // ── Tauri commands ───────────────────────────────────────────────────────
-
-async fn rebuild_cache() -> Vec<StoredSecret> {
-    // List all known secrets from the frontend store + keychain.
-    // For now we return the in-memory cache; a full implementation
-    // would walk the keychain entries by account_id prefix.
-    let cache = secrets_cache().lock().unwrap().clone();
-    cache
-}
 
 #[tauri::command]
 pub async fn store_provider_secret(
@@ -210,35 +135,71 @@ pub async fn store_provider_secret(
     label: String,
     value: String,
 ) -> Result<StoredSecret, String> {
+    validate_secret_input(&account_id, &value)?;
+    let _guard = secret_operation().lock().await;
+    let path = metadata_path();
+    let mut entries = load_metadata_from(&path)?;
+    let previous_value = get_from_keychain(&account_id).await.ok();
     store_in_keychain(&account_id, &label, &value).await?;
     let secret = StoredSecret {
         account_id: account_id.clone(),
-        label,
+        label: label.clone(),
         masked: mask_secret(&value),
     };
-    // Update in-memory cache.
-    let mut cache = secrets_cache().lock().unwrap();
-    cache.retain(|s| s.account_id != *account_id);
-    cache.push(secret.clone());
+    upsert_metadata(&mut entries, secret.clone());
+    if let Err(error) = save_metadata_to(&path, &entries) {
+        if let Some(previous) = previous_value {
+            let _ = store_in_keychain(&account_id, &label, &previous).await;
+        } else {
+            let _ = delete_from_keychain(&account_id).await;
+        }
+        return Err(error);
+    }
     Ok(secret)
 }
 
 #[tauri::command]
 pub async fn get_provider_secret(account_id: String) -> Result<String, String> {
-    get_from_keychain(&account_id).await
+    if account_id.trim().is_empty() {
+        return Err("Provider secret account ID is invalid".into());
+    }
+    let _guard = secret_operation().lock().await;
+    let value = get_from_keychain(&account_id).await?;
+    let path = metadata_path();
+    let mut entries = load_metadata_from(&path)?;
+    if !entries.iter().any(|entry| entry.account_id == account_id) {
+        upsert_metadata(
+            &mut entries,
+            StoredSecret {
+                account_id: account_id.clone(),
+                label: account_id.clone(),
+                masked: mask_secret(&value),
+            },
+        );
+        save_metadata_to(&path, &entries)?;
+    }
+    Ok(value)
 }
 
 #[tauri::command]
 pub async fn delete_provider_secret(account_id: String) -> Result<(), String> {
-    delete_from_keychain(&account_id).await?;
-    let mut cache = secrets_cache().lock().unwrap();
-    cache.retain(|s| s.account_id != *account_id);
+    let _guard = secret_operation().lock().await;
+    let path = metadata_path();
+    let previous = load_metadata_from(&path)?;
+    let mut updated = previous.clone();
+    updated.retain(|entry| entry.account_id != account_id);
+    save_metadata_to(&path, &updated)?;
+    if let Err(error) = delete_from_keychain(&account_id).await {
+        let _ = save_metadata_to(&path, &previous);
+        return Err(error);
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn list_provider_secrets() -> Result<Vec<StoredSecret>, String> {
-    Ok(rebuild_cache().await)
+    let _guard = secret_operation().lock().await;
+    load_metadata_from(&metadata_path())
 }
 
 #[cfg(test)]
@@ -253,6 +214,55 @@ mod tests {
     #[test]
     fn mask_secret_shows_last_4() {
         assert_eq!(mask_secret("sk-abc123def456"), "…f456");
+    }
+
+    #[test]
+    fn mask_secret_handles_unicode_boundaries() {
+        assert_eq!(mask_secret("token-密钥甲乙丙丁"), "…甲乙丙丁");
+    }
+
+    #[test]
+    fn metadata_is_persisted_and_sorted_without_secret_values() {
+        let path = std::env::temp_dir().join(format!(
+            "junqi-secret-metadata-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let mut entries = Vec::new();
+        upsert_metadata(
+            &mut entries,
+            StoredSecret {
+                account_id: "z".into(),
+                label: "Zed".into(),
+                masked: "…1234".into(),
+            },
+        );
+        upsert_metadata(
+            &mut entries,
+            StoredSecret {
+                account_id: "a".into(),
+                label: "Alpha".into(),
+                masked: "…5678".into(),
+            },
+        );
+        save_metadata_to(&path, &entries).unwrap();
+
+        let loaded = load_metadata_from(&path).unwrap();
+        assert_eq!(loaded[0].account_id, "a");
+        assert_eq!(loaded[1].account_id, "z");
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("token-"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn secret_input_rejects_empty_and_control_values() {
+        assert!(validate_secret_input("", "token").is_err());
+        assert!(validate_secret_input("account\nname", "token").is_err());
+        assert!(validate_secret_input("account", "   ").is_err());
+        assert!(validate_secret_input("account", "token").is_ok());
     }
 
     #[test]

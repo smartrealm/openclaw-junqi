@@ -29,6 +29,8 @@ interface PaneTreeViewProps {
   isActive?: boolean;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: number;
+  terminalShiftEnterNewline: boolean;
   monoFontFamily: FontFamily;
   projectPath: string;
   onClose?: () => void;
@@ -50,6 +52,8 @@ function PaneNodeRenderer({
   onZoom,
   themeVariant,
   terminalFontSize,
+  terminalScrollback,
+  terminalShiftEnterNewline,
   monoFontFamily,
   projectPath,
   workspaceActive,
@@ -67,6 +71,8 @@ function PaneNodeRenderer({
   onZoom: (paneId: string) => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: number;
+  terminalShiftEnterNewline: boolean;
   monoFontFamily: FontFamily;
   projectPath: string;
   workspaceActive: boolean;
@@ -96,6 +102,8 @@ function PaneNodeRenderer({
           ref={undefined}
           themeVariant={themeVariant}
           terminalFontSize={terminalFontSize}
+          terminalScrollback={terminalScrollback}
+          terminalShiftEnterNewline={terminalShiftEnterNewline}
           monoFontFamily={monoFontFamily}
           projectPath={workspace.sshRemoteHost ? '' : node.config.cwd || workspace.workingDirectory || projectPath}
           sshHost={workspace.sshRemoteHost}
@@ -133,6 +141,8 @@ function PaneNodeRenderer({
       onZoom={onZoom}
       themeVariant={themeVariant}
       terminalFontSize={terminalFontSize}
+      terminalScrollback={terminalScrollback}
+      terminalShiftEnterNewline={terminalShiftEnterNewline}
       monoFontFamily={monoFontFamily}
       projectPath={projectPath}
       workspaceActive={workspaceActive}
@@ -156,6 +166,8 @@ function SplitRenderer({
   onZoom,
   themeVariant,
   terminalFontSize,
+  terminalScrollback,
+  terminalShiftEnterNewline,
   monoFontFamily,
   projectPath,
   workspaceActive,
@@ -173,6 +185,8 @@ function SplitRenderer({
   onZoom: (paneId: string) => void;
   themeVariant: ThemeVariant;
   terminalFontSize: TerminalFontSize;
+  terminalScrollback: number;
+  terminalShiftEnterNewline: boolean;
   monoFontFamily: FontFamily;
   projectPath: string;
   workspaceActive: boolean;
@@ -309,6 +323,8 @@ function SplitRenderer({
           onZoom={onZoom}
           themeVariant={themeVariant}
           terminalFontSize={terminalFontSize}
+          terminalScrollback={terminalScrollback}
+          terminalShiftEnterNewline={terminalShiftEnterNewline}
           monoFontFamily={monoFontFamily}
           projectPath={projectPath}
           workspaceActive={workspaceActive}
@@ -405,6 +421,8 @@ function SplitRenderer({
           onZoom={onZoom}
           themeVariant={themeVariant}
           terminalFontSize={terminalFontSize}
+          terminalScrollback={terminalScrollback}
+          terminalShiftEnterNewline={terminalShiftEnterNewline}
           monoFontFamily={monoFontFamily}
           projectPath={projectPath}
           workspaceActive={workspaceActive}
@@ -468,6 +486,8 @@ export function PaneTreeView({
   isActive = true,
   themeVariant,
   terminalFontSize,
+  terminalScrollback,
+  terminalShiftEnterNewline,
   monoFontFamily,
   projectPath,
   onClose,
@@ -610,6 +630,8 @@ export function PaneTreeView({
         }}
         themeVariant={themeVariant}
         terminalFontSize={terminalFontSize}
+        terminalScrollback={terminalScrollback}
+        terminalShiftEnterNewline={terminalShiftEnterNewline}
         monoFontFamily={monoFontFamily}
         projectPath={projectPath}
         workspaceActive={isActive}

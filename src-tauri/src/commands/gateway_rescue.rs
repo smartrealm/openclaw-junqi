@@ -16,7 +16,7 @@ pub struct RescueContext {
     logs: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RescueChatRequest {
     api: String,
@@ -47,9 +47,10 @@ fn endpoint(base_url: &str, suffix: &str) -> Result<String, String> {
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if last == "v1beta" || last == "v1" {
-        Ok(format!("{}/{}", base, suffix))
-    } else if last.starts_with('v') && last[1..].chars().all(|c| c.is_ascii_digit()) {
+    if last == "v1beta"
+        || last == "v1"
+        || (last.starts_with('v') && last[1..].chars().all(|c| c.is_ascii_digit()))
+    {
         Ok(format!("{}/{}", base, suffix))
     } else {
         Ok(format!("{}/v1/{}", base, suffix))
@@ -66,7 +67,14 @@ fn tail_chars(value: &str, max_chars: usize) -> String {
 
 fn rescue_system_prompt(ctx: &RescueContext) -> String {
     let logs = ctx.logs.clone().unwrap_or_default();
-    let tail = tail_chars(&logs, 8000);
+    // Logs stay local until this exact boundary. Sanitize again here even
+    // though Gateway ingestion also redacts, because callers can send an
+    // arbitrary diagnostic context through the IPC command.
+    let error = crate::commands::diagnostic_output::sanitize_diagnostic_text(&ctx.error, 2_000);
+    let tail = crate::commands::diagnostic_output::sanitize_diagnostic_text(
+        &tail_chars(&logs, 8_000),
+        8_000,
+    );
     [
         "You are JunQi Desktop local recovery assistant.",
         "The OpenClaw Gateway cannot start, so the user is talking to you through a direct provider fallback.",
@@ -74,7 +82,7 @@ fn rescue_system_prompt(ctx: &RescueContext) -> String {
         "Prefer safe actions: explain likely cause, suggest doctor --fix, config backup/restore, port checks, and provider config validation.",
         "",
         "Gateway error:",
-        ctx.error.as_str(),
+        error.as_str(),
         "",
         "Gateway logs:",
         if tail.trim().is_empty() { "(none)" } else { tail.as_str() },
@@ -150,6 +158,32 @@ fn assistant_text(payload: &serde_json::Value) -> String {
         .collect()
 }
 
+fn provider_error_message(payload: &serde_json::Value) -> String {
+    let message = payload
+        .get("error")
+        .and_then(|value| value.get("message"))
+        .and_then(|value| value.as_str())
+        .or_else(|| payload.get("message").and_then(|value| value.as_str()))
+        .map(str::to_owned)
+        .unwrap_or_else(|| assistant_text(payload));
+    let sanitized = crate::commands::diagnostic_output::sanitize_diagnostic_text(&message, 1_000);
+    if sanitized.trim().is_empty() {
+        "Provider returned an empty error response".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn rescue_transport_error(context: &str, error: impl std::fmt::Display) -> String {
+    let message = format!("{context}: {error}");
+    let sanitized = crate::commands::diagnostic_output::sanitize_diagnostic_text(&message, 1_000);
+    if sanitized.trim().is_empty() {
+        "Rescue request failed without a usable diagnostic".to_string()
+    } else {
+        sanitized
+    }
+}
+
 #[tauri::command]
 pub async fn gateway_rescue_chat(req: RescueChatRequest) -> Result<RescueChatResponse, String> {
     let api = req.api.trim();
@@ -162,7 +196,7 @@ pub async fn gateway_rescue_chat(req: RescueChatRequest) -> Result<RescueChatRes
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(35))
         .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+        .map_err(|error| rescue_transport_error("Failed to create HTTP client", error))?;
 
     let mut builder = client.post(url).header("content-type", "application/json");
     let body = if api == "anthropic-messages" {
@@ -179,23 +213,17 @@ pub async fn gateway_rescue_chat(req: RescueChatRequest) -> Result<RescueChatRes
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Rescue request failed: {}", e))?;
+        .map_err(|error| rescue_transport_error("Rescue request failed", error))?;
     let status = response.status();
     let text = response
         .text()
         .await
-        .map_err(|e| format!("Failed to read rescue response: {}", e))?;
+        .map_err(|error| rescue_transport_error("Failed to read rescue response", error))?;
     let payload: serde_json::Value =
         serde_json::from_str(&text).unwrap_or_else(|_| json!({ "text": text }));
 
     if !status.is_success() {
-        let message = payload
-            .get("error")
-            .and_then(|v| v.get("message"))
-            .and_then(|v| v.as_str())
-            .or_else(|| payload.get("message").and_then(|v| v.as_str()))
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| assistant_text(&payload));
+        let message = provider_error_message(&payload);
         return Err(format!("{} {}", status.as_u16(), message));
     }
 
@@ -222,5 +250,42 @@ mod tests {
             endpoint("https://api.example.com", "chat/completions").unwrap(),
             "https://api.example.com/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn rescue_prompt_never_contains_credentials_from_error_or_logs() {
+        let prompt = rescue_system_prompt(&RescueContext {
+            error: "Gateway failed with api_key=super-secret".to_string(),
+            logs: Some(
+                "Authorization: Bearer hidden-token\nsk-visible-token-123456789".to_string(),
+            ),
+        });
+        assert!(!prompt.contains("super-secret"));
+        assert!(!prompt.contains("hidden-token"));
+        assert!(!prompt.contains("sk-visible-token-123456789"));
+        assert!(prompt.contains("[sensitive diagnostic redacted]"));
+    }
+
+    #[test]
+    fn provider_failure_message_is_bounded_and_redacted_before_ipc() {
+        let message = provider_error_message(&json!({
+            "error": {
+                "message": "Authorization: Bearer hidden-token\\nrequest api_key=super-secret"
+            }
+        }));
+        assert!(!message.contains("hidden-token"));
+        assert!(!message.contains("super-secret"));
+        assert!(message.contains("[sensitive diagnostic redacted]"));
+    }
+
+    #[test]
+    fn transport_failure_message_is_bounded_and_redacted_before_ipc() {
+        let message = rescue_transport_error(
+            "Rescue request failed",
+            "proxy rejected Authorization: Bearer hidden-token; api_key=super-secret",
+        );
+        assert!(!message.contains("hidden-token"));
+        assert!(!message.contains("super-secret"));
+        assert!(message.contains("[sensitive diagnostic redacted]"));
     }
 }

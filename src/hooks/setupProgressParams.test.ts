@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import {
   setupProgressI18nParams,
   SETUP_PROGRESS_PARAM_RULES,
+  translateSetupProgressMessage,
   type ParamRule,
 } from "./setupProgressParams";
 
@@ -52,8 +53,8 @@ const CASES: Record<string, Case> = {
   },
   ".extract": {
     key: "setup.node.extract",
-    message: "Extracting to /Users/wei/.junqi/node…",
-    expected: { path: "/Users/wei/.junqi/node" },
+    message: "Extracting to /custom/runtime/node…",
+    expected: { path: "/custom/runtime/node" },
   },
   ".waitingWizard": {
     key: "setup.git.waitingWizard",
@@ -67,36 +68,39 @@ const CASES: Record<string, Case> = {
   },
   ".useLocalNode": {
     key: "setup.openclaw.useLocalNode",
-    message: "Using local Node.js: /Users/wei/.openclaw/node/bin/node",
-    expected: { path: "/Users/wei/.openclaw/node/bin/node" },
+    message: "Using detected Node.js: /custom/runtime/node/bin/node",
+    expected: { path: "/custom/runtime/node/bin/node" },
   },
   ".useLocalNpm": {
     key: "setup.openclaw.useLocalNpm",
-    message: "Using local npm: /Users/wei/.openclaw/node/lib/node_modules/npm/bin/npm-cli.js",
+    message: "Using local npm: /custom/runtime/node/lib/node_modules/npm/bin/npm-cli.js",
     expected: {
-      path: "/Users/wei/.openclaw/node/lib/node_modules/npm/bin/npm-cli.js",
+      path: "/custom/runtime/node/lib/node_modules/npm/bin/npm-cli.js",
+    },
+  },
+  ".useNodeNpm": {
+    key: "setup.openclaw.useNodeNpm",
+    message: "Using npm bundled with selected Node.js: /custom/npm/lib/node_modules/npm/bin/npm-cli.js",
+    expected: {
+      path: "/custom/npm/lib/node_modules/npm/bin/npm-cli.js",
     },
   },
   ".userNpmPrefix": {
     key: "setup.openclaw.userNpmPrefix",
     message:
-      "Detected npm prefix /Users/wei/.npm-global (matches your `npm i -g`); installing openclaw there",
-    expected: { path: "/Users/wei/.npm-global" },
+      "Detected npm prefix /custom/npm (matches your `npm i -g`); installing openclaw there",
+    expected: { path: "/custom/npm" },
   },
-  ".localNpmPrefix (two captures)": {
-    key: "setup.openclaw.localNpmPrefix",
+  ".userNpmPrefixMissingPath": {
+    key: "setup.openclaw.userNpmPrefixMissingPath",
     message:
-      "User npm prefix not writable; using XDG fallback /Users/wei/.local/share/npm-global (add /Users/wei/.local/bin to your PATH to use openclaw from terminal)",
-    expected: {
-      path: "/Users/wei/.local/share/npm-global",
-      binPath: "/Users/wei/.local/bin",
-    },
+      "Detected npm prefix /custom/npm (matches your `npm i -g`); installing openclaw there",
+    expected: { path: "/custom/npm" },
   },
-  ".sandboxNpmPrefix": {
-    key: "setup.openclaw.sandboxNpmPrefix",
-    message:
-      "User npm prefix and ~/.local both unwritable; using JunQi sandbox /Users/wei/.openclaw/global",
-    expected: { path: "/Users/wei/.openclaw/global" },
+  ".customNpmPrefix": {
+    key: "setup.openclaw.customNpmPrefix",
+    message: "Using custom npm prefix /Volumes/Tools/npm-global",
+    expected: { path: "/Volumes/Tools/npm-global" },
   },
   ".useExisting (version + path)": {
     key: "setup.openclaw.useExisting",
@@ -129,6 +133,34 @@ const CASES: Record<string, Case> = {
     message: "Runtime check done: Node.js ✓, openclaw ✓",
     expected: { summary: "Node.js ✓, openclaw ✓" },
   },
+  ".binary": {
+    key: "setup.openclawUpdate.progress.binary",
+    message: "OpenClaw binary: C:\\Users\\Wei\\AppData\\Roaming\\npm\\openclaw.cmd",
+    expected: { path: "C:\\Users\\Wei\\AppData\\Roaming\\npm\\openclaw.cmd" },
+  },
+  ".readPort": {
+    key: "setup.gateway.readPort",
+    message: "Reading gateway port from C:\\Users\\Wei\\OpenClaw Data\\openclaw.json...",
+    expected: { path: "C:\\Users\\Wei\\OpenClaw Data\\openclaw.json" },
+  },
+  ".targetNode": {
+    key: "setup.openclawUpdate.progress.targetNode",
+    message: "Target OpenClaw requires Node.js >=24.15.0 <25; validating update runtime...",
+    expected: { requirement: ">=24.15.0 <25" },
+  },
+  ".runningUpdater": {
+    key: "setup.openclawUpdate.progress.runningUpdater",
+    message: "Running official updater via npmjs.org (official)",
+    expected: { registry: "npmjs.org (official)" },
+  },
+  ".retryingRegistry": {
+    key: "setup.openclawUpdate.progress.retryingRegistry",
+    message: "Network failure via npmjs.org (official); retrying via npmmirror.com (China mirror)",
+    expected: {
+      primary: "npmjs.org (official)",
+      fallback: "npmmirror.com (China mirror)",
+    },
+  },
   ".portResolved": {
     key: "setup.gateway.portResolved",
     message: "Target port = 18789 (source: openclaw.json, default 18789)",
@@ -136,7 +168,7 @@ const CASES: Record<string, Case> = {
   },
   ".alreadyUp": {
     key: "setup.gateway.alreadyUp",
-    message: "Port 18789 already listening",
+    message: "OpenClaw Gateway health check passed on port 18789; skipping start",
     expected: { port: "18789" },
   },
   ".probe": {
@@ -156,6 +188,31 @@ function suffixesForRule(rule: ParamRule): string[] {
 }
 
 describe("setupProgressParams", () => {
+  test("WIN-I18N-05 translates keyed progress and retains diagnostics when interpolation fails", () => {
+    const translated = translateSetupProgressMessage(
+      "setup.openclawUpdate.progress.binary",
+      "OpenClaw binary: C:\\Tools\\openclaw.cmd",
+      (_key, options) => `二进制路径：${options.path}`,
+    );
+    assert.equal(translated, "二进制路径：C:\\Tools\\openclaw.cmd");
+
+    const raw = "OpenClaw binary: C:\\Tools\\openclaw.cmd";
+    assert.equal(
+      translateSetupProgressMessage("missing.key", raw, (key) => key),
+      raw,
+    );
+  });
+
+  test("explicit backend params take precedence over legacy message parsing", () => {
+    const translated = translateSetupProgressMessage(
+      "setup.openclaw.prepareDir",
+      "producer wording may evolve",
+      (_key, options) => `准备安装目录 ${options.path}`,
+      { path: "/Users/wei/OpenClaw" },
+    );
+    assert.equal(translated, "准备安装目录 /Users/wei/OpenClaw");
+  });
+
   test("returns {} for an unknown key", () => {
     assert.deepEqual(
       setupProgressI18nParams("setup.unknown.key", "anything"),

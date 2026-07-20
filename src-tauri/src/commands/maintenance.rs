@@ -1,9 +1,7 @@
-use crate::state::gateway_process::{push_log, LogLevel, LogSource};
-use crate::state::GatewayProcess;
-use crate::{commands::gateway::resolve_openclaw_binary, commands::system, paths, platform};
+use crate::{commands::openclaw_cli::OpenClawCliTarget, paths};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::HashSet, path::Path, process::Stdio, sync::OnceLock, time::Duration};
+use std::{collections::HashSet, sync::OnceLock, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 const CONFIG_TIMEOUT: Duration = Duration::from_secs(30);
@@ -77,31 +75,14 @@ struct DoctorEnvelope {
     findings: Vec<Value>,
 }
 
-fn build_command(binary: &Path, args: &[&str]) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new(binary);
-    command
-        .args(args)
-        .env("PATH", system::openclaw_search_path())
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
-        .env("OPENCLAW_NO_RESPAWN", "1")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    platform::configure_background_command(&mut command);
-    command
-}
-
 async fn run_json_command(
-    binary: &Path,
+    target: &OpenClawCliTarget,
     args: &[&str],
     timeout: Duration,
     required_keys: &[&str],
 ) -> Result<Value, String> {
     let label = args.join(" ");
-    let mut command = build_command(binary, args);
+    let mut command = target.command(args);
     let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to run OpenClaw {label}: {error}"))?;
@@ -367,112 +348,50 @@ fn apply_doctor_payload(report: &mut MaintenanceReport, payload: Value) -> Resul
 }
 
 #[tauri::command]
-pub async fn run_maintenance_repair(
-    state: tauri::State<'_, GatewayProcess>,
-) -> Result<bool, String> {
-    let _operation_guard = acquire_operation_guard().await;
-    push_log(
-        &state.logs,
-        LogSource::Lifecycle,
-        LogLevel::Info,
-        "maintenance repair started",
-    );
-
-    let Some(binary) = resolve_openclaw_binary() else {
-        push_log(
-            &state.logs,
-            LogSource::Lifecycle,
-            LogLevel::Error,
-            "maintenance repair failed: OpenClaw executable not found",
-        );
-        return Ok(false);
-    };
-
-    let mut command = tokio::process::Command::new(binary);
-    command
-        .args(["doctor", "--fix", "--yes", "--non-interactive"])
-        .env("PATH", system::openclaw_search_path())
-        .env("OPENCLAW_STATE_DIR", paths::desktop_dir())
-        .env("OPENCLAW_CONFIG_PATH", paths::config_path())
-        .env("OPENCLAW_NO_RESPAWN", "1")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    platform::configure_background_command(&mut command);
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Failed to start OpenClaw maintenance repair: {error}"))?;
-    let status = match tokio::time::timeout(DOCTOR_TIMEOUT, child.wait()).await {
-        Ok(Ok(status)) => status,
-        Ok(Err(error)) => {
-            push_log(
-                &state.logs,
-                LogSource::Lifecycle,
-                LogLevel::Error,
-                format!("maintenance repair wait failed: {error}"),
-            );
-            return Ok(false);
-        }
-        Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            push_log(
-                &state.logs,
-                LogSource::Lifecycle,
-                LogLevel::Error,
-                "maintenance repair timed out",
-            );
-            return Ok(false);
-        }
-    };
-    let repaired = status.success();
-    push_log(
-        &state.logs,
-        LogSource::Lifecycle,
-        if repaired {
-            LogLevel::Info
-        } else {
-            LogLevel::Error
-        },
-        format!(
-            "maintenance repair exited with code {}",
-            status.code().unwrap_or(-1)
-        ),
-    );
-    Ok(repaired)
-}
-
-#[tauri::command]
 pub async fn run_maintenance_scan() -> Result<MaintenanceReport, String> {
     let _operation_guard = acquire_operation_guard().await;
     let checked_at_ms = chrono::Utc::now().timestamp_millis();
-    let Some(binary) = resolve_openclaw_binary() else {
+    if let Err(error) = paths::validate_runtime_mode(paths::active_runtime_mode()) {
         return Ok(MaintenanceReport {
             healthy: false,
             checked_at_ms,
             config_valid: None,
-            config_path: Some(paths::config_path().display().to_string()),
+            config_path: Some(paths::active_config_path().display().to_string()),
             doctor_ok: None,
             checks_run: None,
             checks_skipped: None,
             findings: Vec::new(),
-            scan_errors: vec!["OpenClaw executable was not found".to_string()],
+            scan_errors: vec![error],
             summary: MaintenanceSummary::default(),
         });
+    }
+    let target = match crate::commands::openclaw_cli::resolve_active_openclaw_target().await {
+        Ok(target) => target,
+        Err(error) => {
+            return Ok(MaintenanceReport {
+                healthy: false,
+                checked_at_ms,
+                config_valid: None,
+                config_path: Some(paths::active_config_path().display().to_string()),
+                doctor_ok: None,
+                checks_run: None,
+                checks_skipped: None,
+                findings: Vec::new(),
+                scan_errors: vec![error],
+                summary: MaintenanceSummary::default(),
+            });
+        }
     };
 
     let config_result = run_json_command(
-        &binary,
+        &target,
         &["config", "validate", "--json"],
         CONFIG_TIMEOUT,
         &["valid"],
     )
     .await;
     let doctor_result = run_json_command(
-        &binary,
+        &target,
         &["doctor", "--lint", "--json"],
         DOCTOR_TIMEOUT,
         &["ok", "findings"],

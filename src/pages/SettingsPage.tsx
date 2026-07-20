@@ -4,11 +4,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Loader2, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Wrench, Sparkles, FolderOpen,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, Glasses, PawPrint, Info, Clock, Palette, Radio, KeyRound, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard } from '@/components/shared/GlassCard';
@@ -20,12 +20,13 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
-import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { notifications } from '@/services/notifications';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
 import { SkinPreview } from '@/pet/SkinPreview';
 import { invoke } from '@tauri-apps/api/core';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
 import { formatBytes } from '@/utils/format';
@@ -33,16 +34,21 @@ import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';
 import { MaintenanceCenter } from '@/components/settings/MaintenanceCenter';
+import { TerminalSettingsPanel } from '@/components/settings/TerminalSettingsPanel';
+import { NpmCacheSettingsPanel } from '@/components/settings/NpmCacheSettingsPanel';
+import { ManagedRuntimeSettingsPanel } from '@/components/settings/ManagedRuntimeSettingsPanel';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import clsx from 'clsx';
 
-type SettingsTab = 'appearance' | 'notify' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
+type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
+const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'pet', 'connect', 'storage', 'maintenance', 'about'];
 
 export function SettingsPageFull() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     theme, setTheme,
     uiScale, setUiScale,
@@ -50,6 +56,8 @@ export function SettingsPageFull() {
     notificationsEnabled, setNotificationsEnabled,
     soundEnabled, setSoundEnabled,
     dndMode, setDndMode,
+    dynamicIslandEnabled, setDynamicIslandEnabled,
+    dynamicIslandAutoExpand, setDynamicIslandAutoExpand,
     gatewayUrl, setGatewayUrl,
     budgetLimit, setBudgetLimit,
     gatewayToken, setGatewayToken,
@@ -65,7 +73,7 @@ export function SettingsPageFull() {
   }, [budgetLimit]);
   const { connected, connecting } = useChatStore();
   const prefersDark = usePrefersDark();
-  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, setPetVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petIdea, setPetIdea] = useState('');
   const [preparingPetSkill, setPreparingPetSkill] = useState(false);
@@ -168,7 +176,23 @@ export function SettingsPageFull() {
   const [editUrl, setEditUrl] = useState(gatewayUrl);
   const [editToken, setEditToken] = useState(gatewayToken);
   const [connectionDirty, setConnectionDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => (
+    SETTINGS_TABS.includes(requestedTab as SettingsTab) ? requestedTab as SettingsTab : 'appearance'
+  ));
+
+  useEffect(() => {
+    if (SETTINGS_TABS.includes(requestedTab as SettingsTab)) setActiveTab(requestedTab as SettingsTab);
+  }, [requestedTab]);
+
+  const selectTab = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('tab', tab);
+      return next;
+    }, { replace: true });
+  };
 
   useEffect(() => {
     if (activeTab !== 'pet') return;
@@ -286,7 +310,7 @@ export function SettingsPageFull() {
   };
 
   const copyDiagnosticInfo = async () => {
-    const gatewayUrl = localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || 'ws://127.0.0.1:18789';
+    const gatewayUrl = localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || defaultGatewayWsUrl();
     const hasGatewayToken = Boolean((editToken || '').trim() || (gatewayToken || '').trim());
     const platformInfo = await window.aegis?.app?.platformInfo?.() ?? `${navigator.platform || '—'}`;
     const info = [
@@ -362,11 +386,11 @@ export function SettingsPageFull() {
     try {
       const config = await window.aegis?.config.get();
       return {
-        url: config?.gatewayUrl || config?.gatewayWsUrl || 'ws://127.0.0.1:18789',
+        url: config?.gatewayUrl || config?.gatewayWsUrl || defaultGatewayWsUrl(),
         token: config?.gatewayToken || '',
       };
     } catch {
-      return { url: 'ws://127.0.0.1:18789', token: '' };
+      return { url: defaultGatewayWsUrl(), token: '' };
     }
   };
 
@@ -375,7 +399,7 @@ export function SettingsPageFull() {
     setTestResult(null);
     try {
       const { url, token } = await resolveConnectionUrl();
-      gateway.connect(url, token);
+      gatewayManager.connect(url, token);
       // Poll the store for up to 5 s (50 × 100 ms) instead of a fixed 2.5 s sleep.
       // This resolves faster on quick connections and is more reliable on slow ones.
       let connected = false;
@@ -393,7 +417,7 @@ export function SettingsPageFull() {
 
   const handleReconnect = async () => {
     const { url, token } = await resolveConnectionUrl();
-    gateway.connect(url, token);
+    gatewayManager.connect(url, token);
   };
 
   const handleSaveConnection = () => {
@@ -401,8 +425,8 @@ export function SettingsPageFull() {
     setGatewayToken(editToken.trim());
     setConnectionDirty(false);
     // Reconnect with new settings
-    const url = editUrl.trim() || 'ws://127.0.0.1:18789';
-    gateway.connect(url, editToken.trim());
+    const url = editUrl.trim() || defaultGatewayWsUrl();
+    gatewayManager.connect(url, editToken.trim());
   };
 
   // Toggle switch — unified design (used everywhere in settings)
@@ -444,9 +468,10 @@ export function SettingsPageFull() {
       </div>
 
       {/* Horizontal tab bar */}
-      <div className="flex gap-1 border-b border-aegis-border pb-0 overflow-x-auto">
+      <div className="flex gap-1 border-b border-aegis-border pb-0 overflow-x-auto" role="tablist" aria-label={t('settings.title')}>
         {([
           ['appearance', t('settings.tab.appearance', '外观'), Sun],
+          ['terminal', t('settings.tab.terminal', '终端'), TerminalSquare],
           ['notify', t('settings.tab.notify', '通知'), Bell],
           ['pet', t('settings.tab.pet', '萌宠'), PawPrint],
           ['connect', t('settings.tab.connect', '连接'), Wifi],
@@ -454,7 +479,7 @@ export function SettingsPageFull() {
           ['maintenance', t('settings.tab.maintenance', '检修'), Wrench],
           ['about', t('settings.tab.about', '关于'), Info],
         ] as const).map(([key, label, Icon]) => (
-          <button key={key} onClick={() => setActiveTab(key)}
+          <button key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => selectTab(key)}
             className={clsx(
               'flex items-center gap-1.5 px-3.5 py-2 rounded-t-lg text-[13px] font-medium transition-colors border-b-2 -mb-[1px] whitespace-nowrap',
               activeTab === key
@@ -468,13 +493,11 @@ export function SettingsPageFull() {
       </div>
       <div className="space-y-6">
 
+      {activeTab === 'terminal' && <TerminalSettingsPanel />}
+
       {activeTab === 'maintenance' && (
         <MaintenanceCenter
-          onRecoverGateway={async () => {
-            const result = await invoke<{ healthy?: boolean }>('ensure_gateway_running');
-            if (result?.healthy) await handleReconnect();
-            return result;
-          }}
+          onRecoverGateway={() => gatewayManager.ensureRunning()}
           onOpenConfig={(category) => {
             const tab = category === 'mcp' ? 'tools' : category === 'security' ? 'secrets' : 'advanced';
             navigate(`/config?tab=${tab}`);
@@ -674,6 +697,44 @@ export function SettingsPageFull() {
           </button>
         </div>
       </GlassCard>
+
+      <GlassCard delay={0.12}>
+        <h3 className="text-[14px] font-semibold text-aegis-text mb-4 flex items-center gap-2">
+          <PanelTop size={16} className="text-aegis-primary" />
+          {t('settings.dynamicIsland', '灵动岛')}
+        </h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('settings.dynamicIslandEnabled', '启用灵动岛')}</div>
+              <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandDesc', '主窗口最小化且会话正在执行时显示；拖入文件时临时显示接收状态。')}</div>
+            </div>
+            <Toggle enabled={dynamicIslandEnabled} onChange={setDynamicIslandEnabled} />
+          </div>
+
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('settings.dynamicIslandAutoExpand', '重要状态自动展开')}</div>
+              <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.dynamicIslandAutoExpandDesc', '等待输入、执行完成、失败或接收文件时短暂展开，随后自动收起。')}</div>
+            </div>
+            <Toggle enabled={dynamicIslandAutoExpand} onChange={setDynamicIslandAutoExpand} disabled={!dynamicIslandEnabled} />
+          </div>
+
+          <button
+            type="button"
+            disabled={!dynamicIslandEnabled}
+            onClick={() => invoke('open_dynamic_island').catch(() => undefined)}
+            className={clsx(
+              'text-[12px] px-4 py-2 rounded-lg border transition-colors',
+              dynamicIslandEnabled
+                ? 'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10'
+                : 'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed',
+            )}
+          >
+            {t('settings.dynamicIslandPreview', '预览灵动岛')}
+          </button>
+        </div>
+      </GlassCard>
         </>
       )}
 
@@ -751,6 +812,34 @@ export function SettingsPageFull() {
               style={{ transform: petSoundEnabled ? 'translateX(16px)' : 'translateX(0)' }}
             />
           </button>
+        </div>
+
+        <div className="flex items-center justify-between mt-4">
+          <div>
+            <div className="text-[13px] text-aegis-text">{t('pet.settings.backdropContrast', '自动调整文字对比度')}</div>
+            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.backdropContrastHint', '根据萌宠附近桌面颜色调整提示文字，不保存桌面图像')}</div>
+          </div>
+          <Toggle enabled={backdropContrastEnabled} onChange={setBackdropContrastEnabled} />
+        </div>
+
+        <div className="mt-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('pet.settings.captionScale', '提示文字大小')}</div>
+              <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.captionScaleHint', '调整萌宠状态与提示文字的显示大小')}</div>
+            </div>
+            <span className="w-10 text-right font-mono text-xs text-aegis-primary">{Math.round(petCaptionScale * 100)}%</span>
+          </div>
+          <input
+            className="mt-2 w-full accent-[rgb(var(--aegis-primary))]"
+            type="range"
+            min="0.85"
+            max="1.35"
+            step="0.05"
+            value={petCaptionScale}
+            onChange={(event) => setPetCaptionScale(Number(event.target.value))}
+            aria-label={t('pet.settings.captionScale', '提示文字大小')}
+          />
         </div>
 
         {/* Custom static upload */}
@@ -986,7 +1075,7 @@ export function SettingsPageFull() {
               type="text"
               value={editUrl}
               onChange={(e) => { setEditUrl(e.target.value); setConnectionDirty(true); }}
-              placeholder={t('settingsExtra.wsUrlPlaceholder', 'ws://127.0.0.1:18789')}
+              placeholder={defaultGatewayWsUrl()}
               className="w-full px-3 py-2.5 rounded-xl text-[13px] font-mono
                 bg-[rgb(var(--aegis-overlay)/0.03)] border border-aegis-border
                 text-aegis-text placeholder:text-aegis-text-dim
@@ -994,7 +1083,10 @@ export function SettingsPageFull() {
               dir="ltr"
             />
             <div className="text-[10px] text-aegis-text-dim mt-1">
-              {t('settings.gatewayUrlHint', 'Leave empty to use default (ws://127.0.0.1:18789)')}
+              {t('settings.gatewayUrlHint', {
+                url: defaultGatewayWsUrl(),
+                defaultValue: 'Leave empty to use default ({{url}})',
+              })}
             </div>
           </div>
 
@@ -1063,6 +1155,10 @@ export function SettingsPageFull() {
       {activeTab === 'storage' && (
         <>
       <GatewayLifecyclePanel variant="full" />
+
+      <ManagedRuntimeSettingsPanel />
+
+      <NpmCacheSettingsPanel />
 
       {/* Conversation files — same managed index as File Manager */}
       <GlassCard delay={0.28}>
@@ -1146,7 +1242,7 @@ export function SettingsPageFull() {
               <JunQiLogo
                 variant="full"
                 className="h-[64px] w-[320px] max-w-full"
-                title="大夏集团 DAXIA GROUP"
+                title="陕西浚启智境科技有限公司"
               />
             </div>
           </div>
@@ -1160,7 +1256,7 @@ export function SettingsPageFull() {
           {[
             ['OpenClaw', openclawVersion ? `v${openclawVersion}` : '—'],
             [t('settingsExtra.platform', 'Platform'), platformLabel],
-            [t('settings.gateway', 'Gateway'), connected ? `${localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || 'ws://127.0.0.1:18789'} ✓` : '— ✗'],
+            [t('settings.gateway', 'Gateway'), connected ? `${localStorage.getItem('aegis-gateway-http')?.replace('http', 'ws') || defaultGatewayWsUrl()} ✓` : '— ✗'],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between">
               <span className="text-[11px] text-aegis-text-dim">{label}</span>
@@ -1185,7 +1281,7 @@ export function SettingsPageFull() {
           </button>
 
           <button
-            onClick={() => setActiveTab('maintenance')}
+            onClick={() => selectTab('maintenance')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-aegis-text-dim hover:text-aegis-text border border-aegis-border/20 hover:border-aegis-border/40 transition-colors"
           >
             <Wrench size={12} />

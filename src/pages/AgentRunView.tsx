@@ -14,7 +14,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Channel } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm, save } from '@tauri-apps/plugin-dialog';
 import type { Terminal as XTerm } from '@xterm/xterm';
@@ -30,28 +29,18 @@ import {
 import {
   Sparkle,
   Robot,
-  Pi,
-  Diamond,
-  CursorClick,
-  Lightning,
-  Hexagon,
-  XLogo,
-  Cloud,
-  ArrowCircleUp,
-  Moon as MoonPh,
-  BracketsCurly,
-  Wrench as WrenchPh,
-  Brain as BrainPh,
 } from '@phosphor-icons/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { PromptEditor, type ImageAttach } from '@/components/shared/PromptEditor';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import {
   useAgentWorkspaceStore,
+  shouldIgnoreAgentWorkspaceTaskStatusTransition,
   type AgentWorkspaceTask,
   type AgentWorkspaceTaskStatus,
 } from '@/stores/agentWorkspaceStore';
-import { StatusIcon, type StatusIconValue } from '@/components/shared/StatusIcon';
+import { StatusIcon } from '@/components/shared/StatusIcon';
 import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
 import { SessionViewPage } from '@/pages/SessionViewPage';
 import { ToolCallActivityPill, type ToolCallEvent, type ToolStats } from '@/components/shared/ToolCallHistoryPopover';
@@ -76,6 +65,11 @@ import {
   TERMINAL_NEWLINE_SEQUENCE,
 } from '@/_nezha_root/shortcuts';
 import { createTaskWorktreeArgs, mergeTaskWorktreeArgs, taskWorktreeArgs, worktreeDiffStatsArgs } from './agentWorktreeCommands';
+import { applyPlanModePrompt } from './agentPrompt';
+import claudeGif from '@/assets/gif/claude.gif';
+import codexGif from '@/assets/gif/codex.gif';
+import { captureTaskNameSnapshot, taskStillMatchesNameSnapshot } from './AgentWorkspace/taskNameGuard';
+import { getUsageColor, useUsageSnapshot, type UsageWindow } from '@/hooks/useUsageSnapshot';
 
 async function loadTerminalDeps() {
   const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
@@ -123,31 +117,17 @@ function isActiveWorkspaceTaskStatus(status: AgentWorkspaceTaskStatus | undefine
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-// Agent banner icons (phosphor regular — polished, SF-Symbol-grade, 24px)
-const AGENT_BRANDS: Record<string, { bg: string; icon: React.ReactNode; label: string }> = {
-  claude:     { bg: 'linear-gradient(135deg, #d97757, #a84e32)', icon: <Sparkle size={24} weight="regular" className="text-amber-200" />, label: 'Claude Code' },
-  codex:      { bg: 'linear-gradient(135deg, #7a9dff, #3a5dc0)', icon: <Robot size={24} weight="regular" className="text-blue-200" />, label: 'Codex' },
-  pi:         { bg: 'linear-gradient(135deg, #c2c5ce, #80838c)', icon: <Pi size={24} weight="regular" className="text-gray-200" />, label: 'Pi' },
-  gemini:     { bg: 'linear-gradient(135deg, #3186ff, #1a47b8)', icon: <Diamond size={24} weight="regular" className="text-blue-200" />, label: 'Gemini CLI' },
-  'cursor-agent': { bg: 'linear-gradient(135deg, #f54e00, #b83800)', icon: <CursorClick size={24} weight="regular" className="text-orange-200" />, label: 'Cursor CLI' },
-  amp:        { bg: 'linear-gradient(135deg, #e8b168, #c4852e)', icon: <Lightning size={24} weight="regular" className="text-amber-200" />, label: 'Amp' },
-  copilot:    { bg: 'linear-gradient(135deg, #6e40c9, #4520a0)', icon: <Hexagon size={24} weight="regular" className="text-purple-200" />, label: 'Copilot CLI' },
-  grok:       { bg: 'linear-gradient(135deg, #e8e8e8, #999)', icon: <XLogo size={24} weight="regular" className="text-gray-200" />, label: 'Grok Build' },
-  'kiro-cli': { bg: 'linear-gradient(135deg, #9046ff, #6020cc)', icon: <Cloud size={24} weight="regular" className="text-purple-200" />, label: 'Kiro CLI' },
-  agy:        { bg: 'linear-gradient(135deg, #4285f4, #1a50c0)', icon: <ArrowCircleUp size={24} weight="regular" className="text-blue-200" />, label: 'Antigravity CLI' },
-  kimi:       { bg: 'linear-gradient(135deg, #c9c3d6, #8a7fa0)', icon: <MoonPh size={24} weight="regular" className="text-violet-200" />, label: 'Kimi Code' },
-  opencode:   { bg: 'linear-gradient(135deg, #b0b0b0, #707070)', icon: <BracketsCurly size={24} weight="regular" className="text-gray-200" />, label: 'OpenCode' },
-  aider:      { bg: 'linear-gradient(135deg, #44aa44, #228822)', icon: <WrenchPh size={24} weight="regular" className="text-green-200" />, label: 'Aider' },
-  qwen:       { bg: 'linear-gradient(135deg, #6600cc, #4400aa)', icon: <BrainPh size={24} weight="regular" className="text-purple-200" />, label: 'Qwen CLI' },
-};
-
 function AgentHeader({ agent }: { agent: AgentType }) {
   const { t } = useTranslation();
-  const brand = AGENT_BRANDS[agent] ?? AGENT_BRANDS.claude;
   return (
-    <div className="flex items-center justify-center w-full py-6" style={{ background: brand.bg }}>
-      <span className="text-[28px] font-bold text-white tracking-tight flex items-center gap-2">
-        {brand.icon} {brand.label}
+    <div className="flex w-full shrink-0 flex-col items-center justify-center pb-2 pt-5">
+      <img
+        src={agent === 'codex' ? codexGif : claudeGif}
+        alt=""
+        className="mb-2 h-auto w-[min(112px,28vw)] object-contain"
+      />
+      <span className="text-xl font-bold text-aegis-text">
+        {t('newTask.title', '新建任务')}
       </span>
     </div>
   );
@@ -175,6 +155,17 @@ function formatDuration(secs: number): string {
 }
 function fmtNum(n: number): string { return n < 1000 ? String(n) : n < 1e6 ? `${(n/1e3).toFixed(1)}k` : `${(n/1e6).toFixed(1)}M`; }
 function fmtBytes(b: number): string { return b < 1024 ? `${b}B` : b < 1024*1024 ? `${(b/1024).toFixed(0)}K` : `${(b/1024/1024).toFixed(1)}M`; }
+
+function InlineUsageWindow({ label, window }: { label: string; window: UsageWindow }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-[10px] text-aegis-text-dim">{label}</span>
+      <span className="text-[11px] font-bold tabular-nums" style={{ color: getUsageColor(window.remainingPercent) }}>
+        {window.remainingPercent}%
+      </span>
+    </span>
+  );
+}
 
 // ── Kooky ToolCallActivityStrip sub-components ─────────────────────────────
 
@@ -222,7 +213,7 @@ function FollowUpDock({ agent, onSend, disabled }: { agent: AgentType; onSend: (
         style={{ background: "var(--aegis-elevated)", color: "rgb(var(--aegis-text-secondary))" }}>
         {agent}
       </span>
-      <input
+      <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -232,8 +223,10 @@ function FollowUpDock({ agent, onSend, disabled }: { agent: AgentType; onSend: (
           }
         }}
         disabled={disabled}
-        placeholder="Type message (Enter to send, Shift+Enter for newline) — IME / 中文 / 宫格 supported"
-        className="flex-1 bg-transparent text-[12px] font-mono text-aegis-text placeholder:text-aegis-text-dim/60 outline-none px-2"
+        rows={1}
+        aria-label="向运行中的智能体发送消息"
+        placeholder="输入消息（Enter 发送，Shift+Enter 换行）"
+        className="max-h-24 min-h-6 flex-1 resize-none bg-transparent px-2 py-1 text-[12px] leading-4 text-aegis-text outline-none placeholder:text-aegis-text-dim/60 disabled:cursor-not-allowed disabled:opacity-50"
       />
       <button type="button" onClick={handleSubmit} disabled={disabled || !text.trim()}
         className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold transition-all"
@@ -381,59 +374,6 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
   );
 }
 
-// ── Session history strip (kooky-style recent sessions) ─────────────────────
-//
-// Renders a compact horizontal list of recent sessions for the same agent +
-// project. Each chip is a one-click "resume" target that hydrates the prompt
-// editor with the corresponding --resume/--session flag and the saved ID.
-function SessionHistoryStrip({ agent, projectPath, onResume }: {
-  agent: AgentType;
-  projectPath: string;
-  onResume: (cmd: string) => void;
-}) {
-  const { t } = useTranslation();
-  const list = useSessionHistoryStore((s) => s.listForProject);
-  const sessions = list(projectPath, 6).filter((e) => e.agent === agent);
-  if (sessions.length === 0) return null;
-
-  const timeAgo = (ms: number) => {
-    const diff = Date.now() - ms;
-    const min = Math.floor(diff / 60_000);
-    if (min < 1) return t('session.justNow', 'just now');
-    if (min < 60) return t('session.minAgo', `${min}m ago`);
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return t('session.hrAgo', `${hr}h ago`);
-    return t('session.dayAgo', `${Math.floor(hr / 24)}d ago`);
-  };
-
-  return (
-    <div className="mx-4 mt-3 px-3 py-2 rounded-lg flex items-center gap-2 flex-wrap"
-      style={{ background: 'rgb(var(--aegis-surface))', border: '1px solid rgb(var(--aegis-border))' }}>
-      <span className="text-[10px] uppercase tracking-wider text-aegis-text-dim font-semibold mr-1">
-        {t('session.recent', 'Recent')}
-      </span>
-      {sessions.map((s) => (
-        <button key={s.key}
-          onClick={() => s.resumeCommand && onResume(s.resumeCommand)}
-          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-colors"
-          style={{
-            background: 'rgb(var(--aegis-overlay)/0.04)',
-            border: '1px solid rgb(var(--aegis-border))',
-            color: 'rgb(var(--aegis-text-secondary))',
-          }}
-          title={s.sessionPath}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.10)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgb(var(--aegis-overlay)/0.04)'; }}>
-          <RotateCcw size={10} />
-          <span className="font-mono">{s.sessionId.slice(0, 8)}</span>
-          <span className="text-aegis-text-dim">·</span>
-          <span className="text-aegis-text-dim">{timeAgo(s.lastSeen)}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export interface AgentRunViewProps {
@@ -462,6 +402,7 @@ export interface AgentRunViewProps {
   terminalFontSize?: TerminalFontSize;
   monoFontFamily?: FontFamily;
   themeVariant?: ThemeVariant;
+  visible?: boolean;
 }
 
 export function AgentRunView({
@@ -489,6 +430,7 @@ export function AgentRunView({
   terminalFontSize = 12,
   monoFontFamily = getDefaultMonoFont(),
   themeVariant = 'dark',
+  visible = true,
 }: AgentRunViewProps = {}) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
@@ -502,6 +444,7 @@ export function AgentRunView({
       path: workspace.projectDirectory || workspace.workingDirectory,
     }))
     .filter((workspace) => Boolean(workspace.path)), [workspaces]);
+  const { snapshot: usageSnapshot } = useUsageSnapshot(visible);
   const requestedAgent = providedAgent ?? params.get('agent');
   const initialAgent: AgentType = requestedAgent === 'codex' || requestedAgent === 'pi'
     ? requestedAgent
@@ -575,7 +518,9 @@ export function AgentRunView({
 
   // ── Execution state ──────────────────────────────────────────────────────
   const [running, setRunning] = useState(initiallyActive);
-  const [status, setStatus] = useState<StatusIconValue>(initiallyActive ? providedInitialStatus! : 'idle');
+  const [status, setStatus] = useState<AgentWorkspaceTaskStatus | 'idle'>(initiallyActive ? providedInitialStatus! : 'idle');
+  const statusRef = useRef(status);
+  statusRef.current = status;
   const [error, setError] = useState<string | null>(null);
   const restoredWorktreePath = initialWorktreeDiscarded ? null : providedInitialWorktreePath ?? null;
   const [worktreePath, setWorktreePath] = useState<string | null>(restoredWorktreePath);
@@ -870,12 +815,12 @@ export function AgentRunView({
     void invoke<string>('get_task_output_snapshot', { taskId }).then((snapshot) => {
       if (!disposed && snapshot) writeTerm(snapshot);
     }).catch(() => undefined);
-    const subscription = listen<{ task_id: string; output: string }>('task-output', (event) => {
+    const unlisten = subscribeTauriEvent<{ task_id: string; output: string }>('task-output', (event) => {
       if (event.payload.task_id === taskId && event.payload.output) writeTerm(event.payload.output);
     });
     return () => {
       disposed = true;
-      void subscription.then((unlisten) => unlisten());
+      unlisten();
     };
   }, [initiallyActive, taskId, workspaceTaskId, writeTerm]);
 
@@ -913,7 +858,7 @@ export function AgentRunView({
   // the `agent-sessions` key (see sessionHistoryStore).
   const recordSession = useSessionHistoryStore((s) => s.record);
   useEffect(() => {
-    const p = listen<{ task_id: string; session_id: string; session_path: string }>('task-session', (e) => {
+    const unlisten = subscribeTauriEvent<{ task_id: string; session_id: string; session_path: string }>('task-session', (e) => {
       if (e.payload.task_id !== taskId || !e.payload.session_path) return;
       setSessionPath(e.payload.session_path);
       setSessionId(e.payload.session_id);
@@ -938,12 +883,12 @@ export function AgentRunView({
         });
       }
     });
-    return () => { void p.then((u) => u()); };
+    return unlisten;
   }, [taskId, agent, projectPath, recordSession, updateWorkspaceTask, workspaceTaskId]);
 
   // ── Tool-call activity listener (kooky ToolCallActivityStrip model) ──────
   useEffect(() => {
-    const p = listen<{ task_id: string; bash: number; edit: number; read: number; other: number; latest: string }>(
+    const unlisten = subscribeTauriEvent<{ task_id: string; bash: number; edit: number; read: number; other: number; latest: string }>(
       'task-toolcall', (e) => {
         if (e.payload.task_id !== taskId) return;
         setToolStats({
@@ -955,11 +900,11 @@ export function AgentRunView({
         });
       },
     );
-    return () => { void p.then((u) => u()); };
+    return unlisten;
   }, [taskId]);
 
   useEffect(() => {
-    const listener = listen<{ task_id: string; status: string }>('task-status', (event) => {
+    const unlisten = subscribeTauriEvent<{ task_id: string; status: string }>('task-status', (event) => {
       if (event.payload.task_id !== taskId) return;
       const nextStatus = event.payload.status;
       if (
@@ -971,6 +916,12 @@ export function AgentRunView({
         && nextStatus !== 'done'
         && nextStatus !== 'failed'
         && nextStatus !== 'cancelled'
+      ) return;
+
+      const currentStatus = statusRef.current;
+      if (
+        currentStatus !== 'idle'
+        && shouldIgnoreAgentWorkspaceTaskStatusTransition(currentStatus, nextStatus)
       ) return;
 
       setStatus(nextStatus);
@@ -991,7 +942,7 @@ export function AgentRunView({
         if (workspaceTaskId) updateWorkspaceTask(workspaceTaskId, stats);
       }).catch(() => undefined);
     });
-    return () => { void listener.then((unlisten) => unlisten()); };
+    return unlisten;
   }, [baseBranch, projectPath, taskId, updateWorkspaceTask, updateWorkspaceTaskState, workspaceTaskId]);
 
   useEffect(() => {
@@ -999,6 +950,7 @@ export function AgentRunView({
       setMetrics(null);
       return;
     }
+    if (!visible) return;
     let cancelled = false;
     const fetch = async () => {
       try {
@@ -1013,7 +965,7 @@ export function AgentRunView({
       if (metricsTimerRef.current) window.clearInterval(metricsTimerRef.current);
       metricsTimerRef.current = null;
     };
-  }, [sessionPath, running]);
+  }, [sessionPath, running, visible]);
 
   const copySessionPath = useCallback(async () => {
     if (!sessionPath) return;
@@ -1035,7 +987,7 @@ export function AgentRunView({
       setError('请选择工作树的基础分支');
       return;
     }
-    const taskPrompt = planMode && basePrompt ? `${basePrompt}\n\nPlease use plan mode.` : basePrompt;
+    const taskPrompt = applyPlanModePrompt(basePrompt, planMode);
     setError(null); clearTerm(); setStatus('running'); setRunning(true); setMetrics(null); setDiffStats(null);
     if (workspaceTaskId) {
       updateWorkspaceTask(workspaceTaskId, {
@@ -1062,34 +1014,40 @@ export function AgentRunView({
         if (resumeIdRef.current && worktreePathRef.current) {
           actualPath = worktreePathRef.current;
         } else {
-          const result = await invoke<{ path: string; branch: string }>('create_task_worktree', createTaskWorktreeArgs(actualPath, taskId, baseBranch));
-          actualPath = result.path;
-          setWorktreePath(result.path);
-          worktreePathRef.current = result.path;
-          setWorktreeBranch(result.branch);
+          const result = await invoke<{ worktreePath: string; worktreeBranch: string; baseBranch: string }>(
+            'create_task_worktree',
+            createTaskWorktreeArgs(actualPath, taskId, baseBranch),
+          );
+          actualPath = result.worktreePath;
+          setWorktreePath(result.worktreePath);
+          worktreePathRef.current = result.worktreePath;
+          setWorktreeBranch(result.worktreeBranch);
+          setBaseBranch(result.baseBranch);
           setWorktreeDiscarded(false);
           if (workspaceTaskId) {
             updateWorkspaceTask(workspaceTaskId, {
-              worktreePath: result.path,
-              worktreeBranch: result.branch,
-              baseBranch: baseBranch || undefined,
+              worktreePath: result.worktreePath,
+              worktreeBranch: result.worktreeBranch,
+              baseBranch: result.baseBranch,
               worktreeDiscarded: false,
             });
           }
         }
       }
       await invoke('run_task', {
-        taskId,
-        projectPath: actualPath,
-        prompt: taskPrompt,
-        agent,
-        permissionMode: perm,
-        images: attachedImages.map((image) => image.src),
-        texts: textAttachments.map((attachment) => attachment.text),
-        cols: 220,
-        rows: 50,
+        request: {
+          taskId,
+          projectPath: actualPath,
+          prompt: taskPrompt,
+          agent,
+          permissionMode: perm,
+          images: attachedImages.map((image) => image.src),
+          texts: textAttachments.map((attachment) => attachment.text),
+          cols: 220,
+          rows: 50,
+          resumeId: resumeIdRef.current,
+        },
         onOutput,
-        resumeId: resumeIdRef.current,
       });
     } catch (e) {
       const failureReason = String(e);
@@ -1297,18 +1255,24 @@ export function AgentRunView({
 
   const generateTitle = useCallback(async () => {
     if (!workspaceTaskId || generatingTitle || running) return;
+    const expectedTask = useAgentWorkspaceStore.getState().tasks.find((task) => task.id === workspaceTaskId);
+    if (!expectedTask) return;
+    const snapshot = captureTaskNameSnapshot(expectedTask);
     setGeneratingTitle(true);
     try {
       const nextTitle = await invoke<string>('generate_task_name', {
         projectPath,
         agent,
+        sessionPath: snapshot.sessionPath,
         originalPrompt: prompt,
       });
-      if (nextTitle.trim()) {
-        setTaskTitle(nextTitle.trim());
-        setTitleDraft(nextTitle.trim());
-        updateWorkspaceTask(workspaceTaskId, { title: nextTitle.trim() });
-      }
+      const title = nextTitle.trim();
+      if (!title) return;
+      const currentTask = useAgentWorkspaceStore.getState().tasks.find((task) => task.id === workspaceTaskId);
+      if (!taskStillMatchesNameSnapshot(currentTask, snapshot)) return;
+      setTaskTitle(title);
+      setTitleDraft(title);
+      updateWorkspaceTask(workspaceTaskId, { title });
     } catch (reason) {
       setError(`生成任务名称失败：${String(reason)}`);
     } finally {
@@ -1316,12 +1280,9 @@ export function AgentRunView({
     }
   }, [agent, generatingTitle, projectPath, prompt, running, updateWorkspaceTask, workspaceTaskId]);
 
-  // ── Save as Todo (localStorage) ─────────────────────────────────────────
+  // ── Save as Todo ────────────────────────────────────────────────────────
   const handleSaveTodo = useCallback(() => {
-    if (launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)) return;
-    const todos = JSON.parse(localStorage.getItem('junqi:saved-todos') || '[]');
-    todos.push({ at: Date.now(), agent, prompt, perm, textChars: textAttachments.map(t => t.text) });
-    localStorage.setItem('junqi:saved-todos', JSON.stringify(todos.slice(-20)));
+    if (launchMode === 'worktree' || attachedImages.length > 0 || textAttachments.length > 0 || !prompt.trim()) return;
     if (workspaceTaskId) {
       updateWorkspaceTask(workspaceTaskId, {
         prompt,
@@ -1337,7 +1298,7 @@ export function AgentRunView({
     }
     onTaskSaved?.();
     setAttachedImages([]); setTextAttachments([]);
-  }, [prompt, agent, perm, textAttachments, workspaceTaskId, updateWorkspaceTask, onTaskSaved, launchMode]);
+  }, [prompt, agent, perm, attachedImages, textAttachments, workspaceTaskId, updateWorkspaceTask, onTaskSaved, launchMode]);
 
   // ── Xterm re-fit on done ────────────────────────────────────────────────
   useEffect(() => {
@@ -1357,16 +1318,6 @@ export function AgentRunView({
     <div className="flex flex-col h-full overflow-hidden" style={{ background: 'rgb(var(--aegis-bg))' }}>
       {/* ── Header: agent GIF + status ────────────────────────────────── */}
       {!running && !isDone && <AgentHeader agent={agent} />}
-      {/* ── Session history (kooky-style recent list) ─────────────────── */}
-      {!running && !isDone && <SessionHistoryStrip agent={agent} projectPath={projectPath} onResume={(cmd) => {
-        const m = cmd.match(/^(?:claude|pi)\s+(?:--resume|--session)\s+(\S+)|^codex\s+resume\s+(\S+)/);
-        const resumeSessionId = m?.[1] ?? m?.[2];
-        if (resumeSessionId) {
-          resumeIdRef.current = resumeSessionId;
-          setError(null);
-          void handleStart(`[Resuming ${agent} session ${resumeSessionId}]`);
-        }
-      }} />}
       {(running || isDone) && (
         <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0" style={{ background: 'rgb(var(--aegis-primary)/0.06)', borderColor: 'rgb(var(--aegis-border))' }}>
           <StatusBadge state={needsRecovery ? 'idle' : status === 'done' ? 'ended' : status === 'failed' ? 'failed' : status === 'cancelled' ? 'idle' : 'running'} size={10} />
@@ -1408,7 +1359,29 @@ export function AgentRunView({
         </div>
       )}
 
-      {/* ── Missing-file warning ──────────────────────────────────────── */}
+      {/* Run metadata */}
+      {(running || isDone) && (
+        <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-2 border-b border-aegis-border px-5 py-1.5 text-[11px] text-aegis-text-dim">
+          <span className="whitespace-nowrap font-medium text-aegis-text-secondary">
+            {agent === 'claude' ? '✦ Claude Code' : agent === 'codex' ? '⬡ Codex' : 'Pi'} · {t(PERM_OPTIONS.find((option) => option.value === perm)?.label ?? 'agent.perm.ask')}
+          </span>
+          {agent === 'claude' && usageSnapshot?.claude.status === 'available' && (
+            <>
+              {usageSnapshot.claude.data.fiveHour && <><span>·</span><InlineUsageWindow label="5h" window={usageSnapshot.claude.data.fiveHour} /></>}
+              {usageSnapshot.claude.data.sevenDay && <><span>·</span><InlineUsageWindow label="7d" window={usageSnapshot.claude.data.sevenDay} /></>}
+            </>
+          )}
+          {agent === 'codex' && usageSnapshot?.codex.status === 'available' && (
+            <>
+              {usageSnapshot.codex.data.primary && <><span>·</span><InlineUsageWindow label="5h" window={usageSnapshot.codex.data.primary} /></>}
+              {usageSnapshot.codex.data.secondary && <><span>·</span><InlineUsageWindow label="7d" window={usageSnapshot.codex.data.secondary} /></>}
+            </>
+          )}
+          {worktreeBranch && !worktreeDiscarded && <><span>·</span><span className="inline-flex min-w-0 items-center gap-1 truncate"><GitBranch size={11} />{worktreeBranch}</span></>}
+        </div>
+      )}
+
+      {/* Missing-file warning */}
       {missingInstructionsFile && !running && !isDone && (
         <div className="mx-4 mt-3 px-3 py-2 rounded-lg flex items-center gap-2 text-[12px]"
           style={{ background: 'rgb(var(--aegis-warning)/0.06)', border: '1px solid rgb(var(--aegis-warning)/0.2)', color: 'rgb(var(--aegis-warning))' }}>
@@ -1434,28 +1407,86 @@ export function AgentRunView({
 
       {/* ── Scrollable body ───────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        {/* ── Config bar (nezha-style toolbar) ────────────────────────── */}
         {!running && !isDone && (
-          <div className="px-4 py-3 flex flex-col gap-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <AgentToggle agent={agent} allowPi={providedProjectPath === undefined} onChange={(next) => {
-                draftUserEditedRef.current = true;
-                setAgent(next);
-              }} disabled={running} />
-              <PermissionSelector perm={perm} onChange={(next) => {
-                draftUserEditedRef.current = true;
-                setPerm(next);
-              }} disabled={running} />
-            </div>
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
             {providedProjectPath === undefined && (
-              <div className="flex items-center gap-2">
-                <input value={projectPath} onChange={(e) => setProjectPath(e.target.value)}
-                  placeholder="Project path (cwd if empty)" disabled={running}
-                  className="flex-1 px-2.5 py-1.5 rounded-md text-[12px] font-mono"
-                  style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }} />
-              </div>
+              <input value={projectPath} onChange={(event) => setProjectPath(event.target.value)}
+                placeholder="项目路径（留空使用当前目录）"
+                className="h-9 w-full rounded-md border border-aegis-border bg-aegis-bg px-3 font-mono text-xs text-aegis-text outline-none focus:border-aegis-primary" />
             )}
-            <div className="flex items-center gap-3 flex-wrap">
+
+            <div className="overflow-visible rounded-lg border border-aegis-border bg-aegis-card shadow-sm">
+              <div className="p-3 pb-1">
+                <PromptEditor
+                  value={prompt} onChange={(next) => {
+                    draftUserEditedRef.current = true;
+                    setPrompt(next);
+                  }} onSubmit={handleStart} submitHint=""
+                  placeholder="描述你的任务... 输入 @ 引用文件"
+                  rows={4} disabled={running} draftKey={`agent-run:${taskId}`}
+                  projectPath={projectPath}
+                  mentionProjects={mentionProjects}
+                  expanded={composerExpanded} onExpandedChange={setComposerExpanded}
+                  images={attachedImages} onAttachImages={setAttachedImages}
+                  onRemoveImage={(i) => setAttachedImages((previous) => previous.filter((_, index) => index !== i))}
+                  onLargePaste={(text) => setTextAttachments((previous) => [...previous, { text, chars: text.length }])} />
+              </div>
+
+              {textAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+                  {textAttachments.map((attachment, index) => (
+                    <div key={index} className="flex items-center gap-1.5 rounded border border-aegis-border bg-aegis-surface px-2.5 py-1 text-[11px] text-aegis-text-dim">
+                      <FileText size={11} />
+                      <span>文本附件 · {attachment.chars > 1000 ? `${(attachment.chars / 1000).toFixed(1)}K` : attachment.chars} 字符</span>
+                      <button type="button" title="移除附件" onClick={() => setTextAttachments((previous) => previous.filter((_, itemIndex) => itemIndex !== index))} className="ml-1 rounded p-0.5 hover:bg-red-500/10 hover:text-red-400">
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex min-h-12 flex-wrap items-center gap-2 border-t border-aegis-border px-3 py-2">
+                <AgentToggle agent={agent} allowPi={providedProjectPath === undefined} onChange={(next) => {
+                  draftUserEditedRef.current = true;
+                  setAgent(next);
+                }} disabled={running} />
+                <PermissionSelector perm={perm} onChange={(next) => {
+                  draftUserEditedRef.current = true;
+                  setPerm(next);
+                }} disabled={running} />
+                <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-aegis-text-dim">
+                  <input type="checkbox" checked={planMode} onChange={(event) => {
+                    draftUserEditedRef.current = true;
+                    setPlanMode(event.target.checked);
+                  }} className="h-3.5 w-3.5 accent-aegis-primary" />
+                  计划模式
+                </label>
+                <div className="min-w-2 flex-1" />
+                {attachedImages.length > 0 && (
+                  <button type="button" title="清空图片" onClick={() => setAttachedImages([])} className="flex h-8 items-center gap-1 rounded px-2 text-[11px] text-aegis-text-dim hover:bg-aegis-hover hover:text-red-400">
+                    <X size={12} />{attachedImages.length}
+                  </button>
+                )}
+                <button type="button" onClick={handleSaveTodo}
+                  disabled={launchMode === 'worktree' || attachedImages.length > 0 || textAttachments.length > 0 || !prompt.trim()}
+                  title={launchMode === 'worktree'
+                    ? '工作树任务需要直接启动'
+                    : attachedImages.length > 0 || textAttachments.length > 0
+                      ? '包含附件的任务必须立即发送'
+                      : '保存为待办'}
+                  className="flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40">
+                  <Bookmark size={13} />保存为待办
+                </button>
+                <button type="button" title="发送任务" onClick={() => void handleStart()}
+                  disabled={!prompt.trim() && textAttachments.length === 0 && attachedImages.length === 0}
+                  className="flex h-8 w-8 items-center justify-center rounded bg-aegis-primary text-white disabled:cursor-not-allowed disabled:opacity-40">
+                  <Play size={14} fill="currentColor" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex min-h-10 items-center rounded-md border border-aegis-border bg-aegis-surface px-3">
               <LaunchSelector mode={launchMode} baseBranch={baseBranch}
                 onMode={(next) => {
                   draftUserEditedRef.current = true;
@@ -1464,75 +1495,7 @@ export function AgentRunView({
                   draftUserEditedRef.current = true;
                   setBaseBranch(next);
                 }} disabled={running} projectPath={projectPath} />
-              <label className="flex items-center gap-1.5 text-[12px] text-aegis-text-dim cursor-pointer select-none">
-                <input type="checkbox" checked={planMode} onChange={(e) => {
-                  draftUserEditedRef.current = true;
-                  setPlanMode(e.target.checked);
-                }} disabled={running}
-                  className="w-3.5 h-3.5 rounded accent-aegis-primary" />
-                Plan mode
-              </label>
             </div>
-          </div>
-        )}
-
-        {/* ── Prompt editor ───────────────────────────────────────────── */}
-        {!running && !isDone && (
-          <div className="px-4 pb-3">
-            <PromptEditor
-              value={prompt} onChange={(next) => {
-                draftUserEditedRef.current = true;
-                setPrompt(next);
-              }} onSubmit={handleStart} submitHint=""
-              placeholder="What should the agent do? type @ to mention a file, drag images here (⌘L expands)"
-              rows={4} disabled={running} draftKey={`agent-run:${taskId}`}
-              projectPath={projectPath}
-              mentionProjects={mentionProjects}
-              expanded={composerExpanded} onExpandedChange={setComposerExpanded}
-              images={attachedImages} onAttachImages={setAttachedImages}
-              onRemoveImage={(i) => setAttachedImages((p) => p.filter((_, idx) => idx !== i))}
-              onLargePaste={(text) => setTextAttachments((prev) => [...prev, { text, chars: text.length }])} />
-          </div>
-        )}
-
-        {/* ── Text attachments ──────────────────────────────────────── */}
-        {!running && !isDone && textAttachments.length > 0 && (
-          <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-            {textAttachments.map((ta, i) => (
-              <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px]"
-                style={{ background: 'rgb(var(--aegis-overlay)/0.05)', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text-secondary))' }}>
-                <FileText size={11} className="text-aegis-text-dim" />
-                <span>Text attachment · {ta.chars > 1000 ? `${(ta.chars/1000).toFixed(1)}K` : ta.chars} chars</span>
-                <button type="button" onClick={() => setTextAttachments((p) => p.filter((_, idx) => idx !== i))}
-                  className="ml-1 p-0.5 rounded hover:bg-[rgb(var(--aegis-danger)/0.1)] text-aegis-text-dim hover:text-aegis-danger">
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── Send / Cancel bar ───────────────────────────────────────── */}
-        {!running && !isDone && (
-          <div className="px-4 pb-4 flex items-center gap-2 flex-wrap">
-            <button type="button" onClick={() => void handleStart()}
-              disabled={!prompt.trim() && textAttachments.length === 0 && attachedImages.length === 0}
-              className="flex items-center gap-2 px-5 py-2 rounded-lg text-[13px] font-bold transition-all"
-              style={{ background: 'rgb(var(--aegis-primary))', color: 'rgb(var(--aegis-on-primary))', opacity: prompt.trim() || textAttachments.length > 0 || attachedImages.length > 0 ? 1 : 0.4 }}>
-              <Play size={14} fill="currentColor" /> Send
-            </button>
-            <button type="button" onClick={handleSaveTodo}
-              disabled={launchMode === 'worktree' || (!prompt.trim() && textAttachments.length === 0)}
-              title={launchMode === 'worktree' ? '工作树任务需要直接启动' : undefined}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium text-aegis-text-dim hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors">
-              <Bookmark size={13} /> Save as Todo
-            </button>
-            {attachedImages.length > 0 && (
-              <button type="button" onClick={() => setAttachedImages([])}
-                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-aegis-text-dim hover:text-aegis-danger">
-                <X size={12} /> Clear images ({attachedImages.length})
-              </button>
-            )}
           </div>
         )}
 
@@ -1596,7 +1559,7 @@ export function AgentRunView({
                   debugWarn('terminal', '[AgentRunView] follow-up send failed:', err);
                 });
               }}
-              disabled={false}
+              disabled={needsRecovery}
             />
           </div>
         )}
@@ -1652,10 +1615,12 @@ export function AgentRunView({
                     <span className="text-[rgb(var(--aegis-text-dim))]">·</span>
                   </>
                 )}
-                {worktreePath && diffStats && (
+                {worktreePath && worktreeBranch && !worktreeDiscarded && (
                   <>
-                    <span className="text-[rgb(var(--aegis-success))]">+{diffStats.additions}</span>
-                    <span className="text-[rgb(var(--aegis-danger))]">−{diffStats.deletions}</span>
+                    {diffStats && <>
+                      <span className="text-[rgb(var(--aegis-success))]">+{diffStats.additions}</span>
+                      <span className="text-[rgb(var(--aegis-danger))]">−{diffStats.deletions}</span>
+                    </>}
                     <button type="button" disabled={worktreeBusy !== null} onClick={() => void mergeWorktree()}
                       className="hover:text-[rgb(var(--aegis-success))] transition-colors disabled:cursor-wait disabled:opacity-50">
                       {worktreeBusy === 'merge' ? '合并中...' : t('agent.worktree.merge', 'merge')}
@@ -1692,11 +1657,6 @@ export function AgentRunView({
                   </>
                 )}
               </span>
-              {/* Right: new task */}
-              <button type="button" onClick={() => { setStatus('idle'); setRunning(false); setError(null); setMetrics(null); setSessionPath(null); setDiffStats(null); clearTerm(); }}
-                className="flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-[var(--aegis-hover)] text-[rgb(var(--aegis-text-dim))] hover:text-[rgb(var(--aegis-text))]">
-                <RotateCcw size={12} />
-              </button>
             </div>
           </div>
         )}

@@ -269,9 +269,9 @@ static AGENTS: &[AgentSpec] = &[
         bin: "codex",
         label: "Codex",
         perm_flags: Some((
-            "--permission-mode default",
-            "--permission-mode auto",
-            "--dangerously-bypass-approvals",
+            "",
+            "--sandbox workspace-write -a on-request",
+            "--dangerously-bypass-approvals-and-sandbox",
         )),
         prompt_flag: Some("--"),
         resume_flag: None,
@@ -412,9 +412,9 @@ fn resume_arguments(agent: &str, session_id: &str) -> Option<Vec<String>> {
     }
 }
 
-#[tauri::command]
-pub async fn run_task(
-    app: AppHandle,
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskLaunchRequest {
     task_id: String,
     project_path: String,
     prompt: String,
@@ -424,9 +424,27 @@ pub async fn run_task(
     texts: Option<Vec<String>>,
     cols: Option<u16>,
     rows: Option<u16>,
-    on_output: Channel<String>,
     resume_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn run_task(
+    app: AppHandle,
+    request: TaskLaunchRequest,
+    on_output: Channel<String>,
 ) -> Result<(), String> {
+    let TaskLaunchRequest {
+        task_id,
+        project_path,
+        prompt,
+        agent,
+        permission_mode,
+        images,
+        texts,
+        cols,
+        rows,
+        resume_id,
+    } = request;
     // A retry reuses the task id. Retire the previous PTY generation before
     // installing the new one so its reader cannot remain alive in parallel.
     reset_task_process_inner(&task_id);
@@ -466,9 +484,13 @@ pub async fn run_task(
         )
     })?;
 
-    let program = crate::platform::resolve_spawn_program(spec.bin);
+    let program = super::app_settings::get_agent_program(spec.bin);
     let mut cmd = CommandBuilder::new(&program);
     cmd.cwd(&project_path);
+    #[cfg(target_os = "macos")]
+    if agent == "claude" {
+        cmd.env("CLAUDE_CODE_DISABLE_MOUSE", "1");
+    }
     let hook_status = super::hooks::ensure_installed();
     if hook_status.script_installed {
         let hooks_usable = if agent == "codex" {
@@ -683,7 +705,7 @@ pub async fn run_task(
                 &task_id_for_reader[..task_id_for_reader.len().min(16)],
                 final_status
             ),
-            None,
+            Some(&task_notification_url(&task_id_for_reader)),
         );
     });
 
@@ -783,10 +805,7 @@ fn spawn_session_watcher(
                                             &task_id[..task_id.len().min(12)],
                                             session_path_str
                                         ),
-                                        Some(&format!(
-                                            "/session?path={}",
-                                            url_encode(&session_path_str)
-                                        )),
+                                        Some(&task_notification_url(&task_id)),
                                     );
                                     return;
                                 }
@@ -820,7 +839,7 @@ fn spawn_session_watcher(
                             "Task {} session file found",
                             &task_id[..task_id.len().min(12)]
                         ),
-                        Some(&format!("/session?path={}", url_encode(&session_path_str))),
+                        Some(&task_notification_url(&task_id)),
                     );
                     return;
                 }
@@ -922,7 +941,10 @@ fn spawn_toolcall_watcher(app: tauri::AppHandle, task_id: String, path: PathBuf)
     });
 }
 
-/// Minimal URL-encode for file paths used in notification deep-links.
+fn task_notification_url(task_id: &str) -> String {
+    format!("/ai-workspace?task={}", url_encode(task_id))
+}
+
 fn url_encode(s: &str) -> String {
     s.chars()
         .map(|c| match c {
@@ -1085,8 +1107,8 @@ mod tests {
     use super::{
         append_task_output, claude_project_directory_name, cleanup_task_attachments,
         decode_task_image, permission_flag, prompt_with_attachments, prompt_with_project_prefix,
-        resume_arguments, safe_task_id, task_final_status, task_output_buffers,
-        MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
+        resume_arguments, safe_task_id, task_final_status, task_notification_url,
+        task_output_buffers, TaskLaunchRequest, MAX_TASK_OUTPUT_SNAPSHOT_BYTES,
     };
 
     #[test]
@@ -1110,6 +1132,13 @@ mod tests {
     }
 
     #[test]
+    fn macos_claude_tasks_disable_cli_mouse_reporting() {
+        let source = include_str!("agent_task_pty.rs");
+        assert!(source.contains("#[cfg(target_os = \"macos\")]"));
+        assert!(source.contains("cmd.env(\"CLAUDE_CODE_DISABLE_MOUSE\", \"1\")"));
+    }
+
+    #[test]
     fn claude_session_directory_name_is_project_scoped() {
         assert_eq!(
             claude_project_directory_name("/Users/wei/Jun Qi"),
@@ -1127,9 +1156,14 @@ mod tests {
             permission_flag("claude", "auto_edit"),
             vec!["--permission-mode", "acceptEdits"],
         );
+        assert_eq!(permission_flag("codex", "ask"), Vec::<String>::new(),);
+        assert_eq!(
+            permission_flag("codex", "auto_edit"),
+            vec!["--sandbox", "workspace-write", "-a", "on-request"],
+        );
         assert_eq!(
             permission_flag("codex", "full_access"),
-            vec!["--dangerously-bypass-approvals"],
+            vec!["--dangerously-bypass-approvals-and-sandbox"],
         );
     }
 
@@ -1155,6 +1189,26 @@ mod tests {
     #[test]
     fn task_attachment_paths_are_safe_on_windows_and_unix() {
         assert_eq!(safe_task_id("agent-task:run/1"), "agent-task_run_1");
+    }
+
+    #[test]
+    fn task_launch_request_uses_the_frontend_camel_case_contract() {
+        let request: TaskLaunchRequest = serde_json::from_value(serde_json::json!({
+            "taskId": "task-1",
+            "projectPath": "/workspace",
+            "prompt": "review",
+            "agent": "codex",
+            "permissionMode": "ask",
+            "images": [],
+            "texts": [],
+            "cols": 220,
+            "rows": 50,
+            "resumeId": "session-1"
+        }))
+        .unwrap();
+        assert_eq!(request.task_id, "task-1");
+        assert_eq!(request.project_path, "/workspace");
+        assert_eq!(request.resume_id.as_deref(), Some("session-1"));
     }
 
     #[test]
@@ -1221,6 +1275,14 @@ mod tests {
         assert_eq!(task_final_status(true, true, false), "done");
         assert_eq!(task_final_status(false, true, true), "cancelled");
         assert_eq!(task_final_status(false, false, false), "failed");
+    }
+
+    #[test]
+    fn task_notifications_link_back_to_the_ai_workspace() {
+        assert_eq!(
+            task_notification_url("agent-task:123"),
+            "/ai-workspace?task=agent-task%3A123"
+        );
     }
 
     #[test]

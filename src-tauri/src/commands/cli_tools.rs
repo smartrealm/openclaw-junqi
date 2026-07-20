@@ -1,4 +1,4 @@
-/// 扫描用户 PATH，检测常见 AI CLI 和开发工具。
+//! 扫描用户 PATH，检测常见 AI CLI 和开发工具。
 
 type Label = &'static str;
 type Icon = &'static str;
@@ -18,6 +18,7 @@ const CANDIDATES: &[(&str, Label, Icon)] = &[
     ("agy", "Antigravity CLI", ""),
     ("kimi", "Kimi Code", ""),
     ("opencode", "OpenCode", ""),
+    ("droid", "Droid", ""),
     ("aider", "Aider", ""),
     ("qwen", "Qwen CLI", ""),
     ("ollama", "Ollama", ""),

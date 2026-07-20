@@ -6,13 +6,14 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   RefreshCw, BarChart3,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
-  TrendingUp, TrendingDown,
+  TrendingUp, TrendingDown, Minus,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { PageTransition } from '@/components/shared/PageTransition';
+import { SceneTransition } from '@/components/shared/SceneTransition';
 import { DashboardIcon } from '@/components/shared/DashboardIcon';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore } from '@/stores/chatStore';
@@ -22,6 +23,17 @@ import clsx from 'clsx';
 import { themeColorVar } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { formatTokens } from '@/utils/format';
+import { useSceneRecovery } from '@/motion/sceneRecovery';
+import { gateway } from '@/services/gateway';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useNotificationStore } from '@/stores/notificationStore';
+import {
+  budgetProgress,
+  costChangePercent,
+  localDateKey,
+  percentageOf,
+  previousLocalDateKey,
+} from './dashboardMetrics';
 
 import {
   ContextRing, QuickAction, SessionItem, FeedItem, AgentItem,
@@ -69,7 +81,8 @@ const getAgentName = (id: string) => {
 export function DashboardPage() {
   const { t }      = useTranslation();
   const navigate   = useNavigate();
-  const { connected, tokenUsage, availableModels, modelsLoading, sessions: chatSessions } = useChatStore();
+  const { connected, availableModels, modelsLoading, sessions: chatSessions } = useChatStore();
+  const budgetLimit = useSettingsStore((s) => s.budgetLimit);
   const hasProviders = availableModels.length > 0;
 
   // ── Data from central store ─────────────────────────────────
@@ -84,6 +97,9 @@ export function DashboardPage() {
 
   const [quickActionLoading, setQuickActionLoading] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const sceneRecovery = useSceneRecovery(connected, () => {
+    void refreshAll();
+  });
 
   const connectedSince = useRef<number | null>(null);
 
@@ -116,25 +132,37 @@ export function DashboardPage() {
   // ── Quick Actions ────────────────────────────────────────────
   // Keep only actions that have a real local workflow. Prompt-only shortcuts
   // looked functional but depended on the LLM to decide what to do.
-  const handleQuickAction = (action: string) => {
-    setQuickActionLoading(action);
-
-    switch (action) {
-      case 'compact':
-        window.dispatchEvent(new CustomEvent('aegis:compress-session'));
-        break;
-      case 'status':
-        navigate('/perf');
-        break;
+  const handleQuickAction = async (action: 'compact' | 'status') => {
+    if (action === 'status') {
+      navigate('/perf');
+      return;
     }
-    setTimeout(() => setQuickActionLoading(null), 1200);
+    if (!connected || quickActionLoading) return;
+    setQuickActionLoading(action);
+    const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
+    try {
+      await gateway.compactSession(sessionKey);
+      useNotificationStore.getState().addToast(
+        'task_complete',
+        t('dashboard.compactQueuedTitle', 'Compaction requested'),
+        t('dashboard.compactQueuedBody', 'OpenClaw is compacting the current session context.'),
+      );
+    } catch (error) {
+      useNotificationStore.getState().addToast(
+        'error',
+        t('dashboard.compactFailedTitle', 'Compaction failed'),
+        String(error),
+      );
+    } finally {
+      setQuickActionLoading(null);
+    }
   };
 
   // ── Derived values ───────────────────────────────────────────
 
-  const today     = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-  const monthKey  = today.slice(0, 7); // "YYYY-MM"
+  const now = new Date();
+  const today = localDateKey(now);
+  const yesterday = previousLocalDateKey(now);
 
   const allDaily: any[] = useMemo(() => costData?.daily || [], [costData]);
 
@@ -147,17 +175,11 @@ export function DashboardPage() {
     () => allDaily.find((d: any) => d.date === yesterday)?.totalCost || 0,
     [allDaily, yesterday]
   );
-  const changePercent = yesterdayCost > 0
-    ? ((todayCost - yesterdayCost) / yesterdayCost) * 100
-    : 0;
+  const changePercent = costChangePercent(todayCost, yesterdayCost);
 
-  // This month's total cost
-  const monthCost = useMemo(
-    () => allDaily
-      .filter((d: any) => d.date.startsWith(monthKey))
-      .reduce((sum: number, d: any) => sum + d.totalCost, 0),
-    [allDaily, monthKey]
-  );
+  const rollingCost = costData?.totals?.totalCost
+    ?? allDaily.reduce((sum: number, d: any) => sum + (d.totalCost || 0), 0);
+  const budgetPct = budgetProgress(rollingCost, budgetLimit);
 
   // Sparklines: last 7 and last 30 days (oldest → newest)
   const spark7 = useMemo(() => {
@@ -180,13 +202,13 @@ export function DashboardPage() {
   const mainSession  = sessions.find((s: any) => s.key === 'agent:main:main');
   const mainModel    = hasProviders ? (mainSession?.model || '—') : '—';
   const shortModel   = mainModel.split('/').pop() || mainModel;
-  const usagePct     = tokenUsage?.percentage || 0;
   const ctxUsed      = mainSession?.totalTokens   || 0;
   const ctxMax       = mainSession?.contextTokens || 200_000;
+  const usagePct     = percentageOf(ctxUsed, ctxMax);
 
   // Active sessions
   const activeSessions = useMemo(
-    () => sessions.filter((s: any) => (s.totalTokens || 0) > 0),
+    () => sessions.filter((s: any) => Boolean(s.running) || (s.totalTokens || 0) > 0),
     [sessions]
   );
   const chatSessionByKey = useMemo(
@@ -212,10 +234,11 @@ export function DashboardPage() {
     })).slice(0, 5);
   }, [sessions, chatSessions]);
 
-  // Chart data: last 14 days (oldest first)
+  // Match the upstream desktop chart: the cost API defines the available day
+  // buckets, and the category axis renders those compact MM-DD labels.
   const chartData = useMemo(() => {
     const sorted = [...allDaily]
-      .sort((a, b) => a.date.localeCompare(b.date))
+      .sort((left, right) => left.date.localeCompare(right.date))
       .slice(-14);
     return sorted.map((d: any) => {
       const input = d.inputCost || 0;
@@ -223,7 +246,7 @@ export function DashboardPage() {
       const cache = (d.cacheReadCost || 0) + (d.cacheWriteCost || 0);
       const total = d.totalCost || input + output + cache;
       return {
-        date: d.date.slice(5), // MM-DD
+        date: d.date.slice(5),
         input,
         output,
         cache,
@@ -232,6 +255,7 @@ export function DashboardPage() {
       };
     });
   }, [allDaily]);
+  const hasChartCost = chartData.some((entry) => entry.total > 0);
 
   const agentIdFromKey = useCallback((key?: string) => {
     const parts = String(key || '').split(':');
@@ -338,7 +362,11 @@ export function DashboardPage() {
 
   // ── Render ───────────────────────────────────────────────────
   return (
-    <PageTransition className="p-5 space-y-4 max-w-[1280px] mx-auto overflow-y-auto h-full">
+    <SceneTransition
+      className="min-h-full p-3 sm:p-5 space-y-4 max-w-[1280px] mx-auto"
+      recoveryRevision={sceneRecovery.revision}
+      recoveryReason={sceneRecovery.reason}
+    >
 
       {/* ════ SECTION 1: TOP BAR ════ */}
       <div className="flex items-center justify-between">
@@ -351,50 +379,57 @@ export function DashboardPage() {
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2.5">
-              <h1 className="text-[18px] font-bold text-aegis-text tracking-tight">
+              <h1 className="text-[20px] font-bold text-aegis-text tracking-normal">
                 {t('dashboard.title')}
               </h1>
               {/* Status badge — inline with title so the idle/working state reads naturally */}
-              <div className={clsx(
-                'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border',
-                connected
-                  ? agentStatus === 'working'
-                    ? 'bg-aegis-success/[0.08] border-aegis-success/30 text-aegis-success'
-                    : 'bg-aegis-text-dim/[0.06] border-aegis-text-dim/20 text-aegis-text-dim'
-                  : 'bg-aegis-danger/[0.08] border-aegis-danger/30 text-aegis-danger'
-              )}>
-                {/* Dot with ring background — gives the status indicator visual weight */}
-                <span className={clsx(
-                  'relative flex items-center justify-center w-3.5 h-3.5 rounded-full border',
-                  connected
-                    ? agentStatus === 'working'
-                      ? 'border-aegis-success/30 bg-aegis-success/[0.06]'
-                      : 'border-aegis-text-dim/25 bg-aegis-text-dim/[0.04]'
-                    : 'border-aegis-danger/30 bg-aegis-danger/[0.06]'
-                )}>
-                  <span className={clsx(
-                    'w-1.5 h-1.5 rounded-full',
+              <AnimatePresence initial={false} mode="wait">
+                <motion.div
+                  key={`${connected}-${agentStatus}`}
+                  initial={{ opacity: 0, y: -3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 3 }}
+                  transition={{ duration: 0.18 }}
+                  className={clsx(
+                    'flex min-w-[68px] items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border',
                     connected
                       ? agentStatus === 'working'
-                        ? 'bg-aegis-success animate-pulse-soft'
-                        : 'bg-aegis-text-dim'
-                      : 'bg-aegis-danger animate-pulse-soft'
-                  )} />
-                </span>
-                {connected
-                  ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
-                  : t('dashboard.offline')
-                }
-              </div>
+                        ? 'bg-aegis-success/[0.08] border-aegis-success/30 text-aegis-success'
+                        : 'bg-aegis-text-dim/[0.06] border-aegis-text-dim/20 text-aegis-text-dim'
+                      : 'bg-aegis-danger/[0.08] border-aegis-danger/30 text-aegis-danger',
+                  )}
+                >
+                  <span className={clsx(
+                    'relative flex items-center justify-center w-3.5 h-3.5 rounded-full border',
+                    connected
+                      ? agentStatus === 'working'
+                        ? 'border-aegis-success/30 bg-aegis-success/[0.06]'
+                        : 'border-aegis-text-dim/25 bg-aegis-text-dim/[0.04]'
+                      : 'border-aegis-danger/30 bg-aegis-danger/[0.06]',
+                  )}>
+                    <span className={clsx(
+                      'w-1.5 h-1.5 rounded-full',
+                      connected
+                        ? agentStatus === 'working'
+                          ? 'bg-aegis-success animate-pulse-soft'
+                          : 'bg-aegis-text-dim'
+                        : 'bg-aegis-danger animate-pulse-soft',
+                    )} />
+                  </span>
+                  {connected
+                    ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
+                    : t('dashboard.offline')}
+                </motion.div>
+              </AnimatePresence>
             </div>
-            <p className="text-[11px] text-aegis-text-dim">{t('dashboard.commandCenter')}</p>
+            <p className="text-[12px] text-aegis-text-dim">{t('dashboard.commandCenter')}</p>
           </div>
         </div>
 
         {/* Status + meta info */}
         <div className="flex items-center gap-3">
           {/* Uptime + model (desktop only) — hide model when no providers configured */}
-          <div className="hidden lg:flex items-center gap-3 text-[10px] font-mono text-aegis-text-muted">
+          <div className="hidden lg:flex items-center gap-3 text-[11px] font-mono tabular-nums text-aegis-text-muted">
             <span>{t('dashboard.uptime')}: <span className="text-aegis-text">{fmtUptime(uptime)}</span></span>
             {hasProviders && (
               <>
@@ -408,6 +443,7 @@ export function DashboardPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
+            aria-label={t('dashboard.refresh', 'Refresh')}
             className="p-1.5 rounded-lg hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
             title={t('dashboard.refresh', 'Refresh')}
           >
@@ -447,26 +483,31 @@ export function DashboardPage() {
       )}
 
       {/* ════ SECTION 2: HERO CARDS (4 columns) ════ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
 
         {/* 💰 Today's Cost */}
-        <GlassCard delay={0.05} className="flex flex-col gap-2">
-          <div className="flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted font-medium">
+        <GlassCard hover={false} delay={0.05} className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[12px] text-aegis-text-muted font-medium">
             <DashboardIcon kind="cost" size={13} />
             {t('dashboard.todayCost')}
           </div>
-          <div className="text-[22px] font-bold text-aegis-text leading-none tracking-tight">
+          <div className="text-[26px] font-bold tabular-nums text-aegis-text leading-none tracking-normal">
             {fmtCostShort(todayCost)}
           </div>
           <div className={clsx(
-            'flex items-center gap-1 text-[11px] font-semibold',
-            changePercent <= 0 ? 'text-aegis-success' : 'text-aegis-danger'
+            'flex items-center gap-1 text-[12px] font-semibold',
+            changePercent === null
+              ? 'text-aegis-text-dim'
+              : changePercent <= 0 ? 'text-aegis-success' : 'text-aegis-danger'
           )}>
-            {changePercent <= 0
-              ? <TrendingDown size={12} />
-              : <TrendingUp   size={12} />
-            }
-            {Math.abs(changePercent).toFixed(0)}% {t('dashboard.vsYesterday')}
+            {changePercent === null
+              ? <Minus size={13} />
+              : changePercent <= 0
+                ? <TrendingDown size={13} />
+                : <TrendingUp size={13} />}
+            {changePercent === null
+              ? t('dashboard.noYesterdayBaseline', 'No comparison data')
+              : `${Math.abs(changePercent).toFixed(0)}% ${t('dashboard.vsYesterday')}`}
           </div>
           {spark7.length > 0 && (
             <Sparkline data={spark7} color={themeColorVar('primary')} width={120} height={30} />
@@ -474,32 +515,46 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* 📅 This Month */}
-        <GlassCard delay={0.08} className="flex flex-col gap-2">
-          <div className="flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted font-medium">
+        <GlassCard hover={false} delay={0.08} className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[12px] text-aegis-text-muted font-medium">
             <DashboardIcon kind="month" size={13} />
-            {t('dashboard.thisMonth')}
+            {t('dashboard.rolling30Cost', 'Last 30 days')}
           </div>
-          <div className="text-[22px] font-bold text-aegis-text leading-none tracking-tight">
-            {fmtCostShort(monthCost)}
+          <div className="text-[26px] font-bold tabular-nums text-aegis-text leading-none tracking-normal">
+            {fmtCostShort(rollingCost)}
           </div>
-          <div className="text-[11px] text-aegis-text-dim">
-            {t('dashboard.monthBudget')}
+          <div className="text-[12px] text-aegis-text-dim">
+            {budgetPct === null
+              ? t('dashboard.noBudgetLimit', 'No budget limit')
+              : t('dashboard.budgetUsage', {
+                  used: fmtCostShort(rollingCost),
+                  limit: fmtCostShort(budgetLimit),
+                  percent: Math.round(budgetPct),
+                })}
           </div>
+          {budgetPct !== null && (
+            <div className="h-1.5 overflow-hidden rounded-full bg-[rgb(var(--aegis-overlay)/0.06)]" aria-hidden="true">
+              <div
+                className={clsx('h-full rounded-full transition-[width] duration-500', budgetPct >= 100 ? 'bg-aegis-danger' : 'bg-aegis-primary')}
+                style={{ width: `${budgetPct}%` }}
+              />
+            </div>
+          )}
           {spark30.length > 0 && (
             <Sparkline data={spark30} color={themeColorVar('accent')} width={120} height={30} />
           )}
         </GlassCard>
 
         {/* ⚡ Tokens Today */}
-        <GlassCard delay={0.11} className="flex flex-col gap-2">
-          <div className="flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted font-medium">
+        <GlassCard hover={false} delay={0.11} className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[12px] text-aegis-text-muted font-medium">
             <DashboardIcon kind="tokens" size={13} />
             {t('dashboard.tokensToday')}
           </div>
-          <div className="text-[22px] font-bold text-aegis-text leading-none tracking-tight">
+          <div className="text-[26px] font-bold tabular-nums text-aegis-text leading-none tracking-normal">
             {formatTokens(tokensToday)}
           </div>
-          <div className="text-[10px] text-aegis-text-muted font-mono space-y-0.5">
+          <div className="text-[11px] text-aegis-text-muted font-mono tabular-nums space-y-0.5">
             <div className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-accent" />
               {t('dashboard.tokensIn')}:  {formatTokens(tokensIn)}
@@ -512,14 +567,14 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* 🧠 Context */}
-        <GlassCard delay={0.14} className="flex flex-col gap-2">
-          <div className="flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted font-medium">
+        <GlassCard hover={false} delay={0.14} className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[12px] text-aegis-text-muted font-medium">
             <DashboardIcon kind="context" size={13} />
             {t('dashboard.contextCard')}
           </div>
           <div className="flex items-center gap-3 mt-1">
             <ContextRing percentage={usagePct} />
-            <div className="text-[10px] text-aegis-text-muted font-mono space-y-1">
+            <div className="min-w-0 text-[11px] text-aegis-text-muted font-mono tabular-nums space-y-1">
               <div>{t('dashboard.used', { n: formatTokens(ctxUsed) })}</div>
               <div className="text-aegis-text-dim">{t('dashboard.max', { n: formatTokens(ctxMax) })}</div>
             </div>
@@ -531,65 +586,73 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-3 shrink-0">
 
         {/* Daily Cost Chart */}
-        <GlassCard delay={0.16}>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp size={15} className="text-aegis-primary" />
-              <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.dailyCostChart')}</span>
+        <GlassCard hover={false} delay={0.16} noPad className="h-full">
+          <div className="flex h-full min-h-[250px] flex-col p-5">
+            <div className="mb-4 flex shrink-0 items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={15} className="text-aegis-primary" />
+                <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.dailyCostChart')}</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{t('dashboard.inputCostLabel')}</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{t('dashboard.outputCostLabel')}</span>
+                {hasChartCost && chartData.some((d: any) => d.cache > 0) && (
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{t('dashboard.cacheCostLabel', 'Cache')}</span>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-3 text-[10px] text-aegis-text-muted font-medium">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{t('dashboard.inputCostLabel')}</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{t('dashboard.outputCostLabel')}</span>
-              {chartData.some((d: any) => d.cache > 0) && (
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{t('dashboard.cacheCostLabel', 'Cache')}</span>
+            <div className="relative min-h-[160px] flex-1">
+              {hasChartCost ? (
+                <Suspense fallback={<div className="h-full" />}>
+                  <CostChart data={chartData} />
+                </Suspense>
+              ) : !connected ? (
+                <div className="absolute inset-0 flex items-center justify-center text-[13px] text-aegis-text-dim">
+                  {t('dashboard.notConnected')}
+                </div>
+              ) : costError ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-[13px] text-aegis-text-dim">
+                  <span>{t('dashboard.costError')}</span>
+                  <button
+                    onClick={handleRefresh}
+                    className="text-aegis-primary hover:underline text-[12px]"
+                  >
+                    {t('dashboard.costRetry')}
+                  </button>
+                </div>
+              ) : (costLoading && !costData) ? (
+                <div className="absolute inset-0 flex items-center justify-center text-[13px] text-aegis-text-dim">
+                  {t('common.loading')}
+                </div>
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-[13px] text-aegis-text-dim">
+                  <BarChart3 size={18} className="text-aegis-text-muted" />
+                  <span>{t('dashboard.costEmpty', 'No usage recorded yet')}</span>
+                </div>
               )}
             </div>
           </div>
-          {chartData.length > 0 ? (
-            <Suspense fallback={<div className="h-[160px]" />}>
-              <CostChart data={chartData} />
-            </Suspense>
-          ) : !connected ? (
-            <div className="h-[160px] flex items-center justify-center text-[12px] text-aegis-text-dim">
-              {t('dashboard.notConnected')}
-            </div>
-          ) : costError ? (
-            <div className="h-[160px] flex flex-col items-center justify-center gap-2 text-[12px] text-aegis-text-dim">
-              <span>{t('dashboard.costError')}</span>
-              <button
-                onClick={handleRefresh}
-                className="text-aegis-primary hover:underline text-[11px]"
-              >
-                {t('dashboard.costRetry')}
-              </button>
-            </div>
-          ) : (costLoading && !costData) ? (
-            <div className="h-[160px] flex items-center justify-center text-[12px] text-aegis-text-dim">
-              {t('common.loading')}
-            </div>
-          ) : (
-            <div className="h-[160px] flex flex-col items-center justify-center gap-1 text-[12px] text-aegis-text-dim">
-              <BarChart3 size={18} className="text-aegis-text-muted" />
-              <span>{t('dashboard.costEmpty', 'No usage recorded yet')}</span>
-            </div>
-          )}
         </GlassCard>
 
         {/* Active Agents */}
-        <GlassCard delay={0.18} className="flex flex-col min-h-[160px]">
+        <GlassCard hover={false} delay={0.18} className="flex flex-col min-h-[160px]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2 min-w-0">
               <Bot size={15} className="text-aegis-accent" />
-              <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.activeAgents')}</span>
+              <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.activeAgents')}</span>
               {agentList.length > 0 && (
-                <span className="text-[10px] font-mono text-aegis-text-dim truncate">
-                  {formatTokens(activeAgentTokenTotal)} tok · {activeAgentModelCount || 0} models
+                <span className="text-[11px] font-mono tabular-nums text-aegis-text-dim truncate">
+                  {t('dashboard.agentSummary', {
+                    tokens: formatTokens(activeAgentTokenTotal),
+                    models: activeAgentModelCount || 0,
+                    defaultValue: '{{tokens}} tokens · {{models}} models',
+                  })}
                 </span>
               )}
             </div>
             <button
               onClick={() => navigate('/agents')}
-              className="flex items-center gap-0.5 text-[10px] text-aegis-primary hover:underline"
+              className="flex items-center gap-0.5 text-[11px] text-aegis-primary hover:underline"
             >
               {t('dashboard.viewAll')}
               <ChevronRight size={12} />
@@ -612,15 +675,16 @@ export function DashboardPage() {
                     tokenCount={tokenCount}
                     maxTokens={maxAgentTokens}
                     sessions={a.activeSessions || 0}
+                    running={Boolean(a.running)}
                   />
                 );
               })
             ) : !connected ? (
-              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
+              <div className="flex-1 flex items-center justify-center text-[12px] text-aegis-text-dim">
                 {t('dashboard.notConnected')}
               </div>
             ) : usageError ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[11px] text-aegis-text-dim">
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[12px] text-aegis-text-dim">
                 <div>{t('dashboard.agentError')}</div>
                 <button
                   onClick={handleRefresh}
@@ -630,11 +694,11 @@ export function DashboardPage() {
                 </button>
               </div>
             ) : (usageLoading && !usageData) ? (
-              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
+              <div className="flex-1 flex items-center justify-center text-[12px] text-aegis-text-dim">
                 {t('common.loading')}
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-[11px] text-aegis-text-dim">
+              <div className="flex-1 flex items-center justify-center text-[12px] text-aegis-text-dim">
                 {t('dashboard.noAgentData')}
               </div>
             )}
@@ -646,31 +710,31 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
 
         {/* ── Quick Actions ── */}
-        <GlassCard delay={0.20}>
+        <GlassCard hover={false} delay={0.20}>
           <div className="flex items-center gap-2 mb-3">
             <Zap size={15} className="text-aegis-accent" />
-            <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.quickActions')}</span>
+            <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.quickActions')}</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <QuickAction icon={RefreshCw} label={t('dashboard.compact')}
               glowColor={themeColorVar('warning', 0.08)} bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
-              onClick={() => handleQuickAction('compact')}   loading={quickActionLoading === 'compact'} />
+              onClick={() => void handleQuickAction('compact')} loading={quickActionLoading === 'compact'} disabled={!connected} />
             <QuickAction icon={BarChart3} label={t('dashboard.systemStatus')}
               glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
-              onClick={() => handleQuickAction('status')}    loading={quickActionLoading === 'status'} />
+              onClick={() => void handleQuickAction('status')} loading={false} />
           </div>
         </GlassCard>
 
         {/* ── Sessions ── */}
-        <GlassCard delay={0.22}>
+        <GlassCard hover={false} delay={0.22}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Bot size={15} className="text-aegis-accent" />
-              <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.sessions')}</span>
+              <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.sessions')}</span>
             </div>
             <button
               onClick={() => navigate('/chat')}
-              className="flex items-center gap-0.5 text-[10px] text-aegis-primary hover:underline"
+              className="flex items-center gap-0.5 text-[11px] text-aegis-primary hover:underline"
             >
               {t('dashboard.viewAll')}
               <ChevronRight size={12} />
@@ -708,7 +772,7 @@ export function DashboardPage() {
               );
             })}
             {recentSessions.length === 0 && (
-              <div className="py-3 text-center text-[11px] text-aegis-text-dim">
+              <div className="py-3 text-center text-[12px] text-aegis-text-dim">
                 {connected ? t('dashboard.noActiveSessions') : t('dashboard.notConnected')}
               </div>
             )}
@@ -716,13 +780,13 @@ export function DashboardPage() {
         </GlassCard>
 
         {/* ── Activity Feed ── */}
-        <GlassCard delay={0.24}>
+        <GlassCard hover={false} delay={0.24}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Activity size={15} className="text-aegis-primary" />
-              <span className="text-[13px] font-semibold text-aegis-text">{t('dashboard.activity')}</span>
+              <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.activity')}</span>
             </div>
-            <span className="text-[8px] font-bold text-aegis-success bg-aegis-success-surface px-2 py-0.5 rounded-md tracking-wider animate-pulse-soft">
+            <span className="text-[10px] font-bold text-aegis-success bg-aegis-success-surface px-2 py-0.5 rounded-md tracking-normal animate-pulse-soft">
               {t('dashboard.live', 'LIVE')}
             </span>
           </div>
@@ -738,11 +802,13 @@ export function DashboardPage() {
                   time={item.time}
                   isLast={i === feedItems.length - 1}
                   agentName={item.agentName}
-                  onClick={() => { useChatStore.getState().openTab(item.sessionKey); navigate('/chat'); }}
+                  onClick={item.sessionKey
+                    ? () => { useChatStore.getState().openTab(item.sessionKey); navigate('/chat'); }
+                    : undefined}
                 />
               ))
             ) : (
-              <div className="py-3 text-center text-[11px] text-aegis-text-dim">
+              <div className="py-3 text-center text-[12px] text-aegis-text-dim">
                 {connected ? t('dashboard.noActiveSessions') : t('dashboard.notConnected')}
               </div>
             )}
@@ -750,6 +816,6 @@ export function DashboardPage() {
         </GlassCard>
       </div>
 
-    </PageTransition>
+    </SceneTransition>
   );
 }

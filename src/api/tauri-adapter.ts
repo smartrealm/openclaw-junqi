@@ -26,6 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { EnsureResult, LogEntry } from './tauri-commands';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 import {
   loadOrCreateDeviceIdentity,
   buildDeviceAuthPayload,
@@ -41,6 +42,11 @@ import { formatGatewayLogs } from '../services/gateway/gatewayLogFormatting';
 import { gatewayRestartSingleFlight } from '../services/gateway/SingleFlight';
 import { gatewayRestartProgressFromLog, type GatewayRecoveryStatus } from '../services/gateway/recoveryProgress';
 import { APP_VERSION } from '../version';
+import {
+  persistGatewayToken,
+  pollGatewayPairing,
+  requestGatewayPairing,
+} from './gateway-pairing';
 
 const GATEWAY_RESTART_STARTED_EVENT = 'aegis:gateway-restart-started';
 const GATEWAY_RESTART_FINISHED_EVENT = 'aegis:gateway-restart-finished';
@@ -80,6 +86,22 @@ function detectPlatform(): string {
   if (ua.includes("Win")) return "win32";
   if (ua.includes("Linux")) return "linux";
   return "unknown";
+}
+
+interface StorageRuntimePaths {
+  stateDir: string;
+  workspaceDir: string;
+}
+
+async function readStorageRuntimePaths(): Promise<StorageRuntimePaths | null> {
+  try {
+    const status = await invoke<Partial<StorageRuntimePaths>>('get_storage_setup_status');
+    if (typeof status.stateDir !== 'string' || !status.stateDir.trim()) return null;
+    if (typeof status.workspaceDir !== 'string' || !status.workspaceDir.trim()) return null;
+    return { stateDir: status.stateDir, workspaceDir: status.workspaceDir };
+  } catch {
+    return null;
+  }
 }
 
 // Guard: in a plain browser (no Tauri runtime, e.g. headless screenshots),
@@ -128,7 +150,7 @@ let _cachedGatewayToken: string | null = null;
 
 /**
  * Returns the gateway port configured in openclaw.json.
- * Falls back to 18789 if the file is missing or the field is absent.
+ * Falls back to the shared runtime default when the field is absent.
  * Result is cached for the process lifetime to avoid repeated disk reads.
  */
 async function readGatewayPort(): Promise<number> {
@@ -141,7 +163,18 @@ async function readGatewayPort(): Promise<number> {
       return port;
     }
   } catch { /* config not yet written — use default */ }
-  return 18789;
+  return DEFAULT_GATEWAY_PORT;
+}
+
+/**
+ * Readiness for desktop recovery means more than a listener on the configured
+ * port: the endpoint must authenticate with the currently selected OpenClaw
+ * state/config pair. This prevents an unrelated local Gateway from cancelling
+ * recovery work or being adopted by the UI.
+ */
+async function probeSelectedGatewayReady(status: { running?: unknown; port?: unknown }): Promise<boolean> {
+  if (!status.running) return false;
+  return invoke<boolean>('probe_selected_gateway', { port: status.port });
 }
 
 /**
@@ -244,22 +277,49 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       try { return { ...r, ...JSON.parse(localStorage.getItem("aegis-config") || "{}") }; } catch { return r; }
     },
     save: async (c: any) => { try { localStorage.setItem("aegis-config", JSON.stringify(c)); return { success: true }; } catch { return { success: false }; } },
-    detect: async () => { try { const d: any = await invoke("read_config"); return { path: d.path, exists: !!(d.raw && d.raw !== "{}") }; } catch { return { path: "", exists: false }; } },
+    detect: async () => { try { const d: any = await invoke("read_config"); return { path: d.path, exists: d.exists === true }; } catch { return { path: "", exists: false }; } },
     read: async () => { try { const d: any = await invoke("read_config"); return { data: JSON.parse(d.raw || "{}"), path: d.path }; } catch { return { data: {}, path: "" }; } },
     write: async (_p: string, d: any) => { try { await invoke("write_config", { json: JSON.stringify(d, null, 2) }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
     restart: restartLocalGateway,
-    validateOpenclawJson: async () => { try { const d: any = await invoke("read_config"); return { valid: true, path: d.path, exists: true }; } catch { return { valid: false, path: "", exists: false }; } },
+    validateOpenclawJson: async () => { try { return await invoke("validate_openclaw_config"); } catch (e: any) { return { valid: false, path: "", exists: false, error: String(e) }; } },
     backupAndResetOpenclaw: async () => { try { await invoke("write_config", { json: "{}" }); return { success: true }; } catch (e: any) { return { success: false, error: String(e) }; } },
+  },
+  providerRuntime: {
+    catalog: (provider?: string) => invoke('get_openclaw_provider_catalog', { provider: provider ?? null }),
+    schema: () => invoke('get_openclaw_config_schema'),
+    authProfiles: (provider?: string) => invoke('get_openclaw_auth_profiles', { provider: provider ?? null }),
+    probe: (data: any, provider: string, profileKey?: string) => invoke('probe_openclaw_provider', {
+      json: JSON.stringify(data),
+      provider,
+      profileKey: profileKey ?? null,
+    }),
+  },
+  channelRuntime: {
+    catalog: () => invoke('get_openclaw_channel_catalog'),
+    capabilities: (channel: string) => invoke('get_openclaw_channel_capabilities', { channel }),
+    status: (channel?: string, probe = false) => invoke('get_openclaw_channel_status', {
+      channel: channel ?? null,
+      probe,
+    }),
+    logs: (channel?: string, lines = 200) => invoke('get_openclaw_channel_logs', {
+      channel: channel ?? null,
+      lines,
+    }),
   },
 
   gateway: {
     getStatus: async () => {
       try {
         const s: any = await invoke("gateway_status");
-        const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
-        return { running: ready, ready, error: null, logs: await readRecentGatewayLogs() };
+        const ready = await probeSelectedGatewayReady(s);
+        // `gateway_status` reports a PID while a JunQi-managed child is still
+        // booting. Preserve that liveness fact independently from authenticated
+        // readiness: treating a live child as stopped makes the lifecycle FSM
+        // spawn it again on every status poll.
+        const processAlive = Boolean(s.running || s.pid);
+        return { running: processAlive, processAlive, ready, error: null, logs: await readRecentGatewayLogs() };
       } catch (e: any) {
-        return { running: false, ready: false, error: String(e), logs: await readRecentGatewayLogs() };
+        return { running: false, processAlive: false, ready: false, error: String(e), logs: await readRecentGatewayLogs() };
       }
     },
     start: async () => {
@@ -274,7 +334,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
         if (typeof result?.port === "number" && result.port > 0 && result.port < 65536) {
           _cachedGatewayPort = result.port;
         }
-        return { success: true };
+        return { ...result, success: true };
       } catch (e: any) {
         return { success: false, error: String(e) };
       }
@@ -327,14 +387,16 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
         try {
           const s: any = await invoke("gateway_status");
           if (!isCurrent()) return;
-          const ready = Boolean(s.running) && await invoke<boolean>('probe_gateway_port', { port: s.port });
+          const ready = await probeSelectedGatewayReady(s);
           if (!isCurrent()) return;
           const logs = await readRecentGatewayLogs();
           if (!isCurrent()) return;
           lastLogs = logs;
           if (ready) restartActive = false;
+          const processAlive = Boolean(s.running || s.pid);
           cb({
-            running: ready,
+            running: processAlive,
+            processAlive,
             ready,
             retrying: restartActive && !ready,
             error: null,
@@ -344,6 +406,7 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
           if (!isCurrent()) return;
           cb({
             running: false,
+            processAlive: false,
             ready: false,
             error: String(e),
             logs: lastLogs,
@@ -389,14 +452,17 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
 
       const handleRestartProgress = (event: any) => {
         const line = String(event.payload ?? '');
-        restartActive = true;
         appendLogLine(line);
-        cb({ running: false, ready: false, retrying: true, error: null, logs: lastLogs });
+        // Restart lifecycle is owned by the synchronous started/finished
+        // events. Tauri progress events can arrive after the command promise
+        // settles; treating a late log line as a new restart leaves recovery
+        // controls permanently disabled after a failed restart.
+        cb({ running: false, processAlive: false, ready: false, retrying: restartActive, error: null, logs: lastLogs });
       };
 
       const handleRestartStarted = () => {
         restartActive = true;
-        cb({ running: false, ready: false, retrying: true, error: null, logs: lastLogs });
+        cb({ running: false, processAlive: false, ready: false, retrying: true, error: null, logs: lastLogs });
       };
       const handleRestartFinished = () => {
         restartActive = false;
@@ -450,13 +516,18 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     read: async (path: string) => { try { const { readFile } = await import("@tauri-apps/plugin-fs"); const c = await readFile(path); const t = new TextDecoder().decode(c); const ext = path.split(".").pop()?.toLowerCase() || ""; const img = ["png","jpg","jpeg","gif","webp","svg"]; const is = img.includes(ext); return { name: path.split("/").pop()||path, path, base64: is ? btoa(String.fromCharCode(...c)) : btoa(t), mimeType: is ? `image/${ext}` : "application/octet-stream", isImage: is, size: c.length }; } catch { return null; } },
     openSharedFolder: async () => {
       try {
-        // Read configured workspace from config, fall back to default
         const config = await invoke<{ raw: string }>("read_config");
         const parsed = JSON.parse(config.raw || "{}");
-        const workspace = parsed?.agents?.defaults?.workspace || "~/.openclaw/workspace";
-        await invoke("open_folder", { path: workspace });
+        const configuredWorkspace = parsed?.agents?.defaults?.workspace;
+        const workspace = typeof configuredWorkspace === 'string' && configuredWorkspace.trim()
+          ? configuredWorkspace
+          : (await readStorageRuntimePaths())?.workspaceDir;
+        if (workspace) await invoke("open_folder", { path: workspace });
       } catch {
-        try { await invoke("open_folder", { path: "~/.openclaw/workspace" }); } catch {}
+        const paths = await readStorageRuntimePaths();
+        if (paths?.workspaceDir) {
+          try { await invoke("open_folder", { path: paths.workspaceDir }); } catch {}
+        }
       }
     },
   },
@@ -497,7 +568,28 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
     getSources: async () => { try { const r: any = await invoke("screenshot_list_windows"); return Array.isArray(r) ? r : []; } catch { return []; } },
   },
   memory: { browse: async () => null, readLocal: async () => ({ success: false, files: [] }) },
-  pairing: { getToken: async () => { try { return await invoke("get_gateway_token"); } catch { return null; } }, saveToken: async () => ({ success: true }), requestPairing: async () => { const id = await deviceIdentity(); return { code: "", deviceId: id.deviceId }; }, poll: async () => ({ status: "timeout" }) },
+  pairing: {
+    getToken: async () => {
+      try {
+        const settings = JSON.parse(localStorage.getItem('aegis-config') || '{}');
+        if (typeof settings.gatewayToken === 'string' && settings.gatewayToken.trim()) {
+          return settings.gatewayToken.trim();
+        }
+      } catch { /* fall through to the OpenClaw config */ }
+      try { return await invoke("get_gateway_token"); } catch { return null; }
+    },
+    saveToken: async (token: string) => {
+      try {
+        persistGatewayToken(token, localStorage);
+        _cachedGatewayToken = token.trim();
+        return { success: true };
+      } catch {
+        return { success: false };
+      }
+    },
+    requestPairing: (httpBaseUrl: string) => requestGatewayPairing(httpBaseUrl, detectPlatform()),
+    poll: (httpBaseUrl: string, deviceId: string) => pollGatewayPairing(httpBaseUrl, deviceId),
+  },
   terminal: {
     // portable-pty backed PTY multiplexer in Rust. Each create() spawns a
     // login shell; stdout arrives via the "terminal-data" event, exits via
@@ -556,7 +648,16 @@ function restartLocalGateway(): Promise<{ success: boolean; method?: string; err
       }
     },
   },
-  logs: { openElectronLogFile: async () => { try { await invoke("open_folder", { path: "~/.openclaw" }); return { success: true }; } catch { return { success: false }; } } },
+  logs: { openElectronLogFile: async () => {
+    const paths = await readStorageRuntimePaths();
+    if (!paths?.stateDir) return { success: false, error: 'Storage location is unavailable' };
+    try {
+      await invoke("open_folder", { path: paths.stateDir });
+      return { success: true, path: paths.stateDir };
+    } catch (error) {
+      return { success: false, path: paths.stateDir, error: String(error) };
+    }
+  } },
   secrets: { audit: async () => ({ success: false }), reload: async () => ({ success: false }) },
   agentAuth: { syncMain: async () => ({ success: true }), rehydrateMainRuntime: async () => ({ success: true }) },
   skills: { listManaged: async () => ({ success: true, skills: [] }), importFolder: async () => ({ success: false }), importZip: async () => ({ success: false }), delete: async () => ({ success: false }) },

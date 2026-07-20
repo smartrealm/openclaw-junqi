@@ -11,9 +11,14 @@ import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { debugWarn } from '@/utils/debugLog';
+import {
+  gatewayMutationFailure,
+  isSessionDeleted,
+  normalizeSessionKey,
+} from '@/utils/sessionLifecycle';
 
 export type SessionRenameResult =
-  | { ok: true; label: string }
+  | { ok: true; label: string; superseded?: boolean }
   | { ok: false; error: string };
 
 type SessionRenameDeps = {
@@ -31,8 +36,14 @@ const defaultSessionRenameDeps: SessionRenameDeps = {
 };
 
 let sessionRenameDeps: SessionRenameDeps = defaultSessionRenameDeps;
+let renameOperationSequence = 0;
+const latestRenameBySession = new Map<string, number>();
+const renameQueueBySession = new Map<string, Promise<void>>();
 
 export function __setSessionRenameDepsForTest(overrides?: Partial<SessionRenameDeps>): void {
+  renameOperationSequence = 0;
+  latestRenameBySession.clear();
+  renameQueueBySession.clear();
   sessionRenameDeps = overrides
     ? { ...defaultSessionRenameDeps, ...overrides }
     : defaultSessionRenameDeps;
@@ -69,20 +80,52 @@ function applyConfirmedLabel(sessionKey: string, label: string): void {
  * custom label (`label: null`), allowing OpenClaw to return to its own
  * display-name fallback.
  */
-export async function applySessionRename(key: string, next: string): Promise<SessionRenameResult> {
-  const sessionKey = key.trim();
-  const requestedLabel = next.trim();
-  if (!sessionKey) return { ok: false, error: 'Missing session key' };
+async function performSessionRename(
+  sessionKey: string,
+  requestedLabel: string,
+  operationId: number,
+): Promise<SessionRenameResult> {
+  if (isSessionDeleted(sessionKey)) return { ok: false, error: 'Session has been deleted' };
 
   try {
     const response = await sessionRenameDeps.patchLabel(sessionKey, requestedLabel || null);
+    const failure = gatewayMutationFailure(response, 'Gateway rejected session label mutation');
+    if (failure) throw new Error(failure);
     const label = confirmedLabel(response, requestedLabel);
+    if (latestRenameBySession.get(sessionKey) !== operationId || isSessionDeleted(sessionKey)) {
+      const currentLabel = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.label;
+      return { ok: true, label: currentLabel ?? label, superseded: true };
+    }
     applyConfirmedLabel(sessionKey, label);
     return { ok: true, label };
   } catch (error) {
+    if (latestRenameBySession.get(sessionKey) !== operationId || isSessionDeleted(sessionKey)) {
+      const currentLabel = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.label ?? '';
+      return { ok: true, label: currentLabel, superseded: true };
+    }
     const message = errorMessage(error);
     sessionRenameDeps.warn('[sessionRename] Gateway rejected session label mutation:', error);
     sessionRenameDeps.notifyFailure(message);
     return { ok: false, error: message };
   }
+}
+
+export function applySessionRename(key: string, next: string): Promise<SessionRenameResult> {
+  const sessionKey = normalizeSessionKey(key);
+  const requestedLabel = next.trim();
+  if (!sessionKey) return Promise.resolve({ ok: false, error: 'Missing session key' });
+
+  const operationId = ++renameOperationSequence;
+  latestRenameBySession.set(sessionKey, operationId);
+  const previous = renameQueueBySession.get(sessionKey) ?? Promise.resolve();
+  const task = previous.then(() => performSessionRename(sessionKey, requestedLabel, operationId));
+  const tail = task.then(() => undefined, () => undefined);
+  renameQueueBySession.set(sessionKey, tail);
+  void tail.finally(() => {
+    if (renameQueueBySession.get(sessionKey) === tail) {
+      renameQueueBySession.delete(sessionKey);
+      if (latestRenameBySession.get(sessionKey) === operationId) latestRenameBySession.delete(sessionKey);
+    }
+  });
+  return task;
 }

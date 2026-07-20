@@ -1,8 +1,9 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, Download, ExternalLink, RefreshCw } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Download, ExternalLink, RefreshCw, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { useOpenclawUpdate } from '@/hooks/useOpenclawUpdate';
+import { resolveOpenclawUpdateIndicator } from './openclawUpdateIndicator';
 import { Alert } from './alert';
 import { Button } from './button';
 
@@ -33,10 +34,15 @@ export function OpenClawUpdatePanel({
   const update = useOpenclawUpdate();
   const [confirming, setConfirming] = useState(false);
   const status = update.status;
-  const displayedVersion = status?.currentVersion || update.result?.afterVersion || currentVersion || null;
-  const hasChecked = status !== null;
-  const available = Boolean(status?.available && !status.error);
-  const upToDate = hasChecked && !available && !status?.error;
+  const displayedVersion = status?.installedVersion
+    || update.result?.afterVersion
+    || currentVersion
+    || status?.currentVersion
+    || null;
+  const latestVersion = status?.latestVersion ?? null;
+  const indicator = resolveOpenclawUpdateIndicator(update.phase, status);
+  const available = indicator === 'available';
+  const upToDate = indicator === 'current';
 
   const channelLabel = status?.channel
     ? t(`setup.openclawUpdate.channel.${status.channel}`, { defaultValue: status.channel })
@@ -51,12 +57,13 @@ export function OpenClawUpdatePanel({
   const npmRegistryLabel = npmRegistryKind
     ? t(`setup.openclawUpdate.registry.${npmRegistryKind}`)
     : npmRegistry;
+  const progressPercent = Math.max(0, Math.min(100, Math.round(update.progress ?? 0)));
 
   const handleUpdate = async () => {
     setConfirming(false);
     const completion = await update.apply();
     if (!completion?.result.success) return;
-    const version = completion.status?.currentVersion || completion.result.afterVersion || null;
+    const version = completion.status?.installedVersion || completion.result.afterVersion || null;
     try {
       await onUpdated?.(version);
     } catch {
@@ -105,7 +112,7 @@ export function OpenClawUpdatePanel({
           onClick={() => setConfirming(true)}
         >
           {status?.latestVersion
-            ? t('setup.openclawUpdate.updateTo', { version: status.latestVersion })
+            ? t('setup.openclawUpdate.updateTo', { version: latestVersion })
             : t('setup.openclawUpdate.updateNow')}
         </Button>
       );
@@ -136,19 +143,35 @@ export function OpenClawUpdatePanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <RefreshCw size={15} className="shrink-0 text-aegis-primary" />
+            <span
+              data-testid="openclaw-update-status-icon"
+              data-state={indicator}
+              className="inline-flex shrink-0"
+              aria-hidden="true"
+            >
+              {indicator === 'current' ? (
+                <CheckCircle2 size={15} className="text-aegis-success" />
+              ) : indicator === 'available' ? (
+                <Download size={15} className="text-aegis-warning" />
+              ) : indicator === 'error' ? (
+                <CircleAlert size={15} className="text-aegis-danger" />
+              ) : (
+                <RefreshCw
+                  size={15}
+                  className={clsx('text-aegis-primary', indicator === 'busy' && 'animate-spin')}
+                />
+              )}
+            </span>
             <h3 id={titleId} className="text-sm font-semibold text-aegis-text">
               {t('setup.openclawUpdate.title')}
             </h3>
             {upToDate && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-aegis-success">
-                <CheckCircle2 size={12} />
+              <span className="inline-flex items-center text-[11px] font-medium text-aegis-success">
                 {t('setup.openclawUpdate.upToDate')}
               </span>
             )}
             {available && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-aegis-warning">
-                <Download size={12} />
+              <span className="inline-flex items-center text-[11px] font-medium text-aegis-warning">
                 {t('setup.openclawUpdate.available')}
               </span>
             )}
@@ -171,7 +194,7 @@ export function OpenClawUpdatePanel({
           <span>
             {t('setup.openclawUpdate.latestVersion')}
             <strong className="ms-1.5 font-mono font-semibold text-aegis-warning">
-              v{status.latestVersion}
+              v{latestVersion}
             </strong>
           </span>
         )}
@@ -212,6 +235,45 @@ export function OpenClawUpdatePanel({
           <Alert tone="info" size="sm" title={t('setup.openclawUpdate.updating')}>
             {t('setup.openclawUpdate.restartHint')}
           </Alert>
+        </div>
+      )}
+
+      {(update.checking || update.updating || update.logs.length > 0) && (
+        <div className="mt-3 border-t border-aegis-border/50 pt-3" aria-live="polite">
+          <div className="mb-2 flex items-center justify-between gap-3 text-xs text-aegis-text-dim">
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <TerminalSquare size={13} className="shrink-0" />
+              <span className="truncate">
+                {update.statusMessage || t('setup.openclawUpdate.preparing')}
+              </span>
+            </span>
+            <span className="shrink-0 font-mono tabular-nums">
+              {progressPercent}%
+            </span>
+          </div>
+          <div
+            className="h-2 overflow-hidden rounded-full bg-[rgb(var(--aegis-overlay)/0.14)]"
+            role="progressbar"
+            aria-label={t('setup.openclawUpdate.progress')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPercent}
+          >
+            <div
+              className="h-full rounded-full transition-[width] duration-300"
+              style={{
+                width: `${progressPercent}%`,
+                backgroundColor: 'rgb(var(--aegis-primary))',
+              }}
+            />
+          </div>
+          {update.logs.length > 0 && (
+            <div className="mt-2 max-h-40 overflow-y-auto bg-black/20 px-3 py-2 font-mono text-xs leading-5 text-aegis-text-dim">
+              {update.logs.map((line, index) => (
+                <div key={`${index}-${line}`} className="break-all">{line}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

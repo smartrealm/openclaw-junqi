@@ -5,6 +5,8 @@
 
 import { useNotificationStore, type NotificationType } from '@/stores/notificationStore';
 import { debugLog, debugWarn } from '@/utils/debugLog';
+import { invoke } from '@tauri-apps/api/core';
+import { PERSISTENT_NOTIFICATIONS_CHANGED_EVENT } from '@/hooks/usePersistentNotifications';
 
 export interface NotifyOptions {
   type: NotificationType;
@@ -79,7 +81,9 @@ class NotificationService {
    * Both gates respect `enabled` and `dndMode`.
    */
   notify(options: NotifyOptions): void {
-    if (!this._enabled || this._dndMode) return;
+    if (!this._enabled) return;
+    this.persist(options);
+    if (this._dndMode) return;
     this.playChime();
 
     if (document.hasFocus()) {
@@ -91,6 +95,24 @@ class NotificationService {
       // 2. Electron IPC fallback (works in production where file:// may block Web API)
       this.showOSNotification(options.title, options.body);
     }
+  }
+
+  private persist(options: NotifyOptions): void {
+    const host = window as Window & { __TAURI_INTERNALS__?: unknown };
+    if (!host.__TAURI_INTERNALS__) return;
+    const level = options.type === 'error' ? 'error' : 'info';
+    void invoke('push_notification', {
+      level,
+      title: options.title,
+      body: options.body,
+      url: null,
+    }).then(() => {
+      if (typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new Event(PERSISTENT_NOTIFICATIONS_CHANGED_EVENT));
+      }
+    }).catch((error) => {
+      debugWarn('notifications', '[Notify] Failed to persist notification:', error);
+    });
   }
 
   /**

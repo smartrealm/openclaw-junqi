@@ -3,12 +3,28 @@ mod paths;
 mod platform;
 mod state;
 mod tray;
+mod window_adaptation;
+mod window_sizing;
 
+use commands::channel_enrollment::ChannelEnrollmentRegistry;
 use state::GatewayProcess;
 use tauri::{Emitter, Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if commands::uninstall::requested() {
+        if let Err(error) = commands::uninstall::run() {
+            eprintln!("[uninstall] {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if let Err(error) = paths::recover_interrupted_runtime_mode_switch() {
+        eprintln!("[runtime-switch] {error}");
+    }
+    // GUI-launched processes on macOS can miss the user's login PATH. Resolve
+    // it before Tauri starts worker threads so child tools inherit it reliably.
+    commands::app_settings::prime_login_shell_path();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -26,6 +42,7 @@ pub fn run() {
         // auto-saves on exit). First-launch sizing is handled in setup() below.
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(GatewayProcess::new())
+        .manage(ChannelEnrollmentRegistry::default())
         .invoke_handler(tauri::generate_handler![
             // Gateway
             commands::gateway::start_gateway,
@@ -34,13 +51,28 @@ pub fn run() {
             commands::gateway::stop_gateway,
             commands::gateway::gateway_status,
             commands::gateway::probe_gateway_port,
+            commands::gateway::probe_selected_gateway,
+            commands::gateway::handoff_gateway_to_official_service,
+            commands::state_dir_probe::detect_state_dir_split,
+            commands::gateway_service::gateway_autostart_status,
+            commands::gateway_service::enable_gateway_autostart,
+            commands::gateway_service::disable_gateway_autostart,
             commands::gateway_logs::get_gateway_logs,
             commands::gateway_logs::clear_gateway_logs,
             commands::gateway_rescue::gateway_rescue_chat,
+            state::gateway_diagnostics::diagnose_gateway_recovery,
+            commands::openclaw_repair::repair_openclaw,
+            commands::plugin_recovery::list_broken_gateway_plugins,
+            commands::plugin_recovery::heal_openclaw_plugin,
+            commands::plugin_recovery::disable_openclaw_plugin,
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,
-            commands::maintenance::run_maintenance_repair,
+            commands::storage::commit_runtime_reconfiguration,
+            commands::storage::rollback_runtime_reconfiguration,
+            commands::storage::update_npm_cache_directory,
+            commands::terminal_integration::apply_terminal_integration,
+            commands::terminal_integration::get_terminal_integration_status,
             commands::gateway_supervisor::get_gateway_lifecycle,
             commands::gateway_supervisor::get_gateway_runtime_snapshot,
             commands::secret_store::store_provider_secret,
@@ -55,6 +87,8 @@ pub fn run() {
             // System
             commands::system::get_platform_info,
             commands::system::check_node,
+            commands::setup::check_setup_node,
+            commands::setup::repair_setup_node_runtime,
             commands::system::check_git,
             commands::system::check_openclaw,
             commands::openclaw_update::check_openclaw_update,
@@ -79,10 +113,15 @@ pub fn run() {
             commands::voice_wake::voice_wake_status,
             // Setup
             commands::setup::install_node,
+            commands::setup::cancel_dependency_install,
+            commands::managed_runtime::update_managed_node,
             commands::setup::install_git,
+            commands::managed_runtime::update_managed_git,
+            commands::managed_runtime::get_managed_runtime_status,
             commands::setup::install_openclaw,
+            commands::setup::reinstall_openclaw,
+            commands::setup::relocate_openclaw,
             commands::setup::prepare_gateway,
-            commands::setup::install_winget_package,
             // Control UI (Console)
             commands::console::open_control_ui,
             commands::console::return_to_desktop,
@@ -94,9 +133,28 @@ pub fn run() {
             commands::console::write_models_log,
             // Config
             commands::config::read_config,
+            commands::config::validate_openclaw_config,
             commands::config::write_config,
             commands::config::read_provider_api_key,
             commands::config::detect_gateway_config,
+            commands::config::set_active_gateway_runtime,
+            commands::config::commit_active_gateway_runtime,
+            commands::config::rollback_active_gateway_runtime,
+            commands::openclaw_provider::get_openclaw_provider_catalog,
+            commands::openclaw_provider::get_openclaw_config_schema,
+            commands::openclaw_provider::get_openclaw_auth_profiles,
+            commands::openclaw_provider::probe_openclaw_provider,
+            commands::openclaw_channel::get_openclaw_channel_catalog,
+            commands::openclaw_channel::get_openclaw_channel_capabilities,
+            commands::openclaw_channel::get_openclaw_channel_status,
+            commands::openclaw_channel::get_openclaw_channel_logs,
+            commands::channel_enrollment::start_channel_enrollment,
+            commands::channel_enrollment::poll_channel_enrollment,
+            commands::channel_enrollment::read_channel_enrollment_credential,
+            commands::channel_enrollment::complete_channel_enrollment,
+            commands::channel_enrollment::cancel_channel_enrollment,
+            commands::channel_enrollment::render_qr_code_data_url,
+            commands::channel_enrollment::render_local_qr_data_url,
             // Pairing
             commands::pairing::list_pairing_requests,
             commands::pairing::approve_pairing_request,
@@ -109,6 +167,7 @@ pub fn run() {
             commands::docker::docker_gateway_status,
             // Desktop Pet (companion)
             commands::pet::emit_pet_state,
+            commands::pet_backdrop::get_pet_backdrop_reading,
             commands::pet::open_pet_window,
             commands::pet::close_pet_window,
             commands::pet::toggle_pet_window,
@@ -117,6 +176,15 @@ pub fn run() {
             commands::quickchat::close_quickchat,
             commands::quickchat::get_quickchat_visible,
             commands::quickchat::get_quickchat_seed,
+            // Dynamic Island — top-center agent status and quick actions
+            commands::dynamic_island::open_dynamic_island,
+            commands::dynamic_island::close_dynamic_island,
+            commands::dynamic_island::toggle_dynamic_island,
+            commands::dynamic_island::get_dynamic_island_visible,
+            commands::dynamic_island::set_dynamic_island_expanded,
+            commands::dynamic_island::set_dynamic_island_click_through,
+            commands::dynamic_island::reposition_dynamic_island,
+            commands::dynamic_island::dynamic_island_focus_main,
             commands::pet::set_pet_click_through,
             commands::pet::set_pet_position,
             commands::pet::start_pet_dragging,
@@ -224,7 +292,9 @@ pub fn run() {
             commands::project_config::write_agent_config_file,
             // App settings (ported from nezha app_settings.rs, simplified)
             commands::app_settings::load_app_settings,
+            commands::app_settings::set_application_language,
             commands::app_settings::save_terminal_scrollback,
+            commands::app_settings::save_terminal_shift_enter_newline,
             commands::app_settings::save_app_settings,
             commands::app_settings::detect_agent_paths,
             // Hooks (minimal port of nezha hooks.rs)
@@ -236,14 +306,17 @@ pub fn run() {
             commands::skills::list_skills,
             commands::skills::list_skill_installations,
             commands::skills::install_skill,
+            commands::skills::uninstall_skill,
             commands::skills::delete_skill,
             // Workspace path accessor (PR-15 @ file mention support)
             commands::workspace::get_workspace_path,
             // Notification local store (PR-0.6a — local read state only)
             commands::notification::get_notifications,
+            commands::notification::push_notification,
             commands::notification::mark_notification_read,
             commands::notification::mark_all_notifications_read,
-            // Usage snapshot stub (PR-0.6b — unavailable for both agents)
+            commands::notification::clear_notifications,
+            // Claude OAuth and persistent Codex app-server usage snapshots
             commands::usage::read_usage_snapshot,
             // Agent task PTY (PR-0.3 — minimal port)
             commands::agent_task_pty::run_task,
@@ -258,6 +331,21 @@ pub fn run() {
             commands::agent_workspace_storage::save_agent_workspace_tasks,
         ])
         .setup(|app| {
+            // A location reconfiguration can own a platform service (notably a
+            // Windows Scheduled Task), so recover it only after Tauri has
+            // constructed the managed Gateway state and service APIs. The
+            // memento remains durable when this fails and setup can surface a
+            // retryable recovery state instead of launching mixed paths.
+            let recovery_handle = app.handle().clone();
+            let recovery_state = app.state::<GatewayProcess>();
+            if let Err(error) = tauri::async_runtime::block_on(
+                commands::storage::recover_interrupted_runtime_reconfiguration(
+                    &recovery_handle,
+                    recovery_state,
+                ),
+            ) {
+                eprintln!("[runtime-reconfiguration] {error}");
+            }
             commands::fs_watcher::init(app);
             let _ = commands::hooks::ensure_installed();
             commands::agent_event_watcher::start(app.handle().clone());
@@ -267,7 +355,7 @@ pub fn run() {
             // and always_on_top so it doesn't take its own Dock slot.
             #[cfg(target_os = "macos")]
             {
-                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                app.set_activation_policy(tauri::ActivationPolicy::Regular);
                 // Force every window's icon to our bundled junqi icon at runtime.
                 // This is essential for `cargo run` / `tauri dev` because the
                 // binary has no .app bundle and the parent process (Xcode,
@@ -336,17 +424,14 @@ pub fn run() {
                                 );
                                 commands::terminal_drop::emit_hover(
                                     &app_for_dd,
-                                    commands::terminal_drop::target_at(
-                                        position.x as f64,
-                                        position.y as f64,
-                                    ),
+                                    commands::terminal_drop::target_at(position.x, position.y),
                                 );
                             }
                             tauri::DragDropEvent::Over { position, .. } => {
-                                let local_x = position.x as f64 / scale;
-                                let local_y = position.y as f64 / scale;
-                                let gx = (position.x as f64 + win_pos_x) / scale;
-                                let gy = (position.y as f64 + win_pos_y) / scale;
+                                let local_x = position.x / scale;
+                                let local_y = position.y / scale;
+                                let gx = (position.x + win_pos_x) / scale;
+                                let gy = (position.y + win_pos_y) / scale;
                                 let _ = app_for_dd.emit(
                                     "aegis:drag-move",
                                     serde_json::json!({
@@ -381,10 +466,7 @@ pub fn run() {
                                 );
                                 commands::terminal_drop::emit_hover(
                                     &app_for_dd,
-                                    commands::terminal_drop::target_at(
-                                        position.x as f64,
-                                        position.y as f64,
-                                    ),
+                                    commands::terminal_drop::target_at(position.x, position.y),
                                 );
                             }
                             tauri::DragDropEvent::Leave => {
@@ -392,10 +474,8 @@ pub fn run() {
                                 commands::quickchat::ResourceDropCoordinator::leave(&app_for_dd);
                             }
                             tauri::DragDropEvent::Drop { paths, position } => {
-                                let target_id = commands::terminal_drop::target_at(
-                                    position.x as f64,
-                                    position.y as f64,
-                                );
+                                let target_id =
+                                    commands::terminal_drop::target_at(position.x, position.y);
                                 commands::terminal_drop::clear_hover(&app_for_dd);
                                 if let Some(target_id) = target_id {
                                     if commands::terminal_drop::emit_file_drop(
@@ -424,37 +504,23 @@ pub fn run() {
                     }
                 });
             }
-            // First launch only: size the window to ~80% of the primary monitor and
-            // center it. On later launches the window-state plugin restores the user's
-            // last size/position, so we must NOT override it. A marker file under the
-            // app dir distinguishes first run from subsequent ones.
-            let first_run_marker = paths::desktop_dir().join(".junqi-window-initialized");
-            if !first_run_marker.exists() {
-                if let Some(window) = app.get_webview_window("main") {
-                    if let (Ok(Some(monitor)), Ok(scale)) =
-                        (window.primary_monitor(), window.scale_factor())
-                    {
-                        let phys = monitor.size();
-                        // Convert physical → logical; clamp between min (960×640)
-                        // and max (1600×1000) so the window never gets absurdly large
-                        // on 4K/5K displays nor unusably small on laptops.
-                        let logical_w = phys.width as f64 / scale;
-                        let logical_h = phys.height as f64 / scale;
-                        let w = (logical_w * 0.72).clamp(1100.0, 1600.0);
-                        let h = (logical_h * 0.80).clamp(720.0, 1000.0);
-                        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
-                            width: w,
-                            height: h,
-                        }));
-                    }
-                    let _ = window.center();
-                }
-                if let Some(parent) = first_run_marker.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                // Non-critical: if the marker can't be written, we re-apply default
-                // sizing next launch — harmless.
-                let _ = std::fs::write(&first_run_marker, "1");
+            // Use the monitor work area (excluding taskbar/menu bar) for first-launch
+            // sizing. Later launches preserve the window-state plugin's restored size,
+            // unless it no longer fits the current display.
+            let desktop_dir = paths::desktop_dir();
+            let first_run_marker = desktop_dir.join(".junqi-window-initialized");
+            let preferred_size_marker = desktop_dir.join(".junqi-window-size-v2");
+            if let Some(window) = app.get_webview_window("main") {
+                window_adaptation::initialize(window, first_run_marker, preferred_size_marker);
+            } else {
+                eprintln!("[window-adaptation] main window is unavailable during setup");
+            }
+            if let Some(main_window) = app.get_webview_window("main") {
+                commands::dynamic_island::remember_main_monitor(&main_window);
+                let tracked_window = main_window.clone();
+                main_window.on_window_event(move |_| {
+                    commands::dynamic_island::remember_main_monitor(&tracked_window);
+                });
             }
             // Emit gateway config to frontend before it loads (no invoke needed)
             let handle = app.handle().clone();

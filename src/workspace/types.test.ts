@@ -11,7 +11,20 @@ import {
   normalizeWorkspaces,
   removeLeaf,
   splitLeaf,
+  workspaceNameFromPath,
 } from './types';
+
+test('workspace names derive from POSIX and Windows directories when no explicit name exists', () => {
+  assert.equal(workspaceNameFromPath('/Users/wei/projects/junqi/'), 'junqi');
+  assert.equal(workspaceNameFromPath('C:\\Users\\wei\\projects\\junqi\\'), 'junqi');
+  assert.equal(newWorkspace(undefined, '/Users/wei/projects/junqi').name, 'junqi');
+  assert.equal(newWorkspace('Release shell', '/Users/wei/projects/junqi').name, 'Release shell');
+  assert.equal(normalizeWorkspace({
+    name: 'Workspace',
+    projectDirectory: '/Users/wei/projects/junqi',
+    workingDirectory: '/Users/wei/projects/junqi',
+  }).name, 'junqi');
+});
 
 test('nested splits preserve one stable id per leaf and focusable ids remain resolvable', () => {
   const workspace = newWorkspace('Project', '/repo');
@@ -119,6 +132,16 @@ test('normalization infers a missing workspace cwd from the focused pane', () =>
   assert.equal(migrated.focusedPaneId, 'pane-two');
   assert.equal(migrated.workingDirectory, '/repo/packages/web');
   assert.equal(migrated.projectDirectory, '/repo/packages/web');
+});
+
+test('normalization preserves the optional project rail visibility flag', () => {
+  const workspace = normalizeWorkspace({
+    id: 'hidden-project',
+    name: 'Hidden project',
+    hiddenFromRail: true,
+    root: defaultLeaf('shell', undefined, '/repo'),
+  });
+  assert.equal(workspace.hiddenFromRail, true);
 });
 
 test('normalization maps a legacy config focus id to the matching non-first pane', () => {

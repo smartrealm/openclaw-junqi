@@ -13,9 +13,23 @@ export enum GatewayState {
 
 /** Events that drive state transitions. */
 export type GatewayEvent =
-  | { type: 'STATUS_RECEIVED'; running: boolean; error: string | null; retrying: boolean }
+  | { type: 'INITIALIZE' }
+  | { type: 'RECOVERY_REQUESTED' }
+  | {
+      type: 'STATUS_RECEIVED';
+      /** Backward-compatible status projection for older adapters. */
+      running?: boolean;
+      processAlive?: boolean;
+      endpointReady?: boolean;
+      error: string | null;
+      retrying: boolean;
+      logs?: { stdout: string; stderr: string };
+    }
   | { type: 'START_SUCCESS' }
+  | { type: 'SELECTED_GATEWAY_READY' }
   | { type: 'START_FAILED'; error: string }
+  | { type: 'START_REQUESTED' }
+  | { type: 'DOCKER_START_REQUESTED' }
   | { type: 'WS_OPEN' }
   | { type: 'WS_CLOSE'; reason?: string }
   | { type: 'RETRY' }
@@ -23,7 +37,7 @@ export type GatewayEvent =
 
 /** External gateway process status (from Rust gateway_status command). */
 export interface GatewayProcessStatus {
-  running: boolean;
+  processAlive: boolean;
   ready: boolean;
   error: string | null;
   logs?: { stdout: string; stderr: string };
@@ -44,4 +58,6 @@ export interface GatewayStateSnapshot {
   error: string | null;
   logs?: { stdout: string; stderr: string };
   retrying: boolean;
+  /** The selected state/config pair has an authenticated, healthy endpoint. */
+  selectedGatewayReady: boolean;
 }

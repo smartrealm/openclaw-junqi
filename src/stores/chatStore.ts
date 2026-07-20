@@ -8,6 +8,13 @@ import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/proc
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { gateway } from '@/services/gateway';
 import { useSettingsStore } from './settingsStore';
+import {
+  isAgentMainSession,
+  isSessionDeleted,
+  markSessionDeleted,
+  restoreSessionKey,
+  withoutDeletedSessions,
+} from '@/utils/sessionLifecycle';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -16,10 +23,47 @@ import { useSettingsStore } from './settingsStore';
 const MAIN_SESSION = 'agent:main:main';
 const SESSION_TOPIC_PREFS_KEY = 'aegis:session-topic-prefs';
 const OPEN_TABS_PREFS_KEY = 'aegis-open-tabs';
+const SESSION_PIN_PREFS_KEY = 'aegis:session-pin-prefs';
 
 function persistOpenTabs(tabs: string[]): void {
   try {
     localStorage.setItem(OPEN_TABS_PREFS_KEY, JSON.stringify(tabs));
+  } catch {
+    // ignore persistence errors
+  }
+}
+
+function readSessionPinPrefs(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(SESSION_PIN_PREFS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, boolean] => (
+        typeof entry[0] === 'string' && entry[0].trim().length > 0 && typeof entry[1] === 'boolean'
+      )),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function persistSessionPin(sessionKey: string, pinned: boolean): void {
+  try {
+    const prefs = readSessionPinPrefs();
+    prefs[sessionKey] = pinned;
+    localStorage.setItem(SESSION_PIN_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore persistence errors
+  }
+}
+
+function clearSessionPinPref(sessionKey: string): void {
+  try {
+    const prefs = readSessionPinPrefs();
+    delete prefs[sessionKey];
+    localStorage.setItem(SESSION_PIN_PREFS_KEY, JSON.stringify(prefs));
   } catch {
     // ignore persistence errors
   }
@@ -67,7 +111,7 @@ const WEAK_SESSION_TOPIC_PATTERNS: RegExp[] = [
   /^session[:\s-]/i,
   /^new chat$/i,
   /^untitled$/i,
-  /^desktop-\d+$/i,
+  /^desktop-[a-z0-9-]+$/i,
 ];
 
 const WEAK_SESSION_TOPIC_FRAGMENTS = [
@@ -202,6 +246,12 @@ const upsertSession = (
   if (found) return next;
   return [...next, build({ key, label: key })];
 };
+
+function isLocalPlaceholderSession(session: Session): boolean {
+  const createdAt = session.createdAt;
+  return typeof createdAt === 'number'
+    || (typeof createdAt === 'string' && createdAt.trim().length > 0);
+}
 
 export interface ChatMessage {
   id: string;
@@ -581,6 +631,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   addMessage: (msg, sessionKey) => {
     set((state) => {
       const targetKey = sessionKey ?? state.activeSessionKey;
+      if (isSessionDeleted(targetKey)) return state;
       const currentMessages = getSessionMessages(state, targetKey);
       if (currentMessages.some((m) => m.id === msg.id)) return state;
       const updated = [...currentMessages, msg];
@@ -650,6 +701,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   updateStreamingMessage: (id, content, extra, sessionKey) => {
     set((state) => {
       const targetKey = sessionKey ?? state.activeSessionKey;
+      if (isSessionDeleted(targetKey)) return state;
       const currentMessages = getSessionMessages(state, targetKey);
       const existingIdx = currentMessages.findIndex((m) => m.id === id);
       let updated: ChatMessage[];
@@ -727,6 +779,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   finalizeStreamingMessage: (id, content, extra, sessionKey) => {
     set((state) => {
       const targetKey = sessionKey ?? state.activeSessionKey;
+      if (isSessionDeleted(targetKey)) return state;
       const currentMessages = getSessionMessages(state, targetKey);
       const existingIdx = currentMessages.findIndex((m) => m.id === id);
       const sessionThinking = state.thinkingBySession[targetKey];
@@ -845,6 +898,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setMessages: (msgs, sessionKey) => set((state) => {
     const targetKey = sessionKey ?? state.activeSessionKey;
+    if (isSessionDeleted(targetKey)) return state;
     const derived = recomputeDerived(msgs, targetKey);
     const isActive = targetKey === state.activeSessionKey;
     const currentSession = state.sessions.find((session) => session.key === targetKey);
@@ -917,6 +971,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   _groupsCache: {},
 
   cacheMessagesForSession: (key, msgs) => set((state) => {
+    if (isSessionDeleted(key)) return state;
     const derived = recomputeDerived(msgs, key);
     return {
       sessions: updateSession(state.sessions, key, (session) => ({
@@ -970,7 +1025,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messagesPerSession,
     } = get();
     const defs = defaults ?? prev;
-    const visibleIncomingSessions = sessions;
+    const visibleIncomingSessions = withoutDeletedSessions(sessions);
+    const persistedPins = readSessionPinPrefs();
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
     const incomingKeys = new Set(visibleIncomingSessions.map((session) => session.key));
     const mergedSessions = visibleIncomingSessions.map((session) => {
@@ -985,7 +1041,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // confirms them, so no client-side shadow value is needed here.
         label: typeof session.label === 'string' ? session.label : '',
         // Preserve pin/archive flags (purely local UI state).
-        pinned: previous?.pinned ?? session.pinned,
+        pinned: previous?.pinned
+          ?? (Object.prototype.hasOwnProperty.call(persistedPins, session.key)
+            ? persistedPins[session.key]
+            : session.pinned),
         archived: previous?.archived ?? session.archived,
         topic: hasCachedMessages
           ? resolveAndPersistSessionTopic(session.key, hydratedTopic, cachedMessages, session.lastMessage)
@@ -998,11 +1057,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const localOnlySessions = previousSessions.filter((session) => {
       if (incomingKeys.has(session.key)) return false;
       if (session.archived) return false;
-      const createdAt = session.createdAt;
-      const isLocalPlaceholder = typeof createdAt === 'number' || (typeof createdAt === 'string' && createdAt.trim().length > 0);
-      return isLocalPlaceholder;
+      return isLocalPlaceholderSession(session);
     });
     const nextSessions = [...mergedSessions, ...localOnlySessions];
+    const hasAuthoritativeMainSession = visibleIncomingSessions.some((session) => isAgentMainSession(session.key));
+    const removedCanonicalSessionKeys = hasAuthoritativeMainSession
+      ? previousSessions.flatMap((session) => {
+          if (incomingKeys.has(session.key) || isAgentMainSession(session.key)) return [];
+          return isLocalPlaceholderSession(session) ? [] : [session.key];
+        })
+      : [];
+    removedCanonicalSessionKeys.forEach(markSessionDeleted);
     const active = nextSessions.find((s) => s.key === activeSessionKey);
     const titleBar = titleBarStateFromSession(active, defs);
     set({
@@ -1013,9 +1078,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Only update currentModel if there is no manual override in effect.
       ...(manualModelOverride ? {} : { currentModel: titleBar.currentModel }),
     });
+    removedCanonicalSessionKeys.forEach((key) => get().removeSession(key));
   },
 
   setActiveSession: (key) => {
+    if (isSessionDeleted(key)) return;
     const state = get();
     const msgs = state.messagesPerSession[key] || [];
     const blocks = state._blocksCache[key];
@@ -1072,52 +1139,67 @@ export const useChatStore = create<ChatState>((set, get) => ({
    *  with this key already exists we surface it instead of duplicating.
    *  Used by per-agent "+ New Session" buttons before the user has sent
    *  any messages. */
-  addLocalSession: (session) => set((state) => {
-    const exists = state.sessions.some((s) => s.key === session.key);
-    const openTabs = state.openTabs.includes(session.key) ? state.openTabs : [...state.openTabs, session.key];
-    if (openTabs !== state.openTabs) persistOpenTabs(openTabs);
-    const msgs = state.messagesPerSession[session.key] || [];
-    const blocks = state._blocksCache[session.key];
-    const groups = state._groupsCache[session.key];
-    const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
-    const activeState = {
-      openTabs,
-      activeSessionKey: session.key,
-      messages: msgs,
-      renderBlocks: blocks ?? recomputeBlocks(msgs, session.key),
-      responseGroups: groups ?? recomputeGroups(msgs, session.key),
-      isTyping: state.typingBySession[session.key] || false,
-      quickReplies: state.quickRepliesBySession[session.key] || [],
-      thinkingText: state.thinkingBySession[session.key]?.text || '',
-      thinkingRunId: state.thinkingBySession[session.key]?.runId || null,
-      ...titleBar,
-    };
-    if (exists) {
-      return activeState;
-    }
-    return {
-      ...activeState,
-      sessions: [...state.sessions, session],
-    };
-  }),
+  addLocalSession: (session) => {
+    restoreSessionKey(session.key);
+    set((state) => {
+      const exists = state.sessions.some((s) => s.key === session.key);
+      const openTabs = state.openTabs.includes(session.key) ? state.openTabs : [...state.openTabs, session.key];
+      if (openTabs !== state.openTabs) persistOpenTabs(openTabs);
+      const msgs = state.messagesPerSession[session.key] || [];
+      const blocks = state._blocksCache[session.key];
+      const groups = state._groupsCache[session.key];
+      const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
+      const activeState = {
+        openTabs,
+        activeSessionKey: session.key,
+        messages: msgs,
+        renderBlocks: blocks ?? recomputeBlocks(msgs, session.key),
+        responseGroups: groups ?? recomputeGroups(msgs, session.key),
+        isTyping: state.typingBySession[session.key] || false,
+        quickReplies: state.quickRepliesBySession[session.key] || [],
+        thinkingText: state.thinkingBySession[session.key]?.text || '',
+        thinkingRunId: state.thinkingBySession[session.key]?.runId || null,
+        ...titleBar,
+      };
+      if (exists) {
+        return activeState;
+      }
+      return {
+        ...activeState,
+        sessions: [...state.sessions, session],
+      };
+    });
+  },
 
   /** Locally apply a renamed label without refetching sessions.list. */
-  setSessionLabel: (key, label) => set((state) => ({
-    sessions: updateSession(state.sessions, key, (session) =>
-      session.label === label ? session : { ...session, label },
-    ),
-  })),
+  setSessionLabel: (key, label) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: updateSession(state.sessions, key, (session) =>
+            session.label === label ? session : { ...session, label },
+          ),
+        }
+  )),
 
   /** Locally apply a model switch without waiting for sessions.list. */
-  setSessionModel: (key, model) => set((state) => ({
-    sessions: upsertSession(state.sessions, key, (session) =>
-      session.model === model ? session : { ...session, model },
-    ),
-    ...(state.activeSessionKey === key ? { currentModel: model } : {}),
-  })),
+  setSessionModel: (key, model) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.model === model ? session : { ...session, model },
+          ),
+          ...(state.activeSessionKey === key ? { currentModel: model } : {}),
+        }
+  )),
 
   togglePinSession: (key) => set((state) => ({
-    sessions: updateSession(state.sessions, key, (s) => ({ ...s, pinned: !s.pinned })),
+    sessions: updateSession(state.sessions, key, (session) => {
+      const pinned = !session.pinned;
+      persistSessionPin(key, pinned);
+      return { ...session, pinned };
+    }),
   })),
 
   setSessionArchived: (key, archived) => set((state) => ({
@@ -1140,15 +1222,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
    *  next outgoing message (via drag-drop, paste, or the attach button).
    *  Cleared after the user sends. Pure UI state; not persisted. */
   draftAttachments: {} as Record<string, string[]>,
-  setDraftAttachments: (key: string, paths: string[]) => set((s) => ({
-    draftAttachments: { ...s.draftAttachments, [key]: paths },
-  })),
-  addDraftAttachment: (key: string, path: string) => set((s) => ({
-    draftAttachments: {
-      ...s.draftAttachments,
-      [key]: [...(s.draftAttachments[key] ?? []), path],
-    },
-  })),
+  setDraftAttachments: (key: string, paths: string[]) => set((s) => (
+    isSessionDeleted(key) ? s : { draftAttachments: { ...s.draftAttachments, [key]: paths } }
+  )),
+  addDraftAttachment: (key: string, path: string) => set((s) => (
+    isSessionDeleted(key)
+      ? s
+      : {
+          draftAttachments: {
+            ...s.draftAttachments,
+            [key]: [...(s.draftAttachments[key] ?? []), path],
+          },
+        }
+  )),
   removeDraftAttachment: (key: string, path: string) => set((s) => {
     const cur = s.draftAttachments[key] ?? [];
     const next = cur.filter((p) => p !== path);
@@ -1171,6 +1257,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   })(),
 
   openTab: (key) => set((state) => {
+    if (isSessionDeleted(key)) return state;
     const clearedSessions = updateSession(state.sessions, key, clearSessionAttentionState);
     const session = clearedSessions.find((s) => s.key === key) ?? state.sessions.find((s) => s.key === key);
     const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
@@ -1246,7 +1333,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   removeSession: (key) => set((state) => {
-    if (key === MAIN_SESSION) return state;
+    if (isAgentMainSession(key)) return state;
+    clearSessionPinPref(key);
     const newTabs = state.openTabs.filter((t) => t !== key);
     if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
     persistOpenTabs(newTabs);
@@ -1264,6 +1352,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _typingRm, ...restTyping } = state.typingBySession;
     const { [key]: _qr, ...restQuickReplies } = state.quickRepliesBySession;
     const { [key]: _thinking, ...restThinking } = state.thinkingBySession;
+    const { [key]: _draft, ...restDrafts } = state.drafts;
+    const { [key]: _queue, ...restMessageQueue } = state.messageQueue;
+    const { [key]: _attachments, ...restDraftAttachments } = state.draftAttachments;
     const msgs = restMessages[newActive] || [];
     const blocks = restBlocks[newActive];
     const groups = restGroupsCache[newActive];
@@ -1279,6 +1370,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingBySession: restTyping,
       quickRepliesBySession: restQuickReplies,
       thinkingBySession: restThinking,
+      drafts: restDrafts,
+      messageQueue: restMessageQueue,
+      draftAttachments: restDraftAttachments,
       quickReplies: restQuickReplies[newActive] || [],
       thinkingText: restThinking[newActive]?.text || '',
       thinkingRunId: restThinking[newActive]?.runId || null,
@@ -1347,6 +1441,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   typingBySession: {},
   messageQueue: {},
   drainQueue: async (sessionKey) => {
+    if (isSessionDeleted(sessionKey)) return;
     const { messageQueue } = get();
     const queue = [...(messageQueue[sessionKey] || [])];
     if (queue.length === 0) return;
@@ -1386,6 +1481,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setIsTyping: (typing, sessionKey) =>
     set((state) => {
       const targetKey = sessionKey ?? state.activeSessionKey;
+      if (isSessionDeleted(targetKey)) return state;
       return {
         typingBySession: {
           ...state.typingBySession,
@@ -1403,7 +1499,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Drafts ──
   drafts: {},
-  setDraft: (key, text) => set((state) => ({ drafts: { ...state.drafts, [key]: text } })),
+  setDraft: (key, text) => set((state) => (
+    isSessionDeleted(key) ? state : { drafts: { ...state.drafts, [key]: text } }
+  )),
   getDraft: (key) => get().drafts[key] || '',
 
   // ── Quick Replies ──
@@ -1411,6 +1509,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   quickRepliesBySession: {},
   setQuickReplies: (buttons, sessionKey) => set((state) => {
     const targetKey = sessionKey ?? state.activeSessionKey;
+    if (isSessionDeleted(targetKey)) return state;
     return {
       quickRepliesBySession: {
         ...state.quickRepliesBySession,
@@ -1426,6 +1525,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   thinkingBySession: {},
   setThinkingStream: (runId, text, sessionKey) => set((state) => {
     const targetKey = sessionKey ?? state.activeSessionKey;
+    if (isSessionDeleted(targetKey)) return state;
     return {
       thinkingBySession: {
         ...state.thinkingBySession,

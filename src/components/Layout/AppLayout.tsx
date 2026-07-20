@@ -3,7 +3,7 @@
 // + Ambient background glow (from conceptual design)
 // ═══════════════════════════════════════════════════════════
 
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { matchPath, Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { TopBar } from '@/components/Layout/TopBar';
@@ -14,9 +14,8 @@ import { usePetStore } from '@/stores/petStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { getDirection } from '@/i18n';
+import { isGatewayOptionalPath } from '@/utils/gatewayOptionalRoutes';
 
-/** Pages that work without Gateway connection */
-const OFFLINE_PAGES = ['/settings', '/terminal', '/welcome', '/config'];
 const CommandPalette = lazy(() => import('@/components/CommandPalette').then(m => ({ default: m.CommandPalette })));
 const PetBreakOverlay = lazy(() => import('@/pet/PetBreakOverlay').then(m => ({ default: m.PetBreakOverlay })));
 const OfflineOverlay = lazy(() => import('@/components/OfflineOverlay').then(m => ({ default: m.OfflineOverlay })));
@@ -79,8 +78,15 @@ export function AppLayout() {
   const language = useSettingsStore((s) => s.language);
   const dir = getDirection(language);
   const location = useLocation();
+  const routeScrollRef = useRef<HTMLDivElement>(null);
   const { connected } = useChatStore();
   const isWorkspacePage = matchPath('/welcome', location.pathname) !== null;
+  const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
+  const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
+  const isSettingsPage = matchPath('/settings/*', location.pathname) !== null;
+  const usesGlobalSidebar = !isWorkspacePage && !isTerminalPage && !isAgentWorkspacePage;
+  const showRouteBack = isTerminalPage || isAgentWorkspacePage || isSettingsPage;
+  const routeBackFallback = isTerminalPage || isAgentWorkspacePage ? '/tools' : '/';
 
   // Register global keyboard shortcuts
   useKeyboardShortcuts();
@@ -88,7 +94,7 @@ export function AppLayout() {
   // Show offline overlay on pages that need Gateway, when not connected.
   // A 600ms grace period prevents the overlay from flashing on brief
   // disconnect/reconnect cycles (e.g. when the user clicks "重连").
-  const isOfflinePage = OFFLINE_PAGES.some((path) => matchPath(`${path}/*`, location.pathname) !== null);
+  const isOfflinePage = isGatewayOptionalPath(location.pathname);
   const wantsOffline = !connected && !isOfflinePage;
   const [showOffline, setShowOffline] = useState(false);
   useEffect(() => {
@@ -97,6 +103,12 @@ export function AppLayout() {
     return () => clearTimeout(t);
   }, [wantsOffline]);
 
+  // The route viewport persists between tabs. Reset it before paint so the
+  // scrollbar never renders at the previous page's position and then jumps.
+  useLayoutEffect(() => {
+    if (routeScrollRef.current) routeScrollRef.current.scrollTop = 0;
+  }, [location.pathname]);
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-aegis-bg relative">
       {/* ── Ambient Background Glow (from conceptual JSX) ── */}
@@ -104,19 +116,28 @@ export function AppLayout() {
       <div className="ambient-glow-purple" />
 
       {/* ── Custom window-chrome top bar ── */}
-      <TopBar hideSidebarToggle={isWorkspacePage} />
+      <TopBar
+        hideSidebarToggle={isWorkspacePage}
+        sidebarTarget={isTerminalPage ? 'terminal' : isAgentWorkspacePage ? 'agent-workspace' : 'app'}
+        showBack={showRouteBack}
+        backFallback={routeBackFallback}
+      />
 
       {/* ── Navigation tabs ── */}
       {!isWorkspacePage && <TabBar />}
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
-        {!isWorkspacePage && (
+        {usesGlobalSidebar && (
           <Suspense fallback={<SidebarFallback />}>
             <NavSidebar />
           </Suspense>
         )}
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
-          <div className="flex-1 overflow-y-auto scrollbar-thin h-full">
+          <div
+            ref={routeScrollRef}
+            className={`route-scrollbar flex-1 h-full ${isTerminalPage || isAgentWorkspacePage ? 'overflow-hidden' : 'overflow-y-auto'}`}
+            data-route-scroll
+          >
             <ErrorBoundary>
               <Suspense fallback={
                 <div className="flex-1 flex items-center justify-center h-full">

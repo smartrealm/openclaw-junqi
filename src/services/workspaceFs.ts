@@ -92,8 +92,8 @@ export function readImagePreview(path: string, root: string): Promise<ImagePrevi
   return invoke('read_image_preview', { path, projectPath: root });
 }
 
-/** The default runtime workspace path (~/.openclaw/workspace), used as fallback
- *  when the active agent has no explicit `workspace` configured. */
+/** Resolve the current runtime workspace natively, including the active
+ *  `agents.defaults.workspace` override and the configured storage layout. */
 export function getWorkspacePath(): Promise<string> {
   return invoke('get_workspace_path');
 }

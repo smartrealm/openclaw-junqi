@@ -4,6 +4,7 @@ import '../../test-setup';
 import { useChatStore, type Session } from '../stores/chatStore';
 import { useGatewayDataStore } from '../stores/gatewayDataStore';
 import { __setSessionDeleteDepsForTest, deleteSessionEverywhere } from './sessionDelete';
+import { __resetSessionLifecycleForTest } from './sessionLifecycle';
 
 const MAIN_KEY = 'agent:main:main';
 const TEST_KEY = 'agent:worker:desktop-delete-test';
@@ -28,6 +29,7 @@ describe('deleteSessionEverywhere', () => {
   let warnings: unknown[][];
 
   beforeEach(() => {
+    __resetSessionLifecycleForTest();
     requests = [];
     failures = [];
     warnings = [];

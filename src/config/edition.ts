@@ -160,6 +160,7 @@ const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/git', feature: 'git' },
   { prefix: '/calendar', feature: 'calendar' },
   { prefix: '/sandbox', feature: 'sandbox' },
+  { prefix: '/openclaw-commands', feature: 'tools' },
   { prefix: '/tools', feature: 'tools' },
   { prefix: '/settings', feature: 'settings' },
   { prefix: '/chat', feature: 'chat' },

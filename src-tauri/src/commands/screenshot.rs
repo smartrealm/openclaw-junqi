@@ -116,8 +116,8 @@ pub fn screenshot_list_windows() -> Result<Vec<serde_json::Value>, String> {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn screenshot_capture_window(id: String) -> Result<serde_json::Value, String> {
-    let win_id = if id.starts_with("window:") {
-        &id[7..]
+    let win_id = if let Some(window_id) = id.strip_prefix("window:") {
+        window_id
     } else if id.starts_with("screen:") {
         return screenshot_capture_inner();
     } else {

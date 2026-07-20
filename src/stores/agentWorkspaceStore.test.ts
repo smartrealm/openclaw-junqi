@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAgentWorkspaceTaskStatus, useAgentWorkspaceStore } from './agentWorkspaceStore';
+import { isAgentWorkspaceTaskStatus, shouldIgnoreAgentWorkspaceTaskStatusTransition, useAgentWorkspaceStore } from './agentWorkspaceStore';
 
 function resetStore() {
   useAgentWorkspaceStore.setState({ tasks: [], selectedTaskId: null, selectedTaskIds: {} });
@@ -10,6 +10,14 @@ test('agent workspace status guard rejects unknown backend values', () => {
   assert.equal(isAgentWorkspaceTaskStatus('running'), true);
   assert.equal(isAgentWorkspaceTaskStatus('awaiting_review'), true);
   assert.equal(isAgentWorkspaceTaskStatus('unexpected-status'), false);
+});
+
+test('detached tasks ignore stale live status events until explicitly reconnected', () => {
+  assert.equal(shouldIgnoreAgentWorkspaceTaskStatusTransition('detached', 'running'), true);
+  assert.equal(shouldIgnoreAgentWorkspaceTaskStatusTransition('detached', 'input_required'), true);
+  assert.equal(shouldIgnoreAgentWorkspaceTaskStatusTransition('detached', 'awaiting_review'), true);
+  assert.equal(shouldIgnoreAgentWorkspaceTaskStatusTransition('detached', 'done'), false);
+  assert.equal(shouldIgnoreAgentWorkspaceTaskStatusTransition('interrupted', 'running'), false);
 });
 
 test('agent workspace tasks are created selected and updated independently', () => {

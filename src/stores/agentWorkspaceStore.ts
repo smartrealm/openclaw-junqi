@@ -26,6 +26,14 @@ export function isAgentWorkspaceTaskStatus(value: string): value is AgentWorkspa
     || value === 'cancelled';
 }
 
+export function shouldIgnoreAgentWorkspaceTaskStatusTransition(
+  current: AgentWorkspaceTaskStatus,
+  next: AgentWorkspaceTaskStatus,
+): boolean {
+  return current === 'detached'
+    && (next === 'running' || next === 'input_required' || next === 'awaiting_review');
+}
+
 export interface AgentWorkspaceTask {
   id: string;
   projectPath: string;

@@ -6,6 +6,8 @@ import type { PetEmotion, PetState } from './pet-states';
 import type { DragKind } from '@/stores/petStore';
 import { pomodoroIcon, pomodoroColor, celebrateIcon, CELEBRATE_CAPTION } from './pomodoroView';
 import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle, type PetThemeName } from './petTheme';
+import { resolvePetBackdropTextStyle, type PetBackdropReading } from './backdropContrast';
+import { usePetStore } from '@/stores/petStore';
 
 /** Fallback status labels (used until/unless i18n keys are present). */
 const STATUS_LABEL: Record<PetEmotion, string> = {
@@ -155,15 +157,29 @@ function useResolvedPetTheme(): { themeName: PetThemeName; isDark: boolean } {
  * `bubbleKey` follows the bubble's logical type, so AnimatePresence cross-fades
  * when the type changes but leaves within-type updates untouched.
  */
-export function PetBubble({ state, dragging, hovered }: { state: PetState; dragging?: boolean; hovered?: boolean }) {
+export function PetBubble({ state, dragging, hovered, backdrop }: { state: PetState; dragging?: boolean; hovered?: boolean; backdrop?: PetBackdropReading | null }) {
   const { t } = useTranslation();
   const { themeName, isDark } = useResolvedPetTheme();
   const emotionColor = useEmotionColor(themeName);
   const dragMeta = useDragKindMeta(themeName);
+  const captionScale = usePetStore((store) => store.captionScale);
   const e = state.emotion;
   const label = t(`pet.status.${e}`, STATUS_LABEL[e]);
-  const textPalette = resolvePetTextPalette(themeName);
-  const readableText = (color: string) => solidPetTextStyle(color, petTextShadowForTheme(themeName));
+  const backdropStyle = resolvePetBackdropTextStyle(backdrop ?? null);
+  const baseTextPalette = resolvePetTextPalette(themeName);
+  const textPalette = backdropStyle
+    ? {
+        ...baseTextPalette,
+        primary: backdropStyle.foreground,
+        secondary: backdropStyle.foreground,
+        danger: backdropStyle.foreground,
+      }
+    : baseTextPalette;
+  const readableText = (color: string) => backdropStyle
+      ? {
+        ...solidPetTextStyle(color, backdropStyle.shadow),
+      }
+    : solidPetTextStyle(color, petTextShadowForTheme(themeName));
 
   // Operation-hint carousel, shown only while the cursor is over the pet
   // AND the pet is idle (i.e. the tip branch is the rendered body — busy
@@ -192,16 +208,21 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
 
   // Base bubble style: pure text. Keep it visually light around the pet.
   const bubbleStyle: CSSProperties = {
-    maxWidth: 240,
+    maxWidth: Math.round(240 * captionScale),
     textAlign: 'center',
     ...petBubbleTextContainerStyle(textPalette.primary, themeName),
     fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
-    fontSize: 13,
+    fontSize: 13 * captionScale,
     fontWeight: 760,
     lineHeight: 1.5,
     overflowWrap: 'anywhere',
     wordBreak: 'normal',
     whiteSpace: 'normal',
+    ...(backdropStyle ? {
+      background: backdropStyle.bubble,
+      borderRadius: 6,
+      padding: '2px 6px',
+    } : {}),
   };
 
   let body: ReactNode = null;
@@ -369,9 +390,48 @@ export function PetBubble({ state, dragging, hovered }: { state: PetState; dragg
       : t(p.phase === 'work' ? 'pet.pomodoro.focusing' : 'pet.pomodoro.resting', p.phase === 'work' ? '专注中' : '休息中');
     const PomoIcon = pomodoroIcon(p);
     body = (
-      <span style={{ fontWeight: 700, ...readableText(textPalette.primary), display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <PomoIcon size={13} strokeWidth={2.2} style={{ flexShrink: 0, color: pomodoroColor(p, isDark) }} />
-        {p.paused ? phaseLabel : `${phaseLabel} ${fmtClock(p.remainingMs)}`}
+      <span
+        data-pet-pomodoro-status
+        style={{
+          display: 'inline-grid',
+          gridTemplateColumns: '14px minmax(0, 1fr)',
+          alignItems: 'center',
+          columnGap: 5,
+          maxWidth: 104,
+          ...readableText(textPalette.primary),
+        }}
+      >
+        <PomoIcon
+          size={14}
+          strokeWidth={2.2}
+          aria-hidden="true"
+          style={{ color: pomodoroColor(p, isDark) }}
+        />
+        <span
+          style={{
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            textAlign: 'start',
+            lineHeight: 1.12,
+          }}
+        >
+          <span style={{ fontSize: 10.5, fontWeight: 650, whiteSpace: 'normal' }}>
+            {phaseLabel}
+          </span>
+          <span
+            style={{
+              marginTop: 1,
+              fontSize: 13,
+              fontWeight: 760,
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {fmtClock(p.remainingMs)}
+          </span>
+        </span>
       </span>
     );
   } else if (e === 'sleep' || e === 'sleepy') {

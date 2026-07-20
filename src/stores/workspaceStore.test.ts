@@ -138,6 +138,14 @@ test('workspace family operations never leave a worktree orphaned', () => {
   assert.equal(remaining.some((workspace) => workspace.id === other.id), false);
 });
 
+test('workspace rail visibility can be toggled without removing the workspace', () => {
+  const workspace = resetStore('/repo');
+  useWorkspaceStore.getState().toggleWorkspaceHidden(workspace.id);
+  assert.equal(useWorkspaceStore.getState().workspaces[0]?.hiddenFromRail, true);
+  useWorkspaceStore.getState().toggleWorkspaceHidden(workspace.id);
+  assert.equal(useWorkspaceStore.getState().workspaces[0]?.hiddenFromRail, false);
+});
+
 test('created worktrees stay beside their source and retain source project ownership', () => {
   const source = resetStore('/repo-a');
   const other = useWorkspaceStore.getState().createWorkspace('Project B', '/repo-b');

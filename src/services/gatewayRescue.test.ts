@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildManualGatewayRescueTarget,
+  classifyGatewayRescueFailure,
   resolveGatewayRescueTarget,
   resolveGatewayRescueTargets,
 } from './gatewayRescue';
@@ -18,6 +19,7 @@ test('resolveGatewayRescueTarget resolves OpenAI-compatible provider from primar
         openai: {
           baseUrl: 'https://api.openai.com/v1',
           apiKey: '${OPENAI_API_KEY}',
+          models: [{ id: 'gpt-4o-mini' }],
         },
       },
     },
@@ -73,6 +75,7 @@ test('resolveGatewayRescueTarget returns null without readable secret value', ()
         openai: {
           baseUrl: 'https://api.openai.com/v1',
           apiKey: '${OPENAI_API_KEY}',
+          models: [{ id: 'gpt-4o-mini' }],
         },
       },
     },
@@ -118,6 +121,7 @@ test('resolveGatewayRescueTargets falls back to configured providers when primar
         openai: {
           baseUrl: 'https://api.openai.com/v1',
           apiKey: '${OPENAI_API_KEY}',
+          models: [{ id: 'gpt-4o-mini' }],
         },
       },
     },
@@ -131,6 +135,41 @@ test('resolveGatewayRescueTargets falls back to configured providers when primar
   assert.equal(targets.length, 1);
   assert.equal(targets[0].providerId, 'openai');
   assert.equal(targets[0].source, 'configured-provider');
+});
+
+test('resolveGatewayRescueTargets does not invent a model for a provider', () => {
+  const targets = resolveGatewayRescueTargets({
+    models: {
+      providers: {
+        vllm: {
+          baseUrl: 'http://127.0.0.1:8000/v1',
+          apiKey: 'test-key',
+        },
+      },
+    },
+  } as any);
+
+  assert.deepEqual(targets, []);
+});
+
+test('resolveGatewayRescueTargets enumerates only explicitly configured provider models', () => {
+  const targets = resolveGatewayRescueTargets({
+    models: {
+      providers: {
+        vllm: {
+          baseUrl: 'http://127.0.0.1:8000/v1',
+          apiKey: 'test-key',
+          models: [{ id: 'local-qwen' }, { id: 'vllm/local-llama' }],
+        },
+      },
+    },
+  } as any);
+
+  assert.deepEqual(targets.map((target) => target.modelRef), [
+    'vllm/local-qwen',
+    'vllm/local-llama',
+  ]);
+  assert.equal(targets.some((target) => target.modelId === 'gpt-4o-mini'), false);
 });
 
 test('resolveGatewayRescueTargets reads provider config despite provider key case drift', () => {
@@ -216,4 +255,10 @@ test('buildManualGatewayRescueTarget rejects incomplete temporary config', () =>
     apiKey: 'temp-key',
     modelId: '',
   }), null);
+});
+
+test('classifyGatewayRescueFailure separates credential and permission failures', () => {
+  assert.equal(classifyGatewayRescueFailure(new Error('401 Invalid API key')), 'authentication');
+  assert.equal(classifyGatewayRescueFailure(new Error('403 forbidden')), 'permission');
+  assert.equal(classifyGatewayRescueFailure(new Error('network timeout')), 'request');
 });

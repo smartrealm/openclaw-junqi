@@ -1,40 +1,16 @@
-// ── NotificationBell — minimal port of nezha's NotificationBell ──────────────
-//
-// Frontend component that:
-//   1. Polls `get_notifications` Tauri command (stub backend: returns empty list)
-//   2. Shows a bell icon in the title bar with an unread count badge
-//   3. Opens a popover with the notification list + mark-read actions
-//
-// Adapted differences from nezha:
-//   - Calls `invoke()` directly instead of a useNotifications hook (junqi
-//     doesn't have an equivalent hook yet — would be a follow-up refactor).
-//   - Uses `react-i18next` (junqi's i18n) instead of nezha's useI18n.
-//   - Style uses inline JSX (Tailwind) instead of nezha's `s.xxx` CSS-in-JS.
-//
-// Source: nezha/src/components/nezha/NotificationBell.tsx
-
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Bell, X, Check, CheckCheck, Info, AlertTriangle, AlertCircle, ExternalLink,
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-
-interface NotificationItem {
-  id: string;
-  level: string;
-  title: string;
-  body: string;
-  bodyZh: string | null;
-  url: string | null;
-  createdAt: string;
-  isRead: boolean;
-}
-
-interface NotificationResult {
-  notifications: NotificationItem[];
-  unreadCount: number;
-}
+import { useNavigate } from 'react-router-dom';
+import { useSettingsStore } from '@/stores/settingsStore';
+import {
+  usePersistentNotifications,
+  type PersistentNotificationItem,
+} from '@/hooks/usePersistentNotifications';
+import { resolveNotificationTarget } from '@/utils/notificationTarget';
+import { formatNotificationTime } from '@/utils/notificationTime';
 
 function LevelIcon({ level }: { level: string }) {
   switch (level) {
@@ -45,19 +21,21 @@ function LevelIcon({ level }: { level: string }) {
 }
 
 interface NotificationEntryProps {
-  item: NotificationItem;
+  item: PersistentNotificationItem;
   onMarkRead: (id: string) => void;
+  onOpenUrl: (url: string) => void;
 }
 
-function NotificationEntry({ item, onMarkRead }: NotificationEntryProps) {
+function NotificationEntry({ item, onMarkRead, onOpenUrl }: NotificationEntryProps) {
   const { t } = useTranslation();
+  const language = useSettingsStore((state) => state.language);
   const [hov, setHov] = useState(false);
+  const body = language === 'zh' && item.bodyZh ? item.bodyZh : item.body;
+  const actionableUrl = resolveNotificationTarget(item.url) ? item.url : null;
 
   const handleClick = () => {
     if (!item.isRead) onMarkRead(item.id);
-    if (item.url) {
-      try { window.open(item.url, '_blank', 'noopener,noreferrer'); } catch { /* ignore */ }
-    }
+    if (actionableUrl) onOpenUrl(actionableUrl);
   };
 
   return (
@@ -65,7 +43,7 @@ function NotificationEntry({ item, onMarkRead }: NotificationEntryProps) {
       onClick={handleClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      className="px-3 py-2.5 border-b flex items-start gap-2.5 cursor-pointer transition-colors"
+      className={`px-3 py-2.5 border-b flex items-start gap-2.5 transition-colors ${actionableUrl ? 'cursor-pointer' : 'cursor-default'}`}
       style={{
         borderColor: 'rgb(var(--aegis-overlay) / 0.06)',
         background: hov ? 'rgb(var(--aegis-overlay) / 0.04)' : item.isRead ? 'transparent' : 'rgb(var(--aegis-primary) / 0.06)',
@@ -83,7 +61,7 @@ function NotificationEntry({ item, onMarkRead }: NotificationEntryProps) {
           >
             {item.title}
           </span>
-          {item.url && (
+          {actionableUrl && (
             <ExternalLink size={11} className="text-aegis-text-dim shrink-0" />
           )}
         </div>
@@ -97,24 +75,10 @@ function NotificationEntry({ item, onMarkRead }: NotificationEntryProps) {
             lineHeight: 1.5,
           }}
         >
-          {item.body}
+          {body}
         </div>
-        {item.bodyZh && (
-          <div
-            className="text-[11.5px] text-aegis-text-muted leading-snug overflow-hidden mt-1"
-            style={{
-              display: '-webkit-box',
-              WebkitLineClamp: 5,
-              WebkitBoxOrient: 'vertical',
-              whiteSpace: 'pre-line',
-              lineHeight: 1.5,
-            }}
-          >
-            {item.bodyZh}
-          </div>
-        )}
         <div className="text-[10.5px] text-aegis-text-dim mt-1">
-          {item.createdAt}
+          {formatNotificationTime(item.createdAt, language)}
         </div>
       </div>
       {!item.isRead && (
@@ -144,49 +108,24 @@ interface NotificationBellProps {
 
 export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [result, setResult] = useState<NotificationResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { result, loading, error, refresh, markRead, markAllRead } = usePersistentNotifications(pollIntervalMs);
 
-  const fetchNotifications = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await invoke<NotificationResult>('get_notifications');
-      setResult(r);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
+  const handleOpenUrl = useCallback((url: string) => {
+    const target = resolveNotificationTarget(url);
+    if (!target) return;
+    setOpen(false);
+    if (target.kind === 'internal') {
+      navigate(target.value);
+    } else {
+      try {
+        window.open(target.value, '_blank', 'noopener,noreferrer');
+      } catch {
+        // Keep the notification dialog usable if the WebView blocks popups.
+      }
     }
-  }, []);
-
-  useEffect(() => {
-    void fetchNotifications();
-    if (pollIntervalMs > 0) {
-      const timer = window.setInterval(fetchNotifications, pollIntervalMs);
-      return () => window.clearInterval(timer);
-    }
-  }, [fetchNotifications, pollIntervalMs]);
-
-  const handleMarkRead = useCallback(async (id: string) => {
-    try {
-      await invoke('mark_notification_read', { id });
-      await fetchNotifications();
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [fetchNotifications]);
-
-  const handleMarkAllRead = useCallback(async () => {
-    try {
-      await invoke('mark_all_notifications_read');
-      await fetchNotifications();
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [fetchNotifications]);
+  }, [navigate]);
 
   const unreadCount = result?.unreadCount ?? 0;
   const bellColor = error
@@ -201,7 +140,11 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
     <>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen((value) => {
+          const next = !value;
+          if (next) void refresh();
+          return next;
+        })}
         title={t('notification.title', 'Notifications')}
         aria-label={t('notification.title', 'Notifications')}
         className="relative w-[28px] h-[28px] flex items-center justify-center rounded-[5px] transition-colors"
@@ -228,7 +171,7 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-[min(720px,calc(100vw-48px))] max-h-[calc(100vh-96px)] flex flex-col rounded-[14px] overflow-hidden"
+            className="w-[min(920px,calc(100vw-48px),calc((100vh-96px)*4/3))] max-h-[calc(100vh-96px)] flex flex-col rounded-[14px] overflow-hidden"
             style={{
               background: 'rgb(var(--aegis-card))',
               border: '1px solid rgb(var(--aegis-border))',
@@ -249,7 +192,7 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
                 <button
                   type="button"
                   title={t('notification.markAllAsRead', 'Mark all as read')}
-                  onClick={handleMarkAllRead}
+                  onClick={() => void markAllRead()}
                   className="p-0.5 rounded hover:bg-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted"
                 >
                   <CheckCheck size={14} />
@@ -279,7 +222,12 @@ export function NotificationBell({ pollIntervalMs = 60_000 }: NotificationBellPr
                 </div>
               ) : (
                 items.map((item) => (
-                  <NotificationEntry key={item.id} item={item} onMarkRead={handleMarkRead} />
+                  <NotificationEntry
+                    key={item.id}
+                    item={item}
+                    onMarkRead={(id) => void markRead(id)}
+                    onOpenUrl={handleOpenUrl}
+                  />
                 ))
               )}
             </div>

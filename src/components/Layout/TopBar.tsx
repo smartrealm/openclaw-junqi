@@ -1,19 +1,56 @@
-import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { useTranslation } from 'react-i18next';
-import { PanelLeftOpen, PanelLeftClose, PanelLeft, Bell } from 'lucide-react';
+import { ArrowLeft, PanelLeftOpen, PanelLeftClose, PanelLeft, Bell } from 'lucide-react';
 import clsx from 'clsx';
 
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import { useNotificationStore } from '@/stores/notificationStore';
+import type { NotificationType } from '@/stores/notificationStore';
+import type { NotificationPanelItem } from '@/components/Layout/NotificationPanel';
+import {
+  usePersistentNotifications,
+  type PersistentNotificationItem,
+} from '@/hooks/usePersistentNotifications';
 import { APP_PLATFORM } from '@/components/Terminal/_nezha-platform';
+import {
+  readTerminalSidebarMode,
+  requestTerminalSidebarToggle,
+  TERMINAL_SIDEBAR_MODE_EVENT,
+} from '@/components/Terminal/terminalSidebarEvents';
+import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
+import { resolveNotificationTarget } from '@/utils/notificationTarget';
+import {
+  AGENT_WORKSPACE_SIDEBAR_MODE_EVENT,
+  readAgentWorkspaceSidebarMode,
+  requestAgentWorkspaceSidebarToggle,
+} from './agentWorkspaceSidebarEvents';
+import { isWorkspaceSidebarMode, type WorkspaceSidebarMode } from './workspaceSidebarChannel';
 
 const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPanel').then(m => ({ default: m.NotificationPanel })));
 
 type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
+
+function persistentNotificationType(level: string): NotificationType {
+  return level === 'error' || level === 'warning' ? 'error' : 'info';
+}
+
+export function toNotificationPanelItem(
+  item: PersistentNotificationItem,
+  language: string,
+): NotificationPanelItem {
+  return {
+    id: item.id,
+    type: persistentNotificationType(item.level),
+    title: item.title,
+    body: language === 'zh' && item.bodyZh ? item.bodyZh : item.body,
+    timestamp: item.createdAt,
+    read: item.isRead,
+    url: item.url,
+  };
+}
 
 /**
  * TopBar — custom window-chrome strip (macOS Overlay title bar).
@@ -34,26 +71,66 @@ type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
  */
 interface TopBarProps {
   hideSidebarToggle?: boolean;
+  sidebarTarget?: 'app' | 'terminal' | 'agent-workspace';
+  showBack?: boolean;
+  backFallback?: string;
 }
 
-export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
+export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showBack = false, backFallback = '/' }: TopBarProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const isMac = APP_PLATFORM === 'macos';
+  const backLabel = t('topbar.back', '返回');
+  const handleBack = useCallback(() => {
+    const historyIndex = Number((window.history.state as { idx?: number } | null)?.idx);
+    if (Number.isFinite(historyIndex) && historyIndex > 0) navigate(-1);
+    else navigate(backFallback);
+  }, [backFallback, navigate]);
 
   // ── Sidebar collapse (three-stage cycle: expanded → mini → hidden) ──
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);
   const cycleSidebar = useSettingsStore((s) => s.cycleSidebar);
-  const collapseIcon = sidebarMode === 'expanded'
+  const [terminalSidebarMode, setTerminalSidebarMode] = useState<TerminalSidebarMode>(readTerminalSidebarMode);
+  const [agentWorkspaceSidebarMode, setAgentWorkspaceSidebarMode] = useState<WorkspaceSidebarMode>(readAgentWorkspaceSidebarMode);
+  useEffect(() => {
+    const updateTerminal = (event: Event) => {
+      const mode = (event as CustomEvent<TerminalSidebarMode>).detail;
+      if (isWorkspaceSidebarMode(mode)) setTerminalSidebarMode(mode);
+    };
+    const updateAgentWorkspace = (event: Event) => {
+      const mode = (event as CustomEvent<WorkspaceSidebarMode>).detail;
+      if (isWorkspaceSidebarMode(mode)) setAgentWorkspaceSidebarMode(mode);
+    };
+    window.addEventListener(TERMINAL_SIDEBAR_MODE_EVENT, updateTerminal);
+    window.addEventListener(AGENT_WORKSPACE_SIDEBAR_MODE_EVENT, updateAgentWorkspace);
+    return () => {
+      window.removeEventListener(TERMINAL_SIDEBAR_MODE_EVENT, updateTerminal);
+      window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_MODE_EVENT, updateAgentWorkspace);
+    };
+  }, []);
+  const workspaceSidebarMode = sidebarTarget === 'terminal'
+    ? terminalSidebarMode
+    : sidebarTarget === 'agent-workspace'
+      ? agentWorkspaceSidebarMode
+      : null;
+  const effectiveSidebarMode = workspaceSidebarMode
+    ? workspaceSidebarMode === 'full' ? 'expanded' : workspaceSidebarMode === 'compact' ? 'mini' : 'hidden'
+    : sidebarMode;
+  const collapseIcon = effectiveSidebarMode === 'expanded'
     ? <PanelLeftClose size={16} />
-    : sidebarMode === 'mini'
+    : effectiveSidebarMode === 'mini'
       ? <PanelLeft size={16} />
       : <PanelLeftOpen size={16} />;
-  const collapseTitle = sidebarMode === 'expanded'
+  const collapseTitle = effectiveSidebarMode === 'expanded'
     ? t('nav.sidebarToMini', 'Collapse to icons')
-    : sidebarMode === 'mini'
+    : effectiveSidebarMode === 'mini'
       ? t('nav.sidebarHide', 'Hide sidebar')
       : t('nav.sidebarExpand', 'Expand sidebar');
+  const handleSidebarToggle = sidebarTarget === 'terminal'
+    ? requestTerminalSidebarToggle
+    : sidebarTarget === 'agent-workspace'
+      ? requestAgentWorkspaceSidebarToggle
+      : cycleSidebar;
 
   // Zoom cancellation: webview setZoom scales everything, but traffic lights
   // are native window chrome → we cancel the zoom on the bar so they stay
@@ -120,21 +197,30 @@ export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
   const onStatusClick = useCallback(() => {
     if (status === 'working') navigate('/chat');
     else if (status === 'disconnected') {
-      try { gatewayManager.reset(); } catch {}
-      try { void window.aegis?.gateway?.retry?.(); } catch {}
+      void gatewayManager.restart();
     }
   }, [status, navigate]);
 
   const statusClickable = status === 'working' || status === 'disconnected';
 
   // ── Notifications ──
-  const history = useNotificationStore((s) => s.history);
-  const markRead = useNotificationStore((s) => s.markRead);
-  const markAllRead = useNotificationStore((s) => s.markAllRead);
-  const clearHistory = useNotificationStore((s) => s.clearHistory);
+  const language = useSettingsStore((s) => s.language);
+  const {
+    result: persistentNotifications,
+    refresh: refreshNotifications,
+    markRead,
+    markAllRead,
+    clear: clearNotifications,
+  } = usePersistentNotifications();
+  const history = useMemo(
+    () => (persistentNotifications?.notifications ?? []).map((item) => (
+      toNotificationPanelItem(item, language)
+    )),
+    [language, persistentNotifications?.notifications],
+  );
   const dndMode = useSettingsStore((s) => s.dndMode);
   const setDndMode = useSettingsStore((s) => s.setDndMode);
-  const unread = history.reduce((n, h) => (h.read ? n : n + 1), 0);
+  const unread = persistentNotifications?.unreadCount ?? 0;
 
   const toggleDnd = useCallback(() => {
     const next = !dndMode;
@@ -144,6 +230,22 @@ export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
 
   const [panelOpen, setPanelOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  const openNotification = useCallback((item: NotificationPanelItem) => {
+    void markRead(item.id);
+    const target = resolveNotificationTarget(item.url);
+    if (!target) return;
+    setPanelOpen(false);
+    if (target?.kind === 'internal') {
+      navigate(target.value);
+    } else {
+      try {
+        window.open(target.value, '_blank', 'noopener,noreferrer');
+      } catch {
+        // External navigation failures must not break notification state.
+      }
+    }
+  }, [markRead, navigate]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -201,11 +303,24 @@ export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
         isMac ? 'ps-[82px] pe-3' : 'px-3',
       )}
     >
+      {showBack && (
+        <button
+          type="button"
+          onClick={handleBack}
+          title={t('topbar.backHint', '返回上一页')}
+          aria-label={t('topbar.backHint', '返回上一页')}
+          className="flex h-[28px] shrink-0 items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+        >
+          <ArrowLeft size={14} />
+          <span>{backLabel}</span>
+        </button>
+      )}
+
       {/* Left — collapse toggle (kooky: 28x28, cornerRadius 5, icon 12pt) */}
       {!hideSidebarToggle && (
         <button
           type="button"
-          onClick={() => cycleSidebar()}
+          onClick={handleSidebarToggle}
           title={collapseTitle}
           aria-label={collapseTitle}
           className="w-[28px] h-[28px] flex items-center justify-center rounded-[5px] text-aegis-text-secondary hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.12)] transition-colors shrink-0"
@@ -221,7 +336,8 @@ export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
         disabled={!statusClickable}
         title={statusText}
         className={clsx(
-          'absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] border transition-colors max-w-[50%]',
+          'absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] border transition-colors',
+          showBack ? 'max-w-[calc(50%_-_80px)]' : 'max-w-[50%]',
           status === 'idle' && 'border-transparent text-aegis-text-muted',
           status === 'working' && 'border-aegis-primary/25 text-aegis-primary bg-aegis-primary/[0.06] hover:bg-aegis-primary/[0.12] cursor-pointer',
           status === 'connecting' && 'border-transparent text-aegis-warning',
@@ -244,7 +360,11 @@ export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
       <div ref={notifRef} className="ml-auto relative shrink-0">
         <button
           type="button"
-          onClick={() => setPanelOpen((o) => !o)}
+          onClick={() => setPanelOpen((value) => {
+            const next = !value;
+            if (next) void refreshNotifications();
+            return next;
+          })}
           title={t('notifications.title', 'Notifications')}
           aria-label={t('notifications.title', 'Notifications')}
           aria-expanded={panelOpen}
@@ -269,9 +389,9 @@ export function TopBar({ hideSidebarToggle = false }: TopBarProps) {
               items={history}
               dndMode={dndMode}
               onToggleDnd={toggleDnd}
-              onMarkAllRead={markAllRead}
-              onClear={clearHistory}
-              onItemClick={(id) => markRead(id)}
+              onMarkAllRead={() => void markAllRead()}
+              onClear={() => void clearNotifications()}
+              onItemClick={openNotification}
             />
           </Suspense>
         )}

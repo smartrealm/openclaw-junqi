@@ -11,6 +11,7 @@ import { ConnectionRetryPolicy } from './ConnectionRetryPolicy';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import i18n from '@/i18n';
+import { gatewayLocaleForLanguage } from './gatewayLocale';
 
 // OpenClaw 2026.5.x introduced a newer WS protocol while older installs still
 // negotiate protocol 3. Advertise a compatible range so Desktop can connect to
@@ -28,9 +29,7 @@ export function detectPlatform(): string {
 
 // ── Locale from app language ──
 export function getAppLocale(): string {
-  const lang = i18n.language || 'en';
-  if (lang.startsWith('ar')) return 'ar-SA';
-  return 'en-US';
+  return gatewayLocaleForLanguage(i18n.language);
 }
 
 // ── Shared chat message type ──
@@ -90,11 +89,16 @@ export interface GatewayRetryState {
 interface PendingRequest {
   resolve: (value: any) => void;
   reject: (reason: any) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
-interface RequestOptions {
-  timeoutMs?: number;
+export interface GatewayRequestOptions {
+  /**
+   * `null` keeps an interactive request open until the Gateway responds or
+   * the WebSocket closes. Some official setup operations wait on a person or
+   * a third-party device longer than the normal RPC timeout.
+   */
+  timeoutMs?: number | null;
 }
 
 // ── Queued message (pre-processed: attachments in gateway format, context injected) ──
@@ -408,7 +412,7 @@ export class GatewayConnection {
     const pending = [...this.pendingRequests.values()];
     this.pendingRequests.clear();
     for (const request of pending) {
-      clearTimeout(request.timer);
+      if (request.timer) clearTimeout(request.timer);
       request.reject(reason);
     }
   }
@@ -557,7 +561,7 @@ export class GatewayConnection {
   // Request / Response
   // ══════════════════════════════════════════════════════
 
-  async request(method: string, params: any, options?: RequestOptions): Promise<any> {
+  async request(method: string, params: any, options?: GatewayRequestOptions): Promise<any> {
     if (!this.ws || !this.connected) throw new Error('Not connected');
 
     return new Promise((resolve, reject) => {
@@ -570,10 +574,13 @@ export class GatewayConnection {
   registerCallback(
     id: string,
     handlers: { resolve: (v: any) => void; reject: (e: any) => void },
-    options?: RequestOptions,
+    options?: GatewayRequestOptions,
   ) {
-    const timeoutMs = Math.max(1000, options?.timeoutMs ?? 120_000);
-    const timer = setTimeout(() => {
+    const configuredTimeout = options?.timeoutMs;
+    const timeoutMs = configuredTimeout === null
+      ? null
+      : Math.max(1000, configuredTimeout ?? 120_000);
+    const timer = timeoutMs === null ? null : setTimeout(() => {
       this.pendingRequests.delete(id);
       handlers.reject(`Request timeout (${timeoutMs}ms)`);
     }, timeoutMs);
@@ -611,7 +618,7 @@ export class GatewayConnection {
       .on('res', (msg) => {
         const pending = this.pendingRequests.get(msg.id);
         if (!pending) return;
-        clearTimeout(pending.timer);
+        if (pending.timer) clearTimeout(pending.timer);
         this.pendingRequests.delete(msg.id);
         if (msg.ok !== false) {
           pending.resolve(msg.payload ?? msg);

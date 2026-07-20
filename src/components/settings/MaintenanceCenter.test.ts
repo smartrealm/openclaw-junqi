@@ -31,16 +31,18 @@ test('maintenance UI is deep-linkable and reuses canonical Gateway status', () =
   assert.match(center, /runMaintenanceScan/);
   assert.match(center, /<GatewayLifecyclePanel variant="full"/);
   assert.match(center, /showConfirm\(/);
-  assert.match(center, /run_maintenance_repair/);
+  assert.match(center, /runOpenClawRepair/);
 });
 
-test('repair and scan share one backend operation lock', () => {
+test('repair serializes with maintenance scans and Gateway lifecycle operations', () => {
   const maintenance = source('src-tauri/src/commands/maintenance.rs');
+  const repair = source('src-tauri/src/commands/openclaw_repair.rs');
   const lib = source('src-tauri/src/lib.rs');
 
   assert.match(maintenance, /static MAINTENANCE_OPERATION/);
-  assert.match(maintenance, /run_maintenance_repair[\s\S]*acquire_operation_guard\(\)\.await/);
-  assert.match(lib, /commands::maintenance::run_maintenance_repair/);
+  assert.match(repair, /try_lock_owned\(\)/);
+  assert.match(repair, /acquire_operation_guard\(\)\.await/);
+  assert.match(lib, /commands::openclaw_repair::repair_openclaw/);
 });
 
 test('BUG-M01 and BUG-M02 structured payloads fail closed and preserve config issues', () => {
@@ -66,8 +68,7 @@ test('BUG-M04 findings and Gateway failures have application-native actions', ()
   const settings = source('src/pages/SettingsPage.tsx');
   const center = source('src/components/settings/MaintenanceCenter.tsx');
   assert.match(settings, /category === 'mcp' \? 'tools' : category === 'security' \? 'secrets' : 'advanced'/);
-  assert.match(settings, /onRecoverGateway=/);
-  assert.match(settings, /gatewayManager\.ensureRunning\(\)|ensure_gateway_running/);
+  assert.match(settings, /onRecoverGateway=\{\(\) => gatewayManager\.ensureRunning\(\)\}/);
   assert.match(center, /onOpenConfig\(category\)/);
   assert.match(center, /onRecoverGateway[\s\S]*gatewayRecovering[\s\S]*检查并恢复 Gateway/);
 });
@@ -75,11 +76,16 @@ test('BUG-M04 findings and Gateway failures have application-native actions', ()
 test('BUG-M05 and BUG-M06 raw Doctor execution is not exposed or logged', () => {
   const lib = source('src-tauri/src/lib.rs');
   const maintenance = source('src-tauri/src/commands/maintenance.rs');
+  const cli = source('src-tauri/src/commands/openclaw_cli.rs');
+  const repair = source('src-tauri/src/commands/openclaw_repair.rs');
   const center = source('src/components/settings/MaintenanceCenter.tsx');
   assert.doesNotMatch(lib, /commands::gateway::run_doctor/);
-  assert.match(maintenance, /stdout\(Stdio::null\(\)\)/);
-  assert.match(maintenance, /stderr\(Stdio::null\(\)\)/);
-  assert.match(maintenance, /configure_background_command\(&mut command\)/);
+  assert.match(repair, /sanitize_diagnostic_line/);
+  assert.match(repair, /REPAIR_TAIL_CAPACITY/);
+  // Process-launch safety belongs to the shared runtime-aware CLI adapter,
+  // which maintenance now reuses for both Native and Docker targets.
+  assert.match(cli, /configure_background_command\(&mut command\)/);
+  assert.match(maintenance, /resolve_active_openclaw_target\(\)/);
   assert.doesNotMatch(maintenance, /cmd\.exe|powershell|Command::new\("cmd"/i);
   assert.doesNotMatch(center, /openclaw doctor --fix/i);
 });

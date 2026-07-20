@@ -14,6 +14,13 @@ export interface CustomPetPackage {
 // The legacy lobster was visually dominant in a work surface. Keep it as an
 // opt-in skin, while new and migrated installs start with the quieter robot.
 export const DEFAULT_PET_SKIN: PetSkin = 'robot';
+const MIN_PET_CAPTION_SCALE = 0.85;
+const MAX_PET_CAPTION_SCALE = 1.35;
+
+function normalizePetCaptionScale(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  return Math.round(Math.min(MAX_PET_CAPTION_SCALE, Math.max(MIN_PET_CAPTION_SCALE, value)) * 100) / 100;
+}
 
 function normalizePersistedPetSkin(skin: unknown): PetSkin {
   // Preserve valid choices; only missing or invalid values fall back.
@@ -117,6 +124,10 @@ interface PetSettings {
   dragOver: boolean;
   /** Sound effects — pet can play a soft "munch" on drop. Toggleable from settings. */
   soundEnabled: boolean;
+  /** Lets the companion derive a readable caption palette from nearby desktop pixels. */
+  backdropContrastEnabled: boolean;
+  /** User-controlled caption scale, kept within a readable range for the floating window. */
+  captionScale: number;
 
   setPetVisible: (v: boolean) => void;
   setEnabled: (v: boolean) => void;
@@ -130,6 +141,8 @@ interface PetSettings {
   setDragActive: (v: boolean, paths?: string[]) => void;
   setDragOver: (v: boolean) => void;
   setSoundEnabled: (v: boolean) => void;
+  setBackdropContrastEnabled: (v: boolean) => void;
+  setCaptionScale: (v: number) => void;
 }
 
 export const usePetStore = create<PetSettings>()(
@@ -164,6 +177,8 @@ export const usePetStore = create<PetSettings>()(
       dragCount: 0,
       dragOver: false,
       soundEnabled: true,
+      backdropContrastEnabled: true,
+      captionScale: 1,
       setEnabled: (enabled) => set({ enabled }),
       setPosition: (position) => set({ position }),
       setClickThrough: (clickThrough) => set({ clickThrough }),
@@ -189,10 +204,12 @@ export const usePetStore = create<PetSettings>()(
         })),
       setDragOver: (v) => set({ dragOver: v }),
       setSoundEnabled: (v) => set({ soundEnabled: v }),
+      setBackdropContrastEnabled: (backdropContrastEnabled) => set({ backdropContrastEnabled }),
+      setCaptionScale: (captionScale) => set({ captionScale: normalizePetCaptionScale(captionScale) }),
     }),
     {
       name: 'aegis-pet-settings',
-      version: 5,
+      version: 7,
       migrate: (persisted, persistedVersion) => {
         const p = (persisted as Partial<PetSettings>) || {};
         const pomodoro: Partial<PomodoroState> = p.pomodoro || {};
@@ -211,11 +228,13 @@ export const usePetStore = create<PetSettings>()(
             completedDate: pomodoro.completedDate ?? '',
           },
           soundEnabled: p.soundEnabled ?? true,
+          backdropContrastEnabled: p.backdropContrastEnabled ?? true,
+          captionScale: normalizePetCaptionScale(p.captionScale),
         };
       },
       // customAsset (data URL) stays out of localStorage. pomodoro: persist
       // config + daily count + cycle progress; runtime (running/paused/phase/endsAt/...) resets.
-      partialize: ({ enabled, position, clickThrough, skin, pomodoro, soundEnabled }) => ({
+      partialize: ({ enabled, position, clickThrough, skin, pomodoro, soundEnabled, backdropContrastEnabled, captionScale }) => ({
         enabled,
         position,
         clickThrough,
@@ -230,6 +249,8 @@ export const usePetStore = create<PetSettings>()(
           completedDate: pomodoro.completedDate,
         },
         soundEnabled,
+        backdropContrastEnabled,
+        captionScale,
       }),
       merge: (persisted, current) => {
         const p = (persisted as Partial<PetSettings>) || {};

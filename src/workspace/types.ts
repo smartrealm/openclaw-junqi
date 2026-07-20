@@ -63,6 +63,8 @@ export interface Workspace {
   worktreePath?: string;
   /** SSH destination for a remote-only workspace (for example user@host). */
   sshRemoteHost?: string;
+  /** Keep the project in the drawer but omit it from the AI workspace rail. */
+  hiddenFromRail?: boolean;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -141,13 +143,20 @@ export function defaultLeaf(kind: LeafKind = 'shell', label?: string, cwd = ''):
   });
 }
 
-/** Build a fresh single-pane workspace. */
-export function newWorkspace(name = 'Workspace', workingDirectory = ''): Workspace {
+/** Derive a stable human-readable workspace label from a POSIX or Windows path. */
+export function workspaceNameFromPath(workingDirectory: string): string {
+  const normalized = workingDirectory.replace(/[\\/]+$/, '');
+  return normalized.split(/[\\/]/).pop()?.trim() || 'Workspace';
+}
+
+/** Build a fresh single-pane workspace. Explicit names always win. */
+export function newWorkspace(name?: string, workingDirectory = ''): Workspace {
   const directory = nonEmptyPathString(workingDirectory) ?? '';
+  const displayName = nonEmptyString(name) ?? workspaceNameFromPath(directory);
   const leaf = defaultLeaf('shell', undefined, directory);
   return {
     id: newPaneId(),
-    name: nonEmptyString(name) ?? 'Workspace',
+    name: displayName,
     projectDirectory: directory,
     workingDirectory: directory,
     root: leaf,
@@ -324,6 +333,7 @@ function normalizeWorkspaceWithPaneIds(
   const worktreeBranch = nonEmptyString(source.worktreeBranch);
   const worktreePath = nonEmptyPathString(source.worktreePath);
   const sshRemoteHost = nonEmptyString(source.sshRemoteHost);
+  const hiddenFromRail = source.hiddenFromRail === true;
   if (sshRemoteHost) {
     const remoteRoot = mapLeaves(root, (leaf) => {
       if (!leaf.config.cwd) return leaf;
@@ -338,15 +348,20 @@ function normalizeWorkspaceWithPaneIds(
       root: remoteRoot,
       focusedPaneId,
       sshRemoteHost,
+      ...(hiddenFromRail ? { hiddenFromRail: true } : {}),
     };
   }
   const hydratedRoot = mapLeaves(root, (leaf) => (
     leaf.config.cwd ? leaf : { ...leaf, config: { ...leaf.config, cwd: workingDirectory } }
   ));
+  const persistedName = nonEmptyString(source.name);
+  const displayName = !persistedName || persistedName === 'Workspace'
+    ? workspaceNameFromPath(projectDirectory || workingDirectory)
+    : persistedName;
 
   return {
     id: nonEmptyString(source.id) ?? newPaneId(),
-    name: nonEmptyString(source.name) ?? 'Workspace',
+    name: displayName,
     projectDirectory,
     workingDirectory,
     root: hydratedRoot,
@@ -354,6 +369,7 @@ function normalizeWorkspaceWithPaneIds(
     ...(worktreeParentId ? { worktreeParentId } : {}),
     ...(worktreeBranch ? { worktreeBranch } : {}),
     ...(worktreePath ? { worktreePath } : {}),
+    ...(hiddenFromRail ? { hiddenFromRail: true } : {}),
   };
 }
 

@@ -1,0 +1,525 @@
+const COMFORTABLE_MIN_WIDTH: f64 = 960.0;
+const COMFORTABLE_MIN_HEIGHT: f64 = 640.0;
+const INITIAL_WIDTH_RATIO: f64 = 0.86;
+const INITIAL_HEIGHT_RATIO: f64 = 0.88;
+const SCREEN_MARGIN_RATIO: f64 = 0.94;
+const INITIAL_MAX_WIDTH: f64 = 1800.0;
+const INITIAL_MAX_HEIGHT: f64 = 1120.0;
+const MIN_DRAGGABLE_WIDTH: i64 = 120;
+const TITLE_BAR_HEIGHT: i64 = 48;
+const MIN_TITLE_BAR_VISIBLE_HEIGHT: i64 = 24;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PhysicalSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PhysicalPosition {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PhysicalRect {
+    pub position: PhysicalPosition,
+    pub size: PhysicalSize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct WindowSnapshot {
+    pub work_area: PhysicalRect,
+    pub inner_size: PhysicalSize,
+    pub outer_size: PhysicalSize,
+    pub outer_position: PhysicalPosition,
+    pub monitor_scale_factor: f64,
+    pub monitor_is_fallback: bool,
+    pub maximized: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SizingMode {
+    Initial,
+    Upgrade,
+    Preserve,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WindowAdjustment {
+    pub minimum_inner_size: PhysicalSize,
+    pub target_inner_size: Option<PhysicalSize>,
+    pub target_outer_position: Option<PhysicalPosition>,
+}
+
+pub(crate) fn plan_window_adjustment(
+    snapshot: WindowSnapshot,
+    mode: SizingMode,
+) -> Result<WindowAdjustment, &'static str> {
+    if !snapshot.monitor_scale_factor.is_finite() || snapshot.monitor_scale_factor <= 0.0 {
+        return Err("monitor scale factor must be finite and positive");
+    }
+    if snapshot.work_area.size.width == 0 || snapshot.work_area.size.height == 0 {
+        return Err("monitor work area must be non-empty");
+    }
+
+    let frame = PhysicalSize {
+        width: snapshot
+            .outer_size
+            .width
+            .saturating_sub(snapshot.inner_size.width),
+        height: snapshot
+            .outer_size
+            .height
+            .saturating_sub(snapshot.inner_size.height),
+    };
+    let maximum_outer = PhysicalSize {
+        width: ratio(snapshot.work_area.size.width, SCREEN_MARGIN_RATIO),
+        height: ratio(snapshot.work_area.size.height, SCREEN_MARGIN_RATIO),
+    };
+    if frame.width >= maximum_outer.width || frame.height >= maximum_outer.height {
+        return Err("window frame exceeds the usable monitor work area");
+    }
+    let maximum_inner = PhysicalSize {
+        width: maximum_outer.width.saturating_sub(frame.width).max(1),
+        height: maximum_outer.height.saturating_sub(frame.height).max(1),
+    };
+    let minimum_inner_size = PhysicalSize {
+        width: logical_to_physical(COMFORTABLE_MIN_WIDTH, snapshot.monitor_scale_factor)
+            .min(maximum_inner.width),
+        height: logical_to_physical(COMFORTABLE_MIN_HEIGHT, snapshot.monitor_scale_factor)
+            .min(maximum_inner.height),
+    };
+
+    if snapshot.maximized {
+        return Ok(WindowAdjustment {
+            minimum_inner_size,
+            target_inner_size: None,
+            target_outer_position: None,
+        });
+    }
+
+    let preferred_inner = preferred_inner_size(snapshot, frame, minimum_inner_size, maximum_inner);
+    let desired_inner = match mode {
+        SizingMode::Initial => preferred_inner,
+        SizingMode::Upgrade => PhysicalSize {
+            width: snapshot
+                .inner_size
+                .width
+                .max(preferred_inner.width)
+                .clamp(minimum_inner_size.width, maximum_inner.width),
+            height: snapshot
+                .inner_size
+                .height
+                .max(preferred_inner.height)
+                .clamp(minimum_inner_size.height, maximum_inner.height),
+        },
+        SizingMode::Preserve => PhysicalSize {
+            width: snapshot
+                .inner_size
+                .width
+                .clamp(minimum_inner_size.width, maximum_inner.width),
+            height: snapshot
+                .inner_size
+                .height
+                .clamp(minimum_inner_size.height, maximum_inner.height),
+        },
+    };
+    let resized = desired_inner != snapshot.inner_size;
+    let desired_outer = PhysicalSize {
+        width: desired_inner.width.saturating_add(frame.width),
+        height: desired_inner.height.saturating_add(frame.height),
+    };
+
+    let desired_position = if mode == SizingMode::Initial || snapshot.monitor_is_fallback {
+        center_in_work_area(snapshot.work_area, desired_outer)
+    } else if resized || !title_bar_is_reachable(snapshot) {
+        clamp_to_work_area(snapshot.outer_position, desired_outer, snapshot.work_area)
+    } else {
+        snapshot.outer_position
+    };
+
+    Ok(WindowAdjustment {
+        minimum_inner_size,
+        target_inner_size: resized.then_some(desired_inner),
+        target_outer_position: (desired_position != snapshot.outer_position)
+            .then_some(desired_position),
+    })
+}
+
+fn preferred_inner_size(
+    snapshot: WindowSnapshot,
+    frame: PhysicalSize,
+    minimum: PhysicalSize,
+    maximum: PhysicalSize,
+) -> PhysicalSize {
+    PhysicalSize {
+        width: initial_dimension(
+            snapshot.work_area.size.width,
+            frame.width,
+            minimum.width,
+            maximum.width,
+            INITIAL_WIDTH_RATIO,
+            logical_to_physical(INITIAL_MAX_WIDTH, snapshot.monitor_scale_factor),
+        ),
+        height: initial_dimension(
+            snapshot.work_area.size.height,
+            frame.height,
+            minimum.height,
+            maximum.height,
+            INITIAL_HEIGHT_RATIO,
+            logical_to_physical(INITIAL_MAX_HEIGHT, snapshot.monitor_scale_factor),
+        ),
+    }
+}
+
+fn logical_to_physical(logical: f64, scale_factor: f64) -> u32 {
+    (logical * scale_factor).round().clamp(1.0, u32::MAX as f64) as u32
+}
+
+fn ratio(value: u32, factor: f64) -> u32 {
+    ((value as f64) * factor)
+        .floor()
+        .clamp(1.0, u32::MAX as f64) as u32
+}
+
+fn initial_dimension(
+    work_area: u32,
+    frame: u32,
+    minimum: u32,
+    maximum: u32,
+    ratio_value: f64,
+    cap: u32,
+) -> u32 {
+    ratio(work_area, ratio_value)
+        .saturating_sub(frame)
+        .clamp(minimum, maximum.min(cap).max(minimum))
+}
+
+fn center_in_work_area(work_area: PhysicalRect, outer_size: PhysicalSize) -> PhysicalPosition {
+    PhysicalPosition {
+        x: saturating_i32(
+            work_area.position.x as i64
+                + (work_area.size.width as i64 - outer_size.width as i64) / 2,
+        ),
+        y: saturating_i32(
+            work_area.position.y as i64
+                + (work_area.size.height as i64 - outer_size.height as i64) / 2,
+        ),
+    }
+}
+
+fn clamp_to_work_area(
+    position: PhysicalPosition,
+    outer_size: PhysicalSize,
+    work_area: PhysicalRect,
+) -> PhysicalPosition {
+    let min_x = work_area.position.x as i64;
+    let min_y = work_area.position.y as i64;
+    let max_x = min_x + work_area.size.width as i64 - outer_size.width as i64;
+    let max_y = min_y + work_area.size.height as i64 - outer_size.height as i64;
+    PhysicalPosition {
+        x: saturating_i32((position.x as i64).clamp(min_x, max_x.max(min_x))),
+        y: saturating_i32((position.y as i64).clamp(min_y, max_y.max(min_y))),
+    }
+}
+
+fn title_bar_is_reachable(snapshot: WindowSnapshot) -> bool {
+    let window_left = snapshot.outer_position.x as i64;
+    let window_top = snapshot.outer_position.y as i64;
+    let window_right = window_left + snapshot.outer_size.width as i64;
+    let title_bottom = window_top + TITLE_BAR_HEIGHT.min(snapshot.outer_size.height as i64);
+    let work_left = snapshot.work_area.position.x as i64;
+    let work_top = snapshot.work_area.position.y as i64;
+    let work_right = work_left + snapshot.work_area.size.width as i64;
+    let work_bottom = work_top + snapshot.work_area.size.height as i64;
+    let visible_width = window_right.min(work_right) - window_left.max(work_left);
+    let visible_height = title_bottom.min(work_bottom) - window_top.max(work_top);
+
+    visible_width >= MIN_DRAGGABLE_WIDTH && visible_height >= MIN_TITLE_BAR_VISIBLE_HEIGHT
+}
+
+fn saturating_i32(value: i64) -> i32 {
+    value.clamp(i32::MIN as i64, i32::MAX as i64) as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot() -> WindowSnapshot {
+        WindowSnapshot {
+            work_area: PhysicalRect {
+                position: PhysicalPosition { x: 0, y: 0 },
+                size: PhysicalSize {
+                    width: 1920,
+                    height: 1040,
+                },
+            },
+            inner_size: PhysicalSize {
+                width: 1180,
+                height: 760,
+            },
+            outer_size: PhysicalSize {
+                width: 1196,
+                height: 799,
+            },
+            outer_position: PhysicalPosition { x: 200, y: 120 },
+            monitor_scale_factor: 1.0,
+            monitor_is_fallback: false,
+            maximized: false,
+        }
+    }
+
+    #[test]
+    fn normal_laptop_preserves_a_visible_user_size() {
+        let plan = plan_window_adjustment(snapshot(), SizingMode::Preserve).unwrap();
+
+        assert_eq!(
+            plan.minimum_inner_size,
+            PhysicalSize {
+                width: 960,
+                height: 640
+            }
+        );
+        assert_eq!(plan.target_inner_size, None);
+        assert_eq!(plan.target_outer_position, None);
+    }
+
+    #[test]
+    fn preferred_size_uses_more_of_a_standard_desktop_work_area() {
+        let plan = plan_window_adjustment(snapshot(), SizingMode::Initial).unwrap();
+
+        assert_eq!(
+            plan.target_inner_size,
+            Some(PhysicalSize {
+                width: 1635,
+                height: 876,
+            })
+        );
+    }
+
+    #[test]
+    fn upgrade_grows_only_dimensions_below_the_new_preference() {
+        let mut input = snapshot();
+        input.inner_size = PhysicalSize {
+            width: 1700,
+            height: 700,
+        };
+        input.outer_size = PhysicalSize {
+            width: 1716,
+            height: 739,
+        };
+
+        let plan = plan_window_adjustment(input, SizingMode::Upgrade).unwrap();
+
+        assert_eq!(
+            plan.target_inner_size,
+            Some(PhysicalSize {
+                width: 1700,
+                height: 876,
+            })
+        );
+    }
+
+    #[test]
+    fn upgrade_leaves_an_already_larger_window_unchanged() {
+        let mut input = snapshot();
+        input.inner_size = PhysicalSize {
+            width: 1700,
+            height: 900,
+        };
+        input.outer_size = PhysicalSize {
+            width: 1716,
+            height: 939,
+        };
+
+        let plan = plan_window_adjustment(input, SizingMode::Upgrade).unwrap();
+
+        assert_eq!(plan.target_inner_size, None);
+    }
+
+    #[test]
+    fn first_launch_is_centered_and_bounded_on_4k() {
+        let mut input = snapshot();
+        input.work_area.size = PhysicalSize {
+            width: 3840,
+            height: 2080,
+        };
+        input.outer_position = PhysicalPosition { x: 0, y: 0 };
+        input.inner_size = PhysicalSize {
+            width: 1280,
+            height: 800,
+        };
+        input.outer_size = PhysicalSize {
+            width: 1296,
+            height: 839,
+        };
+
+        let plan = plan_window_adjustment(input, SizingMode::Initial).unwrap();
+
+        assert_eq!(
+            plan.target_inner_size,
+            Some(PhysicalSize {
+                width: 1800,
+                height: 1120
+            })
+        );
+        assert_eq!(
+            plan.target_outer_position,
+            Some(PhysicalPosition { x: 1012, y: 460 })
+        );
+    }
+
+    #[test]
+    fn large_window_shrinks_and_moves_inside_a_smaller_display() {
+        let mut input = snapshot();
+        input.work_area.size = PhysicalSize {
+            width: 1280,
+            height: 680,
+        };
+        input.inner_size = PhysicalSize {
+            width: 1600,
+            height: 1000,
+        };
+        input.outer_size = PhysicalSize {
+            width: 1616,
+            height: 1039,
+        };
+        input.outer_position = PhysicalPosition { x: 900, y: 300 };
+
+        let plan = plan_window_adjustment(input, SizingMode::Preserve).unwrap();
+
+        assert_eq!(
+            plan.target_inner_size,
+            Some(PhysicalSize {
+                width: 1187,
+                height: 600
+            })
+        );
+        assert_eq!(
+            plan.target_outer_position,
+            Some(PhysicalPosition { x: 77, y: 41 })
+        );
+    }
+
+    #[test]
+    fn offscreen_fallback_centers_on_primary_work_area() {
+        let mut input = snapshot();
+        input.work_area.position = PhysicalPosition { x: 0, y: 40 };
+        input.outer_position = PhysicalPosition { x: 5000, y: -2000 };
+        input.monitor_is_fallback = true;
+
+        let plan = plan_window_adjustment(input, SizingMode::Preserve).unwrap();
+
+        assert_eq!(plan.target_inner_size, None);
+        assert_eq!(
+            plan.target_outer_position,
+            Some(PhysicalPosition { x: 362, y: 160 })
+        );
+    }
+
+    #[test]
+    fn negative_origin_monitor_coordinates_are_preserved() {
+        let mut input = snapshot();
+        input.work_area.position = PhysicalPosition { x: -1920, y: 0 };
+        input.outer_position = PhysicalPosition { x: -1700, y: 100 };
+
+        let plan = plan_window_adjustment(input, SizingMode::Preserve).unwrap();
+
+        assert_eq!(plan.target_outer_position, None);
+    }
+
+    #[test]
+    fn intentionally_offset_but_reachable_window_position_is_preserved() {
+        let mut input = snapshot();
+        input.outer_position = PhysicalPosition { x: -100, y: 20 };
+
+        let plan = plan_window_adjustment(input, SizingMode::Preserve).unwrap();
+
+        assert_eq!(plan.target_inner_size, None);
+        assert_eq!(plan.target_outer_position, None);
+    }
+
+    #[test]
+    fn unreachable_title_bar_is_recovered_even_when_size_fits() {
+        let mut input = snapshot();
+        input.outer_position = PhysicalPosition { x: 200, y: -100 };
+
+        let plan = plan_window_adjustment(input, SizingMode::Preserve).unwrap();
+
+        assert_eq!(
+            plan.target_outer_position,
+            Some(PhysicalPosition { x: 200, y: 0 })
+        );
+    }
+
+    #[test]
+    fn equivalent_100_and_150_percent_displays_have_equal_logical_plans() {
+        let base = snapshot();
+        let base_plan = plan_window_adjustment(base, SizingMode::Initial).unwrap();
+        let scaled = WindowSnapshot {
+            work_area: PhysicalRect {
+                position: PhysicalPosition { x: 0, y: 0 },
+                size: PhysicalSize {
+                    width: 2880,
+                    height: 1560,
+                },
+            },
+            inner_size: PhysicalSize {
+                width: 1770,
+                height: 1140,
+            },
+            outer_size: PhysicalSize {
+                width: 1794,
+                height: 1199,
+            },
+            outer_position: PhysicalPosition { x: 300, y: 180 },
+            monitor_scale_factor: 1.5,
+            monitor_is_fallback: false,
+            maximized: false,
+        };
+        let scaled_plan = plan_window_adjustment(scaled, SizingMode::Initial).unwrap();
+
+        let base_size = base_plan.target_inner_size.unwrap();
+        let scaled_size = scaled_plan.target_inner_size.unwrap();
+        assert!((scaled_size.width as f64 / 1.5 - base_size.width as f64).abs() <= 1.0);
+        assert!((scaled_size.height as f64 / 1.5 - base_size.height as f64).abs() <= 1.0);
+    }
+
+    #[test]
+    fn maximized_window_only_updates_minimum_constraints() {
+        let mut input = snapshot();
+        input.maximized = true;
+
+        let plan = plan_window_adjustment(input, SizingMode::Preserve).unwrap();
+
+        assert_eq!(plan.target_inner_size, None);
+        assert_eq!(plan.target_outer_position, None);
+    }
+
+    #[test]
+    fn invalid_monitor_metrics_are_rejected() {
+        let mut input = snapshot();
+        input.monitor_scale_factor = f64::NAN;
+        assert!(plan_window_adjustment(input, SizingMode::Preserve).is_err());
+
+        input.monitor_scale_factor = 1.0;
+        input.work_area.size.width = 0;
+        assert!(plan_window_adjustment(input, SizingMode::Preserve).is_err());
+
+        input.work_area.size = PhysicalSize {
+            width: 100,
+            height: 100,
+        };
+        input.inner_size = PhysicalSize {
+            width: 1,
+            height: 1,
+        };
+        input.outer_size = PhysicalSize {
+            width: 200,
+            height: 200,
+        };
+        assert!(plan_window_adjustment(input, SizingMode::Preserve).is_err());
+    }
+}

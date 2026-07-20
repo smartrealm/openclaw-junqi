@@ -31,15 +31,51 @@ interface AegisAPI {
     validateOpenclawJson: () => Promise<{ valid: boolean; path: string; exists: boolean; error?: string }>;
     backupAndResetOpenclaw: () => Promise<{ success: boolean; backupPath?: string | null; error?: string }>;
   };
+  providerRuntime: {
+    catalog: (provider?: string) => Promise<{
+      version?: string;
+      models: Array<{
+        key: string;
+        name: string;
+        input?: string;
+        contextWindow?: number;
+        local?: boolean;
+        available?: boolean;
+        tags?: string[];
+        missing?: boolean;
+      }>;
+    }>;
+    schema: () => Promise<Record<string, unknown>>;
+    authProfiles: (provider?: string) => Promise<{
+      agentId?: string;
+      agentDir?: string;
+      authStatePath?: string;
+      provider?: string | null;
+      profiles: Array<{
+        id: string;
+        provider: string;
+        type: string;
+        label?: string;
+      }>;
+    }>;
+    probe: (data: any, provider: string, profileKey?: string) => Promise<Record<string, unknown>>;
+  };
+  channelRuntime: {
+    catalog: () => Promise<Record<string, unknown>>;
+    capabilities: (channel: string) => Promise<Record<string, unknown>>;
+    status: (channel?: string, probe?: boolean) => Promise<Record<string, unknown>>;
+    logs: (channel?: string, lines?: number) => Promise<Record<string, unknown>>;
+  };
   // Gateway boot status (process-level, distinct from WebSocket connection)
   gateway?: {
     getStatus: () => Promise<{
       running: boolean;
+      processAlive?: boolean;
       ready?: boolean;
       error: string | null;
       logs: { stdout: string; stderr: string };
     }>;
-    start: () => Promise<{ success: boolean; error?: string }>;
+    start: () => Promise<{ success: boolean; error?: string; port?: number; token?: string | null }>;
     retry: () => Promise<{ success: boolean; error?: string }>;
     /**
      * Boot-time orchestrator: try native → Docker fallback. Returns the
@@ -64,6 +100,7 @@ interface AegisAPI {
     clearLogs?: () => Promise<boolean>;
     onStatusChanged: (cb: (status: {
       running: boolean;
+      processAlive?: boolean;
       ready?: boolean;
       error: string | null;
       retrying?: boolean;

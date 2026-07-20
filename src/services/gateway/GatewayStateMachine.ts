@@ -9,7 +9,7 @@ import { GatewayState, GatewayEvent, type GatewayStateSnapshot } from './types';
 export type GatewayAction =
   | 'CONNECT'    // Establish WebSocket connection
   | 'START'      // Start gateway process
-  | 'CLEAR_ERROR'
+  | 'START_DOCKER'
   | 'SHOW_ERROR'
   | 'NONE';
 
@@ -32,16 +32,16 @@ interface TransitionRule {
 const RULES: TransitionRule[] = [
   // ── DETECTING ──
   { from: GatewayState.DETECTING, event: 'STATUS_RECEIVED', to: GatewayState.CONNECTING,  actions: ['CONNECT'] },
-  { from: GatewayState.DETECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },
+  { from: GatewayState.DETECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: [] },
   // Note: running=false or error handled dynamically in transition()
 
   // ── STARTING ──
   { from: GatewayState.STARTING,  event: 'START_SUCCESS',   to: GatewayState.CONNECTING,  actions: ['CONNECT'] },
   { from: GatewayState.STARTING,  event: 'START_FAILED',    to: GatewayState.ERROR,       actions: ['SHOW_ERROR'] },
-  { from: GatewayState.STARTING,  event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },
+  { from: GatewayState.STARTING,  event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: [] },
 
   // ── CONNECTING ──
-  { from: GatewayState.CONNECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: ['CLEAR_ERROR'] },
+  { from: GatewayState.CONNECTING, event: 'WS_OPEN',         to: GatewayState.CONNECTED,   actions: [] },
   { from: GatewayState.CONNECTING, event: 'WS_CLOSE',        to: GatewayState.DETECTING,   actions: [] },
 
   // ── CONNECTED ──
@@ -56,6 +56,10 @@ const RULES: TransitionRule[] = [
   { from: GatewayState.STARTING,    event: 'RESET',          to: GatewayState.DETECTING,   actions: [] },
   { from: GatewayState.CONNECTING,  event: 'RESET',          to: GatewayState.DETECTING,   actions: [] },
   { from: GatewayState.CONNECTED,   event: 'RESET',          to: GatewayState.DETECTING,   actions: [] },
+  { from: GatewayState.DETECTING,   event: 'RETRY',          to: GatewayState.DETECTING,   actions: [] },
+  { from: GatewayState.STARTING,    event: 'RETRY',          to: GatewayState.DETECTING,   actions: [] },
+  { from: GatewayState.CONNECTING,  event: 'RETRY',          to: GatewayState.DETECTING,   actions: [] },
+  { from: GatewayState.CONNECTED,   event: 'RETRY',          to: GatewayState.DETECTING,   actions: [] },
 ];
 
 export class GatewayStateMachine {
@@ -67,27 +71,41 @@ export class GatewayStateMachine {
 
   /** Process an event; returns the transition result or null if no rule. */
   transition(event: GatewayEvent): TransitionResult {
-    // Dynamic handling for STATUS_RECEIVED (depends on payload fields + current state).
-    // Important: gateway_status is polled periodically. Once WS is CONNECTED,
-    // a fresh "running=true" status must NOT downgrade the state back to CONNECTING.
+    if (event.type === 'INITIALIZE' || event.type === 'RECOVERY_REQUESTED') {
+      return this.apply(this.state, event.type, GatewayState.DETECTING, []);
+    }
+    if (event.type === 'START_REQUESTED') {
+      return this.apply(this.state, event.type, GatewayState.STARTING, ['START']);
+    }
+    if (event.type === 'DOCKER_START_REQUESTED') {
+      return this.apply(this.state, event.type, GatewayState.STARTING, ['START_DOCKER']);
+    }
+
+    // Process liveness, HTTP readiness, and WebSocket connectivity are distinct.
+    // Status observation never starts a process: setup, boot recovery, and manual
+    // recovery own that intent explicitly. This prevents a slow Gateway boot from
+    // being interpreted as repeated permission to spawn another Gateway.
     if (event.type === 'STATUS_RECEIVED') {
-      if (this.state === GatewayState.CONNECTED) {
-        return { state: this.state, actions: ['NONE'] };
-      }
-      if (this.state === GatewayState.CONNECTING && event.running && !event.error) {
-        return { state: this.state, actions: ['NONE'] };
-      }
+      const processAlive = event.processAlive ?? event.running ?? false;
+      const endpointReady = event.endpointReady ?? processAlive;
       if (event.retrying) {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.DETECTING, []);
       }
       if (event.error) {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.ERROR, ['SHOW_ERROR']);
       }
-      if (event.running) {
+      if (!processAlive) {
+        return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.DETECTING, []);
+      }
+      if (!endpointReady) {
+        return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.STARTING, []);
+      }
+      if (this.state === GatewayState.CONNECTED || this.state === GatewayState.CONNECTING) {
+        return { state: this.state, actions: ['NONE'] };
+      }
+      if (endpointReady) {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.CONNECTING, ['CONNECT']);
       }
-      // Not running, no error → try starting (only once; manager gates duplicate START).
-      return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.STARTING, ['START']);
     }
 
     // Static rule lookup
@@ -102,13 +120,18 @@ export class GatewayStateMachine {
   }
 
   /** Build a UI-facing snapshot of the current state. */
-  snapshot(error: string | null, retrying: boolean): GatewayStateSnapshot {
+  snapshot(
+    error: string | null,
+    retrying: boolean,
+    selectedGatewayReady = false,
+  ): GatewayStateSnapshot {
     return {
       state: this.state,
       connecting: this.state === GatewayState.CONNECTING || this.state === GatewayState.STARTING,
       connected: this.state === GatewayState.CONNECTED,
       error,
       retrying,
+      selectedGatewayReady,
     };
   }
 }

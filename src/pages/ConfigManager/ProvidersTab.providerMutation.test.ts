@@ -198,3 +198,16 @@ test('applyProviderRemoval keeps provider resources when another auth profile st
   assert.ok(next.agents?.defaults?.models?.['openai/gpt-4o']);
   assert.equal(next.agents?.defaults?.model?.primary, 'openai/gpt-4o');
 });
+
+test('BUG-MP-08 removing a profile also repairs official auth order', () => {
+  const next = applyProviderRemoval({
+    auth: {
+      profiles: {
+        'openai:a': { provider: 'openai', mode: 'api_key' },
+        'openai:b': { provider: 'openai', mode: 'oauth' },
+      },
+      order: { openai: ['openai:a', 'openai:b'] },
+    },
+  }, 'openai', 'openai:a');
+  assert.deepEqual(next.auth?.order?.openai, ['openai:b']);
+});

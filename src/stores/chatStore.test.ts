@@ -61,6 +61,14 @@ test('setSessionModel upserts a local session row when sessions.list has not cau
 
 test('setSessions follows the Gateway session list after a deletion', () => {
   const deletedKey = 'agent:worker:s-deleted';
+  useChatStore.setState({
+    sessions: [
+      { key: MAIN_KEY, label: 'Main' },
+      { key: deletedKey, label: 'Delete me' },
+    ],
+    openTabs: [MAIN_KEY, deletedKey],
+    activeSessionKey: deletedKey,
+  });
   useChatStore.getState().setSessions([
     { key: MAIN_KEY, label: 'Main' },
   ]);
@@ -68,6 +76,8 @@ test('setSessions follows the Gateway session list after a deletion', () => {
   const state = useChatStore.getState();
   assert.equal(state.sessions.some((session) => session.key === deletedKey), false);
   assert.equal(state.sessions.some((session) => session.key === MAIN_KEY), true);
+  assert.deepEqual(state.openTabs, [MAIN_KEY]);
+  assert.equal(state.activeSessionKey, MAIN_KEY);
 });
 
 test('removeSession closes the tab, switches active session, and persists tab order', () => {

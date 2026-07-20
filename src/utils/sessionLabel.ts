@@ -1,4 +1,5 @@
 import { isWeakSessionTopic } from '@/stores/chatStore';
+import { isAgentMainSession } from '@/utils/sessionLifecycle';
 
 type SessionLike = {
   key?: string;
@@ -20,7 +21,7 @@ function normalizeText(value?: string): string {
 function isGatewayDefaultLabel(label: string, key: string): boolean {
   if (!label || !key) return true;
   if (label === key) return true;
-  if (/^desktop-\d+$/i.test(label)) return true;
+  if (/^desktop-[a-z0-9-]+$/i.test(label)) return true;
   // English / Chinese / Arabic gateway defaults
   if (/^(main session|主智能体|new session|新会话|default session|untitled)$/i.test(label)) return true;
   return false;
@@ -43,7 +44,7 @@ export function getSessionDisplayLabel(
   if (label && !isGatewayDefaultLabel(label, key)) return label;
 
   // Auto-derived fallbacks only kick in when the user hasn't renamed.
-  if (key === 'agent:main:main') return mainSessionLabel;
+  if (isAgentMainSession(key)) return mainSessionLabel;
 
   const topic = normalizeText(session?.topic);
   if (topic && !isWeakSessionTopic(topic)) return topic;
@@ -55,6 +56,6 @@ export function getSessionDisplayLabel(
   if (lastMessage && !isWeakSessionTopic(lastMessage)) return lastMessage.slice(0, 32);
 
   const lastKeyPart = key.split(':').pop() || key;
-  if (/^desktop-\d+$/i.test(lastKeyPart)) return genericSessionLabel;
+  if (/^desktop-[a-z0-9-]+$/i.test(lastKeyPart)) return genericSessionLabel;
   return lastKeyPart;
 }

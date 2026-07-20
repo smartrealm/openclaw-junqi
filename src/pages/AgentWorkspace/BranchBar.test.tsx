@@ -17,3 +17,13 @@ test('branch base picker includes local and remote branch results', () => {
   assert.match(source, /setFromBranch\(branch\.name\)/);
   assert.match(source, /branch\.remote/);
 });
+
+test('branch picker stays synchronized without duplicate git requests', () => {
+  assert.match(source, /inflightRef\.current/);
+  assert.match(source, /window\.addEventListener\('focus', onFocus\)/);
+  assert.match(source, /10_000/);
+  assert.match(source, /document\.addEventListener\('pointerdown', onPointerDown, true\)/);
+  assert.match(source, /const localBranches = filtered\.filter/);
+  assert.match(source, /const remoteGroups = filtered\.filter/);
+  assert.match(source, /const staleRequest = inflightRef\.current/);
+});

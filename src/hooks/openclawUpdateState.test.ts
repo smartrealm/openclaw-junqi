@@ -4,6 +4,7 @@ import type { OpenclawUpdateResult, OpenclawUpdateStatus } from '@/api/tauri-com
 import { initialOpenclawUpdateState, openclawUpdateReducer } from './openclawUpdateState';
 
 const status: OpenclawUpdateStatus = {
+  installedVersion: '2026.6.11',
   currentVersion: '2026.6.11',
   latestVersion: '2026.7.1',
   available: true,
@@ -61,4 +62,51 @@ test('successful update retains the refreshed runtime status', () => {
   assert.equal(next.phase, 'success');
   assert.equal(next.status?.currentVersion, '2026.7.1');
   assert.equal(next.result?.gatewayRestarted, true);
+});
+
+test('update progress remains monotonic and suppresses adjacent duplicate logs', () => {
+  let next = openclawUpdateReducer(initialOpenclawUpdateState, { type: 'updateStarted' });
+  next = openclawUpdateReducer(next, {
+    type: 'progressReceived',
+    progress: 40,
+    message: 'Checking Node.js runtime',
+  });
+  next = openclawUpdateReducer(next, {
+    type: 'progressReceived',
+    progress: 20,
+    message: 'Checking Node.js runtime',
+  });
+
+  assert.equal(next.progress, 40);
+  assert.deepEqual(next.logs, ['Checking Node.js runtime']);
+
+  for (let index = 0; index < 205; index += 1) {
+    next = openclawUpdateReducer(next, {
+      type: 'progressReceived',
+      progress: null,
+      message: `line-${index}`,
+    });
+  }
+  assert.equal(next.logs.length, 200);
+  assert.equal(next.logs[0], 'line-5');
+});
+
+test('diagnostics stay in logs without replacing the localized progress phase', () => {
+  let next = openclawUpdateReducer(initialOpenclawUpdateState, { type: 'updateStarted' });
+  next = openclawUpdateReducer(next, {
+    type: 'progressReceived',
+    progress: 40,
+    message: 'Checking Node.js runtime',
+  });
+  next = openclawUpdateReducer(next, {
+    type: 'diagnosticReceived',
+    message: 'npm http fetch GET 200 https://registry.npmjs.org/openclaw',
+  });
+
+  assert.equal(next.statusMessage, 'Checking Node.js runtime');
+  assert.equal(next.progress, 40);
+  assert.deepEqual(next.logs, [
+    'Checking Node.js runtime',
+    'npm http fetch GET 200 https://registry.npmjs.org/openclaw',
+  ]);
 });

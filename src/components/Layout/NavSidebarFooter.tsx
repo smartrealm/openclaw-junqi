@@ -10,6 +10,7 @@ import { Settings } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { UsagePopover } from '@/components/shared/UsagePopover';
+import { ENABLE_USAGE_INSIGHTS } from '@/components/Terminal/_nezha-platform';
 import clsx from 'clsx';
 
 export function NavSidebarFooter({ collapsed }: { collapsed?: boolean }) {
@@ -18,7 +19,7 @@ export function NavSidebarFooter({ collapsed }: { collapsed?: boolean }) {
   if (collapsed) {
     return (
       <div className="flex flex-col items-center gap-1 pb-2">
-        <UsagePopover />
+        {ENABLE_USAGE_INSIGHTS && <UsagePopover />}
         <NavLink to="/settings"
           title={t('nav.settings', 'Settings')}
           aria-label={t('nav.settings', 'Settings')}
@@ -32,7 +33,7 @@ export function NavSidebarFooter({ collapsed }: { collapsed?: boolean }) {
   return (
     <div className="flex items-center gap-1 px-2 py-1.5 mx-2 mb-2 rounded-lg"
       style={{ background: 'rgb(var(--aegis-overlay) / 0.03)', border: '1px solid rgb(var(--aegis-border))' }}>
-      <UsagePopover />
+      {ENABLE_USAGE_INSIGHTS && <UsagePopover />}
       <NavLink to="/settings"
         className={clsx(
           'flex-1 flex items-center gap-2 px-2 py-1.5 rounded text-[13px] font-medium transition-colors',

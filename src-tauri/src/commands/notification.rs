@@ -1,12 +1,11 @@
 // ── Notification local store (ported from nezha notification.rs) ──────────────
 //
-// Manages `~/.nezha/notification-store.json` — a per-user persistent store of
+// Manages JunQi's application config directory — a per-user persistent store of
 // "which notification IDs have been read" + a local notifications queue that
 // other modules (e.g. agent_task_pty) can push to.
 //
 // Architecture:
-//   - `get_notifications` — returns mock items + local pushed items, merged with
-//     read state
+//   - `get_notifications` — returns persisted local items merged with read state
 //   - `push_local_notification` — called by other Rust modules to push a
 //     notification (e.g. "task failed", "task needs input")
 //   - `mark_notification_read` / `mark_all_notifications_read` — persist read state
@@ -16,7 +15,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationItem {
@@ -40,6 +38,28 @@ pub struct NotificationResult {
     pub unread_count: usize,
 }
 
+fn create_notification(
+    level: &str,
+    title: &str,
+    body: &str,
+    url: Option<&str>,
+) -> NotificationItem {
+    let level = match level {
+        "warning" | "error" => level,
+        _ => "info",
+    };
+    NotificationItem {
+        id: format!("local-{}", uuid::Uuid::new_v4()),
+        level: level.to_string(),
+        title: sanitize_text(title, 200),
+        body: sanitize_text(body, 4_000),
+        body_zh: None,
+        url: url.map(|value| sanitize_text(value, 2_000)),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        is_read: false,
+    }
+}
+
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 struct LocalStore {
     /// IDs the user has explicitly marked as read.
@@ -51,24 +71,97 @@ struct LocalStore {
     last_fetched_at: i64,
 }
 
-fn store_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    let dir = home.join(".nezha");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("notification-store.json"))
+struct NotificationRepository {
+    store_path: PathBuf,
+    items_path: PathBuf,
 }
 
-fn store_lock() -> &'static Mutex<LocalStore> {
-    static LOCK: OnceLock<Mutex<LocalStore>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(load_store()))
+impl NotificationRepository {
+    fn discover() -> Result<Self, String> {
+        let dir = crate::paths::app_config_dir().join("notifications");
+        fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+        let repository = Self {
+            store_path: dir.join("read-state.json"),
+            items_path: dir.join("items.json"),
+        };
+        repository.migrate_legacy_files()?;
+        Ok(repository)
+    }
+
+    fn migrate_legacy_files(&self) -> Result<(), String> {
+        let Some(home) = dirs::home_dir() else {
+            return Ok(());
+        };
+        self.migrate_legacy_files_from(&home.join(".nezha"))
+    }
+
+    fn migrate_legacy_files_from(&self, legacy_dir: &Path) -> Result<(), String> {
+        if !self.store_path.exists() {
+            let legacy_store = legacy_dir.join("notification-store.json");
+            if legacy_store.exists() {
+                save_store_at(&self.store_path, &load_store_at(&legacy_store))?;
+            }
+        }
+        if !self.items_path.exists() {
+            let legacy_items = legacy_dir.join("local-notifications.json");
+            if legacy_items.exists() {
+                save_local_notifications(
+                    &self.items_path,
+                    &load_local_notifications(&legacy_items),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn load_store(&self) -> LocalStore {
+        load_store_at(&self.store_path)
+    }
+
+    fn save_store(&self, store: &LocalStore) -> Result<(), String> {
+        save_store_at(&self.store_path, store)
+    }
+
+    fn load_items(&self) -> Vec<NotificationItem> {
+        load_local_notifications(&self.items_path)
+    }
+
+    fn save_items(&self, items: &[NotificationItem]) -> Result<(), String> {
+        save_local_notifications(&self.items_path, items)
+    }
 }
 
-fn load_store() -> LocalStore {
-    let path = match store_path() {
-        Ok(p) => p,
-        Err(_) => return LocalStore::default(),
-    };
-    load_store_at(&path)
+fn mark_all_items_read(store: &mut LocalStore, items: &[NotificationItem]) {
+    store.read_ids = items.iter().map(|item| item.id.clone()).collect();
+}
+
+fn prune_read_state(store: &mut LocalStore, items: &[NotificationItem]) -> bool {
+    let item_ids = items
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    let previous_len = store.read_ids.len();
+    store.read_ids.retain(|id| item_ids.contains(id.as_str()));
+    store.read_ids.len() != previous_len
+}
+
+fn repository_gate() -> &'static Mutex<()> {
+    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(()))
+}
+
+fn persist_notification(item: NotificationItem) -> Result<NotificationItem, String> {
+    let _guard = repository_gate()
+        .lock()
+        .map_err(|_| "Notification repository lock is poisoned".to_string())?;
+    let repository = NotificationRepository::discover()?;
+    let mut existing = repository.load_items();
+    if existing.len() >= 50 {
+        existing.drain(0..existing.len() - 49);
+    }
+    existing.push(item.clone());
+    repository.save_items(&existing)?;
+    Ok(item)
 }
 
 /// Pure helper: read a store from the given path. Missing/empty file
@@ -83,11 +176,6 @@ fn load_store_at(path: &Path) -> LocalStore {
         .unwrap_or_default()
 }
 
-fn save_store(store: &LocalStore) -> Result<(), String> {
-    let path = store_path()?;
-    save_store_at(&path, store)
-}
-
 /// Pure helper: write a store to the given path atomically.
 fn save_store_at(path: &Path, store: &LocalStore) -> Result<(), String> {
     if let Some(parent) = path.parent() {
@@ -98,18 +186,7 @@ fn save_store_at(path: &Path, store: &LocalStore) -> Result<(), String> {
 }
 
 fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
-    let uid = format!(
-        "{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-    );
-    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-    let tmp = path.with_file_name(format!(".{file_name}.{uid}.tmp"));
-    fs::write(&tmp, content).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, path).map_err(|e| e.to_string())
+    crate::paths::atomic_write_text(path, content)
 }
 
 /// Sanitize free-form text: cap length and strip control characters so a
@@ -123,110 +200,9 @@ fn sanitize_text(s: &str, max_len: usize) -> String {
     cleaned
 }
 
-/// Return the current notification list with `isRead` merged from local store,
-/// plus the unread count.
-///
-/// Mock: returns a fixed set of demo items so the frontend bell has real
-/// content to render. Replace `_mock_items()` with a real fetch
-/// (HTTP / gateway.call / etc.) when a notification source is ready.
-/// `store.read_ids` is still meaningful — items the user marks read will
-/// report `is_read: true` on the next fetch.
-fn mock_items() -> Vec<NotificationItem> {
-    vec![
-        NotificationItem {
-            id: "welcome-v1".to_string(),
-            level: "info".to_string(),
-            title: "Welcome to JunQi".to_string(),
-            body: "Nezha-style skill hub + worktree support is now available. Open /skill-hub to get started.".to_string(),
-            body_zh: Some("已支持 Nezha 风格的 skill hub + worktree。打开 /skill-hub 开始使用。".to_string()),
-            url: None,
-            created_at: "2026-06-22 10:00".to_string(),
-            is_read: false,
-        },
-        NotificationItem {
-            id: "make-target".to_string(),
-            level: "info".to_string(),
-            title: "New: Run Make targets in one click".to_string(),
-            body: "Open a Makefile in the file viewer and click any target button to run it in the terminal.".to_string(),
-            body_zh: Some("在文件查看器打开 Makefile，点击 target 按钮即可在终端运行。".to_string()),
-            url: None,
-            created_at: "2026-06-22 09:30".to_string(),
-            is_read: false,
-        },
-        NotificationItem {
-            id: "agent-task-pty".to_string(),
-            level: "info".to_string(),
-            title: "Agent task PTY is ready".to_string(),
-            body: "Claude Code and Codex can now run in a managed PTY. Future updates will add session resume and worktree merge.".to_string(),
-            body_zh: Some("Claude Code 和 Codex 现在可以在托管的 PTY 中运行。后续会接入 session 续接和 worktree 合并。".to_string()),
-            url: None,
-            created_at: "2026-06-22 09:00".to_string(),
-            is_read: false,
-        },
-        NotificationItem {
-            id: "usage-mock".to_string(),
-            level: "warning".to_string(),
-            title: "Usage data is mocked".to_string(),
-            body: "Claude/Codex usage windows currently show demo values. Real OAuth / codex app-server integration is on the roadmap.".to_string(),
-            body_zh: Some("Claude/Codex 用量窗口目前显示的是演示数据。真实 OAuth / codex app-server 接入在路线图中。".to_string()),
-            url: None,
-            created_at: "2026-06-22 08:30".to_string(),
-            is_read: false,
-        },
-        NotificationItem {
-            id: "docs".to_string(),
-            level: "info".to_string(),
-            title: "Port plan document".to_string(),
-            body: "See docs/NEZHA-PORT-PLAN.md for the full migration status and architecture notes.".to_string(),
-            body_zh: None,
-            url: Some("https://github.com/hanshuaikang/nezha".to_string()),
-            created_at: "2026-06-21 18:00".to_string(),
-            is_read: false,
-        },
-    ]
-}
-
 /// Push a notification from another backend module (e.g. agent_task_pty).
-/// These are persisted to `~/.nezha/local-notifications.json` and merged
-/// into the result of `get_notifications`.
 pub fn push_local_notification(level: &str, title: &str, body: &str, url: Option<&str>) {
-    let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let id = format!("local-{}", uuid_v4());
-    let item = NotificationItem {
-        id,
-        level: level.to_string(),
-        title: title.to_string(),
-        body: body.to_string(),
-        body_zh: None,
-        url: url.map(|s| s.to_string()),
-        created_at: now,
-        is_read: false,
-    };
-    // Append to local notifications file
-    if let Ok(path) = local_notifications_path() {
-        let mut existing = load_local_notifications(&path);
-        // Keep max 50 most recent
-        if existing.len() >= 50 {
-            existing.drain(0..existing.len() - 49);
-        }
-        existing.push(item);
-        let _ = save_local_notifications(&path, &existing);
-    }
-}
-
-fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("{:x}-{:04x}", now.as_secs(), now.subsec_nanos() % 0x10000)
-}
-
-fn local_notifications_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    let dir = home.join(".nezha");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("local-notifications.json"))
+    let _ = persist_notification(create_notification(level, title, body, url));
 }
 
 fn load_local_notifications(path: &Path) -> Vec<NotificationItem> {
@@ -247,15 +223,16 @@ fn save_local_notifications(path: &Path, items: &[NotificationItem]) -> Result<(
 #[tauri::command]
 pub async fn get_notifications() -> Result<NotificationResult, String> {
     tokio::task::spawn_blocking(|| -> Result<NotificationResult, String> {
-        let store = store_lock().lock().expect("notification store poisoned");
-
-        let local = local_notifications_path()
-            .map(|p| load_local_notifications(&p))
-            .unwrap_or_default();
-
-        // Merge: mock items first (pinned to top), then local items (newest first)
-        let mock = mock_items();
-        let mut all: Vec<NotificationItem> = mock.into_iter().chain(local).collect();
+        let _guard = repository_gate()
+            .lock()
+            .map_err(|_| "Notification repository lock is poisoned".to_string())?;
+        let repository = NotificationRepository::discover()?;
+        let mut all = repository.load_items();
+        let mut store = repository.load_store();
+        if prune_read_state(&mut store, &all) {
+            repository.save_store(&store)?;
+        }
+        all.reverse();
 
         // Mark read state
         for item in &mut all {
@@ -273,15 +250,40 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
 }
 
 #[tauri::command]
+pub async fn push_notification(
+    level: String,
+    title: String,
+    body: String,
+    url: Option<String>,
+) -> Result<NotificationItem, String> {
+    tokio::task::spawn_blocking(move || {
+        if title.trim().is_empty() {
+            return Err("Notification title is required".to_string());
+        }
+        persist_notification(create_notification(&level, &title, &body, url.as_deref()))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub async fn mark_notification_read(id: String) -> Result<(), String> {
     let sanitized_id = sanitize_text(&id, 100);
     if sanitized_id.is_empty() {
         return Err("Notification id is required".into());
     }
     tokio::task::spawn_blocking(move || {
-        let mut store = store_lock().lock().expect("notification store poisoned");
+        let _guard = repository_gate()
+            .lock()
+            .map_err(|_| "Notification repository lock is poisoned".to_string())?;
+        let repository = NotificationRepository::discover()?;
+        let items = repository.load_items();
+        if !items.iter().any(|item| item.id == sanitized_id) {
+            return Err("Notification does not exist".to_string());
+        }
+        let mut store = repository.load_store();
         if store.read_ids.insert(sanitized_id) {
-            save_store(&store)?;
+            repository.save_store(&store)?;
         }
         Ok(())
     })
@@ -292,19 +294,49 @@ pub async fn mark_notification_read(id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn mark_all_notifications_read() -> Result<(), String> {
     tokio::task::spawn_blocking(|| {
-        // No items to mark in this stub. If we ever fetch real items,
-        // this would iterate them and insert into `store.read_ids`.
-        // For now: just touch the file to record that the user pressed it.
-        let store = store_lock().lock().expect("notification store poisoned");
-        save_store(&store)?;
+        let _guard = repository_gate()
+            .lock()
+            .map_err(|_| "Notification repository lock is poisoned".to_string())?;
+        let repository = NotificationRepository::discover()?;
+        let mut store = repository.load_store();
+        mark_all_items_read(&mut store, &repository.load_items());
+        repository.save_store(&store)?;
         Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[tauri::command]
+pub async fn clear_notifications() -> Result<(), String> {
+    tokio::task::spawn_blocking(|| {
+        let _guard = repository_gate()
+            .lock()
+            .map_err(|_| "Notification repository lock is poisoned".to_string())?;
+        let repository = NotificationRepository::discover()?;
+        repository.save_items(&[])?;
+        repository.save_store(&LocalStore::default())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn item(id: &str) -> NotificationItem {
+        NotificationItem {
+            id: id.to_string(),
+            level: "info".to_string(),
+            title: "title".to_string(),
+            body: "body".to_string(),
+            body_zh: None,
+            url: None,
+            created_at: "2026-07-14T00:00:00Z".to_string(),
+            is_read: false,
+        }
+    }
 
     #[test]
     fn sanitize_text_preserves_newlines_and_tabs() {
@@ -332,6 +364,17 @@ mod tests {
     #[test]
     fn sanitize_text_on_empty_returns_empty() {
         assert_eq!(sanitize_text("", 100), "");
+    }
+
+    #[test]
+    fn frontend_notification_payload_is_sanitized_before_persistence() {
+        let created =
+            create_notification("unexpected", "title\0", "body\x07", Some("/ai-workspace\0"));
+        assert_eq!(created.level, "info");
+        assert_eq!(created.title, "title");
+        assert_eq!(created.body, "body");
+        assert_eq!(created.url.as_deref(), Some("/ai-workspace"));
+        assert!(!created.is_read);
     }
 
     #[test]
@@ -363,22 +406,68 @@ mod tests {
     }
 
     #[test]
-    fn mock_items_have_unique_ids() {
-        let items = mock_items();
-        let mut ids: Vec<&String> = items.iter().map(|i| &i.id).collect();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), items.len(), "mock IDs must be unique");
+    fn notification_source_contains_no_pinned_demo_items() {
+        let source = include_str!("notification.rs");
+        let removed_mock = ["mock_", "items"].concat();
+        let removed_demo = ["usage-", "mock"].concat();
+        assert!(!source.contains(&removed_mock));
+        assert!(!source.contains(&removed_demo));
+        assert!(source.contains("all.reverse()"));
     }
 
     #[test]
-    fn mock_items_levels_are_valid() {
-        for item in mock_items() {
-            assert!(
-                matches!(item.level.as_str(), "info" | "warning" | "error"),
-                "invalid level: {}",
-                item.level
-            );
-        }
+    fn mark_all_read_records_every_persisted_notification() {
+        let mut store = LocalStore::default();
+        let items = vec![item("first"), item("second")];
+
+        mark_all_items_read(&mut store, &items);
+
+        assert_eq!(store.read_ids.len(), 2);
+        assert!(store.read_ids.contains("first"));
+        assert!(store.read_ids.contains("second"));
+    }
+
+    #[test]
+    fn read_state_drops_ids_for_evicted_notifications() {
+        let mut store = LocalStore::default();
+        store
+            .read_ids
+            .extend(["retained".to_string(), "already-evicted".to_string()]);
+
+        assert!(prune_read_state(&mut store, &[item("retained")]));
+        assert_eq!(store.read_ids, HashSet::from(["retained".to_string()]));
+        assert!(!prune_read_state(&mut store, &[item("retained")]));
+    }
+
+    #[test]
+    fn repository_migrates_legacy_files_without_deleting_them() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-notification-migration-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let legacy = root.join("legacy");
+        let current = root.join("current");
+        std::fs::create_dir_all(&legacy).unwrap();
+        let mut legacy_store = LocalStore::default();
+        legacy_store.read_ids.insert("legacy-item".to_string());
+        save_store_at(&legacy.join("notification-store.json"), &legacy_store).unwrap();
+        save_local_notifications(
+            &legacy.join("local-notifications.json"),
+            &[item("legacy-item")],
+        )
+        .unwrap();
+        let repository = NotificationRepository {
+            store_path: current.join("read-state.json"),
+            items_path: current.join("items.json"),
+        };
+
+        repository.migrate_legacy_files_from(&legacy).unwrap();
+
+        assert!(repository.load_store().read_ids.contains("legacy-item"));
+        assert_eq!(repository.load_items().len(), 1);
+        assert!(legacy.join("notification-store.json").exists());
+        assert!(legacy.join("local-notifications.json").exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

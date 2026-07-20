@@ -12,15 +12,38 @@ const INVALID_CONFIG_PATTERNS: &[&str] = &[
     "run: openclaw doctor --fix",
 ];
 
+const REPAIR_PATTERNS: &[&str] = &[
+    "failed post-core payload smoke check",
+    "missing-main-entry",
+    "startup migrations did not complete",
+    "openclaw update repair",
+    "plugin payload",
+];
+
+const STATE_DIRECTORY_PATTERNS: &[&str] = &[
+    "openclaw state directory is incompatible",
+    "junqi_state_directory_probe_failed",
+    "operation not permitted, chmod",
+    "eperm: operation not permitted, chmod",
+    "does not accept the token from junqi's selected state directory",
+];
+
 const TRANSIENT_START_ERROR_PATTERNS: &[&str] = &[
+    "startup migrations are already running",
     "WebSocket closed before handshake",
     "ECONNREFUSED",
     "Gateway process exited before becoming ready",
     "Timed out waiting for connect.challenge",
     "Connect handshake timeout",
     "gateway starting",
-    "Port ",
 ];
+
+fn is_port_contention(normalized: &str) -> bool {
+    normalized.contains("eaddrinuse")
+        || normalized.contains("address already in use")
+        || (normalized.contains("port")
+            && (normalized.contains("occupied") || normalized.contains("already in use")))
+}
 
 /// Returns true when any stderr line looks like an OpenClaw config validation
 /// failure — actionable by the user (fix the JSON, provider key, etc.).
@@ -36,53 +59,68 @@ pub fn has_invalid_config_signal(stderr_lines: &[String]) -> bool {
     false
 }
 
-/// Returns true when every stderr line matches a known transient cause.
+/// Returns true when the diagnostic contains a known transient cause.
 /// Transient errors should be retried with backoff; they are NOT the user's
 /// fault (port contention, network blip, process still warming up).
 pub fn is_transient_start_failure(stderr_lines: &[String]) -> bool {
     if stderr_lines.is_empty() {
         return false; // Exit with no output → assume non-transient.
     }
-    for line in stderr_lines {
+    stderr_lines.iter().any(|line| {
         let normalized = line.trim().to_lowercase();
-        let matched = TRANSIENT_START_ERROR_PATTERNS
+        TRANSIENT_START_ERROR_PATTERNS
             .iter()
-            .any(|pat| normalized.contains(&pat.to_lowercase()));
-        if !matched {
-            return false; // One unrecognized line → treat as non-transient.
-        }
-    }
-    true
+            .any(|pat| normalized.contains(&pat.to_lowercase()))
+            || is_port_contention(&normalized)
+    })
 }
 
 /// Suggested recovery action to surface to the user.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RecoveryAction {
-    /// Config validation failure — likely bad provider key or schema.
-    FixConfig,
-    /// Transient error — backoff and retry automatically.
+    InspectConfig,
+    SelectStorage,
     Retry,
-    /// Unknown — recommend running `openclaw doctor`.
-    RunDoctor,
-    /// No issue — startup succeeded.
-    None,
+    Repair,
 }
 
 /// Returns the recommended action from a set of diagnostic inputs.
 pub fn diagnose_startup_failure(
     stderr_lines: &[String],
-    already_attempted_config_repair: bool,
+    _already_attempted_config_repair: bool,
 ) -> RecoveryAction {
-    if stderr_lines.is_empty() {
-        return RecoveryAction::RunDoctor;
+    if stderr_lines.iter().any(|line| {
+        let normalized = line.to_ascii_lowercase();
+        STATE_DIRECTORY_PATTERNS
+            .iter()
+            .any(|pattern| normalized.contains(pattern))
+    }) {
+        return RecoveryAction::SelectStorage;
     }
-    if has_invalid_config_signal(stderr_lines) && !already_attempted_config_repair {
-        return RecoveryAction::FixConfig;
+    if has_invalid_config_signal(stderr_lines) {
+        return RecoveryAction::InspectConfig;
+    }
+    if stderr_lines.iter().any(|line| {
+        let normalized = line.to_ascii_lowercase();
+        REPAIR_PATTERNS
+            .iter()
+            .any(|pattern| normalized.contains(pattern))
+    }) {
+        return RecoveryAction::Repair;
     }
     if is_transient_start_failure(stderr_lines) {
         return RecoveryAction::Retry;
     }
-    RecoveryAction::RunDoctor
+    RecoveryAction::Repair
+}
+
+#[tauri::command]
+pub fn diagnose_gateway_recovery(error: String) -> RecoveryAction {
+    diagnose_startup_failure(
+        &error.lines().map(str::to_string).collect::<Vec<_>>(),
+        false,
+    )
 }
 
 #[cfg(test)]
@@ -104,9 +142,19 @@ mod tests {
     }
 
     #[test]
-    fn mixed_lines_not_transient() {
-        assert!(!is_transient_start_failure(&[
-            "running...".into(),
+    fn migration_lock_contention_retries_instead_of_repairing_plugins() {
+        let error = "OpenClaw startup migrations are already running for this state directory; retry after the other gateway finishes or after 2026-07-15T04:50:45.044Z.";
+        assert!(is_transient_start_failure(&[error.into()]));
+        assert_eq!(
+            diagnose_startup_failure(&[error.into()], false),
+            RecoveryAction::Retry
+        );
+    }
+
+    #[test]
+    fn mixed_lines_with_transient_signal_are_transient() {
+        assert!(is_transient_start_failure(&[
+            "ECONNREFUSED 127.0.0.1:18789".into(),
             "unknown error".into(),
         ]));
     }
@@ -124,6 +172,20 @@ mod tests {
     }
 
     #[test]
+    fn unrelated_port_text_is_not_treated_as_a_listener_conflict() {
+        assert!(!is_transient_start_failure(&[
+            "Port configuration contains an unsupported key".into()
+        ]));
+    }
+
+    #[test]
+    fn eaddrinuse_is_transient() {
+        assert!(is_transient_start_failure(&[
+            "listen EADDRINUSE: address already in use 127.0.0.1:18789".into()
+        ]));
+    }
+
+    #[test]
     fn diagnosis_recommends_retry_for_transient() {
         let action = diagnose_startup_failure(&["ECONNREFUSED".into()], false);
         assert!(matches!(action, RecoveryAction::Retry));
@@ -132,7 +194,7 @@ mod tests {
     #[test]
     fn diagnosis_recommends_fix_config_when_not_yet_attempted() {
         let action = diagnose_startup_failure(&["invalid config: missing provider".into()], false);
-        assert!(matches!(action, RecoveryAction::FixConfig));
+        assert!(matches!(action, RecoveryAction::InspectConfig));
     }
 
     #[test]
@@ -141,6 +203,21 @@ mod tests {
             &["invalid config".into()],
             true, // already tried fix
         );
-        assert!(matches!(action, RecoveryAction::RunDoctor));
+        assert!(matches!(action, RecoveryAction::InspectConfig));
+    }
+
+    #[test]
+    fn diagnosis_recommends_repair_for_missing_plugin_entry() {
+        let action = diagnose_startup_failure(&["openclaw-lark missing-main-entry".into()], false);
+        assert_eq!(action, RecoveryAction::Repair);
+    }
+
+    #[test]
+    fn state_directory_permission_failure_returns_to_storage_selection() {
+        let action = diagnose_startup_failure(
+            &["EPERM: operation not permitted, chmod 'F:\\Tools\\AI\\OpenClaw\\state'".into()],
+            false,
+        );
+        assert_eq!(action, RecoveryAction::SelectStorage);
     }
 }

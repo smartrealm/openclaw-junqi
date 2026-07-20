@@ -4,15 +4,54 @@
 // Backward-compatible with: import { gateway } from '@/services/gateway'
 // ═══════════════════════════════════════════════════════════
 
-import { GatewayConnection, type GatewayCallbacks, type ChatMessage, type MediaInfo } from './Connection';
+import {
+  GatewayConnection,
+  type GatewayCallbacks,
+  type GatewayRequestOptions,
+  type ChatMessage,
+  type MediaInfo,
+} from './Connection';
 import { ChatHandler } from './ChatHandler';
+import { debugWarn } from '@/utils/debugLog';
 
 // Re-export types for consumers
-export type { ChatMessage, MediaInfo, GatewayCallbacks };
+export type { ChatMessage, MediaInfo, GatewayCallbacks, GatewayRequestOptions };
 
 // ── Create instances ──
 const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
+const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
+
+async function cleanupSessionArtifacts(sessionKey: string): Promise<void> {
+  const operations: Array<{ label: string; task: Promise<unknown> | undefined }> = [
+    { label: 'uploads', task: window.aegis?.uploads?.cleanupSession?.({ sessionKey }) },
+    { label: 'outputs', task: window.aegis?.managedFiles?.cleanupSessionRefs?.({ sessionKey, kind: 'outputs' }) },
+    { label: 'voice', task: window.aegis?.voice?.cleanupSession?.({ sessionKey }) },
+  ];
+
+  await Promise.all(operations.map(async ({ label, task }) => {
+    if (!task) return;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        task,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error(`${label} cleanup timed out`)),
+            SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      if ((result as { success?: boolean } | null)?.success === false) {
+        throw new Error(`${label} cleanup was rejected`);
+      }
+    } catch (error) {
+      debugWarn('app', `[gateway] Session ${label} cleanup failed for ${sessionKey}:`, error);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }));
+}
 
 // Wire event handler: Connection dispatches events to ChatHandler
 connection.onEvent = (msg: any) => chatHandler.handleEvent(msg);
@@ -76,30 +115,25 @@ export const gateway = {
     return connection.request('chat.history', { sessionKey, limit }, { timeoutMs });
   },
   async abortChat(sessionKey = 'agent:main:main') { return connection.request('chat.abort', { sessionKey }); },
+  async compactSession(sessionKey = 'agent:main:main') {
+    return connection.request('chat.send', {
+      sessionKey,
+      message: '/compact',
+      idempotencyKey: `aegis-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    });
+  },
 
   // Session Lifecycle
   async deleteSession(sessionKey: string, deleteTranscript = true) {
     const result = await connection.request('sessions.delete', { key: sessionKey, deleteTranscript });
-    if (result?.success === false) return result;
-    try {
-      await Promise.allSettled([
-        window.aegis?.uploads?.cleanupSession?.({ sessionKey }),
-        window.aegis?.managedFiles?.cleanupSessionRefs?.({ sessionKey, kind: 'outputs' }),
-        window.aegis?.voice?.cleanupSession?.({ sessionKey }),
-      ]);
-    } catch {}
+    if (result?.success === false || result?.ok === false) return result;
+    await cleanupSessionArtifacts(sessionKey);
     return result;
   },
   async resetSession(sessionKey: string) {
     const result = await connection.request('sessions.reset', { key: sessionKey });
-    if (result?.success === false) return result;
-    try {
-      await Promise.allSettled([
-        window.aegis?.uploads?.cleanupSession?.({ sessionKey }),
-        window.aegis?.managedFiles?.cleanupSessionRefs?.({ sessionKey, kind: 'outputs' }),
-        window.aegis?.voice?.cleanupSession?.({ sessionKey }),
-      ]);
-    } catch {}
+    if (result?.success === false || result?.ok === false) return result;
+    await cleanupSessionArtifacts(sessionKey);
     return result;
   },
 
@@ -126,7 +160,9 @@ export const gateway = {
   // Models & Usage
   async getSessionStatus(sessionKey = 'agent:main:main') { return connection.request('sessions.list', {}); },
   async getAvailableModels() { return connection.request('models.list', {}); },
-  async call(method: string, params: any = {}) { return connection.request(method, params); },
+  async call(method: string, params: any = {}, options?: GatewayRequestOptions) {
+    return connection.request(method, params, options);
+  },
   // Skills — list installed skills with status (input for the @skill picker)
   async getSkills(agentId?: string) { return connection.request('skills.status', agentId ? { agentId } : {}); },
   async getCostSummary(days = 30) { return connection.request('usage.cost', { days }); },

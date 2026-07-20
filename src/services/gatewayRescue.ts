@@ -1,6 +1,10 @@
 import type { GatewayRuntimeConfig } from '@/pages/ConfigManager/types';
 import { getTemplateById, type ProviderTemplate } from '@/pages/ConfigManager/providerTemplates';
-import { extractEnvRefKey, resolveProviderSecret } from '@/pages/ConfigManager/providerSecretResolver';
+import {
+  extractEnvRefKey,
+  resolveProviderSecret,
+  type ProviderSecretSource,
+} from '@/pages/ConfigManager/providerSecretResolver';
 import { invoke } from '@tauri-apps/api/core';
 
 export type RescueProviderApi = 'openai-compatible' | 'anthropic-messages';
@@ -13,6 +17,7 @@ export interface GatewayRescueTarget {
   apiKey: string;
   api: RescueProviderApi;
   source: 'primary' | 'configured-provider' | 'manual';
+  credentialSource: ProviderSecretSource | 'manual';
   template?: ProviderTemplate;
 }
 
@@ -24,6 +29,15 @@ export interface GatewayRescueMessage {
 export interface GatewayRescueContext {
   error: string;
   logs?: string;
+}
+
+export type GatewayRescueFailureKind = 'authentication' | 'permission' | 'request';
+
+export function classifyGatewayRescueFailure(error: unknown): GatewayRescueFailureKind {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (/(^|\D)401(\D|$)|invalid api key|unauthori[sz]ed/i.test(message)) return 'authentication';
+  if (/(^|\D)403(\D|$)|forbidden|permission denied/i.test(message)) return 'permission';
+  return 'request';
 }
 
 function parseModelRef(modelRef: string): { providerId: string; modelId: string } | null {
@@ -50,6 +64,20 @@ function configuredModelRefs(config: GatewayRuntimeConfig): string[] {
   };
   add(config.agents?.defaults?.model?.primary);
   for (const ref of Object.keys(config.agents?.defaults?.models ?? {})) add(ref);
+  return [...refs];
+}
+
+function providerModelRefs(config: GatewayRuntimeConfig, providerId: string): string[] {
+  const provider = getProviderConfig(config, providerId);
+  if (!Array.isArray(provider?.models)) return [];
+  const refs = new Set<string>();
+  for (const model of provider.models) {
+    const id = String(model?.id ?? '').trim();
+    if (!id) continue;
+    const parsed = parseModelRef(id);
+    if (parsed && parsed.providerId !== providerId) continue;
+    refs.add(parsed ? id : `${providerId}/${id}`);
+  }
   return [...refs];
 }
 
@@ -122,14 +150,13 @@ function buildTargetFromProvider(
     apiKey,
     api,
     source,
+    credentialSource: secret.source,
     template,
   };
 }
 
-function fallbackModelRef(providerId: string, template?: ProviderTemplate): string {
-  const firstPopular = template?.popularModels?.[0]?.id?.trim();
-  if (firstPopular && parseModelRef(firstPopular)) return firstPopular;
-  return `${providerId}/${providerId === 'anthropic' ? 'claude-sonnet-4-6' : 'gpt-4o-mini'}`;
+export function gatewayRescueTargetKey(target: GatewayRescueTarget): string {
+  return [target.api, target.baseUrl, target.providerId, target.modelId].join('\u0000');
 }
 
 export function resolveGatewayRescueTargets(config: GatewayRuntimeConfig): GatewayRescueTarget[] {
@@ -137,7 +164,7 @@ export function resolveGatewayRescueTargets(config: GatewayRuntimeConfig): Gatew
   const seen = new Set<string>();
   const add = (target: GatewayRescueTarget | null) => {
     if (!target) return;
-    const key = `${target.api}:${target.baseUrl}:${target.modelRef}`;
+    const key = gatewayRescueTargetKey(target);
     if (seen.has(key)) return;
     seen.add(key);
     targets.push(target);
@@ -155,13 +182,14 @@ export function resolveGatewayRescueTargets(config: GatewayRuntimeConfig): Gatew
 
   for (const providerId of Object.keys(config.models?.providers ?? {})) {
     const normalizedProviderId = providerId.trim().toLowerCase();
-    const template = getTemplateById(normalizedProviderId);
-    add(buildTargetFromProvider(
-      config,
-      normalizedProviderId,
-      fallbackModelRef(normalizedProviderId, template),
-      'configured-provider',
-    ));
+    for (const modelRef of providerModelRefs(config, normalizedProviderId)) {
+      add(buildTargetFromProvider(
+        config,
+        normalizedProviderId,
+        modelRef,
+        'configured-provider',
+      ));
+    }
   }
 
   return targets;
@@ -188,6 +216,7 @@ export function buildManualGatewayRescueTarget(input: {
     apiKey,
     api,
     source: 'manual',
+    credentialSource: 'manual',
   };
 }
 

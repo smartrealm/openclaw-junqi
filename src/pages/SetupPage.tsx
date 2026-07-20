@@ -4,37 +4,50 @@
 // ═══════════════════════════════════════════════════════════
 
 import {
+  AlertTriangle,
   Check,
   CheckCircle2,
-  ChevronRight,
   Container,
-  Copy,
   Circle,
   Globe2,
+  LoaderCircle,
   Monitor,
   Moon,
+  Minus,
   Package,
   Palette,
+  Power,
   RefreshCw,
   Sun,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/app-store";
+import { combineUnlisteners, subscribeTauriEvent } from "@/utils/tauriEvents";
 import type { SetupLog, SetupStep } from "@/stores/app-store";
+import { classifySetupMessage, normalizeSetupProgressPayload } from "@/hooks/setupProgressEvents";
+import { translateSetupProgressMessage } from "@/hooks/setupProgressParams";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changeLanguage } from "@/i18n";
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from "@/i18n/languages";
 import { useSetupFlow } from "@/hooks/useSetupFlow";
 import type { SetupFlow, StepState } from "@/hooks/useSetupFlow";
-import type { DockerStatus } from "@/api/tauri-commands";
+import type { DockerStatus, GatewayAutostartStatus } from "@/api/tauri-commands";
+import {
+  detectStateDirSplit,
+  disableGatewayAutostart,
+  enableGatewayAutostart,
+  gatewayAutostartStatus,
+  type StateDirSplit,
+} from "@/api/tauri-commands";
 import type { ThemeSetting } from "@/theme/types";
 import { setThemeWithTransition } from "@/motion/themeTransition";
 import {
   InstallationConsole,
+  currentStepOf,
+  installStepTitle,
   OpenClawRuntimeDetails,
   SetupShell,
   StatusPanel,
@@ -43,80 +56,34 @@ import {
 import clsx from "clsx";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
 import { OpenClawUpdatePanel } from "@/components/shared/OpenClawUpdatePanel";
-
-function setupStepMessageKey(step: SetupStep): string {
-  switch (step) {
-    case "welcome":
-      return "setup.petWelcome";
-    case "detecting":
-      return "setup.detecting";
-    case "storage":
-      return "storage.title";
-    case "gateway-stopped":
-      return "setup.gatewayNotRunning";
-    case "choosing-mode":
-      return "setup.chooseMode";
-    case "git-missing":
-      return "setup.gitRequired";
-    case "ready":
-      return "setup.ready";
-    case "error":
-      return "pet.status.error";
-    case "checking":
-    case "install-git":
-    case "install-node":
-    case "install-openclaw":
-    case "install-complete":
-      return "setup.installComplete";
-    default:
-      return "setup.settingUp";
-  }
-}
-
-function setupStepProgress(step: SetupStep): number {
-  switch (step) {
-    case "welcome":
-      return 0;
-    case "detecting":
-    case "gateway-stopped":
-    case "choosing-mode":
-      return 18;
-    case "storage":
-      return 24;
-    case "git-missing":
-    case "checking":
-    case "install-git":
-    case "install-node":
-    case "install-openclaw":
-    case "error":
-      return 52;
-    case "install-complete":
-      return 68;
-    case "ready":
-      return 100;
-    default:
-      return 0;
-  }
-}
+import { ChannelEnrollmentDialog } from "@/components/channels/ChannelEnrollmentDialog";
+import { type OpenClawWizardStep } from "@/services/openclawWizard";
+import {
+  FeishuQrWizardBridge,
+  FeishuQrWizardSessionChangedError,
+  isFeishuQrSetupMethodStep,
+} from "@/services/feishuQrWizardBridge";
+import {
+  cancelChannelEnrollment,
+  type ChannelEnrollmentCompletion,
+} from "@/services/channelEnrollment";
+import { extractWizardUrls, renderWizardQrDataUrl } from "@/services/wizardQr";
+import {
+  setupStepMessageKey,
+  setupStepProgress,
+  type InstallMode,
+  type SetupNavigationMode,
+} from "@/stores/setup-navigation";
 
 function useSetupNavigation() {
   const { t } = useTranslation();
-  const setSetupStep = useAppStore((s) => s.setSetupStep);
+  const navigateSetup = useAppStore((s) => s.navigateSetup);
   const setSetupStatus = useAppStore((s) => s.setSetupStatus);
 
-  return (step: SetupStep) => {
+  return (step: SetupStep, mode: SetupNavigationMode = "push") => {
     setSetupStatus(t(setupStepMessageKey(step)), setupStepProgress(step));
-    setSetupStep(step);
+    navigateSetup(step, mode);
   };
-}
-
-function payloadMessage(payload: unknown): string | null {
-  if (typeof payload === "string") return payload;
-  if (payload && typeof payload === "object" && "message" in payload) {
-    const message = (payload as { message?: unknown }).message;
-    return typeof message === "string" ? message : null;
-  }
-  return null;
 }
 
 function LanguageThemeControls() {
@@ -225,11 +192,11 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
       nextAction={{ label: t("setup.nextStep", "下一步"), onClick: () => navigateSetup("detecting") }}
     >
       <div className="mb-6 grid gap-4 border-b border-aegis-border pb-5 md:grid-cols-[1fr_auto] md:items-end">
-        <div>
+        <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-aegis-primary">JunQi Desktop</div>
           <div className="mt-2 text-[11px] font-medium uppercase tracking-wider text-aegis-text-dim">{t("setup.companyLabel")}</div>
           <div className="mt-0.5 text-base font-semibold text-aegis-text">{t("setup.companyName")}</div>
-          <p className="mt-3 max-w-[42ch] text-sm leading-6 text-aegis-text-muted" dir="auto">
+          <p className="mt-3 text-sm leading-6 text-aegis-text-muted min-[520px]:whitespace-nowrap" dir="auto">
             {t("setup.productIntro")}
           </p>
         </div>
@@ -244,14 +211,13 @@ function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
 
 function DetectingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const navigateSetup = useSetupNavigation();
   return (
     <SetupShell
       active={1}
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.runtimeSubtitle")}
       logs={logs}
-      previousAction={{ onClick: () => navigateSetup("welcome") }}
+      previousAction={{ onClick: flow.goBack }}
       nextAction={{ label: flow.statusMessage || t("setup.detecting"), disabled: true, loading: true, icon: "none" }}
     >
       <StatusPanel
@@ -269,12 +235,12 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
   const navigateSetup = useSetupNavigation();
   return (
     <SetupShell
-      active={1}
-      title={t("setup.foundOclaw")}
+      active={3}
+      title={t("setup.openclawDetectedTitle")}
       subtitle={t("setup.gatewayNotRunning")}
       logs={logs}
-      previousAction={{ onClick: () => navigateSetup("welcome") }}
-      nextAction={{ label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }}
+      previousAction={{ onClick: flow.goBack }}
+      nextAction={{ label: t("setup.startingGateway"), disabled: true, loading: true, icon: "none" }}
       wide
     >
       <div className="grid gap-4">
@@ -282,9 +248,9 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
           icon={<Monitor size={22} />}
           eyebrow={t("setup.steps.runtime.title")}
           title={t("setup.gatewayStoppedTitle")}
-          message={flow.statusMessage || t("setup.gatewayNotRunning")}
+          message={flow.statusMessage || t("setup.startingGateway")}
           footer={
-            <button onClick={() => navigateSetup("choosing-mode")} className="text-xs font-medium text-aegis-text-dim hover:text-aegis-text">
+            <button onClick={flow.requestReinstall} className="text-xs font-medium text-aegis-text-dim hover:text-aegis-text">
               {t("setup.reinstallBtn")}
             </button>
           }
@@ -299,7 +265,9 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
             currentVersion={flow.openclawStatus.version}
             onUpdated={async () => {
               const refreshed = await flow.refreshRuntime();
-              if (refreshed.gatewayRunning) navigateSetup("ready");
+              if (refreshed.gatewayRunning) {
+                navigateSetup(flow.needsOnboarding ? "configure-openclaw" : "ready");
+              }
             }}
           />
         )}
@@ -310,8 +278,19 @@ function GatewayStoppedScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[
 
 function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const navigateSetup = useSetupNavigation();
+  const [selectedMode, setSelectedMode] = useState<InstallMode>(flow.installMode);
   const dockerAvailable = flow.dockerStatus?.available && flow.dockerStatus?.daemon_running;
+  useEffect(() => {
+    if (
+      selectedMode === "docker"
+      && flow.dockerStatus !== null
+      && !flow.checkingDocker
+      && !dockerAvailable
+    ) {
+      setSelectedMode("native");
+    }
+  }, [dockerAvailable, flow.checkingDocker, flow.dockerStatus, selectedMode]);
+
   const dockerStatusText = flow.checkingDocker
     ? t("setup.checkingDocker")
     : dockerAvailable
@@ -322,47 +301,79 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
 
   return (
     <SetupShell
-      active={1}
+      active={3}
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.chooseMode")}
       logs={logs}
-      previousAction={{ onClick: () => navigateSetup("welcome") }}
-      nextAction={{ label: t("setup.modeNative"), onClick: () => flow.selectMode("native"), icon: "next" }}
+      previousAction={{ onClick: flow.goBack }}
+      nextAction={{
+        label: t("setup.nextStep", "下一步"),
+        onClick: () => { void flow.selectMode(selectedMode); },
+        disabled: selectedMode === "docker" && !dockerAvailable,
+        icon: "next",
+      }}
     >
       <div className="grid gap-4 md:grid-cols-2">
-        <button onClick={() => flow.selectMode("native")} className="group flex min-h-[168px] flex-col rounded-lg border border-aegis-border bg-aegis-surface/50 p-5 text-left transition-colors hover:border-aegis-primary hover:bg-aegis-primary/5">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="rounded-lg bg-aegis-primary/10 p-2 text-aegis-primary"><Monitor size={18} /></div>
-            <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeNative")}</h3>
+        <button
+          type="button"
+          aria-pressed={selectedMode === "native"}
+          onClick={() => setSelectedMode("native")}
+          className={clsx(
+            "group flex min-h-[168px] flex-col rounded-lg border p-5 text-left transition-colors",
+            selectedMode === "native"
+              ? "border-aegis-primary bg-aegis-primary/8 ring-1 ring-aegis-primary/25"
+              : "border-aegis-border bg-aegis-surface/50 hover:border-aegis-primary hover:bg-aegis-primary/5",
+          )}
+        >
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-aegis-primary/10 p-2 text-aegis-primary"><Monitor size={18} /></div>
+              <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeNative")}</h3>
+            </div>
+            {selectedMode === "native"
+              ? <CheckCircle2 size={19} className="shrink-0 text-aegis-primary" />
+              : <Circle size={19} className="shrink-0 text-aegis-text-dim" />}
           </div>
           <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeNativeDesc")}</p>
-          <span className="mt-auto inline-flex items-center gap-1 pt-4 text-xs font-medium text-aegis-primary">
-            {t("setup.selectAndContinue")} <ChevronRight size={14} />
-          </span>
         </button>
 
         <div
           className={clsx(
-            "flex min-h-[168px] flex-col rounded-lg border border-aegis-border bg-aegis-surface/50 p-5 text-left transition-colors",
-            dockerAvailable ? "cursor-pointer hover:border-aegis-primary hover:bg-aegis-primary/5" : "opacity-80",
+            "flex min-h-[168px] flex-col rounded-lg border p-5 text-left transition-colors",
+            selectedMode === "docker"
+              ? "border-aegis-primary bg-aegis-primary/8 ring-1 ring-aegis-primary/25"
+              : "border-aegis-border bg-aegis-surface/50",
+            dockerAvailable ? "hover:border-aegis-primary hover:bg-aegis-primary/5 focus-within:border-aegis-primary" : "opacity-80",
           )}
-          onClick={() => dockerAvailable && flow.selectMode("docker")}
         >
-          <div className="mb-4 flex items-center gap-3">
-            <div className={clsx("rounded-lg p-2", dockerAvailable ? "bg-aegis-success/10 text-aegis-success" : "bg-aegis-text-dim/10 text-aegis-text-dim")}>
-              <Container size={18} />
+          <button
+            type="button"
+            disabled={!dockerAvailable}
+            aria-pressed={selectedMode === "docker"}
+            onClick={() => setSelectedMode("docker")}
+            className="flex flex-1 flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 disabled:cursor-not-allowed"
+          >
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={clsx("rounded-lg p-2", dockerAvailable ? "bg-aegis-success/10 text-aegis-success" : "bg-aegis-text-dim/10 text-aegis-text-dim")}>
+                  <Container size={18} />
+                </div>
+                <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeDocker")}</h3>
+              </div>
+              {selectedMode === "docker"
+                ? <CheckCircle2 size={19} className="shrink-0 text-aegis-primary" />
+                : <Circle size={19} className="shrink-0 text-aegis-text-dim" />}
             </div>
-            <h3 className="text-base font-semibold text-aegis-text">{t("setup.modeDocker")}</h3>
-          </div>
-          <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeDockerDesc")}</p>
-          <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", dockerAvailable ? "text-aegis-success" : "text-aegis-danger")}>
-            {flow.checkingDocker ? <RefreshCw size={13} className="animate-spin" /> : dockerAvailable ? <Check size={13} /> : <X size={13} />}
-            <span>{dockerStatusText}</span>
-          </div>
+            <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeDockerDesc")}</p>
+            <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", dockerAvailable ? "text-aegis-success" : "text-aegis-danger")}>
+              {flow.checkingDocker ? <RefreshCw size={13} className="animate-spin" /> : dockerAvailable ? <Check size={13} /> : <X size={13} />}
+              <span>{dockerStatusText}</span>
+            </div>
+          </button>
           {!dockerAvailable && !flow.checkingDocker && (
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); void flow.detectDocker(); }}
+              onClick={() => void flow.detectDocker()}
               className="mt-3 inline-flex items-center gap-1.5 self-start rounded-md border border-aegis-border px-2.5 py-1.5 text-[11px] text-aegis-text-secondary hover:bg-aegis-surface"
             >
               <RefreshCw size={12} />
@@ -377,60 +388,503 @@ function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
 
 function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const { setupStep, setupError } = useAppStore();
-  const active = setupStep === "ready" ? 3 : 2;
-  const isInstallComplete = setupStep === "install-complete";
+  const { setupStep } = useAppStore();
+  const active = setupStep === "ready" ? 5 : 3;
+  const isGatewayReady = setupStep === "gateway-ready";
+  const currentInstallStep = currentStepOf(flow.steps);
+  const canRepairGateway = setupStep === "error" && currentInstallStep?.id === "gateway";
+  // BUG-CPI-07：自愈梯子（更新→重装）已确认这些插件不可自动修复，
+  // 主操作降级为"临时禁用并启动"。
+  const hasBrokenPlugins = setupStep === "error" && flow.brokenPlugins.length > 0;
+  const currentInstallTitle = installStepTitle(currentInstallStep, t) ?? t("setup.settingUp");
+  const runningStepLabel = t("setup.installPanel.runningStep", {
+    step: currentInstallTitle,
+    defaultValue: "正在执行：{{step}}",
+  });
 
   return (
     <SetupShell
       active={active}
-      title={setupStep === "ready" ? t("setup.ready") : isInstallComplete ? t("setup.installComplete", "必需组件已安装完成") : t("setup.settingUp")}
-      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isInstallComplete ? t("setup.installCompleteSubtitle", "安装与配置已完成。请确认后手动启动 Gateway。") : t("setup.subtitle")}
+      title={setupStep === "ready" ? t("setup.ready") : isGatewayReady ? t("setup.gatewayConnected") : t("setup.settingUp")}
+      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isGatewayReady ? t("setup.gatewayReadySubtitle") : t("setup.subtitle")}
       logs={logs}
       wide
-      previousAction={setupStep === "ready" ? undefined : { onClick: () => flow.goBack() }}
+      showLogToggle={false}
+      previousAction={setupStep === "error" || isGatewayReady ? { onClick: () => flow.goBack(), disabled: flow.repairing } : undefined}
+      secondaryAction={canRepairGateway ? {
+        label: t("setup.retryDirectly", "直接重试"),
+        onClick: () => { void flow.retryGateway(); },
+        disabled: flow.repairing,
+      } : undefined}
       nextAction={
         setupStep === "ready"
           ? { label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }
-          : isInstallComplete
-            ? { label: t("setup.startGatewayBtn"), onClick: () => flow.startGateway(), icon: "none" }
+          : isGatewayReady
+            ? { label: t("setup.nextStep", "下一步"), onClick: () => { void flow.continueAfterGatewayReady(); } }
+          : hasBrokenPlugins
+            ? {
+                label: flow.repairing
+                  ? t("setup.pluginDisablingBtn", "正在禁用插件…")
+                  : t("setup.disablePluginsAndStart", "临时禁用插件并启动"),
+                onClick: () => { void flow.disablePluginsAndRetry(); },
+                loading: flow.repairing,
+                icon: "none",
+              }
+          : canRepairGateway
+            ? {
+                label: flow.repairing
+                  ? t("setup.repairing", "正在修复…")
+                  : t("setup.repairAndRetry", "自动修复并重试"),
+                onClick: () => { void flow.repairAndRetry(); },
+                loading: flow.repairing,
+                icon: "none",
+              }
           : setupStep === "error"
             ? { label: t("setup.retry"), onClick: () => { void flow.retrySetup(); }, icon: "none" }
-            : { label: flow.statusMessage || t("setup.settingUp"), disabled: true, loading: true, icon: "none" }
+            : { label: runningStepLabel, disabled: true, loading: true, icon: "none" }
       }
     >
-      <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
-      {setupStep === "error" && setupError && (
-        <div className="mt-5 rounded-lg border border-red-500/25 bg-red-500/5 p-4">
-          <p className="break-all font-mono text-sm text-red-300">{setupError}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={() => void navigator.clipboard?.writeText(setupError)}
-              className="inline-flex items-center gap-1 rounded-lg border border-aegis-border px-3 py-1.5 text-xs text-aegis-text-secondary hover:bg-aegis-surface"
-            >
-              <Copy size={11} />
-              {t("setup.copyError")}
-            </button>
-          </div>
+      {hasBrokenPlugins && (
+        <div className="mb-3 space-y-2">
+          <StatusPanel
+            icon={<Package size={22} />}
+            tone="danger"
+            eyebrow={t("setup.pluginRecovery.eyebrow", "插件问题")}
+            title={t("setup.pluginRecovery.title", "插件阻止了 Gateway 启动")}
+            message={t(
+              "setup.pluginRecovery.desc",
+              "以下插件无法自动修复（已尝试更新与重装）。临时禁用后即可继续启动，不影响其他功能；插件发布修复版本后可在设置中重新启用。",
+            )}
+          />
+          <ul className="space-y-1 rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2 text-sm">
+            {flow.brokenPlugins.map((plugin) => (
+              <li key={plugin.id} className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium text-aegis-text">{plugin.id}</span>
+                {plugin.version && (
+                  <span className="text-xs text-aegis-text-dim">v{plugin.version}</span>
+                )}
+                {plugin.detail && (
+                  <span className="text-xs text-aegis-text-dim" dir="ltr">{plugin.detail}</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
+      )}
+      <InstallationConsole flow={flow} logs={logs} setupStep={setupStep} />
+    </SetupShell>
+  );
+}
+
+function wizardInitialValue(step: OpenClawWizardStep): unknown {
+  if (step.type === "confirm") return Boolean(step.initialValue);
+  if (step.type === "multiselect") return Array.isArray(step.initialValue) ? step.initialValue : [];
+  if (step.type === "select") {
+    const options = Array.isArray(step.options) ? step.options : [];
+    return options.some((option) => wizardValuesEqual(option.value, step.initialValue))
+      ? step.initialValue
+      : options[0]?.value;
+  }
+  if (step.type === "text") return typeof step.initialValue === "string" ? step.initialValue : "";
+  if (step.type === "action") return true;
+  return undefined;
+}
+
+function wizardValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  try { return JSON.stringify(left) === JSON.stringify(right); } catch { return false; }
+}
+
+function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
+  const { t } = useTranslation();
+  const step = flow.wizardStep;
+  const [value, setValue] = useState<unknown>(() => step ? wizardInitialValue(step) : undefined);
+  const [feishuDomain, setFeishuDomain] = useState<"feishu" | "lark">("feishu");
+  const [enrollmentDomain, setEnrollmentDomain] = useState<"feishu" | "lark" | null>(null);
+  const [enrollmentFinalizing, setEnrollmentFinalizing] = useState(false);
+  const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
+  const [pendingEnrollment, setPendingEnrollment] = useState<ChannelEnrollmentCompletion | null>(null);
+  const [wizardQrDataUrl, setWizardQrDataUrl] = useState<string | null>(null);
+  const [wizardQrSource, setWizardQrSource] = useState<string | null>(null);
+  const enrollmentFinalizingRef = useRef(enrollmentFinalizing);
+  const pendingEnrollmentRef = useRef<ChannelEnrollmentCompletion | null>(null);
+
+  useEffect(() => {
+    enrollmentFinalizingRef.current = enrollmentFinalizing;
+  }, [enrollmentFinalizing]);
+
+  useEffect(() => {
+    pendingEnrollmentRef.current = pendingEnrollment;
+  }, [pendingEnrollment]);
+
+  useEffect(() => () => {
+    const completion = pendingEnrollmentRef.current;
+    if (completion) void cancelChannelEnrollment(completion.sessionId);
+  }, []);
+
+  useEffect(() => {
+    setValue(step ? wizardInitialValue(step) : undefined);
+    setWizardQrDataUrl(null);
+    setWizardQrSource(null);
+    if (!enrollmentFinalizingRef.current) {
+      setEnrollmentDomain(null);
+      setEnrollmentError(null);
+      setPendingEnrollment(null);
+    }
+  }, [step?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const source = step?.type === "note" ? extractWizardUrls(step.message)[0] : undefined;
+    setWizardQrSource(source ?? null);
+    setWizardQrDataUrl(null);
+    if (!source) return () => { cancelled = true; };
+    void renderWizardQrDataUrl(source).then((dataUrl) => {
+      if (!cancelled) setWizardQrDataUrl(dataUrl);
+    });
+    return () => { cancelled = true; };
+  }, [step?.id, step?.message, step?.type]);
+
+  if (!step) {
+    return (
+      <SetupShell
+        active={4}
+        title={t("setup.wizard.title", "配置 OpenClaw")}
+        subtitle={t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
+        logs={logs}
+        previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
+        nextAction={{
+          label: flow.wizardRecoveryRequired
+            ? t("setup.wizard.reclaim", "重新接管向导")
+            : flow.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
+          onClick: () => void (flow.wizardRecoveryRequired ? flow.reclaimWizard() : flow.retryWizard()),
+          disabled: flow.wizardSubmitting && !flow.wizardError,
+          loading: flow.wizardSubmitting,
+          icon: "none",
+        }}
+      >
+        <div className={clsx("rounded-lg border p-4 text-sm leading-6", flow.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
+          {flow.wizardError || t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
+        </div>
+      </SetupShell>
+    );
+  }
+
+  // Gateway owns wizard presentation and language. Keep its rendered step
+  // intact so local, remote, and externally managed Gateways behave alike.
+  const presentedStep = step;
+  const feishuQrSetupMethod = isFeishuQrSetupMethodStep(presentedStep);
+  const options = Array.isArray(presentedStep.options) ? presentedStep.options : [];
+  const selectedValues = Array.isArray(value) ? value : [];
+  const toggleMulti = (optionValue: unknown) => {
+    setValue((current: unknown) => {
+      const values = Array.isArray(current) ? current : [];
+      return values.some((item) => wizardValuesEqual(item, optionValue))
+        ? values.filter((item) => !wizardValuesEqual(item, optionValue))
+        : [...values, optionValue];
+    });
+  };
+  const blocked = !feishuQrSetupMethod
+    && (step.type === "select" || step.type === "multiselect")
+    && options.length === 0;
+  const messageRenderedInBody = presentedStep.type === "confirm"
+    || presentedStep.type === "note"
+    || presentedStep.type === "progress"
+    || presentedStep.type === "action";
+  const wizardTitle = feishuQrSetupMethod
+    ? t("setup.wizard.channelEnrollment.title", "扫描二维码连接飞书")
+    : presentedStep.title || t("setup.wizard.title", "配置 OpenClaw");
+  const wizardSubtitle = feishuQrSetupMethod
+    ? t("setup.wizard.channelEnrollment.subtitle", "使用手机扫码创建应用，JunQi 会继续完成 OpenClaw 官方配置。")
+    : messageRenderedInBody
+      ? t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")
+      : presentedStep.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
+  const handleEnrollmentFailure = async (completion: ChannelEnrollmentCompletion, error: unknown) => {
+    if (error instanceof FeishuQrWizardSessionChangedError) {
+      await cancelChannelEnrollment(completion.sessionId);
+      setPendingEnrollment(null);
+      setEnrollmentError(t("setup.wizard.channelEnrollment.handoffFailed", "扫码已验证，但 OpenClaw 配置未能继续。请重新生成二维码后重试。"));
+      return;
+    }
+    setPendingEnrollment(completion);
+    setEnrollmentError(t("setup.wizard.channelEnrollment.handoffRecoverable", "扫码已验证，但 OpenClaw 配置会话需要恢复。点击“继续配置”即可，无需重新扫码。"));
+  };
+  const completeEnrollment = async (completion: ChannelEnrollmentCompletion, initialStep: OpenClawWizardStep) => {
+    enrollmentFinalizingRef.current = true;
+    setEnrollmentFinalizing(true);
+    try {
+      await new FeishuQrWizardBridge(completion).complete(initialStep, flow.submitWizardStep);
+      setEnrollmentDomain(null);
+      setPendingEnrollment(null);
+    } catch (error) {
+      setEnrollmentDomain(null);
+      await handleEnrollmentFailure(completion, error);
+    } finally {
+      enrollmentFinalizingRef.current = false;
+      setEnrollmentFinalizing(false);
+    }
+  };
+  const handleEnrollmentConnected = async (completion: ChannelEnrollmentCompletion) => {
+    await completeEnrollment(completion, step);
+  };
+  const resumeEnrollment = async () => {
+    const completion = pendingEnrollment;
+    if (!completion) return;
+    enrollmentFinalizingRef.current = true;
+    setEnrollmentFinalizing(true);
+    try {
+      const result = await flow.retryWizard();
+      if (!result || result.done || !result.step) {
+        throw new Error('OpenClaw did not return a resumable Feishu step.');
+      }
+      await new FeishuQrWizardBridge(completion).complete(result.step, flow.submitWizardStep);
+      setPendingEnrollment(null);
+      setEnrollmentError(null);
+    } catch (error) {
+      await handleEnrollmentFailure(completion, error);
+    } finally {
+      enrollmentFinalizingRef.current = false;
+      setEnrollmentFinalizing(false);
+    }
+  };
+
+  return (
+    <SetupShell
+      active={4}
+      title={wizardTitle}
+      subtitle={wizardSubtitle}
+      logs={logs}
+      previousAction={{
+        label: t("setup.previousStep", "上一步"),
+        onClick: flow.wizardCanGoBack ? flow.backWizard : flow.goBack,
+        disabled: flow.wizardSubmitting || Boolean(enrollmentDomain) || enrollmentFinalizing,
+      }}
+      nextAction={{
+        label: pendingEnrollment
+          ? t("setup.wizard.channelEnrollment.resume", "继续配置")
+          : feishuQrSetupMethod
+          ? t("setup.wizard.channelEnrollment.start", "显示二维码")
+          : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
+        onClick: () => {
+          if (pendingEnrollment) {
+            void resumeEnrollment();
+            return;
+          }
+          if (feishuQrSetupMethod) {
+            setEnrollmentError(null);
+            setEnrollmentDomain(feishuDomain);
+            return;
+          }
+          void flow.submitWizardStep(step.id, value);
+        },
+        disabled: flow.wizardSubmitting || blocked || enrollmentFinalizing,
+        loading: flow.wizardSubmitting || enrollmentFinalizing,
+        icon: "next",
+      }}
+    >
+      <div className="space-y-4" dir="auto">
+        {feishuQrSetupMethod && (
+          <div className="space-y-4 rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
+            <p>{t("setup.wizard.channelEnrollment.description", "扫码会创建并验证飞书应用；凭据只会临时交给 OpenClaw 官方向导，不会显示在 JunQi 页面中。")}</p>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("setup.wizard.channelEnrollment.domain", "服务区域")}>
+              {([
+                ["feishu", t("setup.wizard.channelEnrollment.feishu", "飞书")],
+                ["lark", t("setup.wizard.channelEnrollment.lark", "Lark")],
+              ] as const).map(([domain, label]) => {
+                const selected = feishuDomain === domain;
+                return (
+                  <button key={domain} type="button" role="radio" aria-checked={selected} onClick={() => setFeishuDomain(domain)} className={clsx("rounded-md border px-3 py-2 text-sm font-semibold transition", selected ? "border-aegis-primary bg-aegis-primary/10 text-aegis-text" : "border-aegis-border bg-aegis-surface text-aegis-text-secondary hover:border-aegis-primary/40")}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {presentedStep.type === "text" && (
+          <input
+            type={presentedStep.sensitive ? "password" : "text"}
+            value={typeof value === "string" ? value : ""}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder={presentedStep.placeholder}
+            aria-label={presentedStep.title || t("setup.wizard.textInput", "OpenClaw 配置值")}
+            autoComplete={presentedStep.sensitive ? "new-password" : "off"}
+            className="w-full rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5 text-sm text-aegis-text outline-none focus:border-aegis-primary"
+          />
+        )}
+        {presentedStep.type === "confirm" && (
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-aegis-border bg-aegis-surface p-4 text-sm text-aegis-text">
+            <input type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} className="h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
+            <span>{presentedStep.message || t("setup.wizard.confirm", "确认并继续")}</span>
+          </label>
+        )}
+        {presentedStep.type === "select" && !feishuQrSetupMethod && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {options.map((option, index) => {
+              const selected = wizardValuesEqual(value, option.value);
+              return (
+                <button key={`${step.id}-${index}`} type="button" onClick={() => setValue(option.value)} className={clsx("flex min-h-[64px] items-start gap-3 rounded-lg border p-3 text-start transition", selected ? "border-aegis-primary bg-aegis-primary/8" : "border-aegis-border bg-aegis-surface hover:border-aegis-primary/40")}>
+                  {selected ? <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-aegis-primary" /> : <Circle size={17} className="mt-0.5 shrink-0 text-aegis-text-dim" />}
+                  <span>
+                    <span className="block text-sm font-semibold text-aegis-text">{option.label}</span>
+                    {option.hint && <span className="mt-1 block text-xs leading-5 text-aegis-text-muted">{option.hint}</span>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {presentedStep.type === "multiselect" && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {options.map((option, index) => {
+              const selected = selectedValues.some((item) => wizardValuesEqual(item, option.value));
+              return (
+                <label key={`${step.id}-${index}`} className={clsx("flex cursor-pointer items-start gap-3 rounded-lg border p-3", selected ? "border-aegis-primary bg-aegis-primary/8" : "border-aegis-border bg-aegis-surface")}>
+                  <input type="checkbox" checked={selected} onChange={() => toggleMulti(option.value)} className="mt-0.5 h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
+                  <span><span className="block text-sm font-semibold text-aegis-text">{option.label}</span>{option.hint && <span className="mt-1 block text-xs leading-5 text-aegis-text-muted">{option.hint}</span>}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        {(presentedStep.type === "note" || presentedStep.type === "progress" || presentedStep.type === "action") && (
+          <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
+            <pre className="whitespace-pre-wrap break-words font-[inherit]">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</pre>
+            {wizardQrDataUrl && wizardQrSource && (
+              <div className="mt-4 flex flex-col items-center gap-3 rounded-md border border-aegis-border bg-white p-3">
+                <img src={wizardQrDataUrl} alt={t("setup.wizard.qrAlt", "扫描授权二维码")} className="h-64 w-64" />
+                <a href={wizardQrSource} target="_blank" rel="noreferrer" className="max-w-full break-all text-center text-xs text-blue-700 underline">{wizardQrSource}</a>
+              </div>
+            )}
+          </div>
+        )}
+        {enrollmentError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{enrollmentError}</div>}
+        {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}
+      </div>
+      {enrollmentDomain && (
+        <ChannelEnrollmentDialog
+          channel="feishu"
+          domain={enrollmentDomain}
+          finalizing={enrollmentFinalizing}
+          onClose={() => setEnrollmentDomain(null)}
+          onConnected={(completion) => { void handleEnrollmentConnected(completion); }}
+        />
       )}
     </SetupShell>
   );
 }
 
+// ── 开机自启卡片(仅 Native 运行时) ──
+// 通过官方 `openclaw gateway install/uninstall` 注册或移除系统服务;切换后
+// 用现有 restart 流程把 Gateway 从"桌面托管"交接给系统服务(或反向),保证
+// 结束时只有一个明确的托管方持有端口。Docker 运行时由容器重启策略负责。
+function GatewayAutostartCard({ installMode }: { installMode: InstallMode }) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<GatewayAutostartStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (installMode !== "native") return;
+    let cancelled = false;
+    void gatewayAutostartStatus()
+      .then((next) => { if (!cancelled) setStatus(next); })
+      .catch(() => { if (!cancelled) setStatus(null); });
+    return () => { cancelled = true; };
+  }, [installMode]);
+
+  if (installMode !== "native" || !status?.supported) return null;
+  const enabled = status.enabled;
+
+  const toggleAutostart = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setPhase(enabled
+        ? t("setup.autostart.disabling", "正在关闭开机自启…")
+        : t("setup.autostart.enabling", "正在设置开机自启…"));
+      const next = enabled ? await disableGatewayAutostart() : await enableGatewayAutostart();
+      setStatus(next);
+      // 交接托管方:开启后交给系统服务,关闭后回落到桌面托管。
+      setPhase(t("setup.autostart.switching", "正在切换 OpenClaw 的运行方式,请稍候…"));
+      await window.aegis.config.restart();
+      setStatus(await gatewayAutostartStatus().catch(() => next));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+      setPhase(null);
+    }
+  };
+
+  return (
+    <div className="w-full rounded-xl border-2 border-aegis-primary/40 bg-aegis-primary/5 p-5 text-left">
+      <div className="flex items-start gap-3">
+        <span className={clsx(
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+          enabled ? "bg-aegis-success/15 text-aegis-success" : "bg-aegis-primary/15 text-aegis-primary",
+        )}>
+          <Power size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-aegis-text">
+              {t("setup.autostart.title", "要不要让 OpenClaw 开机自动运行?")}
+            </span>
+            {enabled && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-aegis-success/30 bg-aegis-success/10 px-2 py-0.5 text-[11px] font-medium text-aegis-success">
+                <Check size={11} strokeWidth={3} />
+                {t("setup.autostart.enabledBadge", "已开启")}
+              </span>
+            )}
+          </div>
+          <p className="mt-1.5 text-xs leading-5 text-aegis-text-secondary">
+            {enabled
+              ? t("setup.autostart.enabledHint", "已设置为开机自动运行:以后电脑一开机,OpenClaw 就会自动在后台工作,不需要打开本应用。随时可以在这里关闭。")
+              : t("setup.autostart.hint", "开启后,电脑一开机 OpenClaw 就会自动在后台运行——不用打开本应用,你的消息渠道和定时任务也能照常工作。不开启也没关系:每次打开本应用时会自动启动它。")}
+          </p>
+          {busy && phase && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-aegis-text-muted">
+              <LoaderCircle size={12} className="animate-spin" />
+              {phase}
+            </p>
+          )}
+          {error && <p className="mt-2 break-all text-xs text-aegis-danger">{error}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => void toggleAutostart()}
+          disabled={busy}
+          className={clsx(
+            "shrink-0 rounded-lg px-4 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
+            enabled
+              ? "border border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface"
+              : "bg-aegis-primary text-white hover:opacity-90",
+          )}
+        >
+          {enabled
+            ? t("setup.autostart.disable", "关闭")
+            : t("setup.autostart.enable", "开机自动运行")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const navigateSetup = useSetupNavigation();
-  const doneCount = flow.steps.filter((s) => s.status === "done").length;
-  const total = flow.steps.length || doneCount || 1;
+  const settledCount = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
+  const total = flow.steps.length || settledCount || 1;
 
   return (
     <SetupShell
-      active={3}
+      active={5}
       title={t("setup.ready")}
       subtitle={t("setup.readySubtitle")}
       logs={logs}
-      previousAction={{ onClick: () => navigateSetup("install-complete") }}
+      previousAction={{ onClick: flow.goBack }}
       nextAction={{ label: t("setup.enterWorkspace"), onClick: (event) => flow.enterWorkspace(event.currentTarget) }}
     >
       <div className="flex flex-col items-center gap-6 py-5 text-center">
@@ -443,6 +897,7 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
               const meta = STEP_META[s.id];
               const label = meta ? t(meta.titleKey, meta.titleFallback) : s.label;
               const done = s.status === "done";
+              const skipped = s.status === "skipped";
               return (
                 <span
                   key={s.id}
@@ -450,10 +905,12 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium",
                     done
                       ? "border-aegis-success/30 bg-aegis-success/10 text-aegis-success"
+                      : skipped
+                        ? "border-aegis-border bg-aegis-surface text-aegis-text-muted"
                       : "border-aegis-border text-aegis-text-dim",
                   )}
                 >
-                  {done ? <Check size={13} strokeWidth={3} /> : <Circle size={12} />}
+                  {done ? <Check size={13} strokeWidth={3} /> : skipped ? <Minus size={13} /> : <Circle size={12} />}
                   {label}
                 </span>
               );
@@ -461,8 +918,9 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
           </div>
         )}
         <div className="text-xs text-aegis-text-dim">
-          {doneCount}/{total} {t("setup.installPanel.stepsDone", "个步骤完成")}
+          {settledCount}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}
         </div>
+        <GatewayAutostartCard installMode={flow.installMode} />
         {flow.openclawStatus?.installed && (
           <div className="w-full text-left">
             <OpenClawUpdatePanel
@@ -478,11 +936,15 @@ function ReadyScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
 
 function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
+  const isMac = window.aegis?.platform === "darwin";
+  const description = isMac
+    ? t("setup.gitMacRequiredDesc", "Apple 命令行工具安装器已打开。完成系统安装后重新检测 Git。")
+    : t("setup.gitRequiredDesc");
   return (
     <SetupShell
-      active={2}
+      active={3}
       title={t("setup.gitRequired")}
-      subtitle={t("setup.gitRequiredDesc")}
+      subtitle={description}
       logs={logs}
       previousAction={{ onClick: () => flow.goBack() }}
       nextAction={{ label: t("setup.gitRetry"), onClick: () => flow.retryGit(), icon: "none" }}
@@ -492,8 +954,45 @@ function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] })
         tone="danger"
         eyebrow={t("setup.steps.install.title")}
         title={t("setup.gitRequired")}
-        message={t("setup.gitRequiredDesc")}
+        message={description}
       />
+    </SetupShell>
+  );
+}
+
+function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
+  const { t } = useTranslation();
+  const requirement = flow.nodeRequirement ?? t("setup.nodeRequirementUnknown", "OpenClaw 所需版本");
+  const message = t("setup.nodeRequiredDesc", { requirement });
+  return (
+    <SetupShell
+      active={3}
+      title={t("setup.nodeRequired")}
+      subtitle={message}
+      logs={logs}
+      previousAction={{ onClick: () => flow.goBack() }}
+      nextAction={{ label: t("setup.nodeRetry"), onClick: () => flow.retryNode(), icon: "none" }}
+    >
+      <div className="space-y-3">
+        <StatusPanel
+          icon={<Package size={22} />}
+          tone="danger"
+          eyebrow={t("setup.steps.install.title")}
+          title={t("setup.nodeRequired")}
+          message={message}
+        />
+        <p className="text-sm leading-6 text-aegis-text-secondary">
+          {t("setup.nodeRequiredInstallHint")}
+        </p>
+        <a
+          href="https://npmmirror.com/mirrors/node/"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex text-sm font-medium text-aegis-primary hover:underline"
+        >
+          {t("setup.nodeDownload")}
+        </a>
+      </div>
     </SetupShell>
   );
 }
@@ -503,9 +1002,6 @@ export function SetupPage() {
   const setupStep = useAppStore((s) => s.setupStep);
   const logs = useAppStore((s) => s.setupLogs);
   const appendSetupLog = useAppStore((s) => s.appendSetupLog);
-  const postStorageStep = useAppStore((s) => s.postStorageStep);
-  const setSetupStep = useAppStore((s) => s.setSetupStep);
-  const setSetupStatus = useAppStore((s) => s.setSetupStatus);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null);
@@ -521,43 +1017,40 @@ export function SetupPage() {
   );
 
   useEffect(() => {
-    let unlistenSetup: (() => void) | null = null;
-    let unlistenGateway: (() => void) | null = null;
+    const unlistenSetup = subscribeTauriEvent("setup-progress", (event) => {
+      const detail = normalizeSetupProgressPayload(event.payload);
+      if (!detail) return;
+      const message = translateSetupProgressMessage(
+        detail.key,
+        detail.message,
+        (key, options) => t(key, options),
+        detail.params,
+      );
+      appendSetupLog({
+        source: "setup",
+        message,
+        step: detail.step ?? undefined,
+        level: classifySetupMessage(message, detail.error),
+        progress: detail.progress ?? undefined,
+      });
+    });
 
-    listen("setup-progress", (event) => {
-      const message = payloadMessage(event.payload);
-      if (message) appendSetupLog({ source: "setup", message });
-    }).then((fn) => { unlistenSetup = fn; }).catch(() => {});
+    const unlistenGateway = subscribeTauriEvent<string>("gateway-log", (event) => {
+      if (event.payload) appendSetupLog({
+        source: "gateway",
+        message: event.payload,
+        level: classifySetupMessage(event.payload),
+      });
+    });
 
-    listen<string>("gateway-log", (event) => {
-      if (event.payload) appendSetupLog({ source: "gateway", message: event.payload });
-    }).then((fn) => { unlistenGateway = fn; }).catch(() => {});
-
-    return () => {
-      unlistenSetup?.();
-      unlistenGateway?.();
-    };
-  }, [appendSetupLog]);
+    return combineUnlisteners([unlistenSetup, unlistenGateway]);
+  }, [appendSetupLog, t]);
 
   const sharedLogs = useMemo(() => logs, [logs]);
-  const finishStorage = (result?: { createdFresh: boolean }) => {
-    const nextStep = postStorageStep === "ready" && result?.createdFresh
-      ? "gateway-stopped"
-      : postStorageStep;
-    if (nextStep === "ready") {
-      setSetupStatus(t("setup.ready"), 100);
-    } else if (nextStep === "gateway-stopped") {
-      setSetupStatus(t("setup.gatewayNotRunning"), 30);
-    } else {
-      setSetupStatus(t("setup.chooseMode"), 30);
-    }
-    setSetupStep(nextStep);
-  };
-
   switch (setupStep) {
     case "welcome": return <WelcomeScreen logs={sharedLogs} />;
     case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
-    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={finishStorage} onBack={() => setSetupStep("welcome")} />;
+    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
     case "gateway-stopped": return <GatewayStoppedScreen flow={flow} logs={sharedLogs} />;
     case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
     case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;
@@ -565,9 +1058,11 @@ export function SetupPage() {
     case "install-git":
     case "install-node":
     case "install-openclaw":
-    case "install-complete":
+    case "gateway-ready":
     case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
+    case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
     case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
+    case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
     default: return <DetectingScreen flow={flow} logs={sharedLogs} />;
   }
 }

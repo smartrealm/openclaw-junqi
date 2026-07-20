@@ -7,18 +7,21 @@ import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, MessageCircle, Kanban, DollarSign, Clock, Bot, Brain,
   Settings, Wifi, WifiOff, Heart, Mail, Calendar, RefreshCw,
-  Globe, Bell, BellOff, Command, Sparkles, Terminal, Cpu
+  Globe, Bell, BellOff, BookOpenText, Command, Sparkles, Terminal, Cpu
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
-import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { changeLanguage } from '@/i18n';
 import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
+import { gateway } from '@/services/gateway';
+import { useNotificationStore } from '@/stores/notificationStore';
 import clsx from 'clsx';
 
-const DEFAULT_GATEWAY_WS_URL = 'ws://127.0.0.1:18789';
+const DEFAULT_GATEWAY_WS_URL = defaultGatewayWsUrl();
 
 // Quick-launch agents (kooky supports 13; we expose the common ones in palette).
 import { Sparkle, Robot, Diamond, Pi, Brain as BrainPh, Cube } from '@phosphor-icons/react';
@@ -57,12 +60,12 @@ export function CommandPalette() {
     const storeUrl = state.gatewayUrl?.trim();
     const storeToken = state.gatewayToken?.trim() || '';
     if (storeUrl) {
-      gateway.connect(storeUrl, storeToken);
+      gatewayManager.connect(storeUrl, storeToken);
       return;
     }
     const config = await window.aegis?.config?.get();
     const cfgUrl = config?.gatewayUrl || config?.gatewayWsUrl || DEFAULT_GATEWAY_WS_URL;
-    gateway.connect(cfgUrl, config?.gatewayToken || storeToken);
+    gatewayManager.connect(cfgUrl, config?.gatewayToken || storeToken);
   };
 
   // Define commands — all names use i18n keys
@@ -88,7 +91,20 @@ export function CommandPalette() {
       window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: "What's on my calendar today and tomorrow?", autoSend: true } }));
     }},
     { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
-      window.dispatchEvent(new CustomEvent('aegis:compress-session'));
+      const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
+      void gateway.compactSession(sessionKey).then(() => {
+        useNotificationStore.getState().addToast(
+          'task_complete',
+          t('dashboard.compactQueuedTitle', 'Compaction requested'),
+          t('dashboard.compactQueuedBody', 'OpenClaw is compacting the current session context.'),
+        );
+      }).catch((error) => {
+        useNotificationStore.getState().addToast(
+          'error',
+          t('dashboard.compactFailedTitle', 'Compaction failed'),
+          String(error),
+        );
+      });
     }},
 
     // Agent launchers (kooky ⌘P pattern: type to filter, Enter to launch)
@@ -102,6 +118,7 @@ export function CommandPalette() {
       action: () => navigate(`/agent-run?agent=${a.id}`),
     })),
     { id: 'agent-terminal', icon: Terminal, name: t('palette.openTerminal', 'Open Terminal'), keywords: ['terminal', 'shell', 'bash', 'zsh'], shortcut: 'Ctrl+T', action: () => navigate('/terminal') },
+    { id: 'nav-openclaw-commands', feature: 'tools', icon: BookOpenText, name: t('nav.openclawCommands', 'OpenClaw commands'), keywords: ['openclaw', 'cli', 'commands', 'reference', '命令', 'مرجع'], action: () => navigate('/openclaw-commands') },
     { id: 'agent-status', icon: Cpu, name: t('palette.systemStatus', 'System Status'), keywords: ['status', 'system', 'health'], action: () => navigate('/perf') },
 
     // Connection

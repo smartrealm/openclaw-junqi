@@ -26,19 +26,22 @@ export function normalizeLoadedAgentWorkspaceTasks(
 ): AgentWorkspaceTask[] {
   const recoveredAt = Date.now();
   return tasks.map((task) => {
-    const activeStatus = task.status === 'pending'
+    const hasLiveProcess = activeTaskIds.has(task.id);
+    const recoverableStatus = task.status === 'pending'
       || task.status === 'running'
       || task.status === 'input_required'
-      || task.status === 'awaiting_review';
-    const recoveredStatus = activeStatus
-      ? activeTaskIds.has(task.id) ? 'detached' as const : 'interrupted' as const
+      || task.status === 'awaiting_review'
+      || task.status === 'detached'
+      || (task.status === 'interrupted' && hasLiveProcess);
+    const recoveredStatus = recoverableStatus
+      ? hasLiveProcess ? 'detached' as const : 'interrupted' as const
       : task.status;
     return {
       ...task,
       projectPath,
       status: recoveredStatus,
-      updatedAt: activeStatus ? recoveredAt : Number.isFinite(task.updatedAt) ? task.updatedAt : task.createdAt,
-      ...(activeStatus ? { attentionRequestedAt: task.attentionRequestedAt ?? recoveredAt } : {}),
+      updatedAt: recoverableStatus ? recoveredAt : Number.isFinite(task.updatedAt) ? task.updatedAt : task.createdAt,
+      ...(recoverableStatus ? { attentionRequestedAt: task.attentionRequestedAt ?? recoveredAt } : {}),
     };
   });
 }
@@ -48,6 +51,7 @@ export function useAgentWorkspacePersistence(workspaces: PersistedWorkspace[]): 
   const loadedIdsRef = useRef(new Set<string>());
   const blockedIdsRef = useRef(new Set<string>());
   const saveTimersRef = useRef(new Map<string, number>());
+  const pendingSavesRef = useRef(new Map<string, AgentWorkspaceTask[]>());
   const workspaceMapRef = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -107,9 +111,13 @@ export function useAgentWorkspacePersistence(workspaces: PersistedWorkspace[]): 
         if (current === before || JSON.stringify(current) === JSON.stringify(before)) continue;
         const existing = saveTimersRef.current.get(projectId);
         if (existing !== undefined) window.clearTimeout(existing);
+        pendingSavesRef.current.set(projectId, current);
         saveTimersRef.current.set(projectId, window.setTimeout(() => {
           saveTimersRef.current.delete(projectId);
-          void invoke('save_agent_workspace_tasks', { projectId, tasks: current }).catch((error) => {
+          const tasks = pendingSavesRef.current.get(projectId);
+          pendingSavesRef.current.delete(projectId);
+          if (!tasks) return;
+          void invoke('save_agent_workspace_tasks', { projectId, tasks }).catch((error) => {
             console.error(`save AI workspace tasks for ${projectId}`, error);
           });
         }, 400));
@@ -119,6 +127,12 @@ export function useAgentWorkspacePersistence(workspaces: PersistedWorkspace[]): 
       unsubscribe();
       for (const timer of saveTimersRef.current.values()) window.clearTimeout(timer);
       saveTimersRef.current.clear();
+      for (const [projectId, tasks] of pendingSavesRef.current) {
+        void invoke('save_agent_workspace_tasks', { projectId, tasks }).catch((error) => {
+          console.error(`flush AI workspace tasks for ${projectId}`, error);
+        });
+      }
+      pendingSavesRef.current.clear();
     };
   }, []);
 }

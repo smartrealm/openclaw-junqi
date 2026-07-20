@@ -440,3 +440,25 @@ test('disabling the only image-capable model clears image primary', () => {
 
   assert.equal(next.agents?.defaults?.imageModel, undefined);
 });
+
+test('BUG-MP-06 writes advanced fields only to the provider model definition', () => {
+  const next = updateProviderModel({
+    config: {
+      models: { providers: { openai: { models: [{ id: 'gpt-5.6', name: 'GPT-5.6' }] } } },
+      agents: { defaults: { models: { 'openai/gpt-5.6': { alias: 'gpt' } } } },
+    },
+    providerId: 'openai',
+    modelRef: 'openai/gpt-5.6',
+    providerPatch: {
+      id: 'gpt-5.6',
+      name: 'GPT-5.6',
+      reasoning: true,
+      contextWindow: 1_000_000,
+      compat: { supportsTools: true },
+    },
+  });
+  assert.equal(next.models?.providers?.openai.models?.[0]?.reasoning, true);
+  assert.equal(next.models?.providers?.openai.models?.[0]?.contextWindow, 1_000_000);
+  assert.deepEqual(next.models?.providers?.openai.models?.[0]?.compat, { supportsTools: true });
+  assert.deepEqual(next.agents?.defaults?.models?.['openai/gpt-5.6'], { alias: 'gpt' });
+});

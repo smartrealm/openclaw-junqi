@@ -14,7 +14,7 @@ import {
   Save, RefreshCw, ExternalLink, Loader2,
   Sun, Moon, Eye, Palette, Type, Keyboard,
   Wifi, Bell, BellOff, Volume2, VolumeX, PawPrint,
-  CheckCircle2, AlertCircle, Upload, Trash2,
+  CheckCircle2, AlertCircle, Upload, Trash2, Blocks, FolderOpen, RotateCcw,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -23,22 +23,32 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { setThemeWithTransition } from '@/motion/themeTransition';
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
-import { gateway } from '@/services/gateway';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { notifications } from '@/services/notifications';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
 import { SkinPreview } from '@/pet/SkinPreview';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { changeLanguage } from '@/i18n';
 import type { AegisTheme } from '@/theme/types';
-import { APP_LANGUAGE_OPTIONS, type SupportedLanguage } from '@/i18n/languages';
+import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { APP_VERSION } from '@/version';
+import { JunQiLogo } from '@/components/shared/JunQiLogo';
+import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import clsx from 'clsx';
+import {
+  readAttentionBadge,
+  readTaskDisplayWindow,
+  TASK_DISPLAY_WINDOWS,
+  type TaskDisplayWindow,
+  writeAttentionBadge,
+  writeTaskDisplayWindow,
+} from '@/workspace/agentWorkspacePreferences';
 
 // ── Nav ─────────────────────────────────────────────────────────────────────
 
 type NavSection = 'application' | 'connectivity' | 'agents' | 'about';
-type NavKey = 'general' | 'theme' | 'fonts' | 'shortcuts' | 'connect' | 'notify' | 'pet' | 'hooks' | 'claude' | 'codex' | 'about';
+type NavKey = 'general' | 'theme' | 'fonts' | 'shortcuts' | 'skills' | 'connect' | 'notify' | 'pet' | 'hooks' | 'claude' | 'codex' | 'about';
 
 interface NavItem { key: NavKey; label: string; icon: React.ReactNode; section: NavSection; }
 
@@ -69,6 +79,7 @@ export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
     { key: 'theme', label: t('appSettings.theme', 'Theme'), icon: <Palette size={14} />, section: 'application' },
     { key: 'fonts', label: t('appSettings.fonts', 'Fonts'), icon: <Type size={14} />, section: 'application' },
     { key: 'shortcuts', label: t('appSettings.shortcuts', 'Shortcuts'), icon: <Keyboard size={14} />, section: 'application' },
+    { key: 'skills', label: t('skill.settings.navLabel', 'Skills'), icon: <Blocks size={14} />, section: 'application' },
     { key: 'connect', label: t('appSettings.connect', 'Connect'), icon: <Wifi size={14} />, section: 'connectivity' },
     { key: 'notify', label: t('appSettings.notify', 'Notifications'), icon: <Bell size={14} />, section: 'connectivity' },
     { key: 'pet', label: t('appSettings.pet', 'Pet'), icon: <PawPrint size={14} />, section: 'connectivity' },
@@ -115,6 +126,7 @@ export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
           {activeNav === 'theme' && <ThemePanel />}
           {activeNav === 'fonts' && <FontsPanel />}
           {activeNav === 'shortcuts' && <ShortcutsPanel />}
+          {activeNav === 'skills' && <SkillsPanel />}
           {activeNav === 'connect' && <ConnectPanel />}
           {activeNav === 'notify' && <NotifyPanel />}
           {activeNav === 'pet' && <PetPanel />}
@@ -124,6 +136,78 @@ export function AppSettingsDialog({ onClose }: AppSettingsDialogProps) {
           {activeNav === 'about' && <AboutPanel />}
         </main>
       </div>
+    </div>
+  );
+}
+
+interface SkillHubConfig {
+  hubPath?: string | null;
+}
+
+function SkillsPanel() {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState<SkillHubConfig | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<SkillHubConfig>('get_skill_hub_config')
+      .then((next) => { if (!cancelled) setConfig(next); })
+      .catch((reason) => { if (!cancelled) setError(String(reason)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const notifyChanged = () => window.dispatchEvent(new Event('nezha:skill-hub-changed'));
+  const chooseHub = async () => {
+    setError(null);
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (typeof selected !== 'string') return;
+    setBusy(true);
+    try {
+      const result = await invoke<{ config: SkillHubConfig }>('set_skill_hub_path', { path: selected });
+      setConfig(result.config);
+      notifyChanged();
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const clearHub = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await invoke('clear_skill_hub');
+      setConfig(null);
+      notifyChanged();
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hubPath = config?.hubPath ?? '';
+  return (
+    <div className="p-6">
+      <h2 className="mb-1 text-[16px] font-bold text-aegis-text">{t('skill.settings.navLabel', 'Skills')}</h2>
+      <p className="mb-5 text-[12px] text-aegis-text-dim">{t('skill.settings.hubPathHint', 'Choose the folder that stores shared skills.')}</p>
+      <label className="mb-1.5 block text-[11px] font-semibold text-aegis-text-secondary">{t('skill.settings.hubPath', 'Skill hub path')}</label>
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 truncate rounded-md border border-aegis-border bg-aegis-input px-3 py-2 font-mono text-[12px] text-aegis-text" title={hubPath}>
+          {hubPath || <span className="font-sans text-aegis-text-dim">{t('skill.settings.notConfigured', 'Not configured')}</span>}
+        </div>
+        <button type="button" onClick={() => void chooseHub()} disabled={busy} className="flex h-9 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[12px] text-aegis-text-secondary hover:bg-aegis-hover disabled:opacity-50">
+          <FolderOpen size={13} />{t('skill.settings.choose', 'Choose')}
+        </button>
+        {hubPath && (
+          <button type="button" title={t('skill.settings.reset', 'Reset')} onClick={() => void clearHub()} disabled={busy} className="flex h-9 w-9 items-center justify-center rounded-md border border-aegis-border text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-50">
+            <RotateCcw size={13} />
+          </button>
+        )}
+      </div>
+      {error && <div className="mt-3 text-[12px] text-aegis-danger" role="alert">{error}</div>}
     </div>
   );
 }
@@ -144,6 +228,8 @@ function GeneralPanel() {
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const [terminalScrollback, setTerminalScrollback] = useState(1000);
   const [savingScrollback, setSavingScrollback] = useState(false);
+  const [taskDisplayWindow, setTaskDisplayWindow] = useState<TaskDisplayWindow>(readTaskDisplayWindow);
+  const [attentionBadge, setAttentionBadge] = useState(readAttentionBadge);
   useEffect(() => {
     let cancelled = false;
     void invoke<{ terminal_scrollback?: number }>('load_app_settings').then((settings) => {
@@ -160,13 +246,10 @@ function GeneralPanel() {
       window.dispatchEvent(new Event('nezha:app-settings-changed'));
     } finally { setSavingScrollback(false); }
   };
-  const handleLanguageChange = (lang: SupportedLanguage) => {
+  const handleLanguageChange = (lang: AppLanguage) => {
     setLanguage(lang);
     changeLanguage(lang);
   };
-  const languageOptions = language === 'ar'
-    ? [...APP_LANGUAGE_OPTIONS, { value: 'ar' as const, label: 'العربية' }]
-    : APP_LANGUAGE_OPTIONS;
   return (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.general', 'General')}</h2>
@@ -174,9 +257,9 @@ function GeneralPanel() {
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-[11px] font-semibold text-aegis-text-secondary mb-1.5 block">{t('settings.language')}</label>
-          <select value={language} onChange={(e) => handleLanguageChange(e.target.value as SupportedLanguage)}
+          <select value={language} onChange={(e) => handleLanguageChange(e.target.value as AppLanguage)}
             className="px-3 py-2 rounded-md text-[13px] w-[200px]" style={{ background: 'rgb(var(--aegis-input))', border: '1px solid rgb(var(--aegis-border))', color: 'rgb(var(--aegis-text))' }}>
-            {languageOptions.map((option) => (
+            {APP_LANGUAGE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
@@ -197,6 +280,31 @@ function GeneralPanel() {
           </div>
           <p className="mt-1 text-[11px] text-aegis-text-dim">{t('appSettings.terminalScrollbackHint', '500–5000 lines. Applies to newly opened terminals.')}</p>
           {terminalScrollback > 3000 && <p className="mt-1 text-[11px] text-aegis-warning">{t('appSettings.terminalScrollbackWarning', 'Large buffers use more memory.')}</p>}
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold text-aegis-text-secondary">任务展示范围</label>
+          <select
+            value={taskDisplayWindow}
+            onChange={(event) => {
+              const value = event.target.value === 'all' ? 'all' : Number(event.target.value) as TaskDisplayWindow;
+              setTaskDisplayWindow(value);
+              writeTaskDisplayWindow(value);
+            }}
+            className="w-[200px] rounded-md border border-aegis-border bg-aegis-input px-3 py-2 text-[13px] text-aegis-text"
+          >
+            {TASK_DISPLAY_WINDOWS.map((value) => <option key={value} value={value}>{value === 'all' ? '全部' : `${value} 天`}</option>)}
+          </select>
+          <p className="mt-1 text-[11px] text-aegis-text-dim">限制普通历史任务的展示时间，需要关注、待合并、收藏和待办任务始终显示。</p>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold text-aegis-text-secondary">待确认角标</div>
+            <p className="mt-1 text-[11px] text-aegis-text-dim">在项目栏显示等待输入或审阅的任务数量。</p>
+          </div>
+          <Toggle enabled={attentionBadge} onChange={(enabled) => {
+            setAttentionBadge(enabled);
+            writeAttentionBadge(enabled);
+          }} />
         </div>
       </div>
     </div>
@@ -320,8 +428,8 @@ function ConnectPanel() {
   const [testing, setTesting] = useState(false);
   const [testOk, setTestOk] = useState<boolean|null>(null);
   const dirty = editUrl !== gatewayUrl || editToken !== gatewayToken;
-  const handleSave = () => { setGatewayUrl(editUrl.trim()); setGatewayToken(editToken.trim()); gateway.connect(editUrl.trim()||'ws://127.0.0.1:18789',editToken.trim()); };
-  const handleTest = async () => { setTesting(true); setTestOk(null); try { gateway.connect(editUrl.trim()||'ws://127.0.0.1:18789',editToken.trim()); await new Promise(r=>setTimeout(r,2500)); setTestOk(useChatStore.getState().connected); } catch { setTestOk(false); } finally { setTesting(false); } };
+  const handleSave = () => { setGatewayUrl(editUrl.trim()); setGatewayToken(editToken.trim()); gatewayManager.connect(editUrl.trim() || defaultGatewayWsUrl(), editToken.trim()); };
+  const handleTest = async () => { setTesting(true); setTestOk(null); try { gatewayManager.connect(editUrl.trim() || defaultGatewayWsUrl(), editToken.trim()); await new Promise(r=>setTimeout(r,2500)); setTestOk(useChatStore.getState().connected); } catch { setTestOk(false); } finally { setTesting(false); } };
   return (
     <div className="p-6">
       <h2 className="text-[16px] font-bold text-aegis-text mb-1">{t('appSettings.connect', 'Connect')}</h2>
@@ -332,7 +440,7 @@ function ConnectPanel() {
           <span className={connected?'text-aegis-success':connecting?'text-aegis-warning':'text-aegis-danger'}>{connected?t('connection.connected'):connecting?t('connection.connecting'):t('connection.disconnected')}</span></span>
       </div>
       <div className="flex flex-col gap-3">
-        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.webSocketUrl', 'WebSocket URL')}</label><input value={editUrl} onChange={e=>setEditUrl(e.target.value)} placeholder="ws://127.0.0.1:18789" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
+        <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.webSocketUrl', 'WebSocket URL')}</label><input value={editUrl} onChange={e=>setEditUrl(e.target.value)} placeholder={defaultGatewayWsUrl()} className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
         <div><label className="text-[11px] text-aegis-text-dim mb-1 block">{t('appSettings.token', 'Token')}</label><input type="password" value={editToken} onChange={e=>setEditToken(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 rounded-md text-[13px] font-mono" style={{background:'rgb(var(--aegis-input))',border:'1px solid rgb(var(--aegis-border))',color:'rgb(var(--aegis-text))'}}/></div>
         <div className="flex items-center gap-2">
           {dirty && <button onClick={handleSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-semibold bg-aegis-primary/15 text-aegis-primary border border-aegis-primary/25">{t('appSettings.saveReconnect', 'Save & Reconnect')}</button>}
@@ -374,7 +482,7 @@ function NotifyPanel() {
 
 function PetPanel() {
   const { t, i18n } = useTranslation();
-  const { enabled:petEnabled,setEnabled:setPetEnabled,skin:petSkin,setSkin:setPetSkin,customAsset:petCustomAsset,setCustomAsset:setPetCustomAsset,customPet,setCustomPet,pomodoro:petPomodoro,setPomodoro:setPetPomodoro,petVisible } = usePetStore();
+  const { enabled:petEnabled,setEnabled:setPetEnabled,skin:petSkin,setSkin:setPetSkin,customAsset:petCustomAsset,setCustomAsset:setPetCustomAsset,customPet,setCustomPet,pomodoro:petPomodoro,setPomodoro:setPetPomodoro,petVisible,backdropContrastEnabled,setBackdropContrastEnabled,captionScale:petCaptionScale,setCaptionScale:setPetCaptionScale } = usePetStore();
   const [uploadErr,setUploadErr]=useState<string|null>(null);
   const [now,setNow]=useState(Date.now());
   useEffect(()=>{if(!petPomodoro.running||petPomodoro.paused)return;const id=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(id);},[petPomodoro.running,petPomodoro.paused]);
@@ -384,6 +492,8 @@ function PetPanel() {
       <p className="text-[12px] text-aegis-text-dim mb-5">{t('pet.settings.enabledHint')}</p>
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{t('pet.settings.enabled')}</div></div><Toggle enabled={petEnabled} onChange={setPetEnabled}/></div>
+        <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{t('pet.settings.backdropContrast')}</div><div className="text-[11px] text-aegis-text-dim">{t('pet.settings.backdropContrastHint')}</div></div><Toggle enabled={backdropContrastEnabled} onChange={setBackdropContrastEnabled}/></div>
+        <div><div className="flex items-center justify-between gap-3"><div><div className="text-[13px] text-aegis-text">{t('pet.settings.captionScale','提示文字大小')}</div><div className="text-[11px] text-aegis-text-dim">{t('pet.settings.captionScaleHint','调整萌宠状态与提示文字的显示大小')}</div></div><span className="font-mono text-xs text-aegis-primary">{Math.round(petCaptionScale*100)}%</span></div><input className="mt-2 w-full accent-[rgb(var(--aegis-primary))]" type="range" min="0.85" max="1.35" step="0.05" value={petCaptionScale} onChange={(event)=>setPetCaptionScale(Number(event.target.value))} aria-label={t('pet.settings.captionScale','提示文字大小')}/></div>
         <div className="flex items-center justify-between"><div><div className="text-[13px] text-aegis-text">{petVisible?t('pet.settings.hidePet'):t('pet.settings.showPet')}</div></div>
           <button disabled={!petEnabled} onClick={()=>invoke(petVisible?'close_pet_window':'open_pet_window').catch(()=>undefined)}
             className={clsx('text-[12px] px-3 py-1.5 rounded-xl border transition-colors',petEnabled?'border-aegis-primary/30 text-aegis-primary hover:bg-aegis-primary/10':'border-aegis-border/20 text-aegis-text-dim opacity-40 cursor-not-allowed')}>{petVisible?t('pet.settings.hide'):t('pet.settings.show')}</button></div>
@@ -428,6 +538,103 @@ export function HooksPanel() {
         </div>)}</div>}</div>);
 }
 
+interface NativeAppSettings {
+  language: string;
+  claude_path: string;
+  codex_path: string;
+  send_shortcut: string;
+  terminal_shift_enter_newline: boolean;
+  claude_force_default_tui: boolean;
+  terminal_scrollback: number;
+}
+
+function AgentProgramPathSection({ agent }: { agent: 'claude' | 'codex' }) {
+  const { t } = useTranslation();
+  const [settings, setSettings] = useState<NativeAppSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const field = agent === 'claude' ? 'claude_path' : 'codex_path';
+
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<NativeAppSettings>('load_app_settings')
+      .then((next) => { if (!cancelled) setSettings(next); })
+      .catch((reason) => { if (!cancelled) setError(String(reason)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const detect = async () => {
+    setDetecting(true);
+    setError(null);
+    try {
+      const next = await invoke<NativeAppSettings>('detect_agent_paths');
+      setSettings(next);
+      window.dispatchEvent(new Event('nezha:app-settings-changed'));
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setDetecting(false);
+    }
+  };
+  const save = async (nextSettings: NativeAppSettings | null = settings) => {
+    if (!nextSettings) return;
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      await invoke('save_app_settings', { settings: nextSettings });
+      setSettings(nextSettings);
+      window.dispatchEvent(new Event('nezha:app-settings-changed'));
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2000);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-md border border-aegis-border bg-aegis-surface p-3">
+      <div className="mb-2 text-[12px] font-semibold text-aegis-text">{agent === 'claude' ? 'Claude Code' : 'Codex'} {t('appSettings.executablePath', 'executable path')}</div>
+      <div className="flex items-center gap-2">
+        <input
+          value={settings?.[field] ?? ''}
+          disabled={!settings || saving || detecting}
+          onChange={(event) => setSettings((current) => current ? { ...current, [field]: event.target.value } : current)}
+          placeholder={agent}
+          spellCheck={false}
+          className="min-w-0 flex-1 rounded-md border border-aegis-border bg-aegis-input px-3 py-2 font-mono text-[12px] text-aegis-text outline-none focus:border-aegis-primary"
+        />
+        <button type="button" onClick={() => void detect()} disabled={!settings || saving || detecting} className="flex h-9 items-center gap-1.5 rounded-md border border-aegis-border px-3 text-[12px] text-aegis-text-secondary hover:bg-aegis-hover disabled:opacity-50">
+          <RefreshCw size={12} className={detecting ? 'animate-spin' : ''} />{t('appSettings.detect', 'Detect')}
+        </button>
+        <button type="button" onClick={() => void save()} disabled={!settings || saving || detecting} className="flex h-9 items-center gap-1.5 rounded-md bg-aegis-primary px-3 text-[12px] font-semibold text-white disabled:opacity-50">
+          {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <CheckCircle2 size={12} /> : <Save size={12} />}
+          {saved ? t('common.saved', 'Saved') : t('common.save', 'Save')}
+        </button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-aegis-text-dim">{t('appSettings.executablePathHint', 'Leave empty to resolve the agent from the login-shell PATH.')}</p>
+      {agent === 'claude' && settings && (
+        <div className="mt-3 flex items-center justify-between gap-4 border-t border-aegis-border pt-3">
+          <div>
+            <div className="text-[12px] font-medium text-aegis-text">{t('appSettings.claudeForceDefaultTui', 'Use Claude default terminal UI')}</div>
+            <p className="mt-0.5 text-[11px] text-aegis-text-dim">{t('appSettings.claudeForceDefaultTuiHint', 'Avoid fullscreen terminal behavior that can interfere with scrolling and text selection.')}</p>
+          </div>
+          <Toggle enabled={settings.claude_force_default_tui} disabled={saving || detecting} onChange={(enabled) => {
+            const next = { ...settings, claude_force_default_tui: enabled };
+            setSettings(next);
+            void save(next);
+          }} />
+        </div>
+      )}
+      {error && <div className="mt-2 text-[11px] text-aegis-danger" role="alert">{error}</div>}
+    </div>
+  );
+}
+
 function FileEditor({ label, agent, lang }: { label: string; agent: 'claude'|'codex'; lang: 'json'|'toml' }) {
   const [c,setC]=useState<string|null>(null); const [orig,setOrig]=useState(''); const [fp,setFp]=useState('');
   const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [err,setErr]=useState<string|null>(null);
@@ -436,6 +643,7 @@ function FileEditor({ label, agent, lang }: { label: string; agent: 'claude'|'co
   const dirty=c!==null&&c!==orig;
   return (
     <div className="p-6 flex flex-col h-full"><div className="flex items-center gap-2 mb-1"><h2 className="text-[16px] font-bold text-aegis-text">{label}</h2><span className="text-[10px] px-2 py-0.5 rounded font-mono" style={{background:'rgb(var(--aegis-overlay)/0.06)',color:'rgb(var(--aegis-text-secondary))',border:'1px solid rgb(var(--aegis-border))'}}>{lang}</span>{dirty&&<span className="text-[10px] px-2 py-0.5 rounded font-semibold" style={{background:'rgb(var(--aegis-warning)/0.15)',color:'rgb(var(--aegis-warning))'}}>unsaved</span>}</div>
+      <AgentProgramPathSection agent={agent}/>
       <div className="text-[11px] text-aegis-text-dim font-mono mb-4 truncate" title={fp}>{fp||'(loading…)'}</div>
       {err&&<div className="mb-3 px-3 py-2 rounded-md text-[12px]" style={{background:'rgb(var(--aegis-danger)/0.1)',color:'rgb(var(--aegis-danger))'}}>{err}</div>}
       <div className="flex items-center gap-2 mb-3">
@@ -451,13 +659,23 @@ export function CodexPanel() { return <FileEditor label="Codex" agent="codex" la
 
 function AboutPanel() {
   return (
-    <div className="p-6"><h2 className="text-[16px] font-bold text-aegis-text mb-1">About JunQi</h2><p className="text-[12px] text-aegis-text-dim mb-6">OpenClaw Gateway desktop client with Nezha-style AI tooling.</p>
-      <div className="flex flex-col gap-3">
-        {[['Version', APP_VERSION],['Stack','React 19 · Tauri 2 · TypeScript · Vite · xterm.js'],['Backend','Rust · portable-pty · serde_json · chrono · toml · serde_yaml'],['Features','Gateway chat · 24+ pages · Nezha 39-feature port · Skill hub · Worktree · Session playback · Agent PTY · 14 agents']].map(([t,b])=>
-          <div key={t} className="rounded-xl p-4" style={{background:'rgb(var(--aegis-overlay)/0.04)',border:'1px solid rgb(var(--aegis-border))'}}><div className="text-[12px] font-semibold text-aegis-text-secondary mb-1">{t}</div><div className="text-[12px] text-aegis-text-dim leading-relaxed">{b}</div></div>)}
-        <a href="https://github.com/hanshuaikang/nezha" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2 px-3 py-2 rounded-md text-[12px] w-fit hover:bg-[rgb(var(--aegis-overlay)/0.04)] transition-colors" style={{color:'rgb(var(--aegis-primary))',border:'1px solid rgb(var(--aegis-border))'}}><ExternalLink size={12}/>nezha on GitHub</a>
+    <div className="p-6">
+      <div className="flex gap-4 rounded-lg border border-aegis-border bg-aegis-surface p-5">
+        <JunQiLogo variant="emblem" title="JunQi" className="h-16 w-16 shrink-0 rounded-lg" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[16px] font-bold text-aegis-text">JunQi</div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-aegis-text-secondary">OpenClaw 桌面工作台</p>
+          <div className="mt-4 grid gap-3">
+            <div><div className="mb-1 text-[11px] text-aegis-text-dim">版本</div><div className="font-mono text-[12.5px] text-aegis-text">{APP_VERSION}</div></div>
+            <div>
+              <div className="mb-1 text-[11px] text-aegis-text-dim">GitHub</div>
+              <a href="https://github.com/smartrealm/openclaw-junqi" target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1.5 break-all text-[12.5px] text-aegis-primary hover:underline">github.com/smartrealm/openclaw-junqi<ExternalLink size={13} /></a>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>);
+    </div>
+  );
 }
 
 export default AppSettingsDialog;

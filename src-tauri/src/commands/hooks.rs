@@ -7,23 +7,11 @@ use std::sync::{Mutex, OnceLock};
 /// Hook install status — mirrors nezha's `HookInstallStatus`.
 /// `script_installed` and `settings_linked` track the two halves of
 /// installation. They're `false` until `ensure_installed` runs successfully.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct HookInstallStatus {
     pub script_installed: bool,
     pub settings_linked: bool,
     pub codex_installed: bool,
-    pub script_path: Option<String>,
-}
-
-impl Default for HookInstallStatus {
-    fn default() -> Self {
-        Self {
-            script_installed: false,
-            settings_linked: false,
-            codex_installed: false,
-            script_path: None,
-        }
-    }
 }
 
 /// Per-agent readiness — what `get_hook_readiness` returns as a JSON array.
@@ -85,12 +73,12 @@ pub fn usable_for(_agent: &str) -> bool {
 /// once the script + settings file exist on disk.
 pub fn ensure_installed() -> HookInstallStatus {
     match install_hook_files() {
-        Ok((script_path_str, settings_path_str)) => {
+        Ok((script_path_str, settings_path_str, node_path_str)) => {
             let status = HookInstallStatus {
                 script_installed: true,
                 settings_linked: true,
-                codex_installed: install_codex_hooks(&script_path_str).unwrap_or(false),
-                script_path: Some(script_path_str),
+                codex_installed: install_codex_hooks(&node_path_str, &script_path_str)
+                    .unwrap_or(false),
             };
             let _ = settings_path_str; // kept for future settings_linked parity
             cache_status(status.clone());
@@ -122,9 +110,10 @@ pub fn events_dir_for(task_id: &str) -> Result<std::path::PathBuf, String> {
     Ok(events_root()?.join(crate::commands::agent_task_pty::safe_task_id(task_id)))
 }
 
-fn install_hook_files() -> Result<(String, String), String> {
+fn install_hook_files() -> Result<(String, String, String), String> {
     use std::path::PathBuf;
 
+    let node_path = detect_node().ok_or_else(|| "Node.js executable was not found".to_string())?;
     let dir: PathBuf = hooks_dir_internal()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {}", dir.display(), e))?;
 
@@ -143,7 +132,11 @@ fn install_hook_files() -> Result<(String, String), String> {
 
     // Build Nezha's isolated Claude settings file with hook entries only.
     // User settings remain untouched and no unrelated scalar options are overridden.
-    let settings = build_claude_settings(&script_path);
+    let settings = build_claude_settings(
+        &node_path,
+        &script_path,
+        super::app_settings::claude_force_default_tui(),
+    );
     let settings_path = dir.join("claude-settings.json");
     std::fs::write(
         &settings_path,
@@ -154,13 +147,22 @@ fn install_hook_files() -> Result<(String, String), String> {
     Ok((
         script_path.to_string_lossy().into_owned(),
         settings_path.to_string_lossy().into_owned(),
+        node_path,
     ))
 }
 
-fn build_claude_settings(script_path: &std::path::Path) -> serde_json::Value {
-    let command = format!("node \"{}\"", script_path.display());
+fn hook_command(node_path: &str, script_path: &std::path::Path) -> String {
+    format!("\"{}\" \"{}\"", node_path, script_path.display())
+}
+
+fn build_claude_settings(
+    node_path: &str,
+    script_path: &std::path::Path,
+    force_default_tui: bool,
+) -> serde_json::Value {
+    let command = hook_command(node_path, script_path);
     let entry = || serde_json::json!({ "hooks": [{ "type": "command", "command": command }] });
-    serde_json::json!({
+    let mut settings = serde_json::json!({
         "hooks": {
             "SessionStart":     [entry()],
             "UserPromptSubmit": [entry()],
@@ -169,7 +171,11 @@ fn build_claude_settings(script_path: &std::path::Path) -> serde_json::Value {
             "Stop":             [entry()],
             "SubagentStop":     [entry()],
         }
-    })
+    });
+    if force_default_tui {
+        settings["tui"] = serde_json::Value::String("default".to_string());
+    }
+    settings
 }
 
 const CODEX_HOOK_MIN_VERSION: &str = "0.131.0";
@@ -188,8 +194,8 @@ fn toml_quote(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-fn build_codex_block(script_path: &str) -> String {
-    let command = toml_quote(&format!("node \"{script_path}\""));
+fn build_codex_block(node_path: &str, script_path: &str) -> String {
+    let command = toml_quote(&hook_command(node_path, std::path::Path::new(script_path)));
     let mut block = format!("{CODEX_BEGIN}\n");
     for event in CODEX_EVENTS {
         block.push_str(&format!("[[hooks.{event}]]\n[[hooks.{event}.hooks]]\ntype = \"command\"\ncommand = {command}\n\n"));
@@ -198,8 +204,8 @@ fn build_codex_block(script_path: &str) -> String {
     block
 }
 
-fn inject_codex_text(existing: &str, script_path: &str) -> String {
-    let block = build_codex_block(script_path);
+fn inject_codex_text(existing: &str, node_path: &str, script_path: &str) -> String {
+    let block = build_codex_block(node_path, script_path);
     if let (Some(begin), Some(end)) = (existing.find(CODEX_BEGIN), existing.find(CODEX_END)) {
         if begin < end {
             let end = existing[end..]
@@ -221,7 +227,7 @@ fn inject_codex_text(existing: &str, script_path: &str) -> String {
     )
 }
 
-fn install_codex_hooks(script_path: &str) -> Result<bool, String> {
+fn install_codex_hooks(node_path: &str, script_path: &str) -> Result<bool, String> {
     let Some(version) = super::app_settings::detect_codex_version() else {
         return Ok(false);
     };
@@ -234,7 +240,7 @@ fn install_codex_hooks(script_path: &str) -> Result<bool, String> {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let existing = fs::read_to_string(&path).unwrap_or_default();
-    let updated = inject_codex_text(&existing, script_path);
+    let updated = inject_codex_text(&existing, node_path, script_path);
     toml::from_str::<toml::Value>(&updated)
         .map_err(|error| format!("Codex hook config is invalid: {error}"))?;
     let temporary = path.with_extension("toml.junqi.tmp");
@@ -243,15 +249,11 @@ fn install_codex_hooks(script_path: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Remove hooks from both agents' config files. Stub.
-pub fn uninstall() -> Result<(), String> {
-    cache_status(HookInstallStatus::default());
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static STATUS_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     /// Override the hooks dir for testing — production code reads from
     /// `~/.nezha/hooks`, which we don't want to touch during unit tests.
@@ -300,21 +302,36 @@ mod tests {
         assert!(!s.script_installed);
         assert!(!s.settings_linked);
         assert!(!s.codex_installed);
-        assert!(s.script_path.is_none());
     }
 
     #[test]
     fn claude_hook_settings_use_the_current_nested_schema() {
-        let settings = build_claude_settings(std::path::Path::new("/tmp/nezha-hook.mjs"));
+        let settings = build_claude_settings(
+            "/opt/homebrew/bin/node",
+            std::path::Path::new("/tmp/nezha-hook.mjs"),
+            false,
+        );
         assert_eq!(
             settings["hooks"]["Stop"][0]["hooks"][0]["command"],
-            "node \"/tmp/nezha-hook.mjs\""
+            "\"/opt/homebrew/bin/node\" \"/tmp/nezha-hook.mjs\""
         );
         assert!(settings.get("tui").is_none());
     }
 
     #[test]
+    fn claude_hook_settings_can_force_the_default_tui_without_touching_user_settings() {
+        let settings = build_claude_settings(
+            "/opt/homebrew/bin/node",
+            std::path::Path::new("/tmp/nezha-hook.mjs"),
+            true,
+        );
+        assert_eq!(settings["tui"], "default");
+        assert!(settings["hooks"]["Stop"].is_array());
+    }
+
+    #[test]
     fn cached_status_starts_uninstalled() {
+        let _guard = STATUS_TEST_LOCK.lock().expect("status test lock poisoned");
         // Reset to known state so prior tests (which mutate the global) don't
         // leak into this assertion.
         cache_status(HookInstallStatus::default());
@@ -325,17 +342,16 @@ mod tests {
 
     #[test]
     fn cache_status_round_trips_through_global() {
+        let _guard = STATUS_TEST_LOCK.lock().expect("status test lock poisoned");
         let injected = HookInstallStatus {
             script_installed: true,
             settings_linked: true,
             codex_installed: true,
-            script_path: Some("/tmp/test-hook.mjs".to_string()),
         };
         cache_status(injected.clone());
         let read_back = current_status();
-        assert_eq!(read_back.script_installed, true);
-        assert_eq!(read_back.settings_linked, true);
-        assert_eq!(read_back.script_path.as_deref(), Some("/tmp/test-hook.mjs"));
+        assert!(read_back.script_installed);
+        assert!(read_back.settings_linked);
 
         // Reset for other tests.
         cache_status(HookInstallStatus::default());
@@ -343,6 +359,7 @@ mod tests {
 
     #[test]
     fn usable_for_returns_false_when_nothing_installed() {
+        let _guard = STATUS_TEST_LOCK.lock().expect("status test lock poisoned");
         cache_status(HookInstallStatus::default());
         assert!(!usable_for("claude"));
         assert!(!usable_for("codex"));
@@ -350,11 +367,11 @@ mod tests {
 
     #[test]
     fn usable_for_returns_true_after_install_marks_both() {
+        let _guard = STATUS_TEST_LOCK.lock().expect("status test lock poisoned");
         cache_status(HookInstallStatus {
             script_installed: true,
             settings_linked: true,
             codex_installed: true,
-            script_path: Some("/fake/path".to_string()),
         });
         assert!(usable_for("claude"));
         assert!(usable_for("codex"));
@@ -364,22 +381,26 @@ mod tests {
 
     #[test]
     fn hook_command_format_is_unix_safe() {
-        // The command uses bare `node` (not absolute path) + quoted script path,
-        // which works on both Unix and Windows shells.
-        let cmd = format!("node \"{}\"", "/some path/with space/hook.mjs");
-        assert!(cmd.starts_with("node "));
-        assert!(cmd.contains('"'));
+        let cmd = hook_command(
+            "/some path/node",
+            std::path::Path::new("/some path/with space/hook.mjs"),
+        );
+        assert_eq!(
+            cmd,
+            "\"/some path/node\" \"/some path/with space/hook.mjs\""
+        );
     }
 
     #[test]
     fn codex_hook_injection_is_idempotent_and_preserves_user_config() {
         let original = "model = \"gpt-5\"\n";
-        let first = inject_codex_text(original, "/tmp/nezha hook.mjs");
-        let second = inject_codex_text(&first, "/tmp/new-hook.mjs");
+        let first = inject_codex_text(original, "/usr/bin/node", "/tmp/nezha hook.mjs");
+        let second = inject_codex_text(&first, "/opt/node/bin/node", "/tmp/new-hook.mjs");
         assert!(second.starts_with(original));
         assert_eq!(second.matches(CODEX_BEGIN).count(), 1);
         assert!(second.contains("PermissionRequest"));
         assert!(second.contains("new-hook.mjs"));
+        assert!(second.contains("/opt/node/bin/node"));
         toml::from_str::<toml::Value>(&second).expect("injected config is valid TOML");
     }
 
@@ -410,75 +431,74 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
     tokio::task::spawn_blocking(|| {
         let node_present = detect_node().is_some();
 
-        let claude_version = detect_agent_version("claude");
-        let codex_version = detect_agent_version("codex");
+        let claude_version = super::app_settings::detect_claude_version();
+        let codex_version = super::app_settings::detect_codex_version();
 
         let claude_min = "2.1.87";
         let codex_min = "0.131.0";
 
-        let mut out: Vec<HookAgentReadiness> = Vec::new();
-
-        out.push(match claude_version {
-            None => HookAgentReadiness {
-                agent: "claude".to_string(),
-                usable: false,
-                reason: Some("not_installed".to_string()),
-                detected_version: None,
-                min_version: Some(claude_min.to_string()),
+        let out = vec![
+            match claude_version {
+                None => HookAgentReadiness {
+                    agent: "claude".to_string(),
+                    usable: false,
+                    reason: Some("not_installed".to_string()),
+                    detected_version: None,
+                    min_version: Some(claude_min.to_string()),
+                },
+                Some(ver) if !node_present => HookAgentReadiness {
+                    agent: "claude".to_string(),
+                    usable: false,
+                    reason: Some("no_node".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(claude_min.to_string()),
+                },
+                Some(ver) if version_lt(&ver, claude_min) => HookAgentReadiness {
+                    agent: "claude".to_string(),
+                    usable: false,
+                    reason: Some("version_too_low".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(claude_min.to_string()),
+                },
+                Some(ver) => HookAgentReadiness {
+                    agent: "claude".to_string(),
+                    usable: usable_for("claude"),
+                    reason: (!usable_for("claude")).then(|| "not_installed".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(claude_min.to_string()),
+                },
             },
-            Some(ver) if !node_present => HookAgentReadiness {
-                agent: "claude".to_string(),
-                usable: false,
-                reason: Some("no_node".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(claude_min.to_string()),
+            match codex_version {
+                None => HookAgentReadiness {
+                    agent: "codex".to_string(),
+                    usable: false,
+                    reason: Some("not_installed".to_string()),
+                    detected_version: None,
+                    min_version: Some(codex_min.to_string()),
+                },
+                Some(ver) if !node_present => HookAgentReadiness {
+                    agent: "codex".to_string(),
+                    usable: false,
+                    reason: Some("no_node".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(codex_min.to_string()),
+                },
+                Some(ver) if version_lt(&ver, codex_min) => HookAgentReadiness {
+                    agent: "codex".to_string(),
+                    usable: false,
+                    reason: Some("version_too_low".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(codex_min.to_string()),
+                },
+                Some(ver) => HookAgentReadiness {
+                    agent: "codex".to_string(),
+                    usable: usable_for("codex"),
+                    reason: (!usable_for("codex")).then(|| "not_installed".to_string()),
+                    detected_version: Some(ver),
+                    min_version: Some(codex_min.to_string()),
+                },
             },
-            Some(ver) if version_lt(&ver, claude_min) => HookAgentReadiness {
-                agent: "claude".to_string(),
-                usable: false,
-                reason: Some("version_too_low".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(claude_min.to_string()),
-            },
-            Some(ver) => HookAgentReadiness {
-                agent: "claude".to_string(),
-                usable: usable_for("claude"),
-                reason: (!usable_for("claude")).then(|| "not_installed".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(claude_min.to_string()),
-            },
-        });
-
-        out.push(match codex_version {
-            None => HookAgentReadiness {
-                agent: "codex".to_string(),
-                usable: false,
-                reason: Some("not_installed".to_string()),
-                detected_version: None,
-                min_version: Some(codex_min.to_string()),
-            },
-            Some(ver) if !node_present => HookAgentReadiness {
-                agent: "codex".to_string(),
-                usable: false,
-                reason: Some("no_node".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(codex_min.to_string()),
-            },
-            Some(ver) if version_lt(&ver, codex_min) => HookAgentReadiness {
-                agent: "codex".to_string(),
-                usable: false,
-                reason: Some("version_too_low".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(codex_min.to_string()),
-            },
-            Some(ver) => HookAgentReadiness {
-                agent: "codex".to_string(),
-                usable: usable_for("codex"),
-                reason: (!usable_for("codex")).then(|| "not_installed".to_string()),
-                detected_version: Some(ver),
-                min_version: Some(codex_min.to_string()),
-            },
-        });
+        ];
 
         Ok::<Vec<HookAgentReadiness>, String>(out)
     })
@@ -487,34 +507,16 @@ pub async fn get_hook_readiness() -> Result<Vec<HookAgentReadiness>, String> {
 }
 
 fn detect_node() -> Option<String> {
-    let lookup = if cfg!(windows) { "where" } else { "which" };
-    std::process::Command::new(lookup)
-        .arg("node")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            String::from_utf8(o.stdout)
-                .ok()
-                .and_then(|s| s.lines().next().map(|l| l.trim().to_string()))
-        })
-        .filter(|s| !s.is_empty())
-}
+    if let Some(configured) = crate::paths::configured_node_path().filter(|path| path.is_file()) {
+        return Some(configured.to_string_lossy().into_owned());
+    }
 
-fn detect_agent_version(binary: &str) -> Option<String> {
-    std::process::Command::new(binary)
-        .arg("--version")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() {
-                String::from_utf8_lossy(&o.stderr).trim().to_string().into()
-            } else {
-                Some(s)
-            }
-        })
+    let detected = crate::platform::detect_path("node");
+    if !detected.is_empty() {
+        return Some(detected);
+    }
+
+    None
 }
 
 /// Loose semver-ish compare: returns true if `have < min`.

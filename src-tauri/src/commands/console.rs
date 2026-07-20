@@ -6,7 +6,7 @@
 //! button via an initialization script (the JS `WebviewWindow` API can't inject
 //! scripts, so the window is built here in Rust).
 
-use crate::paths;
+use crate::{paths, window_adaptation};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const CONTROL_UI_LABEL: &str = "control-ui";
@@ -14,18 +14,23 @@ const CONTROL_UI_LABEL: &str = "control-ui";
 /// Read the gateway token straight from the local OpenClaw config
 /// (`~/.openclaw/openclaw.json` → gateway.auth.token).
 fn read_gateway_token() -> Option<String> {
-    let raw = std::fs::read_to_string(paths::config_path()).ok()?;
-    let cfg: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let raw = std::fs::read_to_string(paths::active_config_path()).ok()?;
+    let cfg = crate::commands::config::parse_openclaw_config(&raw).ok()?;
     cfg.get("gateway")?
         .get("auth")?
         .get("token")?
         .as_str()
+        .filter(|token| !token.trim().is_empty())
         .map(|s| s.to_string())
 }
 
 fn control_ui_url(port: u16, token: Option<String>) -> Result<url::Url, String> {
-    let mut url = url::Url::parse(&format!("http://127.0.0.1:{}", port))
-        .map_err(|e| format!("Invalid Control UI URL: {}", e))?;
+    let mut url = url::Url::parse(&format!(
+        "http://{}:{}",
+        crate::commands::config::default_gateway_host(),
+        port
+    ))
+    .map_err(|e| format!("Invalid Control UI URL: {}", e))?;
 
     if let Some(token) = token.filter(|value| !value.is_empty()) {
         // The Control UI reads the hash with URLSearchParams. Serialize the
@@ -227,10 +232,11 @@ const RETURN_BUTTON_SCRIPT: &str = r#"
 #[tauri::command]
 pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
     let port = crate::commands::gateway::configured_gateway_port();
-    if !crate::commands::gateway::is_gateway_serving(port).await {
+    if !crate::commands::gateway::is_gateway_healthy(port).await {
         return Err(format!(
-            "OpenClaw Gateway is not ready on 127.0.0.1:{}. Start or reconnect it before opening Control UI.",
-            port
+            "OpenClaw Gateway is not ready on {}:{}. Start or reconnect it before opening Control UI.",
+            crate::commands::config::default_gateway_host(),
+            port,
         ));
     }
 
@@ -243,7 +249,7 @@ pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
         let needs_navigation = win
             .url()
             .map(|current| {
-                current.host_str() != Some("127.0.0.1")
+                current.host_str() != Some(crate::commands::config::default_gateway_host())
                     || current.port_or_known_default() != Some(port)
             })
             .unwrap_or(true);
@@ -257,13 +263,17 @@ pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(&app, CONTROL_UI_LABEL, WebviewUrl::External(target))
+    let window = WebviewWindowBuilder::new(&app, CONTROL_UI_LABEL, WebviewUrl::External(target))
         .title("OpenClaw Console")
         .inner_size(1280.0, 860.0)
         .min_inner_size(800.0, 600.0)
         .initialization_script(RETURN_BUTTON_SCRIPT)
         .build()
         .map_err(|e| format!("Failed to open Control UI: {}", e))?;
+
+    // Control UI is an independent native window. Size it against its current
+    // monitor's usable work area and keep it reachable across monitor/DPI changes.
+    window_adaptation::initialize_transient(window);
 
     Ok(())
 }

@@ -5,6 +5,7 @@
 //   - send_shortcut: "enter" | "mod_enter"
 //   - terminal_shift_enter_newline: bool
 //   - claude_force_default_tui: bool
+//   - language: native menu locale synchronized from the webview
 //
 // Differences from nezha upstream:
 //   - `detect_path`, `login_shell_*`, `home_dir` are inlined here (junqi has no
@@ -43,6 +44,71 @@ fn default_terminal_scrollback() -> u32 {
     1000
 }
 
+const FALLBACK_APPLICATION_LANGUAGE: &str = "en";
+
+fn normalize_application_language(value: &str) -> Option<&'static str> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized == "zh-tw"
+        || normalized == "zh_tw"
+        || normalized == "zh-hk"
+        || normalized == "zh_hk"
+        || normalized == "zh-mo"
+        || normalized == "zh_mo"
+        || normalized.contains("hant")
+    {
+        Some("zh-TW")
+    } else if normalized == "zh" || normalized == "zh-cn" || normalized == "zh_cn" || normalized == "zh-sg" || normalized == "zh_sg" || normalized.contains("hans") {
+        Some("zh")
+    } else if normalized == "ar" || normalized.starts_with("ar-") || normalized.starts_with("ar_") {
+        Some("ar")
+    } else if normalized == "en" || normalized.starts_with("en-") || normalized.starts_with("en_") {
+        Some("en")
+    } else {
+        None
+    }
+}
+
+fn system_application_language() -> Option<&'static str> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Globalization::GetUserDefaultLocaleName;
+
+        let mut locale = [0_u16; 85];
+        // SAFETY: `locale` is a writable UTF-16 buffer sized above the Windows
+        // locale-name maximum. The API writes at most the supplied length.
+        let length = unsafe { GetUserDefaultLocaleName(locale.as_mut_ptr(), locale.len() as i32) };
+        if length > 1 {
+            let locale = String::from_utf16_lossy(&locale[..length as usize - 1]);
+            return normalize_application_language(&locale);
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        for key in ["LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG"] {
+            if let Ok(value) = std::env::var(key) {
+                if let Some(language) = normalize_application_language(&value) {
+                    return Some(language);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn default_application_language() -> String {
+    system_application_language()
+        .unwrap_or(FALLBACK_APPLICATION_LANGUAGE)
+        .to_string()
+}
+
+fn normalized_application_language(value: &str) -> Result<String, String> {
+    normalize_application_language(value)
+        .map(str::to_string)
+        .ok_or_else(|| format!("Unsupported application language: {value}"))
+}
+
 fn clamp_terminal_scrollback(value: u32) -> u32 {
     let clamped = value.clamp(500, 5000);
     ((clamped + 250) / 500) * 500
@@ -50,6 +116,8 @@ fn clamp_terminal_scrollback(value: u32) -> u32 {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AppSettings {
+    #[serde(default = "default_application_language")]
+    pub language: String,
     #[serde(default)]
     pub claude_path: String,
     #[serde(default)]
@@ -67,6 +135,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            language: default_application_language(),
             claude_path: String::new(),
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
@@ -93,6 +162,14 @@ fn nezha_dir() -> Result<PathBuf, String> {
 
 fn settings_path() -> Result<PathBuf, String> {
     Ok(nezha_dir()?.join("settings.json"))
+}
+
+fn persist_settings(settings: &AppSettings) -> Result<(), String> {
+    let dir = nezha_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = settings_path()?;
+    let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    atomic_write(&path, &raw)
 }
 
 /// Atomically write `content` to `path` via temp file + rename.
@@ -170,6 +247,7 @@ fn load_settings_unlocked() -> AppSettings {
     if !path.exists() {
         // First run: detect paths and persist defaults.
         let settings = AppSettings {
+            language: default_application_language(),
             claude_path: detect_path("claude"),
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
@@ -177,12 +255,7 @@ fn load_settings_unlocked() -> AppSettings {
             claude_force_default_tui: default_claude_force_default_tui(),
             terminal_scrollback: default_terminal_scrollback(),
         };
-        if let Ok(dir) = nezha_dir() {
-            let _ = fs::create_dir_all(&dir);
-        }
-        if let Ok(raw) = serde_json::to_string_pretty(&settings) {
-            let _ = atomic_write(&path, &raw);
-        }
+        let _ = persist_settings(&settings);
         return settings;
     }
 
@@ -190,7 +263,37 @@ fn load_settings_unlocked() -> AppSettings {
         Ok(r) => r,
         Err(_) => return AppSettings::default(),
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    let mut settings = serde_json::from_str::<AppSettings>(&raw).unwrap_or_default();
+    settings.send_shortcut = normalize_send_shortcut(settings.send_shortcut);
+    settings
+}
+
+fn agent_program_from_settings(settings: &AppSettings, agent: &str) -> String {
+    let configured = match agent {
+        "codex" => settings.codex_path.trim(),
+        "claude" => settings.claude_path.trim(),
+        _ => "",
+    };
+    crate::platform::resolve_spawn_program(if configured.is_empty() {
+        agent
+    } else {
+        configured
+    })
+}
+
+pub fn get_agent_program(agent: &str) -> String {
+    agent_program_from_settings(&load_settings_unlocked(), agent)
+}
+
+pub fn claude_force_default_tui() -> bool {
+    load_settings_unlocked().claude_force_default_tui
+}
+
+pub fn application_language() -> String {
+    let settings = load_settings_unlocked();
+    normalize_application_language(&settings.language)
+        .unwrap_or(FALLBACK_APPLICATION_LANGUAGE)
+        .to_string()
 }
 
 #[tauri::command]
@@ -201,13 +304,36 @@ pub async fn load_app_settings() -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
-pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
+pub fn save_app_settings(mut settings: AppSettings) -> Result<(), String> {
     let _guard = settings_lock().lock();
-    let dir = nezha_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = settings_path()?;
-    let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    atomic_write(&path, &raw)
+    settings.language = normalize_application_language(&settings.language)
+        .unwrap_or(FALLBACK_APPLICATION_LANGUAGE)
+        .to_string();
+    persist_settings(&settings)
+}
+
+#[tauri::command]
+pub async fn set_application_language(
+    app: tauri::AppHandle,
+    language: String,
+) -> Result<String, String> {
+    let language = normalized_application_language(&language)?;
+    let persisted_language = tokio::task::spawn_blocking({
+        let language = language.clone();
+        move || {
+            let _guard = settings_lock().lock();
+            let mut settings = load_settings_unlocked();
+            settings.language = language;
+            persist_settings(&settings)?;
+            Ok::<String, String>(settings.language)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    crate::tray::menu::update_tray_language(&app, &persisted_language)
+        .map_err(|e| e.to_string())?;
+    Ok(persisted_language)
 }
 
 #[tauri::command]
@@ -216,11 +342,20 @@ pub async fn save_terminal_scrollback(scrollback: u32) -> Result<AppSettings, St
         let _guard = settings_lock().lock();
         let mut settings = load_settings_unlocked();
         settings.terminal_scrollback = clamp_terminal_scrollback(scrollback);
-        let dir = nezha_dir()?;
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = settings_path()?;
-        let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-        atomic_write(&path, &raw)?;
+        persist_settings(&settings)?;
+        Ok::<AppSettings, String>(settings)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_terminal_shift_enter_newline(enabled: bool) -> Result<AppSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        let _guard = settings_lock().lock();
+        let mut settings = load_settings_unlocked();
+        settings.terminal_shift_enter_newline = enabled;
+        persist_settings(&settings)?;
         Ok::<AppSettings, String>(settings)
     })
     .await
@@ -234,48 +369,19 @@ pub async fn detect_agent_paths() -> Result<AppSettings, String> {
         settings.claude_path = detect_path("claude");
         settings.codex_path = detect_path("codex");
         let _guard = settings_lock().lock();
-        let dir = nezha_dir()?;
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = settings_path()?;
-        let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-        atomic_write(&path, &raw)?;
+        persist_settings(&settings)?;
         Ok::<AppSettings, String>(settings)
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
-/// Detect Claude Code version by running `claude --version`.
-/// Result is cached per-process.
 pub fn detect_claude_version() -> Option<String> {
-    static CACHE: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    {
-        let guard = cache.lock().expect("version cache poisoned");
-        if let Some(v) = guard.as_ref() {
-            return v.clone();
-        }
-    }
-    let version = run_version_command("claude");
-    let mut guard = cache.lock().expect("version cache poisoned");
-    *guard = Some(version.clone());
-    version
+    run_version_command(&get_agent_program("claude"))
 }
 
-/// Detect Codex version by running `codex --version`.
 pub fn detect_codex_version() -> Option<String> {
-    static CACHE: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    {
-        let guard = cache.lock().expect("version cache poisoned");
-        if let Some(v) = guard.as_ref() {
-            return v.clone();
-        }
-    }
-    let version = run_version_command("codex");
-    let mut guard = cache.lock().expect("version cache poisoned");
-    *guard = Some(version.clone());
-    version
+    run_version_command(&get_agent_program("codex"))
 }
 
 fn run_version_command(binary: &str) -> Option<String> {
@@ -313,5 +419,60 @@ mod tests {
     fn legacy_settings_receive_default_scrollback() {
         let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
         assert_eq!(settings.terminal_scrollback, 1000);
+    }
+
+    #[test]
+    fn application_language_accepts_supported_locale_tags() {
+        assert_eq!(normalize_application_language("zh-CN"), Some("zh"));
+        assert_eq!(normalize_application_language("zh-TW"), Some("zh-TW"));
+        assert_eq!(normalize_application_language("en_US"), Some("en"));
+        assert_eq!(normalize_application_language("ar-SA"), Some("ar"));
+        assert_eq!(normalize_application_language("fr-FR"), None);
+    }
+
+    #[test]
+    fn terminal_defaults_match_the_settings_ui() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.terminal_scrollback, 1000);
+        assert!(settings.terminal_shift_enter_newline);
+    }
+
+    #[test]
+    fn configured_agent_program_takes_priority_over_the_default_binary() {
+        let settings = AppSettings {
+            claude_path: "/custom/bin/claude".to_string(),
+            codex_path: "/custom/bin/codex".to_string(),
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            agent_program_from_settings(&settings, "claude"),
+            "/custom/bin/claude"
+        );
+        assert_eq!(
+            agent_program_from_settings(&settings, "codex"),
+            "/custom/bin/codex"
+        );
+        let gemini = agent_program_from_settings(&settings, "gemini");
+        assert_ne!(gemini, settings.claude_path);
+        assert!(std::path::Path::new(&gemini)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.to_ascii_lowercase().starts_with("gemini")));
+    }
+
+    #[test]
+    fn ai_agent_entry_points_use_the_configured_program() {
+        assert!(
+            include_str!("agent_task_pty.rs").contains("app_settings::get_agent_program(spec.bin)")
+        );
+        assert!(include_str!("agent_assist.rs").contains("app_settings::get_agent_program(&agent)"));
+        assert!(include_str!("git_neu.rs").contains("app_settings::get_agent_program(\"codex\")"));
+    }
+
+    #[test]
+    fn version_detection_uses_the_same_configured_agent_program() {
+        let source = include_str!("app_settings.rs");
+        assert!(source.contains("run_version_command(&get_agent_program(\"claude\"))"));
+        assert!(source.contains("run_version_command(&get_agent_program(\"codex\"))"));
     }
 }

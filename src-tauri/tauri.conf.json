@@ -1,7 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
   "productName": "JunQi Desktop",
-  "version": "0.5.4",
+  "mainBinaryName": "junqi-desktop",
+  "version": "1.2.27",
   "identifier": "com.junqi.junqidesktop",
   "build": {
     "beforeBuildCommand": "npm run build",
@@ -17,10 +18,10 @@
     "windows": [
       {
         "title": "JunQi Desktop",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 960,
-        "minHeight": 640,
+        "width": 1440,
+        "height": 900,
+        "minWidth": 560,
+        "minHeight": 420,
         "transparent": true,
         "backgroundColor": "#0c1015",
         "decorations": true,
@@ -55,13 +56,18 @@
       "allowDowngrades": true,
       "nsis": {
         "installerIcon": "icons/icon.ico",
+        "installerHooks": "installer-hooks.nsh",
         "languages": [
+          "English",
           "SimpChinese"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": true
       },
       "wix": {
-        "language": "zh-CN"
+        "language": [
+          "en-US",
+          "zh-CN"
+        ]
       }
     },
     "macOS": {
@@ -74,9 +80,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY2QkQxQzQ2NjQxNkZENzcKUldSMy9SWmtSaHk5OXJMRUR1dUJXdXZLZEtJWFlwdm5tdzRYRHIzSXA5V0J1czBNVWRvMXR4V3EK",
-      "endpoints": [
-        "https://github.com/smartrealm/openclaw-junqi/releases/latest/download/latest.json"
-      ]
+      "endpoints": []
     },
     "shell": {
       "open": true

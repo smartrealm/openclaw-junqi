@@ -5,7 +5,6 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { RotateCcw, FolderOpen, ChevronsUpDown } from "lucide-react";
@@ -14,6 +13,7 @@ import { CreateInputRow } from "./CreateInputRow";
 import { TreeItem } from "./TreeItem";
 import { writeClipboardText } from "./clipboard";
 import { debugError } from "@/utils/debugLog";
+import { subscribeTauriEvent } from "@/utils/tauriEvents";
 import { dispatchFileTreePointerDrag } from "./pathDrag";
 import {
   AUTO_REFRESH_MS,
@@ -242,10 +242,10 @@ export function FileExplorer({
 
   useEffect(() => {
     if (!active) return;
-    const subscription = listen<{ dir: string }>("fs-changed", (event) => {
+    const unlisten = subscribeTauriEvent<{ dir: string }>("fs-changed", (event) => {
       void refreshDir(event.payload.dir);
     });
-    return () => { void subscription.then((unlisten) => unlisten()); };
+    return unlisten;
   }, [active, refreshDir]);
 
   // Auto-refresh timer

@@ -79,7 +79,7 @@ earlyBootstrap();
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     windowLabel = getCurrentWindow().label;
-      } catch {
+  } catch {
     /* plain vite/browser context */
   }
   if (windowLabel.startsWith('terminal-')) {
@@ -89,11 +89,13 @@ earlyBootstrap();
   const Root =
     windowLabel === 'pet'
       ? (await import('./pet/PetWindow')).default
-      : windowLabel === 'quickchat'
-        ? (await import('./pages/QuickChatRoot')).default
-        : windowLabel.startsWith('terminal-')
-          ? (await import('./pages/TerminalWindowRoot')).default
-      : (await import('./App')).default;
+      : windowLabel === 'dynamic-island'
+        ? (await import('./dynamic-island/DynamicIsland')).default
+        : windowLabel === 'quickchat'
+          ? (await import('./pages/QuickChatRoot')).default
+          : windowLabel.startsWith('terminal-')
+            ? (await import('./pages/TerminalWindowRoot')).default
+            : (await import('./App')).default;
 
   ReactDOM.createRoot(document.getElementById('app-root')!).render(
     React.createElement(React.StrictMode, null,

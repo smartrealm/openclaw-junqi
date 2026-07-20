@@ -30,7 +30,7 @@ function CostTooltip({ active, payload, label }: any) {
   const other = payload.find((p: any) => p.dataKey === 'other')?.value || 0;
   const total = payload[0]?.payload?.total ?? input + output + cache + other;
   return (
-    <div className="bg-aegis-card border border-aegis-border rounded-xl p-2.5 text-[11px] shadow-lg">
+    <div className="bg-aegis-card border border-aegis-border rounded-lg p-2.5 text-[12px] shadow-lg">
       <div className="text-aegis-text-dim font-mono mb-1.5">{label}</div>
       <div className="flex items-center gap-1.5 text-aegis-accent">
         <span className="w-2 h-2 rounded-full bg-aegis-accent" />
@@ -61,8 +61,8 @@ function CostTooltip({ active, payload, label }: any) {
 
 export function CostChart({ data }: { data: ChartPoint[] }) {
   return (
-    <ResponsiveContainer width="100%" height={160}>
-      <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
         <defs>
           <linearGradient id="gInput" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={themeColorVar('accent')} stopOpacity={0.25} />
@@ -76,7 +76,7 @@ export function CostChart({ data }: { data: ChartPoint[] }) {
         <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--aegis-overlay) / 0.04)" vertical={false} />
         <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgb(var(--aegis-text-dim))' }} axisLine={false} tickLine={false} />
         <YAxis
-          tick={{ fontSize: 10, fill: 'rgb(var(--aegis-text-dim))' }}
+          tick={{ fontSize: 11, fill: 'rgb(var(--aegis-text-dim))' }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v) => (v === 0 ? '' : `$${v.toFixed(2)}`)}

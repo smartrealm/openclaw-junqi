@@ -7,4 +7,5 @@ test('feature lookup covers every feature-gated deep link outside the primary ro
   assert.equal(getFeatureKeyForPath('/channels'), 'configManager');
   assert.equal(getFeatureKeyForPath('/kanban'), 'workshop');
   assert.equal(getFeatureKeyForPath('/timeline'), 'workshop');
+  assert.equal(getFeatureKeyForPath('/openclaw-commands'), 'tools');
 });

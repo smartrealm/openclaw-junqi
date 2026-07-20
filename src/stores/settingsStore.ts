@@ -21,9 +21,9 @@ import { resolveTab, type SidebarTab } from '@/components/Layout/tab-utils';
 import {
   applyDocumentLanguage,
   browserDefaultLanguage,
-  isSupportedLanguage,
+  isAppLanguage,
   persistLanguagePreference,
-  type SupportedLanguage,
+  type AppLanguage,
 } from '@/i18n/languages';
 
 // ═══════════════════════════════════════════════════════════
@@ -46,10 +46,12 @@ interface SettingsState {
   sidebarOpen: boolean;
   sidebarWidth: number;
   settingsOpen: boolean;
-  language: SupportedLanguage;
+  language: AppLanguage;
   notificationsEnabled: boolean;
   soundEnabled: boolean;
   dndMode: boolean;
+  dynamicIslandEnabled: boolean;
+  dynamicIslandAutoExpand: boolean;
   budgetLimit: number;
   commandPaletteOpen: boolean;
   memoryExplorerEnabled: boolean;
@@ -81,10 +83,12 @@ interface SettingsState {
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
   setSettingsOpen: (open: boolean) => void;
-  setLanguage: (lang: SupportedLanguage) => void;
+  setLanguage: (lang: AppLanguage) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setSoundEnabled: (enabled: boolean) => void;
   setDndMode: (dnd: boolean) => void;
+  setDynamicIslandEnabled: (enabled: boolean) => void;
+  setDynamicIslandAutoExpand: (enabled: boolean) => void;
   setBudgetLimit: (n: number) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setMemoryExplorerEnabled: (enabled: boolean) => void;
@@ -120,11 +124,13 @@ async function applyUiZoom(scale: number): Promise<void> {
 }
 
 // Auto-detect language on first run: check saved → system language → fallback to English
-const detectLang = (): SupportedLanguage => {
+const detectLang = (): AppLanguage => {
   const saved = localStorage.getItem('aegis-language');
-  if (isSupportedLanguage(saved)) return saved;
+  if (isAppLanguage(saved)) return saved;
   // First run — detect from system/browser language
-  return browserDefaultLanguage();
+  const language = browserDefaultLanguage();
+  persistLanguagePreference(language);
+  return language;
 };
 const savedLang = detectLang();
 
@@ -168,7 +174,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   language: savedLang,
   notificationsEnabled: localStorage.getItem('aegis-notifications') !== 'false',
   soundEnabled: localStorage.getItem('aegis-sound') !== 'false',
-  dndMode: false,
+  dndMode: localStorage.getItem('aegis-dnd-mode') === 'true',
+  dynamicIslandEnabled: localStorage.getItem('junqi:dynamic-island-enabled') !== 'false',
+  dynamicIslandAutoExpand: localStorage.getItem('junqi:dynamic-island-auto-expand') !== 'false',
   budgetLimit: parseFloat(localStorage.getItem('aegis-budget-limit') || '0') || 0,
   commandPaletteOpen: false,
   memoryExplorerEnabled: localStorage.getItem('aegis-memory-explorer') === 'true',
@@ -228,14 +236,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setLanguage: (lang) => {
-    if (!isSupportedLanguage(lang)) return;
+    if (!isAppLanguage(lang)) return;
     persistLanguagePreference(lang);
     applyDocumentLanguage(lang);
     set({ language: lang });
   },
   setNotificationsEnabled: (enabled) => { localStorage.setItem('aegis-notifications', String(enabled)); set({ notificationsEnabled: enabled }); },
   setSoundEnabled: (enabled) => { localStorage.setItem('aegis-sound', String(enabled)); set({ soundEnabled: enabled }); },
-  setDndMode: (dnd) => set({ dndMode: dnd }),
+  setDndMode: (dnd) => { localStorage.setItem('aegis-dnd-mode', String(dnd)); set({ dndMode: dnd }); },
+  setDynamicIslandEnabled: (enabled) => { localStorage.setItem('junqi:dynamic-island-enabled', String(enabled)); set({ dynamicIslandEnabled: enabled }); },
+  setDynamicIslandAutoExpand: (enabled) => { localStorage.setItem('junqi:dynamic-island-auto-expand', String(enabled)); set({ dynamicIslandAutoExpand: enabled }); },
   setBudgetLimit: (n) => { localStorage.setItem('aegis-budget-limit', String(n)); set({ budgetLimit: n }); },
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setMemoryExplorerEnabled: (enabled) => { localStorage.setItem('aegis-memory-explorer', String(enabled)); set({ memoryExplorerEnabled: enabled }); },

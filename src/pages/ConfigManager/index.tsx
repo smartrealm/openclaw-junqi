@@ -12,7 +12,11 @@ import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { getTemplateById } from './providerTemplates';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
-import { testProviderConnection, type ConnectionPrecheckProbe } from './providerConnectionTest';
+import {
+  summarizeOfficialProviderProbe,
+  type ProviderProbeRequest,
+  type ProviderProbeSummary,
+} from '@/services/openclawProviderRuntime';
 import {
   normalizeAgentsForRuntime,
   normalizeModelsProvidersForRuntime,
@@ -26,6 +30,7 @@ import { FloatingSaveButton, ChangesPill } from './components';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
+import { migrateLegacyChannelBindings } from '@/services/channelConfig';
 
 type Tab = ConfigTab;
 
@@ -326,12 +331,13 @@ export function ConfigManagerPage() {
         setConfigPath(detected.path);
         setConfigExists(detected.exists);
 
-        if (detected.exists) {
-          const { data } = await window.aegis.config.read(detected.path);
-          const normalized = normalizeConfig(data);
-          setConfig(normalized);
-          setOriginalConfig(structuredClone(normalized));
-        }
+        // A missing openclaw.json is a valid first-run state. The backend read
+        // contract returns an empty object for that case, so keep the editor
+        // usable and let the first save create the file atomically.
+        const { data } = await window.aegis.config.read(detected.path);
+        const normalized = normalizeConfig(data ?? {});
+        setConfig(normalized);
+        setOriginalConfig(structuredClone(normalized));
       } catch (err: any) {
         setError(err.message || 'Unknown error');
       } finally {
@@ -377,7 +383,7 @@ export function ConfigManagerPage() {
   // ── Save ──
   async function persistConfig(
     targetConfig?: GatewayRuntimeConfig | null,
-    options?: { connectionProbe?: ConnectionPrecheckProbe }
+    options?: { connectionProbe?: ProviderProbeRequest }
   ): Promise<boolean> {
     const configToSave = targetConfig ?? config;
     if (!configToSave || !configPath) return false;
@@ -397,7 +403,13 @@ export function ConfigManagerPage() {
       // Preserve provider env vars from disk when the UI state lost them but the
       // provider/profile still exists. Prevents accidental API key deletion.
       const merged = preserveProviderSecretsFromDisk(diskConfig, mergedRaw);
-      const precheckResult = await runConnectionPrecheck(options?.connectionProbe);
+
+      // Apply save-time provider preference and strip UI-only fields before
+      // validating or probing. The probe must exercise the exact candidate that
+      // will be written, not an approximation assembled from form fields.
+      const mergedWithPreferredProviders = applyPreferredWebProviders(merged);
+      const toWrite = normalizeConfigForDisk(mergedWithPreferredProviders);
+      const precheckResult = await runConnectionPrecheck(toWrite, options?.connectionProbe);
       if (!precheckResult.ok) {
         const continueSave = await requestConnectionFailureConfirm(precheckResult.failures);
         if (!continueSave) return false;
@@ -417,11 +429,13 @@ export function ConfigManagerPage() {
         debugWarn('app', '[Config] Backup failed:', backupErr);
       }
 
-      // 3. Apply save-time provider preference for web tools, then write
-      const mergedWithPreferredProviders = applyPreferredWebProviders(merged);
-      const toWrite = normalizeConfigForDisk(mergedWithPreferredProviders);
+      // 3. Write the already validated candidate.
       const savedPrimaryModel = toWrite.agents?.defaults?.model?.primary ?? null;
-      await window.aegis.config.write(configPath, toWrite);
+      const writeResult = await window.aegis.config.write(configPath, toWrite);
+      if (!writeResult.success) {
+        throw new Error(writeResult.error || t('config.saveFailed'));
+      }
+      setConfigExists(true);
 
       // 3.5 Keep main agent runtime state clean:
       // normalize alias-drifted auth-profiles and force models.json rebuild.
@@ -493,7 +507,7 @@ export function ConfigManagerPage() {
 
   async function handleApplyAndSave(
     updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig,
-    options?: { connectionProbe?: ConnectionPrecheckProbe }
+    options?: { connectionProbe?: ProviderProbeRequest }
   ): Promise<boolean> {
     if (!config) return false;
     return persistConfig(updater(config), options);
@@ -953,7 +967,7 @@ export function ConfigManagerPage() {
         profiles: authProfilesForRuntime(auth.profiles, canonicalProviderId),
       },
     };
-    return normalized;
+    return migrateLegacyChannelBindings(normalized);
   };
 
   const requestConnectionFailureConfirm = (failures: string[]) => {
@@ -970,30 +984,47 @@ export function ConfigManagerPage() {
     resolver?.(value);
   };
 
-  const runConnectionPrecheck = async (probe?: ConnectionPrecheckProbe) => {
+  const probeProviderCandidate = async (
+    candidate: GatewayRuntimeConfig,
+    probe: ProviderProbeRequest,
+  ): Promise<ProviderProbeSummary> => {
+    const providerId = canonicalProviderId(probe.providerId);
+    if (!providerId) {
+      return { ok: false, status: 'unknown', detail: 'Provider ID is required.' };
+    }
+    const normalizedCandidate = normalizeConfigForDisk(candidate);
+    const payload = await window.aegis.providerRuntime.probe(
+      normalizedCandidate,
+      providerId,
+      probe.profileKey,
+    );
+    return summarizeOfficialProviderProbe(payload);
+  };
+
+  const runConnectionPrecheck = async (
+    candidate: GatewayRuntimeConfig,
+    probe?: ProviderProbeRequest,
+  ) => {
     if (!probe) {
       return { ok: true, failures: [] as string[] };
     }
-
     const providerId = canonicalProviderId(probe.providerId);
-    const baseUrl = String(probe.baseUrl ?? '').trim();
-    const apiKey = String(probe.apiKey ?? '').trim();
-    if (!providerId || !baseUrl || !apiKey) {
-      return { ok: true, failures: [] as string[] };
+    try {
+      const result = await probeProviderCandidate(candidate, probe);
+      if (result.ok) return { ok: true, failures: [] as string[] };
+      const detail = [result.status, result.reasonCode, result.detail]
+        .filter(Boolean)
+        .join(' · ');
+      return {
+        ok: false,
+        failures: [`${providerId}:${probe.profileKey ?? 'default'} — ${detail}`],
+      };
+    } catch (error: any) {
+      return {
+        ok: false,
+        failures: [`${providerId}:${probe.profileKey ?? 'default'} — ${error?.message || String(error)}`],
+      };
     }
-    const template = getTemplateById(providerId);
-    const modelOverride = stripProviderPrefix(providerId, probe.modelOverride);
-    const result = await testProviderConnection(baseUrl, apiKey, template, modelOverride);
-    const failures = result.ok
-      ? []
-      : (() => {
-          const rawMsg = result.message ?? '';
-          const i18nMatch = rawMsg.match(/^__i18n:([^:]+):(.+)__$/);
-          const displayMsg = i18nMatch ? t(i18nMatch[1], { status: i18nMatch[2] }) : rawMsg;
-          return [`${providerId}:${probe.profileKey} — ${displayMsg}`];
-        })();
-
-    return { ok: failures.length === 0, failures };
   };
 
   // ── Reload (re-detect path + re-read) ──
@@ -1261,7 +1292,7 @@ export function ConfigManagerPage() {
         </div>
 
         {/* Quick stats (only when config loaded) */}
-        {!detecting && configExists && config && (
+        {!detecting && config && (
           <div className="grid grid-cols-3 gap-3 mb-5">
             {[
               { val: providerCount, label: t('config.providers'), color: 'text-aegis-primary' },
@@ -1284,7 +1315,7 @@ export function ConfigManagerPage() {
           <div className="flex items-center justify-center py-20 text-aegis-text-muted text-sm animate-pulse">
             {t('config.detecting')}
           </div>
-        ) : !configExists || !config ? (
+        ) : !config ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
             <AlertCircle size={32} className="text-aegis-text-muted" />
             <p className="text-sm text-aegis-text-secondary">{t('config.noFile')}</p>
@@ -1302,6 +1333,7 @@ export function ConfigManagerPage() {
                 config={config}
                 onChange={handleChange}
                 onApplyAndSave={handleApplyAndSave}
+                onProbeProvider={probeProviderCandidate}
                 saving={saving}
                 addRequestId={providerAddRequestId}
               />

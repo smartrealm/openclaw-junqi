@@ -57,6 +57,7 @@ interface WorkspaceStoreState {
   addShellPane: () => string | null;
   addAgentPane: (agent?: string) => string | null;
   renameWorkspace: (id: string, name: string) => void;
+  toggleWorkspaceHidden: (id: string) => void;
   moveWorkspace: (workspaceId: string, targetWorkspaceId: string, position?: 'before' | 'after') => void;
 }
 
@@ -222,7 +223,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           return hydrated;
         }
 
-        const fresh = newWorkspace('Workspace', fallback);
+        const fresh = newWorkspace(undefined, fallback);
         set({ workspaces: [fresh], activeWorkspaceId: fresh.id });
         return fresh;
       },
@@ -325,7 +326,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         }
         const remaining = state.workspaces.filter((workspace) => !closingIds.has(workspace.id));
         if (remaining.length === 0) {
-          const fresh = newWorkspace('Workspace', state.defaultWorkingDirectory);
+          const fresh = newWorkspace(undefined, state.defaultWorkingDirectory);
           return { workspaces: [fresh], activeWorkspaceId: fresh.id };
         }
         const next = remaining[Math.min(index, remaining.length - 1)];
@@ -511,6 +512,12 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           )),
         }));
       },
+
+      toggleWorkspaceHidden: (id) => set((state) => ({
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === id ? { ...workspace, hiddenFromRail: !workspace.hiddenFromRail } : workspace
+        )),
+      })),
 
       moveWorkspace: (workspaceId, targetWorkspaceId, position = 'before') => set((state) => {
         if (workspaceId === targetWorkspaceId) return {};

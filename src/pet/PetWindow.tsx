@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import { motion } from 'framer-motion';
-import { pomodoroIcon, pomodoroColor } from './pomodoroView';
 import { computeSnapTarget, easeOutCubic, type PetBounds } from './snap';
 import { PetCharacter } from './PetCharacter';
 import { PetBubble } from './PetBubble';
@@ -18,6 +16,7 @@ import { isThemeSetting, type ThemeSetting } from '@/theme/types';
 import { playPetSfx } from './petSounds';
 import { combineUnlisteners, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { PetPositionScheduler } from './petPositionScheduler';
+import type { PetBackdropReading } from './backdropContrast';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
@@ -28,7 +27,11 @@ const PET_H = 154;
 const SNAP_THRESHOLD = 90;
 /** Gap left between the pet and the edge after snapping. */
 const SNAP_MARGIN = 6;
+const DROP_CATCH_MEMORY_MS = 1_200;
 const PENDING_PACKAGE_AFTER_KEY = 'junqi:pet-package-pending-after';
+const BACKDROP_REFRESH_EVENT = 'junqi:pet-backdrop-refresh';
+const BACKDROP_DEBOUNCE_MS = 400;
+const BACKDROP_FALLBACK_REFRESH_MS = 90_000;
 
 const createPositionScheduler = () => new PetPositionScheduler((point) =>
   invoke('set_pet_position', { x: point.x, y: point.y }),
@@ -56,6 +59,7 @@ export default function PetWindow() {
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [backdrop, setBackdrop] = useState<PetBackdropReading | null>(null);
   // True while the magnetic-snap glide is moving the window. The window moving
   // under a still cursor makes hovered flicker (mouseenter/leave), which would
   // make the tip bubble strobe — so we suppress hover-driven tips while snapping.
@@ -71,6 +75,7 @@ export default function PetWindow() {
   const customAsset = usePetStore((s) => s.customAsset);
   const setCustomAsset = usePetStore((s) => s.setCustomAsset);
   const customPet = usePetStore((s) => s.customPet);
+  const backdropContrastEnabled = usePetStore((s) => s.backdropContrastEnabled);
   const setCustomPet = usePetStore((s) => s.setCustomPet);
   const positionRef = useRef(position);
   positionRef.current = position;
@@ -96,6 +101,7 @@ export default function PetWindow() {
   // listener and read by the magnetic-pull RAF loop. Module-level state
   // (the listener may not have fired yet when the effect mounts).
   const dragCursorRef = useRef<null | { x: number; y: number; gx: number; gy: number; win_w: number; win_h: number }>(null);
+  const preserveDropTargetUntilRef = useRef(0);
   const timeoutsRef = useRef<number[]>([]);
 
   const defer = (fn: () => void, ms: number) => {
@@ -152,6 +158,46 @@ export default function PetWindow() {
       media?.removeEventListener('change', onSystemTheme);
     };
   }, [theme]);
+
+  useEffect(() => {
+    if (!backdropContrastEnabled) {
+      setBackdrop(null);
+      return;
+    }
+    let alive = true;
+    let debounceTimer: number | null = null;
+    const readBackdrop = () => invoke<PetBackdropReading>('get_pet_backdrop_reading')
+      .then((reading) => { if (alive) setBackdrop(reading); })
+      .catch(() => { if (alive) setBackdrop(null); });
+    const scheduleRefresh = () => {
+      if (debounceTimer != null) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null;
+        void readBackdrop();
+      }, BACKDROP_DEBOUNCE_MS);
+    };
+    const onVisibility = () => {
+      if (!document.hidden) scheduleRefresh();
+    };
+    window.addEventListener(BACKDROP_REFRESH_EVENT, scheduleRefresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    scheduleRefresh();
+    // Wallpaper changes have no portable event. This is deliberately sparse:
+    // normal updates come from pet movement/layout events, never a screenshot loop.
+    const fallbackTimer = window.setInterval(scheduleRefresh, BACKDROP_FALLBACK_REFRESH_MS);
+    return () => {
+      alive = false;
+      if (debounceTimer != null) window.clearTimeout(debounceTimer);
+      window.clearInterval(fallbackTimer);
+      window.removeEventListener(BACKDROP_REFRESH_EVENT, scheduleRefresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [backdropContrastEnabled]);
+
+  useEffect(() => {
+    if (!backdropContrastEnabled) return;
+    window.dispatchEvent(new Event(BACKDROP_REFRESH_EVENT));
+  }, [backdropContrastEnabled, dragging, hovered, state.emotion, state.message, state.taskLabel]);
 
   useEffect(() => {
     document.documentElement.style.background = 'transparent';
@@ -224,6 +270,7 @@ export default function PetWindow() {
         }
         positionRef.current = e.payload;
         petPosRef.current = e.payload;
+        window.dispatchEvent(new Event(BACKDROP_REFRESH_EVENT));
       }),
     ];
     // CRITICAL: PetWindow is a SEPARATE webview from the main window — its
@@ -236,6 +283,7 @@ export default function PetWindow() {
     unlistens.push(
       subscribeTauriEvent<string[]>('aegis:drag-active', (e) => {
         const paths = e.payload ?? [];
+        preserveDropTargetUntilRef.current = 0;
         dragCursorRef.current = { x: 0, y: 0, gx: window.screenX + 540, gy: window.screenY + 360, win_w: 1080, win_h: 720 };
         petStore.setDragActive(true, paths);
         cancelSnap();
@@ -244,18 +292,29 @@ export default function PetWindow() {
         dragCursorRef.current = e.payload;
         cancelSnap();
       }),
+      subscribeTauriEvent<string[]>('aegis:file-dropped', () => {
+        preserveDropTargetUntilRef.current = Date.now() + DROP_CATCH_MEMORY_MS;
+      }),
       subscribeTauriEvent('aegis:drag-inactive', () => {
-        dragCursorRef.current = null;
+        const remainingCatchMs = preserveDropTargetUntilRef.current - Date.now();
+        if (remainingCatchMs > 0) {
+          defer(() => {
+            if (Date.now() >= preserveDropTargetUntilRef.current) {
+              dragCursorRef.current = null;
+              preserveDropTargetUntilRef.current = 0;
+            }
+          }, remainingCatchMs);
+        } else {
+          dragCursorRef.current = null;
+        }
         petStore.setDragActive(false);
         petStore.setDragOver(false);
         if (petPosRef.current) petStore.setPosition(petPosRef.current);
       }),
     );
-    // NB: we deliberately do NOT listen for `aegis:file-dropped` here. The
-    // swallow emotion (and the leap-to-catch sprint) arrives via the broadcast
-    // `pet-state`, and drop also emits `aegis:drag-inactive` which stops the
-    // chase — so bumping this window's local swallowTick would be a no-op (the
-    // local store isn't read during derivation). The main window owns the drop.
+    // The main window still owns swallow state. This window only remembers the
+    // final cursor position long enough for the broadcast emotion to trigger
+    // the catch sprint after drag-inactive stops the chase.
     // Custom asset changed in the main window (upload/clear) → reload from disk.
     unlistens.push(
       subscribeTauriEvent('pet-asset-changed', () => {
@@ -404,7 +463,7 @@ export default function PetWindow() {
   useEffect(() => {
     const was = prevEmotionRef.current;
     const now = state.emotion;
-    if (was !== 'swallow' && now === 'swallow') {
+    if (was !== 'swallow' && was !== 'rapidSwallow' && (now === 'swallow' || now === 'rapidSwallow')) {
       playPetSfx('munch', useSettingsStore.getState().soundEnabled);
     }
     prevEmotionRef.current = now;
@@ -527,7 +586,7 @@ export default function PetWindow() {
   // On drop (swallow emotion enters), the pet SPRINTS the remaining distance
   // to the cursor — the "leap to catch the falling morsel" gesture.
   useEffect(() => {
-    if (state.emotion !== 'swallow') return;
+    if (state.emotion !== 'swallow' && state.emotion !== 'rapidSwallow') return;
     cancelSnap();
     const cur = dragCursorRef.current;
     const pos = petPosRef.current;
@@ -635,11 +694,6 @@ export default function PetWindow() {
     invoke('pet_show_context_menu', { items: compactItems(items) }).catch(() => undefined);
   };
 
-  // Pomodoro badge over the character's head — vector Lucide icon, not emoji.
-  const pomoBadge = state.pomodoro?.enabled && state.pomodoro.running ? state.pomodoro : null;
-  const BadgeIcon = pomoBadge ? pomodoroIcon(pomoBadge) : null;
-  const badgeColor = pomoBadge ? pomodoroColor(pomoBadge) : '';
-
   return (
     <div
       onMouseDown={onMouseDown}
@@ -659,14 +713,14 @@ export default function PetWindow() {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'flex-end',
-        gap: 10,
+        gap: 6,
         background: 'transparent',
         cursor: dragging ? 'grabbing' : 'grab',
         WebkitUserSelect: 'none',
         userSelect: 'none',
       }}
     >
-      <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} />
+      <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} backdrop={backdrop} />
       <div style={{ position: 'relative' }}>
         <PetCharacter
           emotion={state.emotion}
@@ -682,15 +736,6 @@ export default function PetWindow() {
           dragDy={dragOffset.dy}
           dragRotation={dragOffset.rot}
         />
-        {BadgeIcon && (
-          <motion.span
-            style={{ position: 'absolute', top: -22, right: 4, color: badgeColor, pointerEvents: 'none', filter: 'none' }}
-            animate={{ y: [0, -2, 0] }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          >
-            <BadgeIcon size={15} strokeWidth={2.4} />
-          </motion.span>
-        )}
       </div>
     </div>
   );

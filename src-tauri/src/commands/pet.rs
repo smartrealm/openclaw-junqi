@@ -200,8 +200,29 @@ pub async fn start_pet_dragging(app: AppHandle) -> Result<(), String> {
         .get_webview_window(PET_LABEL)
         .ok_or("pet window not found")?;
     win.start_dragging().map_err(|e| e.to_string())?;
-    app.emit_to(PET_LABEL, "pet-drag-ended", ())
-        .map_err(|e| e.to_string())
+
+    #[cfg(windows)]
+    {
+        wait_for_windows_left_button_release().await;
+        app.emit_to(PET_LABEL, "pet-drag-ended", ())
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn wait_for_windows_left_button_release() {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5 * 60);
+    while std::time::Instant::now() < deadline {
+        let pressed = unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } < 0;
+        if !pressed {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+    }
 }
 
 /// Read the pet window's current logical (x, y) — used by the JS drag handler
