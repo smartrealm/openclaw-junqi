@@ -95,7 +95,7 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
       onClick={onClick}
       disabled={loading || disabled}
       className={clsx(
-        'relative flex flex-col items-center gap-2 p-3.5 rounded-xl',
+        'relative flex min-h-[58px] items-center gap-2.5 rounded-lg p-2.5 text-left',
         'border border-[rgb(var(--aegis-overlay)/0.05)] bg-[rgb(var(--aegis-overlay)/0.015)]',
         'transition-all duration-250 overflow-hidden',
         (loading || disabled) && 'opacity-45 cursor-not-allowed',
@@ -111,13 +111,13 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
         <Loader2 size={18} className="animate-spin text-aegis-text-dim relative z-10" />
       ) : (
         <div
-          className="w-9 h-9 rounded-[10px] flex items-center justify-center relative z-10 transition-transform duration-250 group-hover:scale-110"
+          className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform duration-250 group-hover:scale-105"
           style={{ background: bgColor, border: `1px solid ${bgColor}` }}
         >
-          <Icon size={18} style={{ color: iconColor }} />
+          <Icon size={16} style={{ color: iconColor }} />
         </div>
       )}
-      <span className="text-[12px] font-medium text-aegis-text-muted leading-tight text-center relative z-10 group-hover:text-aegis-text transition-colors">
+      <span className="relative z-10 line-clamp-2 min-w-0 text-[11.5px] font-medium leading-[1.3] text-aegis-text-muted transition-colors group-hover:text-aegis-text">
         {label}
       </span>
     </button>
@@ -194,13 +194,18 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
 // ═══════════════════════════════════════════════════════════
 // FeedItem — Activity feed entry with connector line
 // ═══════════════════════════════════════════════════════════
-export function FeedItem({ color, glowColor, text, time, isLast, agentName, onClick }: {
+export function FeedItem({ color, glowColor, text, time, timeTitle, isLast, agentName, model, modelTitle, tokens, running, onClick }: {
   color: string;
   glowColor: string;
   text: string;
   time: string;
+  timeTitle?: string;
   isLast?: boolean;
   agentName?: string;
+  model?: string;
+  modelTitle?: string;
+  tokens?: string;
+  running?: boolean;
   onClick?: () => void;
 }) {
   const content = (
@@ -215,17 +220,32 @@ export function FeedItem({ color, glowColor, text, time, isLast, agentName, onCl
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[12px] text-aegis-text leading-[1.45]">{text}</div>
-        <div className="flex items-center gap-2 mt-0.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1 truncate text-[12px] font-medium leading-[1.45] text-aegis-text" title={text}>{text}</div>
+          <time className="shrink-0 font-mono text-[10px] tabular-nums text-aegis-text-dim" title={timeTitle}>{time}</time>
+        </div>
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
           {agentName && (
-            <span className="text-[10px] font-medium text-aegis-accent truncate max-w-[100px]">{agentName}</span>
+            <span className="max-w-[88px] truncate text-[10px] font-medium text-aegis-accent" title={agentName}>{agentName}</span>
           )}
-          <span className="text-[10px] text-aegis-text-muted font-mono tabular-nums">{time}</span>
+          {agentName && model && <span className="text-[9px] text-aegis-text-dim/55">·</span>}
+          {model && (
+            <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-aegis-text-muted" title={modelTitle}>{model}</span>
+          )}
+          {tokens && (
+            <span className="shrink-0 font-mono text-[10px] font-semibold tabular-nums text-aegis-text-dim">{tokens}</span>
+          )}
+          {running && (
+            <span
+              className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-aegis-success"
+              title={i18n.t('dashboard.working', { defaultValue: 'Working' }) as string}
+            />
+          )}
         </div>
       </div>
     </>
   );
-  const rowClass = 'w-full text-left flex gap-2.5 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 animate-slide-in-right';
+  const rowClass = 'w-full text-left flex gap-2.5 px-1 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 animate-slide-in-right rounded-md';
   if (!onClick) return <div className={rowClass}>{content}</div>;
   return (
     <button type="button" onClick={onClick} className={`${rowClass} hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors`}>
