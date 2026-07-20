@@ -2445,6 +2445,7 @@
   "setup.wizard.connecting": "جارٍ الاتصال بمعالج إعداد OpenClaw الرسمي…",
   "setup.wizard.connectingAction": "جارٍ الاتصال",
   "setup.wizard.connectionTimeout": "تم تشغيل Gateway، لكن انتهت مهلة الاتصال بمعالج الإعداد.",
+  "setup.wizard.handoffNotReady": "اكتمل إعداد OpenClaw، لكن تعذر التحقق من Gateway المحدد بعد تبديل طريقة التشغيل. أصلحه وأعد المحاولة.",
   "setup.wizard.failed": "فشل معالج إعداد OpenClaw.",
   "setup.wizard.missingStep": "لم يُرجع معالج إعداد OpenClaw الخطوة التالية.",
   "setup.wizard.sessionExpired": "انتهت جلسة إعداد OpenClaw. أعد الاتصال للمتابعة.",

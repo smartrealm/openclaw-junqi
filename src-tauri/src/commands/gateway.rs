@@ -543,6 +543,62 @@ mod gateway_config_tests {
     }
 
     #[test]
+    fn existing_gateway_policy_is_preserved_during_startup_normalization() {
+        let path = isolated_config_path("existing-gateway-policy");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = r#"{
+            gateway: {
+                mode: 'local',
+                bind: 'tailnet',
+                port: 19991,
+                auth: { token: 'existing' },
+                controlUi: { allowedOrigins: ['https://example.test'], allowInsecureAuth: false }
+            }
+        }"#;
+        std::fs::write(&path, original).unwrap();
+
+        ensure_config_with_token(&path, 18789, "loopback").unwrap();
+        let config = crate::commands::config::parse_openclaw_config(
+            &std::fs::read_to_string(&path).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(config["gateway"]["bind"], "tailnet");
+        assert_eq!(config["gateway"]["port"], 19991);
+        assert_eq!(config["gateway"]["controlUi"]["allowedOrigins"][0], "https://example.test");
+        assert_eq!(config["gateway"]["controlUi"]["allowInsecureAuth"], false);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn remote_gateway_mode_is_rejected_without_mutating_config() {
+        let path = isolated_config_path("remote-gateway-mode");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = r#"{"gateway":{"mode":"remote","auth":{"token":"existing"}}}"#;
+        std::fs::write(&path, original).unwrap();
+
+        let error = ensure_config_with_token(&path, 18789, "loopback").unwrap_err();
+        assert!(error.contains("remote"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn secretref_gateway_token_is_rejected_without_replacement() {
+        let path = isolated_config_path("secretref-gateway-token");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = r#"{"gateway":{"mode":"local","auth":{"token":{"source":"env","id":"OPENCLAW_TOKEN"}}}}"#;
+        std::fs::write(&path, original).unwrap();
+
+        let error = ensure_config_with_token(&path, 18789, "loopback").unwrap_err();
+        assert!(error.contains("SecretRef"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn gateway_locale_is_seeded_into_gateway_config() {
         let path = isolated_config_path("gateway-locale");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -798,6 +854,17 @@ pub(crate) fn ensure_config_with_token(
         let auth_config = config
             .get("gateway")
             .and_then(|gateway| gateway.get("auth"));
+        if let Some(mode_value) = config
+            .get("gateway")
+            .and_then(|gateway| gateway.get("mode"))
+        {
+            let mode = mode_value.as_str().ok_or("gateway.mode must be a string")?;
+            if mode != "local" {
+                return Err(format!(
+                    "Gateway mode `{mode}` is not compatible with JunQi's local Gateway lifecycle; select a local Gateway configuration first"
+                ));
+            }
+        }
         let configured_auth_mode = auth_config.and_then(|auth| auth.get("mode"));
         if let Some(mode_value) = configured_auth_mode {
             let mode = mode_value
@@ -820,7 +887,8 @@ pub(crate) fn ensure_config_with_token(
             );
         }
 
-        // Try to get existing token
+        // Try to get existing token. Non-string values (including SecretRef)
+        // cannot be resolved by the renderer-side connection contract.
         if let Some(token) = config
             .get("gateway")
             .and_then(|g| g.get("auth"))
@@ -832,19 +900,15 @@ pub(crate) fn ensure_config_with_token(
 
             let mut config = config;
 
-            // Ensure gateway.mode, bind, port, and controlUi config are set
+            // Seed only missing local bootstrap fields. Existing Gateway policy
+            // belongs to the user and must not be replaced during startup.
             if let Some(gw) = config.get_mut("gateway").and_then(|g| g.as_object_mut()) {
                 if !gw.contains_key("mode") {
                     gw.insert("mode".into(), serde_json::json!("local"));
                 }
-
-                // Always update bind and port to match the requested values
-                // (critical for Docker mode where bind must be "lan" for 0.0.0.0)
-                gw.insert("bind".into(), serde_json::json!(bind));
-                gw.insert("port".into(), serde_json::json!(port));
-
-                // Always update controlUi to ensure Tauri origins + insecure auth are present
-                gw.insert("controlUi".into(), control_ui.clone());
+                gw.entry("bind").or_insert_with(|| serde_json::json!(bind));
+                gw.entry("port").or_insert_with(|| serde_json::json!(port));
+                gw.entry("controlUi").or_insert(control_ui.clone());
             }
 
             ensure_gateway_locale_config(&mut config)?;
@@ -852,6 +916,16 @@ pub(crate) fn ensure_config_with_token(
             write_openclaw_config_safely(config_path, &config)?;
 
             return Ok(token);
+        }
+
+        if auth_config
+            .and_then(|auth| auth.get("token"))
+            .is_some_and(|token| !token.is_string() && !token.is_null())
+        {
+            return Err(
+                "Gateway token uses SecretRef or another non-string credential; resolve it in OpenClaw before connecting JunQi"
+                    .into(),
+            );
         }
 
         // Config exists but no token — add token auth
@@ -868,12 +942,15 @@ pub(crate) fn ensure_config_with_token(
             .entry("mode")
             .or_insert_with(|| serde_json::json!("local"));
 
-        // Always update bind and port to match the requested values
-        gw_obj.insert("bind".into(), serde_json::json!(bind));
-        gw_obj.insert("port".into(), serde_json::json!(port));
-
-        // Ensure controlUi config
-        gw_obj.insert("controlUi".into(), control_ui.clone());
+        gw_obj
+            .entry("bind")
+            .or_insert_with(|| serde_json::json!(bind));
+        gw_obj
+            .entry("port")
+            .or_insert_with(|| serde_json::json!(port));
+        gw_obj
+            .entry("controlUi")
+            .or_insert(control_ui.clone());
 
         let auth = gw_obj
             .entry("auth")

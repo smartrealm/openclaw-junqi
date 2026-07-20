@@ -2653,6 +2653,7 @@
       "connecting": "正在連接 OpenClaw 官方配置嚮導…",
       "connectingAction": "正在連接",
       "connectionTimeout": "Gateway 已啟動，但配置嚮導連接超時。",
+      "handoffNotReady": "OpenClaw 配置已完成，但切換運行方式後無法驗證所選 Gateway。請修復並重試。",
       "failed": "OpenClaw 配置嚮導執行失敗。",
       "missingStep": "OpenClaw 配置嚮導沒有返回下一步。",
       "sessionExpired": "OpenClaw 配置會話已失效，請重新連接。",

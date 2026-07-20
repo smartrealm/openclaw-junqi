@@ -125,7 +125,6 @@ export const installOpenclaw = () => invoke<string>("install_openclaw");
 export const reinstallOpenclaw = () => invoke<string>("reinstall_openclaw");
 export const relocateOpenclaw = () => invoke<string>("relocate_openclaw");
 export const applyTerminalIntegration = () => invoke<TerminalIntegrationStatus>("apply_terminal_integration");
-export const prepareGateway = () => invoke<string>("prepare_gateway");
 export const startGateway = (port?: number) => (
   port == null ? invoke<any>("start_gateway") : invoke<any>("start_gateway", { port })
 );

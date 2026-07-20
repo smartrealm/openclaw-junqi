@@ -43,6 +43,28 @@ test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () =
   assert.match(stopped, /flow\.needsOnboarding \? "configure-openclaw" : "ready"/);
 });
 
+test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway readiness', () => {
+  const completion = setupFlow.slice(
+    setupFlow.indexOf('if (result.done || result.status === "done")'),
+    setupFlow.indexOf('const startOfficialOnboarding = useCallback'),
+  );
+
+  assert.match(completion, /await invoke<boolean>\("handoff_gateway_to_official_service", \{\}\)/);
+  assert.match(completion, /await invoke<boolean>\("probe_selected_gateway", \{\}\)/);
+  assert.match(completion, /replaceSetupStep\("error"\)/);
+  assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
+});
+
+test('BUG-ONB-17 setup endpoint cache removes legacy renderer Gateway credentials', () => {
+  const cache = setupFlow.slice(
+    setupFlow.indexOf('function cacheGatewayTarget'),
+    setupFlow.indexOf('export function useSetupFlow'),
+  );
+
+  assert.match(cache, /delete next\.gatewayToken/);
+  assert.doesNotMatch(cache, /next\.gatewayToken\s*=/);
+});
+
 test('BUG-ONB-05 install mode selection is explicit and confirmed by Next', () => {
   const mode = setupPage.slice(
     setupPage.indexOf('function ModeSelectScreen'),
@@ -225,4 +247,9 @@ test('FEAT-AUTOSTART ready screen offers boot autostart with runtime handover', 
   ]) {
     assert.match(registration, new RegExp(command));
   }
+});
+
+test('BUG-ONB-18 unused prepare_gateway bridge is no longer part of the command surface', () => {
+  assert.doesNotMatch(adapter, /prepareGateway/);
+  assert.doesNotMatch(setupCommand, /#\[tauri::command\][\s\S]{0,120}pub async fn prepare_gateway/);
 });

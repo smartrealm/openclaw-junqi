@@ -2659,6 +2659,7 @@
       "connecting": "Connecting to the official OpenClaw setup wizard…",
       "connectingAction": "Connecting",
       "connectionTimeout": "Gateway started, but the setup wizard connection timed out.",
+      "handoffNotReady": "OpenClaw setup completed, but the selected Gateway could not be verified after the runtime handoff. Repair it and try again.",
       "failed": "The OpenClaw setup wizard failed.",
       "missingStep": "The OpenClaw setup wizard did not return its next step.",
       "sessionExpired": "The OpenClaw setup session expired. Reconnect to continue.",

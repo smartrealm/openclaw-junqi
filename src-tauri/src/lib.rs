@@ -121,7 +121,6 @@ pub fn run() {
             commands::setup::install_openclaw,
             commands::setup::reinstall_openclaw,
             commands::setup::relocate_openclaw,
-            commands::setup::prepare_gateway,
             // Control UI (Console)
             commands::console::open_control_ui,
             commands::console::return_to_desktop,
