@@ -2,11 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Session } from '@/stores/chatStore';
 import {
+  agentIdFromSessionKey,
   classifySessionPresentation,
   cronJobIdFromSessionKey,
   isIsolatedExecutionSessionKey,
   isSessionExecutionActive,
   partitionSessionsForPresentation,
+  parentSessionKeyForSession,
+  sessionExecutionState,
 } from './sessionPresentation';
 
 function session(partial: Partial<Session> & { key: string }): Session {
@@ -46,4 +49,18 @@ test('partitions background sessions and preserves unknown sessions as conversat
   assert.equal(result.background.subagent.length, 1);
   assert.equal(isSessionExecutionActive(session({ key: 'agent:main:cron:job', status: 'running' })), true);
   assert.equal(isSessionExecutionActive(session({ key: 'agent:main:cron:job', status: 'done' })), false);
+  assert.equal(sessionExecutionState(session({ key: 'agent:main:subagent:run-1', subagentRunState: 'done' })), 'done');
+  assert.equal(sessionExecutionState(session({ key: 'agent:main:subagent:run-2', status: 'cancelled' })), 'failed');
+});
+
+test('resolves subagent ownership from OpenClaw parent metadata', () => {
+  const child = session({
+    key: 'agent:research:subagent:913a829b-fb76-4bc3-972c-97f12e3508dd',
+    parentSessionKey: 'agent:main:desktop-parent',
+    spawnedBy: 'agent:legacy:main',
+  });
+
+  assert.equal(agentIdFromSessionKey(child.key), 'research');
+  assert.equal(parentSessionKeyForSession(child), 'agent:main:desktop-parent');
+  assert.equal(agentIdFromSessionKey(parentSessionKeyForSession(child) ?? ''), 'main');
 });

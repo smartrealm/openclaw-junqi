@@ -210,6 +210,86 @@ pub async fn probe_openclaw_provider(
     Ok(payload)
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveModelProbe {
+    ready: bool,
+    model: Option<String>,
+    detail: Option<String>,
+}
+
+fn active_model_probe_from_status(payload: &Value) -> ActiveModelProbe {
+    let model = payload
+        .get("resolvedDefault")
+        .or_else(|| payload.get("defaultModel"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let results = payload
+        .get("auth")
+        .and_then(|auth| auth.get("probes"))
+        .and_then(|probes| probes.get("results"))
+        .and_then(Value::as_array);
+    let ready = model.as_deref().is_some_and(|selected| {
+        results.is_some_and(|results| {
+            results.iter().any(|result| {
+                result.get("status").and_then(Value::as_str) == Some("ok")
+                    && result.get("model").and_then(Value::as_str) == Some(selected)
+            })
+        })
+    });
+    let detail = if ready {
+        None
+    } else if model.is_none() {
+        Some("No primary model is configured".to_string())
+    } else if results.is_none_or(Vec::is_empty) {
+        Some("OpenClaw returned no live model probe result".to_string())
+    } else {
+        let statuses = results
+            .into_iter()
+            .flatten()
+            .filter_map(|result| result.get("status").and_then(Value::as_str))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(", ");
+        Some(format!(
+            "The configured primary model did not pass a live probe{}",
+            if statuses.is_empty() {
+                String::new()
+            } else {
+                format!(" (status: {statuses})")
+            }
+        ))
+    };
+    ActiveModelProbe {
+        ready,
+        model,
+        detail,
+    }
+}
+
+#[tauri::command]
+pub async fn probe_active_openclaw_model() -> Result<ActiveModelProbe, String> {
+    let args = [
+        "models",
+        "status",
+        "--probe",
+        "--json",
+        "--probe-timeout",
+        "15000",
+        "--probe-concurrency",
+        "1",
+        "--probe-max-tokens",
+        "1",
+    ];
+    let output = run_openclaw(&args, None, PROBE_COMMAND_TIMEOUT).await?;
+    let payload =
+        parse_cli_json(&output).map_err(|_| output_error("models status --probe", &output))?;
+    Ok(active_model_probe_from_status(&payload))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,5 +316,34 @@ mod tests {
             candidate.path.clone()
         };
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn active_model_probe_requires_a_success_for_the_resolved_primary() {
+        let ready = active_model_probe_from_status(&serde_json::json!({
+            "defaultModel": "alias/model",
+            "resolvedDefault": "openai/gpt-5",
+            "auth": {"probes": {"results": [
+                {"model": "openai/gpt-5", "status": "ok"},
+                {"model": "other/fallback", "status": "auth"}
+            ]}}
+        }));
+        assert_eq!(
+            ready,
+            ActiveModelProbe {
+                ready: true,
+                model: Some("openai/gpt-5".into()),
+                detail: None,
+            }
+        );
+
+        let wrong_model = active_model_probe_from_status(&serde_json::json!({
+            "resolvedDefault": "anthropic/claude",
+            "auth": {"probes": {"results": [
+                {"model": "openai/gpt-5", "status": "ok"}
+            ]}}
+        }));
+        assert!(!wrong_model.ready);
+        assert!(wrong_model.detail.is_some());
     }
 }

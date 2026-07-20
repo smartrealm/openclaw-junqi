@@ -443,7 +443,7 @@ export class GatewayConnection {
           debugLog('gateway', '[GW] ✅ Connected!');
           const auth = response.auth || response.payload?.auth;
           if (auth?.deviceToken && window.aegis?.pairing?.saveToken) {
-            window.aegis.pairing.saveToken(auth.deviceToken).catch(() => {});
+            window.aegis.pairing.saveToken(auth.deviceToken, this.url).catch(() => {});
           }
           this.connected = true;
           this.connecting = false;

@@ -12,18 +12,14 @@ const DEFAULT_URL = defaultGatewayWsUrl();
 
 /** Resolve the WebSocket URL and token from config + user settings. */
 export async function resolveConnectionTarget(): Promise<ConnectionTarget> {
-  const userUrl = (getSettings().gatewayUrl || '').trim();
-  const userToken = (getSettings().gatewayToken || '').trim();
-
-  let wsUrl = userUrl || DEFAULT_URL;
-  let token = userToken;
+  let wsUrl = DEFAULT_URL;
+  let token = '';
 
   if (window.aegis?.config) {
     try {
       const config = await window.aegis.config.get();
-      const configUrl = config.gatewayUrl || config.gatewayWsUrl || DEFAULT_URL;
-      wsUrl = userUrl || configUrl;
-      token = userToken || config.gatewayToken || '';
+      wsUrl = config.gatewayUrl || config.gatewayWsUrl || DEFAULT_URL;
+      token = config.gatewayToken || '';
     } catch {}
   }
 
@@ -72,15 +68,5 @@ export async function executeDockerStart(): Promise<{
     return { ...result, success: true };
   } catch (error) {
     return { success: false, error: String(error) };
-  }
-}
-
-// ── Helpers ──
-function getSettings(): { gatewayUrl?: string; gatewayToken?: string } {
-  try {
-    const raw = localStorage.getItem('aegis-config');
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
   }
 }

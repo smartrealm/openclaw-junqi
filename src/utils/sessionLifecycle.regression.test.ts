@@ -6,6 +6,7 @@ import { useChatStore, type ChatMessage, type Session } from '@/stores/chatStore
 import { handleGatewayEvent, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import {
   __resetSessionLifecycleForTest,
+  coalesceSessionsByKey,
   createAgentSessionKey,
   createLatestRequestGate,
   isSessionDeleted,
@@ -75,6 +76,17 @@ beforeEach(() => {
 });
 
 describe('session lifecycle regression fixes', () => {
+  test('session snapshots collapse by normalized key and keep the newest label', () => {
+    const sessions = coalesceSessionsByKey([
+      { key: ` ${SESSION_KEY} `, label: '旧名称', updatedAt: '2026-07-20T08:00:00Z' },
+      { key: SESSION_KEY, label: '新名称', updatedAt: '2026-07-20T08:01:00Z' },
+    ]);
+
+    assert.equal(sessions.length, 1);
+    assert.equal(sessions[0]?.key, SESSION_KEY);
+    assert.equal(sessions[0]?.label, '新名称');
+  });
+
   test('BUG-01 deletion purges every per-session cache and blocks late writes', () => {
     seedSession();
 

@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  persistGatewayToken,
+  canonicalGatewayEndpoint,
+  mergeDesktopGatewaySettings,
   pollGatewayPairing,
+  readLegacyGatewayCredential,
+  readLegacyGatewayEndpoint,
+  removeLegacyGatewayCredentials,
   requestGatewayPairing,
 } from './gateway-pairing';
 
@@ -46,17 +50,52 @@ test('pairing polling encodes the device id and rejects malformed status', async
   );
 });
 
-test('pairing token persistence preserves other desktop settings', () => {
-  const values = new Map<string, string>([['aegis-config', JSON.stringify({ gatewayUrl: 'ws://host' })]]);
+test('legacy Gateway credentials are discoverable, removable, and never re-saved with settings', () => {
+  const values = new Map<string, string>([
+    ['aegis-config', JSON.stringify({ gatewayUrl: 'ws://host:18789', gatewayToken: ' old-token ' })],
+    ['aegis-gateway-token', 'other-token'],
+    ['aegis-setting:gatewayToken', JSON.stringify('settings-token')],
+  ]);
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
   };
 
-  persistGatewayToken(' paired-token ', storage);
-  assert.deepEqual(JSON.parse(values.get('aegis-config') ?? '{}'), {
-    gatewayUrl: 'ws://host',
-    gatewayToken: 'paired-token',
+  assert.deepEqual(readLegacyGatewayCredential(storage), {
+    endpoint: 'ws://host:18789',
+    token: 'old-token',
   });
-  assert.throws(() => persistGatewayToken('   ', storage), /cannot be empty/);
+  removeLegacyGatewayCredentials(storage);
+  assert.deepEqual(JSON.parse(values.get('aegis-config') ?? '{}'), {
+    gatewayUrl: 'ws://host:18789',
+  });
+  assert.equal(values.has('aegis-gateway-token'), false);
+  assert.equal(values.has('aegis-setting:gatewayToken'), false);
+
+  mergeDesktopGatewaySettings({ gatewayUrl: 'ws://new-host:18790', gatewayToken: 'do-not-store' }, storage);
+  assert.deepEqual(JSON.parse(values.get('aegis-config') ?? '{}'), {
+    gatewayUrl: 'ws://new-host:18790',
+  });
+});
+
+test('legacy Gateway URL fallback includes the settings namespace', () => {
+  const values = new Map<string, string>([
+    ['aegis-setting:gatewayUrl', JSON.stringify('wss://legacy.example/gateway')],
+  ]);
+  assert.equal(
+    readLegacyGatewayEndpoint({ getItem: (key) => values.get(key) ?? null }),
+    'wss://legacy.example/gateway',
+  );
+});
+
+test('Gateway endpoint identity matches HTTP pairing and WebSocket connection surfaces', () => {
+  assert.equal(
+    canonicalGatewayEndpoint('http://LOCALHOST:18789/'),
+    canonicalGatewayEndpoint('ws://localhost:18789'),
+  );
+  assert.equal(
+    canonicalGatewayEndpoint('https://gateway.example/base/'),
+    canonicalGatewayEndpoint('wss://gateway.example:443/base'),
+  );
 });

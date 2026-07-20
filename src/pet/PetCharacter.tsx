@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import type { PetEmotion } from './pet-states';
 import { EMOTION_CFG } from './emotion-config';
-import { SKIN_REGISTRY, type PetSkin } from './skins';
+import { DEFAULT_PET_SKIN, SKIN_REGISTRY, type PetSkin } from './skins';
 import { EFFECT_REGISTRY } from './effects';
 import { normalizePetThemeName, resolvePetCharacterPalette, type PetThemeName } from './petTheme';
 import type { CustomPetPackage } from '@/stores/petStore';
@@ -46,7 +46,7 @@ function usePetCharacterTheme(): PetThemeName {
   return themeName;
 }
 
-export function PetCharacter({ emotion = 'idle', progress = 0, skin = 'robot', customAsset, customPet, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
+export function PetCharacter({ emotion = 'idle', progress = 0, skin = DEFAULT_PET_SKIN, customAsset, customPet, dragging = false, hovered = false, walkDir = 0, celebrating = false, dragDx = 0, dragDy = 0, dragRotation = 0 }: {
   emotion?: PetEmotion;
   progress?: number;
   skin?: PetSkin;

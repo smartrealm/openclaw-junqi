@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { isPetSkin, type PetSkin } from '@/pet/skins';
+import { DEFAULT_PET_SKIN, isPetSkin, type PetSkin } from '@/pet/skins';
 export type { PetSkin };
+export { DEFAULT_PET_SKIN };
 
 export interface CustomPetPackage {
   id: string;
@@ -11,9 +12,6 @@ export interface CustomPetPackage {
   spritesheetDataUrl: string;
 }
 
-// The legacy lobster was visually dominant in a work surface. Keep it as an
-// opt-in skin, while new and migrated installs start with the quieter robot.
-export const DEFAULT_PET_SKIN: PetSkin = 'robot';
 const MIN_PET_CAPTION_SCALE = 0.85;
 const MAX_PET_CAPTION_SCALE = 1.35;
 
@@ -25,13 +23,6 @@ function normalizePetCaptionScale(value: unknown): number {
 function normalizePersistedPetSkin(skin: unknown): PetSkin {
   // Preserve valid choices; only missing or invalid values fall back.
   return isPetSkin(skin) ? skin : DEFAULT_PET_SKIN;
-}
-
-function migratePersistedPetSkin(skin: unknown, persistedVersion: number): PetSkin {
-  // v4 and earlier shipped lobster as an indistinguishable default. Migrate it
-  // once rather than continuing to make the oversized claws the first-run pet.
-  if (persistedVersion < 5 && skin === 'lobster') return DEFAULT_PET_SKIN;
-  return normalizePersistedPetSkin(skin);
 }
 
 /** Coarse classification of a drag payload — drives the bubble icon + accent
@@ -210,14 +201,14 @@ export const usePetStore = create<PetSettings>()(
     {
       name: 'aegis-pet-settings',
       version: 7,
-      migrate: (persisted, persistedVersion) => {
+      migrate: (persisted) => {
         const p = (persisted as Partial<PetSettings>) || {};
         const pomodoro: Partial<PomodoroState> = p.pomodoro || {};
         return {
           enabled: p.enabled ?? true,
           position: p.position ?? null,
           clickThrough: p.clickThrough ?? true,
-          skin: migratePersistedPetSkin(p.skin, persistedVersion),
+          skin: normalizePersistedPetSkin(p.skin),
           pomodoro: {
             enabled: pomodoro.enabled ?? false,
             workMin: pomodoro.workMin ?? 30,
@@ -263,7 +254,7 @@ export const usePetStore = create<PetSettings>()(
           pomodoro.workRounds = 0;
           pomodoro.completedDate = today;
         }
-        return { ...current, ...p, pomodoro };
+        return { ...current, ...p, skin: normalizePersistedPetSkin(p.skin), pomodoro };
       },
     },
   ),

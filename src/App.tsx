@@ -895,7 +895,11 @@ export default function App() {
       ) {
         applyConfirmedSessionDeletion(detail.sessionKey);
       }
-      setTimeout(() => void loadSessions(), 250);
+      setTimeout(() => {
+        void loadSessions().finally(() => {
+          window.dispatchEvent(new CustomEvent('aegis:sessions-refreshed', { detail }));
+        });
+      }, 250);
     };
     window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
 
@@ -974,14 +978,6 @@ export default function App() {
   // ── Pairing Handlers ──
   const handlePairingComplete = useCallback(async (token: string) => {
     debugLog('gateway', '[App] 🔑 Pairing complete — reconnecting with new token');
-    // Save token to config via IPC
-    if (window.aegis?.pairing?.saveToken) {
-      await window.aegis.pairing.saveToken(token);
-    }
-    // Also update config via the existing config:save IPC
-    if (window.aegis?.config?.save) {
-      await window.aegis.config.save({ gatewayToken: token });
-    }
     // Reconnect gateway with new token
     gatewayManager.reconnectWithToken(token);
     setNeedsPairing(false);

@@ -140,7 +140,7 @@ export function PairingScreen({ gatewayHttpUrl, onPaired, onCancel, errorMessage
 
           // Save token via IPC
           if (window.aegis?.pairing?.saveToken) {
-            await window.aegis.pairing.saveToken(result.token);
+            await window.aegis.pairing.saveToken(result.token, gatewayHttpUrl);
           }
 
           // Notify parent after a brief success animation
@@ -388,7 +388,7 @@ export function PairingScreen({ gatewayHttpUrl, onPaired, onCancel, errorMessage
                     onClick={async () => {
                       if (!manualToken.trim()) return;
                       if (window.aegis?.pairing?.saveToken) {
-                        await window.aegis.pairing.saveToken(manualToken.trim());
+                        await window.aegis.pairing.saveToken(manualToken.trim(), gatewayHttpUrl);
                       }
                       setState('approved');
                       setTimeout(() => onPaired(manualToken.trim()), 800);

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { debugLog } from '@/utils/debugLog';
 import {
+  coalesceSessionsByKey,
   createLatestRequestGate,
   markSessionDeleted,
   withoutDeletedSessions,
@@ -227,7 +228,7 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
     // (runningUpdatedAt) that the polling API does not return. Without this,
     // every 10s poll wipes the freshness stamp → isFreshRunning returns false →
     // pet shows idle while an agent is actively working.
-    const visibleSessions = withoutDeletedSessions(sessions);
+    const visibleSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
     const existing = get().sessions;
     const existingByKey = new Map(existing.map((s) => [s.key, s]));
     const merged = visibleSessions.map((s) => {

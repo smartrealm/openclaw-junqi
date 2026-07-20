@@ -9,6 +9,7 @@ import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { gateway } from '@/services/gateway';
 import { useSettingsStore } from './settingsStore';
 import {
+  coalesceSessionsByKey,
   isAgentMainSession,
   isSessionDeleted,
   markSessionDeleted,
@@ -1045,7 +1046,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messagesPerSession,
     } = get();
     const defs = defaults ?? prev;
-    const visibleIncomingSessions = withoutDeletedSessions(sessions);
+    const visibleIncomingSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
     const persistedPins = readSessionPinPrefs();
     const previousByKey = new Map(previousSessions.map((session) => [session.key, session]));
     const incomingKeys = new Set(visibleIncomingSessions.map((session) => session.key));
@@ -1196,9 +1197,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     isSessionDeleted(key)
       ? state
       : {
-          sessions: updateSession(state.sessions, key, (session) =>
+          sessions: coalesceSessionsByKey(updateSession(state.sessions, key, (session) =>
             session.label === label ? session : { ...session, label },
-          ),
+          )),
         }
   )),
 

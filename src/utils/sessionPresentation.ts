@@ -2,6 +2,7 @@ import type { Session } from '@/stores/chatStore';
 
 export type BackgroundActivityKind = 'dreaming' | 'cron' | 'subagent' | 'system';
 export type SessionPresentationKind = 'conversation' | BackgroundActivityKind;
+export type SessionExecutionState = 'running' | 'done' | 'failed' | 'stopped' | 'unknown';
 
 export interface AutomationJobDescriptor {
   id: string;
@@ -38,6 +39,19 @@ function normalized(value: unknown): string {
 function agentSessionRest(sessionKey: string): string | null {
   const match = /^agent:[^:]+:(.+)$/i.exec(normalized(sessionKey));
   return match?.[1] ?? null;
+}
+
+export function agentIdFromSessionKey(sessionKey: string): string | null {
+  return /^agent:([^:]+):/i.exec(normalized(sessionKey))?.[1] ?? null;
+}
+
+/** Parent ownership is authoritative only when OpenClaw returns a session key. */
+export function parentSessionKeyForSession(session: Session): string | null {
+  for (const candidate of [session.parentSessionKey, session.spawnedBy]) {
+    const key = normalized(candidate);
+    if (agentIdFromSessionKey(key)) return key;
+  }
+  return null;
 }
 
 export function isCronSessionKey(sessionKey: string): boolean {
@@ -131,10 +145,19 @@ export function partitionSessionsForPresentation<T extends Session>(
   return partition;
 }
 
+export function sessionExecutionState(session: Session): SessionExecutionState {
+  if (session.running === true || session.hasActiveRun === true || session.hasActiveSubagentRun === true) {
+    return 'running';
+  }
+
+  const state = normalized(session.subagentRunState || session.status).toLowerCase();
+  if (['active', 'running', 'started', 'working'].includes(state)) return 'running';
+  if (['complete', 'completed', 'done', 'finished', 'succeeded', 'success'].includes(state)) return 'done';
+  if (['aborted', 'canceled', 'cancelled', 'error', 'failed'].includes(state)) return 'failed';
+  if (['idle', 'paused', 'stopped'].includes(state)) return 'stopped';
+  return 'unknown';
+}
+
 export function isSessionExecutionActive(session: Session): boolean {
-  return session.running === true
-    || session.hasActiveRun === true
-    || session.hasActiveSubagentRun === true
-    || session.status === 'running'
-    || session.subagentRunState === 'active';
+  return sessionExecutionState(session) === 'running';
 }

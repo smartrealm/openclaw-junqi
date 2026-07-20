@@ -422,6 +422,30 @@ export function useSetupFlow(
     }
   }, []);
 
+  const probeActiveRuntimeModel = useCallback(async (): Promise<{
+    ready: boolean;
+    model?: string | null;
+    detail?: string | null;
+  }> => {
+    report(t("setup.wizard.checkingModel", "正在验证所选模型…"), 90);
+    try {
+      const result = await window.aegis.providerRuntime.probeActive();
+      appendSetupLog({
+        source: "setup",
+        step: "wizard",
+        message: result.ready
+          ? `OpenClaw live model probe passed${result.model ? ` (${result.model})` : ""}`
+          : result.detail || "OpenClaw live model probe did not pass",
+        level: result.ready ? "info" : "warn",
+      });
+      return result;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      appendSetupLog({ source: "setup", step: "wizard", message: detail, level: "warn" });
+      return { ready: false, detail };
+    }
+  }, [appendSetupLog, report, t]);
+
   // ── 挂载后自动检测 ──
   // 先读取后端持久化的运行时选择；只有 Native 才检查宿主机 OpenClaw。
   // 然后 probe_gateway_port（Rust 侧从选定配置读取实际端口）。检测只能推进向导步骤，不能写入
@@ -676,7 +700,6 @@ export function useSetupFlow(
       // The official session is terminal even when the lifecycle handoff below
       // fails. Do not replay accepted model credentials on recovery; recover
       // only the Gateway owner and verify the selected config identity.
-      updateOnboardingRequirement(false);
       // OpenClaw's official wizard may install its platform service by
       // default. Reconcile ownership before declaring setup complete so the
       // foreground bootstrap child and Scheduled Task never race on one port.
@@ -702,6 +725,23 @@ export function useSetupFlow(
         replaceSetupStep("error");
         return result;
       }
+      const modelProbe = await probeActiveRuntimeModel();
+      if (!modelProbe.ready) {
+        const message = t(
+          "setup.wizard.modelNotReady",
+          "所选模型尚未通过实时验证，请继续完成 OpenClaw 配置。",
+        );
+        updateOnboardingRequirement(true);
+        setWizardStep(null);
+        setWizardCanGoBack(false);
+        setWizardRecoveryRequired(false);
+        setWizardError(message);
+        setSetupError(message);
+        await refreshGatewayConnectionTarget();
+        replaceSetupStep("configure-openclaw");
+        return result;
+      }
+      updateOnboardingRequirement(false);
       setWizardStep(null);
       setWizardCanGoBack(false);
       setWizardError(null);
@@ -721,7 +761,21 @@ export function useSetupFlow(
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
     replaceSetupStep("configure-openclaw");
     return result;
-  }, [appendSetupLog, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, probeActiveRuntimeModel, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
+
+  const recoverLostWizardSession = useCallback(async (
+    client: OpenClawWizardClient,
+  ): Promise<OpenClawWizardResult> => {
+    client.forgetSession();
+    const structurallyIncomplete = await resolveActiveRuntimeOnboardingRequirement();
+    if (!structurallyIncomplete) {
+      const modelProbe = await probeActiveRuntimeModel();
+      if (modelProbe.ready) {
+        return { done: true, status: "done" };
+      }
+    }
+    return await client.start();
+  }, [probeActiveRuntimeModel, resolveActiveRuntimeOnboardingRequirement]);
 
   const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
@@ -736,8 +790,7 @@ export function useSetupFlow(
           result = await client.resume();
         } catch (error) {
           if (!isOpenClawWizardSessionLost(error)) throw error;
-          client.forgetSession();
-          result = await client.start();
+          result = await recoverLostWizardSession(client);
         }
       } else {
         result = await client.start();
@@ -753,7 +806,7 @@ export function useSetupFlow(
     } finally {
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, recoverLostWizardSession, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const resumeOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
@@ -765,8 +818,7 @@ export function useSetupFlow(
       return await applyWizardResult(result);
     } catch (error) {
       if (isOpenClawWizardSessionLost(error)) {
-        wizardClientRef.current!.forgetSession();
-        return await startOfficialOnboarding();
+        return await applyWizardResult(await recoverLostWizardSession(wizardClientRef.current!));
       }
       const message = wizardFailureMessage(error);
       setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
@@ -777,7 +829,7 @@ export function useSetupFlow(
     } finally {
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, replaceSetupStep, setSetupError, startOfficialOnboarding, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, recoverLostWizardSession, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
 
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
     // React state updates are asynchronous. A final note can receive two click
@@ -797,8 +849,7 @@ export function useSetupFlow(
         return await resumeOfficialOnboarding();
       }
       if (isOpenClawWizardSessionLost(error)) {
-        wizardClientRef.current!.forgetSession();
-        return await startOfficialOnboarding();
+        return await applyWizardResult(await recoverLostWizardSession(wizardClientRef.current!));
       }
       const message = wizardFailureMessage(error);
       setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
@@ -809,7 +860,7 @@ export function useSetupFlow(
       wizardSubmitInFlightRef.current = false;
       setWizardSubmitting(false);
     }
-  }, [applyWizardResult, resumeOfficialOnboarding, setSetupError, startOfficialOnboarding, wizardFailureMessage]);
+  }, [applyWizardResult, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     setWizardError(null);
@@ -951,14 +1002,19 @@ export function useSetupFlow(
       await startGatewayAction();
       return;
     }
-    if (needsOnboardingRef.current) {
+    let onboardingRequired = needsOnboardingRef.current;
+    if (!onboardingRequired) {
+      onboardingRequired = !(await probeActiveRuntimeModel()).ready;
+      updateOnboardingRequirement(onboardingRequired);
+    }
+    if (onboardingRequired) {
       navigateSetup("configure-openclaw", "push");
       await startOfficialOnboarding();
       return;
     }
     report(t("setup.ready"), 100);
     navigateSetup("ready", "push");
-  }, [gatewayRunning, navigateSetup, report, startGatewayAction, startOfficialOnboarding, t]);
+  }, [gatewayRunning, navigateSetup, probeActiveRuntimeModel, report, startGatewayAction, startOfficialOnboarding, t, updateOnboardingRequirement]);
 
   // Gateway startup is an installation transition, not a user decision. Keep
   // storage, runtime selection, and the official OpenClaw wizard interactive,

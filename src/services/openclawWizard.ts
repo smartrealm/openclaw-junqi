@@ -13,6 +13,12 @@ export interface OpenClawWizardOption {
   hint?: string;
 }
 
+export interface OpenClawWizardDeviceCode {
+  code: string;
+  expiresInMinutes?: number;
+  message?: string;
+}
+
 export interface OpenClawWizardStep {
   id: string;
   type: OpenClawWizardStepType;
@@ -24,6 +30,8 @@ export interface OpenClawWizardStep {
   placeholder?: string;
   sensitive?: boolean;
   executor?: 'gateway' | 'client';
+  externalUrl?: string;
+  deviceCode?: OpenClawWizardDeviceCode;
   [key: string]: unknown;
 }
 
@@ -53,6 +61,18 @@ function isWizardOption(value: unknown): value is OpenClawWizardOption {
     && (option.hint === undefined || typeof option.hint === 'string');
 }
 
+function isWizardDeviceCode(value: unknown): value is OpenClawWizardDeviceCode {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const deviceCode = value as Record<string, unknown>;
+  return typeof deviceCode.code === 'string'
+    && Boolean(deviceCode.code.trim())
+    && (deviceCode.message === undefined || typeof deviceCode.message === 'string')
+    && (deviceCode.expiresInMinutes === undefined
+      || (Number.isInteger(deviceCode.expiresInMinutes)
+        && Number(deviceCode.expiresInMinutes) >= 1
+        && Number(deviceCode.expiresInMinutes) <= 1440));
+}
+
 function normalizeWizardStep(value: unknown): OpenClawWizardStep | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
@@ -64,6 +84,8 @@ function normalizeWizardStep(value: unknown): OpenClawWizardStep | null {
   if (raw.placeholder !== undefined && typeof raw.placeholder !== 'string') return null;
   if (raw.sensitive !== undefined && typeof raw.sensitive !== 'boolean') return null;
   if (raw.executor !== undefined && raw.executor !== 'gateway' && raw.executor !== 'client') return null;
+  if (raw.externalUrl !== undefined && typeof raw.externalUrl !== 'string') return null;
+  if (raw.deviceCode !== undefined && !isWizardDeviceCode(raw.deviceCode)) return null;
 
   // The Gateway is the source of truth for presentation and option identity.
   // Keep the complete object so newer protocol metadata survives unchanged.
@@ -347,7 +369,7 @@ export function isOpenClawWizardStepDesynchronized(error: unknown): boolean {
 export function requiresOpenClawOnboarding(configExists: boolean, config: unknown): boolean {
   if (!configExists || !config || typeof config !== 'object') return true;
   const cfg = config as Record<string, any>;
-  if (typeof cfg.wizard?.lastRunAt === 'string' && cfg.wizard.lastRunAt.trim()) return false;
-  const primary = cfg.agents?.defaults?.model?.primary;
+  const model = cfg.agents?.defaults?.model;
+  const primary = typeof model === 'string' ? model : model?.primary;
   return !(typeof primary === 'string' && primary.trim());
 }

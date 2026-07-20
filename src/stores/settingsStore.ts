@@ -162,7 +162,7 @@ const readPersistedTheme = (): ThemeSetting => {
   }
 };
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+export const useSettingsStore = create<SettingsState>((set, get) => ({
   theme: readPersistedTheme(),
   uiScale: savedUiScale,
   uiFont: localStorage.getItem(AEGIS_FONTS_STORAGE_KEYS.uiFont) || '',
@@ -190,7 +190,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   wakeWord: localStorage.getItem('aegis-wake-word') || '',
   wakeSensitivity: parseFloat(localStorage.getItem('aegis-wake-sensitivity') || '0.7') || 0.7,
   gatewayUrl: localStorage.getItem('aegis-gateway-url') || '',
-  gatewayToken: localStorage.getItem('aegis-gateway-token') || '',
+  gatewayToken: '',
   sidebarCollapsed: savedSidebarMode === 'mini',
   sidebarMode: savedSidebarMode,
   activeSidebarTab: (typeof window !== 'undefined' && window.location) ? resolveTab(window.location.pathname) : 'workbench',
@@ -262,11 +262,19 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     localStorage.setItem('aegis-gateway-url', url);
     set({ gatewayUrl: url });
     window.aegis?.settings?.save?.('gatewayUrl', url).catch?.(() => {});
+    void window.aegis?.config?.save?.({ gatewayUrl: url });
   },
   setGatewayToken: (token) => {
-    localStorage.setItem('aegis-gateway-token', token);
-    set({ gatewayToken: token });
-    window.aegis?.settings?.save?.('gatewayToken', token).catch?.(() => {});
+    const normalized = token.trim();
+    localStorage.removeItem('aegis-gateway-token');
+    localStorage.removeItem('aegis-setting:gatewayToken');
+    set({ gatewayToken: '' });
+    const endpoint = get().gatewayUrl.trim() || undefined;
+    if (normalized) {
+      void window.aegis?.pairing?.saveToken(normalized, endpoint);
+    } else {
+      void window.aegis?.pairing?.clearToken(endpoint);
+    }
   },
   setSidebarCollapsed: (collapsed) => {
     const mode: SidebarMode = collapsed ? 'mini' : 'expanded';
