@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { normalizePetThemeName, petBubbleTextContainerStyle, petTextShadowForTheme, resolvePetAccentPalette, resolvePetCharacterPalette, resolvePetDarkMode, resolvePetTextPalette, solidPetTextStyle } from './petTheme';
 import { DEFAULT_PET_SKIN } from '../stores/petStore';
 
-test('default pet skin is the quieter robot', () => {
-  assert.equal(DEFAULT_PET_SKIN, 'robot');
-  assert.equal(resolvePetCharacterPalette('aegis-light', 'robot').body, '#5d7cff');
-  assert.equal(resolvePetCharacterPalette('aegis-dark', 'robot').body, '#8fa2ff');
+test('default pet skin is lobster', () => {
+  assert.equal(DEFAULT_PET_SKIN, 'lobster');
+  assert.equal(resolvePetCharacterPalette('aegis-light', 'lobster').body, '#ef6f5e');
+  assert.equal(resolvePetCharacterPalette('aegis-dark', 'lobster').body, '#ff836f');
 });
 
 test('pet dark mode follows explicit dark theme names', () => {

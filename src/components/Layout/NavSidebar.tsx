@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, type LucideIcon } from 'lucide-react';
+import { Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Pencil, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, RefreshCw, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -16,6 +16,7 @@ import {
   isEmptyTransientSession,
   sessionActivityTime,
   sessionTitle,
+  sortSessionsByActivity,
   type SessionBucketKey,
 } from './sidebarUtils';
 import { applySessionRename } from '@/utils/sessionRename';
@@ -23,8 +24,11 @@ import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecycle';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import {
+  agentIdFromSessionKey,
   isSessionExecutionActive,
+  parentSessionKeyForSession,
   partitionSessionsForPresentation,
+  sessionExecutionState,
   type BackgroundActivityKind,
 } from '@/utils/sessionPresentation';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
@@ -38,13 +42,12 @@ const BACKGROUND_ACTIVITY_ITEMS: ReadonlyArray<{
   kind: BackgroundActivityKind;
   labelKey: string;
   fallback: string;
-  to: string;
   Icon: LucideIcon;
 }> = [
-  { kind: 'dreaming', labelKey: 'sidebar.background.dreaming', fallback: '梦境', to: '/cron', Icon: Moon },
-  { kind: 'cron', labelKey: 'sidebar.background.cron', fallback: '定时', to: '/cron', Icon: Clock },
-  { kind: 'subagent', labelKey: 'sidebar.background.subagent', fallback: '子智能体', to: '/agents/live', Icon: Bot },
-  { kind: 'system', labelKey: 'sidebar.background.system', fallback: '系统', to: '/logs', Icon: Cpu },
+  { kind: 'dreaming', labelKey: 'sidebar.background.dreaming', fallback: '梦境', Icon: Moon },
+  { kind: 'cron', labelKey: 'sidebar.background.cron', fallback: '定时', Icon: Clock },
+  { kind: 'subagent', labelKey: 'sidebar.background.subagent', fallback: '子智能体', Icon: Bot },
+  { kind: 'system', labelKey: 'sidebar.background.system', fallback: '系统', Icon: Cpu },
 ];
 
 function sessionAgentId(session: Session, sessionKey: string): string {
@@ -218,7 +221,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           }
         }}
         className={clsx(
-          'grid w-full cursor-pointer grid-cols-[4px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-1.5 py-2 pr-16 text-left transition-colors',
+          'grid w-full cursor-pointer grid-cols-[4px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-1.5 py-2 text-left transition-colors',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/55',
           isActive
             ? 'border-aegis-primary/35 bg-aegis-primary/[0.14] text-aegis-text shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.14)]'
@@ -246,11 +249,11 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
             <span className="min-w-0 flex-1 truncate" title={agentName}>{agentLabel}</span>
             {isWorking && (
               <span
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-aegis-success"
+                className="inline-flex h-5 w-3 shrink-0 items-center justify-center"
                 title={t('chat.sessionWorking', 'Working…')}
                 aria-label={t('chat.sessionWorking', 'Working…')}
               >
-                <LoaderCircle size={11} className="animate-spin" aria-hidden="true" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-aegis-success shadow-[0_0_7px_rgb(var(--aegis-success)/0.7)]" aria-hidden="true" />
               </span>
             )}
             {hasPendingCompletion && (
@@ -263,14 +266,15 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
               </span>
             )}
             {timeLabel && (
-              <span className="ml-2 shrink-0 text-[10.5px] tabular-nums text-aegis-text-dim/70">
+              <span className="ml-auto shrink-0 pl-1 text-[10.5px] tabular-nums text-aegis-text-dim/70">
                 {timeLabel}
               </span>
             )}
           </span>
         </span>
       </div>
-      <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated/95 p-0.5 opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:opacity-100 group-focus-within/session:opacity-100">
+      {isWorking && <span className="aegis-session-running-border absolute inset-0 z-10 rounded-lg" aria-hidden="true" />}
+      <span className="pointer-events-none absolute end-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated p-0.5 opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100">
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
@@ -313,9 +317,11 @@ function WorkbenchPanel() {
   const navigate = useNavigate();
   const sessions = useChatStore((st) => st.sessions) ?? [];
   const cronJobs = useGatewayDataStore((st) => st.cronJobs) ?? [];
+  const agents = useGatewayDataStore((st) => st.agents) ?? [];
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
   const [nowMs, setNowMs] = useState(Date.now());
   const [backgroundOpen, setBackgroundOpen] = useState(false);
+  const [refreshingSessions, setRefreshingSessions] = useState(false);
   const [expandedBuckets, setExpandedBuckets] = useState<Record<SessionBucketKey, boolean>>({
     today: true,
     withinWeek: true,
@@ -353,6 +359,32 @@ function WorkbenchPanel() {
     const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const handleRefreshed = () => setRefreshingSessions(false);
+    window.addEventListener('aegis:sessions-refreshed', handleRefreshed);
+    return () => window.removeEventListener('aegis:sessions-refreshed', handleRefreshed);
+  }, []);
+
+  useEffect(() => {
+    if (!refreshingSessions) return;
+    const fallback = window.setTimeout(() => setRefreshingSessions(false), 12_000);
+    return () => window.clearTimeout(fallback);
+  }, [refreshingSessions]);
+
+  const refreshSessions = useCallback(() => {
+    if (refreshingSessions) return;
+    setRefreshingSessions(true);
+    window.dispatchEvent(new CustomEvent('aegis:sessions-changed', {
+      detail: { reason: 'manual-refresh' },
+    }));
+  }, [refreshingSessions]);
+
+  const openBackgroundSession = useCallback((sessionKey: string) => {
+    cleanupEmptyActiveSession(sessionKey);
+    useChatStore.getState().openTab(sessionKey);
+    navigate('/chat');
+  }, [navigate]);
 
   useEffect(() => {
     const activeBucket = buckets.find((bucket) => bucket.sessions.some((session) => session.key === activeKey));
@@ -451,6 +483,23 @@ function WorkbenchPanel() {
         })}
       </div>
 
+      <div className="flex shrink-0 items-center gap-2 px-4 pb-1.5">
+        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-aegis-text-dim">
+          {t('sidebar.userSessions', '用户会话')}
+        </span>
+        <span className="font-mono text-[10.5px] text-aegis-text-dim/70">{visibleSessions.length}</span>
+        <button
+          type="button"
+          onClick={refreshSessions}
+          disabled={refreshingSessions}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-aegis-text-dim transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text disabled:cursor-wait disabled:opacity-60"
+          title={t('sidebar.refreshSessions', '刷新会话')}
+          aria-label={t('sidebar.refreshSessions', '刷新会话')}
+        >
+          <RefreshCw size={11.5} className={refreshingSessions ? 'animate-spin' : undefined} aria-hidden="true" />
+        </button>
+      </div>
+
       <div className="flex-1 overflow-y-auto min-h-0 px-1">
         {visibleSessions.length === 0 && (
           <div className="px-4 py-3 text-[13px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
@@ -502,25 +551,95 @@ function WorkbenchPanel() {
           </button>
 
           {backgroundOpen && (
-            <div className="mt-0.5 space-y-0.5 pl-4">
+            <div className="mt-0.5 max-h-[min(42vh,320px)] space-y-1 overflow-y-auto overscroll-contain pl-3 pr-0.5">
               {BACKGROUND_ACTIVITY_ITEMS
                 .filter((item) => presentation.background[item.kind].length > 0)
                 .map((item) => {
-                  const group = presentation.background[item.kind];
+                  const group = sortSessionsByActivity(presentation.background[item.kind]);
                   const running = group.some(isSessionExecutionActive);
                   const { Icon } = item;
                   return (
-                    <button
-                      key={item.kind}
-                      type="button"
-                      onClick={() => navigate(item.to)}
-                      className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[11.5px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/30 hover:text-aegis-text-secondary"
-                    >
-                      <Icon size={12} className={clsx('shrink-0', running && 'text-aegis-success')} />
-                      <span className="min-w-0 flex-1 truncate">{t(item.labelKey, item.fallback)}</span>
-                      {running && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-aegis-success" aria-hidden="true" />}
-                      <span className="shrink-0 font-mono text-[10.5px] text-aegis-text-dim/70">{group.length}</span>
-                    </button>
+                    <div key={item.kind}>
+                      <div className="flex h-7 w-full items-center gap-2 px-2 text-[11px] font-semibold text-aegis-text-dim">
+                        <Icon size={12} className={clsx('shrink-0', running && 'text-aegis-success')} />
+                        <span className="min-w-0 flex-1 truncate">{t(item.labelKey, item.fallback)}</span>
+                        <span className="shrink-0 font-mono text-[10px] text-aegis-text-dim/70">{group.length}</span>
+                      </div>
+                      <div className="space-y-0.5 pl-2">
+                        {group.map((session) => {
+                          const state = sessionExecutionState(session);
+                          const title = sessionTitle(session, firstUserByKey[session.key]);
+                          const workerAgentId = session.agentId || agentIdFromSessionKey(session.key) || 'main';
+                          const parentSessionKey = parentSessionKeyForSession(session);
+                          const parentAgentId = parentSessionKey
+                            ? agentIdFromSessionKey(parentSessionKey)
+                            : null;
+                          const workerName = getAgentDisplayName(
+                            agents.find((agent) => agent.id === workerAgentId),
+                            workerAgentId === 'main' ? t('agents.mainAgent', 'Main Agent') : workerAgentId,
+                          );
+                          const parentName = parentAgentId
+                            ? getAgentDisplayName(
+                                agents.find((agent) => agent.id === parentAgentId),
+                                parentAgentId === 'main' ? t('agents.mainAgent', 'Main Agent') : parentAgentId,
+                              )
+                            : null;
+                          const delegationLabel = parentName
+                            ? parentAgentId === workerAgentId
+                              ? t('sidebar.background.delegatedBy', { name: parentName, defaultValue: '{{name}} 委派' })
+                              : t('sidebar.background.delegationRoute', {
+                                  parent: parentName,
+                                  worker: workerName,
+                                  defaultValue: '{{parent}} → {{worker}}',
+                                })
+                            : workerName;
+                          const status = state === 'running'
+                            ? t('sidebar.background.status.running', '运行中')
+                            : state === 'done'
+                              ? t('sidebar.background.status.done', '完成')
+                              : state === 'failed'
+                                ? t('sidebar.background.status.failed', '失败')
+                                : state === 'stopped'
+                                  ? t('sidebar.background.status.stopped', '已停止')
+                                  : '';
+                          return (
+                            <button
+                              key={session.key}
+                              type="button"
+                              onClick={() => openBackgroundSession(session.key)}
+                              className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/35 hover:text-aegis-text-secondary"
+                              title={parentSessionKey
+                                ? `${session.key}\n${delegationLabel}\n${parentSessionKey}`
+                                : session.key}
+                            >
+                              <span className={clsx(
+                                'h-1.5 w-1.5 shrink-0 rounded-full',
+                                state === 'running' && 'animate-pulse bg-aegis-success',
+                                state === 'done' && 'bg-aegis-primary/70',
+                                state === 'failed' && 'bg-aegis-danger',
+                                (state === 'stopped' || state === 'unknown') && 'bg-aegis-border',
+                              )} aria-hidden="true" />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[11px] text-aegis-text-secondary">{title}</span>
+                                <span className="mt-0.5 block truncate text-[9.5px] text-aegis-text-dim/80">{delegationLabel}</span>
+                              </span>
+                              {status && (
+                                <span className={clsx(
+                                  'inline-flex shrink-0 items-center gap-1 text-[9.5px]',
+                                  state === 'running' && 'text-aegis-success',
+                                  state === 'done' && 'text-aegis-primary',
+                                  state === 'failed' && 'text-aegis-danger',
+                                )}>
+                                  {state === 'done' && <CheckCircle2 size={10} aria-hidden="true" />}
+                                  {state === 'failed' && <X size={10} aria-hidden="true" />}
+                                  {status}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
             </div>

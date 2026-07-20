@@ -1,4 +1,10 @@
-type SessionKeyLike = { key?: string };
+type SessionKeyLike = {
+  key?: string;
+  createdAt?: string | number;
+  updatedAt?: string | number;
+  lastActive?: string | number;
+  lastTimestamp?: string | number;
+};
 
 const deletedSessionKeys = new Set<string>();
 let fallbackKeySequence = 0;
@@ -28,6 +34,58 @@ export function isSessionDeleted(sessionKey: string): boolean {
 
 export function withoutDeletedSessions<T extends SessionKeyLike>(sessions: T[]): T[] {
   return sessions.filter((session) => !isSessionDeleted(session.key ?? ''));
+}
+
+function sessionRevision(session: SessionKeyLike): number {
+  const candidates = [
+    session.updatedAt,
+    session.lastActive,
+    session.lastTimestamp,
+    session.createdAt,
+  ];
+  let latest = 0;
+  for (const candidate of candidates) {
+    const value = typeof candidate === 'number'
+      ? candidate
+      : typeof candidate === 'string' && candidate.trim()
+        ? Date.parse(candidate)
+        : Number.NaN;
+    if (Number.isFinite(value)) latest = Math.max(latest, value);
+  }
+  return latest;
+}
+
+/**
+ * Collapse repeated Gateway snapshots into one record per normalized session
+ * key. Newer records own conflicting fields while sparse metadata from the
+ * other snapshot is retained. Distinct keys are never collapsed merely because
+ * their labels match: users may legitimately name two conversations alike.
+ */
+export function coalesceSessionsByKey<T extends SessionKeyLike>(sessions: readonly T[]): T[] {
+  const byKey = new Map<string, { session: T; revision: number }>();
+
+  for (const source of sessions) {
+    const key = normalizeSessionKey(source.key ?? '');
+    if (!key) continue;
+    const candidate = (key === source.key ? source : { ...source, key }) as T;
+    const revision = sessionRevision(candidate);
+    const current = byKey.get(key);
+    if (!current) {
+      byKey.set(key, { session: candidate, revision });
+      continue;
+    }
+
+    const candidateWins = revision >= current.revision;
+    const session = candidateWins
+      ? { ...current.session, ...candidate, key }
+      : { ...candidate, ...current.session, key };
+    byKey.set(key, {
+      session: session as T,
+      revision: Math.max(current.revision, revision),
+    });
+  }
+
+  return [...byKey.values()].map(({ session }) => session);
 }
 
 function failureDetail(value: unknown, seen: Set<object> = new Set()): string | null {

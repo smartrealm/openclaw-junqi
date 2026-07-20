@@ -617,3 +617,31 @@ html {
     animation: none;
   }
 }
+
+/* Session activity remains visible when hover actions cover the timestamp. */
+@keyframes aegis-session-border-march {
+  to {
+    background-position: 8px 0, 100% 8px, -8px 100%, 0 -8px;
+  }
+}
+
+.aegis-session-running-border {
+  pointer-events: none;
+  background-image:
+    linear-gradient(90deg, rgb(var(--aegis-success) / 0.9) 50%, transparent 50%),
+    linear-gradient(180deg, rgb(var(--aegis-success) / 0.9) 50%, transparent 50%),
+    linear-gradient(90deg, rgb(var(--aegis-success) / 0.9) 50%, transparent 50%),
+    linear-gradient(180deg, rgb(var(--aegis-success) / 0.9) 50%, transparent 50%);
+  background-position: 0 0, 100% 0, 0 100%, 0 0;
+  background-repeat: repeat-x, repeat-y, repeat-x, repeat-y;
+  background-size: 8px 1px, 1px 8px, 8px 1px, 1px 8px;
+  animation: aegis-session-border-march 700ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aegis-session-running-border {
+    animation: none;
+    border: 1px solid rgb(var(--aegis-success) / 0.65);
+    background: none;
+  }
+}

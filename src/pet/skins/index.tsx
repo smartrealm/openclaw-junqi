@@ -21,6 +21,7 @@ const BOTTOM = { transformBox: 'fill-box' as const, transformOrigin: 'bottom' };
 const SHADOW = 'rgb(var(--aegis-primary) / 0.38)';
 
 export type PetSkin = 'robot' | 'lobster' | 'cat' | 'jellyfish' | 'ghost' | 'blue-mascot';
+export const DEFAULT_PET_SKIN: PetSkin = 'lobster';
 export interface PetSkinOption {
   id: PetSkin;
   label: string;

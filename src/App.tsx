@@ -895,7 +895,11 @@ export default function App() {
       ) {
         applyConfirmedSessionDeletion(detail.sessionKey);
       }
-      setTimeout(() => void loadSessions(), 250);
+      setTimeout(() => {
+        void loadSessions().finally(() => {
+          window.dispatchEvent(new CustomEvent('aegis:sessions-refreshed', { detail }));
+        });
+      }, 250);
     };
     window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
 

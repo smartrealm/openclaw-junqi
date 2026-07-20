@@ -16,7 +16,7 @@ import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
-import { createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecycle';
+import { coalesceSessionsByKey, createAgentSessionKey, isAgentMainSession } from '@/utils/sessionLifecycle';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { getAgentDefaultPersona, setAgentDefaultPersona } from '@/utils/agentPersona';
 import type { SkillPersona } from '@/types/skills';
@@ -887,7 +887,7 @@ export function ChatTabs() {
       gateway.getSessions()
         .then((result: any) => {
           const existingByKey = new Map(sessions.map((session) => [session.key, session]));
-          const list: Session[] = (result?.sessions || []).map((s: any) => {
+          const list: Session[] = coalesceSessionsByKey((result?.sessions || []).map((s: any) => {
             const key = s.key || s.sessionKey;
             const previous = existingByKey.get(key);
             const lastMessage = s.lastMessage?.content?.substring?.(0, 80) || previous?.lastMessage;
@@ -904,7 +904,7 @@ export function ChatTabs() {
               agent: s.agent,
               metadata: s.metadata,
             };
-          });
+          }));
           setNewSessions(list.filter((s) => !openTabs.includes(s.key)));
         })
         .catch(() => {})
