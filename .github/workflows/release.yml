@@ -182,6 +182,11 @@ jobs:
           ref: ${{ needs.verify-version.outputs.source-sha }}
           persist-credentials: false
 
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
         with:
@@ -208,20 +213,29 @@ jobs:
             librsvg2-dev \
             libasound2-dev
 
+      - name: Fetch locked Rust dependencies
+        run: node scripts/fetch-cargo-dependencies.mjs --target x86_64-unknown-linux-gnu
+
       - name: Rust format
         working-directory: src-tauri
         run: cargo fmt --all -- --check
 
       - name: Rust lint
         working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: cargo clippy --all-targets
 
       - name: Rust check
         working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: cargo check --all-targets
 
       - name: Rust tests
         working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: cargo test --lib --no-fail-fast
 
   quality-evidence:
@@ -501,6 +515,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Fetch locked Rust dependencies
+        run: node scripts/fetch-cargo-dependencies.mjs --target ${{ matrix.target }}
+
       - name: Verify updater signing inputs
         if: needs.verify-version.outputs.signing-enabled == 'true'
         env:
@@ -546,6 +563,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CARGO_NET_OFFLINE: "true"
         with:
           args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
@@ -555,6 +573,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CARGO_NET_OFFLINE: "true"
         with:
           args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
@@ -564,6 +583,7 @@ jobs:
         env:
           # An unsigned candidate must never evaluate release signing secrets.
           APPLE_SIGNING_IDENTITY: '-'
+          CARGO_NET_OFFLINE: "true"
         with:
           # createUpdaterArtifacts requires a private updater key. Candidates
           # are deliberately unsigned, so disable only that artifact family

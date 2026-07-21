@@ -14,6 +14,7 @@ const tauri = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', im
 const noUpdaterArtifactsProfile = JSON.parse(
   readFileSync(new URL('../src-tauri/tauri.no-updater-artifacts.conf.json', import.meta.url), 'utf8'),
 );
+const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 const taggedRelease = readFileSync(new URL('../.github/workflows/tag-release.yml', import.meta.url), 'utf8');
 
@@ -129,4 +130,14 @@ test('Windows release matrix builds and stages NSIS installers for x64 and ARM64
   assert.match(taggedRelease, /Validate signed release assets and generate updater manifest/);
   assert.doesNotMatch(taggedRelease, /asset_count|Expected 19 release assets/);
   assert.match(release, /if-no-files-found: error/);
+});
+
+test('Cargo dependencies are prefetched before Windows builds run offline', () => {
+  for (const workflow of [ci, release, taggedRelease]) {
+    assert.match(workflow, /Fetch locked Rust dependencies/);
+    assert.match(workflow, /node scripts\/fetch-cargo-dependencies\.mjs --target/);
+  }
+  assert.match(ci, /Build NSIS installer[\s\S]*CARGO_NET_OFFLINE: "true"/);
+  assert.match(release, /Build unsigned candidate[\s\S]*CARGO_NET_OFFLINE: "true"/);
+  assert.match(taggedRelease, /Build signed updater artifacts and installers[\s\S]*CARGO_NET_OFFLINE: "true"/);
 });

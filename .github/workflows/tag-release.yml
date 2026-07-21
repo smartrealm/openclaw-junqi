@@ -202,12 +202,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Fetch locked Rust dependencies
+        run: node scripts/fetch-cargo-dependencies.mjs --target ${{ matrix.target }}
+
       - name: Build signed updater artifacts and installers
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+          CARGO_NET_OFFLINE: "true"
         with:
           args: --target ${{ matrix.target }} ${{ matrix.bundle_args }}
 
