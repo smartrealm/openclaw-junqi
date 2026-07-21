@@ -893,6 +893,23 @@ struct DownloadRequest<'a> {
     progress: std::ops::Range<f64>,
 }
 
+fn compact_elapsed(duration: std::time::Duration) -> String {
+    let seconds = duration.as_secs();
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
+    }
+}
+
+fn transfer_rate_mib_per_second(bytes: u64, elapsed: std::time::Duration) -> f64 {
+    let seconds = elapsed.as_secs_f64().max(0.001);
+    bytes as f64 / 1024.0 / 1024.0 / seconds
+}
+
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
 async fn download_with_fallback(
     request: DownloadRequest<'_>,
@@ -1010,7 +1027,21 @@ async fn download_with_fallback_with_budget(
                 continue;
             }
         };
+        let header_elapsed = source_started.elapsed();
+        let response_status = response.status();
         let total = response.content_length().unwrap_or(0);
+        let response_detail = format!(
+            "{label} response headers received in {:.2}s (HTTP {}, content-length={})",
+            header_elapsed.as_secs_f64(),
+            response_status.as_u16(),
+            if total > 0 {
+                format!("{:.1} MB", total as f64 / 1024.0 / 1024.0)
+            } else {
+                "unknown".to_string()
+            },
+        );
+        record_timeline_note(step, &response_detail);
+        emit_diagnostic(app, step, &response_detail, prog_start);
         let mut file = match tokio::fs::File::create(destination).await {
             Ok(file) => file,
             Err(error) => {
@@ -1109,23 +1140,29 @@ async fn download_with_fallback_with_budget(
                     0.5
                 };
                 let progress = prog_start + (prog_end - prog_start) * fraction;
+                let elapsed = source_started.elapsed();
+                let rate = transfer_rate_mib_per_second(downloaded, elapsed);
                 let detail = if total > 0 {
                     format!(
-                        "【下载 {}/{}】{}：{:.1}/{:.1} MB（{}%）",
+                        "【下载 {}/{}】{}：{:.1}/{:.1} MB（{}%，{:.2} MB/s，已用时 {}）",
                         index + 1,
                         sources.len(),
                         label,
                         downloaded as f64 / 1024.0 / 1024.0,
                         total as f64 / 1024.0 / 1024.0,
                         (fraction * 100.0).round() as u64,
+                        rate,
+                        compact_elapsed(elapsed),
                     )
                 } else {
                     format!(
-                        "【下载 {}/{}】{}：已下载 {:.1} MB",
+                        "【下载 {}/{}】{}：已下载 {:.1} MB（{:.2} MB/s，已用时 {}）",
                         index + 1,
                         sources.len(),
                         label,
                         downloaded as f64 / 1024.0 / 1024.0,
+                        rate,
+                        compact_elapsed(elapsed),
                     )
                 };
                 emit(app, step, &detail, progress);
@@ -1161,11 +1198,14 @@ async fn download_with_fallback_with_budget(
             let _ = tokio::fs::remove_file(destination).await;
             continue;
         }
+        let completed_elapsed = source_started.elapsed();
         record_timeline_note(
             step,
             &format!(
-                "{label} succeeded after {:.1}s",
-                source_started.elapsed().as_secs_f64()
+                "{label} succeeded after {:.1}s; downloaded {:.1} MB; average {:.2} MB/s",
+                completed_elapsed.as_secs_f64(),
+                downloaded as f64 / 1024.0 / 1024.0,
+                transfer_rate_mib_per_second(downloaded, completed_elapsed),
             ),
         );
         emit(
@@ -1411,15 +1451,45 @@ fn npm_fetch_duration_ms(line: &str) -> Option<u64> {
     })
 }
 
-fn observe_slow_npm_fetch(
+#[derive(Default)]
+struct NpmFetchMetrics {
+    requests: u64,
+    cache_hits: u64,
+    cache_misses: u64,
+    total_duration_ms: u128,
+    slowest_duration_ms: u64,
+    slow_requests: u64,
+}
+
+type SharedNpmFetchMetrics = Arc<Mutex<NpmFetchMetrics>>;
+
+fn observe_npm_fetch(
     line: &str,
     source_label: &str,
     slow_fetch_tx: &tokio::sync::watch::Sender<Option<String>>,
     slow_fetch_triggered: &AtomicBool,
+    metrics: &SharedNpmFetchMetrics,
 ) {
     let Some(duration_ms) = npm_fetch_duration_ms(line) else {
         return;
     };
+    {
+        let lowercase = line.to_ascii_lowercase();
+        let mut metrics = metrics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        metrics.requests += 1;
+        metrics.total_duration_ms += duration_ms as u128;
+        metrics.slowest_duration_ms = metrics.slowest_duration_ms.max(duration_ms);
+        if lowercase.contains("cache hit") {
+            metrics.cache_hits += 1;
+        } else if lowercase.contains("cache miss") {
+            metrics.cache_misses += 1;
+        }
+        if duration_ms >= NPM_SLOW_FETCH_THRESHOLD.as_millis() as u64 {
+            metrics.slow_requests += 1;
+        }
+    }
     if duration_ms < NPM_SLOW_FETCH_THRESHOLD.as_millis() as u64
         || slow_fetch_triggered.swap(true, Ordering::AcqRel)
     {
@@ -1432,6 +1502,38 @@ fn observe_slow_npm_fetch(
         NPM_SLOW_FETCH_THRESHOLD.as_secs()
     );
     let _ = slow_fetch_tx.send(Some(reason));
+}
+
+fn npm_fetch_summary(source_label: &str, metrics: &SharedNpmFetchMetrics) -> Option<String> {
+    let metrics = metrics
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if metrics.requests == 0 {
+        return None;
+    }
+    let average_ms = metrics.total_duration_ms / metrics.requests as u128;
+    Some(format!(
+        "npm network summary for {source_label}: requests={}, cache hits={}, cache misses={}, average={}ms, slowest={}ms, requests >= {}s={}",
+        metrics.requests,
+        metrics.cache_hits,
+        metrics.cache_misses,
+        average_ms,
+        metrics.slowest_duration_ms,
+        NPM_SLOW_FETCH_THRESHOLD.as_secs(),
+        metrics.slow_requests,
+    ))
+}
+
+fn emit_npm_fetch_summary(
+    app: &tauri::AppHandle,
+    step: &str,
+    source_label: &str,
+    metrics: &SharedNpmFetchMetrics,
+    progress: f64,
+) {
+    if let Some(summary) = npm_fetch_summary(source_label, metrics) {
+        emit_diagnostic(app, step, &summary, progress);
+    }
 }
 
 type NpmDiagnostics = Arc<Mutex<Vec<String>>>;
@@ -1518,6 +1620,7 @@ async fn stop_npm_process(
     }
 }
 
+#[cfg(test)]
 async fn wait_for_process_activity(
     child: &mut tokio::process::Child,
     activity: &mut tokio::sync::watch::Receiver<u64>,
@@ -1620,6 +1723,35 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         .map(npm_registry::NpmPackageSource::label)
         .collect::<Vec<_>>()
         .join(" -> ");
+    let cache_directory = paths::configured_npm_cache_dir()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "npm default cache".to_string());
+    emit_diagnostic(
+        app,
+        step,
+        &format!(
+            "npm install context: platform={}/{}, node={}, npm-cli={}, prefix={}, cache={}, force={}",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            npm.node().display(),
+            npm.npm_cli().display(),
+            global_prefix.display(),
+            cache_directory,
+            force,
+        ),
+        prog_start,
+    );
+    emit_diagnostic(
+        app,
+        step,
+        &format!(
+            "npm network policy: fetch-retries=2, fetch-timeout=120000ms, slow-source-threshold={}s, inactivity-timeout={}s, transaction-deadline={}s",
+            NPM_SLOW_FETCH_THRESHOLD.as_secs(),
+            NPM_INACTIVITY_TIMEOUT.as_secs(),
+            DEPENDENCY_INSTALL_DEADLINE.as_secs(),
+        ),
+        prog_start,
+    );
     emit(
         app,
         step,
@@ -1718,6 +1850,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         let (activity_tx, mut activity_rx) = tokio::sync::watch::channel(0_u64);
         let (slow_fetch_tx, mut slow_fetch_rx) = tokio::sync::watch::channel(None::<String>);
         let slow_fetch_triggered = Arc::new(AtomicBool::new(false));
+        let fetch_metrics = Arc::new(Mutex::new(NpmFetchMetrics::default()));
         let diagnostics = Arc::new(Mutex::new(Vec::new()));
 
         // Stream stdout to progress events so the user sees live npm output
@@ -1728,6 +1861,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let activity_tx = activity_tx.clone();
             let slow_fetch_tx = slow_fetch_tx.clone();
             let slow_fetch_triggered = Arc::clone(&slow_fetch_triggered);
+            let fetch_metrics = Arc::clone(&fetch_metrics);
             let source_label = reg_label.clone();
             let diagnostics = Arc::clone(&diagnostics);
             tokio::spawn(async move {
@@ -1739,16 +1873,22 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     .map_err(|error| format!("Failed to read npm stdout: {error}"))?
                 {
                     activity_tx.send_modify(|sequence| *sequence += 1);
-                    observe_slow_npm_fetch(
+                    observe_npm_fetch(
                         &line,
                         &source_label,
                         &slow_fetch_tx,
                         &slow_fetch_triggered,
+                        &fetch_metrics,
                     );
                     match npm_log_line_for_display(&line) {
                         Some(display_line) => {
                             record_npm_diagnostic(&diagnostics, &display_line);
-                            emit(&app_c, &step_c, &format!("npm › {}", display_line), prog_live);
+                            emit(
+                                &app_c,
+                                &step_c,
+                                &format!("npm › {}", display_line),
+                                prog_live,
+                            );
                         }
                         // Noisy lines (npm verbose/sill/timing/notice) are dropped from
                         // the primary progress stream, but a raw diagnostic console
@@ -1756,7 +1896,12 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                         // something, not just silently stuck.
                         None => {
                             if let Some(raw_line) = npm_log_line_redacted(&line) {
-                                emit_diagnostic(&app_c, &step_c, &format!("npm » {}", raw_line), prog_live);
+                                emit_diagnostic(
+                                    &app_c,
+                                    &step_c,
+                                    &format!("npm » {}", raw_line),
+                                    prog_live,
+                                );
                             }
                         }
                     }
@@ -1772,6 +1917,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
             let activity_tx = activity_tx.clone();
             let slow_fetch_tx = slow_fetch_tx.clone();
             let slow_fetch_triggered = Arc::clone(&slow_fetch_triggered);
+            let fetch_metrics = Arc::clone(&fetch_metrics);
             let source_label = reg_label.clone();
             let diagnostics = Arc::clone(&diagnostics);
             tokio::spawn(async move {
@@ -1783,15 +1929,18 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                     .map_err(|error| format!("Failed to read npm stderr: {error}"))?
                 {
                     activity_tx.send_modify(|sequence| *sequence += 1);
-                    observe_slow_npm_fetch(
+                    observe_npm_fetch(
                         &line,
                         &source_label,
                         &slow_fetch_tx,
                         &slow_fetch_triggered,
+                        &fetch_metrics,
                     );
                     match npm_log_line_for_display(&line) {
                         Some(display_line) => {
-                            if display_line.contains("TAR_ENTRY_ERROR") && display_line.contains("ENOENT") {
+                            if display_line.contains("TAR_ENTRY_ERROR")
+                                && display_line.contains("ENOENT")
+                            {
                                 let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
                                 // Preserve the first diagnostic but avoid flooding the
                                 // setup UI with hundreds of identical npm warnings.
@@ -1800,11 +1949,21 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                                 }
                             }
                             record_npm_diagnostic(&diagnostics, &display_line);
-                            emit(&app_e, &step_e, &format!("npm › {}", display_line), prog_live);
+                            emit(
+                                &app_e,
+                                &step_e,
+                                &format!("npm › {}", display_line),
+                                prog_live,
+                            );
                         }
                         None => {
                             if let Some(raw_line) = npm_log_line_redacted(&line) {
-                                emit_diagnostic(&app_e, &step_e, &format!("npm » {}", raw_line), prog_live);
+                                emit_diagnostic(
+                                    &app_e,
+                                    &step_e,
+                                    &format!("npm » {}", raw_line),
+                                    prog_live,
+                                );
                             }
                         }
                     }
@@ -1859,6 +2018,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 output.finish().await.map_err(|error| {
                     format!("npm exited, but its output streams did not finish cleanly: {error}")
                 })?;
+                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
                 if std::time::Instant::now() >= deadline {
                     return Err("npm install exceeded the 30-minute dependency deadline".into());
                 }
@@ -1871,7 +2031,9 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 } else {
                     format!("npm process error: {e}; {diagnostic}")
                 };
-                if let Err(cleanup_error) = stop_npm_process(&mut child, child_pid, output).await {
+                let cleanup = stop_npm_process(&mut child, child_pid, output).await;
+                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                if let Err(cleanup_error) = cleanup {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
                     ));
@@ -1896,7 +2058,9 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 } else {
                     format!("{reason}; {diagnostic}")
                 };
-                if let Err(cleanup_error) = stop_npm_process(&mut child, child_pid, output).await {
+                let cleanup = stop_npm_process(&mut child, child_pid, output).await;
+                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                if let Err(cleanup_error) = cleanup {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
                     ));
@@ -1928,7 +2092,9 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 } else {
                     format!("{base_error}; {diagnostic}")
                 };
-                if let Err(cleanup_error) = stop_npm_process(&mut child, child_pid, output).await {
+                let cleanup = stop_npm_process(&mut child, child_pid, output).await;
+                emit_npm_fetch_summary(app, step, &reg_label, &fetch_metrics, prog_live);
+                if let Err(cleanup_error) = cleanup {
                     return Err(format!(
                         "{last_err}; process cleanup was not confirmed, so no fallback registry was started: {cleanup_error}"
                     ));
@@ -3257,7 +3423,7 @@ fn preserve_windows_installer_log(path: &Path, tool: &str) -> Option<PathBuf> {
     if !path.is_file() {
         return None;
     }
-    let directory = paths::app_config_dir().join("installer-logs");
+    let directory = paths::diagnostics_log_dir();
     std::fs::create_dir_all(&directory).ok()?;
     let destination = directory.join(format!(
         "{}-{}.log",
@@ -5113,6 +5279,7 @@ async fn install_openclaw_impl_inner(
     let _operation_guard = operation_gate.lock_owned().await;
     let install_lock = OPENCLAW_INSTALL_LOCK.get_or_init(|| tokio::sync::Mutex::new(()));
     let _install_guard = install_lock.lock().await;
+    reset_timeline_log(step);
     let mode = mode.for_current_storage();
     let mut relocation = matches!(mode, OpenclawInstallMode::Relocate)
         .then(OpenclawRelocationRequest::capture)
@@ -5487,9 +5654,7 @@ mod tests {
             Some("npm verbose cli /usr/bin/node /usr/bin/npm".into())
         );
         assert_eq!(
-            npm_log_line_redacted(
-                "npm timing reifyNode:node_modules/openclaw Completed in 45ms"
-            ),
+            npm_log_line_redacted("npm timing reifyNode:node_modules/openclaw Completed in 45ms"),
             Some("npm timing reifyNode:node_modules/openclaw Completed in 45ms".into())
         );
         assert_eq!(
@@ -5522,15 +5687,33 @@ mod tests {
     fn slow_npm_fetch_signal_is_emitted_once_without_leaking_urls() {
         let (tx, rx) = tokio::sync::watch::channel(None::<String>);
         let triggered = AtomicBool::new(false);
+        let metrics = Arc::new(Mutex::new(NpmFetchMetrics::default()));
         let line = "npm http fetch GET 200 https://user:secret@example.test/package.tgz 91000ms (cache miss)";
 
-        observe_slow_npm_fetch(line, "npmmirror.com (China mirror)", &tx, &triggered);
-        observe_slow_npm_fetch(line, "npmmirror.com (China mirror)", &tx, &triggered);
+        observe_npm_fetch(
+            line,
+            "npmmirror.com (China mirror)",
+            &tx,
+            &triggered,
+            &metrics,
+        );
+        observe_npm_fetch(
+            line,
+            "npmmirror.com (China mirror)",
+            &tx,
+            &triggered,
+            &metrics,
+        );
 
         let reason = rx.borrow().clone().expect("slow source signal");
         assert!(reason.contains("91000ms"));
         assert!(!reason.contains("example.test"));
         assert!(triggered.load(Ordering::Acquire));
+        let summary = npm_fetch_summary("npmmirror.com (China mirror)", &metrics).unwrap();
+        assert!(summary.contains("requests=2"));
+        assert!(summary.contains("cache misses=2"));
+        assert!(summary.contains("slowest=91000ms"));
+        assert!(!summary.contains("example.test"));
     }
 
     #[test]

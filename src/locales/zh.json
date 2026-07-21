@@ -2563,6 +2563,8 @@
       "stepsDone": "个步骤已处理",
       "activity": "执行记录",
       "live": "实时",
+      "openLogs": "打开完整日志目录",
+      "openLogsFailed": "无法打开日志目录",
       "runningStep": "正在执行：{{step}}",
       "keepOpen": "安装过程中请保持窗口打开。完成后点击进入工作台。",
       "readyHint": "Gateway 已就绪。点击进入工作台继续。",

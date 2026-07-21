@@ -1066,6 +1066,7 @@ export function SetupPage() {
         step: detail.step ?? undefined,
         level: classifySetupMessage(message, detail.error),
         progress: detail.progress ?? undefined,
+        diagnostic: detail.diagnostic,
       });
     });
 

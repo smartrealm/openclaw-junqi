@@ -5,6 +5,17 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+fn emit_gateway_log(app: &AppHandle, message: impl AsRef<str>) {
+    for line in message.as_ref().lines() {
+        let line = crate::commands::diagnostic_output::sanitize_diagnostic_line(line);
+        if line.is_empty() {
+            continue;
+        }
+        crate::commands::setup_progress::record_timeline_note("gateway", &line);
+        let _ = app.emit("gateway-log", &line);
+    }
+}
+
 fn write_json_atomic(path: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(value)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
@@ -45,8 +56,8 @@ async fn stop_offline_gateway_service(
     )
     .await?;
     if stopped {
-        let _ = app.emit(
-            "gateway-log",
+        emit_gateway_log(
+            app,
             "Stopped the selected OpenClaw system service before starting the desktop-managed Gateway.",
         );
     }
@@ -1410,7 +1421,7 @@ async fn official_gateway_rpc_accepts_selected_config(
 fn emit_restart_progress(app: &AppHandle, line: impl AsRef<str>) {
     let line = line.as_ref().to_string();
     let _ = app.emit("gateway-restart-progress", &line);
-    let _ = app.emit("gateway-log", &line);
+    emit_gateway_log(app, &line);
 }
 
 pub(crate) async fn wait_for_selected_gateway(
@@ -1550,7 +1561,7 @@ fn spawn_log_reader(
             if line.is_empty() {
                 continue;
             }
-            let _ = app.emit("gateway-log", &line);
+            emit_gateway_log(&app, &line);
             push_log(&state.logs, source, LogLevel::Info, line);
         }
     });
@@ -1574,7 +1585,7 @@ fn spawn_restart_log_reader(
                 continue;
             }
             let _ = app.emit("gateway-restart-progress", &line);
-            let _ = app.emit("gateway-log", &line);
+            emit_gateway_log(&app, &line);
             push_log(&state.logs, source, LogLevel::Info, line);
         }
     });
@@ -1593,16 +1604,16 @@ pub async fn restart_gateway(
     let _global_operation_guard = match operation_gate.clone().try_lock_owned() {
         Ok(guard) => guard,
         Err(_) => {
-            let _ = app.emit(
-                "gateway-log",
+            emit_gateway_log(
+                &app,
                 "Gateway lifecycle operation in progress; waiting for ownership...",
             );
             operation_gate.lock_owned().await
         }
     };
     if state.restart_completed_generation.load(Ordering::Acquire) != observed_restart_generation {
-        let _ = app.emit(
-            "gateway-log",
+        emit_gateway_log(
+            &app,
             "Concurrent Gateway restart finished; reusing its final status.",
         );
         return gateway_status(state).await;
@@ -2007,8 +2018,8 @@ async fn recover_failed_official_gateway_handoff(
 
     match start_gateway_locked(app.clone(), state.clone(), Some(context.port)).await {
         Ok(status) if status.running => {
-            let _ = app.emit(
-                "gateway-log",
+            emit_gateway_log(
+                &app,
                 "Desktop-managed Gateway restored after official service handoff failed.",
             );
             Ok(false)
@@ -2101,8 +2112,8 @@ async fn restore_stale_gateway_after_failed_handoff(
         Some(false),
         "wizard handoff: stale Gateway service restored after failure",
     );
-    let _ = app.emit(
-        "gateway-log",
+    emit_gateway_log(
+        &app,
         "Official Gateway service was restored after a failed handoff.",
     );
     Ok(false)
@@ -2151,7 +2162,7 @@ pub async fn handoff_gateway_to_official_service(
     .await;
     let inspection = inspection.map_err(|error| {
         let message = format!("Official Gateway service inspection failed after wizard: {error}");
-        let _ = app.emit("gateway-log", &message);
+        emit_gateway_log(&app, &message);
         message
     })?;
     let Some(handoff) = official_gateway_handoff(inspection)? else {
@@ -2252,8 +2263,8 @@ pub async fn handoff_gateway_to_official_service(
         Some(false),
         "wizard handoff: official Gateway service is now the owner",
     );
-    let _ = app.emit(
-        "gateway-log",
+    emit_gateway_log(
+        &app,
         "Official OpenClaw Gateway service is now the selected lifecycle owner.",
     );
     Ok(true)
@@ -2326,6 +2337,7 @@ pub(crate) async fn start_gateway_locked(
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
 ) -> Result<GatewayStatus, String> {
+    crate::commands::setup_progress::reset_timeline_log("gateway");
     if !matches!(
         paths::active_runtime_mode(),
         paths::OpenClawRuntimeMode::Native
@@ -2423,7 +2435,7 @@ pub(crate) async fn start_gateway_locked(
             Err(error) => {
                 let message =
                     format!("Gateway service inspection skipped before foreground start: {error}");
-                let _ = app.emit("gateway-log", &message);
+                emit_gateway_log(&app, &message);
                 crate::state::gateway_process::push_log(
                     &state.logs,
                     crate::state::gateway_process::LogSource::Lifecycle,
@@ -2590,8 +2602,8 @@ pub(crate) async fn start_gateway_locked(
     };
     if let Some(mut old) = old_child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old).await;
-        let _ = app.emit(
-            "gateway-log",
+        emit_gateway_log(
+            &app,
             "Waiting for the previous Gateway process to release its port...",
         );
         crate::state::gateway_process::push_log(
@@ -2636,10 +2648,7 @@ pub(crate) async fn start_gateway_locked(
     std::fs::create_dir_all(&base_dir)
         .map_err(|error| format!("Failed to create OpenClaw state directory: {error}"))?;
     if let Some(probe_node) = crate::commands::state_dir_probe::probe_node_path(&node) {
-        let _ = app.emit(
-            "gateway-log",
-            "Checking state directory write capability...",
-        );
+        emit_gateway_log(&app, "Checking state directory write capability...");
         crate::state::gateway_process::push_log(
             &state.logs,
             crate::state::gateway_process::LogSource::Lifecycle,
@@ -2649,10 +2658,9 @@ pub(crate) async fn start_gateway_locked(
         match crate::commands::state_dir_probe::probe_chmod_capability(&probe_node, &base_dir).await
         {
             crate::commands::state_dir_probe::ChmodProbeOutcome::Unsupported(detail) => {
-                let message = crate::commands::state_dir_probe::chmod_unsupported_message(
-                    &base_dir, &detail,
-                );
-                let _ = app.emit("gateway-log", &message);
+                let message =
+                    crate::commands::state_dir_probe::chmod_unsupported_message(&base_dir, &detail);
+                emit_gateway_log(&app, &message);
                 crate::state::gateway_process::push_log(
                     &state.logs,
                     crate::state::gateway_process::LogSource::Lifecycle,
@@ -2670,7 +2678,7 @@ pub(crate) async fn start_gateway_locked(
                 let message = format!(
                     "State directory write capability probe was inconclusive ({detail}); continuing, the Gateway readiness check will catch any real problem"
                 );
-                let _ = app.emit("gateway-log", &message);
+                emit_gateway_log(&app, &message);
                 crate::state::gateway_process::push_log(
                     &state.logs,
                     crate::state::gateway_process::LogSource::Lifecycle,
@@ -2805,10 +2813,7 @@ pub(crate) async fn start_gateway_locked(
     }
 
     // Emit initial status
-    let _ = app.emit(
-        "gateway-log",
-        "Gateway process started, waiting for ready...",
-    );
+    emit_gateway_log(&app, "Gateway process started, waiting for ready...");
     crate::state::gateway_process::push_log(
         &state.logs,
         crate::state::gateway_process::LogSource::Lifecycle,
@@ -2830,14 +2835,15 @@ pub(crate) async fn start_gateway_locked(
         let now = std::time::Instant::now();
         if now >= next_heartbeat_at {
             let elapsed = now.duration_since(startup_started_at).as_secs();
-            let _ = app.emit(
-                "gateway-log",
+            emit_gateway_log(
+                &app,
                 format!(
                     "Still waiting for the Gateway to become reachable on 127.0.0.1:{} (elapsed {}s)...",
                     port, elapsed
                 ),
             );
-            next_heartbeat_at = now + std::time::Duration::from_secs(MANAGED_GATEWAY_START_HEARTBEAT_SECS);
+            next_heartbeat_at =
+                now + std::time::Duration::from_secs(MANAGED_GATEWAY_START_HEARTBEAT_SECS);
         }
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -2848,7 +2854,7 @@ pub(crate) async fn start_gateway_locked(
                     &state,
                     startup_started_at_ms,
                 );
-                let _ = app.emit("gateway-log", &msg);
+                emit_gateway_log(&app, &msg);
                 return Err(msg);
             }
             Ok(None) => {}
@@ -2873,7 +2879,7 @@ pub(crate) async fn start_gateway_locked(
                 &state,
                 startup_started_at_ms,
             );
-            let _ = app.emit("gateway-log", &msg);
+            emit_gateway_log(&app, &msg);
             return Err(msg);
         }
 

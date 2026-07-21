@@ -2563,6 +2563,8 @@
       "stepsDone": "個步驟已處理",
       "activity": "執行記錄",
       "live": "實時",
+      "openLogs": "打開完整日誌目錄",
+      "openLogsFailed": "無法打開日誌目錄",
       "runningStep": "正在執行：{{step}}",
       "keepOpen": "安裝過程中請保持窗口打開。完成後點擊進入工作臺。",
       "readyHint": "Gateway 已就緒。點擊進入工作臺繼續。",

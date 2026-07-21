@@ -7,6 +7,8 @@ const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanel
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const setupCommands = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const setupProgress = readFileSync(new URL('../../src-tauri/src/commands/setup_progress.rs', import.meta.url), 'utf8');
+const gatewayCommands = readFileSync(new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url), 'utf8');
 const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
 const storageCommands = readFileSync(new URL('../../src-tauri/src/commands/storage.rs', import.meta.url), 'utf8');
 const nodeRuntime = readFileSync(new URL('../../src-tauri/src/commands/node_runtime.rs', import.meta.url), 'utf8');
@@ -14,6 +16,36 @@ const runtimePolicy = readFileSync(new URL('../../src-tauri/src/commands/runtime
 const paths = readFileSync(new URL('../../src-tauri/src/paths.rs', import.meta.url), 'utf8');
 const platform = readFileSync(new URL('../../src-tauri/src/platform.rs', import.meta.url), 'utf8');
 const nezhaUnixPlatform = readFileSync(new URL('../../src-tauri/src/nezha/platform/unix.rs', import.meta.url), 'utf8');
+const appStore = readFileSync(new URL('../stores/app-store.ts', import.meta.url), 'utf8');
+const tauriCommands = readFileSync(new URL('../api/tauri-commands.ts', import.meta.url), 'utf8');
+
+test('BUG-INSTALL-LOG-01 setup diagnostics retain the full install timeline', () => {
+  assert.match(setupProgress, /const SETUP_SESSION_LOG: &str = "setup-session\.log"/);
+  assert.match(setupProgress, /matches!\(step, "node" \| "npm" \| "git" \| "openclaw" \| "gateway"\)/);
+  assert.match(setupProgress, /pub fn get_setup_diagnostics_directory/);
+  assert.match(setupCommands, /reset_timeline_log\(step\)/);
+  assert.match(appStore, /const SETUP_LOG_LIMIT = 2_000/);
+  assert.match(setupFlowPanels, /const visibleLogs = logs\.slice\(-500\)/);
+  assert.match(setupFlowPanels, /const text = logs[\s\S]*?\.map\(/);
+  assert.match(setupFlowPanels, /openSetupDiagnosticsDirectory/);
+  assert.match(tauriCommands, /get_setup_diagnostics_directory/);
+});
+
+test('BUG-INSTALL-LOG-02 download and npm diagnostics expose measurable bottlenecks', () => {
+  assert.match(setupCommands, /response headers received in/);
+  assert.match(setupCommands, /transfer_rate_mib_per_second/);
+  assert.match(setupCommands, /struct NpmFetchMetrics/);
+  assert.match(setupCommands, /npm network summary for/);
+  assert.match(setupCommands, /cache hits=\{\}/);
+  assert.match(setupCommands, /slowest=\{\}ms/);
+});
+
+test('BUG-INSTALL-LOG-05 Gateway startup uses the shared persistent diagnostic timeline', () => {
+  assert.match(gatewayCommands, /fn emit_gateway_log/);
+  assert.match(gatewayCommands, /record_timeline_note\("gateway", &line\)/);
+  assert.match(gatewayCommands, /reset_timeline_log\("gateway"\)/);
+  assert.equal((gatewayCommands.match(/app\.emit\("gateway-log"/g) ?? []).length, 1);
+});
 
 test('bug 03 dependency versions remain visible after installation', () => {
   assert.match(setupFlow, /\{ id: "npm",\s+label: "npm"/);

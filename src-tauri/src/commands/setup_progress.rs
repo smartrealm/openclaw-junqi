@@ -1,14 +1,26 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::sync::{Mutex, OnceLock};
 use tauri::Emitter;
 
-/// Every Node.js/Git download-and-install event also lands in a persistent,
+const SETUP_SESSION_LOG: &str = "setup-session.log";
+const SETUP_SESSION_PREVIOUS_LOG: &str = "setup-session.previous.log";
+const SETUP_SESSION_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
+static TIMELINE_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static SETUP_SESSION_INITIALIZED: OnceLock<()> = OnceLock::new();
+
+/// Every setup runtime download-and-install event also lands in a persistent,
 /// on-disk timeline so a slow-but-successful run can be diagnosed after the
 /// fact. The in-memory `setup-progress` events above are only seen by a
 /// running frontend; this file survives regardless of outcome.
 fn timeline_log_path(step: &str) -> std::path::PathBuf {
     crate::paths::diagnostics_log_dir().join(format!("{step}-timeline.log"))
+}
+
+fn session_log_path() -> std::path::PathBuf {
+    crate::paths::diagnostics_log_dir().join(SETUP_SESSION_LOG)
 }
 
 /// Tests must never write into the real user AppData/install directory as a
@@ -20,7 +32,65 @@ fn timeline_tracked(_step: &str) -> bool {
 
 #[cfg(not(test))]
 fn timeline_tracked(step: &str) -> bool {
-    matches!(step, "node" | "git" | "openclaw")
+    matches!(step, "node" | "npm" | "git" | "openclaw" | "gateway")
+}
+
+fn ensure_session_log_initialized() {
+    SETUP_SESSION_INITIALIZED.get_or_init(|| {
+        let path = session_log_path();
+        let Some(parent) = path.parent() else {
+            return;
+        };
+        if std::fs::create_dir_all(parent).is_err() {
+            return;
+        }
+        rotate_session_log_if_needed(&path);
+        let _ = append_line(
+            &path,
+            &format!(
+                "=== JunQi setup diagnostics session started {} (pid={}) ===",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                std::process::id(),
+            ),
+        );
+    });
+}
+
+fn rotate_session_log_if_needed(path: &std::path::Path) -> bool {
+    if !std::fs::metadata(path).is_ok_and(|metadata| metadata.len() >= SETUP_SESSION_LOG_MAX_BYTES)
+    {
+        return false;
+    }
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let previous = parent.join(SETUP_SESSION_PREVIOUS_LOG);
+    let _ = std::fs::remove_file(&previous);
+    std::fs::rename(path, previous).is_ok()
+}
+
+fn append_line(path: &std::path::Path, line: &str) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "{line}")
+}
+
+fn append_session_line(line: &str) {
+    ensure_session_log_initialized();
+    let path = session_log_path();
+    if rotate_session_log_if_needed(&path) {
+        let _ = append_line(
+            &path,
+            &format!(
+                "=== JunQi setup diagnostics continued {} (pid={}) ===",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                std::process::id(),
+            ),
+        );
+    }
+    let _ = append_line(&path, line);
 }
 
 /// Start a fresh timeline for one dependency-install attempt. The caller invokes
@@ -30,40 +100,48 @@ pub fn reset_timeline_log(step: &str) {
     if !timeline_tracked(step) {
         return;
     }
+    let _write_guard = TIMELINE_WRITE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    ensure_session_log_initialized();
     let path = timeline_log_path(step);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(
-        &path,
-        format!(
-            "=== {step} dependency install started {} ===\n",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
-        ),
-    );
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let header = format!("=== {step} dependency install started {timestamp} ===");
+    let _ = std::fs::write(&path, format!("{header}\n"));
+    append_session_line(&header);
 }
 
 fn append_timeline_log(step: &str, line: &str) {
     if !timeline_tracked(step) {
         return;
     }
+    let _write_guard = TIMELINE_WRITE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    ensure_session_log_initialized();
     let path = timeline_log_path(step);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    else {
-        return;
-    };
-    let _ = writeln!(
-        file,
-        "[{}] {}",
-        chrono::Local::now().format("%H:%M:%S%.3f"),
-        line
-    );
+    let now = chrono::Local::now();
+    let _ = append_line(&path, &format!("[{}] {}", now.format("%H:%M:%S%.3f"), line));
+    append_session_line(&format!(
+        "[{}] [{step}] {line}",
+        now.format("%Y-%m-%d %H:%M:%S%.3f")
+    ));
+}
+
+#[tauri::command]
+pub fn get_setup_diagnostics_directory() -> Result<String, String> {
+    let directory = crate::paths::diagnostics_log_dir();
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("Failed to create setup diagnostics directory: {error}"))?;
+    Ok(directory.to_string_lossy().into_owned())
 }
 
 fn record_timeline(step: &str, message: &str, metadata: &SetupProgressMetadata<'_>) {

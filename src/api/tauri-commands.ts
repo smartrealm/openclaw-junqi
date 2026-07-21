@@ -124,6 +124,11 @@ export const cancelDependencyInstall = (operationId: string) => (
 export const installOpenclaw = () => invoke<string>("install_openclaw");
 export const reinstallOpenclaw = () => invoke<string>("reinstall_openclaw");
 export const relocateOpenclaw = () => invoke<string>("relocate_openclaw");
+export const openSetupDiagnosticsDirectory = async () => {
+  const path = await invoke<string>("get_setup_diagnostics_directory");
+  await invoke<void>("open_folder", { path });
+  return path;
+};
 export const applyTerminalIntegration = () => invoke<TerminalIntegrationStatus>("apply_terminal_integration");
 export const startGateway = (port?: number) => (
   port == null ? invoke<any>("start_gateway") : invoke<any>("start_gateway", { port })

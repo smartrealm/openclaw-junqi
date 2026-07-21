@@ -2569,6 +2569,8 @@
       "stepsDone": "steps handled",
       "activity": "Activity log",
       "live": "Live",
+      "openLogs": "Open full log folder",
+      "openLogsFailed": "Could not open log folder",
       "runningStep": "Running: {{step}}",
       "keepOpen": "Keep this window open during installation. Click Enter workspace when setup is complete.",
       "readyHint": "Gateway is ready. Click Enter workspace to continue.",

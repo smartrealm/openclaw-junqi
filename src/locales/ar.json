@@ -2104,6 +2104,8 @@
   "setup.installPanel.stepsDone": "خطوات تمت معالجتها",
   "setup.installPanel.activity": "سجل التنفيذ",
   "setup.installPanel.live": "مباشر",
+  "setup.installPanel.openLogs": "فتح مجلد السجلات الكامل",
+  "setup.installPanel.openLogsFailed": "تعذر فتح مجلد السجلات",
   "setup.installPanel.runningStep": "قيد التنفيذ: {{step}}",
   "setup.installPanel.keepOpen": "أبقِ هذه النافذة مفتوحة أثناء التثبيت. اضغط دخول مساحة العمل عند اكتمال الإعداد.",
   "setup.installPanel.readyHint": "Gateway جاهزة. اضغط دخول مساحة العمل للمتابعة.",
