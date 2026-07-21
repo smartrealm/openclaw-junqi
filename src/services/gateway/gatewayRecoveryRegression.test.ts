@@ -85,7 +85,7 @@ test('BUG-GSC01 application lifecycle requests use the manager core', () => {
 test('managed Gateway start owns readiness and preserves process diagnostics', () => {
   const gateway = source('src-tauri/src/commands/gateway.rs');
   const setup = source('src/hooks/useSetupFlow.ts');
-  assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60/);
+  assert.match(gateway, /MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 90/);
   assert.match(gateway, /child\.try_wait\(\)[\s\S]*gateway_matches_config\(port, &config_path\)\.await/);
   assert.match(gateway, /OPENCLAW_GATEWAY_LIVENESS_PATH: &str = "healthz"/);
   assert.doesNotMatch(gateway, /TcpStream::connect/);

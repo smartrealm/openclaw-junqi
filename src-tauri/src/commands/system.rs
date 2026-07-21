@@ -7,6 +7,14 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 const RUNTIME_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+// A binary that was just written to disk by an installer/npm (Node, npm, Git,
+// or the OpenClaw JS entry) is unscanned by Windows Defender's on-access
+// scanner; its first execution here can stall well past 10s before producing
+// any output. RUNTIME_PROBE_TIMEOUT stays tight for probes against arbitrary,
+// already-established project environments (get_terminal_env); checks that
+// specifically validate a runtime we may have just installed need cold-start
+// headroom instead of misreading "still being scanned" as "broken".
+const FRESH_INSTALL_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 #[derive(Debug, Serialize)]
 pub struct PlatformInfo {
@@ -612,7 +620,7 @@ async fn resolve_node_runtime(node_path: &str) -> Option<(String, String)> {
         ])
         .kill_on_drop(true);
     platform::configure_background_command(&mut command);
-    let output = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output())
+    let output = tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, command.output())
         .await
         .ok()?
         .ok()?;
@@ -648,7 +656,7 @@ pub(crate) async fn check_npm_for_node(node: &NodeStatus) -> NpmStatus {
 
     let mut command = context.command();
     command.arg("--version").kill_on_drop(true);
-    match tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output()).await {
+    match tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, command.output()).await {
         Ok(Ok(output)) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if version.is_empty() {
@@ -1399,7 +1407,7 @@ pub(crate) async fn validate_openclaw_entry_with_node(binary: &Path, node_path: 
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     platform::configure_background_command(&mut command);
-    let syntax_ok = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output())
+    let syntax_ok = tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, command.output())
         .await
         .ok()
         .and_then(Result::ok)
@@ -1436,7 +1444,7 @@ pub(crate) async fn validate_openclaw_entry_with_node(binary: &Path, node_path: 
         smoke.current_dir(cwd);
     }
     platform::configure_background_command(&mut smoke);
-    let result = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, smoke.output())
+    let result = tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, smoke.output())
         .await
         .ok()
         .and_then(Result::ok)
@@ -1768,7 +1776,7 @@ async fn get_git_version(git_path: &str) -> Option<String> {
     let mut command = tokio::process::Command::new(git_path);
     command.arg("--version").kill_on_drop(true);
     platform::configure_background_command(&mut command);
-    let output = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output())
+    let output = tokio::time::timeout(FRESH_INSTALL_PROBE_TIMEOUT, command.output())
         .await
         .ok()?
         .ok()?;

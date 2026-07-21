@@ -1341,6 +1341,7 @@ export function useSetupFlow(
       const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
       if (!isRunActive(runId)) return;
       updateOnboardingRequirement(onboardingRequired);
+      let restoreSucceeded = true;
       if (switchedMode && !restoredRuntimeLocations) {
         try {
           if (previousMode === "native") {
@@ -1351,6 +1352,7 @@ export function useSetupFlow(
           if (!isRunActive(runId)) return;
         } catch (restoreError) {
           if (!isRunActive(runId)) return;
+          restoreSucceeded = false;
           appendSetupLog({
             source: "setup",
             step: "gateway",
@@ -1360,13 +1362,38 @@ export function useSetupFlow(
         }
       }
       if (!isRunActive(runId)) return;
-      appendSetupLog({
-        source: "setup",
-        step: "gateway",
-        message: `Runtime switch to ${mode} failed; restored ${previousMode}`,
-        level: "warn",
-      });
-      report(t("setup.runtimeSwitchRolledBack", "运行时切换失败，已恢复之前的运行模式"));
+      // The "restored" wording is only accurate when the previous Gateway
+      // actually came back up; claiming it unconditionally hid a second,
+      // silent failure from the user.
+      if (restoreSucceeded) {
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message: `Runtime switch to ${mode} failed; restored ${previousMode}`,
+          level: "warn",
+        });
+        report(t("setup.runtimeSwitchRolledBack", "运行时切换失败，已恢复之前的运行模式"));
+      } else {
+        const message = `Runtime switch to ${mode} failed, and the previous ${previousMode} Gateway could not be restored automatically; manual restart may be required.`;
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message,
+          level: "error",
+        });
+        setSetupError(
+          t(
+            "setup.runtimeSwitchRolledBackFailed",
+            "运行时切换失败，且未能自动恢复之前的运行模式，可能需要手动重启 Gateway",
+          ),
+        );
+        report(
+          t(
+            "setup.runtimeSwitchRolledBackFailed",
+            "运行时切换失败，且未能自动恢复之前的运行模式，可能需要手动重启 Gateway",
+          ),
+        );
+      }
     } catch (rollbackError) {
       if (!isRunActive(runId)) return;
       const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
