@@ -1,0 +1,19 @@
+name: Prepare Windows WiX
+description: Enables the Windows scripting prerequisite required by WiX MSI builds.
+
+runs:
+  using: composite
+  steps:
+    - name: Enable VBScript for WiX
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $feature = Get-WindowsOptionalFeature -Online -FeatureName VBSCRIPT
+        if ($feature.State -ne 'Enabled') {
+          Enable-WindowsOptionalFeature -Online -FeatureName VBSCRIPT -All -NoRestart | Out-Host
+          $feature = Get-WindowsOptionalFeature -Online -FeatureName VBSCRIPT
+        }
+        if ($feature.State -ne 'Enabled') {
+          throw "WiX requires the VBSCRIPT Windows optional feature; current state: $($feature.State)"
+        }
+        Write-Host 'WiX prerequisite VBSCRIPT is enabled.'

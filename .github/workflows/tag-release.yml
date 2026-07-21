@@ -206,6 +206,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare WiX MSI prerequisites
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/prepare-windows-wix
+
       - name: Build signed updater artifacts and installers
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:

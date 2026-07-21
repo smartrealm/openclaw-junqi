@@ -503,6 +503,10 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare WiX MSI prerequisites
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/prepare-windows-wix
+
       - name: Verify updater signing inputs
         if: needs.verify-version.outputs.signing-enabled == 'true'
         env:

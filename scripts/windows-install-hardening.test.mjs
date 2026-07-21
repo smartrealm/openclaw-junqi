@@ -15,6 +15,8 @@ const noUpdaterArtifactsProfile = JSON.parse(
   readFileSync(new URL('../src-tauri/tauri.no-updater-artifacts.conf.json', import.meta.url), 'utf8'),
 );
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+const taggedRelease = readFileSync(new URL('../.github/workflows/tag-release.yml', import.meta.url), 'utf8');
+const wixPrerequisite = readFileSync(new URL('../.github/actions/prepare-windows-wix/action.yml', import.meta.url), 'utf8');
 
 test('Windows PATH refresh expands registry values and preserves process entries', () => {
   assert.match(platform, /ExpandEnvironmentStringsW/);
@@ -102,6 +104,14 @@ test('Windows signing is isolated behind the unreachable trusted promotion path'
   assert.equal(noUpdaterArtifactsProfile.bundle?.createUpdaterArtifacts, false);
   assert.match(release, /--config\s+src-tauri\/tauri\.no-updater-artifacts\.conf\.json/);
   assert.doesNotMatch(release, /tags:\s*\[/);
+});
+
+test('Windows MSI workflows prepare the WiX scripting prerequisite', () => {
+  assert.match(wixPrerequisite, /Get-WindowsOptionalFeature -Online -FeatureName VBSCRIPT/);
+  assert.match(wixPrerequisite, /Enable-WindowsOptionalFeature -Online -FeatureName VBSCRIPT -All -NoRestart/);
+  for (const workflow of [release, taggedRelease]) {
+    assert.match(workflow, /uses: \.\/\.github\/actions\/prepare-windows-wix/);
+  }
 });
 
 test('Windows reads the selected OpenClaw token and stores device credentials in Credential Manager', () => {
