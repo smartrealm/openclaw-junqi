@@ -24,17 +24,16 @@ function releaseTauriListener(unlisten: UnlistenFn): void {
   }
 }
 
-/**
- * Tauri's listen() resolves asynchronously. If a React effect unmounts before the
- * promise resolves, a naive `.then(unlistens.push)` leaks the subscription.
- */
-export function subscribeTauriEvent<T>(
+type TauriEventSubscription = {
+  release: UnlistenFn;
+  ready: Promise<void>;
+};
+
+function createTauriEventSubscription<T>(
   event: string,
   handler: EventCallback<T>,
   onError?: (error: unknown) => void,
-): UnlistenFn {
-  if (!hasTauriEventBridge()) return () => {};
-
+): TauriEventSubscription {
   let released = false;
   let unlisten: UnlistenFn | null = null;
 
@@ -46,7 +45,7 @@ export function subscribeTauriEvent<T>(
     if (activeUnlisten) releaseTauriListener(activeUnlisten);
   };
 
-  listen<T>(event, handler)
+  const ready = listen<T>(event, handler)
     .then((fn) => {
       if (released) {
         releaseTauriListener(fn);
@@ -56,9 +55,39 @@ export function subscribeTauriEvent<T>(
     })
     .catch((error) => {
       if (!released) onError?.(error);
+      throw error;
     });
 
-  return release;
+  return { release, ready };
+}
+
+/**
+ * Tauri's listen() resolves asynchronously. If a React effect unmounts before the
+ * promise resolves, a naive `.then(unlistens.push)` leaks the subscription.
+ */
+export function subscribeTauriEvent<T>(
+  event: string,
+  handler: EventCallback<T>,
+  onError?: (error: unknown) => void,
+): UnlistenFn {
+  if (!hasTauriEventBridge()) return () => {};
+  const subscription = createTauriEventSubscription(event, handler, onError);
+  void subscription.ready.catch(() => undefined);
+  return subscription.release;
+}
+
+/**
+ * As above, but resolves only after the native subscription exists. Use this
+ * when a producer must not start until its event consumers are listening.
+ */
+export function subscribeTauriEventReady<T>(
+  event: string,
+  handler: EventCallback<T>,
+  onError?: (error: unknown) => void,
+): Promise<UnlistenFn> {
+  if (!hasTauriEventBridge()) return Promise.resolve(() => {});
+  const subscription = createTauriEventSubscription(event, handler, onError);
+  return subscription.ready.then(() => subscription.release);
 }
 
 /** Emit across Tauri windows while remaining a safe no-op in browser previews. */

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { combineUnlisteners, emitTauriEvent, hasTauriEventBridge, subscribeTauriEvent } from './tauriEvents';
+import { combineUnlisteners, emitTauriEvent, hasTauriEventBridge, subscribeTauriEvent, subscribeTauriEventReady } from './tauriEvents';
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -17,13 +17,14 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-test('plain browser previews do not register Tauri listeners', () => {
+test('plain browser previews do not register Tauri listeners', async () => {
   const host = globalThis.window as Window & { __TAURI_INTERNALS__?: unknown };
   const previous = host.__TAURI_INTERNALS__;
   delete host.__TAURI_INTERNALS__;
   try {
     assert.equal(hasTauriEventBridge(), false);
     assert.doesNotThrow(() => subscribeTauriEvent('task-status', () => {}));
+    await assert.doesNotReject(() => subscribeTauriEventReady('task-status', () => {}));
     assert.doesNotThrow(() => emitTauriEvent('dynamic-island:ready'));
   } finally {
     host.__TAURI_INTERNALS__ = previous;
@@ -46,11 +47,7 @@ test('listener cleanup is idempotent and absorbs asynchronous teardown failures'
 });
 
 test('feature code cannot bypass the lifecycle-safe Tauri event subscriber', () => {
-  const allowed = new Set([
-    'api/tauri-adapter.ts',
-    'components/Terminal/ShellTerminalPanel.tsx',
-    'utils/tauriEvents.ts',
-  ]);
+  const allowed = new Set(['utils/tauriEvents.ts']);
   const directImports = sourceFiles(srcRoot)
     .map((path) => ({
       path: relative(srcRoot, path),
