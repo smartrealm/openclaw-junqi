@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runNpmCommand } from "../../../scripts/npm-command.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, "dist");
@@ -11,8 +11,7 @@ for (const name of await readdir(dist)) {
   if (name.endsWith(".tgz")) await rm(path.join(dist, name));
 }
 
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-const output = execFileSync(npm, ["pack", "--ignore-scripts", "--json", "--pack-destination", dist], {
+const output = runNpmCommand(["pack", "--ignore-scripts", "--json", "--pack-destination", dist], {
   cwd: root,
   encoding: "utf8",
 });

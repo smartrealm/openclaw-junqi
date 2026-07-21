@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import {
   mkdir,
   readFile,
@@ -10,6 +9,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { runNpmCommand } from './npm-command.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const REPOSITORY_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -82,8 +82,7 @@ async function findPackedArchive(distDirectory) {
 }
 
 export async function buildCollaborationPluginBundle() {
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  execFileSync(npm, ['run', 'pack:plugin'], {
+  runNpmCommand(['run', 'pack:plugin'], {
     cwd: PLUGIN_ROOT,
     stdio: 'inherit',
   });
