@@ -8,7 +8,7 @@
 //   - `get_notifications` — returns persisted local items merged with read state
 //   - `push_local_notification` — called by other Rust modules to push a
 //     notification (e.g. "task failed", "task needs input")
-//   - `mark_notification_read` / `mark_all_notifications_read` — persist read state
+//   - read/clear commands — mutate either all records or an explicit record set
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -24,6 +24,8 @@ pub struct NotificationItem {
     pub body: String,
     #[serde(rename = "bodyZh")]
     pub body_zh: Option<String>,
+    #[serde(default)]
+    pub agent: Option<String>,
     pub url: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: String,
@@ -45,7 +47,7 @@ fn create_notification(
     url: Option<&str>,
 ) -> NotificationItem {
     let level = match level {
-        "warning" | "error" => level,
+        "warning" | "error" | "attention" | "completed" => level,
         _ => "info",
     };
     NotificationItem {
@@ -54,10 +56,25 @@ fn create_notification(
         title: sanitize_text(title, 200),
         body: sanitize_text(body, 4_000),
         body_zh: None,
+        agent: None,
         url: url.map(|value| sanitize_text(value, 2_000)),
         created_at: chrono::Utc::now().to_rfc3339(),
         is_read: false,
     }
+}
+
+fn create_frontend_notification(
+    level: &str,
+    title: &str,
+    body: &str,
+    url: Option<&str>,
+    agent: Option<&str>,
+) -> NotificationItem {
+    let mut item = create_notification(level, title, body, url);
+    item.agent = agent
+        .map(|value| sanitize_text(value.trim(), 64))
+        .filter(|value| !value.is_empty());
+    item
 }
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
@@ -105,6 +122,43 @@ impl NotificationRepository {
 
 fn mark_all_items_read(store: &mut LocalStore, items: &[NotificationItem]) {
     store.read_ids = items.iter().map(|item| item.id.clone()).collect();
+}
+
+const MAX_NOTIFICATION_MUTATION_IDS: usize = 50;
+
+fn normalized_notification_ids(ids: Vec<String>) -> HashSet<String> {
+    ids.into_iter()
+        .take(MAX_NOTIFICATION_MUTATION_IDS)
+        .map(|id| sanitize_text(id.trim(), 100))
+        .filter(|id| !id.is_empty())
+        .collect()
+}
+
+fn mark_selected_items_read(
+    store: &mut LocalStore,
+    items: &[NotificationItem],
+    selected_ids: &HashSet<String>,
+) {
+    store.read_ids.extend(
+        items
+            .iter()
+            .filter(|item| selected_ids.contains(&item.id))
+            .map(|item| item.id.clone()),
+    );
+}
+
+fn remove_selected_items(
+    items: &mut Vec<NotificationItem>,
+    store: &mut LocalStore,
+    selected_ids: &HashSet<String>,
+) -> bool {
+    let previous_len = items.len();
+    items.retain(|item| !selected_ids.contains(&item.id));
+    if items.len() == previous_len {
+        return false;
+    }
+    let _ = prune_read_state(store, items);
+    true
 }
 
 fn prune_read_state(store: &mut LocalStore, items: &[NotificationItem]) -> bool {
@@ -227,12 +281,19 @@ pub async fn push_notification(
     title: String,
     body: String,
     url: Option<String>,
+    agent: Option<String>,
 ) -> Result<NotificationItem, String> {
     tokio::task::spawn_blocking(move || {
         if title.trim().is_empty() {
             return Err("Notification title is required".to_string());
         }
-        persist_notification(create_notification(&level, &title, &body, url.as_deref()))
+        persist_notification(create_frontend_notification(
+            &level,
+            &title,
+            &body,
+            url.as_deref(),
+            agent.as_deref(),
+        ))
     })
     .await
     .map_err(|error| error.to_string())?
@@ -264,14 +325,20 @@ pub async fn mark_notification_read(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn mark_all_notifications_read() -> Result<(), String> {
-    tokio::task::spawn_blocking(|| {
+pub async fn mark_all_notifications_read(ids: Option<Vec<String>>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
         let _guard = repository_gate()
             .lock()
             .map_err(|_| "Notification repository lock is poisoned".to_string())?;
         let repository = NotificationRepository::discover()?;
         let mut store = repository.load_store();
-        mark_all_items_read(&mut store, &repository.load_items());
+        let items = repository.load_items();
+        if let Some(ids) = ids {
+            let selected_ids = normalized_notification_ids(ids);
+            mark_selected_items_read(&mut store, &items, &selected_ids);
+        } else {
+            mark_all_items_read(&mut store, &items);
+        }
         repository.save_store(&store)?;
         Ok(())
     })
@@ -280,14 +347,25 @@ pub async fn mark_all_notifications_read() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn clear_notifications() -> Result<(), String> {
-    tokio::task::spawn_blocking(|| {
+pub async fn clear_notifications(ids: Option<Vec<String>>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
         let _guard = repository_gate()
             .lock()
             .map_err(|_| "Notification repository lock is poisoned".to_string())?;
         let repository = NotificationRepository::discover()?;
-        repository.save_items(&[])?;
-        repository.save_store(&LocalStore::default())
+        if let Some(ids) = ids {
+            let selected_ids = normalized_notification_ids(ids);
+            let mut items = repository.load_items();
+            let mut store = repository.load_store();
+            if remove_selected_items(&mut items, &mut store, &selected_ids) {
+                repository.save_items(&items)?;
+                repository.save_store(&store)?;
+            }
+            Ok(())
+        } else {
+            repository.save_items(&[])?;
+            repository.save_store(&LocalStore::default())
+        }
     })
     .await
     .map_err(|error| error.to_string())?
@@ -304,6 +382,7 @@ mod tests {
             title: "title".to_string(),
             body: "body".to_string(),
             body_zh: None,
+            agent: None,
             url: None,
             created_at: "2026-07-14T00:00:00Z".to_string(),
             is_read: false,
@@ -347,6 +426,29 @@ mod tests {
         assert_eq!(created.body, "body");
         assert_eq!(created.url.as_deref(), Some("/ai-workspace"));
         assert!(!created.is_read);
+    }
+
+    #[test]
+    fn terminal_attention_and_completion_levels_survive_persistence() {
+        assert_eq!(
+            create_notification("attention", "needs input", "tab", None).level,
+            "attention"
+        );
+        assert_eq!(
+            create_notification("completed", "finished", "tab", None).level,
+            "completed"
+        );
+    }
+
+    #[test]
+    fn frontend_agent_metadata_is_optional_and_sanitized() {
+        let item =
+            create_frontend_notification("attention", "needs input", "tab", None, Some("claude\0"));
+        assert_eq!(item.agent.as_deref(), Some("claude"));
+
+        let without_agent =
+            create_frontend_notification("attention", "needs input", "tab", None, Some("  "));
+        assert_eq!(without_agent.agent, None);
     }
 
     #[test]
@@ -397,6 +499,41 @@ mod tests {
         assert_eq!(store.read_ids.len(), 2);
         assert!(store.read_ids.contains("first"));
         assert!(store.read_ids.contains("second"));
+    }
+
+    #[test]
+    fn selected_read_and_clear_operations_leave_other_notifications_unchanged() {
+        let mut store = LocalStore::default();
+        let mut items = vec![item("agent"), item("workflow")];
+        let selected =
+            normalized_notification_ids(vec!["agent".to_string(), "missing".to_string()]);
+
+        mark_selected_items_read(&mut store, &items, &selected);
+        assert_eq!(store.read_ids, HashSet::from(["agent".to_string()]));
+
+        assert!(remove_selected_items(&mut items, &mut store, &selected));
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["workflow"]
+        );
+        assert!(store.read_ids.is_empty());
+    }
+
+    #[test]
+    fn selected_notification_ids_are_bounded_and_sanitized() {
+        let ids = normalized_notification_ids(
+            std::iter::once("valid".to_string())
+                .chain(std::iter::once("bad\0id".to_string()))
+                .chain((0..MAX_NOTIFICATION_MUTATION_IDS).map(|index| format!("item-{index}")))
+                .collect(),
+        );
+
+        assert!(ids.contains("valid"));
+        assert!(ids.contains("badid"));
+        assert!(ids.len() <= MAX_NOTIFICATION_MUTATION_IDS);
     }
 
     #[test]

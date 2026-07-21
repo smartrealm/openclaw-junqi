@@ -21,8 +21,8 @@
 .terminal-kooky-app,
 .terminal-kooky-topbar {
   --kooky-surface: #282c34;
-  --kooky-chrome: #252931;
-  --kooky-raised: #343941;
+  --kooky-chrome: #22252c;
+  --kooky-raised: #41444b;
   --kooky-text: #efeff1;
   --kooky-muted: #8c9099;
   --kooky-faint: #616670;
@@ -51,6 +51,7 @@
   --aegis-text-secondary: 202 204 210;
   --aegis-text-muted: 140 144 153;
   --aegis-text-dim: 97 102 112;
+  --aegis-overlay: 239 239 241;
   --aegis-primary: 104 176 219;
   --aegis-primary-hover: 126 190 228;
   --aegis-primary-deep: 80 152 202;
@@ -177,7 +178,8 @@
 
 .terminal-kooky-command-palette,
 .terminal-kooky-menu,
-.terminal-kooky-modal {
+.terminal-kooky-modal,
+.terminal-kooky-inbox {
   font-family: 'Kooky JetBrains Mono', 'JetBrains Mono', ui-monospace, monospace;
   background: var(--kooky-chrome) !important;
   border-color: rgb(239 239 241 / 0.10) !important;

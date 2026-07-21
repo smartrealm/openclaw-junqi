@@ -84,6 +84,7 @@ import {
 } from './terminalPtyHandoff';
 import { combineUnlisteners, hasTauriEventBridge, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { PERSISTENT_NOTIFICATIONS_CHANGED_EVENT } from '@/hooks/usePersistentNotifications';
 import { Code2, Plus, Terminal as TerminalIcon, X, SplitSquareHorizontal, SplitSquareVertical, RotateCcw } from "lucide-react";
 import { useI18n } from "./i18n-fallback";
 import { PaneStatusBar } from "./PaneStatusBar";
@@ -127,6 +128,7 @@ import {
   removeTerminalSessionOverview,
   upsertTerminalSessionOverview,
 } from './terminalSessionRegistry';
+import { TerminalHookNotificationTracker } from './terminalNotifications';
 import type { Terminal as XTermType } from '@xterm/xterm';
 import "@xterm/xterm/css/xterm.css";
 
@@ -293,8 +295,8 @@ function TabShellItem({
           padding: "5px 10px", height: 28, minWidth: 0,
           borderRadius: 6, flexShrink: 0, cursor: "pointer",
           background: dragOver ? "rgb(var(--aegis-primary)/0.15)"
-            : selected ? "rgb(var(--aegis-overlay)/0.10)"
-            : hovered ? "rgb(var(--aegis-overlay)/0.06)"
+            : selected ? "rgb(var(--aegis-overlay)/0.15)"
+            : hovered ? "rgb(var(--aegis-overlay)/0.07)"
             : "transparent",
           color: selected ? "rgb(var(--aegis-text))" : "rgb(var(--aegis-text)/0.6)",
           transition: "background 0.12s",
@@ -1523,6 +1525,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
     const activeShellIdRef = useRef(activeShellId);
     const trackedAgentShellIdsRef = useRef(new Set<string>());
     const trackedSessionShellIdsRef = useRef(new Set<string>());
+    const terminalNotificationTrackerRef = useRef(new TerminalHookNotificationTracker());
     activeShellIdRef.current = activeShellId;
     const onDirectoryChangeRef = useRef(onDirectoryChange);
     onDirectoryChangeRef.current = onDirectoryChange;
@@ -2489,6 +2492,36 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
                 onTerminalHookEvent={(event) => {
                   const toolCalls = applyTerminalToolCallEvent(shell.toolCalls, event);
                   if (toolCalls !== shell.toolCalls) updateShell(shell.id, { toolCalls });
+                  const notification = terminalNotificationTrackerRef.current.next(
+                    event,
+                    shell.id,
+                    computeShellTitle(shell),
+                  );
+                  if (!notification) return;
+                  const visible = isActive
+                    && paneFocused
+                    && activeShellIdRef.current === shell.id
+                    && document.visibilityState === 'visible'
+                    && document.hasFocus();
+                  void invoke<{ id: string }>('push_notification', {
+                    level: notification.level,
+                    agent: notification.agent,
+                    title: notification.title,
+                    body: notification.body,
+                    url: notification.url,
+                  })
+                    .then(async (created) => {
+                      if (visible && created?.id) {
+                        try {
+                          await invoke('mark_notification_read', { id: created.id });
+                        } catch {
+                          // The notification itself is durable even if the
+                          // visibility read-state write races a shutdown.
+                        }
+                      }
+                      window.dispatchEvent(new Event(PERSISTENT_NOTIFICATIONS_CHANGED_EVENT));
+                    })
+                    .catch((error) => debugError('terminal', 'persist terminal notification failed:', error));
                 }}
                 onCwdChange={(cwd) => {
                   if (isRemoteWorkspace) return;

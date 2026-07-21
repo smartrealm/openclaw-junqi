@@ -12,6 +12,7 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { NotificationType } from '@/stores/notificationStore';
 import type { NotificationPanelItem } from '@/components/Layout/NotificationPanel';
+import { TerminalNotificationPanel } from '@/components/Layout/TerminalNotificationPanel';
 import {
   usePersistentNotifications,
   type PersistentNotificationItem,
@@ -37,6 +38,7 @@ import {
   subscribeTerminalOpenInPreferences,
   visibleTerminalOpenInApps,
 } from '@/components/Terminal/terminalOpenInPreferences';
+import { isTerminalAgentId } from '@/components/Terminal/terminalAgentCatalog';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
 import {
@@ -51,7 +53,10 @@ const NotificationPanel = lazy(() => import('@/components/Layout/NotificationPan
 type AiStatus = 'disconnected' | 'connecting' | 'working' | 'idle';
 
 function persistentNotificationType(level: string): NotificationType {
-  return level === 'error' || level === 'warning' ? 'error' : 'info';
+  if (level === 'error' || level === 'warning') return 'error';
+  if (level === 'attention') return 'message';
+  if (level === 'completed') return 'task_complete';
+  return 'info';
 }
 
 interface TerminalOpenInApp {
@@ -113,7 +118,7 @@ function TerminalOpenInControl({ directory }: { directory: string }) {
   }, [directory, t]);
 
   return (
-    <div ref={wrapRef} className="terminal-kooky-open-in relative flex h-[28px] shrink-0 items-center" style={{ opacity: visibleApps.length > 0 ? 1 : 0.45 }}>
+    <div ref={wrapRef} className="terminal-kooky-open-in relative ml-auto flex h-[28px] shrink-0 items-center" style={{ opacity: visibleApps.length > 0 ? 1 : 0.45 }}>
       <button
         type="button"
         disabled={!canOpen}
@@ -215,7 +220,15 @@ export function toNotificationPanelItem(
     timestamp: item.createdAt,
     read: item.isRead,
     url: item.url,
+    agent: item.agent,
   };
+}
+
+/** Kooky's terminal inbox is fed exclusively by a real terminal agent. */
+export function terminalInboxItems(
+  items: readonly NotificationPanelItem[],
+): NotificationPanelItem[] {
+  return items.filter((item) => isTerminalAgentId(item.agent ?? ''));
 }
 
 /**
@@ -246,6 +259,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   const { t } = useTranslation();
   const navigate = useNavigate();
   const isMac = APP_PLATFORM === 'macos';
+  const terminalChrome = sidebarTarget === 'terminal';
   const backLabel = t('topbar.back', '返回');
   const handleBack = useCallback(() => {
     const historyIndex = Number((window.history.state as { idx?: number } | null)?.idx);
@@ -283,10 +297,10 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     ? workspaceSidebarMode === 'full' ? 'expanded' : workspaceSidebarMode === 'compact' ? 'mini' : 'hidden'
     : sidebarMode;
   const collapseIcon = effectiveSidebarMode === 'expanded'
-    ? <PanelLeftClose size={16} />
+    ? <PanelLeftClose size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
     : effectiveSidebarMode === 'mini'
-      ? <PanelLeft size={16} />
-      : <PanelLeftOpen size={16} />;
+      ? <PanelLeft size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
+      : <PanelLeftOpen size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />;
   const collapseTitle = effectiveSidebarMode === 'expanded'
     ? t('nav.sidebarToMini', 'Collapse to icons')
     : effectiveSidebarMode === 'mini'
@@ -297,7 +311,6 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     : sidebarTarget === 'agent-workspace'
       ? requestAgentWorkspaceSidebarToggle
       : cycleSidebar;
-  const terminalChrome = sidebarTarget === 'terminal';
   const terminalOpenDirectory = useWorkspaceStore((state) => {
     const active = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
     if (!active || active.sshRemoteHost) return '';
@@ -382,7 +395,9 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     refresh: refreshNotifications,
     markRead,
     markAllRead,
+    markReadMany,
     clear: clearNotifications,
+    clearMany,
   } = usePersistentNotifications();
   const history = useMemo(
     () => (persistentNotifications?.notifications ?? []).map((item) => (
@@ -390,9 +405,13 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     )),
     [language, persistentNotifications?.notifications],
   );
+  const terminalInbox = useMemo(() => terminalInboxItems(history), [history]);
+  const notificationItems = terminalChrome ? terminalInbox : history;
   const dndMode = useSettingsStore((s) => s.dndMode);
   const setDndMode = useSettingsStore((s) => s.setDndMode);
-  const unread = persistentNotifications?.unreadCount ?? 0;
+  const unread = terminalChrome
+    ? terminalInbox.filter((item) => !item.read).length
+    : persistentNotifications?.unreadCount ?? 0;
 
   const toggleDnd = useCallback(() => {
     const next = !dndMode;
@@ -406,7 +425,10 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   const openNotification = useCallback((item: NotificationPanelItem) => {
     void markRead(item.id);
     const target = resolveNotificationTarget(item.url);
-    if (!target) return;
+    if (!target) {
+      if (terminalChrome) setPanelOpen(false);
+      return;
+    }
     setPanelOpen(false);
     if (target?.kind === 'internal') {
       navigate(target.value);
@@ -417,7 +439,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
         // External navigation failures must not break notification state.
       }
     }
-  }, [markRead, navigate]);
+  }, [markRead, navigate, terminalChrome]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -552,7 +574,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           onClick={requestTerminalAgentPanelToggle}
           title={t('terminal.agentPanelToggle', 'Toggle agent panel')}
           aria-label={t('terminal.agentPanelToggle', 'Toggle agent panel')}
-          className="terminal-kooky-agent-toggle ml-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          className="terminal-kooky-agent-toggle flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[5px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.12)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
         >
           <LayoutGrid size={14} strokeWidth={1.7} />
         </button>
@@ -576,17 +598,29 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
           )}
         >
           <Bell size={terminalChrome ? 14 : 16} strokeWidth={terminalChrome ? 1.7 : undefined} />
-          {unread > 0 && (
+          {terminalChrome && unread > 0 ? (
+            <span className="absolute end-[5px] top-[5px] h-[6px] w-[6px] rounded-full bg-[#e86868]" />
+          ) : unread > 0 && (
             <span className="absolute top-0 end-0 min-w-[12px] h-[12px] px-[2px] flex items-center justify-center rounded-full bg-aegis-danger text-white text-[8px] font-bold leading-none">
               {unread > 9 ? '9+' : unread}
             </span>
           )}
         </button>
 
-        {panelOpen && (
+        {panelOpen && (terminalChrome ? (
+          <TerminalNotificationPanel
+            items={notificationItems}
+            onMarkAllRead={() => void markReadMany(notificationItems.map((item) => item.id))}
+            onClear={() => {
+              setPanelOpen(false);
+              void clearMany(notificationItems.map((item) => item.id));
+            }}
+            onItemClick={openNotification}
+          />
+        ) : (
           <Suspense fallback={null}>
             <NotificationPanel
-              items={history}
+              items={notificationItems}
               dndMode={dndMode}
               onToggleDnd={toggleDnd}
               onMarkAllRead={() => void markAllRead()}
@@ -594,7 +628,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
               onItemClick={openNotification}
             />
           </Suspense>
-        )}
+        ))}
       </div>
       {terminalChrome && <TerminalKeepAwakeControl />}
     </div>

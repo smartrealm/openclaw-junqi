@@ -13,6 +13,7 @@ export interface NotificationPanelItem {
   timestamp: string;
   read: boolean;
   url?: string | null;
+  agent?: string | null;
 }
 
 interface NotificationPanelProps {

@@ -76,6 +76,14 @@ export function removeTerminalSessionOverview(shellId: string): void {
   notify();
 }
 
+/** Focus a live shell by its opaque notification target id. */
+export function focusTerminalSessionOverview(shellId: string): boolean {
+  const entry = entries.get(shellId.trim());
+  if (!entry) return false;
+  entry.focus();
+  return true;
+}
+
 export function clearTerminalSessionOverview(): void {
   if (entries.size === 0) return;
   entries.clear();

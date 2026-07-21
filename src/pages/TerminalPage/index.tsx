@@ -2,6 +2,7 @@
 // + optional right panel (agents overview)
 
 import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from "@/theme/useTheme";
 import {
   ShellTerminalPanel,
@@ -42,9 +43,11 @@ import {
 import { buildTerminalLaunchTargets, type TerminalLaunchTarget } from "@/components/Terminal/terminalLaunchCatalog";
 import { APP_PLATFORM } from "@/components/Terminal/platform";
 import {
+  focusTerminalSessionOverview,
   getTerminalSessionOverviewSnapshot,
   subscribeTerminalSessionOverview,
 } from "@/components/Terminal/terminalSessionRegistry";
+import { terminalNotificationFocusShellId } from '@/components/Terminal/terminalNotifications';
 import {
   releaseTerminalKeepAwakeOwner,
   setTerminalKeepAwakeWorkActive,
@@ -105,6 +108,8 @@ type TerminalSidebarContent = 'workspaces' | 'files';
 
 export function TerminalPage() {
   const { t } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
   const resolvedTheme = useTheme();
   const themeVariant: ThemeVariant = resolvedTheme.replace("aegis-", "") as ThemeVariant;
 
@@ -248,6 +253,11 @@ export function TerminalPage() {
     getTerminalSessionOverviewSnapshot,
     getTerminalSessionOverviewSnapshot,
   );
+  useEffect(() => {
+    const shellId = terminalNotificationFocusShellId(location.search);
+    if (!shellId || !focusTerminalSessionOverview(shellId)) return;
+    navigate('/terminal', { replace: true });
+  }, [location.search, navigate, terminalSessions]);
   const terminalAgents = useSyncExternalStore(
     subscribeTerminalAgentOverview,
     getTerminalAgentOverviewSnapshot,
@@ -609,7 +619,6 @@ export function TerminalPage() {
             onSelectWorkspace={(id) => useWorkspaceStore.getState().setActive(id)}
             onCreateWorkspace={createWorkspace}
             onCreateSshWorkspace={createSshWorkspace}
-            onOpenFolder={chooseWorkspaceDirectory}
             onOpenRecentDirectory={openWorkspaceDirectory}
             onClearRecentDirectories={clearRecentDirectories}
             onCloseWorkspace={(id) => useWorkspaceStore.getState().closeWorkspace(id)}
@@ -1022,9 +1031,9 @@ function ProjectWorkspaceRow({
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         style={{
-          height: 38, margin: '2px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: 38, margin: '1px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
           position: 'relative', cursor: 'pointer', borderRadius: 6,
-          background: active ? 'rgb(var(--aegis-overlay) / 0.12)' : 'transparent',
+          background: active ? 'rgb(var(--aegis-overlay) / 0.15)' : 'transparent',
           outline: dragTargetPosition ? '1px solid rgb(var(--aegis-primary) / 0.55)' : 'none',
           color: active ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))',
         }}
@@ -1060,9 +1069,9 @@ function ProjectWorkspaceRow({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       style={{
-        minHeight: 0, display: 'flex', alignItems: 'center', gap: 8, margin: '2px 8px',
+        minHeight: 0, display: 'flex', alignItems: 'center', gap: 8, margin: '1px 8px',
         padding: '11px 12px', borderRadius: 6, cursor: 'pointer', position: 'relative',
-        background: active ? 'rgb(var(--aegis-overlay) / 0.12)' : hovered ? 'rgb(var(--aegis-overlay) / 0.06)' : 'transparent',
+        background: active ? 'rgb(var(--aegis-overlay) / 0.15)' : hovered ? 'rgb(var(--aegis-overlay) / 0.07)' : 'transparent',
         boxShadow: dragTargetPosition === 'before'
           ? 'inset 0 2px 0 rgb(var(--aegis-primary) / 0.9)'
           : dragTargetPosition === 'after'
@@ -1149,7 +1158,7 @@ function WorkspaceRowMenuItem({ label, onClick, danger = false, disabled = false
 // ──────────────────────────────────────────────────────────────
 function WorkspaceSidebarPanel({
   mode, width, onWidthChange, onResizeActiveChange, content, onContentChange, projectPath, workspaces, recentDirectories, activeWorkspaceId,
-  onSelectWorkspace, onCreateWorkspace, onCreateSshWorkspace, onOpenFolder, onOpenRecentDirectory,
+  onSelectWorkspace, onCreateWorkspace, onCreateSshWorkspace, onOpenRecentDirectory,
   onClearRecentDirectories, onCloseWorkspace, onCreateWorktree, onAdoptWorktrees, worktreeEligibleWorkspaceIds, worktreeCreateRequestId, onWorktreeCreateRequestHandled,
   onCloseWorktree, onRenameWorkspace, onMoveWorkspace, onDuplicateWorkspace, onCloseOtherWorkspaces, onRevealWorkspace,
   renameWorkspaceRequestId, onRenameWorkspaceRequestHandled, closeWorkspaceRequestId, onCloseWorkspaceRequestHandled, sshWorkspaceRequestVersion,
@@ -1167,7 +1176,6 @@ function WorkspaceSidebarPanel({
   onSelectWorkspace: (id: string) => void;
   onCreateWorkspace: () => void;
   onCreateSshWorkspace: (host: string) => Workspace;
-  onOpenFolder: () => void;
   onOpenRecentDirectory: (path: string) => void | Promise<unknown>;
   onClearRecentDirectories: () => void | Promise<unknown>;
   onCloseWorkspace: (id: string) => void;
@@ -1277,8 +1285,8 @@ function WorkspaceSidebarPanel({
           sidebar is intentionally just a workspace navigator. */}
       {mode === 'full' ? (
         <div style={{
-          height: 40, display: 'flex', alignItems: 'center',
-          padding: '0 10px 0 14px', gap: 6, flexShrink: 0,
+          height: 48, display: 'flex', alignItems: 'center',
+          padding: '0 16px', gap: 6, flexShrink: 0,
         }}>
           <span className="terminal-kooky-sidebar-brand" style={{
             flex: 1, fontSize: 15, fontFamily: 'inherit', color: 'rgb(var(--aegis-text))',
@@ -1288,30 +1296,30 @@ function WorkspaceSidebarPanel({
             onClick={onCreateWorkspace}
             title={t('terminal.workspaceNew')}
             style={{
-              width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'transparent', border: 'none', borderRadius: 5,
               color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer',
             }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
           >
-            <Plus size={13} strokeWidth={2.5} />
+          <Plus size={14} strokeWidth={2} />
           </button>
         </div>
       ) : (
-        <div style={{ height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <button
             onClick={onCreateWorkspace}
             title={t('terminal.workspaceNew')}
             style={{
-              width: 24, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'transparent', border: 'none', borderRadius: 6,
               color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer',
             }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay)/0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
           >
-            <Plus size={13} strokeWidth={2.5} />
+          <Plus size={14} strokeWidth={2} />
           </button>
         </div>
       )}
@@ -1345,7 +1353,7 @@ function WorkspaceSidebarPanel({
           )}
         </div>
       ) : (
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: mode === 'full' ? '6px 0' : '6px 0' }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
         {workspaces.length === 0 ? (
           /* 空状态 */
           mode === 'full' && (
@@ -1426,17 +1434,17 @@ function WorkspaceSidebarPanel({
       </div>
       )}
 
-      {/* ── 底部视图切换 / 打开目录（full 模式） ── */}
+      {/* ── Kooky footer: 工作区 / 文件分段（full 模式） ── */}
       {mode === 'full' && (
         <>
           <div className="terminal-kooky-sidebar-footer" style={{ height: 1, background: 'rgb(255 255 255 / 0.05)', flexShrink: 0 }} />
-          <div className="terminal-kooky-sidebar-footer" style={{ height: 34, display: 'flex', alignItems: 'center', gap: 2, padding: '0 6px' }}>
+          <div className="terminal-kooky-sidebar-footer" style={{ height: 30, display: 'flex', alignItems: 'center', gap: 2, padding: '4px 8px' }}>
             <button
               type="button"
               onClick={() => onContentChange('workspaces')}
               title={t('terminal.workspaceList')}
               aria-pressed={content === 'workspaces'}
-              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: content === 'workspaces' ? 'rgb(var(--aegis-primary) / 0.14)' : 'transparent', border: content === 'workspaces' ? '1px solid rgb(var(--aegis-primary) / 0.28)' : '1px solid transparent', borderRadius: 5, color: content === 'workspaces' ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
+              style={{ width: 26, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: content === 'workspaces' ? 'rgb(var(--aegis-overlay) / 0.15)' : 'transparent', border: 'none', borderRadius: 6, color: content === 'workspaces' ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
               onMouseEnter={(event) => { if (content !== 'workspaces') (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; }}
               onMouseLeave={(event) => { if (content !== 'workspaces') (event.currentTarget as HTMLElement).style.background = 'transparent'; }}
             >
@@ -1447,22 +1455,11 @@ function WorkspaceSidebarPanel({
               onClick={() => onContentChange('files')}
               title={t('terminal.files')}
               aria-pressed={content === 'files'}
-              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: content === 'files' ? 'rgb(var(--aegis-primary) / 0.14)' : 'transparent', border: content === 'files' ? '1px solid rgb(var(--aegis-primary) / 0.28)' : '1px solid transparent', borderRadius: 5, color: content === 'files' ? 'rgb(var(--aegis-primary))' : 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
+              style={{ width: 26, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: content === 'files' ? 'rgb(var(--aegis-overlay) / 0.15)' : 'transparent', border: 'none', borderRadius: 6, color: content === 'files' ? 'rgb(var(--aegis-text))' : 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
               onMouseEnter={(event) => { if (content !== 'files') (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; }}
               onMouseLeave={(event) => { if (content !== 'files') (event.currentTarget as HTMLElement).style.background = 'transparent'; }}
             >
               <FolderTree size={13} strokeWidth={1.9} />
-            </button>
-            <span style={{ flex: 1 }} />
-            <button
-              type="button"
-              onClick={onOpenFolder}
-              title={t('terminal.openFolder')}
-              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 5, color: 'rgb(var(--aegis-text-dim))', cursor: 'pointer' }}
-              onMouseEnter={(event) => { (event.currentTarget as HTMLElement).style.background = 'rgb(var(--aegis-overlay) / 0.08)'; (event.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text))'; }}
-              onMouseLeave={(event) => { (event.currentTarget as HTMLElement).style.background = 'transparent'; (event.currentTarget as HTMLElement).style.color = 'rgb(var(--aegis-text-dim))'; }}
-            >
-              <FolderOpen size={13} strokeWidth={1.9} />
             </button>
           </div>
         </>

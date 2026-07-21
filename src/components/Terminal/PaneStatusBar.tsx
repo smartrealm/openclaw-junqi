@@ -28,7 +28,7 @@ const pillBase: React.CSSProperties = {
   height: 22,
   borderRadius: 4,
   fontSize: 11,
-  fontFamily: '"JetBrains Mono", monospace',
+  fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace',
   color: "rgb(var(--aegis-text-dim))",
   background: "transparent",
   border: "1px solid rgb(255 255 255 / 0.07)",
@@ -59,7 +59,7 @@ function StatusBarIconButton({
   const color  = isActive ? "rgb(var(--aegis-primary))" : "rgb(var(--aegis-text-dim))";
   return (
     <button onClick={onClick} title={help}
-      style={{ ...pillBase, background: bg, border, color, width: 28, padding: "0 4px", justifyContent: "center" }}
+      style={{ ...pillBase, background: bg, border, color, width: 22, padding: 0, justifyContent: "center" }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
     >
       {children}
@@ -442,7 +442,7 @@ export function PaneStatusBar({
     <div style={{
       minHeight: 32, flexShrink: 0,
       display: "flex", alignItems: "center",
-      padding: "5px 8px", gap: 4,
+      padding: "5px 8px", gap: 8,
       borderTop: "1px solid rgb(255 255 255 / 0.06)",
       background: "rgb(var(--aegis-surface))",
       overflow: "visible",
@@ -468,7 +468,7 @@ export function PaneStatusBar({
 
       {/* Spacer — FlowLayout maxWidth:infinity equivalent */}
       {/* RIGHT — env pills + git pills (trailing, wraps on narrow panes) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", alignItems: "center", columnGap: 8, rowGap: 4, flex: 1, minWidth: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
         {visibleItems.filter((item) => item !== 'tool-calls').map(statusSegment)}
       </div>
     </div>
