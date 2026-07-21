@@ -16,6 +16,7 @@ import {
   SquareTerminal, Pencil, FileText, Search, Globe,
   List, Box, Clock, ChevronDown, X,
 } from 'lucide-react';
+import { StatusIcon, type StatusIconValue } from './StatusIcon';
 
 // ── Event model (kooky ToolCallEvent) ────────────────────────────────────────
 
@@ -97,13 +98,13 @@ function DurationLabel({ event }: { event: ToolCallEvent }) {
   return <>{formatElapsed(elapsed)}</>;
 }
 
-// ── State glyph (kooky ToolCallEventState.presentation.glyph) ────────────────
+// ── State presentation ──────────────────────────────────────────────────────
 
-const STATE_PRESENTATION: Record<ToolEventState, { glyph: string; color: string }> = {
-  running:  { glyph: '⋯', color: 'rgb(var(--aegis-status-running))' },
-  done:     { glyph: '✓', color: 'rgb(var(--aegis-success))' },
-  error:    { glyph: '✗', color: 'rgb(var(--aegis-status-failed))' },
-  aborted:  { glyph: '⊘', color: 'rgb(var(--aegis-text-dim))' },
+const STATE_PRESENTATION: Record<ToolEventState, { icon: StatusIconValue; color: string }> = {
+  running:  { icon: 'running', color: 'rgb(var(--aegis-status-running))' },
+  done:     { icon: 'done', color: 'rgb(var(--aegis-success))' },
+  error:    { icon: 'error', color: 'rgb(var(--aegis-status-failed))' },
+  aborted:  { icon: 'cancelled', color: 'rgb(var(--aegis-text-dim))' },
 };
 
 // ── Category colors ─────────────────────────────────────────────────────────
@@ -371,18 +372,17 @@ function EventRow({ event }: { event: ToolCallEvent }) {
         <DurationLabel event={event} />
       </span>
 
-      {/* State glyph */}
+      {/* State */}
       <span
         style={{
           width: 14,
           flexShrink: 0,
-          textAlign: 'center',
-          fontSize: 11,
-          fontWeight: 500,
-          color: pres.color,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
-        {pres.glyph}
+        <StatusIcon status={pres.icon} size={12} />
       </span>
     </div>
   );

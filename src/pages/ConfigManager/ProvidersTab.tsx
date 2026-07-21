@@ -8,7 +8,7 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, Loader2, Download, Check, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, Star, Image, ArrowUp, ArrowDown, Circle, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import { Icon } from '@/components/shared/icons';
 import type {
@@ -1077,7 +1077,7 @@ function ProviderCardShell({
               <span className="font-semibold text-sm text-aegis-text truncate">{title}</span>
               {badge && (
                 <span className={clsx(
-                  'text-[10px] font-semibold px-1.5 py-0.5 rounded-full border flex-shrink-0',
+                  'inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold',
                   PROVIDER_BADGE_CLS[badge.tone],
                 )}>
                   {badge.label}
@@ -1790,7 +1790,7 @@ function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, im
       providerId={provider}
       title={template?.name ?? provider}
       subtitle={<span className="font-mono">{modelsProvider?.baseUrl ?? provider}</span>}
-      badge={{ label: <>⚡ {t('config.customProvider', 'Custom Provider')}</>, tone: 'info' }}
+      badge={{ label: <><Zap size={11} aria-hidden="true" />{t('config.customProvider', 'Custom Provider')}</>, tone: 'info' }}
       statusTone={envKeyFound ? 'ok' : credentialUnverified ? 'info' : 'warn'}
       statusLabel={providerCredentialStatusLabel(t, Boolean(envKeyFound), credentialSource, credentialUnverified)}
       modelCount={Object.keys(editableModels).length}
@@ -1914,7 +1914,9 @@ function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, im
                     : 'bg-aegis-surface border-aegis-border text-aegis-text-muted'
                 )}
               >
-                <span>{envKeyFound ? '✓' : '○'}</span>
+                {envKeyFound
+                  ? <CheckCircle size={13} aria-hidden="true" />
+                  : <Circle size={13} aria-hidden="true" />}
                 <span>{envKeyName}</span>
                 {!envKeyFound && (
                   <span className="text-[10px] opacity-60 ml-1">
@@ -2777,7 +2779,8 @@ function ConfigureStep({
           />
           {/* Drift warning: user changed the pre-filled URL */}
           {baseUrlDrifted && (
-            <p className="text-[10px] text-amber-400 leading-tight">
+            <p className="flex items-start gap-1 text-[10px] text-amber-400 leading-tight">
+              <AlertTriangle size={11} className="mt-px shrink-0" aria-hidden="true" />
               {t('config.baseUrlDriftWarning', { url: catalogEntry?.baseUrlOverride })}
             </p>
           )}

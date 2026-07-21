@@ -111,6 +111,11 @@ const AUTO_ADVANCE_GATEWAY_STEPS = new Set<SetupStep>([
   "gateway-stopped",
 ]);
 
+export type GatewayReadyContinuation =
+  | { status: "idle"; error: null }
+  | { status: "checking"; error: null }
+  | { status: "failed"; error: string };
+
 function pickInstallTargetFromProgress(
   key: string,
   message: string,
@@ -157,6 +162,7 @@ export interface SetupFlow {
   wizardError: string | null;
   wizardRecoveryRequired: boolean;
   needsOnboarding: boolean;
+  gatewayReadyContinuation: GatewayReadyContinuation;
   repairing: boolean;
   brokenPlugins: BrokenGatewayPlugin[];
   forceStorageSelection: boolean;
@@ -188,7 +194,6 @@ export interface SetupFlow {
 }
 
 const INITIAL_NATIVE_STEPS: StepState[] = [
-  { id: "git",       label: "Git",        status: "pending" },
   { id: "node",      label: "Node.js",    status: "pending" },
   { id: "npm",       label: "npm",        status: "pending" },
   { id: "openclaw",  label: "OpenClaw",   status: "pending" },
@@ -250,6 +255,11 @@ export function useSetupFlow(
   const [wizardRecoveryRequired, setWizardRecoveryRequired] = useState(false);
   const wizardSubmitInFlightRef = useRef(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
+  const [gatewayReadyContinuation, setGatewayReadyContinuation] = useState<GatewayReadyContinuation>({
+    status: "idle",
+    error: null,
+  });
+  const gatewayReadyContinuationInFlightRef = useRef(false);
   const [repairing, setRepairing] = useState(false);
   const [brokenPlugins, setBrokenPlugins] = useState<BrokenGatewayPlugin[]>([]);
   const [forceStorageSelection, setForceStorageSelection] = useState(false);
@@ -628,6 +638,14 @@ export function useSetupFlow(
     ));
   }
 
+  function ensureStepBefore(step: StepState, beforeId: string) {
+    if (stepsRef.current.some((current) => current.id === step.id)) return;
+    const next = [...stepsRef.current];
+    const insertionIndex = next.findIndex((current) => current.id === beforeId);
+    next.splice(insertionIndex >= 0 ? insertionIndex : next.length, 0, step);
+    commitSteps(next);
+  }
+
   function failRunningStep(message: string) {
     const running = stepsRef.current.find((step) => step.status === "running");
     if (running) patchStep(running.id, "error", message);
@@ -1003,23 +1021,49 @@ export function useSetupFlow(
   }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, configureTerminalIntegration, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
 
   const continueAfterGatewayReady = useCallback(async () => {
-    if (!gatewayRunning) {
-      await startGatewayAction();
-      return;
+    if (gatewayReadyContinuationInFlightRef.current) return;
+    gatewayReadyContinuationInFlightRef.current = true;
+    setGatewayReadyContinuation({ status: "checking", error: null });
+    setSetupError(null);
+    try {
+      if (!gatewayRunning) {
+        const started = await startGatewayAction();
+        if (!started) {
+          setGatewayReadyContinuation({ status: "idle", error: null });
+          return;
+        }
+      }
+
+      let onboardingRequired = needsOnboardingRef.current;
+      if (!onboardingRequired) {
+        onboardingRequired = !(await probeActiveRuntimeModel()).ready;
+        updateOnboardingRequirement(onboardingRequired);
+      }
+
+      setGatewayReadyContinuation({ status: "idle", error: null });
+      if (onboardingRequired) {
+        // The configure page owns wizard startup. This transition only decides
+        // the destination so one click cannot create competing wizard sessions.
+        navigateSetup("configure-openclaw", "push");
+        return;
+      }
+
+      report(t("setup.ready"), 100);
+      navigateSetup("ready", "push");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const message = t("setup.gatewayReadyContinueFailed", {
+        error: detail,
+        defaultValue: "无法进入下一步：{{error}}",
+      });
+      setGatewayReadyContinuation({ status: "failed", error: message });
+      setSetupError(message);
+      report(message);
+      appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+    } finally {
+      gatewayReadyContinuationInFlightRef.current = false;
     }
-    let onboardingRequired = needsOnboardingRef.current;
-    if (!onboardingRequired) {
-      onboardingRequired = !(await probeActiveRuntimeModel()).ready;
-      updateOnboardingRequirement(onboardingRequired);
-    }
-    if (onboardingRequired) {
-      navigateSetup("configure-openclaw", "push");
-      await startOfficialOnboarding();
-      return;
-    }
-    report(t("setup.ready"), 100);
-    navigateSetup("ready", "push");
-  }, [gatewayRunning, navigateSetup, probeActiveRuntimeModel, report, startGatewayAction, startOfficialOnboarding, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, gatewayRunning, navigateSetup, probeActiveRuntimeModel, report, setSetupError, startGatewayAction, t, updateOnboardingRequirement]);
 
   // Gateway startup is an installation transition, not a user decision. Keep
   // storage, runtime selection, and the official OpenClaw wizard interactive,
@@ -1049,51 +1093,6 @@ export function useSetupFlow(
       const isWindows = runtimePlatform === "win32"
         || runtimePlatform === "windows"
         || userAgent.includes("windows");
-
-      // Git is conditional for the npm installation path. Most published npm
-      // packages do not execute Git at all, so Windows defers the elevated
-      // system installer until npm explicitly reports a missing Git process.
-      // Existing Git remains visible and selected custom Git locations keep
-      // their normal validation contract.
-      patchStep("git", "running", t("setup.checkingGit"));
-      reportPhase("git", t("setup.checkingGit"));
-      const gitStatus = await checkGit();
-      let gitReady = gitStatus.available;
-      if (!isRunActive(runId)) return false;
-      if (!gitReady) {
-        const isMac = runtimePlatform === "darwin" || userAgent.includes("mac");
-        if (isWindows) {
-          patchStep(
-            "git",
-            "skipped",
-            t("setup.git.onDemand", "npm 需要 Git 时再安装"),
-          );
-        } else if (!isMac) {
-          patchStep("git", "error", t("setup.gitRequiredDesc"));
-          setNeedsGit(true);
-          replaceSetupStep("git-missing");
-          reportPhase("git", t("setup.gitRequiredDesc"), 100);
-          return false;
-        } else {
-          patchStep("git", "running", t("setup.installingGit", "正在静默安装 Git…"));
-          replaceSetupStep("install-git");
-          await runDependencyInstall(runId, "git", installGit);
-          if (!isRunActive(runId)) return false;
-          const installedGit = await checkGit();
-          if (!isRunActive(runId)) return false;
-          if (!installedGit.available) {
-            patchStep("git", "error", t("setup.gitRequiredDesc"));
-            setNeedsGit(true);
-            replaceSetupStep("git-missing");
-            reportPhase("git", t("setup.gitRequiredDesc"), 100);
-            return false;
-          }
-          gitReady = true;
-          patchStep("git", "done", installedGit.version ?? undefined);
-        }
-      } else {
-        patchStep("git", "done", gitStatus.version ?? undefined);
-      }
 
       // Node
       patchStep("node", "running", t("setup.checkingNode"));
@@ -1178,11 +1177,16 @@ export function useSetupFlow(
         try {
           await installSelectedOpenclaw();
         } catch (error) {
-          if (!isWindows || gitReady || !isMissingGitDependencyError(error)) throw error;
+          if (!isWindows || !isMissingGitDependencyError(error)) throw error;
 
+          patchStep("openclaw", "pending");
+          ensureStepBefore(
+            { id: "git", label: "Git", status: "running" },
+            "openclaw",
+          );
           patchStep("git", "running", t("setup.installingGit", "正在安装 Git…"));
           replaceSetupStep("install-git");
-          reportPhase("git", t("setup.installingGit", "正在安装 Git…"), 20);
+          reportPhase("openclaw", t("setup.installingGit", "正在安装 Git…"), 10);
           await runDependencyInstall(runId, "git", installGit);
           if (!isRunActive(runId)) return false;
           const installedGit = await checkGit();
@@ -1190,8 +1194,8 @@ export function useSetupFlow(
           if (!installedGit.available) {
             throw new Error(t("setup.gitRequiredDesc"));
           }
-          gitReady = true;
           patchStep("git", "done", installedGit.version ?? undefined);
+          patchStep("openclaw", "running", t("setup.installingOpenclaw"));
           replaceSetupStep("install-openclaw");
           reportPhase("openclaw", t("setup.installingOpenclaw"), 10);
           await installSelectedOpenclaw();
@@ -1432,8 +1436,8 @@ export function useSetupFlow(
     if (createdFresh) updateOnboardingRequirement(true);
 
     // A selected runtime is always brought back through its own preflight and
-    // startup orchestration after storage is confirmed. Native verifies host
-    // Git, Node.js, npm, and OpenClaw; Docker verifies the selected image and
+    // startup orchestration after storage is confirmed. Native verifies the
+    // Node.js/npm/OpenClaw contract; Docker verifies the selected image and
     // container. Neither path asks the user to manually start Gateway.
     const canResumeNativeRuntime = installMode === "native"
       && openclawStatus?.installed
@@ -1820,6 +1824,7 @@ export function useSetupFlow(
     wizardError,
     wizardRecoveryRequired,
     needsOnboarding,
+    gatewayReadyContinuation,
     repairing,
     brokenPlugins,
     forceStorageSelection,

@@ -76,11 +76,15 @@ test('bug 03 dependency versions remain visible after installation', () => {
 });
 
 test('BUG-INSTALL-12 Windows installs Git only after npm reports a missing Git process', () => {
+  const nativeSteps = setupFlow.slice(
+    setupFlow.indexOf('const INITIAL_NATIVE_STEPS'),
+    setupFlow.indexOf('const INITIAL_DOCKER_STEPS'),
+  );
   assert.match(setupFlow, /function isMissingGitDependencyError/);
-  assert.match(setupFlow, /if \(isWindows\) \{[\s\S]*?"git",[\s\S]*?"skipped"/);
+  assert.doesNotMatch(nativeSteps, /id: "git"/);
   assert.match(
     setupFlow,
-    /await installSelectedOpenclaw\(\)[\s\S]*isMissingGitDependencyError\(error\)[\s\S]*runDependencyInstall\(runId, "git", installGit\)[\s\S]*await installSelectedOpenclaw\(\)/,
+    /await installSelectedOpenclaw\(\)[\s\S]*isMissingGitDependencyError\(error\)[\s\S]*ensureStepBefore\([\s\S]*id: "git"[\s\S]*runDependencyInstall\(runId, "git", installGit\)[\s\S]*await installSelectedOpenclaw\(\)/,
   );
 });
 

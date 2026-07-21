@@ -2,6 +2,7 @@
 name = "junqi-desktop"
 version = "1.2.33"
 edition = "2021"
+authors = ["浚启智境科技有限公司"]
 
 [lib]
 name = "junqi_desktop_lib"

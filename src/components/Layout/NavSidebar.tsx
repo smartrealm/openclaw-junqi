@@ -228,36 +228,23 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
             : 'border-transparent text-aegis-text-secondary hover:bg-aegis-hover/35',
         )}
         >
-        <span
-          className={clsx(
-            'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors',
-            isWorking
-              ? 'bg-aegis-success/12 text-aegis-success'
-              : hasPendingCompletion
-                ? 'bg-aegis-primary/12 text-aegis-primary'
-                : isActive
-                  ? 'bg-aegis-primary/10 text-aegis-primary'
-                  : 'bg-aegis-overlay/[0.05] text-aegis-text-dim',
-          )}
-          title={isWorking
-            ? t('chat.sessionWorking', 'Working…')
-            : hasPendingCompletion
-              ? t('chat.sessionCompleted', 'Reply ready')
-              : undefined}
-          aria-label={isWorking
-            ? t('chat.sessionWorking', 'Working…')
-            : hasPendingCompletion
-              ? t('chat.sessionCompleted', 'Reply ready')
-              : undefined}
-        >
-          {isWorking
-            ? <Activity size={15} className="animate-pulse" aria-hidden="true" />
-            : hasPendingCompletion
-              ? <CheckCircle2 size={15} aria-hidden="true" />
-              : <MessageSquare size={14} aria-hidden="true" />}
-        </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+              {isWorking ? (
+                <LoaderCircle
+                  size={13}
+                  className="animate-spin text-aegis-primary"
+                  aria-label={t('chat.sessionWorking', 'Working…')}
+                />
+              ) : hasPendingCompletion ? (
+                <CheckCircle2
+                  size={13}
+                  className="text-aegis-success"
+                  aria-label={t('chat.sessionCompleted', 'Reply ready')}
+                />
+              ) : null}
+            </span>
             <span className={clsx(
               'min-w-0 flex-1 truncate text-[13px] font-semibold leading-[18px] tracking-normal',
               isActive ? 'text-aegis-text' : 'text-aegis-text-secondary',

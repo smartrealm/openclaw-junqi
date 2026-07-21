@@ -1,6 +1,5 @@
 export type SetupProgressPhase =
   | "detecting"
-  | "git"
   | "node"
   | "openclaw"
   | "gatewayPrepare"
@@ -14,8 +13,7 @@ type PhaseRange = Readonly<{ start: number; end: number }>;
 
 export const SETUP_PROGRESS_RANGES: Readonly<Record<SetupProgressPhase, PhaseRange>> = {
   detecting: { start: 0, end: 5 },
-  git: { start: 31, end: 38 },
-  node: { start: 39, end: 52 },
+  node: { start: 31, end: 52 },
   openclaw: { start: 53, end: 73 },
   gatewayPrepare: { start: 74, end: 79 },
   awaitingGatewayStart: { start: 80, end: 80 },
@@ -41,7 +39,9 @@ export function advanceSetupProgress(
 
 export function phaseForSetupEvent(step: string): SetupProgressPhase | null {
   switch (step) {
-    case "git": return "git";
+    // Git is not an OpenClaw npm prerequisite. If a future package explicitly
+    // invokes it, the on-demand install remains part of the OpenClaw phase.
+    case "git": return "openclaw";
     case "node": return "node";
     case "openclaw": return "openclaw";
     case "gateway": return "gatewayPrepare";

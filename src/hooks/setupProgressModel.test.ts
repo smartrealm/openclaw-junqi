@@ -39,6 +39,7 @@ test("global setup progress cannot move backwards", () => {
 });
 
 test("backend steps resolve through one phase registry", () => {
+  assert.equal(phaseForSetupEvent("git"), "openclaw");
   assert.equal(phaseForSetupEvent("node"), "node");
   assert.equal(phaseForSetupEvent("gateway"), "gatewayPrepare");
   assert.equal(phaseForSetupEvent("unknown"), null);

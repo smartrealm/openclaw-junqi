@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Trash2, ArrowRight, AlertCircle, CalendarDays } from 'lucide-react';
+import { X, Trash2, ArrowRight, AlertCircle, CalendarDays, Briefcase, GraduationCap, HeartPulse, House, Tag, Users, type LucideIcon } from 'lucide-react';
 import { useCalendarStore } from '@/stores/calendarStore';
 import { toDateStr } from './calendarUtils';
 import { ALL_CATEGORIES, ALL_CHANNELS, REMINDER_PRESETS } from './calendarTypes';
@@ -38,6 +38,15 @@ const RECURRENCE_KEYS: Record<string, string> = {
   weekly: 'calendar.recurrence.weekly',
   monthly: 'calendar.recurrence.monthly',
   yearly: 'calendar.recurrence.yearly',
+};
+
+const CATEGORY_ICONS: Record<EventCategory, LucideIcon> = {
+  work: Briefcase,
+  personal: House,
+  health: HeartPulse,
+  social: Users,
+  education: GraduationCap,
+  other: Tag,
 };
 
 export function EventModal({ onClose, initialDate, editEvent }: EventModalProps) {
@@ -174,11 +183,28 @@ export function EventModal({ onClose, initialDate, editEvent }: EventModalProps)
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="field-input" />
           </Field>
           <Field label={t('calendar.field.category')}>
-            <select value={category} onChange={(e) => setCategory(e.target.value as EventCategory)} className="field-input">
-              {ALL_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{t(`calendar.categoryIcon.${cat}`)} {t(`calendar.category.${cat}`)}</option>
-              ))}
-            </select>
+            <div className="grid grid-cols-3 gap-1" role="group" aria-label={t('calendar.field.category')}>
+              {ALL_CATEGORIES.map((cat) => {
+                const CategoryIcon = CATEGORY_ICONS[cat];
+                const label = t(`calendar.category.${cat}`);
+                const selected = category === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setCategory(cat)}
+                    title={label}
+                    aria-pressed={selected}
+                    className={selected
+                      ? 'inline-flex min-w-0 items-center justify-center gap-1 rounded-md border border-aegis-primary/35 bg-aegis-primary/10 px-1.5 py-2 text-[10px] font-medium text-aegis-primary'
+                      : 'inline-flex min-w-0 items-center justify-center gap-1 rounded-md border border-aegis-border bg-aegis-elevated px-1.5 py-2 text-[10px] text-aegis-text-muted transition-colors hover:border-aegis-border-hover hover:text-aegis-text'}
+                  >
+                    <CategoryIcon size={12} className="shrink-0" aria-hidden="true" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </Field>
         </div>
 

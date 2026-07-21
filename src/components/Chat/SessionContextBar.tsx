@@ -11,9 +11,7 @@ import { exportChatMarkdown } from '@/utils/exportChat';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { setSessionModelPref } from '@/utils/sessionModelPrefs';
 import { debugError } from '@/utils/debugLog';
-import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
 import { useSkillsStore } from '@/stores/skillsStore';
-import { sessionExecutionState } from '@/utils/sessionPresentation';
 
 const THINKING_LEVELS = [
   { id: 'auto', label: 'Auto' },
@@ -265,7 +263,7 @@ function SessionThinkingPicker({ currentThinking }: { currentThinking: string | 
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession, sessions, typingBySession } = useChatStore();
+  const { tokenUsage, currentModel, currentThinking, availableModels, renderBlocks, activeSessionKey, messagesPerSession } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
   const skills = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
@@ -280,26 +278,6 @@ export function SessionContextBar() {
   const agent = agents.find((a) => a.id === agentId);
   const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent', 'Main Agent'));
   const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
-  const activeSession = sessions.find((session) => session.key === activeSessionKey);
-  const executionState = typingBySession[activeSessionKey]
-    ? 'running'
-    : activeSession
-      ? sessionExecutionState(activeSession)
-      : 'unknown';
-  const lifecycle: LifecycleState = executionState === 'running'
-    ? 'running'
-    : executionState === 'failed'
-      ? 'failed'
-      : executionState === 'done'
-        ? 'ended'
-        : 'idle';
-  const lifecycleLabel = executionState === 'running'
-    ? t('lifecycle.running', '运行中')
-    : executionState === 'failed'
-      ? t('lifecycle.failed', '失败')
-      : executionState === 'done'
-        ? t('lifecycle.ended', '已完成')
-        : t('lifecycle.idle', '空闲');
   const enabledSkillCount = Object.values(skills).filter((skill) => skill.enabled !== false).length;
 
   useEffect(() => {
@@ -319,10 +297,6 @@ export function SessionContextBar() {
         {agentDisplayName}
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />
-
-      <span className="hidden items-center gap-1.5 xl:inline-flex">
-        <StatusBadge state={lifecycle} label size={7} labelText={lifecycleLabel} />
-      </span>
 
       <SessionModelPicker currentModel={currentModel} />
       {hasProviders && (

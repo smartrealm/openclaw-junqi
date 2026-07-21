@@ -923,7 +923,7 @@ export class ChatHandler {
         this.conn.callbacks?.onStreamEnd(
           sessionKey || 'agent:main:main',
           mId,
-          `⚠️ ${errorText}`,
+          errorText,
           undefined,
           { state: 'error', runId: runId || null },
         );
@@ -947,7 +947,7 @@ export class ChatHandler {
         this.conn.callbacks?.onStreamEnd(
           sessionKey || 'agent:main:main',
           mId,
-          cleaned || `⏹️ ${i18n.t('chat.stopped', 'Stopped')}`,
+          cleaned || i18n.t('chat.stopped', 'Stopped'),
           undefined,
           { state: 'aborted', runId: runId || null },
         );

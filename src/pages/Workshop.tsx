@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { timeAgo as centralTimeAgo } from '@/utils/format';
 import {
-  Plus, X, Search, Filter, Activity, Trash2,
+  Plus, X, Search, Filter, Activity, Trash2, ArrowLeft, ArrowRight,
 } from 'lucide-react';
 import {
   SoccerBall, Cube, MagnifyingGlass, Lightbulb,
@@ -305,28 +305,33 @@ function TaskCard({ task, onMove, onDelete, onProgress }: {
             {task.status !== 'queue' && (
               <button
                 onClick={() => onMove(task.id, 'queue')}
-                className="text-[10px] px-2 py-1 rounded-md transition-colors"
+                className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md transition-colors"
                 style={{ background: 'rgb(var(--aegis-overlay) / 0.04)', color: 'rgb(var(--aegis-text-dim))' }}
               >
-                ← {t('workshop.queue', 'Queue')}
+                <ArrowLeft size={11} aria-hidden="true" />
+                {t('workshop.queue', 'Queue')}
               </button>
             )}
             {task.status !== 'inProgress' && (
               <button
                 onClick={() => onMove(task.id, 'inProgress')}
-                className="text-[10px] px-2 py-1 rounded-md transition-colors"
+                className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md transition-colors"
                 style={{ background: themeAlpha('accent', 0.08), color: themeHex('accent') }}
               >
-                {task.status === 'queue' ? '→' : '←'} {t('workshop.inProgress', 'In Progress')}
+                {task.status === 'queue'
+                  ? <ArrowRight size={11} aria-hidden="true" />
+                  : <ArrowLeft size={11} aria-hidden="true" />}
+                {t('workshop.inProgress', 'In Progress')}
               </button>
             )}
             {task.status !== 'done' && (
               <button
                 onClick={() => onMove(task.id, 'done')}
-                className="text-[10px] px-2 py-1 rounded-md transition-colors"
+                className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md transition-colors"
                 style={{ background: themeAlpha('success', 0.08), color: themeHex('success') }}
               >
-                ✓ {t('workshop.done', 'Done')}
+                <StatusIcon status="done" size={11} />
+                {t('workshop.done', 'Done')}
               </button>
             )}
             <button
@@ -380,9 +385,10 @@ function ActivityTimeline({ activities }: { activities: ActivityEntry[] }) {
         );
       case 'completed':
         return (
-          <>
-            <strong>{a.taskTitle}</strong> {t('workshop.activity.completed', 'completed')} ✓
-          </>
+          <span className="inline-flex items-center gap-1">
+            <strong>{a.taskTitle}</strong> {t('workshop.activity.completed', 'completed')}
+            <StatusIcon status="done" size={11} />
+          </span>
         );
       case 'progress':
         return (

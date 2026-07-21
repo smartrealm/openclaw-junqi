@@ -1725,7 +1725,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
     let total_regs = sources.len();
     let registry_order = sources
         .iter()
-        .map(npm_registry::NpmPackageSource::label)
+        .map(npm_registry::NpmPackageSource::install_log_label)
         .collect::<Vec<_>>()
         .join(" -> ");
     let cache_directory = paths::configured_npm_cache_dir()
@@ -1761,9 +1761,18 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
         app,
         step,
         &format!(
-            "npm source order: {}; OpenClaw target = {}",
+            "npm registry order for this installation: {}; OpenClaw target = {}",
             registry_order,
             target.version(),
+        ),
+        prog_start,
+    );
+    emit(
+        app,
+        step,
+        &format!(
+            "npm cache for this installation: {}; registry selection is transaction-scoped and does not overwrite the user's npm configuration",
+            cache_directory,
         ),
         prog_start,
     );
@@ -1800,7 +1809,7 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                 error
             )
         })?;
-        let reg_label = source.label();
+        let reg_label = source.install_log_label();
         let attempt_started = std::time::Instant::now();
         emit(
             app,
@@ -2628,7 +2637,7 @@ async fn wait_for_node_runtime_settle(
         }
     }
 
-    Err(WindowsInstallerFailure::retryable(format!(
+    Err(WindowsInstallerFailure::runtime_unavailable(format!(
         "Node.js runtime did not become usable after the installer completed: {}",
         last_error.unwrap_or_else(|| "the installed runtime was not visible".into())
     )))
@@ -2685,7 +2694,7 @@ async fn wait_for_git_runtime_settle(
         }
     }
 
-    Err(WindowsInstallerFailure::retryable(format!(
+    Err(WindowsInstallerFailure::runtime_unavailable(format!(
         "Git runtime did not become usable after the installer completed: {}",
         last_error.unwrap_or_else(|| "git.exe was not visible on the refreshed PATH".into())
     )))
@@ -3028,9 +3037,17 @@ async fn install_windows_system_node(
         match install_windows_system_node_from_mirrors(&app, &requirement, budget, operation).await
         {
             Ok(installed) => return Ok(installed),
-            Err(error) if error.permits_fallback() => error.into_message(),
+            Err(error) if error.permits_package_manager_fallback() => error.into_message(),
             Err(error) => return Err(error.into_message()),
         };
+    emit(
+        &app,
+        "node",
+        &format!(
+            "Verified Node.js installer was not started; package-manager fallback is allowed: {mirror_error}"
+        ),
+        0.60,
+    );
     emit_keyed(
         &app,
         "node",
@@ -3041,8 +3058,7 @@ async fn install_windows_system_node(
     operation.ensure_active()?;
     match install_windows_system_node_with_winget(&app, &requirement, budget, operation).await {
         Ok(installed) => Ok(installed),
-        Err(error @ WindowsInstallerFailure::Cancelled(_))
-        | Err(error @ WindowsInstallerFailure::CleanupIncomplete(_)) => Err(error.into_message()),
+        Err(error) if error.is_interrupted() => Err(error.into_message()),
         Err(error) => Err(format!(
             "Node.js installer from configured distribution sources failed: {mirror_error}\nWindows Package Manager fallback failed: {}",
             error.into_message()
@@ -3185,7 +3201,7 @@ async fn install_windows_system_node_from_mirrors(
         .map_err(WindowsInstallerFailure::cancelled)?;
     let platform = ManagedNodePlatform::current()?;
     let artifact = platform.installer_distribution_artifact().ok_or_else(|| {
-        WindowsInstallerFailure::retryable(
+        WindowsInstallerFailure::source_unavailable(
             "The current platform does not publish a Node.js MSI installer",
         )
     })?;
@@ -3194,7 +3210,7 @@ async fn install_windows_system_node_from_mirrors(
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
     let filename = platform.installer_filename(&version).ok_or_else(|| {
-        WindowsInstallerFailure::retryable(
+        WindowsInstallerFailure::source_unavailable(
             "The current platform does not publish a Node.js MSI installer",
         )
     })?;
@@ -3204,7 +3220,7 @@ async fn install_windows_system_node_from_mirrors(
         .map_err(WindowsInstallerFailure::cancelled)?;
     let sources = node_installer_sources(platform, &version);
     if sources.is_empty() {
-        return Err(WindowsInstallerFailure::retryable(
+        return Err(WindowsInstallerFailure::source_unavailable(
             "No domestic Node.js MSI source is available for this platform",
         ));
     }
@@ -3240,7 +3256,7 @@ async fn install_windows_system_node_from_mirrors(
     .map_err(dependency_install_windows_failure)?;
 
     let msiexec = platform_path("msiexec.exe", "msiexec").ok_or_else(|| {
-        WindowsInstallerFailure::retryable("Windows Installer (msiexec) is unavailable")
+        WindowsInstallerFailure::source_unavailable("Windows Installer (msiexec) is unavailable")
     })?;
     let installer_log = temp_dir.join("node-msi.log");
     let args = vec![
@@ -3275,19 +3291,15 @@ async fn install_windows_system_node_from_mirrors(
             &format!("msiexec verbose log preserved at {}", path.display()),
         );
     }
-    if let Err(error) = installer_result {
-        let error = match preserved_log {
-            Some(path) => error.with_context(format!("installer log: {}", path.display())),
-            None => error,
-        };
-        return Err(error);
-    }
-    operation
-        .ensure_active()
-        .map_err(WindowsInstallerFailure::cancelled)?;
-    platform::refresh_process_path_from_registry();
-
-    let installed = wait_for_node_runtime_settle(app, requirement, budget, operation).await?;
+    let installer_result = installer_result.map_err(|error| match preserved_log {
+        Some(path) => error.with_context(format!("installer log: {}", path.display())),
+        None => error,
+    });
+    let installed =
+        reconcile_windows_installer_runtime(app, "node", "Node.js", installer_result, || {
+            wait_for_node_runtime_settle(app, requirement, budget, operation)
+        })
+        .await?;
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
@@ -3323,7 +3335,7 @@ async fn install_windows_system_node_with_winget(
     platform::refresh_process_path_from_registry();
     let installed = match wait_for_node_runtime_settle(app, requirement, budget, operation).await {
         Ok(runtime) => runtime,
-        Err(WindowsInstallerFailure::Retryable(_)) => {
+        Err(error) if error.permits_runtime_channel_fallback() => {
             emit_keyed(
                 &app,
                 "node",
@@ -3411,15 +3423,25 @@ fn windows_installer_command_line(args: &[std::ffi::OsString]) -> Result<Vec<u16
 #[cfg(any(windows, test))]
 #[derive(Debug)]
 enum WindowsInstallerFailure {
-    Retryable(String),
+    SourceUnavailable(String),
+    RuntimeUnavailable(String),
+    InstallerFailed(String),
     Cancelled(String),
     CleanupIncomplete(String),
 }
 
 #[cfg(any(windows, test))]
 impl WindowsInstallerFailure {
-    fn retryable(message: impl Into<String>) -> Self {
-        Self::Retryable(message.into())
+    fn source_unavailable(message: impl Into<String>) -> Self {
+        Self::SourceUnavailable(message.into())
+    }
+
+    fn runtime_unavailable(message: impl Into<String>) -> Self {
+        Self::RuntimeUnavailable(message.into())
+    }
+
+    fn installer_failed(message: impl Into<String>) -> Self {
+        Self::InstallerFailed(message.into())
     }
 
     fn cancelled(message: impl Into<String>) -> Self {
@@ -3434,7 +3456,15 @@ impl WindowsInstallerFailure {
     fn with_context(self, context: impl Into<String>) -> Self {
         let context = context.into();
         match self {
-            Self::Retryable(message) => Self::Retryable(format!("{message}; {context}")),
+            Self::SourceUnavailable(message) => {
+                Self::SourceUnavailable(format!("{message}; {context}"))
+            }
+            Self::RuntimeUnavailable(message) => {
+                Self::RuntimeUnavailable(format!("{message}; {context}"))
+            }
+            Self::InstallerFailed(message) => {
+                Self::InstallerFailed(format!("{message}; {context}"))
+            }
             Self::Cancelled(message) => Self::Cancelled(format!("{message}; {context}")),
             Self::CleanupIncomplete(message) => {
                 Self::CleanupIncomplete(format!("{message}; {context}"))
@@ -3442,14 +3472,39 @@ impl WindowsInstallerFailure {
         }
     }
 
-    fn permits_fallback(&self) -> bool {
-        matches!(self, Self::Retryable(_))
+    fn permits_package_manager_fallback(&self) -> bool {
+        matches!(self, Self::SourceUnavailable(_))
+    }
+
+    fn permits_runtime_channel_fallback(&self) -> bool {
+        matches!(self, Self::RuntimeUnavailable(_))
+    }
+
+    fn requires_runtime_recheck(&self) -> bool {
+        matches!(self, Self::InstallerFailed(_))
+    }
+
+    #[cfg(windows)]
+    fn is_interrupted(&self) -> bool {
+        matches!(self, Self::Cancelled(_) | Self::CleanupIncomplete(_))
+    }
+
+    fn message(&self) -> &str {
+        match self {
+            Self::SourceUnavailable(message)
+            | Self::RuntimeUnavailable(message)
+            | Self::InstallerFailed(message)
+            | Self::Cancelled(message)
+            | Self::CleanupIncomplete(message) => message,
+        }
     }
 
     #[cfg(windows)]
     fn into_message(self) -> String {
         match self {
-            Self::Retryable(message)
+            Self::SourceUnavailable(message)
+            | Self::RuntimeUnavailable(message)
+            | Self::InstallerFailed(message)
             | Self::Cancelled(message)
             | Self::CleanupIncomplete(message) => message,
         }
@@ -3458,12 +3513,12 @@ impl WindowsInstallerFailure {
     #[cfg(windows)]
     fn from_wait_error(operation: &str, error: ControlledProcessWaitError) -> Self {
         match error {
-            ControlledProcessWaitError::Monitoring(message) => Self::retryable(message),
+            ControlledProcessWaitError::Monitoring(message) => Self::installer_failed(message),
             ControlledProcessWaitError::Cancelled => Self::cancelled(format!(
                 "{operation} was cancelled after JunQi stopped its process tree"
             )),
             ControlledProcessWaitError::TimedOut => {
-                Self::retryable(format!("{operation} timed out after its allotted wait"))
+                Self::installer_failed(format!("{operation} timed out after its allotted wait"))
             }
             ControlledProcessWaitError::CleanupIncomplete(message) => Self::cleanup_incomplete(
                 format!(
@@ -3476,11 +3531,85 @@ impl WindowsInstallerFailure {
     #[cfg(windows)]
     fn from_output_failure(error: ProcessOutputFailure) -> Self {
         match error {
-            ProcessOutputFailure::Read(message) => Self::retryable(message),
+            ProcessOutputFailure::Read(message) => Self::installer_failed(message),
             ProcessOutputFailure::DidNotClose(message) => Self::cleanup_incomplete(format!(
                 "{message}. A fallback installer will not be started because a descendant process may still be running."
             )),
         }
+    }
+}
+
+#[cfg(any(windows, test))]
+fn windows_installer_exit_succeeded(exit_code: u32) -> bool {
+    // ERROR_SUCCESS_REBOOT_INITIATED (1641) and
+    // ERROR_SUCCESS_REBOOT_REQUIRED (3010) are successful MSI outcomes.
+    matches!(exit_code, 0 | 1641 | 3010)
+}
+
+#[cfg(any(windows, test))]
+fn windows_installer_exit_failure(tool: &str, exit_code: u32) -> WindowsInstallerFailure {
+    let detail = match exit_code {
+        1603 => "Windows Installer reported a fatal installation error",
+        1618 => "another Windows Installer transaction is already running",
+        1638 => "another version of this product is already installed",
+        _ => "the elevated installer reported a non-success result",
+    };
+    WindowsInstallerFailure::installer_failed(format!(
+        "{tool} installer exited with code {exit_code}: {detail}"
+    ))
+}
+
+/// Reconcile a completed elevated installer with the runtime contract it was
+/// supposed to provide. Once an installer process has started, its failure is
+/// never treated like a transport failure: Windows may publish PATH/registry
+/// state after the parent exits, and starting winget immediately can race the
+/// same MSI or display a second UAC prompt.
+#[cfg(windows)]
+async fn reconcile_windows_installer_runtime<T, Verify, VerifyFuture>(
+    app: &tauri::AppHandle,
+    step: &str,
+    tool: &str,
+    installer_result: Result<(), WindowsInstallerFailure>,
+    verify: Verify,
+) -> Result<T, WindowsInstallerFailure>
+where
+    Verify: FnOnce() -> VerifyFuture,
+    VerifyFuture: std::future::Future<Output = Result<T, WindowsInstallerFailure>>,
+{
+    match installer_result {
+        Ok(()) => verify().await,
+        Err(error) if error.requires_runtime_recheck() => {
+            emit(
+                app,
+                step,
+                &format!(
+                    "{tool} installer result requires runtime verification before any fallback: {}",
+                    error.message()
+                ),
+                0.93,
+            );
+            match verify().await {
+                Ok(runtime) => {
+                    emit(
+                        app,
+                        step,
+                        &format!(
+                            "{tool} runtime is ready despite the installer result; package-manager fallback was skipped"
+                        ),
+                        0.96,
+                    );
+                    Ok(runtime)
+                }
+                Err(verification_error) if verification_error.is_interrupted() => {
+                    Err(verification_error)
+                }
+                Err(verification_error) => Err(error.with_context(format!(
+                    "runtime verification failed: {}. JunQi did not start a second installer",
+                    verification_error.into_message()
+                ))),
+            }
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -3512,14 +3641,14 @@ fn dependency_install_windows_failure(error: String) -> WindowsInstallerFailure 
     if error == DEPENDENCY_INSTALL_CANCELLED_MESSAGE {
         WindowsInstallerFailure::cancelled(error)
     } else {
-        WindowsInstallerFailure::retryable(error)
+        WindowsInstallerFailure::source_unavailable(error)
     }
 }
 
 #[cfg(any(windows, test))]
 impl From<String> for WindowsInstallerFailure {
     fn from(message: String) -> Self {
-        Self::retryable(message)
+        Self::source_unavailable(message)
     }
 }
 
@@ -3661,13 +3790,13 @@ async fn launch_elevated_windows_process(
     tokio::task::spawn_blocking(move || {
         let mut executable_wide = executable.as_os_str().encode_wide().collect::<Vec<_>>();
         if executable_wide.contains(&0) {
-            return Err(WindowsInstallerFailure::retryable(format!(
+            return Err(WindowsInstallerFailure::source_unavailable(format!(
                 "Invalid {task_label} installer path"
             )));
         }
         executable_wide.push(0);
-        let parameters =
-            windows_installer_command_line(&args).map_err(WindowsInstallerFailure::retryable)?;
+        let parameters = windows_installer_command_line(&args)
+            .map_err(WindowsInstallerFailure::source_unavailable)?;
         let verb = "runas\0".encode_utf16().collect::<Vec<_>>();
         let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
         info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
@@ -3684,13 +3813,13 @@ async fn launch_elevated_windows_process(
                     "{task_label} installation was cancelled at the Windows administrator prompt"
                 ))
             } else {
-                WindowsInstallerFailure::retryable(format!(
+                WindowsInstallerFailure::source_unavailable(format!(
                     "Failed to start elevated {task_label} installer: {error}"
                 ))
             });
         }
         if info.hProcess.is_null() {
-            return Err(WindowsInstallerFailure::retryable(format!(
+            return Err(WindowsInstallerFailure::source_unavailable(format!(
                 "The elevated {task_label} installer did not return a process handle"
             )));
         }
@@ -3704,7 +3833,9 @@ async fn launch_elevated_windows_process(
     })
     .await
     .map_err(|error| {
-        WindowsInstallerFailure::retryable(format!("{label} installer task failed: {error}"))
+        WindowsInstallerFailure::source_unavailable(format!(
+            "{label} installer task failed: {error}"
+        ))
     })?
 }
 
@@ -3732,18 +3863,15 @@ async fn wait_for_elevated_windows_process(
             };
         }
         match process.poll_exit_code() {
-            Ok(Some(0 | 3010)) => return Ok(()),
+            Ok(Some(exit_code)) if windows_installer_exit_succeeded(exit_code) => return Ok(()),
             Ok(Some(exit_code)) => {
-                return Err(WindowsInstallerFailure::retryable(format!(
-                    "{} installer exited with code {exit_code}",
-                    progress.tool
-                )));
+                return Err(windows_installer_exit_failure(progress.tool, exit_code));
             }
             Ok(None) => {}
             Err(error) => {
                 let cleanup = process.terminate_and_reap().await;
                 return match cleanup {
-                    Ok(()) => Err(WindowsInstallerFailure::retryable(error)),
+                    Ok(()) => Err(WindowsInstallerFailure::installer_failed(error)),
                     Err(cleanup_error) => Err(WindowsInstallerFailure::cleanup_incomplete(
                         format!("{error}; {cleanup_error}"),
                     )),
@@ -3754,7 +3882,7 @@ async fn wait_for_elevated_windows_process(
         let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
             let cleanup = process.terminate_and_reap().await;
             return match cleanup {
-                Ok(()) => Err(WindowsInstallerFailure::retryable(format!(
+                Ok(()) => Err(WindowsInstallerFailure::installer_failed(format!(
                     "{} installer timed out after {} seconds",
                     progress.tool,
                     policy.timeout.as_secs()
@@ -3937,7 +4065,7 @@ async fn ensure_winget_package(
         .map_err(WindowsInstallerFailure::cancelled)?;
     let winget = platform::detect_path("winget");
     if winget.is_empty() {
-        return Err(WindowsInstallerFailure::retryable(
+        return Err(WindowsInstallerFailure::source_unavailable(
             "Windows Package Manager (winget) is unavailable. Install the dependency with its standard system installer or select an explicit portable runtime directory in JunQi.",
         ));
     }
@@ -3970,7 +4098,7 @@ async fn ensure_winget_package(
     if install.status.success() {
         return Ok(());
     }
-    Err(WindowsInstallerFailure::retryable(
+    Err(WindowsInstallerFailure::source_unavailable(
         if diagnostic.is_empty() {
             format!("winget could not install {package_id}")
         } else {
@@ -4020,7 +4148,7 @@ async fn run_winget_package_command(
         .kill_on_drop(true);
     platform::configure_background_command(&mut command);
     let mut child = command.spawn().map_err(|error| {
-        WindowsInstallerFailure::retryable(format!(
+        WindowsInstallerFailure::source_unavailable(format!(
             "Failed to run winget install for {package_id}: {error}"
         ))
     })?;
@@ -4384,9 +4512,17 @@ async fn install_windows_system_git(
     let mirror_error = match install_windows_system_git_from_mirrors(&app, budget, operation).await
     {
         Ok(installed) => return Ok(installed),
-        Err(error) if error.permits_fallback() => error.into_message(),
+        Err(error) if error.permits_package_manager_fallback() => error.into_message(),
         Err(error) => return Err(error.into_message()),
     };
+    emit(
+        &app,
+        "git",
+        &format!(
+            "Verified Git installer was not started; package-manager fallback is allowed: {mirror_error}"
+        ),
+        0.60,
+    );
     emit_keyed(
         &app,
         "git",
@@ -4397,8 +4533,7 @@ async fn install_windows_system_git(
     operation.ensure_active()?;
     match ensure_winget_package(&app, "git", "Git", WINGET_GIT_PACKAGE, budget, operation).await {
         Ok(()) => {}
-        Err(error @ WindowsInstallerFailure::Cancelled(_))
-        | Err(error @ WindowsInstallerFailure::CleanupIncomplete(_)) => {
+        Err(error) if error.is_interrupted() => {
             return Err(error.into_message());
         }
         Err(error) => {
@@ -4505,22 +4640,20 @@ async fn install_windows_system_git_from_mirrors(
             &format!("Inno Setup log preserved at {}", path.display()),
         );
     }
-    if let Err(error) = installer_result {
-        let error = match preserved_log {
-            Some(path) => error.with_context(format!("installer log: {}", path.display())),
-            None => error,
-        };
-        return Err(error);
-    }
-    operation
-        .ensure_active()
-        .map_err(WindowsInstallerFailure::cancelled)?;
-    let installed = wait_for_git_runtime_settle(app, budget, operation).await?;
+    let installer_result = installer_result.map_err(|error| match preserved_log {
+        Some(path) => error.with_context(format!("installer log: {}", path.display())),
+        None => error,
+    });
+    let installed =
+        reconcile_windows_installer_runtime(app, "git", "Git", installer_result, || {
+            wait_for_git_runtime_settle(app, budget, operation)
+        })
+        .await?;
     operation
         .ensure_active()
         .map_err(WindowsInstallerFailure::cancelled)?;
     if !installed.available {
-        return Err(WindowsInstallerFailure::retryable(
+        return Err(WindowsInstallerFailure::runtime_unavailable(
             "The Git installer completed but git.exe was not detected on the system PATH",
         ));
     }
@@ -6260,17 +6393,23 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_process_cleanup_blocks_installer_fallback() {
-        let retryable = WindowsInstallerFailure::retryable("installer exited");
-        assert!(retryable.permits_fallback());
-        assert!(matches!(
-            retryable,
-            WindowsInstallerFailure::Retryable(message) if message == "installer exited"
-        ));
+    fn only_prelaunch_source_failures_allow_package_manager_fallback() {
+        let source_unavailable =
+            WindowsInstallerFailure::source_unavailable("download source unavailable");
+        assert!(source_unavailable.permits_package_manager_fallback());
+
+        let installer_failed = windows_installer_exit_failure("Node.js", 1603);
+        assert!(!installer_failed.permits_package_manager_fallback());
+        assert!(installer_failed.requires_runtime_recheck());
+
+        let runtime_unavailable =
+            WindowsInstallerFailure::runtime_unavailable("runtime not visible");
+        assert!(!runtime_unavailable.permits_package_manager_fallback());
+        assert!(runtime_unavailable.permits_runtime_channel_fallback());
 
         let cleanup_incomplete =
             WindowsInstallerFailure::cleanup_incomplete("tree termination was not confirmed");
-        assert!(!cleanup_incomplete.permits_fallback());
+        assert!(!cleanup_incomplete.permits_package_manager_fallback());
         assert!(matches!(
             cleanup_incomplete,
             WindowsInstallerFailure::CleanupIncomplete(message)
@@ -6278,12 +6417,29 @@ mod tests {
         ));
 
         let cancelled = WindowsInstallerFailure::cancelled("administrator prompt declined");
-        assert!(!cancelled.permits_fallback());
+        assert!(!cancelled.permits_package_manager_fallback());
         assert!(matches!(
             cancelled,
             WindowsInstallerFailure::Cancelled(message)
                 if message == "administrator prompt declined"
         ));
+    }
+
+    #[test]
+    fn windows_installer_success_codes_include_reboot_outcomes() {
+        assert!(windows_installer_exit_succeeded(0));
+        assert!(windows_installer_exit_succeeded(1641));
+        assert!(windows_installer_exit_succeeded(3010));
+        assert!(!windows_installer_exit_succeeded(1603));
+        assert!(!windows_installer_exit_succeeded(1618));
+    }
+
+    #[test]
+    fn windows_installer_busy_error_retains_actionable_exit_code() {
+        let error = windows_installer_exit_failure("Node.js", 1618);
+        assert!(error.message().contains("1618"));
+        assert!(error.message().contains("already running"));
+        assert!(error.requires_runtime_recheck());
     }
 
     #[test]

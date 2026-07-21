@@ -888,7 +888,7 @@ export function CronMonitorPage() {
                             height: `${h}%`,
                             background: isOk ? (colorMap[selectedJob.id] || tc.primary) : tc.danger,
                             animation: `mc-bar-grow 0.4s ease-out ${i * 0.03}s backwards`,
-                          }} title={`${formatDuration(run.durationMs)} ${isOk ? '✓' : '✗'}`} />
+                          }} title={`${formatDuration(run.durationMs)} ${isOk ? t('cron.completed', 'Completed') : t('cron.failed', 'Failed')}`} />
                         );
                       })}
                     </div>

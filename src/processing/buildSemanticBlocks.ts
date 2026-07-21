@@ -330,6 +330,7 @@ export function projectSemanticBlocksToRenderBlocks(blocks: SemanticBlock[]): Re
           timestamp: block.timestamp,
           isStreaming: block.isStreaming,
           role: block.role,
+          responseState: block.responseState,
           markdown: block.markdown,
           model: block.model ?? null,
           artifacts: block.artifacts,

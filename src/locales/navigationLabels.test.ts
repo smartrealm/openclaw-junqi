@@ -38,7 +38,7 @@ test('agent hub view labels remain localized in Chinese', () => {
   assert.equal(zh.agents.subtitle, '所有智能体及活跃工作者一览');
   assert.equal(zh.agents.workers, '活跃工作者');
   assert.equal(zh.agentHub.spawnLink, '派生关系');
-  assert.equal(zh.agentHubExtra.activityView, '⚡ 活动');
+  assert.equal(zh.agentHubExtra.activityView, '活动');
   assert.equal(zh.agentHubExtra.workersCount, '工作者');
   assert.equal(zh.agentSettings.workspace, '工作区');
   assert.equal(zh.agentSettings.lastActivity, '最后活动');
