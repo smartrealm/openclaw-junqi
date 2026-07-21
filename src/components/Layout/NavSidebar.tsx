@@ -248,7 +248,12 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
               {isWorking ? (
                 <LoaderCircle
                   size={13}
-                  className="animate-spin text-aegis-primary"
+                  className={clsx(
+                    'animate-spin',
+                    isActive
+                      ? 'text-aegis-text'
+                      : 'text-aegis-primary group-hover/session:text-aegis-text group-focus-within/session:text-aegis-text',
+                  )}
                   aria-label={t('chat.sessionWorking', 'Working…')}
                 />
               ) : hasPendingCompletion ? (
@@ -277,13 +282,13 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           </span>
         </span>
       </div>
-      <span className="pointer-events-none absolute end-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated p-0.5 opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100">
+      <span className="pointer-events-none absolute end-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated p-0.5 text-aegis-text-muted opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100">
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); startRename(); }}
           onDoubleClick={(e) => e.stopPropagation()}
-          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim transition-colors hover:bg-aegis-hover/55 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/45"
+          className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-aegis-hover/55 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/45"
           title={t('chat.renameSession', 'Rename session')}
           aria-label={t('chat.renameSession', 'Rename session')}
         >
@@ -298,7 +303,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive }: {
           className={clsx(
             'flex h-6 w-6 items-center justify-center rounded transition-colors focus-visible:outline-none',
             canDelete
-              ? 'text-aegis-text-dim hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-1 focus-visible:ring-red-400/45'
+              ? 'hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:ring-1 focus-visible:ring-aegis-danger/45'
               : 'cursor-not-allowed text-aegis-text-dim/30',
           )}
           title={canDelete
