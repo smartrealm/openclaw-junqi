@@ -11,6 +11,9 @@ const config = readFileSync(new URL('../src-tauri/src/commands/config.rs', impor
 const gatewayCredentials = readFileSync(new URL('../src-tauri/src/commands/gateway_credentials.rs', import.meta.url), 'utf8');
 const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8');
 const tauri = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
+const noUpdaterArtifactsProfile = JSON.parse(
+  readFileSync(new URL('../src-tauri/tauri.no-updater-artifacts.conf.json', import.meta.url), 'utf8'),
+);
 const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 
 test('Windows PATH refresh expands registry values and preserves process entries', () => {
@@ -96,7 +99,8 @@ test('Windows signing is isolated behind the unreachable trusted promotion path'
   assert.match(release, /WINDOWS_TIMESTAMP_URL/);
   assert.match(release, /signtool sign \/fd SHA256/);
   assert.match(release, /signtool verify \/pa \/all \/tw/);
-  assert.match(release, /createUpdaterArtifacts":false/);
+  assert.equal(noUpdaterArtifactsProfile.bundle?.createUpdaterArtifacts, false);
+  assert.match(release, /--config\s+src-tauri\/tauri\.no-updater-artifacts\.conf\.json/);
   assert.doesNotMatch(release, /tags:\s*\[/);
 });
 

@@ -23,6 +23,11 @@ const RELEASE_UPLOADER = path.join(REPOSITORY_ROOT, 'scripts/upload-github-relea
 const RELEASE_ASSET_CLEANUP = path.join(REPOSITORY_ROOT, 'scripts/cleanup-github-release-asset.mjs');
 const RUST_TOOLCHAIN = path.join(REPOSITORY_ROOT, 'rust-toolchain.toml');
 const WORKFLOW_DIRECTORY = path.join(REPOSITORY_ROOT, '.github/workflows');
+const NO_UPDATER_ARTIFACTS_PROFILE = path.join(
+  REPOSITORY_ROOT,
+  'src-tauri/tauri.no-updater-artifacts.conf.json',
+);
+const NO_UPDATER_ARTIFACTS_PROFILE_ARGUMENT = /--config\s+src-tauri\/tauri\.no-updater-artifacts\.conf\.json/;
 
 function countOccurrences(source, value) {
   return source.split(value).length - 1;
@@ -128,12 +133,15 @@ describe('collaboration release evidence topology', () => {
   });
 
   test('unsigned CI and candidate builds cannot emit updater artifacts', async () => {
+    const profile = JSON.parse(await readFile(NO_UPDATER_ARTIFACTS_PROFILE, 'utf8'));
+    assert.equal(profile.bundle?.createUpdaterArtifacts, false);
+
     for (const workflowFile of ['ci.yml', 'linux-self-hosted-release.yml', 'release.yml']) {
       const source = await readFile(path.join(WORKFLOW_DIRECTORY, workflowFile), 'utf8');
       const candidateBuilds = workflowRunBlocks(source)
         .filter((block) => /(?:pnpm\s+)?tauri(?:-action|\s+build)|Build unsigned candidate/.test(block));
       if (workflowFile !== 'release.yml') assert.ok(candidateBuilds.length > 0);
-      assert.match(source, /createUpdaterArtifacts"\s*:\s*false/);
+      assert.match(source, NO_UPDATER_ARTIFACTS_PROFILE_ARGUMENT);
     }
   });
 
@@ -300,7 +308,7 @@ describe('collaboration release evidence topology', () => {
     assert.doesNotMatch(releaseSource, /tags:\s*\[/, 'tag pushes must not load tag-owned workflow code');
     assert.match(sourcePolicy, /TRUSTED_PROMOTION_REQUIRED/);
     assert.doesNotMatch(sourcePolicy, /signingEnabled:\s*true/);
-    assert.match(releaseSource, /createUpdaterArtifacts"\s*:\s*false/);
+    assert.match(releaseSource, NO_UPDATER_ARTIFACTS_PROFILE_ARGUMENT);
     assert.match(releaseSource, /Build unsigned candidate/);
     assert.match(releaseSource, /Verify protected macOS signing inputs/);
     assert.match(releaseSource, /Build signed macOS Tauri release/);
