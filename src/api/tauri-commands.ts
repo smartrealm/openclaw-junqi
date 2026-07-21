@@ -129,6 +129,9 @@ export const openSetupDiagnosticsDirectory = async () => {
   await invoke<void>("open_folder", { path });
   return path;
 };
+export const exportSetupDiagnosticsBundle = (destination: string) => (
+  invoke<string>("export_setup_diagnostics_bundle", { destination })
+);
 export const applyTerminalIntegration = () => invoke<TerminalIntegrationStatus>("apply_terminal_integration");
 export const startGateway = (port?: number) => (
   port == null ? invoke<any>("start_gateway") : invoke<any>("start_gateway", { port })

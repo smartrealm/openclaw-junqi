@@ -11,8 +11,18 @@ fn emit_gateway_log(app: &AppHandle, message: impl AsRef<str>) {
         if line.is_empty() {
             continue;
         }
-        crate::commands::setup_progress::record_timeline_note("gateway", &line);
+        crate::commands::setup_diagnostics::record_timeline_note(app, "gateway", &line);
         let _ = app.emit("gateway-log", &line);
+    }
+}
+
+fn gateway_log_stream(source: crate::state::gateway_process::LogSource) -> &'static str {
+    match source {
+        crate::state::gateway_process::LogSource::ChildStdout
+        | crate::state::gateway_process::LogSource::DockerStdout => "stdout",
+        crate::state::gateway_process::LogSource::ChildStderr
+        | crate::state::gateway_process::LogSource::DockerStderr => "stderr",
+        crate::state::gateway_process::LogSource::Lifecycle => "lifecycle",
     }
 }
 
@@ -1550,13 +1560,32 @@ fn spawn_log_reader(
     app: AppHandle,
     reader: impl tokio::io::AsyncRead + Unpin + Send + 'static,
     source: crate::state::gateway_process::LogSource,
+    process: &'static str,
 ) {
     use crate::state::gateway_process::{push_log, LogLevel};
     use tokio::io::{AsyncBufReadExt, BufReader};
     tokio::spawn(async move {
         let state = app.state::<crate::state::GatewayProcess>();
         let mut lines = BufReader::new(reader).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
+        loop {
+            let line = match lines.next_line().await {
+                Ok(Some(line)) => line,
+                Ok(None) => break,
+                Err(error) => {
+                    emit_gateway_log(
+                        &app,
+                        format!("Gateway {process} log reader failed: {error}"),
+                    );
+                    break;
+                }
+            };
+            crate::commands::setup_diagnostics::record_process_output(
+                &app,
+                "gateway",
+                process,
+                gateway_log_stream(source),
+                &line,
+            );
             let line = crate::commands::diagnostic_output::sanitize_diagnostic_line(&line);
             if line.is_empty() {
                 continue;
@@ -1573,13 +1602,32 @@ fn spawn_restart_log_reader(
     app: AppHandle,
     reader: impl tokio::io::AsyncRead + Unpin + Send + 'static,
     source: crate::state::gateway_process::LogSource,
+    process: &'static str,
 ) {
     use crate::state::gateway_process::{push_log, LogLevel};
     use tokio::io::{AsyncBufReadExt, BufReader};
     tokio::spawn(async move {
         let state = app.state::<crate::state::GatewayProcess>();
         let mut lines = BufReader::new(reader).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
+        loop {
+            let line = match lines.next_line().await {
+                Ok(Some(line)) => line,
+                Ok(None) => break,
+                Err(error) => {
+                    emit_gateway_log(
+                        &app,
+                        format!("Gateway {process} log reader failed: {error}"),
+                    );
+                    break;
+                }
+            };
+            crate::commands::setup_diagnostics::record_process_output(
+                &app,
+                "gateway",
+                process,
+                gateway_log_stream(source),
+                &line,
+            );
             let line = crate::commands::diagnostic_output::sanitize_diagnostic_line(&line);
             if line.is_empty() {
                 continue;
@@ -1867,6 +1915,15 @@ pub async fn restart_gateway(
             return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
         }
     };
+    let restart_pid = child.id();
+    let restart_started = std::time::Instant::now();
+    crate::commands::setup_diagnostics::record_process_started(
+        &app,
+        "gateway",
+        "openclaw-gateway-restart",
+        restart_pid,
+        "openclaw gateway restart",
+    );
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -1876,6 +1933,7 @@ pub async fn restart_gateway(
             app.clone(),
             out,
             crate::state::gateway_process::LogSource::ChildStdout,
+            "openclaw-gateway-restart",
         );
     }
     if let Some(err) = stderr {
@@ -1883,6 +1941,7 @@ pub async fn restart_gateway(
             app.clone(),
             err,
             crate::state::gateway_process::LogSource::ChildStderr,
+            "openclaw-gateway-restart",
         );
     }
 
@@ -1902,6 +1961,14 @@ pub async fn restart_gateway(
             return start_managed_gateway_fallback(app, state.clone(), port, reason).await;
         }
     };
+    crate::commands::setup_diagnostics::record_process_finished(
+        &app,
+        "gateway",
+        "openclaw-gateway-restart",
+        restart_pid,
+        status.code().map(i64::from),
+        restart_started.elapsed(),
+    );
     if !status.success() {
         let msg = format!("openclaw gateway restart exited with {}", status);
         emit_restart_progress(&app, &msg);
@@ -2337,7 +2404,7 @@ pub(crate) async fn start_gateway_locked(
     state: State<'_, GatewayProcess>,
     port: Option<u16>,
 ) -> Result<GatewayStatus, String> {
-    crate::commands::setup_progress::reset_timeline_log("gateway");
+    crate::commands::setup_diagnostics::reset_timeline_log(&app, "gateway");
     if !matches!(
         paths::active_runtime_mode(),
         paths::OpenClawRuntimeMode::Native
@@ -2792,6 +2859,14 @@ pub(crate) async fn start_gateway_locked(
             format!("Failed to start gateway: {}", e)
         }
     })?;
+    let gateway_pid = child.id();
+    crate::commands::setup_diagnostics::record_process_started(
+        &app,
+        "gateway",
+        "openclaw-gateway",
+        gateway_pid,
+        "openclaw gateway run",
+    );
 
     // Take stdout/stderr before moving child into state, and stream them as events
     let stdout = child.stdout.take();
@@ -2802,6 +2877,7 @@ pub(crate) async fn start_gateway_locked(
             app.clone(),
             out,
             crate::state::gateway_process::LogSource::ChildStdout,
+            "openclaw-gateway",
         );
     }
     if let Some(err) = stderr {
@@ -2809,6 +2885,7 @@ pub(crate) async fn start_gateway_locked(
             app.clone(),
             err,
             crate::state::gateway_process::LogSource::ChildStderr,
+            "openclaw-gateway",
         );
     }
 
@@ -2855,6 +2932,14 @@ pub(crate) async fn start_gateway_locked(
                     startup_started_at_ms,
                 );
                 emit_gateway_log(&app, &msg);
+                crate::commands::setup_diagnostics::record_process_finished(
+                    &app,
+                    "gateway",
+                    "openclaw-gateway",
+                    gateway_pid,
+                    status.code().map(i64::from),
+                    startup_started_at.elapsed(),
+                );
                 return Err(msg);
             }
             Ok(None) => {}
@@ -2880,6 +2965,14 @@ pub(crate) async fn start_gateway_locked(
                 startup_started_at_ms,
             );
             emit_gateway_log(&app, &msg);
+            crate::commands::setup_diagnostics::record_process_finished(
+                &app,
+                "gateway",
+                "openclaw-gateway",
+                gateway_pid,
+                None,
+                startup_started_at.elapsed(),
+            );
             return Err(msg);
         }
 
@@ -2887,6 +2980,28 @@ pub(crate) async fn start_gateway_locked(
     }
 
     let pid = child.id();
+    crate::commands::setup_diagnostics::record_process_output(
+        &app,
+        "gateway",
+        "openclaw-gateway",
+        "lifecycle",
+        &format!(
+            "process.ready name=openclaw-gateway pid={} elapsed_ms={}",
+            pid.map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".into()),
+            startup_started_at.elapsed().as_millis()
+        ),
+    );
+    crate::commands::setup_diagnostics::record_timeline_note(
+        &app,
+        "gateway",
+        &format!(
+            "process.ready name=openclaw-gateway pid={} elapsed_ms={}",
+            pid.map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".into()),
+            startup_started_at.elapsed().as_millis()
+        ),
+    );
     {
         let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
         *child_lock = Some(child);

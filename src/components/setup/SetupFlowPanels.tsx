@@ -6,6 +6,7 @@ import {
   Circle,
   CircleDot,
   Copy,
+  Download,
   Eye,
   EyeOff,
   FolderOpen,
@@ -18,9 +19,14 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { MouseEventHandler, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { save } from "@tauri-apps/plugin-dialog";
 import type { TFunction } from "i18next";
 import clsx from "clsx";
-import { openSetupDiagnosticsDirectory, type OpenclawStatus } from "@/api/tauri-commands";
+import {
+  exportSetupDiagnosticsBundle,
+  openSetupDiagnosticsDirectory,
+  type OpenclawStatus,
+} from "@/api/tauri-commands";
 import { GatewayLifecyclePanel } from "@/components/settings/GatewayLifecyclePanel";
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
@@ -795,6 +801,8 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   const [copied, setCopied] = useState(false);
   const [openingDirectory, setOpeningDirectory] = useState(false);
   const [directoryError, setDirectoryError] = useState(false);
+  const [exportingBundle, setExportingBundle] = useState(false);
+  const [bundleExportState, setBundleExportState] = useState<"idle" | "success" | "error">("idle");
   const visibleLogs = logs.slice(-500);
 
   useEffect(() => {
@@ -825,6 +833,25 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
     }
   };
 
+  const exportDiagnosticsBundle = async () => {
+    setExportingBundle(true);
+    setBundleExportState("idle");
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const destination = await save({
+        defaultPath: `junqi-install-diagnostics-${timestamp}.zip`,
+        filters: [{ name: "ZIP", extensions: ["zip"] }],
+      });
+      if (!destination) return;
+      await exportSetupDiagnosticsBundle(destination);
+      setBundleExportState("success");
+    } catch {
+      setBundleExportState("error");
+    } finally {
+      setExportingBundle(false);
+    }
+  };
+
   return (
     <section className="h-[390px] overflow-hidden border-t border-aegis-border bg-aegis-bg/35 lg:border-l lg:border-t-0">
       <header className="flex h-12 items-center justify-between gap-3 border-b border-aegis-border px-4">
@@ -840,6 +867,27 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => { void exportDiagnosticsBundle(); }}
+            disabled={exportingBundle}
+            title={bundleExportState === "error"
+              ? t("setup.installPanel.exportLogsFailed", "无法导出安装诊断包")
+              : bundleExportState === "success"
+                ? t("setup.installPanel.exportLogsComplete", "安装诊断包已导出")
+                : t("setup.installPanel.exportLogs", "导出安装诊断包")}
+            aria-label={t("setup.installPanel.exportLogs", "导出安装诊断包")}
+            className={clsx(
+              "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-aegis-surface disabled:opacity-40",
+              bundleExportState === "error"
+                ? "text-red-300"
+                : bundleExportState === "success"
+                  ? "text-aegis-success"
+                  : "text-aegis-text-secondary",
+            )}
+          >
+            <Download size={13} />
+          </button>
           <button
             type="button"
             onClick={() => { void openDiagnosticsDirectory(); }}

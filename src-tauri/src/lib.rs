@@ -124,7 +124,8 @@ pub fn run() {
             commands::setup::install_openclaw,
             commands::setup::reinstall_openclaw,
             commands::setup::relocate_openclaw,
-            commands::setup_progress::get_setup_diagnostics_directory,
+            commands::setup_diagnostics::get_setup_diagnostics_directory,
+            commands::setup_diagnostics::export_setup_diagnostics_bundle,
             // Control UI (Console)
             commands::console::open_control_ui,
             commands::console::return_to_desktop,

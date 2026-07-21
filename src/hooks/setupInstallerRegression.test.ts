@@ -7,6 +7,7 @@ const setupFlowPanels = readFileSync(new URL('../components/setup/SetupFlowPanel
 const setupPage = readFileSync(new URL('../pages/SetupPage.tsx', import.meta.url), 'utf8');
 const storageGate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
 const setupCommands = readFileSync(new URL('../../src-tauri/src/commands/setup.rs', import.meta.url), 'utf8');
+const setupDiagnostics = readFileSync(new URL('../../src-tauri/src/commands/setup_diagnostics.rs', import.meta.url), 'utf8');
 const setupProgress = readFileSync(new URL('../../src-tauri/src/commands/setup_progress.rs', import.meta.url), 'utf8');
 const gatewayCommands = readFileSync(new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url), 'utf8');
 const systemCommands = readFileSync(new URL('../../src-tauri/src/commands/system.rs', import.meta.url), 'utf8');
@@ -20,15 +21,33 @@ const appStore = readFileSync(new URL('../stores/app-store.ts', import.meta.url)
 const tauriCommands = readFileSync(new URL('../api/tauri-commands.ts', import.meta.url), 'utf8');
 
 test('BUG-INSTALL-LOG-01 setup diagnostics retain the full install timeline', () => {
-  assert.match(setupProgress, /const SETUP_SESSION_LOG: &str = "setup-session\.log"/);
-  assert.match(setupProgress, /matches!\(step, "node" \| "npm" \| "git" \| "openclaw" \| "gateway"\)/);
-  assert.match(setupProgress, /pub fn get_setup_diagnostics_directory/);
-  assert.match(setupCommands, /reset_timeline_log\(step\)/);
+  assert.match(setupDiagnostics, /const SETUP_SESSION_LOG: &str = "setup-session\.log"/);
+  assert.match(setupDiagnostics, /const SETUP_RUNS_DIRECTORY: &str = "setup-runs"/);
+  assert.match(setupDiagnostics, /matches!\(step, "node" \| "npm" \| "git" \| "openclaw" \| "gateway"\)/);
+  assert.match(setupDiagnostics, /pub fn get_setup_diagnostics_directory/);
+  assert.match(setupCommands, /reset_timeline_log\(&app, step\)/);
   assert.match(appStore, /const SETUP_LOG_LIMIT = 2_000/);
   assert.match(setupFlowPanels, /const visibleLogs = logs\.slice\(-500\)/);
   assert.match(setupFlowPanels, /const text = logs[\s\S]*?\.map\(/);
   assert.match(setupFlowPanels, /openSetupDiagnosticsDirectory/);
   assert.match(tauriCommands, /get_setup_diagnostics_directory/);
+});
+
+test('BUG-INSTALL-LOG-06 through 11 preserve retries, raw process output, and exportable sessions', () => {
+  assert.match(setupDiagnostics, /const RETAINED_SETUP_RUNS: usize = 8/);
+  assert.match(setupDiagnostics, /dependency install attempt \{\} started/);
+  assert.doesNotMatch(setupDiagnostics, /SETUP_SESSION_LOG_MAX_BYTES|SETUP_SESSION_PREVIOUS_LOG/);
+  assert.match(setupDiagnostics, /pub fn record_process_output/);
+  assert.match(setupDiagnostics, /pub fn record_process_started/);
+  assert.match(setupDiagnostics, /pub fn record_process_finished/);
+  assert.match(setupDiagnostics, /pub fn export_setup_diagnostics_bundle/);
+  assert.match(setupProgress, /setup\.installPanel\.logWriteFailed/);
+  assert.match(setupCommands, /record_process_output\(&app_c, &step_c, &process_label, "stdout", &line\)/);
+  assert.match(setupCommands, /record_process_output\(&app_e, &step_e, &process_label, "stderr", &line\)/);
+  assert.match(setupCommands, /winget \{stream\} › \{display\}/);
+  assert.match(gatewayCommands, /record_process_output\([\s\S]*?"gateway"/);
+  assert.match(setupFlowPanels, /exportDiagnosticsBundle/);
+  assert.match(tauriCommands, /export_setup_diagnostics_bundle/);
 });
 
 test('BUG-INSTALL-LOG-02 download and npm diagnostics expose measurable bottlenecks', () => {
@@ -42,8 +61,8 @@ test('BUG-INSTALL-LOG-02 download and npm diagnostics expose measurable bottlene
 
 test('BUG-INSTALL-LOG-05 Gateway startup uses the shared persistent diagnostic timeline', () => {
   assert.match(gatewayCommands, /fn emit_gateway_log/);
-  assert.match(gatewayCommands, /record_timeline_note\("gateway", &line\)/);
-  assert.match(gatewayCommands, /reset_timeline_log\("gateway"\)/);
+  assert.match(gatewayCommands, /record_timeline_note\(app, "gateway", &line\)/);
+  assert.match(gatewayCommands, /reset_timeline_log\(&app, "gateway"\)/);
   assert.equal((gatewayCommands.match(/app\.emit\("gateway-log"/g) ?? []).length, 1);
 });
 
