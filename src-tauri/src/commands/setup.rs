@@ -21,7 +21,8 @@ use crate::commands::process_control::{
     terminate_windows_process_tree,
 };
 use crate::commands::setup_progress::{
-    emit, emit_keyed, emit_keyed_with_params, record_timeline_note, reset_timeline_log,
+    emit, emit_diagnostic, emit_keyed, emit_keyed_with_params, record_timeline_note,
+    reset_timeline_log,
 };
 use crate::paths;
 use crate::platform;
@@ -1335,22 +1336,33 @@ const NPM_SECRET_MARKERS: &[&str] = &[
     "apikey",
 ];
 
+fn npm_log_line_is_noisy(line: &str) -> bool {
+    let lowercase = line.trim().to_ascii_lowercase();
+    NPM_NOISY_LOG_PREFIXES
+        .iter()
+        .any(|prefix| lowercase.starts_with(prefix))
+}
+
 /// Keep npm's verbose stream available for inactivity detection without
-/// forwarding internal chatter or credentials into the setup console.
+/// forwarding internal chatter or credentials into the primary setup console.
 fn npm_log_line_for_display(line: &str) -> Option<String> {
+    if npm_log_line_is_noisy(line) {
+        return None;
+    }
+    npm_log_line_redacted(line)
+}
+
+/// Redact credentials/registry URLs from an npm log line without dropping it
+/// for noise. Used for the raw diagnostic console, which intentionally shows
+/// everything (including `npm verbose`/`sill`/`timing`) so a slow-but-alive
+/// install is visibly still doing something, never just silently.
+fn npm_log_line_redacted(line: &str) -> Option<String> {
     let line = line.trim();
     if line.is_empty() {
         return None;
     }
 
     let lowercase = line.to_ascii_lowercase();
-    if NPM_NOISY_LOG_PREFIXES
-        .iter()
-        .any(|prefix| lowercase.starts_with(prefix))
-    {
-        return None;
-    }
-
     if NPM_SECRET_MARKERS
         .iter()
         .any(|marker| lowercase.contains(marker))
@@ -1733,11 +1745,21 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                         &slow_fetch_tx,
                         &slow_fetch_triggered,
                     );
-                    let Some(line) = npm_log_line_for_display(&line) else {
-                        continue;
-                    };
-                    record_npm_diagnostic(&diagnostics, &line);
-                    emit(&app_c, &step_c, &format!("npm › {}", line), prog_live);
+                    match npm_log_line_for_display(&line) {
+                        Some(display_line) => {
+                            record_npm_diagnostic(&diagnostics, &display_line);
+                            emit(&app_c, &step_c, &format!("npm › {}", display_line), prog_live);
+                        }
+                        // Noisy lines (npm verbose/sill/timing/notice) are dropped from
+                        // the primary progress stream, but a raw diagnostic console
+                        // still needs them to show a slow-but-alive install is doing
+                        // something, not just silently stuck.
+                        None => {
+                            if let Some(raw_line) = npm_log_line_redacted(&line) {
+                                emit_diagnostic(&app_c, &step_c, &format!("npm » {}", raw_line), prog_live);
+                            }
+                        }
+                    }
                 }
                 Ok(())
             })
@@ -1767,19 +1789,25 @@ async fn npm_install_with_fallback(request: NpmInstallRequest<'_>) -> Result<(),
                         &slow_fetch_tx,
                         &slow_fetch_triggered,
                     );
-                    let Some(line) = npm_log_line_for_display(&line) else {
-                        continue;
-                    };
-                    if line.contains("TAR_ENTRY_ERROR") && line.contains("ENOENT") {
-                        let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
-                        // Preserve the first diagnostic but avoid flooding the
-                        // setup UI with hundreds of identical npm warnings.
-                        if seen > 0 {
-                            continue;
+                    match npm_log_line_for_display(&line) {
+                        Some(display_line) => {
+                            if display_line.contains("TAR_ENTRY_ERROR") && display_line.contains("ENOENT") {
+                                let seen = tar_warning_count_e.fetch_add(1, Ordering::Relaxed);
+                                // Preserve the first diagnostic but avoid flooding the
+                                // setup UI with hundreds of identical npm warnings.
+                                if seen > 0 {
+                                    continue;
+                                }
+                            }
+                            record_npm_diagnostic(&diagnostics, &display_line);
+                            emit(&app_e, &step_e, &format!("npm › {}", display_line), prog_live);
+                        }
+                        None => {
+                            if let Some(raw_line) = npm_log_line_redacted(&line) {
+                                emit_diagnostic(&app_e, &step_e, &format!("npm » {}", raw_line), prog_live);
+                            }
                         }
                     }
-                    record_npm_diagnostic(&diagnostics, &line);
-                    emit(&app_e, &step_e, &format!("npm › {}", line), prog_live);
                 }
                 Ok(())
             })
@@ -5447,6 +5475,33 @@ mod tests {
             npm_log_line_for_display("npm warn deprecated package@1.0.0"),
             Some("npm warn deprecated package@1.0.0".into())
         );
+    }
+
+    #[test]
+    fn npm_log_line_redacted_keeps_noisy_lines_for_the_raw_diagnostic_console() {
+        // The raw console must show verbose/sill/timing lines that the
+        // primary progress stream drops, but never at the cost of leaking
+        // credentials embedded in a registry URL.
+        assert_eq!(
+            npm_log_line_redacted("npm verbose cli /usr/bin/node /usr/bin/npm"),
+            Some("npm verbose cli /usr/bin/node /usr/bin/npm".into())
+        );
+        assert_eq!(
+            npm_log_line_redacted(
+                "npm timing reifyNode:node_modules/openclaw Completed in 45ms"
+            ),
+            Some("npm timing reifyNode:node_modules/openclaw Completed in 45ms".into())
+        );
+        assert_eq!(
+            npm_log_line_redacted("npm sill fetch https://user:secret@example.com/pkg"),
+            Some("npm sill fetch [registry URL redacted]".into())
+        );
+        assert_eq!(
+            npm_log_line_redacted("npm verbose authorization: Bearer secret-value"),
+            Some("[authentication details redacted]".into())
+        );
+        assert!(npm_log_line_is_noisy("npm verbose cli ..."));
+        assert!(!npm_log_line_is_noisy("npm http fetch GET 200 ..."));
     }
 
     #[test]

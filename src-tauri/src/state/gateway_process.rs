@@ -195,6 +195,8 @@ pub fn push_log(
     level: LogLevel,
     message: impl Into<String>,
 ) {
+    let message = message.into();
+    persist_gateway_log_line(level, source, &message);
     let entry = LogEntry {
         timestamp_ms: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -202,7 +204,7 @@ pub fn push_log(
             .unwrap_or(0),
         level,
         source,
-        message: message.into(),
+        message,
     };
     match logs.lock() {
         Ok(mut buf) => {
@@ -216,6 +218,41 @@ pub fn push_log(
         }
     }
 }
+
+/// Every Gateway lifecycle log line (start/stop/restart, Docker, repair) also
+/// lands in a persistent file. The in-memory ring buffer above is capped and
+/// lost on restart; this survives a crash or an app relaunch so a stalled
+/// start_gateway can still be diagnosed afterward.
+#[cfg(not(test))]
+fn persist_gateway_log_line(level: LogLevel, source: LogSource, message: &str) {
+    use std::io::Write;
+
+    let path = crate::paths::diagnostics_log_dir().join("gateway-timeline.log");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    else {
+        return;
+    };
+    let _ = writeln!(
+        file,
+        "[{}] {:?}/{:?} {}",
+        chrono::Local::now().format("%H:%M:%S%.3f"),
+        level,
+        source,
+        message
+    );
+}
+
+/// Tests must never write into the real user AppData/install directory as a
+/// side effect of exercising the ring buffer (e.g. thousands of iterations in
+/// `buffer_caps_at_log_buffer_cap`).
+#[cfg(test)]
+fn persist_gateway_log_line(_level: LogLevel, _source: LogSource, _message: &str) {}
 
 // ─── Tests (SPEC §T5 acceptance) ───────────────────────────────────────────
 

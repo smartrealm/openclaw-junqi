@@ -1011,6 +1011,53 @@ pub fn storage_bootstrap_path() -> PathBuf {
     app_config_dir().join("bootstrap.json")
 }
 
+/// Directory for Node.js/Git/OpenClaw install-and-download diagnostic logs.
+/// Prefers sitting next to the installed executable so a user does not have
+/// to go digging through AppData; falls back to the per-user app config
+/// directory when that turns out to not be writable (a macOS `.app` bundle,
+/// or a Windows perMachine install under `Program Files` without admin
+/// rights). Resolved once per process: the install location and its
+/// writability do not change during a run.
+pub fn diagnostics_log_dir() -> PathBuf {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        installed_exe_sibling_dir("installer-logs")
+            .filter(|dir| directory_accepts_writes(dir))
+            .unwrap_or_else(|| app_config_dir().join("installer-logs"))
+    })
+    .clone()
+}
+
+fn installed_exe_sibling_dir(name: &str) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let parent = exe.parent()?;
+    Some(parent.join(name))
+}
+
+/// Probe-write into `path` (creating it if needed) rather than trusting
+/// directory permission bits, which do not reliably predict write access on
+/// Windows ACLs or macOS bundle protections.
+fn directory_accepts_writes(path: &Path) -> bool {
+    if !path.exists() && std::fs::create_dir_all(path).is_err() {
+        return false;
+    }
+    let probe = path.join(format!(
+        ".junqi-write-probe-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    match std::fs::write(&probe, b"ok") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 pub fn legacy_default_state_dir() -> PathBuf {
     home_dir_or_fallback().join(".openclaw")
 }

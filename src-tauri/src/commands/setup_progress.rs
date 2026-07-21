@@ -8,13 +8,19 @@ use tauri::Emitter;
 /// fact. The in-memory `setup-progress` events above are only seen by a
 /// running frontend; this file survives regardless of outcome.
 fn timeline_log_path(step: &str) -> std::path::PathBuf {
-    crate::paths::app_config_dir()
-        .join("installer-logs")
-        .join(format!("{step}-timeline.log"))
+    crate::paths::diagnostics_log_dir().join(format!("{step}-timeline.log"))
 }
 
+/// Tests must never write into the real user AppData/install directory as a
+/// side effect of exercising install-flow code paths that emit progress.
+#[cfg(test)]
+fn timeline_tracked(_step: &str) -> bool {
+    false
+}
+
+#[cfg(not(test))]
 fn timeline_tracked(step: &str) -> bool {
-    matches!(step, "node" | "git")
+    matches!(step, "node" | "git" | "openclaw")
 }
 
 /// Start a fresh timeline for one dependency-install attempt. The caller invokes

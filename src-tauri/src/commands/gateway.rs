@@ -1428,7 +1428,14 @@ pub(crate) async fn wait_for_selected_gateway(
     false
 }
 
-const MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 60;
+// A freshly installed OpenClaw/Node.js pair is untouched by Windows Defender's
+// on-access scanner; its first execution (this readiness wait) can stall for
+// tens of seconds while the scanner works through node.exe and the package's
+// full node_modules tree before the process produces any output at all. 60s
+// was tuned for an already-scanned/cached binary; give a cold start headroom
+// instead of killing a Gateway that is merely slow to start for the first time.
+const MANAGED_GATEWAY_START_TIMEOUT_SECS: u64 = 90;
+const MANAGED_GATEWAY_START_HEARTBEAT_SECS: u64 = 15;
 
 fn managed_gateway_diagnostics(state: &GatewayProcess, started_at_ms: i64, limit: usize) -> String {
     let Ok(logs) = state.logs.lock() else {
@@ -2583,6 +2590,16 @@ pub(crate) async fn start_gateway_locked(
     };
     if let Some(mut old) = old_child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut old).await;
+        let _ = app.emit(
+            "gateway-log",
+            "Waiting for the previous Gateway process to release its port...",
+        );
+        crate::state::gateway_process::push_log(
+            &state.logs,
+            crate::state::gateway_process::LogSource::Lifecycle,
+            crate::state::gateway_process::LogLevel::Info,
+            "start_gateway: waiting for previous owned child's port to free".to_string(),
+        );
         // Handles TCP TIME_WAIT on Windows and delayed process teardown.
         if let Err(error) =
             crate::commands::gateway_supervisor::wait_for_port_free(port, 30_000).await
@@ -2619,19 +2636,49 @@ pub(crate) async fn start_gateway_locked(
     std::fs::create_dir_all(&base_dir)
         .map_err(|error| format!("Failed to create OpenClaw state directory: {error}"))?;
     if let Some(probe_node) = crate::commands::state_dir_probe::probe_node_path(&node) {
-        if let crate::commands::state_dir_probe::ChmodProbeOutcome::Unsupported(detail) =
-            crate::commands::state_dir_probe::probe_chmod_capability(&probe_node, &base_dir).await
+        let _ = app.emit(
+            "gateway-log",
+            "Checking state directory write capability...",
+        );
+        crate::state::gateway_process::push_log(
+            &state.logs,
+            crate::state::gateway_process::LogSource::Lifecycle,
+            crate::state::gateway_process::LogLevel::Info,
+            "start_gateway: probing state directory chmod capability".to_string(),
+        );
+        match crate::commands::state_dir_probe::probe_chmod_capability(&probe_node, &base_dir).await
         {
-            let message =
-                crate::commands::state_dir_probe::chmod_unsupported_message(&base_dir, &detail);
-            let _ = app.emit("gateway-log", &message);
-            crate::state::gateway_process::push_log(
-                &state.logs,
-                crate::state::gateway_process::LogSource::Lifecycle,
-                crate::state::gateway_process::LogLevel::Error,
-                message.clone(),
-            );
-            return Err(message);
+            crate::commands::state_dir_probe::ChmodProbeOutcome::Unsupported(detail) => {
+                let message = crate::commands::state_dir_probe::chmod_unsupported_message(
+                    &base_dir, &detail,
+                );
+                let _ = app.emit("gateway-log", &message);
+                crate::state::gateway_process::push_log(
+                    &state.logs,
+                    crate::state::gateway_process::LogSource::Lifecycle,
+                    crate::state::gateway_process::LogLevel::Error,
+                    message.clone(),
+                );
+                return Err(message);
+            }
+            // The probe itself failed to run (Node timed out, spawn error)
+            // rather than proving the directory unusable. This must not block
+            // startup — the Gateway readiness check below is authoritative —
+            // but it must not be silent either, or a slow/AV-scanned probe
+            // looks identical to "nothing happened" from the activity log.
+            crate::commands::state_dir_probe::ChmodProbeOutcome::Inconclusive(detail) => {
+                let message = format!(
+                    "State directory write capability probe was inconclusive ({detail}); continuing, the Gateway readiness check will catch any real problem"
+                );
+                let _ = app.emit("gateway-log", &message);
+                crate::state::gateway_process::push_log(
+                    &state.logs,
+                    crate::state::gateway_process::LogSource::Lifecycle,
+                    crate::state::gateway_process::LogLevel::Warn,
+                    message,
+                );
+            }
+            crate::commands::state_dir_probe::ChmodProbeOutcome::Supported => {}
         }
     }
     let pending_service_running = paths::pending_gateway_service_rebind();
@@ -2773,10 +2820,25 @@ pub(crate) async fn start_gateway_locked(
     // until either its TCP endpoint is reachable, the child exits, or startup
     // times out. This gives every caller one cross-platform readiness contract
     // and preserves the real stderr instead of reducing failures to a UI timer.
-    let startup_deadline = std::time::Instant::now()
-        + std::time::Duration::from_secs(MANAGED_GATEWAY_START_TIMEOUT_SECS);
+    let startup_started_at = std::time::Instant::now();
+    let startup_deadline =
+        startup_started_at + std::time::Duration::from_secs(MANAGED_GATEWAY_START_TIMEOUT_SECS);
+    let mut next_heartbeat_at =
+        startup_started_at + std::time::Duration::from_secs(MANAGED_GATEWAY_START_HEARTBEAT_SECS);
     start_failure_guard.stage(GatewayStartStage::Readiness);
     loop {
+        let now = std::time::Instant::now();
+        if now >= next_heartbeat_at {
+            let elapsed = now.duration_since(startup_started_at).as_secs();
+            let _ = app.emit(
+                "gateway-log",
+                format!(
+                    "Still waiting for the Gateway to become reachable on 127.0.0.1:{} (elapsed {}s)...",
+                    port, elapsed
+                ),
+            );
+            next_heartbeat_at = now + std::time::Duration::from_secs(MANAGED_GATEWAY_START_HEARTBEAT_SECS);
+        }
         match child.try_wait() {
             Ok(Some(status)) => {
                 // Let the async stdout/stderr readers flush their final lines.
