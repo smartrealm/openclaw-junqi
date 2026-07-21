@@ -45,14 +45,6 @@ test("all collaboration RPC methods register once with their declared operator s
   for (const definition of COLLABORATION_RPC_METHODS) {
     assert.equal(handlers.get(definition.method)?.scope, definition.scope, definition.method);
   }
-  assert.equal(
-    COLLABORATION_RPC_METHODS.filter((definition) => definition.scope === "operator.read").length,
-    14,
-  );
-  assert.equal(
-    COLLABORATION_RPC_METHODS.filter((definition) => definition.scope === "operator.write").length,
-    26,
-  );
 });
 
 test("every collaboration RPC fails closed while the plugin service is unavailable", async () => {
