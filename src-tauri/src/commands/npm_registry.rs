@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use reqwest::header::HeaderValue;
@@ -15,6 +15,7 @@ const CHINA_NPM_REGISTRY: NpmRegistry = NpmRegistry {
     url: "https://registry.npmmirror.com",
 };
 const REGISTRY_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+const TARBALL_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 const OPENCLAW_PACKAGE_NAME: &str = "openclaw";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -45,6 +46,7 @@ pub struct NpmRegistrySelection {
     pub fallback: Option<NpmRegistry>,
     pub package_version: Option<String>,
     pub node_requirement: Option<String>,
+    diagnostic: String,
 }
 
 impl NpmRegistrySelection {
@@ -62,6 +64,8 @@ impl NpmRegistrySelection {
             fallback: Some(OFFICIAL_NPM_REGISTRY),
             package_version: None,
             node_requirement: None,
+            diagnostic: "公共 registry 元数据探测不可用；保留国内镜像并使用官方源作为备用"
+                .to_string(),
         }
     }
 }
@@ -75,6 +79,7 @@ pub(crate) struct OpenclawReleaseTarget {
     version: String,
     node_requirement: String,
     sources: Vec<NpmPackageSource>,
+    source_diagnostic: String,
 }
 
 impl OpenclawReleaseTarget {
@@ -93,6 +98,10 @@ impl OpenclawReleaseTarget {
     pub(crate) fn sources(&self) -> &[NpmPackageSource] {
         &self.sources
     }
+
+    pub(crate) fn source_diagnostic(&self) -> &str {
+        &self.source_diagnostic
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -100,12 +109,15 @@ struct RegistryProbe {
     registry: NpmRegistry,
     version: String,
     node_requirement: Option<String>,
+    metadata_latency: Duration,
+    tarball_latency: Option<Duration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ReleaseMetadata {
     version: String,
     node_requirement: Option<String>,
+    tarball_url: Url,
 }
 
 /// Internal endpoint used only while resolving package metadata. The public
@@ -261,27 +273,35 @@ impl NpmPackageSource {
 #[derive(Clone)]
 pub(crate) struct EffectiveNpmRegistryPolicy {
     sources: Vec<NpmPackageSource>,
+    diagnostic: String,
 }
 
 impl EffectiveNpmRegistryPolicy {
     fn configured(endpoint: RegistryEndpoint) -> Self {
         Self {
             sources: vec![NpmPackageSource::configured(endpoint)],
+            diagnostic: "使用用户配置的 npm registry；不会切换到公共镜像".to_string(),
         }
     }
 
     fn public(selection: NpmRegistrySelection) -> Self {
+        let diagnostic = selection.diagnostic.clone();
         Self {
             sources: selection
                 .candidates()
                 .into_iter()
                 .map(NpmPackageSource::public)
                 .collect(),
+            diagnostic,
         }
     }
 
     pub(crate) fn sources(&self) -> &[NpmPackageSource] {
         &self.sources
+    }
+
+    pub(crate) fn diagnostic(&self) -> &str {
+        &self.diagnostic
     }
 }
 
@@ -337,12 +357,45 @@ async fn select_from_live_registry_probes(
 
 async fn probe_registry(client: &reqwest::Client, registry: NpmRegistry) -> Option<RegistryProbe> {
     let endpoint = RegistryEndpoint::public(registry);
+    let metadata_started = Instant::now();
     let metadata = probe_endpoint(client, &endpoint, "latest").await?;
+    let metadata_latency = metadata_started.elapsed();
+    let tarball_latency = if is_builtin_registry(registry) {
+        probe_tarball_transport(&metadata.tarball_url).await
+    } else {
+        None
+    };
     Some(RegistryProbe {
         registry,
         version: metadata.version,
         node_requirement: metadata.node_requirement,
+        metadata_latency,
+        tarball_latency,
     })
+}
+
+fn is_builtin_registry(registry: NpmRegistry) -> bool {
+    registry.url == OFFICIAL_NPM_REGISTRY.url || registry.url == CHINA_NPM_REGISTRY.url
+}
+
+async fn probe_tarball_transport(url: &Url) -> Option<Duration> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(TARBALL_PROBE_TIMEOUT)
+        .timeout(TARBALL_PROBE_TIMEOUT)
+        .user_agent("JunQi Desktop npm tarball probe")
+        .build()
+        .ok()?;
+    let started = Instant::now();
+    let response = client
+        .head(url.clone())
+        .header(reqwest::header::ACCEPT, "application/octet-stream")
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    Some(started.elapsed())
 }
 
 fn release_metadata_from_package(metadata: PackageMetadata) -> Option<ReleaseMetadata> {
@@ -369,6 +422,7 @@ fn release_metadata_from_package(metadata: PackageMetadata) -> Option<ReleaseMet
     Some(ReleaseMetadata {
         version,
         node_requirement,
+        tarball_url,
     })
 }
 
@@ -738,6 +792,7 @@ async fn resolve_pinned_openclaw_release_target(
                     version: version.to_string(),
                     node_requirement,
                     sources,
+                    source_diagnostic: policy.diagnostic().to_string(),
                 });
             }
             Err(error) => failures.push(format!("{}: {error}", source.label())),
@@ -755,24 +810,43 @@ fn select_from_probes(
 ) -> NpmRegistrySelection {
     match (official, mirror) {
         (Some(official), Some(mirror)) if mirror.version == official.version => {
+            let (primary, fallback, reason) = choose_matching_source(&official, &mirror);
             NpmRegistrySelection {
-                primary: mirror.registry,
-                fallback: Some(official.registry),
+                primary: primary.registry,
+                fallback: Some(fallback.registry),
                 package_version: Some(official.version),
                 node_requirement: official.node_requirement,
+                diagnostic: format!(
+                    "公共源版本一致；{}。官方元数据 {}，tarball {}；国内镜像元数据 {}，tarball {}",
+                    reason,
+                    format_latency(official.metadata_latency),
+                    format_optional_latency(official.tarball_latency),
+                    format_latency(mirror.metadata_latency),
+                    format_optional_latency(mirror.tarball_latency),
+                ),
             }
         }
-        (Some(official), Some(_stale_mirror)) => NpmRegistrySelection {
+        (Some(official), Some(stale_mirror)) => NpmRegistrySelection {
             primary: official.registry,
             fallback: None,
             package_version: Some(official.version),
             node_requirement: official.node_requirement,
+            diagnostic: format!(
+                "国内镜像版本 {} 与官方版本不一致；以官方发布契约为准（官方元数据 {}，国内镜像元数据 {}）",
+                stale_mirror.version,
+                format_latency(official.metadata_latency),
+                format_latency(stale_mirror.metadata_latency),
+            ),
         },
         (Some(official), None) => NpmRegistrySelection {
             primary: official.registry,
             fallback: None,
             package_version: Some(official.version),
             node_requirement: official.node_requirement,
+            diagnostic: format!(
+                "仅官方 registry 元数据探测成功（耗时 {}）；未启用公共备用源",
+                format_latency(official.metadata_latency),
+            ),
         },
         (None, Some(mirror)) => NpmRegistrySelection {
             primary: mirror.registry,
@@ -783,9 +857,59 @@ fn select_from_probes(
             fallback: Some(OFFICIAL_NPM_REGISTRY),
             package_version: Some(mirror.version),
             node_requirement: mirror.node_requirement,
+            diagnostic: format!(
+                "官方 registry 元数据探测失败；使用国内镜像（元数据 {}，tarball {}），官方源仅作为未验证备用",
+                format_latency(mirror.metadata_latency),
+                format_optional_latency(mirror.tarball_latency),
+            ),
         },
         (None, None) => NpmRegistrySelection::china_default(),
     }
+}
+
+fn choose_matching_source<'a>(
+    official: &'a RegistryProbe,
+    mirror: &'a RegistryProbe,
+) -> (&'a RegistryProbe, &'a RegistryProbe, &'static str) {
+    match (official.tarball_latency, mirror.tarball_latency) {
+        (Some(official_latency), Some(mirror_latency)) if mirror_latency < official_latency => {
+            (mirror, official, "按实际 tarball 传输延迟选择国内镜像")
+        }
+        (Some(official_latency), Some(mirror_latency)) if official_latency < mirror_latency => {
+            (official, mirror, "按实际 tarball 传输延迟选择官方 registry")
+        }
+        (Some(_), Some(_)) => (official, mirror, "tarball 传输延迟相同，优先官方 registry"),
+        (None, Some(_)) => (
+            mirror,
+            official,
+            "官方 tarball 探测不可用，选择已验证 tarball 的国内镜像",
+        ),
+        (Some(_), None) => (
+            official,
+            mirror,
+            "国内镜像 tarball 探测不可用，选择已验证 tarball 的官方 registry",
+        ),
+        (None, None) if mirror.metadata_latency < official.metadata_latency => (
+            mirror,
+            official,
+            "tarball 探测均不可用，按元数据延迟选择国内镜像",
+        ),
+        (None, None) => (
+            official,
+            mirror,
+            "tarball 探测均不可用，按发布权威优先选择官方 registry",
+        ),
+    }
+}
+
+fn format_latency(latency: Duration) -> String {
+    format!("{}ms", latency.as_millis())
+}
+
+fn format_optional_latency(latency: Option<Duration>) -> String {
+    latency
+        .map(format_latency)
+        .unwrap_or_else(|| "不可用".to_string())
 }
 
 #[cfg(test)]
@@ -797,11 +921,13 @@ mod tests {
         thread,
     };
 
-    fn probe(registry: NpmRegistry, _latency_ms: u64, version: &str) -> RegistryProbe {
+    fn probe(registry: NpmRegistry, latency_ms: u64, version: &str) -> RegistryProbe {
         RegistryProbe {
             registry,
             version: version.to_string(),
             node_requirement: Some(">=24.15.0 <25".to_string()),
+            metadata_latency: Duration::from_millis(latency_ms),
+            tarball_latency: Some(Duration::from_millis(latency_ms)),
         }
     }
 
@@ -850,7 +976,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_the_china_registry_first_when_both_are_healthy() {
+    fn chooses_the_faster_matching_source_when_both_are_healthy() {
         let selection = select_from_probes(
             Some(probe(OFFICIAL_NPM_REGISTRY, 80, "2026.7.1")),
             Some(probe(CHINA_NPM_REGISTRY, 50, "2026.7.1")),
@@ -937,6 +1063,7 @@ mod tests {
             fallback: Some(OFFICIAL_NPM_REGISTRY),
             package_version: Some("2026.7.1".to_string()),
             node_requirement: Some(">=24.15.0 <25".to_string()),
+            diagnostic: "test source selection".to_string(),
         });
 
         assert_eq!(
@@ -1037,16 +1164,16 @@ mod tests {
         mirror.join();
         official.join();
 
-        assert_eq!(selection.primary, mirror_registry);
         assert_eq!(selection.package_version.as_deref(), Some(version));
         assert_eq!(
             selection.node_requirement.as_deref(),
             Some(node_requirement)
         );
-        assert_eq!(
-            selection.candidates(),
-            vec![mirror_registry, official_registry]
-        );
+        let candidates = selection.candidates();
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.contains(&mirror_registry));
+        assert!(candidates.contains(&official_registry));
+        assert!(selection.fallback.is_some());
     }
 
     #[test]
@@ -1058,6 +1185,7 @@ mod tests {
                 NpmPackageSource::public(CHINA_NPM_REGISTRY),
                 NpmPackageSource::public(OFFICIAL_NPM_REGISTRY),
             ],
+            source_diagnostic: "test source selection".to_string(),
         };
 
         assert_eq!(target.package_spec(), "openclaw@2026.7.1");
@@ -1085,6 +1213,7 @@ mod tests {
         let client = reqwest::Client::builder().build().unwrap();
         let policy = EffectiveNpmRegistryPolicy {
             sources: vec![NpmPackageSource::public(server.registry)],
+            diagnostic: "test source selection".to_string(),
         };
 
         let target = resolve_pinned_openclaw_release_target(&client, &policy, version)
