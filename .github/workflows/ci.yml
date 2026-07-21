@@ -44,6 +44,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # pinned 1.96.0
         with:
@@ -72,20 +77,29 @@ jobs:
             librsvg2-dev \
             libasound2-dev
 
+      - name: Fetch locked Rust dependencies
+        run: node scripts/fetch-cargo-dependencies.mjs --target x86_64-unknown-linux-gnu
+
       - name: cargo fmt --check
         working-directory: src-tauri
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
         working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: cargo clippy --all-targets
 
       - name: cargo check
         working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: cargo check --all-targets
 
       - name: cargo test (lib only, no GUI)
         working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: cargo test --lib --no-fail-fast
 
   frontend:
@@ -221,15 +235,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Fetch locked Rust dependencies
+        run: node scripts/fetch-cargo-dependencies.mjs --target x86_64-pc-windows-msvc
+
       - name: Compile all native targets
         working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: cargo check --all-targets --target x86_64-pc-windows-msvc
 
       - name: Run native Windows Rust tests
         working-directory: src-tauri
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: cargo test --lib --target x86_64-pc-windows-msvc --no-fail-fast
 
       - name: Build NSIS installer
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: >-
           pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
           --config src-tauri/tauri.no-updater-artifacts.conf.json
